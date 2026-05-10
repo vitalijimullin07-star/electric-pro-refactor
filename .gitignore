@@ -8,3 +8,4 @@ serviceAccountKey.json
 dist/
 build/
 .DS_Store
+local-backups/
