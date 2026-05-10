@@ -1,5 +1,6 @@
 // === БЕЗОПАСНАЯ ОБОЛОЧКА И СИНХРОНИЗАЦИЯ ===
-
+function safeGet(key, def) { try { return localStorage.getItem(key) || def; } catch(e) { return def; } }
+function safeSet(key, val) { try { localStorage.setItem(key, val); } catch(e) {} }
 
 window.addEventListener('offline', () => { showToast("📵 Нет интернета. Работаем локально."); });
 window.addEventListener('online', () => { showToast("🌐 Связь восстановлена. Синхронизация..."); syncDraft(); });
