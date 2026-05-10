@@ -194,6 +194,7 @@ async function finishLoginSetup() {
 
 
 function changeTheme(theme) { document.documentElement.setAttribute('data-theme', theme); safeSet('theme_v31', theme); }
+function updateMasterBadge() { document.getElementById('master-badge').innerHTML = `${appUser?.name || "Мастер"}<br>Объект: ${cust.name || 'Не выбран'}`; }
 
 function updateCoeffs() {
     coeffs.mat = Number(document.getElementById('m-coeff').value);
@@ -795,6 +796,15 @@ function updatePayPrepay(val) {
         safeSet('h_v31', JSON.stringify(hDB));
         if(db) db.collection('history').doc(String(obj.id)).update({ payments: obj.payments }).catch(()=>{});
     }
+}
+
+function saveCust() { 
+    cust.name = document.getElementById('c-name').value; 
+    cust.addr = document.getElementById('c-addr').value;
+    cust.ceil = document.getElementById('c-ceil').value;
+    cust.phone = document.getElementById('c-phone').value;
+    safeSet('cust_v31', JSON.stringify(cust)); 
+    closeModal('custModal'); updateMasterBadge(); 
 }
 
 function saveLogic() { 
