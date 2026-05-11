@@ -274,7 +274,7 @@ async function compareShopsAI() {
 }
 
 
-ync function addDbItem() {
+async function addDbItem() {
     if(appUser.role !== 'admin') return showToast("Только админ может добавлять");
     let cat = document.getElementById('db-new-cat').value.trim() || 'Разное';
     let name = document.getElementById('db-new-name').value.trim();
