@@ -482,44 +482,20 @@
 </div>
 
 
-<script>
-window.addEventListener('error', function(e) {
-    document.body.innerHTML = `
-        <div style="padding:20px;font-family:Arial;background:#111;color:#fff;min-height:100vh;">
-            <h2 style="color:#ff4444;">JS ERROR</h2>
-            <pre style="white-space:pre-wrap;font-size:14px;">${e.message}
-            
-File: ${e.filename}
-Line: ${e.lineno}
-Column: ${e.colno}</pre>
-        </div>
-    `;
-});
-
-window.addEventListener('unhandledrejection', function(e) {
-    document.body.innerHTML = `
-        <div style="padding:20px;font-family:Arial;background:#111;color:#fff;min-height:100vh;">
-            <h2 style="color:#ff4444;">PROMISE ERROR</h2>
-            <pre style="white-space:pre-wrap;font-size:14px;">${e.reason && (e.reason.stack || e.reason.message || e.reason)}</pre>
-        </div>
-    `;
-});
-</script>
-
-<script src="js/00-core.js?v=1778481651"></script>
-<script src="js/visual.js?v=1778481651"></script>
-<script src="js/customer.js?v=1778481651"></script>
-<script src="js/settings.js?v=1778481651"></script>
-<script src="js/database.js?v=1778481651"></script>
-<script src="js/estimate.js?v=1778481651"></script>
-<script src="js/socket-pool.js?v=1778481651"></script>
-<script src="js/shield-configurator.js?v=1778481651"></script>
-<script src="js/recalc-routes.js?v=1778481651"></script>
-<script src="js/pdf-preview.js?v=1778481651"></script>
-<script src="js/accounting.js?v=1778481651"></script>
-<script src="js/ai.js"></script>
-<script src="js/auth.js"></script>
-<script src="js/admin.js"></script>
-<script src="js/app.js?v=1778481651"></script>
+<script src="js/00-core.js?v=1778482585"></script>
+<script src="js/visual.js?v=1778482585"></script>
+<script src="js/customer.js?v=1778482585"></script>
+<script src="js/settings.js?v=1778482585"></script>
+<script src="js/database.js?v=1778482585"></script>
+<script src="js/estimate.js?v=1778482585"></script>
+<script src="js/socket-pool.js?v=1778482585"></script>
+<script src="js/shield-configurator.js?v=1778482585"></script>
+<script src="js/recalc-routes.js?v=1778482585"></script>
+<script src="js/pdf-preview.js?v=1778482585"></script>
+<script src="js/accounting.js?v=1778482585"></script>
+<script src="js/ai.js?v=1778482585"></script>
+<script src="js/auth.js?v=1778482585"></script>
+<script src="js/admin.js?v=1778482585"></script>
+<script src="js/app.js?v=1778482585"></script>
 </body>
 </html>
