@@ -224,7 +224,9 @@
                 <select id="chart-period" onchange="renderChart()" style="margin:0; padding:6px; font-size:11px;"><option value="month">Дни (Месяц)</option><option value="year">Месяцы (Год)</option><option value="all">Всё время</option></select>
                 <select id="chart-type" onchange="renderChart()" style="margin:0; padding:6px; font-size:11px;"><option value="bar">Столбцы</option><option value="line">Линия</option></select>
             </div>
-            <canvas id="buhChart" width="100" height="50"></canvas>
+            <div id="buh-chart-box" style="position:relative;width:100%;height:240px;min-height:240px;max-height:240px;overflow:hidden;">
+        <canvas id="buhChart" style="display:block;width:100%;height:240px;max-height:240px;"></canvas>
+    </div>
         </div>
 
         <div style="background:rgba(0,0,0,0.03); padding:12px; border-radius: 12px; font-size: 13px; font-weight:600; border:1px solid var(--border);">
@@ -489,6 +491,7 @@
 <script src="js/shield-configurator.js"></script>
 <script src="js/recalc-routes.js"></script>
 <script src="js/pdf-preview.js"></script>
+<script src="js/accounting.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

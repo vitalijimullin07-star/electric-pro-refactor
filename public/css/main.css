@@ -108,3 +108,92 @@
         .editable-name { cursor: pointer; color: var(--primary); border-bottom: 1px dashed var(--primary); }
 
         #chart-container { background: rgba(255,255,255,0.7); border-radius: 12px; padding: 10px; margin-bottom: 15px; border: 1px solid var(--border); }
+
+/* FIX: бухгалтерия — ограничение высоты графика */
+#buhModal canvas,
+#buhModal .chart-container,
+#buh-modal canvas,
+#buh-modal .chart-container,
+canvas#buhChart,
+#buhChart {
+    max-height: 280px !important;
+    height: 280px !important;
+}
+
+#buhModal,
+#buh-modal {
+    overflow-y: auto;
+}
+
+
+/* FIX: бухгалтерия — график не должен растягивать окно */
+#chart-container {
+    position: relative !important;
+    width: 100% !important;
+    height: 280px !important;
+    max-height: 280px !important;
+    overflow: hidden !important;
+}
+
+#chart-container canvas,
+#buhChart {
+    display: block !important;
+    width: 100% !important;
+    height: 280px !important;
+    max-height: 280px !important;
+}
+
+/* HARD FIX: бухгалтерия — запрет бесконечного растягивания графика */
+#chart-container {
+    position: relative !important;
+    height: 260px !important;
+    min-height: 260px !important;
+    max-height: 260px !important;
+    overflow: hidden !important;
+    flex: 0 0 260px !important;
+}
+
+#chart-container canvas,
+#buhChart {
+    display: block !important;
+    width: 100% !important;
+    height: 260px !important;
+    max-height: 260px !important;
+}
+
+/* FINAL FIX: бухгалтерия — отдельный контейнер только под график */
+#chart-container {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+}
+
+#buh-chart-box {
+    position: relative !important;
+    width: 100% !important;
+    height: 260px !important;
+    min-height: 260px !important;
+    max-height: 260px !important;
+    overflow: hidden !important;
+}
+
+#buh-chart-box canvas,
+#buhChart {
+    display: block !important;
+    width: 100% !important;
+    height: 260px !important;
+    max-height: 260px !important;
+}
+
+/* FINAL HARD FIX: бухгалтерия */
+#buh-chart-box {
+    height: 240px !important;
+    min-height: 240px !important;
+    max-height: 240px !important;
+    overflow: hidden !important;
+}
+
+#buhChart {
+    height: 240px !important;
+    max-height: 240px !important;
+}
