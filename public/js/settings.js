@@ -55,3 +55,10 @@ function renderLogicUI() {
     document.getElementById('logic-conn-sw').value = appLogic.connPerSwJb; 
     document.getElementById('logic-conn-pass').value = appLogic.connPerPassJb; 
 }
+
+// === saveApiKey ===
+async function saveApiKey(val) { 
+    GEMINI_API_KEY = val.trim(); safeSet('gemini_key_v31', GEMINI_API_KEY);
+    if(db && appUser && appUser.uid) { try { await db.collection('users').doc(appUser.uid).update({geminiKey: GEMINI_API_KEY}); }catch(e){} }
+    showToast("🔑 Ключ сохранен!"); 
+}

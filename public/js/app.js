@@ -87,17 +87,7 @@ if(auth) {
     hideLoader(); checkLocalPinUser();
 }
 
-function showLoader(text, icon = '☁️') { document.getElementById('loader-icon').innerText = icon; document.getElementById('loader-text').innerText = text; document.getElementById('global-loader').classList.add('show'); }
-
-async function saveApiKey(val) { 
-    GEMINI_API_KEY = val.trim(); safeSet('gemini_key_v31', GEMINI_API_KEY);
-    if(db && appUser && appUser.uid) { try { await db.collection('users').doc(appUser.uid).update({geminiKey: GEMINI_API_KEY}); }catch(e){} }
-    showToast("🔑 Ключ сохранен!"); 
-}
-
 // === ЗАМЕНА МАТЕРИАЛА / РАБОТЫ ПО КЛИКУ ===
 let swapTargetIdx = -1;
 
-async function syncDraft() { try { safeSet('est_v31', JSON.stringify(currentEstimate)); if(db && appUser && appUser.uid) await db.collection('drafts').doc(appUser.uid).set({ estimate: currentEstimate, cust: cust, timestamp: new Date().toISOString() }); } catch(e){} }
-async function clearCurrentEstimate() { let c = await window.customConfirm("Очистка", "Очистить смету?"); if(c){ currentEstimate=[]; renderMainTable(); } }
 

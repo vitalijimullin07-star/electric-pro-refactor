@@ -51,3 +51,6 @@ function closeModal(id) { document.getElementById(id).style.display='none'; }
 
 // === toggleMenu ===
 function toggleMenu() { document.getElementById('burger-menu').classList.toggle('open'); document.getElementById('burger-overlay').classList.toggle('open'); }
+
+// === showLoader ===
+function showLoader(text, icon = '☁️') { document.getElementById('loader-icon').innerText = icon; document.getElementById('loader-text').innerText = text; document.getElementById('global-loader').classList.add('show'); }

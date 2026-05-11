@@ -60,3 +60,9 @@ function addAuto(items, tag) {
     items.forEach(it => { it.tag = tag; currentEstimate.push(it); }); 
     renderMainTable(); 
 }
+
+// === syncDraft ===
+async function syncDraft() { try { safeSet('est_v31', JSON.stringify(currentEstimate)); if(db && appUser && appUser.uid) await db.collection('drafts').doc(appUser.uid).set({ estimate: currentEstimate, cust: cust, timestamp: new Date().toISOString() }); } catch(e){} }
+
+// === clearCurrentEstimate ===
+async function clearCurrentEstimate() { let c = await window.customConfirm("Очистка", "Очистить смету?"); if(c){ currentEstimate=[]; renderMainTable(); } }
