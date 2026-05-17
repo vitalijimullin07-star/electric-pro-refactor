@@ -1,0 +1,131 @@
+# V28 Shield Configurator Module
+
+Перенос блока **2. Конфигуратор щита**.
+
+Файл:
+
+- `public/js/02-shield-configurator.js`
+
+Найденные и перенесённые блоки:
+
+- `addAuto`
+- `populateShieldExtras`
+- `addExtraToShieldConfig`
+- `renderShieldExtras`
+- `epV15BrandRu`
+- `epV15BrandCode`
+- `epV15CleanForName`
+- `epV15DetectModel`
+- `epV15DetectNominal`
+- `epV15DetectPoles`
+- `epV15AmpFromNominal`
+- `epV15FormatAutoName`
+- `epV15DetectLeakage`
+- `epV15FormatRcdName`
+- `epV15DisplayMaterialName`
+- `epV15MergeAssignments`
+- `epAutoPrice`
+- `epDifPrice`
+- `generateCascadePanel`
+- `getCfgCount`
+- `epMoveShieldSettingsIntoDetails`
+- `autoPrice`
+- `difPrice`
+- `detectRcdType`
+- `shieldRowsForDetails`
+- `autoGroupMaterial`
+- `autoGroupWork`
+- `fixShieldWorkItem`
+- `patchShieldButton`
+- `epV16GenerateCascadePanel`
+- `isShieldDeviceV16`
+- `dbFindAuto`
+- `dbFindRcd`
+- `autoName`
+- `rcdName`
+- `rcdPrice`
+- `cfgNum`
+- `directAddShield`
+- `isShieldDevice`
+- `cfgN`
+- `addShieldToEstimate`
+- `window.epToggleShieldDbSub`
+- `window.epPromptShieldGroupedAdd`
+- `window.epGenerateShieldFixed`
+- `window.currentShieldExtras`
+- `window.generateCascadePanel`
+- `window.epAutoGroupItem`
+- `window.epAutoRegroupActiveDb`
+- `window.addAuto`
+- `window.epV15IsShieldDevice`
+- `window.epV15Purpose`
+- `window.epV15GetAssignments`
+- `window.epV15BuildLinesFromConfig`
+- `window.epV15InferAssignments`
+- `window.epV15NormalizeCurrentEstimate`
+- `window.epV15SelectVisible`
+- `window.epV15MoveSelectedActive`
+- `window.epV16GenerateCascadePanel`
+- `window.epV17Normalize`
+- `window.epV17ShowDetails`
+- `window.epV17BulkMove`
+- `window.epV17BulkDelete`
+- `window.epV18SetStatus`
+- `window.epV18GenerateShield`
+- `window.epV18ShowDetails`
+- `window.epV18SelectVisible`
+- `window.epV18MoveSelected`
+- `window.epV18DeleteSelected`
+- `window.epV19GenerateShield`
+- `window.epV19ShowDetails`
+- `window.epV20GenerateShield`
+- `window.epV20ShowDetails`
+- `cfg`
+- `currentShieldExtras`
+- `autoEl`
+- `leakage`
+- `bAuto`
+- `rcdType`
+- `relayModules`
+- `masterModules`
+- `extraModules`
+- `totalModules`
+- `comb1P`
+- `pugvSize`
+- `shieldItems`
+- `master`
+- `masterInfo`
+- `cfgDoc`
+- `comb2P`
+- `pugvMeters`
+- `nshviPacks`
+- `isBreaker`
+- `isDif`
+- `isUzo`
+- `oldAddAuto`
+- `newAddAuto`
+- `isAuto`
+- `IIFE_shield_patch_98`
+- `IIFE_shield_patch_99`
+- `IIFE_shield_patch_100`
+- `IIFE_shield_patch_101`
+- `IIFE_shield_patch_102`
+- `IIFE_shield_patch_103`
+- `IIFE_shield_patch_104`
+- `IIFE_shield_patch_105`
+- `IIFE_shield_patch_106`
+- `IIFE_shield_patch_107`
+- `IIFE_shield_patch_108`
+- `IIFE_shield_patch_109`
+- `IIFE_shield_patch_110`
+- `IIFE_shield_patch_111`
+- `IIFE_shield_patch_112`
+- `IIFE_shield_patch_113`
+- `IIFE_shield_patch_114`
+- `IIFE_shield_patch_115`
+- `IIFE_shield_patch_116`
+- `IIFE_shield_patch_117`
+
+`00-core.js` пока не очищался, чтобы сохранить рабочую версию.
+
+После полной проверки функции будут переноситься окончательно и удаляться из runtime.
