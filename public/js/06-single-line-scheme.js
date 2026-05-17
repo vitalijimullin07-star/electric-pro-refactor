@@ -1,21 +1,30 @@
 /*
  * Electric PRO Refactor
  * Module: 06-single-line-scheme.js
- * V55: separate scheme screen.
- *
- * Схема живёт отдельным экраном:
- * - public/scheme.html
- * - кнопка в конфигураторе щита открывает этот экран
- * - дальше сюда добавим передачу schemeTree из конфигуратора
+ * V56: exact button placement under visible "Ручная сборка".
  */
 
 (function () {
   "use strict";
 
-  const VERSION = "V55_SCHEME_SCREEN";
-  const STYLE_ID = "ep-v55-scheme-button-style";
-  const ROW_ID = "ep-v55-scheme-row";
-  const BTN_ID = "ep-v55-scheme-btn";
+  const VERSION = "V56_EXACT_UNDER_MANUAL_BUILD";
+  const STYLE_ID = "ep-v56-scheme-button-style";
+  const ROW_ID = "ep-v56-scheme-row";
+  const BTN_ID = "ep-v56-scheme-btn";
+
+  const OLD_SELECTORS = [
+    "#ep-v55-scheme-row",
+    "#ep-v54-scheme-row",
+    "#ep-v53-scheme-row",
+    "#ep-single-line-launcher",
+    "#ep-scheme-inside-shield",
+    "#ep-sl-shield-host",
+    "#ep-scheme-shield-row-v50",
+    "#ep-scheme-shield-row-v51",
+    "#ep-tree-scheme-inline-body-v52",
+    "#ep-tree-scheme-modal-v51",
+    "#ep-single-line-modal"
+  ].join(",");
 
   function norm(text) {
     return String(text || "").replace(/\s+/g, " ").trim().toLowerCase();
@@ -27,37 +36,35 @@
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-      #ep-single-line-launcher,
-      #ep-scheme-inside-shield,
-      #ep-sl-shield-host,
-      #ep-scheme-shield-row-v50,
-      #ep-scheme-shield-row-v51,
-      #ep-tree-scheme-inline-body-v52,
-      #ep-tree-scheme-modal-v51,
-      #ep-single-line-modal {
+      ${OLD_SELECTORS} {
         display: none !important;
       }
 
       #${ROW_ID} {
-        width: 100%;
-        margin: 10px 0 14px;
+        width: 100% !important;
+        flex: 0 0 100% !important;
+        display: block !important;
+        margin: 10px 0 14px !important;
+        padding: 0 !important;
+        box-sizing: border-box !important;
       }
 
       #${BTN_ID} {
-        width: 100%;
-        border: 0;
-        border-radius: 18px;
-        padding: 14px 16px;
-        background: linear-gradient(135deg, #4f46e5, #2563eb, #0891b2);
-        color: #fff;
-        font-size: 16px;
-        font-weight: 900;
-        box-shadow: 0 10px 25px rgba(37,99,235,.30);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        cursor: pointer;
+        width: 100% !important;
+        min-height: 58px !important;
+        border: 0 !important;
+        border-radius: 18px !important;
+        padding: 14px 16px !important;
+        background: linear-gradient(135deg, #4f46e5, #2563eb, #0891b2) !important;
+        color: #fff !important;
+        font-size: 16px !important;
+        font-weight: 900 !important;
+        box-shadow: 0 10px 25px rgba(37,99,235,.30) !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 8px !important;
+        cursor: pointer !important;
       }
 
       #${BTN_ID}:active {
@@ -65,34 +72,95 @@
       }
 
       #${BTN_ID} small {
-        font-size: 12px;
-        font-weight: 800;
-        opacity: .86;
+        font-size: 12px !important;
+        font-weight: 800 !important;
+        opacity: .86 !important;
       }
     `;
 
     document.head.appendChild(style);
   }
 
-  function removeOldBad() {
-    document.querySelectorAll(
-      "#ep-single-line-launcher, #ep-scheme-inside-shield, #ep-sl-shield-host, #ep-scheme-shield-row-v50, #ep-scheme-shield-row-v51, #ep-tree-scheme-inline-body-v52, #ep-tree-scheme-modal-v51, #ep-single-line-modal"
-    ).forEach((el) => el.remove());
+  function removeOldButtons() {
+    document.querySelectorAll(OLD_SELECTORS).forEach((el) => el.remove());
+
+    document.querySelectorAll("#" + ROW_ID).forEach((el, index) => {
+      if (index > 0) el.remove();
+    });
   }
 
   function isVisible(el) {
     if (!el || !el.getBoundingClientRect) return false;
+
+    const style = window.getComputedStyle(el);
+    if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) {
+      return false;
+    }
+
     const r = el.getBoundingClientRect();
-    return r.width > 10 && r.height > 10 && r.bottom > 0 && r.top < window.innerHeight;
+
+    return (
+      r.width > 20 &&
+      r.height > 20 &&
+      r.bottom > 0 &&
+      r.right > 0 &&
+      r.top < window.innerHeight &&
+      r.left < window.innerWidth
+    );
   }
 
-  function findManualBuildButton() {
-    return Array.from(document.querySelectorAll("button")).find((btn) => {
-      return isVisible(btn) && norm(btn.textContent).includes("ручная сборка");
-    }) || null;
+  function isOnTop(el) {
+    if (!isVisible(el)) return false;
+
+    const r = el.getBoundingClientRect();
+
+    const points = [
+      [r.left + r.width / 2, r.top + r.height / 2],
+      [r.left + 20, r.top + r.height / 2],
+      [r.right - 20, r.top + r.height / 2]
+    ];
+
+    return points.some(([x, y]) => {
+      if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) return false;
+
+      const stack = document.elementsFromPoint(x, y);
+
+      return stack.some((topEl) => {
+        return topEl === el || el.contains(topEl) || (topEl.closest && topEl.closest("button") === el);
+      });
+    });
   }
 
-  function createButtonRow() {
+  function findVisibleManualBuildButton() {
+    const buttons = Array.from(document.querySelectorAll("button"));
+
+    const candidates = buttons
+      .filter((btn) => norm(btn.textContent).includes("ручная сборка"))
+      .filter(isVisible)
+      .map((btn) => {
+        const r = btn.getBoundingClientRect();
+        let score = 0;
+
+        if (isOnTop(btn)) score += 1000;
+        if (r.left >= 0 && r.left < window.innerWidth * 0.75) score += 100;
+        if (r.top > 0 && r.top < window.innerHeight) score += 100;
+        if (r.width > 250) score += 50;
+
+        const parentText = norm(btn.parentElement ? btn.parentElement.textContent : "");
+        if (parentText.includes("сборка щита")) score += 50;
+
+        return { btn, score, top: r.top, left: r.left };
+      })
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        if (a.top !== b.top) return a.top - b.top;
+        return a.left - b.left;
+      });
+
+    return candidates.length ? candidates[0].btn : null;
+  }
+
+  function createRow() {
     let row = document.getElementById(ROW_ID);
     if (row) return row;
 
@@ -101,7 +169,7 @@
     row.innerHTML = `
       <button type="button" id="${BTN_ID}">
         <span>📐 Схема щита</span>
-        <small>открыть экран</small>
+        <small>открыть</small>
       </button>
     `;
 
@@ -122,24 +190,23 @@
         }
       }
     } catch (e) {
-      console.warn("Не удалось подготовить данные щита для схемы", e);
+      console.warn("Не удалось подготовить дерево щита для схемы", e);
     }
 
-    window.location.href = "scheme.html?v=v55";
+    window.location.href = "scheme.html?v=v56";
   }
 
   function mountButton() {
     ensureStyle();
-    removeOldBad();
+    removeOldButtons();
 
-    const manualBtn = findManualBuildButton();
+    const manualBtn = findVisibleManualBuildButton();
     if (!manualBtn) return false;
 
-    const row = createButtonRow();
+    const row = createRow();
 
-    if (!document.body.contains(row)) {
-      const host = manualBtn.closest("div") || manualBtn.parentElement;
-      host.insertAdjacentElement("afterend", row);
+    if (row.previousElementSibling !== manualBtn) {
+      manualBtn.insertAdjacentElement("afterend", row);
     }
 
     const btn = document.getElementById(BTN_ID);
@@ -152,7 +219,20 @@
   }
 
   function boot() {
-    mountButton();
+    ensureStyle();
+
+    let ticks = 0;
+    const timer = setInterval(() => {
+      mountButton();
+      ticks += 1;
+      if (ticks > 20) clearInterval(timer);
+    }, 250);
+
+    document.addEventListener("click", () => {
+      setTimeout(mountButton, 80);
+      setTimeout(mountButton, 250);
+      setTimeout(mountButton, 600);
+    }, true);
 
     const observer = new MutationObserver(() => {
       mountButton();
