@@ -1,0 +1,8187 @@
+{
+  "file": "public/js/00-core.js",
+  "lines": 8919,
+  "bytes": 679243,
+  "functions": [
+    {
+      "name": "safeGet",
+      "line": 36,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 104
+    },
+    {
+      "name": "safeSet",
+      "line": 37,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 82
+    },
+    {
+      "name": "epNormText",
+      "line": 289,
+      "module": "unknown",
+      "score": 0,
+      "size": 125
+    },
+    {
+      "name": "epCleanText",
+      "line": 485,
+      "module": "unknown",
+      "score": 0,
+      "size": 96
+    },
+    {
+      "name": "epMoney",
+      "line": 489,
+      "module": "08-accounting.js",
+      "score": 2,
+      "size": 154
+    },
+    {
+      "name": "epEscape",
+      "line": 494,
+      "module": "05-ai-functions.js",
+      "score": 19,
+      "size": 133865
+    },
+    {
+      "name": "epNormProvider",
+      "line": 500,
+      "module": "05-ai-functions.js",
+      "score": 4,
+      "size": 87
+    },
+    {
+      "name": "epCurrentProvider",
+      "line": 504,
+      "module": "10-estimate-views.js",
+      "score": 5,
+      "size": 139
+    },
+    {
+      "name": "epCurrentKey",
+      "line": 508,
+      "module": "05-ai-functions.js",
+      "score": 8,
+      "size": 315
+    },
+    {
+      "name": "epSetAiProvider",
+      "line": 514,
+      "module": "10-estimate-views.js",
+      "score": 12,
+      "size": 505
+    },
+    {
+      "name": "epRefreshProviderUI",
+      "line": 529,
+      "module": "05-ai-functions.js",
+      "score": 13,
+      "size": 826
+    },
+    {
+      "name": "epInsertMainProviderSwitch",
+      "line": 551,
+      "module": "05-ai-functions.js",
+      "score": 24,
+      "size": 873
+    },
+    {
+      "name": "epMakeAiMenuGroup",
+      "line": 574,
+      "module": "05-ai-functions.js",
+      "score": 19,
+      "size": 1248
+    },
+    {
+      "name": "epAddBetaLabels",
+      "line": 606,
+      "module": "03-socket-pool.js",
+      "score": 7,
+      "size": 658
+    },
+    {
+      "name": "epPatchSettingsUI",
+      "line": 619,
+      "module": "05-ai-functions.js",
+      "score": 16,
+      "size": 2497
+    },
+    {
+      "name": "epTestProviderKey",
+      "line": 673,
+      "module": "05-ai-functions.js",
+      "score": 16,
+      "size": 1415
+    },
+    {
+      "name": "epLoadAiConfigFromServer",
+      "line": 787,
+      "module": "05-ai-functions.js",
+      "score": 22,
+      "size": 3235
+    },
+    {
+      "name": "epCallGemini",
+      "line": 854,
+      "module": "05-ai-functions.js",
+      "score": 9,
+      "size": 1134
+    },
+    {
+      "name": "epExtractOpenAiText",
+      "line": 875,
+      "module": "05-ai-functions.js",
+      "score": 4,
+      "size": 391
+    },
+    {
+      "name": "epCallOpenAI",
+      "line": 887,
+      "module": "05-ai-functions.js",
+      "score": 40,
+      "size": 1192
+    },
+    {
+      "name": "epAskAI",
+      "line": 916,
+      "module": "05-ai-functions.js",
+      "score": 13,
+      "size": 269
+    },
+    {
+      "name": "epStripCode",
+      "line": 925,
+      "module": "unknown",
+      "score": 0,
+      "size": 215
+    },
+    {
+      "name": "epTryJsonParseLoose",
+      "line": 929,
+      "module": "05-ai-functions.js",
+      "score": 2,
+      "size": 192
+    },
+    {
+      "name": "epParseLooseTableText",
+      "line": 946,
+      "module": "06-single-line-scheme.js",
+      "score": 7,
+      "size": 1493
+    },
+    {
+      "name": "epExtractJsonObjectsLoose",
+      "line": 971,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 1006
+    },
+    {
+      "name": "epParseJsonArray",
+      "line": 1000,
+      "module": "05-ai-functions.js",
+      "score": 13,
+      "size": 699
+    },
+    {
+      "name": "epDbTypeLabel",
+      "line": 1080,
+      "module": "04-database.js",
+      "score": 5,
+      "size": 81
+    },
+    {
+      "name": "epCurrentDb",
+      "line": 1081,
+      "module": "04-database.js",
+      "score": 8,
+      "size": 71
+    },
+    {
+      "name": "epSetCurrentDb",
+      "line": 1082,
+      "module": "04-database.js",
+      "score": 8,
+      "size": 91
+    },
+    {
+      "name": "epInferCategory",
+      "line": 1084,
+      "module": "03-socket-pool.js",
+      "score": 10,
+      "size": 1091
+    },
+    {
+      "name": "epInferSubcategory",
+      "line": 1103,
+      "module": "03-socket-pool.js",
+      "score": 11,
+      "size": 1733
+    },
+    {
+      "name": "epNormalizeItems",
+      "line": 1136,
+      "module": "04-database.js",
+      "score": 14,
+      "size": 2264
+    },
+    {
+      "name": "epSaveUserDb",
+      "line": 1182,
+      "module": "04-database.js",
+      "score": 27,
+      "size": 658
+    },
+    {
+      "name": "epSaveGlobalDb",
+      "line": 1200,
+      "module": "04-database.js",
+      "score": 16,
+      "size": 214
+    },
+    {
+      "name": "epLoadUserDbAfterLogin",
+      "line": 1205,
+      "module": "04-database.js",
+      "score": 34,
+      "size": 985
+    },
+    {
+      "name": "epInsertDbTools",
+      "line": 1234,
+      "module": "04-database.js",
+      "score": 22,
+      "size": 1159
+    },
+    {
+      "name": "epReadFileAsText",
+      "line": 1279,
+      "module": "11-pdf-files.js",
+      "score": 5,
+      "size": 270
+    },
+    {
+      "name": "epReadFileAsDataURL",
+      "line": 1288,
+      "module": "11-pdf-files.js",
+      "score": 5,
+      "size": 276
+    },
+    {
+      "name": "epReadFileAsArrayBuffer",
+      "line": 1297,
+      "module": "11-pdf-files.js",
+      "score": 5,
+      "size": 284
+    },
+    {
+      "name": "epIsEmptyCell",
+      "line": 1308,
+      "module": "unknown",
+      "score": 0,
+      "size": 106
+    },
+    {
+      "name": "epCleanCell",
+      "line": 1312,
+      "module": "unknown",
+      "score": 0,
+      "size": 131
+    },
+    {
+      "name": "epIsUnitCell",
+      "line": 1316,
+      "module": "unknown",
+      "score": 0,
+      "size": 204
+    },
+    {
+      "name": "epNormalizeUnit",
+      "line": 1321,
+      "module": "unknown",
+      "score": 0,
+      "size": 285
+    },
+    {
+      "name": "epIsNumberLikeCell",
+      "line": 1330,
+      "module": "unknown",
+      "score": 0,
+      "size": 199
+    },
+    {
+      "name": "epLooksLikeCodeOrNumber",
+      "line": 1337,
+      "module": "unknown",
+      "score": 0,
+      "size": 355
+    },
+    {
+      "name": "epTitleCaseRu",
+      "line": 1347,
+      "module": "unknown",
+      "score": 0,
+      "size": 183
+    },
+    {
+      "name": "epExtractItemsFromSheetRows",
+      "line": 1353,
+      "module": "10-estimate-views.js",
+      "score": 14,
+      "size": 3304
+    },
+    {
+      "name": "epReadDbFile",
+      "line": 1423,
+      "module": "04-database.js",
+      "score": 14,
+      "size": 2370
+    },
+    {
+      "name": "epAiNormalizeImage",
+      "line": 1478,
+      "module": "05-ai-functions.js",
+      "score": 8,
+      "size": 2477
+    },
+    {
+      "name": "epAiNormalizeDbText",
+      "line": 1521,
+      "module": "05-ai-functions.js",
+      "score": 16,
+      "size": 1176
+    },
+    {
+      "name": "epShowDbReview",
+      "line": 1542,
+      "module": "04-database.js",
+      "score": 10,
+      "size": 2143
+    },
+    {
+      "name": "epGetReviewedSelected",
+      "line": 1571,
+      "module": "12-documents.js",
+      "score": 12,
+      "size": 934
+    },
+    {
+      "name": "epSameItem",
+      "line": 1587,
+      "module": "10-estimate-views.js",
+      "score": 2,
+      "size": 299
+    },
+    {
+      "name": "epSendDbProposal",
+      "line": 1593,
+      "module": "04-database.js",
+      "score": 9,
+      "size": 586
+    },
+    {
+      "name": "epDownloadJson",
+      "line": 1642,
+      "module": "11-pdf-files.js",
+      "score": 7,
+      "size": 422
+    },
+    {
+      "name": "epInsertAdminProposalBox",
+      "line": 1792,
+      "module": "04-database.js",
+      "score": 6,
+      "size": 671
+    },
+    {
+      "name": "epListenDbProposals",
+      "line": 1804,
+      "module": "04-database.js",
+      "score": 16,
+      "size": 1964
+    },
+    {
+      "name": "epInitialApply",
+      "line": 1890,
+      "module": "07-settings.js",
+      "score": 6,
+      "size": 360
+    },
+    {
+      "name": "epEsc",
+      "line": 1937,
+      "module": "04-database.js",
+      "score": 15,
+      "size": 24117
+    },
+    {
+      "name": "epId",
+      "line": 1938,
+      "module": "unknown",
+      "score": 0,
+      "size": 77
+    },
+    {
+      "name": "epArr",
+      "line": 1939,
+      "module": "04-database.js",
+      "score": 6,
+      "size": 65
+    },
+    {
+      "name": "epSetArr",
+      "line": 1940,
+      "module": "04-database.js",
+      "score": 6,
+      "size": 85
+    },
+    {
+      "name": "epClean",
+      "line": 1941,
+      "module": "unknown",
+      "score": 0,
+      "size": 68
+    },
+    {
+      "name": "epSame",
+      "line": 1942,
+      "module": "unknown",
+      "score": 0,
+      "size": 312
+    },
+    {
+      "name": "epMaterialFromName",
+      "line": 1948,
+      "module": "04-database.js",
+      "score": 4,
+      "size": 289
+    },
+    {
+      "name": "epOpFromName",
+      "line": 1953,
+      "module": "03-socket-pool.js",
+      "score": 4,
+      "size": 274
+    },
+    {
+      "name": "epNormalizeWorkItem",
+      "line": 1958,
+      "module": "03-socket-pool.js",
+      "score": 7,
+      "size": 1244
+    },
+    {
+      "name": "epDisplayWorkName",
+      "line": 1981,
+      "module": "04-database.js",
+      "score": 2,
+      "size": 247
+    },
+    {
+      "name": "epEstimateCopy",
+      "line": 1987,
+      "module": "04-database.js",
+      "score": 2,
+      "size": 169
+    },
+    {
+      "name": "epMergeFullWorksInto",
+      "line": 1992,
+      "module": "04-database.js",
+      "score": 8,
+      "size": 301
+    },
+    {
+      "name": "epNormalizeAllWorkDb",
+      "line": 2000,
+      "module": "04-database.js",
+      "score": 20,
+      "size": 207
+    },
+    {
+      "name": "epGroupCatalog",
+      "line": 2004,
+      "module": "04-database.js",
+      "score": 3,
+      "size": 494
+    },
+    {
+      "name": "epRenderGroupedList",
+      "line": 2016,
+      "module": "03-socket-pool.js",
+      "score": 3,
+      "size": 3049
+    },
+    {
+      "name": "epGetGlobalDb",
+      "line": 2075,
+      "module": "04-database.js",
+      "score": 74,
+      "size": 841
+    },
+    {
+      "name": "epRenderGlobalDbModal",
+      "line": 2090,
+      "module": "04-database.js",
+      "score": 20,
+      "size": 625
+    },
+    {
+      "name": "epInsertGlobalDbButton",
+      "line": 2109,
+      "module": "12-documents.js",
+      "score": 8,
+      "size": 604
+    },
+    {
+      "name": "epEnsureProposalBox",
+      "line": 2123,
+      "module": "04-database.js",
+      "score": 8,
+      "size": 753
+    },
+    {
+      "name": "epProposalItemName",
+      "line": 2133,
+      "module": "04-database.js",
+      "score": 2,
+      "size": 114
+    },
+    {
+      "name": "epRenderProposalList",
+      "line": 2134,
+      "module": "04-database.js",
+      "score": 13,
+      "size": 1288
+    },
+    {
+      "name": "epStartProposalV2",
+      "line": 2203,
+      "module": "04-database.js",
+      "score": 12,
+      "size": 688
+    },
+    {
+      "name": "epInitFullWorksPatch",
+      "line": 2213,
+      "module": "04-database.js",
+      "score": 13,
+      "size": 180
+    },
+    {
+      "name": "qs",
+      "line": 2234,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 54
+    },
+    {
+      "name": "safeText",
+      "line": 2235,
+      "module": "02-shield-configurator.js",
+      "score": 8,
+      "size": 8033
+    },
+    {
+      "name": "norm",
+      "line": 2236,
+      "module": "unknown",
+      "score": 0,
+      "size": 112
+    },
+    {
+      "name": "uniq",
+      "line": 2237,
+      "module": "unknown",
+      "score": 0,
+      "size": 70
+    },
+    {
+      "name": "getVal",
+      "line": 2238,
+      "module": "unknown",
+      "score": 0,
+      "size": 70
+    },
+    {
+      "name": "getCheck",
+      "line": 2239,
+      "module": "unknown",
+      "score": 0,
+      "size": 68
+    },
+    {
+      "name": "toNum",
+      "line": 2240,
+      "module": "unknown",
+      "score": 0,
+      "size": 86
+    },
+    {
+      "name": "getCfgCount",
+      "line": 2242,
+      "module": "02-shield-configurator.js",
+      "score": 5,
+      "size": 274
+    },
+    {
+      "name": "epMoveShieldSettingsIntoDetails",
+      "line": 2249,
+      "module": "02-shield-configurator.js",
+      "score": 20,
+      "size": 1477
+    },
+    {
+      "name": "epMatGroupName",
+      "line": 2284,
+      "module": "02-shield-configurator.js",
+      "score": 10,
+      "size": 2221
+    },
+    {
+      "name": "epNormalizeMaterialsDb",
+      "line": 2314,
+      "module": "04-database.js",
+      "score": 14,
+      "size": 730
+    },
+    {
+      "name": "fixArr",
+      "line": 2315,
+      "module": "02-shield-configurator.js",
+      "score": 2,
+      "size": 547
+    },
+    {
+      "name": "epGroupedData",
+      "line": 2330,
+      "module": "03-socket-pool.js",
+      "score": 2,
+      "size": 545
+    },
+    {
+      "name": "epRenderGrouped",
+      "line": 2344,
+      "module": "04-database.js",
+      "score": 5,
+      "size": 2320
+    },
+    {
+      "name": "epPatchDbRenderers",
+      "line": 2382,
+      "module": "04-database.js",
+      "score": 39,
+      "size": 1285
+    },
+    {
+      "name": "epAllDbItems",
+      "line": 2397,
+      "module": "04-database.js",
+      "score": 14,
+      "size": 248
+    },
+    {
+      "name": "epFindItem",
+      "line": 2402,
+      "module": "10-estimate-views.js",
+      "score": 3,
+      "size": 542
+    },
+    {
+      "name": "epMat",
+      "line": 2413,
+      "module": "04-database.js",
+      "score": 11,
+      "size": 570
+    },
+    {
+      "name": "epWork",
+      "line": 2421,
+      "module": "04-database.js",
+      "score": 5,
+      "size": 392
+    },
+    {
+      "name": "addLine",
+      "line": 2444,
+      "module": "03-socket-pool.js",
+      "score": 4,
+      "size": 211
+    },
+    {
+      "name": "addRoom",
+      "line": 2445,
+      "module": "02-shield-configurator.js",
+      "score": 2,
+      "size": 231
+    },
+    {
+      "name": "addProtection",
+      "line": 2464,
+      "module": "03-socket-pool.js",
+      "score": 4,
+      "size": 174
+    },
+    {
+      "name": "autoPrice",
+      "line": 2469,
+      "module": "02-shield-configurator.js",
+      "score": 3,
+      "size": 59
+    },
+    {
+      "name": "difPrice",
+      "line": 2470,
+      "module": "02-shield-configurator.js",
+      "score": 3,
+      "size": 60
+    },
+    {
+      "name": "epPatchGenerateButton",
+      "line": 2532,
+      "module": "02-shield-configurator.js",
+      "score": 4,
+      "size": 280
+    },
+    {
+      "name": "boot",
+      "line": 2537,
+      "module": "04-database.js",
+      "score": 4,
+      "size": 126
+    },
+    {
+      "name": "qs",
+      "line": 2557,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 54
+    },
+    {
+      "name": "toast",
+      "line": 2558,
+      "module": "01-visual.js",
+      "score": 6,
+      "size": 89
+    },
+    {
+      "name": "safe",
+      "line": 2559,
+      "module": "04-database.js",
+      "score": 26,
+      "size": 18207
+    },
+    {
+      "name": "norm",
+      "line": 2560,
+      "module": "unknown",
+      "score": 0,
+      "size": 202
+    },
+    {
+      "name": "dbArr",
+      "line": 2561,
+      "module": "04-database.js",
+      "score": 12,
+      "size": 160
+    },
+    {
+      "name": "setDbArr",
+      "line": 2564,
+      "module": "04-database.js",
+      "score": 12,
+      "size": 174
+    },
+    {
+      "name": "detectBrand",
+      "line": 2567,
+      "module": "unknown",
+      "score": 0,
+      "size": 171
+    },
+    {
+      "name": "detectNominal",
+      "line": 2568,
+      "module": "unknown",
+      "score": 0,
+      "size": 153
+    },
+    {
+      "name": "getGroup",
+      "line": 2569,
+      "module": "03-socket-pool.js",
+      "score": 3,
+      "size": 82
+    },
+    {
+      "name": "setGroup",
+      "line": 2570,
+      "module": "03-socket-pool.js",
+      "score": 2,
+      "size": 64
+    },
+    {
+      "name": "normalizeMaterialDb",
+      "line": 2572,
+      "module": "02-shield-configurator.js",
+      "score": 15,
+      "size": 2921
+    },
+    {
+      "name": "renderGrouped",
+      "line": 2599,
+      "module": "03-socket-pool.js",
+      "score": 8,
+      "size": 1316
+    },
+    {
+      "name": "savedChoices",
+      "line": 2639,
+      "module": "04-database.js",
+      "score": 1,
+      "size": 125
+    },
+    {
+      "name": "saveChoice",
+      "line": 2640,
+      "module": "04-database.js",
+      "score": 1,
+      "size": 134
+    },
+    {
+      "name": "qs",
+      "line": 2716,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 54
+    },
+    {
+      "name": "safeHtml",
+      "line": 2717,
+      "module": "04-database.js",
+      "score": 25,
+      "size": 28051
+    },
+    {
+      "name": "norm",
+      "line": 2722,
+      "module": "unknown",
+      "score": 0,
+      "size": 196
+    },
+    {
+      "name": "arrByType",
+      "line": 2732,
+      "module": "04-database.js",
+      "score": 19,
+      "size": 541
+    },
+    {
+      "name": "setArrByType",
+      "line": 2749,
+      "module": "04-database.js",
+      "score": 6,
+      "size": 138
+    },
+    {
+      "name": "detectBrand",
+      "line": 2756,
+      "module": "unknown",
+      "score": 0,
+      "size": 381
+    },
+    {
+      "name": "detectNominal",
+      "line": 2765,
+      "module": "unknown",
+      "score": 0,
+      "size": 163
+    },
+    {
+      "name": "detectLeakage",
+      "line": 2770,
+      "module": "unknown",
+      "score": 0,
+      "size": 123
+    },
+    {
+      "name": "detectRcdType",
+      "line": 2774,
+      "module": "02-shield-configurator.js",
+      "score": 2,
+      "size": 293
+    },
+    {
+      "name": "normalizeDbItem",
+      "line": 2787,
+      "module": "02-shield-configurator.js",
+      "score": 9,
+      "size": 3553
+    },
+    {
+      "name": "normalizeDbs",
+      "line": 2845,
+      "module": "04-database.js",
+      "score": 11,
+      "size": 267
+    },
+    {
+      "name": "renderGroupedFixed",
+      "line": 2852,
+      "module": "04-database.js",
+      "score": 9,
+      "size": 2109
+    },
+    {
+      "name": "reqDisplayName",
+      "line": 2916,
+      "module": "02-shield-configurator.js",
+      "score": 15,
+      "size": 948
+    },
+    {
+      "name": "strictFindMaterial",
+      "line": 2936,
+      "module": "02-shield-configurator.js",
+      "score": 16,
+      "size": 2582
+    },
+    {
+      "name": "cleanCanonicalName",
+      "line": 3028,
+      "module": "02-shield-configurator.js",
+      "score": 8,
+      "size": 750
+    },
+    {
+      "name": "lineFromRaw",
+      "line": 3040,
+      "module": "02-shield-configurator.js",
+      "score": 7,
+      "size": 686
+    },
+    {
+      "name": "mergeEstimateFixed",
+      "line": 3055,
+      "module": "10-estimate-views.js",
+      "score": 8,
+      "size": 1242
+    },
+    {
+      "name": "shieldRowsForDetails",
+      "line": 3103,
+      "module": "10-estimate-views.js",
+      "score": 20,
+      "size": 1224
+    },
+    {
+      "name": "detailNote",
+      "line": 3134,
+      "module": "02-shield-configurator.js",
+      "score": 7,
+      "size": 441
+    },
+    {
+      "name": "qs",
+      "line": 3197,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 54
+    },
+    {
+      "name": "toast",
+      "line": 3198,
+      "module": "01-visual.js",
+      "score": 7,
+      "size": 91
+    },
+    {
+      "name": "safe",
+      "line": 3199,
+      "module": "04-database.js",
+      "score": 27,
+      "size": 22239
+    },
+    {
+      "name": "norm",
+      "line": 3204,
+      "module": "unknown",
+      "score": 0,
+      "size": 246
+    },
+    {
+      "name": "localArr",
+      "line": 3216,
+      "module": "04-database.js",
+      "score": 19,
+      "size": 450
+    },
+    {
+      "name": "setLocalArr",
+      "line": 3225,
+      "module": "04-database.js",
+      "score": 6,
+      "size": 121
+    },
+    {
+      "name": "getGroup",
+      "line": 3229,
+      "module": "03-socket-pool.js",
+      "score": 3,
+      "size": 92
+    },
+    {
+      "name": "itemKey",
+      "line": 3230,
+      "module": "10-estimate-views.js",
+      "score": 2,
+      "size": 194
+    },
+    {
+      "name": "sigKey",
+      "line": 3235,
+      "module": "03-socket-pool.js",
+      "score": 1,
+      "size": 147
+    },
+    {
+      "name": "deletedSet",
+      "line": 3238,
+      "module": "04-database.js",
+      "score": 2,
+      "size": 237
+    },
+    {
+      "name": "saveLocalDb",
+      "line": 3244,
+      "module": "04-database.js",
+      "score": 25,
+      "size": 839
+    },
+    {
+      "name": "loadGlobalDb",
+      "line": 3270,
+      "module": "04-database.js",
+      "score": 48,
+      "size": 880
+    },
+    {
+      "name": "mergedArr",
+      "line": 3291,
+      "module": "04-database.js",
+      "score": 8,
+      "size": 771
+    },
+    {
+      "name": "groupHtml",
+      "line": 3311,
+      "module": "03-socket-pool.js",
+      "score": 3,
+      "size": 2526
+    },
+    {
+      "name": "swapLabel",
+      "line": 3439,
+      "module": "unknown",
+      "score": 0,
+      "size": 155
+    },
+    {
+      "name": "qs",
+      "line": 3511,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 54
+    },
+    {
+      "name": "msg",
+      "line": 3512,
+      "module": "01-visual.js",
+      "score": 5,
+      "size": 83
+    },
+    {
+      "name": "esc",
+      "line": 3513,
+      "module": "04-database.js",
+      "score": 29,
+      "size": 30512
+    },
+    {
+      "name": "clean",
+      "line": 3518,
+      "module": "unknown",
+      "score": 0,
+      "size": 247
+    },
+    {
+      "name": "groupOf",
+      "line": 3529,
+      "module": "03-socket-pool.js",
+      "score": 3,
+      "size": 91
+    },
+    {
+      "name": "localDb",
+      "line": 3530,
+      "module": "04-database.js",
+      "score": 21,
+      "size": 449
+    },
+    {
+      "name": "setLocalDb",
+      "line": 3539,
+      "module": "04-database.js",
+      "score": 8,
+      "size": 120
+    },
+    {
+      "name": "idKey",
+      "line": 3542,
+      "module": "unknown",
+      "score": 0,
+      "size": 70
+    },
+    {
+      "name": "sigKey",
+      "line": 3543,
+      "module": "03-socket-pool.js",
+      "score": 1,
+      "size": 146
+    },
+    {
+      "name": "delStorageKey",
+      "line": 3546,
+      "module": "04-database.js",
+      "score": 2,
+      "size": 120
+    },
+    {
+      "name": "deletedSet",
+      "line": 3547,
+      "module": "05-ai-functions.js",
+      "score": 1,
+      "size": 149
+    },
+    {
+      "name": "saveDeleted",
+      "line": 3550,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 132
+    },
+    {
+      "name": "clearDeletedFor",
+      "line": 3553,
+      "module": "unknown",
+      "score": 0,
+      "size": 302
+    },
+    {
+      "name": "saveMyDb",
+      "line": 3561,
+      "module": "04-database.js",
+      "score": 32,
+      "size": 872
+    },
+    {
+      "name": "loadGlobal",
+      "line": 3586,
+      "module": "04-database.js",
+      "score": 55,
+      "size": 1001
+    },
+    {
+      "name": "merged",
+      "line": 3607,
+      "module": "04-database.js",
+      "score": 7,
+      "size": 717
+    },
+    {
+      "name": "renderList",
+      "line": 3626,
+      "module": "04-database.js",
+      "score": 4,
+      "size": 3621
+    },
+    {
+      "name": "toolbar",
+      "line": 3774,
+      "module": "08-accounting.js",
+      "score": 7,
+      "size": 1050
+    },
+    {
+      "name": "classify",
+      "line": 3855,
+      "module": "02-shield-configurator.js",
+      "score": 19,
+      "size": 1739
+    },
+    {
+      "name": "sameClass",
+      "line": 3884,
+      "module": "02-shield-configurator.js",
+      "score": 4,
+      "size": 351
+    },
+    {
+      "name": "$",
+      "line": 3949,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 53
+    },
+    {
+      "name": "toast",
+      "line": 3950,
+      "module": "01-visual.js",
+      "score": 7,
+      "size": 85
+    },
+    {
+      "name": "esc",
+      "line": 3951,
+      "module": "04-database.js",
+      "score": 4,
+      "size": 38477
+    },
+    {
+      "name": "norm",
+      "line": 3956,
+      "module": "unknown",
+      "score": 0,
+      "size": 246
+    },
+    {
+      "name": "encodeItem",
+      "line": 3967,
+      "module": "10-estimate-views.js",
+      "score": 2,
+      "size": 116
+    },
+    {
+      "name": "decodeItem",
+      "line": 3970,
+      "module": "10-estimate-views.js",
+      "score": 2,
+      "size": 114
+    },
+    {
+      "name": "groupOf",
+      "line": 3973,
+      "module": "03-socket-pool.js",
+      "score": 3,
+      "size": 91
+    },
+    {
+      "name": "sig",
+      "line": 3974,
+      "module": "03-socket-pool.js",
+      "score": 1,
+      "size": 142
+    },
+    {
+      "name": "idkey",
+      "line": 3977,
+      "module": "unknown",
+      "score": 0,
+      "size": 70
+    },
+    {
+      "name": "delKey",
+      "line": 3978,
+      "module": "04-database.js",
+      "score": 2,
+      "size": 113
+    },
+    {
+      "name": "delSet",
+      "line": 3979,
+      "module": "05-ai-functions.js",
+      "score": 1,
+      "size": 140
+    },
+    {
+      "name": "saveDel",
+      "line": 3982,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 123
+    },
+    {
+      "name": "localDb",
+      "line": 3985,
+      "module": "04-database.js",
+      "score": 21,
+      "size": 449
+    },
+    {
+      "name": "setLocalDb",
+      "line": 3994,
+      "module": "04-database.js",
+      "score": 8,
+      "size": 122
+    },
+    {
+      "name": "stripRuntime",
+      "line": 3997,
+      "module": "unknown",
+      "score": 0,
+      "size": 129
+    },
+    {
+      "name": "saveMyDb",
+      "line": 4006,
+      "module": "04-database.js",
+      "score": 32,
+      "size": 880
+    },
+    {
+      "name": "loadCachedGlobalFromStorage",
+      "line": 4029,
+      "module": "04-database.js",
+      "score": 20,
+      "size": 440
+    },
+    {
+      "name": "readGlobal",
+      "line": 4043,
+      "module": "04-database.js",
+      "score": 46,
+      "size": 1132
+    },
+    {
+      "name": "merged",
+      "line": 4074,
+      "module": "04-database.js",
+      "score": 9,
+      "size": 717
+    },
+    {
+      "name": "renderItems",
+      "line": 4093,
+      "module": "04-database.js",
+      "score": 3,
+      "size": 3631
+    },
+    {
+      "name": "makeLocalCopy",
+      "line": 4152,
+      "module": "unknown",
+      "score": 0,
+      "size": 341
+    },
+    {
+      "name": "$",
+      "line": 4459,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 53
+    },
+    {
+      "name": "toast",
+      "line": 4460,
+      "module": "01-visual.js",
+      "score": 7,
+      "size": 85
+    },
+    {
+      "name": "esc",
+      "line": 4461,
+      "module": "10-estimate-views.js",
+      "score": 6,
+      "size": 15149
+    },
+    {
+      "name": "cleanText",
+      "line": 4462,
+      "module": "unknown",
+      "score": 0,
+      "size": 153
+    },
+    {
+      "name": "clone",
+      "line": 4463,
+      "module": "unknown",
+      "score": 0,
+      "size": 100
+    },
+    {
+      "name": "arrLS",
+      "line": 4464,
+      "module": "05-ai-functions.js",
+      "score": 1,
+      "size": 128
+    },
+    {
+      "name": "objLS",
+      "line": 4465,
+      "module": "05-ai-functions.js",
+      "score": 1,
+      "size": 142
+    },
+    {
+      "name": "setLS",
+      "line": 4466,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 159
+    },
+    {
+      "name": "setObjLS",
+      "line": 4467,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 90
+    },
+    {
+      "name": "cleanMode",
+      "line": 4468,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 70
+    },
+    {
+      "name": "scope",
+      "line": 4469,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 89
+    },
+    {
+      "name": "activeLabel",
+      "line": 4470,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 86
+    },
+    {
+      "name": "uid",
+      "line": 4471,
+      "module": "07-settings.js",
+      "score": 3,
+      "size": 96
+    },
+    {
+      "name": "isAdmin",
+      "line": 4472,
+      "module": "07-settings.js",
+      "score": 5,
+      "size": 97
+    },
+    {
+      "name": "groupOf",
+      "line": 4473,
+      "module": "03-socket-pool.js",
+      "score": 3,
+      "size": 91
+    },
+    {
+      "name": "sig",
+      "line": 4474,
+      "module": "03-socket-pool.js",
+      "score": 1,
+      "size": 132
+    },
+    {
+      "name": "enc",
+      "line": 4475,
+      "module": "unknown",
+      "score": 0,
+      "size": 102
+    },
+    {
+      "name": "dec",
+      "line": 4476,
+      "module": "05-ai-functions.js",
+      "score": 1,
+      "size": 99
+    },
+    {
+      "name": "unique",
+      "line": 4478,
+      "module": "unknown",
+      "score": 0,
+      "size": 254
+    },
+    {
+      "name": "myArr",
+      "line": 4491,
+      "module": "04-database.js",
+      "score": 2,
+      "size": 70
+    },
+    {
+      "name": "serverArr",
+      "line": 4492,
+      "module": "04-database.js",
+      "score": 2,
+      "size": 82
+    },
+    {
+      "name": "activeArr",
+      "line": 4493,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 86
+    },
+    {
+      "name": "syncWindowCaches",
+      "line": 4495,
+      "module": "04-database.js",
+      "score": 43,
+      "size": 739
+    },
+    {
+      "name": "saveMyLocal",
+      "line": 4511,
+      "module": "04-database.js",
+      "score": 5,
+      "size": 315
+    },
+    {
+      "name": "saveServerLocal",
+      "line": 4521,
+      "module": "04-database.js",
+      "score": 9,
+      "size": 339
+    },
+    {
+      "name": "setActiveDb",
+      "line": 4529,
+      "module": "04-database.js",
+      "score": 2,
+      "size": 135
+    },
+    {
+      "name": "upsert",
+      "line": 4534,
+      "module": "02-shield-configurator.js",
+      "score": 1,
+      "size": 439
+    },
+    {
+      "name": "epSaveMyDbToServer",
+      "line": 4544,
+      "module": "04-database.js",
+      "score": 14,
+      "size": 471
+    },
+    {
+      "name": "epSaveServerDbToServer",
+      "line": 4559,
+      "module": "04-database.js",
+      "score": 14,
+      "size": 411
+    },
+    {
+      "name": "epSendServerProposal",
+      "line": 4572,
+      "module": "04-database.js",
+      "score": 9,
+      "size": 563
+    },
+    {
+      "name": "epLoadDbFromServer",
+      "line": 4589,
+      "module": "04-database.js",
+      "score": 47,
+      "size": 2312
+    },
+    {
+      "name": "sourceSwitcherHtml",
+      "line": 4641,
+      "module": "04-database.js",
+      "score": 9,
+      "size": 1033
+    },
+    {
+      "name": "renderCatalog",
+      "line": 4654,
+      "module": "10-estimate-views.js",
+      "score": 3,
+      "size": 1509
+    },
+    {
+      "name": "catalogRow",
+      "line": 4676,
+      "module": "10-estimate-views.js",
+      "score": 10,
+      "size": 835
+    },
+    {
+      "name": "editorTop",
+      "line": 4697,
+      "module": "04-database.js",
+      "score": 7,
+      "size": 2726
+    },
+    {
+      "name": "renderDbRows",
+      "line": 4723,
+      "module": "04-database.js",
+      "score": 7,
+      "size": 1318
+    },
+    {
+      "name": "editorRow",
+      "line": 4746,
+      "module": "10-estimate-views.js",
+      "score": 10,
+      "size": 1052
+    },
+    {
+      "name": "reviewedItems",
+      "line": 4869,
+      "module": "04-database.js",
+      "score": 11,
+      "size": 1019
+    },
+    {
+      "name": "downloadJson",
+      "line": 4905,
+      "module": "11-pdf-files.js",
+      "score": 7,
+      "size": 359
+    },
+    {
+      "name": "localFullCleanOnly",
+      "line": 4931,
+      "module": "04-database.js",
+      "score": 8,
+      "size": 466
+    },
+    {
+      "name": "commitCollection",
+      "line": 4952,
+      "module": "04-database.js",
+      "score": 10,
+      "size": 645
+    },
+    {
+      "name": "autoGroupMaterial",
+      "line": 4995,
+      "module": "02-shield-configurator.js",
+      "score": 10,
+      "size": 2557
+    },
+    {
+      "name": "autoGroupWork",
+      "line": 5017,
+      "module": "02-shield-configurator.js",
+      "score": 9,
+      "size": 2417
+    },
+    {
+      "name": "serverModalRow",
+      "line": 5044,
+      "module": "10-estimate-views.js",
+      "score": 7,
+      "size": 490
+    },
+    {
+      "name": "renderServerModalList",
+      "line": 5049,
+      "module": "01-visual.js",
+      "score": 5,
+      "size": 1194
+    },
+    {
+      "name": "epRefreshDbScopeUi",
+      "line": 5097,
+      "module": "04-database.js",
+      "score": 6,
+      "size": 683
+    },
+    {
+      "name": "install",
+      "line": 5105,
+      "module": "04-database.js",
+      "score": 9,
+      "size": 354
+    },
+    {
+      "name": "$",
+      "line": 5148,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 53
+    },
+    {
+      "name": "msg",
+      "line": 5149,
+      "module": "01-visual.js",
+      "score": 5,
+      "size": 83
+    },
+    {
+      "name": "isAdmin",
+      "line": 5150,
+      "module": "07-settings.js",
+      "score": 5,
+      "size": 108
+    },
+    {
+      "name": "uid",
+      "line": 5151,
+      "module": "07-settings.js",
+      "score": 2,
+      "size": 92
+    },
+    {
+      "name": "scope",
+      "line": 5152,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 120
+    },
+    {
+      "name": "setScope",
+      "line": 5153,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 106
+    },
+    {
+      "name": "readArr",
+      "line": 5154,
+      "module": "05-ai-functions.js",
+      "score": 1,
+      "size": 138
+    },
+    {
+      "name": "writeArr",
+      "line": 5155,
+      "module": "10-estimate-views.js",
+      "score": 2,
+      "size": 237
+    },
+    {
+      "name": "readObj",
+      "line": 5156,
+      "module": "05-ai-functions.js",
+      "score": 1,
+      "size": 148
+    },
+    {
+      "name": "writeObj",
+      "line": 5157,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 92
+    },
+    {
+      "name": "clean",
+      "line": 5158,
+      "module": "unknown",
+      "score": 0,
+      "size": 149
+    },
+    {
+      "name": "groupOf",
+      "line": 5159,
+      "module": "03-socket-pool.js",
+      "score": 3,
+      "size": 91
+    },
+    {
+      "name": "clone",
+      "line": 5160,
+      "module": "unknown",
+      "score": 0,
+      "size": 104
+    },
+    {
+      "name": "sig",
+      "line": 5161,
+      "module": "03-socket-pool.js",
+      "score": 1,
+      "size": 128
+    },
+    {
+      "name": "activeTarget",
+      "line": 5162,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 88
+    },
+    {
+      "name": "getMy",
+      "line": 5164,
+      "module": "04-database.js",
+      "score": 4,
+      "size": 223
+    },
+    {
+      "name": "getServer",
+      "line": 5169,
+      "module": "04-database.js",
+      "score": 8,
+      "size": 292
+    },
+    {
+      "name": "setMy",
+      "line": 5176,
+      "module": "04-database.js",
+      "score": 11,
+      "size": 378
+    },
+    {
+      "name": "setServer",
+      "line": 5184,
+      "module": "04-database.js",
+      "score": 32,
+      "size": 605
+    },
+    {
+      "name": "syncMainArrays",
+      "line": 5197,
+      "module": "04-database.js",
+      "score": 32,
+      "size": 456
+    },
+    {
+      "name": "unique",
+      "line": 5211,
+      "module": "04-database.js",
+      "score": 1,
+      "size": 469
+    },
+    {
+      "name": "upsert",
+      "line": 5226,
+      "module": "02-shield-configurator.js",
+      "score": 1,
+      "size": 653
+    },
+    {
+      "name": "reviewedItems",
+      "line": 5238,
+      "module": "04-database.js",
+      "score": 21,
+      "size": 1173
+    },
+    {
+      "name": "saveMyRemote",
+      "line": 5262,
+      "module": "04-database.js",
+      "score": 12,
+      "size": 527
+    },
+    {
+      "name": "saveServerRemote",
+      "line": 5278,
+      "module": "04-database.js",
+      "score": 12,
+      "size": 426
+    },
+    {
+      "name": "rerender",
+      "line": 5291,
+      "module": "04-database.js",
+      "score": 22,
+      "size": 553
+    },
+    {
+      "name": "$",
+      "line": 5377,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 53
+    },
+    {
+      "name": "toast",
+      "line": 5378,
+      "module": "01-visual.js",
+      "score": 6,
+      "size": 91
+    },
+    {
+      "name": "uid",
+      "line": 5379,
+      "module": "07-settings.js",
+      "score": 2,
+      "size": 92
+    },
+    {
+      "name": "isAdmin",
+      "line": 5380,
+      "module": "07-settings.js",
+      "score": 5,
+      "size": 108
+    },
+    {
+      "name": "setScope",
+      "line": 5381,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 106
+    },
+    {
+      "name": "getScope",
+      "line": 5382,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 123
+    },
+    {
+      "name": "label",
+      "line": 5383,
+      "module": "unknown",
+      "score": 0,
+      "size": 85
+    },
+    {
+      "name": "readArr",
+      "line": 5384,
+      "module": "05-ai-functions.js",
+      "score": 1,
+      "size": 138
+    },
+    {
+      "name": "writeArr",
+      "line": 5385,
+      "module": "10-estimate-views.js",
+      "score": 2,
+      "size": 237
+    },
+    {
+      "name": "readObj",
+      "line": 5386,
+      "module": "05-ai-functions.js",
+      "score": 1,
+      "size": 148
+    },
+    {
+      "name": "writeObj",
+      "line": 5387,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 92
+    },
+    {
+      "name": "clean",
+      "line": 5388,
+      "module": "unknown",
+      "score": 0,
+      "size": 149
+    },
+    {
+      "name": "groupOf",
+      "line": 5389,
+      "module": "03-socket-pool.js",
+      "score": 3,
+      "size": 91
+    },
+    {
+      "name": "clone",
+      "line": 5390,
+      "module": "unknown",
+      "score": 0,
+      "size": 104
+    },
+    {
+      "name": "sig",
+      "line": 5391,
+      "module": "03-socket-pool.js",
+      "score": 1,
+      "size": 128
+    },
+    {
+      "name": "unique",
+      "line": 5392,
+      "module": "unknown",
+      "score": 0,
+      "size": 344
+    },
+    {
+      "name": "getServerFromCache",
+      "line": 5406,
+      "module": "04-database.js",
+      "score": 6,
+      "size": 164
+    },
+    {
+      "name": "setMyArrays",
+      "line": 5411,
+      "module": "04-database.js",
+      "score": 14,
+      "size": 288
+    },
+    {
+      "name": "setServerArrays",
+      "line": 5421,
+      "module": "04-database.js",
+      "score": 33,
+      "size": 463
+    },
+    {
+      "name": "syncActiveArrays",
+      "line": 5431,
+      "module": "04-database.js",
+      "score": 36,
+      "size": 848
+    },
+    {
+      "name": "refreshMyFromServer",
+      "line": 5448,
+      "module": "04-database.js",
+      "score": 22,
+      "size": 621
+    },
+    {
+      "name": "refreshServerFromServer",
+      "line": 5463,
+      "module": "04-database.js",
+      "score": 32,
+      "size": 955
+    },
+    {
+      "name": "isVisible",
+      "line": 5481,
+      "module": "unknown",
+      "score": 0,
+      "size": 119
+    },
+    {
+      "name": "updateButtons",
+      "line": 5482,
+      "module": "04-database.js",
+      "score": 7,
+      "size": 880
+    },
+    {
+      "name": "rerenderOpenScreens",
+      "line": 5493,
+      "module": "01-visual.js",
+      "score": 23,
+      "size": 739
+    },
+    {
+      "name": "$",
+      "line": 5570,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 53
+    },
+    {
+      "name": "toast",
+      "line": 5571,
+      "module": "01-visual.js",
+      "score": 6,
+      "size": 125
+    },
+    {
+      "name": "uid",
+      "line": 5572,
+      "module": "07-settings.js",
+      "score": 2,
+      "size": 92
+    },
+    {
+      "name": "isAdmin",
+      "line": 5573,
+      "module": "07-settings.js",
+      "score": 5,
+      "size": 108
+    },
+    {
+      "name": "setScope",
+      "line": 5574,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 106
+    },
+    {
+      "name": "getScope",
+      "line": 5575,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 123
+    },
+    {
+      "name": "hardHideLoader",
+      "line": 5576,
+      "module": "01-visual.js",
+      "score": 10,
+      "size": 185
+    },
+    {
+      "name": "showReadLoader",
+      "line": 5580,
+      "module": "01-visual.js",
+      "score": 8,
+      "size": 142
+    },
+    {
+      "name": "esc",
+      "line": 5581,
+      "module": "10-estimate-views.js",
+      "score": 5,
+      "size": 25041
+    },
+    {
+      "name": "cleanText",
+      "line": 5582,
+      "module": "unknown",
+      "score": 0,
+      "size": 86
+    },
+    {
+      "name": "money",
+      "line": 5583,
+      "module": "08-accounting.js",
+      "score": 2,
+      "size": 141
+    },
+    {
+      "name": "norm",
+      "line": 5584,
+      "module": "unknown",
+      "score": 0,
+      "size": 148
+    },
+    {
+      "name": "readArr",
+      "line": 5585,
+      "module": "05-ai-functions.js",
+      "score": 1,
+      "size": 138
+    },
+    {
+      "name": "writeArr",
+      "line": 5586,
+      "module": "10-estimate-views.js",
+      "score": 2,
+      "size": 237
+    },
+    {
+      "name": "readObj",
+      "line": 5587,
+      "module": "05-ai-functions.js",
+      "score": 1,
+      "size": 148
+    },
+    {
+      "name": "writeObj",
+      "line": 5588,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 92
+    },
+    {
+      "name": "groupOf",
+      "line": 5589,
+      "module": "03-socket-pool.js",
+      "score": 3,
+      "size": 91
+    },
+    {
+      "name": "clone",
+      "line": 5590,
+      "module": "unknown",
+      "score": 0,
+      "size": 104
+    },
+    {
+      "name": "sig",
+      "line": 5591,
+      "module": "03-socket-pool.js",
+      "score": 1,
+      "size": 127
+    },
+    {
+      "name": "unique",
+      "line": 5592,
+      "module": "04-database.js",
+      "score": 1,
+      "size": 469
+    },
+    {
+      "name": "getMy",
+      "line": 5607,
+      "module": "04-database.js",
+      "score": 4,
+      "size": 216
+    },
+    {
+      "name": "getServer",
+      "line": 5612,
+      "module": "04-database.js",
+      "score": 8,
+      "size": 292
+    },
+    {
+      "name": "syncMainArrays",
+      "line": 5619,
+      "module": "04-database.js",
+      "score": 22,
+      "size": 379
+    },
+    {
+      "name": "setMy",
+      "line": 5632,
+      "module": "04-database.js",
+      "score": 11,
+      "size": 378
+    },
+    {
+      "name": "setServer",
+      "line": 5640,
+      "module": "04-database.js",
+      "score": 32,
+      "size": 605
+    },
+    {
+      "name": "upsert",
+      "line": 5653,
+      "module": "02-shield-configurator.js",
+      "score": 1,
+      "size": 538
+    },
+    {
+      "name": "saveMyRemote",
+      "line": 5664,
+      "module": "04-database.js",
+      "score": 12,
+      "size": 527
+    },
+    {
+      "name": "saveServerRemote",
+      "line": 5680,
+      "module": "04-database.js",
+      "score": 12,
+      "size": 426
+    },
+    {
+      "name": "rerender",
+      "line": 5693,
+      "module": "04-database.js",
+      "score": 22,
+      "size": 553
+    },
+    {
+      "name": "fileText",
+      "line": 5700,
+      "module": "11-pdf-files.js",
+      "score": 5,
+      "size": 200
+    },
+    {
+      "name": "fileBuffer",
+      "line": 5701,
+      "module": "11-pdf-files.js",
+      "score": 5,
+      "size": 195
+    },
+    {
+      "name": "csvRows",
+      "line": 5702,
+      "module": "06-single-line-scheme.js",
+      "score": 7,
+      "size": 657
+    },
+    {
+      "name": "inferCat",
+      "line": 5718,
+      "module": "02-shield-configurator.js",
+      "score": 14,
+      "size": 970
+    },
+    {
+      "name": "inferSub",
+      "line": 5736,
+      "module": "02-shield-configurator.js",
+      "score": 13,
+      "size": 970
+    },
+    {
+      "name": "normItem",
+      "line": 5760,
+      "module": "04-database.js",
+      "score": 4,
+      "size": 855
+    },
+    {
+      "name": "rowsToItems",
+      "line": 5770,
+      "module": "10-estimate-views.js",
+      "score": 20,
+      "size": 2232
+    },
+    {
+      "name": "cell",
+      "line": 5773,
+      "module": "10-estimate-views.js",
+      "score": 2,
+      "size": 57
+    },
+    {
+      "name": "jsonToItems",
+      "line": 5808,
+      "module": "04-database.js",
+      "score": 11,
+      "size": 542
+    },
+    {
+      "name": "selectedCount",
+      "line": 5817,
+      "module": "04-database.js",
+      "score": 1,
+      "size": 171
+    },
+    {
+      "name": "saveVisibleEdits",
+      "line": 5821,
+      "module": "10-estimate-views.js",
+      "score": 9,
+      "size": 755
+    },
+    {
+      "name": "renderReviewPage",
+      "line": 5841,
+      "module": "10-estimate-views.js",
+      "score": 11,
+      "size": 3102
+    },
+    {
+      "name": "showReview",
+      "line": 5891,
+      "module": "01-visual.js",
+      "score": 13,
+      "size": 614
+    },
+    {
+      "name": "aiFromImage",
+      "line": 5902,
+      "module": "05-ai-functions.js",
+      "score": 20,
+      "size": 829
+    },
+    {
+      "name": "aiFromText",
+      "line": 5912,
+      "module": "05-ai-functions.js",
+      "score": 14,
+      "size": 611
+    },
+    {
+      "name": "readDbFileV6",
+      "line": 5921,
+      "module": "10-estimate-views.js",
+      "score": 22,
+      "size": 1498
+    },
+    {
+      "name": "collectReviewed",
+      "line": 5986,
+      "module": "04-database.js",
+      "score": 12,
+      "size": 710
+    },
+    {
+      "name": "$",
+      "line": 6069,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 53
+    },
+    {
+      "name": "toast",
+      "line": 6070,
+      "module": "01-visual.js",
+      "score": 6,
+      "size": 123
+    },
+    {
+      "name": "esc",
+      "line": 6071,
+      "module": "07-settings.js",
+      "score": 7,
+      "size": 10546
+    },
+    {
+      "name": "norm",
+      "line": 6072,
+      "module": "unknown",
+      "score": 0,
+      "size": 146
+    },
+    {
+      "name": "cleanText",
+      "line": 6073,
+      "module": "unknown",
+      "score": 0,
+      "size": 80
+    },
+    {
+      "name": "money",
+      "line": 6074,
+      "module": "08-accounting.js",
+      "score": 2,
+      "size": 128
+    },
+    {
+      "name": "uid",
+      "line": 6075,
+      "module": "07-settings.js",
+      "score": 2,
+      "size": 84
+    },
+    {
+      "name": "isAdmin",
+      "line": 6076,
+      "module": "07-settings.js",
+      "score": 5,
+      "size": 102
+    },
+    {
+      "name": "scope",
+      "line": 6077,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 110
+    },
+    {
+      "name": "setScope",
+      "line": 6078,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 98
+    },
+    {
+      "name": "label",
+      "line": 6079,
+      "module": "unknown",
+      "score": 0,
+      "size": 76
+    },
+    {
+      "name": "canEditActive",
+      "line": 6080,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 87
+    },
+    {
+      "name": "readArr",
+      "line": 6081,
+      "module": "05-ai-functions.js",
+      "score": 1,
+      "size": 125
+    },
+    {
+      "name": "writeArr",
+      "line": 6082,
+      "module": "10-estimate-views.js",
+      "score": 2,
+      "size": 224
+    },
+    {
+      "name": "readObj",
+      "line": 6083,
+      "module": "05-ai-functions.js",
+      "score": 1,
+      "size": 131
+    },
+    {
+      "name": "writeObj",
+      "line": 6084,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 87
+    },
+    {
+      "name": "groupOf",
+      "line": 6085,
+      "module": "03-socket-pool.js",
+      "score": 3,
+      "size": 81
+    },
+    {
+      "name": "clone",
+      "line": 6086,
+      "module": "unknown",
+      "score": 0,
+      "size": 99
+    },
+    {
+      "name": "sig",
+      "line": 6087,
+      "module": "03-socket-pool.js",
+      "score": 1,
+      "size": 114
+    },
+    {
+      "name": "unique",
+      "line": 6088,
+      "module": "04-database.js",
+      "score": 1,
+      "size": 355
+    },
+    {
+      "name": "getMy",
+      "line": 6089,
+      "module": "04-database.js",
+      "score": 4,
+      "size": 158
+    },
+    {
+      "name": "getServer",
+      "line": 6090,
+      "module": "04-database.js",
+      "score": 8,
+      "size": 229
+    },
+    {
+      "name": "active",
+      "line": 6091,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 79
+    },
+    {
+      "name": "setMy",
+      "line": 6092,
+      "module": "04-database.js",
+      "score": 10,
+      "size": 261
+    },
+    {
+      "name": "setServer",
+      "line": 6093,
+      "module": "04-database.js",
+      "score": 32,
+      "size": 504
+    },
+    {
+      "name": "syncMain",
+      "line": 6094,
+      "module": "04-database.js",
+      "score": 17,
+      "size": 251
+    },
+    {
+      "name": "upsert",
+      "line": 6095,
+      "module": "02-shield-configurator.js",
+      "score": 1,
+      "size": 511
+    },
+    {
+      "name": "ensureProgress",
+      "line": 6097,
+      "module": "10-estimate-views.js",
+      "score": 8,
+      "size": 1807
+    },
+    {
+      "name": "showProgress",
+      "line": 6110,
+      "module": "01-visual.js",
+      "score": 6,
+      "size": 456
+    },
+    {
+      "name": "hideProgress",
+      "line": 6111,
+      "module": "01-visual.js",
+      "score": 2,
+      "size": 82
+    },
+    {
+      "name": "saveMyRemote",
+      "line": 6113,
+      "module": "04-database.js",
+      "score": 14,
+      "size": 521
+    },
+    {
+      "name": "saveServerRemote",
+      "line": 6124,
+      "module": "04-database.js",
+      "score": 14,
+      "size": 474
+    },
+    {
+      "name": "sendProposal",
+      "line": 6135,
+      "module": "04-database.js",
+      "score": 12,
+      "size": 603
+    },
+    {
+      "name": "reloadActiveDb",
+      "line": 6143,
+      "module": "04-database.js",
+      "score": 11,
+      "size": 558
+    },
+    {
+      "name": "ensurePanel",
+      "line": 6150,
+      "module": "04-database.js",
+      "score": 3,
+      "size": 294
+    },
+    {
+      "name": "renderPanel",
+      "line": 6156,
+      "module": "04-database.js",
+      "score": 14,
+      "size": 2680
+    },
+    {
+      "name": "tuneStaticBlocks",
+      "line": 6187,
+      "module": "04-database.js",
+      "score": 16,
+      "size": 1182
+    },
+    {
+      "name": "editorTop",
+      "line": 6202,
+      "module": "04-database.js",
+      "score": 7,
+      "size": 1588
+    },
+    {
+      "name": "editorRow",
+      "line": 6216,
+      "module": "10-estimate-views.js",
+      "score": 12,
+      "size": 1205
+    },
+    {
+      "name": "renderRows",
+      "line": 6225,
+      "module": "04-database.js",
+      "score": 6,
+      "size": 1212
+    },
+    {
+      "name": "downloadJson",
+      "line": 6273,
+      "module": "11-pdf-files.js",
+      "score": 8,
+      "size": 567
+    },
+    {
+      "name": "fileTextProgress",
+      "line": 6285,
+      "module": "11-pdf-files.js",
+      "score": 5,
+      "size": 314
+    },
+    {
+      "name": "fileBufferProgress",
+      "line": 6286,
+      "module": "11-pdf-files.js",
+      "score": 5,
+      "size": 311
+    },
+    {
+      "name": "csvRows",
+      "line": 6287,
+      "module": "06-single-line-scheme.js",
+      "score": 8,
+      "size": 550
+    },
+    {
+      "name": "inferCat",
+      "line": 6288,
+      "module": "02-shield-configurator.js",
+      "score": 14,
+      "size": 877
+    },
+    {
+      "name": "inferSub",
+      "line": 6289,
+      "module": "02-shield-configurator.js",
+      "score": 13,
+      "size": 849
+    },
+    {
+      "name": "normItem",
+      "line": 6290,
+      "module": "04-database.js",
+      "score": 4,
+      "size": 716
+    },
+    {
+      "name": "rowsToItems",
+      "line": 6291,
+      "module": "10-estimate-views.js",
+      "score": 22,
+      "size": 1815
+    },
+    {
+      "name": "cell",
+      "line": 6291,
+      "module": "10-estimate-views.js",
+      "score": 2,
+      "size": 53
+    },
+    {
+      "name": "jsonToItems",
+      "line": 6292,
+      "module": "04-database.js",
+      "score": 11,
+      "size": 466
+    },
+    {
+      "name": "showReview",
+      "line": 6293,
+      "module": "01-visual.js",
+      "score": 10,
+      "size": 613
+    },
+    {
+      "name": "readDbFile",
+      "line": 6294,
+      "module": "10-estimate-views.js",
+      "score": 15,
+      "size": 1278
+    },
+    {
+      "name": "saveVisibleEdits",
+      "line": 6302,
+      "module": "04-database.js",
+      "score": 14,
+      "size": 544
+    },
+    {
+      "name": "collectReviewed",
+      "line": 6303,
+      "module": "04-database.js",
+      "score": 12,
+      "size": 568
+    },
+    {
+      "name": "install",
+      "line": 6310,
+      "module": "04-database.js",
+      "score": 3,
+      "size": 136
+    },
+    {
+      "name": "$",
+      "line": 6340,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 53
+    },
+    {
+      "name": "toast",
+      "line": 6341,
+      "module": "01-visual.js",
+      "score": 6,
+      "size": 131
+    },
+    {
+      "name": "esc",
+      "line": 6342,
+      "module": "04-database.js",
+      "score": 6,
+      "size": 46777
+    },
+    {
+      "name": "norm",
+      "line": 6343,
+      "module": "unknown",
+      "score": 0,
+      "size": 146
+    },
+    {
+      "name": "money",
+      "line": 6344,
+      "module": "08-accounting.js",
+      "score": 2,
+      "size": 128
+    },
+    {
+      "name": "groupOf",
+      "line": 6345,
+      "module": "03-socket-pool.js",
+      "score": 3,
+      "size": 81
+    },
+    {
+      "name": "clean",
+      "line": 6346,
+      "module": "unknown",
+      "score": 0,
+      "size": 69
+    },
+    {
+      "name": "sig",
+      "line": 6347,
+      "module": "03-socket-pool.js",
+      "score": 1,
+      "size": 114
+    },
+    {
+      "name": "clone",
+      "line": 6348,
+      "module": "unknown",
+      "score": 0,
+      "size": 99
+    },
+    {
+      "name": "scope",
+      "line": 6349,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 110
+    },
+    {
+      "name": "setScope",
+      "line": 6350,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 97
+    },
+    {
+      "name": "fbUser",
+      "line": 6351,
+      "module": "07-settings.js",
+      "score": 7,
+      "size": 176
+    },
+    {
+      "name": "uid",
+      "line": 6352,
+      "module": "07-settings.js",
+      "score": 4,
+      "size": 118
+    },
+    {
+      "name": "currentEmail",
+      "line": 6353,
+      "module": "05-ai-functions.js",
+      "score": 4,
+      "size": 153
+    },
+    {
+      "name": "isAdmin",
+      "line": 6354,
+      "module": "07-settings.js",
+      "score": 11,
+      "size": 271
+    },
+    {
+      "name": "canEdit",
+      "line": 6361,
+      "module": "07-settings.js",
+      "score": 1,
+      "size": 81
+    },
+    {
+      "name": "label",
+      "line": 6362,
+      "module": "unknown",
+      "score": 0,
+      "size": 76
+    },
+    {
+      "name": "readArr",
+      "line": 6363,
+      "module": "05-ai-functions.js",
+      "score": 1,
+      "size": 130
+    },
+    {
+      "name": "writeArr",
+      "line": 6364,
+      "module": "10-estimate-views.js",
+      "score": 2,
+      "size": 224
+    },
+    {
+      "name": "readObj",
+      "line": 6365,
+      "module": "05-ai-functions.js",
+      "score": 1,
+      "size": 136
+    },
+    {
+      "name": "writeObj",
+      "line": 6366,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 89
+    },
+    {
+      "name": "unique",
+      "line": 6367,
+      "module": "04-database.js",
+      "score": 1,
+      "size": 405
+    },
+    {
+      "name": "getMy",
+      "line": 6368,
+      "module": "04-database.js",
+      "score": 4,
+      "size": 158
+    },
+    {
+      "name": "getServer",
+      "line": 6369,
+      "module": "04-database.js",
+      "score": 8,
+      "size": 233
+    },
+    {
+      "name": "setMy",
+      "line": 6370,
+      "module": "04-database.js",
+      "score": 10,
+      "size": 264
+    },
+    {
+      "name": "setServer",
+      "line": 6371,
+      "module": "04-database.js",
+      "score": 32,
+      "size": 508
+    },
+    {
+      "name": "syncMain",
+      "line": 6372,
+      "module": "04-database.js",
+      "score": 17,
+      "size": 254
+    },
+    {
+      "name": "active",
+      "line": 6373,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 79
+    },
+    {
+      "name": "upsert",
+      "line": 6374,
+      "module": "02-shield-configurator.js",
+      "score": 1,
+      "size": 514
+    },
+    {
+      "name": "ensureProgress",
+      "line": 6376,
+      "module": "12-documents.js",
+      "score": 4,
+      "size": 924
+    },
+    {
+      "name": "showProgress",
+      "line": 6382,
+      "module": "01-visual.js",
+      "score": 6,
+      "size": 453
+    },
+    {
+      "name": "hideProgress",
+      "line": 6383,
+      "module": "01-visual.js",
+      "score": 2,
+      "size": 82
+    },
+    {
+      "name": "firebaseHint",
+      "line": 6385,
+      "module": "04-database.js",
+      "score": 5,
+      "size": 261
+    },
+    {
+      "name": "explainErr",
+      "line": 6390,
+      "module": "05-ai-functions.js",
+      "score": 4,
+      "size": 321
+    },
+    {
+      "name": "saveMyRemote",
+      "line": 6396,
+      "module": "04-database.js",
+      "score": 18,
+      "size": 873
+    },
+    {
+      "name": "saveServerRemote",
+      "line": 6415,
+      "module": "04-database.js",
+      "score": 22,
+      "size": 740
+    },
+    {
+      "name": "sendProposal",
+      "line": 6430,
+      "module": "04-database.js",
+      "score": 12,
+      "size": 632
+    },
+    {
+      "name": "reloadFromRemoteCurrent",
+      "line": 6446,
+      "module": "04-database.js",
+      "score": 31,
+      "size": 732
+    },
+    {
+      "name": "rerender",
+      "line": 6459,
+      "module": "01-visual.js",
+      "score": 4,
+      "size": 167
+    },
+    {
+      "name": "currentEditType",
+      "line": 6460,
+      "module": "04-database.js",
+      "score": 4,
+      "size": 269
+    },
+    {
+      "name": "makeManualItem",
+      "line": 6466,
+      "module": "04-database.js",
+      "score": 9,
+      "size": 579
+    },
+    {
+      "name": "saveVisibleEdits",
+      "line": 6562,
+      "module": "04-database.js",
+      "score": 14,
+      "size": 607
+    },
+    {
+      "name": "normItem",
+      "line": 6570,
+      "module": "04-database.js",
+      "score": 4,
+      "size": 568
+    },
+    {
+      "name": "collectReviewed",
+      "line": 6578,
+      "module": "04-database.js",
+      "score": 12,
+      "size": 581
+    },
+    {
+      "name": "injectDebugButton",
+      "line": 6619,
+      "module": "04-database.js",
+      "score": 4,
+      "size": 384
+    },
+    {
+      "name": "$",
+      "line": 6655,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 53
+    },
+    {
+      "name": "toast",
+      "line": 6656,
+      "module": "01-visual.js",
+      "score": 7,
+      "size": 117
+    },
+    {
+      "name": "esc",
+      "line": 6657,
+      "module": "07-settings.js",
+      "score": 17,
+      "size": 27184
+    },
+    {
+      "name": "clean",
+      "line": 6658,
+      "module": "unknown",
+      "score": 0,
+      "size": 76
+    },
+    {
+      "name": "norm",
+      "line": 6659,
+      "module": "unknown",
+      "score": 0,
+      "size": 141
+    },
+    {
+      "name": "money",
+      "line": 6660,
+      "module": "08-accounting.js",
+      "score": 2,
+      "size": 128
+    },
+    {
+      "name": "scope",
+      "line": 6661,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 110
+    },
+    {
+      "name": "setScope",
+      "line": 6662,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 100
+    },
+    {
+      "name": "isAdmin",
+      "line": 6663,
+      "module": "07-settings.js",
+      "score": 5,
+      "size": 113
+    },
+    {
+      "name": "uid",
+      "line": 6664,
+      "module": "07-settings.js",
+      "score": 9,
+      "size": 222
+    },
+    {
+      "name": "currentUserLabel",
+      "line": 6665,
+      "module": "07-settings.js",
+      "score": 15,
+      "size": 283
+    },
+    {
+      "name": "readArr",
+      "line": 6666,
+      "module": "05-ai-functions.js",
+      "score": 1,
+      "size": 130
+    },
+    {
+      "name": "writeArr",
+      "line": 6667,
+      "module": "10-estimate-views.js",
+      "score": 2,
+      "size": 226
+    },
+    {
+      "name": "readObj",
+      "line": 6668,
+      "module": "05-ai-functions.js",
+      "score": 1,
+      "size": 136
+    },
+    {
+      "name": "writeObj",
+      "line": 6669,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 89
+    },
+    {
+      "name": "clone",
+      "line": 6670,
+      "module": "unknown",
+      "score": 0,
+      "size": 52
+    },
+    {
+      "name": "groupOf",
+      "line": 6671,
+      "module": "03-socket-pool.js",
+      "score": 3,
+      "size": 81
+    },
+    {
+      "name": "sig",
+      "line": 6672,
+      "module": "03-socket-pool.js",
+      "score": 1,
+      "size": 114
+    },
+    {
+      "name": "unique",
+      "line": 6673,
+      "module": "04-database.js",
+      "score": 1,
+      "size": 405
+    },
+    {
+      "name": "getServer",
+      "line": 6674,
+      "module": "04-database.js",
+      "score": 8,
+      "size": 234
+    },
+    {
+      "name": "getMy",
+      "line": 6675,
+      "module": "04-database.js",
+      "score": 4,
+      "size": 158
+    },
+    {
+      "name": "setServer",
+      "line": 6676,
+      "module": "04-database.js",
+      "score": 32,
+      "size": 531
+    },
+    {
+      "name": "setMy",
+      "line": 6677,
+      "module": "04-database.js",
+      "score": 10,
+      "size": 283
+    },
+    {
+      "name": "syncMain",
+      "line": 6678,
+      "module": "04-database.js",
+      "score": 17,
+      "size": 254
+    },
+    {
+      "name": "upsert",
+      "line": 6679,
+      "module": "02-shield-configurator.js",
+      "score": 1,
+      "size": 611
+    },
+    {
+      "name": "ensureProgress",
+      "line": 6681,
+      "module": "12-documents.js",
+      "score": 4,
+      "size": 898
+    },
+    {
+      "name": "progress",
+      "line": 6687,
+      "module": "01-visual.js",
+      "score": 4,
+      "size": 422
+    },
+    {
+      "name": "hideProgress",
+      "line": 6688,
+      "module": "01-visual.js",
+      "score": 2,
+      "size": 82
+    },
+    {
+      "name": "explain",
+      "line": 6689,
+      "module": "05-ai-functions.js",
+      "score": 4,
+      "size": 280
+    },
+    {
+      "name": "inferCat",
+      "line": 6691,
+      "module": "02-shield-configurator.js",
+      "score": 13,
+      "size": 790
+    },
+    {
+      "name": "inferSub",
+      "line": 6695,
+      "module": "02-shield-configurator.js",
+      "score": 11,
+      "size": 538
+    },
+    {
+      "name": "normItem",
+      "line": 6696,
+      "module": "08-accounting.js",
+      "score": 5,
+      "size": 839
+    },
+    {
+      "name": "collectReviewed",
+      "line": 6697,
+      "module": "04-database.js",
+      "score": 26,
+      "size": 1071
+    },
+    {
+      "name": "readGlobalDoc",
+      "line": 6710,
+      "module": "04-database.js",
+      "score": 22,
+      "size": 356
+    },
+    {
+      "name": "saveGlobalImport",
+      "line": 6716,
+      "module": "04-database.js",
+      "score": 47,
+      "size": 1635
+    },
+    {
+      "name": "saveMyImport",
+      "line": 6735,
+      "module": "04-database.js",
+      "score": 13,
+      "size": 723
+    },
+    {
+      "name": "sendServerProposal",
+      "line": 6744,
+      "module": "04-database.js",
+      "score": 13,
+      "size": 506
+    },
+    {
+      "name": "rerender",
+      "line": 6750,
+      "module": "01-visual.js",
+      "score": 4,
+      "size": 167
+    },
+    {
+      "name": "fileText",
+      "line": 6778,
+      "module": "11-pdf-files.js",
+      "score": 5,
+      "size": 176
+    },
+    {
+      "name": "fileBuffer",
+      "line": 6779,
+      "module": "11-pdf-files.js",
+      "score": 5,
+      "size": 173
+    },
+    {
+      "name": "csvRows",
+      "line": 6780,
+      "module": "06-single-line-scheme.js",
+      "score": 5,
+      "size": 173
+    },
+    {
+      "name": "rowsToItems",
+      "line": 6781,
+      "module": "10-estimate-views.js",
+      "score": 22,
+      "size": 1944
+    },
+    {
+      "name": "cell",
+      "line": 6783,
+      "module": "10-estimate-views.js",
+      "score": 2,
+      "size": 51
+    },
+    {
+      "name": "jsonToItems",
+      "line": 6800,
+      "module": "04-database.js",
+      "score": 11,
+      "size": 456
+    },
+    {
+      "name": "showReviewV9",
+      "line": 6801,
+      "module": "04-database.js",
+      "score": 17,
+      "size": 1712
+    },
+    {
+      "name": "$",
+      "line": 6882,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 53
+    },
+    {
+      "name": "toast",
+      "line": 6883,
+      "module": "01-visual.js",
+      "score": 7,
+      "size": 117
+    },
+    {
+      "name": "progress",
+      "line": 6884,
+      "module": "01-visual.js",
+      "score": 4,
+      "size": 275
+    },
+    {
+      "name": "hideProgress",
+      "line": 6888,
+      "module": "01-visual.js",
+      "score": 8,
+      "size": 191
+    },
+    {
+      "name": "clean",
+      "line": 6889,
+      "module": "unknown",
+      "score": 0,
+      "size": 76
+    },
+    {
+      "name": "esc",
+      "line": 6890,
+      "module": "05-ai-functions.js",
+      "score": 31,
+      "size": 53443
+    },
+    {
+      "name": "money",
+      "line": 6891,
+      "module": "08-accounting.js",
+      "score": 2,
+      "size": 128
+    },
+    {
+      "name": "provider",
+      "line": 6892,
+      "module": "05-ai-functions.js",
+      "score": 7,
+      "size": 200
+    },
+    {
+      "name": "keyForProvider",
+      "line": 6895,
+      "module": "05-ai-functions.js",
+      "score": 10,
+      "size": 338
+    },
+    {
+      "name": "openAiModel",
+      "line": 6901,
+      "module": "05-ai-functions.js",
+      "score": 17,
+      "size": 188
+    },
+    {
+      "name": "dataMime",
+      "line": 6902,
+      "module": "04-database.js",
+      "score": 1,
+      "size": 106
+    },
+    {
+      "name": "fileToDataURL",
+      "line": 6903,
+      "module": "11-pdf-files.js",
+      "score": 5,
+      "size": 184
+    },
+    {
+      "name": "extractTextFromOpenAI",
+      "line": 6904,
+      "module": "05-ai-functions.js",
+      "score": 4,
+      "size": 319
+    },
+    {
+      "name": "askOpenAI",
+      "line": 6910,
+      "module": "05-ai-functions.js",
+      "score": 34,
+      "size": 1000
+    },
+    {
+      "name": "askGemini",
+      "line": 6926,
+      "module": "05-ai-functions.js",
+      "score": 9,
+      "size": 942
+    },
+    {
+      "name": "stripCode",
+      "line": 6952,
+      "module": "unknown",
+      "score": 0,
+      "size": 0
+    },
+    {
+      "name": "parseJsonLoose",
+      "line": 6953,
+      "module": "05-ai-functions.js",
+      "score": 2,
+      "size": 109
+    },
+    {
+      "name": "inferCat",
+      "line": 6959,
+      "module": "02-shield-configurator.js",
+      "score": 12,
+      "size": 991
+    },
+    {
+      "name": "inferSub",
+      "line": 6977,
+      "module": "03-socket-pool.js",
+      "score": 14,
+      "size": 990
+    },
+    {
+      "name": "normItem",
+      "line": 6994,
+      "module": "04-database.js",
+      "score": 10,
+      "size": 877
+    },
+    {
+      "name": "normalize",
+      "line": 7004,
+      "module": "04-database.js",
+      "score": 4,
+      "size": 259
+    },
+    {
+      "name": "unique",
+      "line": 7005,
+      "module": "10-estimate-views.js",
+      "score": 2,
+      "size": 206
+    },
+    {
+      "name": "showReview",
+      "line": 7006,
+      "module": "10-estimate-views.js",
+      "score": 14,
+      "size": 2097
+    },
+    {
+      "name": "importPrompt",
+      "line": 7019,
+      "module": "04-database.js",
+      "score": 5,
+      "size": 657
+    },
+    {
+      "name": "aiFromImageFile",
+      "line": 7026,
+      "module": "05-ai-functions.js",
+      "score": 18,
+      "size": 499
+    },
+    {
+      "name": "aiFromPdfFile",
+      "line": 7035,
+      "module": "11-pdf-files.js",
+      "score": 23,
+      "size": 723
+    },
+    {
+      "name": "patchLabels",
+      "line": 7066,
+      "module": "11-pdf-files.js",
+      "score": 6,
+      "size": 513
+    },
+    {
+      "name": "$",
+      "line": 7101,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 53
+    },
+    {
+      "name": "txt",
+      "line": 7102,
+      "module": "unknown",
+      "score": 0,
+      "size": 109
+    },
+    {
+      "name": "toast",
+      "line": 7103,
+      "module": "01-visual.js",
+      "score": 7,
+      "size": 117
+    },
+    {
+      "name": "scope",
+      "line": 7104,
+      "module": "04-database.js",
+      "score": 1,
+      "size": 128
+    },
+    {
+      "name": "isAdmin",
+      "line": 7105,
+      "module": "05-ai-functions.js",
+      "score": 6,
+      "size": 272
+    },
+    {
+      "name": "adminServerMode",
+      "line": 7112,
+      "module": "07-settings.js",
+      "score": 4,
+      "size": 94
+    },
+    {
+      "name": "explainServerEdit",
+      "line": 7113,
+      "module": "05-ai-functions.js",
+      "score": 2,
+      "size": 217
+    },
+    {
+      "name": "ensureProgress",
+      "line": 7115,
+      "module": "10-estimate-views.js",
+      "score": 6,
+      "size": 1286
+    },
+    {
+      "name": "setScope",
+      "line": 7143,
+      "module": "04-database.js",
+      "score": 3,
+      "size": 242
+    },
+    {
+      "name": "installAdminSettingsButton",
+      "line": 7175,
+      "module": "07-settings.js",
+      "score": 14,
+      "size": 1010
+    },
+    {
+      "name": "normalDbButtonWasClicked",
+      "line": 7188,
+      "module": "04-database.js",
+      "score": 3,
+      "size": 271
+    },
+    {
+      "name": "patchDbUi",
+      "line": 7210,
+      "module": "07-settings.js",
+      "score": 6,
+      "size": 2225
+    },
+    {
+      "name": "importTarget",
+      "line": 7270,
+      "module": "04-database.js",
+      "score": 2,
+      "size": 162
+    },
+    {
+      "name": "compressImageDataUrl",
+      "line": 7329,
+      "module": "11-pdf-files.js",
+      "score": 9,
+      "size": 1000
+    },
+    {
+      "name": "timeoutPromise",
+      "line": 7353,
+      "module": "05-ai-functions.js",
+      "score": 2,
+      "size": 248
+    },
+    {
+      "name": "patchAll",
+      "line": 7387,
+      "module": "07-settings.js",
+      "score": 3,
+      "size": 65
+    },
+    {
+      "name": "$",
+      "line": 7412,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 53
+    },
+    {
+      "name": "toast",
+      "line": 7413,
+      "module": "01-visual.js",
+      "score": 6,
+      "size": 123
+    },
+    {
+      "name": "esc",
+      "line": 7414,
+      "module": "04-database.js",
+      "score": 4,
+      "size": 41564
+    },
+    {
+      "name": "norm",
+      "line": 7415,
+      "module": "unknown",
+      "score": 0,
+      "size": 131
+    },
+    {
+      "name": "money",
+      "line": 7416,
+      "module": "08-accounting.js",
+      "score": 2,
+      "size": 129
+    },
+    {
+      "name": "appPrice",
+      "line": 7417,
+      "module": "08-accounting.js",
+      "score": 3,
+      "size": 109
+    },
+    {
+      "name": "readArr",
+      "line": 7418,
+      "module": "05-ai-functions.js",
+      "score": 1,
+      "size": 130
+    },
+    {
+      "name": "readObj",
+      "line": 7419,
+      "module": "05-ai-functions.js",
+      "score": 1,
+      "size": 136
+    },
+    {
+      "name": "wallFromName",
+      "line": 7420,
+      "module": "04-database.js",
+      "score": 1,
+      "size": 189
+    },
+    {
+      "name": "groupOf",
+      "line": 7421,
+      "module": "03-socket-pool.js",
+      "score": 3,
+      "size": 91
+    },
+    {
+      "name": "clone",
+      "line": 7422,
+      "module": "unknown",
+      "score": 0,
+      "size": 55
+    },
+    {
+      "name": "fixShieldWorkItem",
+      "line": 7424,
+      "module": "02-shield-configurator.js",
+      "score": 16,
+      "size": 1732
+    },
+    {
+      "name": "normalizeCurrentEstimate",
+      "line": 7486,
+      "module": "10-estimate-views.js",
+      "score": 5,
+      "size": 271
+    },
+    {
+      "name": "patchShieldButton",
+      "line": 7517,
+      "module": "02-shield-configurator.js",
+      "score": 9,
+      "size": 792
+    },
+    {
+      "name": "tagSrc",
+      "line": 7535,
+      "module": "02-shield-configurator.js",
+      "score": 1,
+      "size": 90
+    },
+    {
+      "name": "pushArr",
+      "line": 7536,
+      "module": "unknown",
+      "score": 0,
+      "size": 126
+    },
+    {
+      "name": "collectDb",
+      "line": 7537,
+      "module": "04-database.js",
+      "score": 42,
+      "size": 1760
+    },
+    {
+      "name": "classify",
+      "line": 7567,
+      "module": "02-shield-configurator.js",
+      "score": 25,
+      "size": 1324
+    },
+    {
+      "name": "sameClass",
+      "line": 7594,
+      "module": "04-database.js",
+      "score": 6,
+      "size": 319
+    },
+    {
+      "name": "score",
+      "line": 7603,
+      "module": "03-socket-pool.js",
+      "score": 5,
+      "size": 527
+    },
+    {
+      "name": "swapLabel",
+      "line": 7614,
+      "module": "08-accounting.js",
+      "score": 1,
+      "size": 137
+    },
+    {
+      "name": "boot",
+      "line": 7667,
+      "module": "01-visual.js",
+      "score": 4,
+      "size": 143
+    },
+    {
+      "name": "$",
+      "line": 7698,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 53
+    },
+    {
+      "name": "norm",
+      "line": 7699,
+      "module": "unknown",
+      "score": 0,
+      "size": 116
+    },
+    {
+      "name": "clean",
+      "line": 7700,
+      "module": "unknown",
+      "score": 0,
+      "size": 69
+    },
+    {
+      "name": "add",
+      "line": 7717,
+      "module": "02-shield-configurator.js",
+      "score": 1,
+      "size": 146
+    },
+    {
+      "name": "val",
+      "line": 7728,
+      "module": "unknown",
+      "score": 0,
+      "size": 53
+    },
+    {
+      "name": "chk",
+      "line": 7728,
+      "module": "unknown",
+      "score": 0,
+      "size": 57
+    },
+    {
+      "name": "add",
+      "line": 7729,
+      "module": "03-socket-pool.js",
+      "score": 3,
+      "size": 80
+    },
+    {
+      "name": "room",
+      "line": 7730,
+      "module": "02-shield-configurator.js",
+      "score": 2,
+      "size": 192
+    },
+    {
+      "name": "boot",
+      "line": 7780,
+      "module": "01-visual.js",
+      "score": 2,
+      "size": 122
+    },
+    {
+      "name": "$",
+      "line": 7798,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 51
+    },
+    {
+      "name": "esc",
+      "line": 7799,
+      "module": "02-shield-configurator.js",
+      "score": 19,
+      "size": 31431
+    },
+    {
+      "name": "epV16GenerateCascadePanel",
+      "line": 7800,
+      "module": "02-shield-configurator.js",
+      "score": 22,
+      "size": 13512
+    },
+    {
+      "name": "addLine",
+      "line": 7812,
+      "module": "03-socket-pool.js",
+      "score": 3,
+      "size": 220
+    },
+    {
+      "name": "addRoom",
+      "line": 7816,
+      "module": "02-shield-configurator.js",
+      "score": 2,
+      "size": 301
+    },
+    {
+      "name": "groupAssignment",
+      "line": 7846,
+      "module": "03-socket-pool.js",
+      "score": 9,
+      "size": 286
+    },
+    {
+      "name": "addProtection",
+      "line": 7851,
+      "module": "03-socket-pool.js",
+      "score": 6,
+      "size": 392
+    },
+    {
+      "name": "mat",
+      "line": 7861,
+      "module": "08-accounting.js",
+      "score": 2,
+      "size": 381
+    },
+    {
+      "name": "work",
+      "line": 7868,
+      "module": "04-database.js",
+      "score": 3,
+      "size": 365
+    },
+    {
+      "name": "isShieldDeviceV16",
+      "line": 7938,
+      "module": "02-shield-configurator.js",
+      "score": 10,
+      "size": 290
+    },
+    {
+      "name": "getAssignV16",
+      "line": 7943,
+      "module": "04-database.js",
+      "score": 2,
+      "size": 498
+    },
+    {
+      "name": "add",
+      "line": 7945,
+      "module": "02-shield-configurator.js",
+      "score": 1,
+      "size": 146
+    },
+    {
+      "name": "purposeV16",
+      "line": 7949,
+      "module": "02-shield-configurator.js",
+      "score": 1,
+      "size": 97
+    },
+    {
+      "name": "normalizeV16",
+      "line": 7950,
+      "module": "10-estimate-views.js",
+      "score": 2,
+      "size": 107
+    },
+    {
+      "name": "showDetailsV16",
+      "line": 7951,
+      "module": "01-visual.js",
+      "score": 12,
+      "size": 1142
+    },
+    {
+      "name": "bindButtons",
+      "line": 7977,
+      "module": "02-shield-configurator.js",
+      "score": 2,
+      "size": 229
+    },
+    {
+      "name": "boot",
+      "line": 7987,
+      "module": "01-visual.js",
+      "score": 2,
+      "size": 111
+    },
+    {
+      "name": "$",
+      "line": 8007,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 53
+    },
+    {
+      "name": "txt",
+      "line": 8008,
+      "module": "unknown",
+      "score": 0,
+      "size": 47
+    },
+    {
+      "name": "clean",
+      "line": 8009,
+      "module": "unknown",
+      "score": 0,
+      "size": 62
+    },
+    {
+      "name": "norm",
+      "line": 8010,
+      "module": "unknown",
+      "score": 0,
+      "size": 89
+    },
+    {
+      "name": "esc",
+      "line": 8011,
+      "module": "01-visual.js",
+      "score": 8,
+      "size": 44730
+    },
+    {
+      "name": "toast",
+      "line": 8012,
+      "module": "01-visual.js",
+      "score": 6,
+      "size": 123
+    },
+    {
+      "name": "addBadge",
+      "line": 8013,
+      "module": "12-documents.js",
+      "score": 5,
+      "size": 433
+    },
+    {
+      "name": "brandRu",
+      "line": 8020,
+      "module": "unknown",
+      "score": 0,
+      "size": 91
+    },
+    {
+      "name": "lineConfig",
+      "line": 8021,
+      "module": "02-shield-configurator.js",
+      "score": 24,
+      "size": 1632
+    },
+    {
+      "name": "e",
+      "line": 8022,
+      "module": "unknown",
+      "score": 0,
+      "size": 31
+    },
+    {
+      "name": "ch",
+      "line": 8022,
+      "module": "unknown",
+      "score": 0,
+      "size": 56
+    },
+    {
+      "name": "add",
+      "line": 8023,
+      "module": "03-socket-pool.js",
+      "score": 1,
+      "size": 64
+    },
+    {
+      "name": "room",
+      "line": 8024,
+      "module": "02-shield-configurator.js",
+      "score": 2,
+      "size": 192
+    },
+    {
+      "name": "nominalOf",
+      "line": 8033,
+      "module": "04-database.js",
+      "score": 1,
+      "size": 298
+    },
+    {
+      "name": "isDevice",
+      "line": 8038,
+      "module": "02-shield-configurator.js",
+      "score": 9,
+      "size": 333
+    },
+    {
+      "name": "assignmentsOf",
+      "line": 8042,
+      "module": "02-shield-configurator.js",
+      "score": 9,
+      "size": 1249
+    },
+    {
+      "name": "add",
+      "line": 8043,
+      "module": "02-shield-configurator.js",
+      "score": 1,
+      "size": 145
+    },
+    {
+      "name": "deviceName",
+      "line": 8053,
+      "module": "02-shield-configurator.js",
+      "score": 8,
+      "size": 820
+    },
+    {
+      "name": "purposeOf",
+      "line": 8062,
+      "module": "02-shield-configurator.js",
+      "score": 8,
+      "size": 465
+    },
+    {
+      "name": "patchDbBulk",
+      "line": 8105,
+      "module": "04-database.js",
+      "score": 12,
+      "size": 1157
+    },
+    {
+      "name": "move",
+      "line": 8116,
+      "module": "04-database.js",
+      "score": 2,
+      "size": 186
+    },
+    {
+      "name": "boot",
+      "line": 8126,
+      "module": "01-visual.js",
+      "score": 6,
+      "size": 202
+    },
+    {
+      "name": "$",
+      "line": 8151,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 53
+    },
+    {
+      "name": "esc",
+      "line": 8152,
+      "module": "10-estimate-views.js",
+      "score": 6,
+      "size": 49732
+    },
+    {
+      "name": "clean",
+      "line": 8153,
+      "module": "unknown",
+      "score": 0,
+      "size": 76
+    },
+    {
+      "name": "norm",
+      "line": 8154,
+      "module": "unknown",
+      "score": 0,
+      "size": 104
+    },
+    {
+      "name": "toast",
+      "line": 8155,
+      "module": "01-visual.js",
+      "score": 6,
+      "size": 123
+    },
+    {
+      "name": "arrLS",
+      "line": 8156,
+      "module": "05-ai-functions.js",
+      "score": 1,
+      "size": 128
+    },
+    {
+      "name": "objLS",
+      "line": 8157,
+      "module": "05-ai-functions.js",
+      "score": 1,
+      "size": 134
+    },
+    {
+      "name": "setLS",
+      "line": 8158,
+      "module": "10-estimate-views.js",
+      "score": 2,
+      "size": 223
+    },
+    {
+      "name": "setObjLS",
+      "line": 8159,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 89
+    },
+    {
+      "name": "scope",
+      "line": 8160,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 114
+    },
+    {
+      "name": "isAdmin",
+      "line": 8161,
+      "module": "07-settings.js",
+      "score": 5,
+      "size": 106
+    },
+    {
+      "name": "uid",
+      "line": 8162,
+      "module": "07-settings.js",
+      "score": 2,
+      "size": 92
+    },
+    {
+      "name": "groupOf",
+      "line": 8163,
+      "module": "03-socket-pool.js",
+      "score": 3,
+      "size": 88
+    },
+    {
+      "name": "clone",
+      "line": 8164,
+      "module": "unknown",
+      "score": 0,
+      "size": 53
+    },
+    {
+      "name": "getServerCache",
+      "line": 8165,
+      "module": "04-database.js",
+      "score": 15,
+      "size": 152
+    },
+    {
+      "name": "getArr",
+      "line": 8166,
+      "module": "04-database.js",
+      "score": 16,
+      "size": 481
+    },
+    {
+      "name": "unique",
+      "line": 8177,
+      "module": "03-socket-pool.js",
+      "score": 1,
+      "size": 415
+    },
+    {
+      "name": "syncActiveToMain",
+      "line": 8180,
+      "module": "04-database.js",
+      "score": 18,
+      "size": 233
+    },
+    {
+      "name": "saveArr",
+      "line": 8188,
+      "module": "04-database.js",
+      "score": 73,
+      "size": 1947
+    },
+    {
+      "name": "ensureBadge",
+      "line": 8215,
+      "module": "01-visual.js",
+      "score": 6,
+      "size": 458
+    },
+    {
+      "name": "money",
+      "line": 8231,
+      "module": "08-accounting.js",
+      "score": 2,
+      "size": 128
+    },
+    {
+      "name": "dbFindAuto",
+      "line": 8232,
+      "module": "04-database.js",
+      "score": 5,
+      "size": 438
+    },
+    {
+      "name": "dbFindRcd",
+      "line": 8237,
+      "module": "04-database.js",
+      "score": 5,
+      "size": 395
+    },
+    {
+      "name": "brandRu",
+      "line": 8241,
+      "module": "unknown",
+      "score": 0,
+      "size": 129
+    },
+    {
+      "name": "autoName",
+      "line": 8242,
+      "module": "02-shield-configurator.js",
+      "score": 5,
+      "size": 517
+    },
+    {
+      "name": "autoPrice",
+      "line": 8248,
+      "module": "02-shield-configurator.js",
+      "score": 3,
+      "size": 191
+    },
+    {
+      "name": "rcdName",
+      "line": 8249,
+      "module": "02-shield-configurator.js",
+      "score": 6,
+      "size": 368
+    },
+    {
+      "name": "rcdPrice",
+      "line": 8250,
+      "module": "02-shield-configurator.js",
+      "score": 3,
+      "size": 130
+    },
+    {
+      "name": "val",
+      "line": 8251,
+      "module": "unknown",
+      "score": 0,
+      "size": 85
+    },
+    {
+      "name": "chk",
+      "line": 8252,
+      "module": "unknown",
+      "score": 0,
+      "size": 57
+    },
+    {
+      "name": "cfgNum",
+      "line": 8253,
+      "module": "02-shield-configurator.js",
+      "score": 4,
+      "size": 89
+    },
+    {
+      "name": "appPrice",
+      "line": 8254,
+      "module": "08-accounting.js",
+      "score": 2,
+      "size": 111
+    },
+    {
+      "name": "makeItem",
+      "line": 8255,
+      "module": "04-database.js",
+      "score": 3,
+      "size": 327
+    },
+    {
+      "name": "mergeAssignments",
+      "line": 8256,
+      "module": "04-database.js",
+      "score": 5,
+      "size": 512
+    },
+    {
+      "name": "add",
+      "line": 8256,
+      "module": "unknown",
+      "score": 0,
+      "size": 69
+    },
+    {
+      "name": "directAddShield",
+      "line": 8257,
+      "module": "10-estimate-views.js",
+      "score": 11,
+      "size": 753
+    },
+    {
+      "name": "renderMainDirect",
+      "line": 8263,
+      "module": "10-estimate-views.js",
+      "score": 20,
+      "size": 1331
+    },
+    {
+      "name": "addLine",
+      "line": 8276,
+      "module": "03-socket-pool.js",
+      "score": 4,
+      "size": 169
+    },
+    {
+      "name": "room",
+      "line": 8277,
+      "module": "02-shield-configurator.js",
+      "score": 2,
+      "size": 210
+    },
+    {
+      "name": "groupAssign",
+      "line": 8286,
+      "module": "03-socket-pool.js",
+      "score": 4,
+      "size": 239
+    },
+    {
+      "name": "isShieldDevice",
+      "line": 8317,
+      "module": "02-shield-configurator.js",
+      "score": 10,
+      "size": 270
+    },
+    {
+      "name": "assigns",
+      "line": 8318,
+      "module": "04-database.js",
+      "score": 2,
+      "size": 378
+    },
+    {
+      "name": "add",
+      "line": 8318,
+      "module": "02-shield-configurator.js",
+      "score": 1,
+      "size": 119
+    },
+    {
+      "name": "selectedChecks",
+      "line": 8332,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 194
+    },
+    {
+      "name": "activeTypeFromUi",
+      "line": 8333,
+      "module": "04-database.js",
+      "score": 4,
+      "size": 204
+    },
+    {
+      "name": "optionsHtml",
+      "line": 8334,
+      "module": "07-settings.js",
+      "score": 6,
+      "size": 316
+    },
+    {
+      "name": "buildBulkPanel",
+      "line": 8335,
+      "module": "04-database.js",
+      "score": 8,
+      "size": 1461
+    },
+    {
+      "name": "injectBulkPanel",
+      "line": 8345,
+      "module": "04-database.js",
+      "score": 11,
+      "size": 338
+    },
+    {
+      "name": "injectChecks",
+      "line": 8351,
+      "module": "10-estimate-views.js",
+      "score": 16,
+      "size": 1090
+    },
+    {
+      "name": "refreshDbEnhancements",
+      "line": 8355,
+      "module": "04-database.js",
+      "score": 3,
+      "size": 70
+    },
+    {
+      "name": "boot",
+      "line": 8385,
+      "module": "01-visual.js",
+      "score": 4,
+      "size": 225
+    },
+    {
+      "name": "$",
+      "line": 8404,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 53
+    },
+    {
+      "name": "toast",
+      "line": 8405,
+      "module": "01-visual.js",
+      "score": 6,
+      "size": 131
+    },
+    {
+      "name": "esc",
+      "line": 8406,
+      "module": "02-shield-configurator.js",
+      "score": 4,
+      "size": 16355
+    },
+    {
+      "name": "money",
+      "line": 8407,
+      "module": "08-accounting.js",
+      "score": 2,
+      "size": 57
+    },
+    {
+      "name": "val",
+      "line": 8408,
+      "module": "unknown",
+      "score": 0,
+      "size": 85
+    },
+    {
+      "name": "chk",
+      "line": 8409,
+      "module": "unknown",
+      "score": 0,
+      "size": 59
+    },
+    {
+      "name": "cfgN",
+      "line": 8410,
+      "module": "02-shield-configurator.js",
+      "score": 4,
+      "size": 107
+    },
+    {
+      "name": "appPrice",
+      "line": 8411,
+      "module": "08-accounting.js",
+      "score": 2,
+      "size": 118
+    },
+    {
+      "name": "brandRu",
+      "line": 8412,
+      "module": "unknown",
+      "score": 0,
+      "size": 313
+    },
+    {
+      "name": "curveNom",
+      "line": 8413,
+      "module": "unknown",
+      "score": 0,
+      "size": 200
+    },
+    {
+      "name": "autoName",
+      "line": 8414,
+      "module": "02-shield-configurator.js",
+      "score": 2,
+      "size": 283
+    },
+    {
+      "name": "autoPrice",
+      "line": 8415,
+      "module": "04-database.js",
+      "score": 6,
+      "size": 679
+    },
+    {
+      "name": "rcdName",
+      "line": 8426,
+      "module": "02-shield-configurator.js",
+      "score": 9,
+      "size": 281
+    },
+    {
+      "name": "rcdPrice",
+      "line": 8427,
+      "module": "02-shield-configurator.js",
+      "score": 8,
+      "size": 587
+    },
+    {
+      "name": "makeItem",
+      "line": 8436,
+      "module": "04-database.js",
+      "score": 3,
+      "size": 498
+    },
+    {
+      "name": "groupLines",
+      "line": 8442,
+      "module": "06-single-line-scheme.js",
+      "score": 6,
+      "size": 288
+    },
+    {
+      "name": "buildLines",
+      "line": 8447,
+      "module": "02-shield-configurator.js",
+      "score": 17,
+      "size": 1715
+    },
+    {
+      "name": "add",
+      "line": 8449,
+      "module": "03-socket-pool.js",
+      "score": 4,
+      "size": 177
+    },
+    {
+      "name": "room",
+      "line": 8450,
+      "module": "02-shield-configurator.js",
+      "score": 2,
+      "size": 202
+    },
+    {
+      "name": "addShieldToEstimate",
+      "line": 8465,
+      "module": "10-estimate-views.js",
+      "score": 14,
+      "size": 545
+    },
+    {
+      "name": "groupAssign",
+      "line": 8476,
+      "module": "03-socket-pool.js",
+      "score": 4,
+      "size": 214
+    },
+    {
+      "name": "getAssigns",
+      "line": 8520,
+      "module": "04-database.js",
+      "score": 2,
+      "size": 403
+    },
+    {
+      "name": "add",
+      "line": 8520,
+      "module": "02-shield-configurator.js",
+      "score": 1,
+      "size": 131
+    },
+    {
+      "name": "isDevice",
+      "line": 8521,
+      "module": "02-shield-configurator.js",
+      "score": 3,
+      "size": 164
+    },
+    {
+      "name": "patchButtons",
+      "line": 8538,
+      "module": "02-shield-configurator.js",
+      "score": 2,
+      "size": 293
+    },
+    {
+      "name": "boot",
+      "line": 8539,
+      "module": "01-visual.js",
+      "score": 3,
+      "size": 147
+    },
+    {
+      "name": "$",
+      "line": 8558,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 53
+    },
+    {
+      "name": "text",
+      "line": 8559,
+      "module": "unknown",
+      "score": 0,
+      "size": 48
+    },
+    {
+      "name": "clean",
+      "line": 8560,
+      "module": "unknown",
+      "score": 0,
+      "size": 63
+    },
+    {
+      "name": "esc",
+      "line": 8561,
+      "module": "01-visual.js",
+      "score": 5,
+      "size": 18964
+    },
+    {
+      "name": "toast",
+      "line": 8562,
+      "module": "01-visual.js",
+      "score": 6,
+      "size": 131
+    },
+    {
+      "name": "money",
+      "line": 8563,
+      "module": "08-accounting.js",
+      "score": 2,
+      "size": 109
+    },
+    {
+      "name": "val",
+      "line": 8564,
+      "module": "unknown",
+      "score": 0,
+      "size": 85
+    },
+    {
+      "name": "chk",
+      "line": 8565,
+      "module": "unknown",
+      "score": 0,
+      "size": 59
+    },
+    {
+      "name": "count",
+      "line": 8566,
+      "module": "02-shield-configurator.js",
+      "score": 2,
+      "size": 236
+    },
+    {
+      "name": "appPrice",
+      "line": 8573,
+      "module": "08-accounting.js",
+      "score": 2,
+      "size": 118
+    },
+    {
+      "name": "brandRu",
+      "line": 8574,
+      "module": "unknown",
+      "score": 0,
+      "size": 313
+    },
+    {
+      "name": "norm",
+      "line": 8575,
+      "module": "unknown",
+      "score": 0,
+      "size": 104
+    },
+    {
+      "name": "activeMatDb",
+      "line": 8576,
+      "module": "04-database.js",
+      "score": 12,
+      "size": 479
+    },
+    {
+      "name": "curveNom",
+      "line": 8584,
+      "module": "unknown",
+      "score": 0,
+      "size": 200
+    },
+    {
+      "name": "dbFindAuto",
+      "line": 8585,
+      "module": "02-shield-configurator.js",
+      "score": 4,
+      "size": 637
+    },
+    {
+      "name": "dbFindRcd",
+      "line": 8589,
+      "module": "02-shield-configurator.js",
+      "score": 6,
+      "size": 442
+    },
+    {
+      "name": "modelFromDbName",
+      "line": 8593,
+      "module": "04-database.js",
+      "score": 2,
+      "size": 122
+    },
+    {
+      "name": "autoName",
+      "line": 8594,
+      "module": "05-ai-functions.js",
+      "score": 4,
+      "size": 388
+    },
+    {
+      "name": "autoPrice",
+      "line": 8595,
+      "module": "02-shield-configurator.js",
+      "score": 3,
+      "size": 275
+    },
+    {
+      "name": "rcdName",
+      "line": 8596,
+      "module": "02-shield-configurator.js",
+      "score": 10,
+      "size": 424
+    },
+    {
+      "name": "rcdPrice",
+      "line": 8597,
+      "module": "02-shield-configurator.js",
+      "score": 5,
+      "size": 206
+    },
+    {
+      "name": "item",
+      "line": 8598,
+      "module": "10-estimate-views.js",
+      "score": 3,
+      "size": 496
+    },
+    {
+      "name": "addUniqueAssign",
+      "line": 8604,
+      "module": "05-ai-functions.js",
+      "score": 3,
+      "size": 469
+    },
+    {
+      "name": "directAdd",
+      "line": 8609,
+      "module": "10-estimate-views.js",
+      "score": 13,
+      "size": 1049
+    },
+    {
+      "name": "buildLines",
+      "line": 8616,
+      "module": "02-shield-configurator.js",
+      "score": 9,
+      "size": 1757
+    },
+    {
+      "name": "add",
+      "line": 8618,
+      "module": "03-socket-pool.js",
+      "score": 4,
+      "size": 193
+    },
+    {
+      "name": "room",
+      "line": 8619,
+      "module": "02-shield-configurator.js",
+      "score": 2,
+      "size": 182
+    },
+    {
+      "name": "groupNominals",
+      "line": 8638,
+      "module": "03-socket-pool.js",
+      "score": 2,
+      "size": 313
+    },
+    {
+      "name": "presentGroups",
+      "line": 8639,
+      "module": "03-socket-pool.js",
+      "score": 5,
+      "size": 153
+    },
+    {
+      "name": "groupAssign",
+      "line": 8645,
+      "module": "03-socket-pool.js",
+      "score": 4,
+      "size": 220
+    },
+    {
+      "name": "getAssigns",
+      "line": 8686,
+      "module": "04-database.js",
+      "score": 2,
+      "size": 319
+    },
+    {
+      "name": "add",
+      "line": 8686,
+      "module": "02-shield-configurator.js",
+      "score": 1,
+      "size": 119
+    },
+    {
+      "name": "isDevice",
+      "line": 8687,
+      "module": "02-shield-configurator.js",
+      "score": 3,
+      "size": 156
+    },
+    {
+      "name": "patchButtons",
+      "line": 8699,
+      "module": "02-shield-configurator.js",
+      "score": 2,
+      "size": 299
+    },
+    {
+      "name": "boot",
+      "line": 8707,
+      "module": "01-visual.js",
+      "score": 3,
+      "size": 147
+    },
+    {
+      "name": "$",
+      "line": 8731,
+      "module": "12-documents.js",
+      "score": 2,
+      "size": 53
+    },
+    {
+      "name": "clean",
+      "line": 8732,
+      "module": "unknown",
+      "score": 0,
+      "size": 76
+    },
+    {
+      "name": "esc",
+      "line": 8733,
+      "module": "unknown",
+      "score": 0,
+      "size": 0
+    },
+    {
+      "name": "toast",
+      "line": 8734,
+      "module": "01-visual.js",
+      "score": 6,
+      "size": 123
+    },
+    {
+      "name": "arrLS",
+      "line": 8735,
+      "module": "05-ai-functions.js",
+      "score": 1,
+      "size": 128
+    },
+    {
+      "name": "objLS",
+      "line": 8736,
+      "module": "05-ai-functions.js",
+      "score": 1,
+      "size": 134
+    },
+    {
+      "name": "setArrLS",
+      "line": 8737,
+      "module": "10-estimate-views.js",
+      "score": 2,
+      "size": 229
+    },
+    {
+      "name": "setObjLS",
+      "line": 8738,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 90
+    },
+    {
+      "name": "scope",
+      "line": 8739,
+      "module": "10-estimate-views.js",
+      "score": 1,
+      "size": 114
+    },
+    {
+      "name": "isAdmin",
+      "line": 8740,
+      "module": "07-settings.js",
+      "score": 5,
+      "size": 113
+    },
+    {
+      "name": "uid",
+      "line": 8741,
+      "module": "07-settings.js",
+      "score": 2,
+      "size": 99
+    },
+    {
+      "name": "groupOf",
+      "line": 8742,
+      "module": "03-socket-pool.js",
+      "score": 3,
+      "size": 88
+    },
+    {
+      "name": "clone",
+      "line": 8743,
+      "module": "unknown",
+      "score": 0,
+      "size": 53
+    },
+    {
+      "name": "norm",
+      "line": 8744,
+      "module": "unknown",
+      "score": 0,
+      "size": 104
+    },
+    {
+      "name": "uniq",
+      "line": 8745,
+      "module": "03-socket-pool.js",
+      "score": 1,
+      "size": 456
+    },
+    {
+      "name": "getServerCache",
+      "line": 8756,
+      "module": "04-database.js",
+      "score": 15,
+      "size": 152
+    },
+    {
+      "name": "getArr",
+      "line": 8757,
+      "module": "04-database.js",
+      "score": 16,
+      "size": 469
+    },
+    {
+      "name": "syncMain",
+      "line": 8768,
+      "module": "04-database.js",
+      "score": 18,
+      "size": 173
+    },
+    {
+      "name": "setStatus",
+      "line": 8771,
+      "module": "01-visual.js",
+      "score": 8,
+      "size": 779
+    },
+    {
+      "name": "saveArr",
+      "line": 8779,
+      "module": "04-database.js",
+      "score": 74,
+      "size": 1878
+    },
+    {
+      "name": "activeType",
+      "line": 8802,
+      "module": "12-documents.js",
+      "score": 7,
+      "size": 461
+    },
+    {
+      "name": "visibleHost",
+      "line": 8809,
+      "module": "04-database.js",
+      "score": 3,
+      "size": 79
+    },
+    {
+      "name": "options",
+      "line": 8810,
+      "module": "07-settings.js",
+      "score": 6,
+      "size": 419
+    },
+    {
+      "name": "fillSelectors",
+      "line": 8817,
+      "module": "12-documents.js",
+      "score": 7,
+      "size": 612
+    },
+    {
+      "name": "panelHtml",
+      "line": 8828,
+      "module": "08-accounting.js",
+      "score": 7,
+      "size": 1417
+    },
+    {
+      "name": "hideOldBulk",
+      "line": 8844,
+      "module": "04-database.js",
+      "score": 6,
+      "size": 183
+    },
+    {
+      "name": "rowId",
+      "line": 8847,
+      "module": "10-estimate-views.js",
+      "score": 13,
+      "size": 588
+    },
+    {
+      "name": "ensureChecks",
+      "line": 8853,
+      "module": "10-estimate-views.js",
+      "score": 8,
+      "size": 763
+    },
+    {
+      "name": "ensurePanel",
+      "line": 8866,
+      "module": "04-database.js",
+      "score": 5,
+      "size": 387
+    },
+    {
+      "name": "selected",
+      "line": 8875,
+      "module": "01-visual.js",
+      "score": 2,
+      "size": 154
+    },
+    {
+      "name": "boot",
+      "line": 8916,
+      "module": "01-visual.js",
+      "score": 2,
+      "size": 112
+    }
+  ],
+  "window_assignments": [
+    {
+      "name": "window.EP_REFACTOR_RUNTIME_VERSION",
+      "line": 2,
+      "module": "12-documents.js",
+      "score": 8
+    },
+    {
+      "name": "window.onerror",
+      "line": 17,
+      "module": "01-visual.js",
+      "score": 9
+    },
+    {
+      "name": "window.customAlert",
+      "line": 140,
+      "module": "12-documents.js",
+      "score": 22
+    },
+    {
+      "name": "window.customConfirm",
+      "line": 152,
+      "module": "12-documents.js",
+      "score": 18
+    },
+    {
+      "name": "window.alert",
+      "line": 165,
+      "module": "11-pdf-files.js",
+      "score": 18
+    },
+    {
+      "name": "window.EP_AI_CONFIG",
+      "line": 476,
+      "module": "05-ai-functions.js",
+      "score": 19
+    },
+    {
+      "name": "window.EP_DB_REVIEW",
+      "line": 483,
+      "module": "05-ai-functions.js",
+      "score": 14
+    },
+    {
+      "name": "window.epSetAiProvider",
+      "line": 527,
+      "module": "05-ai-functions.js",
+      "score": 17
+    },
+    {
+      "name": "window.epRefreshProviderUI",
+      "line": 549,
+      "module": "05-ai-functions.js",
+      "score": 24
+    },
+    {
+      "name": "window.epClearLocalAiKeys",
+      "line": 662,
+      "module": "05-ai-functions.js",
+      "score": 14
+    },
+    {
+      "name": "window.epSaveAiConfig",
+      "line": 703,
+      "module": "05-ai-functions.js",
+      "score": 30
+    },
+    {
+      "name": "window.EP_AI_CONFIG",
+      "line": 722,
+      "module": "05-ai-functions.js",
+      "score": 32
+    },
+    {
+      "name": "window.saveApiKey",
+      "line": 774,
+      "module": "07-settings.js",
+      "score": 16
+    },
+    {
+      "name": "window.epAskAI",
+      "line": 923,
+      "module": "05-ai-functions.js",
+      "score": 11
+    },
+    {
+      "name": "window.runAiCheck",
+      "line": 1019,
+      "module": "05-ai-functions.js",
+      "score": 14
+    },
+    {
+      "name": "window.aiSupply",
+      "line": 1044,
+      "module": "05-ai-functions.js",
+      "score": 19
+    },
+    {
+      "name": "window.aiPueHelper",
+      "line": 1056,
+      "module": "05-ai-functions.js",
+      "score": 17
+    },
+    {
+      "name": "window.compareShopsAI",
+      "line": 1067,
+      "module": "01-visual.js",
+      "score": 13
+    },
+    {
+      "name": "window.epTriggerDbFileImport",
+      "line": 1255,
+      "module": "04-database.js",
+      "score": 18
+    },
+    {
+      "name": "window.epOpenTextImport",
+      "line": 1266,
+      "module": "04-database.js",
+      "score": 12
+    },
+    {
+      "name": "window.epRunTextImport",
+      "line": 1273,
+      "module": "11-pdf-files.js",
+      "score": 12
+    },
+    {
+      "name": "window.epReviewCheckAll",
+      "line": 1536,
+      "module": "05-ai-functions.js",
+      "score": 8
+    },
+    {
+      "name": "window.EP_DB_REVIEW",
+      "line": 1543,
+      "module": "10-estimate-views.js",
+      "score": 9
+    },
+    {
+      "name": "window.epApplyReviewedDbItems",
+      "line": 1610,
+      "module": "04-database.js",
+      "score": 9
+    },
+    {
+      "name": "window.epExportMyDb",
+      "line": 1651,
+      "module": "04-database.js",
+      "score": 44
+    },
+    {
+      "name": "window.epExportGlobalDb",
+      "line": 1660,
+      "module": "04-database.js",
+      "score": 36
+    },
+    {
+      "name": "window.renderDbEditors",
+      "line": 1673,
+      "module": "04-database.js",
+      "score": 13
+    },
+    {
+      "name": "window.epDeleteDbItem",
+      "line": 1719,
+      "module": "04-database.js",
+      "score": 10
+    },
+    {
+      "name": "window.addDbItem",
+      "line": 1746,
+      "module": "04-database.js",
+      "score": 15
+    },
+    {
+      "name": "window.requestPriceChange",
+      "line": 1774,
+      "module": "04-database.js",
+      "score": 9
+    },
+    {
+      "name": "window.epAdminResolveDbProposal",
+      "line": 1836,
+      "module": "04-database.js",
+      "score": 10
+    },
+    {
+      "name": "window.finishLoginSetup",
+      "line": 1878,
+      "module": "07-settings.js",
+      "score": 15
+    },
+    {
+      "name": "window.EP_DB_PROPOSALS_CACHE_V2",
+      "line": 1935,
+      "module": "04-database.js",
+      "score": 19
+    },
+    {
+      "name": "window.epToggleSubCat",
+      "line": 2047,
+      "module": "10-estimate-views.js",
+      "score": 14
+    },
+    {
+      "name": "window.epPromptGroupedAdd",
+      "line": 2048,
+      "module": "10-estimate-views.js",
+      "score": 14
+    },
+    {
+      "name": "window.pendingAdd",
+      "line": 2051,
+      "module": "04-database.js",
+      "score": 13
+    },
+    {
+      "name": "window.promptAdd",
+      "line": 2057,
+      "module": "04-database.js",
+      "score": 17
+    },
+    {
+      "name": "window.openWorkCatalog",
+      "line": 2058,
+      "module": "04-database.js",
+      "score": 26
+    },
+    {
+      "name": "window.openMatCatalog",
+      "line": 2060,
+      "module": "04-database.js",
+      "score": 20
+    },
+    {
+      "name": "window.renderDbEditors",
+      "line": 2065,
+      "module": "04-database.js",
+      "score": 31
+    },
+    {
+      "name": "window.epOpenGlobalDbModal",
+      "line": 2087,
+      "module": "01-visual.js",
+      "score": 24
+    },
+    {
+      "name": "window.epSwitchGlobalDbTab",
+      "line": 2088,
+      "module": "04-database.js",
+      "score": 25
+    },
+    {
+      "name": "window.epGlobalSelectAll",
+      "line": 2089,
+      "module": "04-database.js",
+      "score": 22
+    },
+    {
+      "name": "window.epAddSelectedGlobalToMyDb",
+      "line": 2097,
+      "module": "04-database.js",
+      "score": 28
+    },
+    {
+      "name": "window.openModal",
+      "line": 2117,
+      "module": "04-database.js",
+      "score": 14
+    },
+    {
+      "name": "window.epOpenProposalDetail",
+      "line": 2146,
+      "module": "04-database.js",
+      "score": 13
+    },
+    {
+      "name": "window.epProposalSelectAll",
+      "line": 2161,
+      "module": "04-database.js",
+      "score": 13
+    },
+    {
+      "name": "window.epResolveProposalOne",
+      "line": 2162,
+      "module": "04-database.js",
+      "score": 14
+    },
+    {
+      "name": "window.epResolveProposalItems",
+      "line": 2163,
+      "module": "04-database.js",
+      "score": 12
+    },
+    {
+      "name": "window.EP_DB_PROPOSALS_CACHE_V2",
+      "line": 2208,
+      "module": "04-database.js",
+      "score": 24
+    },
+    {
+      "name": "window.finishLoginSetup",
+      "line": 2217,
+      "module": "04-database.js",
+      "score": 8
+    },
+    {
+      "name": "window.matDB",
+      "line": 2326,
+      "module": "04-database.js",
+      "score": 12
+    },
+    {
+      "name": "window.userMatDB",
+      "line": 2327,
+      "module": "04-database.js",
+      "score": 8
+    },
+    {
+      "name": "window.epToggleShieldDbSub",
+      "line": 2371,
+      "module": "04-database.js",
+      "score": 18
+    },
+    {
+      "name": "window.epPromptShieldGroupedAdd",
+      "line": 2372,
+      "module": "01-visual.js",
+      "score": 18
+    },
+    {
+      "name": "window.pendingAdd",
+      "line": 2376,
+      "module": "01-visual.js",
+      "score": 25
+    },
+    {
+      "name": "window.openMatCatalog",
+      "line": 2386,
+      "module": "04-database.js",
+      "score": 31
+    },
+    {
+      "name": "window.openWorkCatalog",
+      "line": 2387,
+      "module": "04-database.js",
+      "score": 44
+    },
+    {
+      "name": "window.renderDbEditors",
+      "line": 2388,
+      "module": "04-database.js",
+      "score": 41
+    },
+    {
+      "name": "window.epGenerateShieldFixed",
+      "line": 2427,
+      "module": "02-shield-configurator.js",
+      "score": 22
+    },
+    {
+      "name": "window.currentShieldExtras",
+      "line": 2520,
+      "module": "01-visual.js",
+      "score": 13
+    },
+    {
+      "name": "window.generateCascadePanel",
+      "line": 2533,
+      "module": "12-documents.js",
+      "score": 10
+    },
+    {
+      "name": "window.matDB",
+      "line": 2565,
+      "module": "04-database.js",
+      "score": 12
+    },
+    {
+      "name": "window.workDB",
+      "line": 2565,
+      "module": "04-database.js",
+      "score": 11
+    },
+    {
+      "name": "window.epDbToggleSub",
+      "line": 2623,
+      "module": "04-database.js",
+      "score": 27
+    },
+    {
+      "name": "window.openMatCatalog",
+      "line": 2628,
+      "module": "04-database.js",
+      "score": 26
+    },
+    {
+      "name": "window.openWorkCatalog",
+      "line": 2629,
+      "module": "04-database.js",
+      "score": 29
+    },
+    {
+      "name": "window.renderDbEditors",
+      "line": 2630,
+      "module": "04-database.js",
+      "score": 22
+    },
+    {
+      "name": "window.epMat",
+      "line": 2651,
+      "module": "10-estimate-views.js",
+      "score": 10
+    },
+    {
+      "name": "window.renderMainTable",
+      "line": 2668,
+      "module": "01-visual.js",
+      "score": 18
+    },
+    {
+      "name": "window.applySwap",
+      "line": 2671,
+      "module": "01-visual.js",
+      "score": 12
+    },
+    {
+      "name": "window.openSwapModal",
+      "line": 2685,
+      "module": "01-visual.js",
+      "score": 9
+    },
+    {
+      "name": "window.epDbToggleSubFixed",
+      "line": 2885,
+      "module": "01-visual.js",
+      "score": 15
+    },
+    {
+      "name": "window.openMatCatalog",
+      "line": 2891,
+      "module": "01-visual.js",
+      "score": 17
+    },
+    {
+      "name": "window.openWorkCatalog",
+      "line": 2897,
+      "module": "04-database.js",
+      "score": 21
+    },
+    {
+      "name": "window.renderDbEditors",
+      "line": 2903,
+      "module": "04-database.js",
+      "score": 15
+    },
+    {
+      "name": "window.epMat",
+      "line": 2994,
+      "module": "04-database.js",
+      "score": 10
+    },
+    {
+      "name": "window.renderMainTable",
+      "line": 3086,
+      "module": "10-estimate-views.js",
+      "score": 15
+    },
+    {
+      "name": "window.categorizeEstimateItem",
+      "line": 3091,
+      "module": "10-estimate-views.js",
+      "score": 15
+    },
+    {
+      "name": "window.showPreview",
+      "line": 3145,
+      "module": "01-visual.js",
+      "score": 12
+    },
+    {
+      "name": "window.EP_GLOBAL_DB_VISIBLE_CACHE",
+      "line": 3267,
+      "module": "04-database.js",
+      "score": 60
+    },
+    {
+      "name": "window.EP_GLOBAL_DB_TAB_FIXED",
+      "line": 3268,
+      "module": "04-database.js",
+      "score": 53
+    },
+    {
+      "name": "window.EP_GLOBAL_DB_VISIBLE_CACHE",
+      "line": 3287,
+      "module": "04-database.js",
+      "score": 12
+    },
+    {
+      "name": "window.epToggleSmartSub",
+      "line": 3348,
+      "module": "01-visual.js",
+      "score": 25
+    },
+    {
+      "name": "window.epOpenGlobalDbModal",
+      "line": 3350,
+      "module": "01-visual.js",
+      "score": 28
+    },
+    {
+      "name": "window.EP_GLOBAL_DB_TAB_FIXED",
+      "line": 3354,
+      "module": "04-database.js",
+      "score": 24
+    },
+    {
+      "name": "window.epSwitchGlobalDbTab",
+      "line": 3358,
+      "module": "04-database.js",
+      "score": 20
+    },
+    {
+      "name": "window.EP_GLOBAL_DB_TAB_FIXED",
+      "line": 3359,
+      "module": "04-database.js",
+      "score": 20
+    },
+    {
+      "name": "window.epGlobalSelectAll",
+      "line": 3362,
+      "module": "04-database.js",
+      "score": 14
+    },
+    {
+      "name": "window.epAddSelectedGlobalToMyDb",
+      "line": 3368,
+      "module": "04-database.js",
+      "score": 12
+    },
+    {
+      "name": "window.openMatCatalog",
+      "line": 3405,
+      "module": "01-visual.js",
+      "score": 13
+    },
+    {
+      "name": "window.openWorkCatalog",
+      "line": 3412,
+      "module": "10-estimate-views.js",
+      "score": 12
+    },
+    {
+      "name": "window.promptAdd",
+      "line": 3421,
+      "module": "10-estimate-views.js",
+      "score": 13
+    },
+    {
+      "name": "window.EP_SWAP_CANDIDATES_SMART",
+      "line": 3444,
+      "module": "04-database.js",
+      "score": 10
+    },
+    {
+      "name": "window.openSwapModal",
+      "line": 3445,
+      "module": "04-database.js",
+      "score": 10
+    },
+    {
+      "name": "window.EP_SWAP_CANDIDATES_SMART",
+      "line": 3464,
+      "module": "10-estimate-views.js",
+      "score": 12
+    },
+    {
+      "name": "window.applySwap",
+      "line": 3475,
+      "module": "10-estimate-views.js",
+      "score": 18
+    },
+    {
+      "name": "window.EP_HARD_GLOBAL_CACHE",
+      "line": 3584,
+      "module": "04-database.js",
+      "score": 48
+    },
+    {
+      "name": "window.EP_HARD_GLOBAL_CACHE",
+      "line": 3601,
+      "module": "04-database.js",
+      "score": 22
+    },
+    {
+      "name": "window.EP_GLOBAL_DB_VISIBLE_CACHE",
+      "line": 3602,
+      "module": "04-database.js",
+      "score": 24
+    },
+    {
+      "name": "window.epHardToggleDbSub",
+      "line": 3672,
+      "module": "01-visual.js",
+      "score": 24
+    },
+    {
+      "name": "window.epOpenGlobalDbModal",
+      "line": 3674,
+      "module": "01-visual.js",
+      "score": 26
+    },
+    {
+      "name": "window.EP_HARD_GLOBAL_TYPE",
+      "line": 3678,
+      "module": "04-database.js",
+      "score": 17
+    },
+    {
+      "name": "window.epSwitchGlobalDbTab",
+      "line": 3682,
+      "module": "04-database.js",
+      "score": 18
+    },
+    {
+      "name": "window.EP_HARD_GLOBAL_TYPE",
+      "line": 3683,
+      "module": "04-database.js",
+      "score": 16
+    },
+    {
+      "name": "window.epGlobalSelectAll",
+      "line": 3686,
+      "module": "04-database.js",
+      "score": 16
+    },
+    {
+      "name": "window.epHardRenderGlobalModal",
+      "line": 3689,
+      "module": "04-database.js",
+      "score": 17
+    },
+    {
+      "name": "window.epAddSelectedGlobalToMyDb",
+      "line": 3701,
+      "module": "04-database.js",
+      "score": 12
+    },
+    {
+      "name": "window.openMatCatalog",
+      "line": 3759,
+      "module": "01-visual.js",
+      "score": 15
+    },
+    {
+      "name": "window.openWorkCatalog",
+      "line": 3766,
+      "module": "04-database.js",
+      "score": 9
+    },
+    {
+      "name": "window.renderDbEditors",
+      "line": 3786,
+      "module": "04-database.js",
+      "score": 18
+    },
+    {
+      "name": "window.epHardSelectDelete",
+      "line": 3799,
+      "module": "04-database.js",
+      "score": 9
+    },
+    {
+      "name": "window.epHardDeleteLocalPosition",
+      "line": 3802,
+      "module": "04-database.js",
+      "score": 8
+    },
+    {
+      "name": "window.epHardDeleteSelected",
+      "line": 3813,
+      "module": "04-database.js",
+      "score": 8
+    },
+    {
+      "name": "window.promptAdd",
+      "line": 3832,
+      "module": "10-estimate-views.js",
+      "score": 11
+    },
+    {
+      "name": "window.epApplyReviewedDbItems",
+      "line": 3845,
+      "module": "02-shield-configurator.js",
+      "score": 13
+    },
+    {
+      "name": "window.EP_HARD_SWAP",
+      "line": 3892,
+      "module": "01-visual.js",
+      "score": 7
+    },
+    {
+      "name": "window.openSwapModal",
+      "line": 3893,
+      "module": "01-visual.js",
+      "score": 9
+    },
+    {
+      "name": "window.EP_HARD_SWAP",
+      "line": 3904,
+      "module": "10-estimate-views.js",
+      "score": 13
+    },
+    {
+      "name": "window.applySwap",
+      "line": 3912,
+      "module": "10-estimate-views.js",
+      "score": 13
+    },
+    {
+      "name": "window.EP_ULTIMATE_DB_CACHE",
+      "line": 4004,
+      "module": "04-database.js",
+      "score": 39
+    },
+    {
+      "name": "window.EP_ULTIMATE_DB_CACHE",
+      "line": 4067,
+      "module": "04-database.js",
+      "score": 13
+    },
+    {
+      "name": "window.EP_HARD_GLOBAL_CACHE",
+      "line": 4068,
+      "module": "04-database.js",
+      "score": 11
+    },
+    {
+      "name": "window.EP_GLOBAL_DB_VISIBLE_CACHE",
+      "line": 4069,
+      "module": "04-database.js",
+      "score": 13
+    },
+    {
+      "name": "window.epUltimateToggleSub",
+      "line": 4146,
+      "module": "01-visual.js",
+      "score": 18
+    },
+    {
+      "name": "window.epOpenGlobalDbModal",
+      "line": 4168,
+      "module": "01-visual.js",
+      "score": 23
+    },
+    {
+      "name": "window.EP_ULTIMATE_GLOBAL_TYPE",
+      "line": 4172,
+      "module": "04-database.js",
+      "score": 23
+    },
+    {
+      "name": "window.epSwitchGlobalDbTab",
+      "line": 4177,
+      "module": "04-database.js",
+      "score": 23
+    },
+    {
+      "name": "window.EP_ULTIMATE_GLOBAL_TYPE",
+      "line": 4178,
+      "module": "04-database.js",
+      "score": 22
+    },
+    {
+      "name": "window.epGlobalSelectAll",
+      "line": 4182,
+      "module": "04-database.js",
+      "score": 20
+    },
+    {
+      "name": "window.epUltimateRenderGlobal",
+      "line": 4186,
+      "module": "04-database.js",
+      "score": 20
+    },
+    {
+      "name": "window.epAddSelectedGlobalToMyDb",
+      "line": 4199,
+      "module": "04-database.js",
+      "score": 15
+    },
+    {
+      "name": "window.openMatCatalog",
+      "line": 4226,
+      "module": "01-visual.js",
+      "score": 17
+    },
+    {
+      "name": "window.openWorkCatalog",
+      "line": 4234,
+      "module": "04-database.js",
+      "score": 17
+    },
+    {
+      "name": "window.renderDbEditors",
+      "line": 4245,
+      "module": "04-database.js",
+      "score": 19
+    },
+    {
+      "name": "window.epUltimateSelectDelete",
+      "line": 4264,
+      "module": "04-database.js",
+      "score": 9
+    },
+    {
+      "name": "window.epUltimateDeleteOne",
+      "line": 4268,
+      "module": "04-database.js",
+      "score": 8
+    },
+    {
+      "name": "window.epUltimateDeleteSelected",
+      "line": 4288,
+      "module": "04-database.js",
+      "score": 5
+    },
+    {
+      "name": "window.epUltimateEditPrice",
+      "line": 4318,
+      "module": "10-estimate-views.js",
+      "score": 9
+    },
+    {
+      "name": "window.promptAdd",
+      "line": 4329,
+      "module": "10-estimate-views.js",
+      "score": 11
+    },
+    {
+      "name": "window.epApplyReviewedDbItems",
+      "line": 4346,
+      "module": "04-database.js",
+      "score": 21
+    },
+    {
+      "name": "window.EP_ULTIMATE_SWAP",
+      "line": 4373,
+      "module": "01-visual.js",
+      "score": 7
+    },
+    {
+      "name": "window.openSwapModal",
+      "line": 4374,
+      "module": "01-visual.js",
+      "score": 9
+    },
+    {
+      "name": "window.EP_ULTIMATE_SWAP",
+      "line": 4385,
+      "module": "10-estimate-views.js",
+      "score": 6
+    },
+    {
+      "name": "window.applySwap",
+      "line": 4398,
+      "module": "01-visual.js",
+      "score": 14
+    },
+    {
+      "name": "window.EP_MY_MAT",
+      "line": 4497,
+      "module": "04-database.js",
+      "score": 48
+    },
+    {
+      "name": "window.EP_MY_WORK",
+      "line": 4498,
+      "module": "04-database.js",
+      "score": 49
+    },
+    {
+      "name": "window.EP_GLOBAL_MAT",
+      "line": 4499,
+      "module": "04-database.js",
+      "score": 46
+    },
+    {
+      "name": "window.EP_GLOBAL_WORK",
+      "line": 4500,
+      "module": "04-database.js",
+      "score": 47
+    },
+    {
+      "name": "window.EP_FORCE_GLOBAL",
+      "line": 4501,
+      "module": "04-database.js",
+      "score": 46
+    },
+    {
+      "name": "window.EP_ULTIMATE_DB_CACHE",
+      "line": 4502,
+      "module": "04-database.js",
+      "score": 46
+    },
+    {
+      "name": "window.EP_GLOBAL_DB_VISIBLE_CACHE",
+      "line": 4503,
+      "module": "04-database.js",
+      "score": 41
+    },
+    {
+      "name": "window.userMatDB",
+      "line": 4504,
+      "module": "04-database.js",
+      "score": 35
+    },
+    {
+      "name": "window.userWorkDB",
+      "line": 4505,
+      "module": "04-database.js",
+      "score": 34
+    },
+    {
+      "name": "window.epDbToggle",
+      "line": 4652,
+      "module": "04-database.js",
+      "score": 3
+    },
+    {
+      "name": "window.openMatCatalog",
+      "line": 4683,
+      "module": "01-visual.js",
+      "score": 22
+    },
+    {
+      "name": "window.openWorkCatalog",
+      "line": 4684,
+      "module": "01-visual.js",
+      "score": 15
+    },
+    {
+      "name": "window.promptAdd",
+      "line": 4686,
+      "module": "01-visual.js",
+      "score": 7
+    },
+    {
+      "name": "window.renderDbEditors",
+      "line": 4754,
+      "module": "04-database.js",
+      "score": 21
+    },
+    {
+      "name": "window.epSetDbScope",
+      "line": 4767,
+      "module": "04-database.js",
+      "score": 16
+    },
+    {
+      "name": "window.epCreateMasterDb",
+      "line": 4775,
+      "module": "04-database.js",
+      "score": 13
+    },
+    {
+      "name": "window.epCopyOneServerToMy",
+      "line": 4787,
+      "module": "04-database.js",
+      "score": 14
+    },
+    {
+      "name": "window.epCopyOneGlobalToMy",
+      "line": 4799,
+      "module": "04-database.js",
+      "score": 13
+    },
+    {
+      "name": "window.epClearMyDbType",
+      "line": 4801,
+      "module": "04-database.js",
+      "score": 14
+    },
+    {
+      "name": "window.epClearServerDbType",
+      "line": 4809,
+      "module": "04-database.js",
+      "score": 9
+    },
+    {
+      "name": "window.epDeleteMySelected",
+      "line": 4822,
+      "module": "04-database.js",
+      "score": 11
+    },
+    {
+      "name": "window.addDbItem",
+      "line": 4833,
+      "module": "04-database.js",
+      "score": 16
+    },
+    {
+      "name": "window.requestPriceChange",
+      "line": 4853,
+      "module": "04-database.js",
+      "score": 7
+    },
+    {
+      "name": "window.epApplyReviewedDbItems",
+      "line": 4890,
+      "module": "01-visual.js",
+      "score": 10
+    },
+    {
+      "name": "window.epExportActiveDb",
+      "line": 4911,
+      "module": "04-database.js",
+      "score": 38
+    },
+    {
+      "name": "window.epExportMyDb",
+      "line": 4920,
+      "module": "04-database.js",
+      "score": 29
+    },
+    {
+      "name": "window.epExportGlobalDb",
+      "line": 4921,
+      "module": "04-database.js",
+      "score": 22
+    },
+    {
+      "name": "window.epOpenDbFactoryResetModal",
+      "line": 4923,
+      "module": "04-database.js",
+      "score": 17
+    },
+    {
+      "name": "window.epFactoryResetMyDb",
+      "line": 4940,
+      "module": "04-database.js",
+      "score": 19
+    },
+    {
+      "name": "window.epFactoryResetAllDb",
+      "line": 4967,
+      "module": "04-database.js",
+      "score": 24
+    },
+    {
+      "name": "window.epAutoGroupItem",
+      "line": 5031,
+      "module": "04-database.js",
+      "score": 27
+    },
+    {
+      "name": "window.epAutoRegroupActiveDb",
+      "line": 5032,
+      "module": "04-database.js",
+      "score": 25
+    },
+    {
+      "name": "window.epOpenGlobalDbModal",
+      "line": 5067,
+      "module": "01-visual.js",
+      "score": 29
+    },
+    {
+      "name": "window.EP_SERVER_MODAL_TYPE",
+      "line": 5071,
+      "module": "01-visual.js",
+      "score": 20
+    },
+    {
+      "name": "window.epSwitchGlobalDbTab",
+      "line": 5075,
+      "module": "04-database.js",
+      "score": 15
+    },
+    {
+      "name": "window.EP_SERVER_MODAL_TYPE",
+      "line": 5076,
+      "module": "01-visual.js",
+      "score": 14
+    },
+    {
+      "name": "window.epGlobalSelectAll",
+      "line": 5079,
+      "module": "04-database.js",
+      "score": 12
+    },
+    {
+      "name": "window.epRenderServerDbModal",
+      "line": 5082,
+      "module": "01-visual.js",
+      "score": 15
+    },
+    {
+      "name": "window.epAddSelectedGlobalToMyDb",
+      "line": 5089,
+      "module": "01-visual.js",
+      "score": 6
+    },
+    {
+      "name": "window.epSplitDbDebug",
+      "line": 5118,
+      "module": "04-database.js",
+      "score": 17
+    },
+    {
+      "name": "window.EP_MY_WORK",
+      "line": 5178,
+      "module": "04-database.js",
+      "score": 43
+    },
+    {
+      "name": "window.EP_MY_MAT",
+      "line": 5178,
+      "module": "04-database.js",
+      "score": 41
+    },
+    {
+      "name": "window.userMatDB",
+      "line": 5181,
+      "module": "04-database.js",
+      "score": 56
+    },
+    {
+      "name": "window.userWorkDB",
+      "line": 5181,
+      "module": "04-database.js",
+      "score": 57
+    },
+    {
+      "name": "window.EP_GLOBAL_WORK",
+      "line": 5186,
+      "module": "04-database.js",
+      "score": 64
+    },
+    {
+      "name": "window.EP_GLOBAL_MAT",
+      "line": 5186,
+      "module": "04-database.js",
+      "score": 62
+    },
+    {
+      "name": "window.EP_FORCE_GLOBAL",
+      "line": 5190,
+      "module": "04-database.js",
+      "score": 60
+    },
+    {
+      "name": "window.EP_ULTIMATE_DB_CACHE",
+      "line": 5191,
+      "module": "04-database.js",
+      "score": 55
+    },
+    {
+      "name": "window.EP_GLOBAL_DB_VISIBLE_CACHE",
+      "line": 5192,
+      "module": "04-database.js",
+      "score": 49
+    },
+    {
+      "name": "window.matDB",
+      "line": 5201,
+      "module": "04-database.js",
+      "score": 36
+    },
+    {
+      "name": "window.workDB",
+      "line": 5202,
+      "module": "04-database.js",
+      "score": 35
+    },
+    {
+      "name": "window.matDB",
+      "line": 5205,
+      "module": "04-database.js",
+      "score": 20
+    },
+    {
+      "name": "window.workDB",
+      "line": 5206,
+      "module": "04-database.js",
+      "score": 19
+    },
+    {
+      "name": "window.epAutoGroupItem",
+      "line": 5256,
+      "module": "04-database.js",
+      "score": 23
+    },
+    {
+      "name": "window.epRefreshDbScopeUi",
+      "line": 5294,
+      "module": "04-database.js",
+      "score": 21
+    },
+    {
+      "name": "window.epTriggerDbFileImport",
+      "line": 5300,
+      "module": "04-database.js",
+      "score": 10
+    },
+    {
+      "name": "window.epOpenTextImport",
+      "line": 5311,
+      "module": "10-estimate-views.js",
+      "score": 8
+    },
+    {
+      "name": "window.epApplyReviewedDbItems",
+      "line": 5320,
+      "module": "10-estimate-views.js",
+      "score": 10
+    },
+    {
+      "name": "window.EP_MY_MAT",
+      "line": 5414,
+      "module": "04-database.js",
+      "score": 51
+    },
+    {
+      "name": "window.EP_MY_WORK",
+      "line": 5415,
+      "module": "04-database.js",
+      "score": 54
+    },
+    {
+      "name": "window.userMatDB",
+      "line": 5416,
+      "module": "04-database.js",
+      "score": 59
+    },
+    {
+      "name": "window.userWorkDB",
+      "line": 5417,
+      "module": "04-database.js",
+      "score": 60
+    },
+    {
+      "name": "window.EP_GLOBAL_MAT",
+      "line": 5424,
+      "module": "04-database.js",
+      "score": 52
+    },
+    {
+      "name": "window.EP_GLOBAL_WORK",
+      "line": 5425,
+      "module": "04-database.js",
+      "score": 54
+    },
+    {
+      "name": "window.EP_FORCE_GLOBAL",
+      "line": 5426,
+      "module": "04-database.js",
+      "score": 55
+    },
+    {
+      "name": "window.EP_ULTIMATE_DB_CACHE",
+      "line": 5427,
+      "module": "04-database.js",
+      "score": 58
+    },
+    {
+      "name": "window.EP_GLOBAL_DB_VISIBLE_CACHE",
+      "line": 5428,
+      "module": "04-database.js",
+      "score": 52
+    },
+    {
+      "name": "window.matDB",
+      "line": 5436,
+      "module": "04-database.js",
+      "score": 46
+    },
+    {
+      "name": "window.workDB",
+      "line": 5437,
+      "module": "04-database.js",
+      "score": 47
+    },
+    {
+      "name": "window.matDB",
+      "line": 5442,
+      "module": "04-database.js",
+      "score": 40
+    },
+    {
+      "name": "window.workDB",
+      "line": 5443,
+      "module": "04-database.js",
+      "score": 40
+    },
+    {
+      "name": "window.epRenderServerDbModal",
+      "line": 5504,
+      "module": "01-visual.js",
+      "score": 23
+    },
+    {
+      "name": "window.epRefreshActiveDbNow",
+      "line": 5508,
+      "module": "01-visual.js",
+      "score": 19
+    },
+    {
+      "name": "window.epSetDbScope",
+      "line": 5522,
+      "module": "01-visual.js",
+      "score": 16
+    },
+    {
+      "name": "window.EP_DB_REVIEW_V6",
+      "line": 5568,
+      "module": "01-visual.js",
+      "score": 16
+    },
+    {
+      "name": "window.matDB",
+      "line": 5623,
+      "module": "04-database.js",
+      "score": 47
+    },
+    {
+      "name": "window.workDB",
+      "line": 5624,
+      "module": "04-database.js",
+      "score": 52
+    },
+    {
+      "name": "window.matDB",
+      "line": 5626,
+      "module": "04-database.js",
+      "score": 51
+    },
+    {
+      "name": "window.workDB",
+      "line": 5627,
+      "module": "04-database.js",
+      "score": 54
+    },
+    {
+      "name": "window.EP_MY_WORK",
+      "line": 5634,
+      "module": "04-database.js",
+      "score": 43
+    },
+    {
+      "name": "window.EP_MY_MAT",
+      "line": 5634,
+      "module": "04-database.js",
+      "score": 42
+    },
+    {
+      "name": "window.userMatDB",
+      "line": 5637,
+      "module": "04-database.js",
+      "score": 41
+    },
+    {
+      "name": "window.userWorkDB",
+      "line": 5637,
+      "module": "04-database.js",
+      "score": 40
+    },
+    {
+      "name": "window.EP_GLOBAL_WORK",
+      "line": 5642,
+      "module": "04-database.js",
+      "score": 33
+    },
+    {
+      "name": "window.EP_GLOBAL_MAT",
+      "line": 5642,
+      "module": "04-database.js",
+      "score": 31
+    },
+    {
+      "name": "window.EP_FORCE_GLOBAL",
+      "line": 5646,
+      "module": "04-database.js",
+      "score": 31
+    },
+    {
+      "name": "window.EP_ULTIMATE_DB_CACHE",
+      "line": 5647,
+      "module": "04-database.js",
+      "score": 28
+    },
+    {
+      "name": "window.EP_GLOBAL_DB_VISIBLE_CACHE",
+      "line": 5648,
+      "module": "04-database.js",
+      "score": 22
+    },
+    {
+      "name": "window.epRefreshDbScopeUi",
+      "line": 5696,
+      "module": "04-database.js",
+      "score": 11
+    },
+    {
+      "name": "window.EP_DB_REVIEW",
+      "line": 5843,
+      "module": "10-estimate-views.js",
+      "score": 11
+    },
+    {
+      "name": "window.epReviewToggleV6",
+      "line": 5884,
+      "module": "01-visual.js",
+      "score": 15
+    },
+    {
+      "name": "window.epReviewPageV6",
+      "line": 5885,
+      "module": "01-visual.js",
+      "score": 17
+    },
+    {
+      "name": "window.epReviewCheckAll",
+      "line": 5886,
+      "module": "01-visual.js",
+      "score": 15
+    },
+    {
+      "name": "window.EP_DB_REVIEW_V6",
+      "line": 5896,
+      "module": "05-ai-functions.js",
+      "score": 13
+    },
+    {
+      "name": "window.EP_DB_REVIEW",
+      "line": 5897,
+      "module": "05-ai-functions.js",
+      "score": 19
+    },
+    {
+      "name": "window.epTriggerDbFileImport",
+      "line": 5960,
+      "module": "04-database.js",
+      "score": 14
+    },
+    {
+      "name": "window.epRunTextImport",
+      "line": 5974,
+      "module": "04-database.js",
+      "score": 15
+    },
+    {
+      "name": "window.epAutoGroupItem",
+      "line": 6002,
+      "module": "10-estimate-views.js",
+      "score": 11
+    },
+    {
+      "name": "window.epApplyReviewedDbItems",
+      "line": 6006,
+      "module": "10-estimate-views.js",
+      "score": 9
+    },
+    {
+      "name": "window.EP_MY_WORK",
+      "line": 6092,
+      "module": "04-database.js",
+      "score": 59
+    },
+    {
+      "name": "window.EP_MY_MAT",
+      "line": 6092,
+      "module": "04-database.js",
+      "score": 57
+    },
+    {
+      "name": "window.userMatDB",
+      "line": 6092,
+      "module": "04-database.js",
+      "score": 58
+    },
+    {
+      "name": "window.userWorkDB",
+      "line": 6092,
+      "module": "04-database.js",
+      "score": 57
+    },
+    {
+      "name": "window.EP_GLOBAL_WORK",
+      "line": 6093,
+      "module": "04-database.js",
+      "score": 50
+    },
+    {
+      "name": "window.EP_GLOBAL_MAT",
+      "line": 6093,
+      "module": "04-database.js",
+      "score": 48
+    },
+    {
+      "name": "window.EP_FORCE_GLOBAL",
+      "line": 6093,
+      "module": "04-database.js",
+      "score": 45
+    },
+    {
+      "name": "window.EP_ULTIMATE_DB_CACHE",
+      "line": 6093,
+      "module": "04-database.js",
+      "score": 40
+    },
+    {
+      "name": "window.EP_GLOBAL_DB_VISIBLE_CACHE",
+      "line": 6093,
+      "module": "04-database.js",
+      "score": 34
+    },
+    {
+      "name": "window.matDB",
+      "line": 6094,
+      "module": "04-database.js",
+      "score": 20
+    },
+    {
+      "name": "window.workDB",
+      "line": 6094,
+      "module": "04-database.js",
+      "score": 19
+    },
+    {
+      "name": "window.epSendServerProposal",
+      "line": 6138,
+      "module": "04-database.js",
+      "score": 20
+    },
+    {
+      "name": "window.epRefreshActiveDbNow",
+      "line": 6144,
+      "module": "04-database.js",
+      "score": 14
+    },
+    {
+      "name": "window.renderDbEditors",
+      "line": 6232,
+      "module": "04-database.js",
+      "score": 14
+    },
+    {
+      "name": "window.epSetDbScope",
+      "line": 6240,
+      "module": "04-database.js",
+      "score": 9
+    },
+    {
+      "name": "window.epRefreshActiveDbNow",
+      "line": 6244,
+      "module": "01-visual.js",
+      "score": 12
+    },
+    {
+      "name": "window.epChangePriceV7",
+      "line": 6248,
+      "module": "01-visual.js",
+      "score": 13
+    },
+    {
+      "name": "window.epSaveActiveDbV7",
+      "line": 6257,
+      "module": "01-visual.js",
+      "score": 13
+    },
+    {
+      "name": "window.epReloadActiveDbV7",
+      "line": 6263,
+      "module": "01-visual.js",
+      "score": 9
+    },
+    {
+      "name": "window.epDeleteSelectedActiveV7",
+      "line": 6264,
+      "module": "01-visual.js",
+      "score": 10
+    },
+    {
+      "name": "window.epExportActiveDb",
+      "line": 6281,
+      "module": "04-database.js",
+      "score": 34
+    },
+    {
+      "name": "window.epExportMyDb",
+      "line": 6282,
+      "module": "04-database.js",
+      "score": 22
+    },
+    {
+      "name": "window.epExportGlobalDb",
+      "line": 6283,
+      "module": "04-database.js",
+      "score": 12
+    },
+    {
+      "name": "window.EP_DB_REVIEW_V6",
+      "line": 6293,
+      "module": "01-visual.js",
+      "score": 13
+    },
+    {
+      "name": "window.EP_DB_REVIEW",
+      "line": 6293,
+      "module": "01-visual.js",
+      "score": 13
+    },
+    {
+      "name": "window.EP_V7_IMPORT_TARGET",
+      "line": 6293,
+      "module": "01-visual.js",
+      "score": 15
+    },
+    {
+      "name": "window.epReviewPageV6",
+      "line": 6293,
+      "module": "01-visual.js",
+      "score": 16
+    },
+    {
+      "name": "window.epAskAI",
+      "line": 6294,
+      "module": "10-estimate-views.js",
+      "score": 14
+    },
+    {
+      "name": "window.epTriggerDbFileImport",
+      "line": 6297,
+      "module": "04-database.js",
+      "score": 17
+    },
+    {
+      "name": "window.epTriggerServerProposalImportV7",
+      "line": 6298,
+      "module": "04-database.js",
+      "score": 22
+    },
+    {
+      "name": "window.epOpenTextImportServerProposalV7",
+      "line": 6299,
+      "module": "04-database.js",
+      "score": 17
+    },
+    {
+      "name": "window.EP_V7_IMPORT_TARGET",
+      "line": 6299,
+      "module": "04-database.js",
+      "score": 15
+    },
+    {
+      "name": "window.epOpenTextImport",
+      "line": 6299,
+      "module": "01-visual.js",
+      "score": 14
+    },
+    {
+      "name": "window.epRunTextImport",
+      "line": 6301,
+      "module": "04-database.js",
+      "score": 16
+    },
+    {
+      "name": "window.epAutoGroupItem",
+      "line": 6303,
+      "module": "10-estimate-views.js",
+      "score": 13
+    },
+    {
+      "name": "window.epApplyReviewedDbItems",
+      "line": 6304,
+      "module": "10-estimate-views.js",
+      "score": 11
+    },
+    {
+      "name": "window.EP_V7_IMPORT_TARGET",
+      "line": 6308,
+      "module": "04-database.js",
+      "score": 17
+    },
+    {
+      "name": "window.EP_MY_WORK",
+      "line": 6370,
+      "module": "04-database.js",
+      "score": 59
+    },
+    {
+      "name": "window.EP_MY_MAT",
+      "line": 6370,
+      "module": "04-database.js",
+      "score": 57
+    },
+    {
+      "name": "window.userMatDB",
+      "line": 6370,
+      "module": "04-database.js",
+      "score": 57
+    },
+    {
+      "name": "window.userWorkDB",
+      "line": 6370,
+      "module": "04-database.js",
+      "score": 57
+    },
+    {
+      "name": "window.EP_GLOBAL_WORK",
+      "line": 6371,
+      "module": "04-database.js",
+      "score": 50
+    },
+    {
+      "name": "window.EP_GLOBAL_MAT",
+      "line": 6371,
+      "module": "04-database.js",
+      "score": 48
+    },
+    {
+      "name": "window.EP_FORCE_GLOBAL",
+      "line": 6371,
+      "module": "04-database.js",
+      "score": 39
+    },
+    {
+      "name": "window.EP_ULTIMATE_DB_CACHE",
+      "line": 6371,
+      "module": "04-database.js",
+      "score": 34
+    },
+    {
+      "name": "window.EP_GLOBAL_DB_VISIBLE_CACHE",
+      "line": 6371,
+      "module": "04-database.js",
+      "score": 28
+    },
+    {
+      "name": "window.matDB",
+      "line": 6372,
+      "module": "04-database.js",
+      "score": 20
+    },
+    {
+      "name": "window.workDB",
+      "line": 6372,
+      "module": "04-database.js",
+      "score": 19
+    },
+    {
+      "name": "window.epAutoGroupItem",
+      "line": 6473,
+      "module": "10-estimate-views.js",
+      "score": 10
+    },
+    {
+      "name": "window.addDbItem",
+      "line": 6478,
+      "module": "01-visual.js",
+      "score": 8
+    },
+    {
+      "name": "window.epChangePriceV7",
+      "line": 6505,
+      "module": "01-visual.js",
+      "score": 13
+    },
+    {
+      "name": "window.epSaveActiveDbV7",
+      "line": 6522,
+      "module": "01-visual.js",
+      "score": 14
+    },
+    {
+      "name": "window.epReloadActiveDbV7",
+      "line": 6538,
+      "module": "01-visual.js",
+      "score": 8
+    },
+    {
+      "name": "window.epCopyOneServerToMy",
+      "line": 6547,
+      "module": "01-visual.js",
+      "score": 9
+    },
+    {
+      "name": "window.epCopyOneGlobalToMy",
+      "line": 6560,
+      "module": "04-database.js",
+      "score": 17
+    },
+    {
+      "name": "window.epAutoGroupItem",
+      "line": 6580,
+      "module": "10-estimate-views.js",
+      "score": 13
+    },
+    {
+      "name": "window.epApplyReviewedDbItems",
+      "line": 6584,
+      "module": "10-estimate-views.js",
+      "score": 11
+    },
+    {
+      "name": "window.EP_V7_IMPORT_TARGET",
+      "line": 6608,
+      "module": "04-database.js",
+      "score": 18
+    },
+    {
+      "name": "window.epFirebaseDbDebug",
+      "line": 6611,
+      "module": "04-database.js",
+      "score": 18
+    },
+    {
+      "name": "window.renderDbEditors",
+      "line": 6625,
+      "module": "04-database.js",
+      "score": 16
+    },
+    {
+      "name": "window.EP_GLOBAL_WORK",
+      "line": 6676,
+      "module": "04-database.js",
+      "score": 59
+    },
+    {
+      "name": "window.EP_GLOBAL_MAT",
+      "line": 6676,
+      "module": "04-database.js",
+      "score": 57
+    },
+    {
+      "name": "window.EP_FORCE_GLOBAL",
+      "line": 6676,
+      "module": "04-database.js",
+      "score": 49
+    },
+    {
+      "name": "window.EP_ULTIMATE_DB_CACHE",
+      "line": 6676,
+      "module": "04-database.js",
+      "score": 44
+    },
+    {
+      "name": "window.EP_GLOBAL_DB_VISIBLE_CACHE",
+      "line": 6676,
+      "module": "04-database.js",
+      "score": 38
+    },
+    {
+      "name": "window.EP_MY_WORK",
+      "line": 6677,
+      "module": "04-database.js",
+      "score": 28
+    },
+    {
+      "name": "window.EP_MY_MAT",
+      "line": 6677,
+      "module": "04-database.js",
+      "score": 26
+    },
+    {
+      "name": "window.userMatDB",
+      "line": 6677,
+      "module": "04-database.js",
+      "score": 26
+    },
+    {
+      "name": "window.userWorkDB",
+      "line": 6677,
+      "module": "04-database.js",
+      "score": 25
+    },
+    {
+      "name": "window.matDB",
+      "line": 6678,
+      "module": "04-database.js",
+      "score": 20
+    },
+    {
+      "name": "window.workDB",
+      "line": 6678,
+      "module": "04-database.js",
+      "score": 19
+    },
+    {
+      "name": "window.epAutoGroupItem",
+      "line": 6696,
+      "module": "04-database.js",
+      "score": 21
+    },
+    {
+      "name": "window.epTriggerDbFileImport",
+      "line": 6752,
+      "module": "04-database.js",
+      "score": 12
+    },
+    {
+      "name": "window.EP_V9_IMPORT_TARGET",
+      "line": 6755,
+      "module": "04-database.js",
+      "score": 6
+    },
+    {
+      "name": "window.EP_V7_IMPORT_TARGET",
+      "line": 6756,
+      "module": "11-pdf-files.js",
+      "score": 7
+    },
+    {
+      "name": "window.EP_V9_IMPORT_TARGET",
+      "line": 6762,
+      "module": "11-pdf-files.js",
+      "score": 11
+    },
+    {
+      "name": "window.EP_V7_IMPORT_TARGET",
+      "line": 6763,
+      "module": "11-pdf-files.js",
+      "score": 13
+    },
+    {
+      "name": "window.EP_DB_REVIEW_V6",
+      "line": 6803,
+      "module": "04-database.js",
+      "score": 17
+    },
+    {
+      "name": "window.EP_DB_REVIEW",
+      "line": 6804,
+      "module": "04-database.js",
+      "score": 18
+    },
+    {
+      "name": "window.EP_V9_IMPORT_TARGET",
+      "line": 6804,
+      "module": "04-database.js",
+      "score": 18
+    },
+    {
+      "name": "window.EP_V7_IMPORT_TARGET",
+      "line": 6804,
+      "module": "04-database.js",
+      "score": 17
+    },
+    {
+      "name": "window.epReviewPageV6",
+      "line": 6806,
+      "module": "04-database.js",
+      "score": 13
+    },
+    {
+      "name": "window.epReadDbFileV9",
+      "line": 6812,
+      "module": "10-estimate-views.js",
+      "score": 15
+    },
+    {
+      "name": "window.epOpenTextImport",
+      "line": 6825,
+      "module": "04-database.js",
+      "score": 18
+    },
+    {
+      "name": "window.EP_V9_IMPORT_TARGET",
+      "line": 6826,
+      "module": "04-database.js",
+      "score": 15
+    },
+    {
+      "name": "window.EP_V7_IMPORT_TARGET",
+      "line": 6826,
+      "module": "04-database.js",
+      "score": 14
+    },
+    {
+      "name": "window.epApplyReviewedDbItems",
+      "line": 6831,
+      "module": "10-estimate-views.js",
+      "score": 10
+    },
+    {
+      "name": "window.EP_V9_IMPORT_TARGET",
+      "line": 6851,
+      "module": "04-database.js",
+      "score": 15
+    },
+    {
+      "name": "window.EP_V7_IMPORT_TARGET",
+      "line": 6851,
+      "module": "04-database.js",
+      "score": 14
+    },
+    {
+      "name": "window.epFirebaseDbDebug",
+      "line": 6854,
+      "module": "04-database.js",
+      "score": 14
+    },
+    {
+      "name": "window.epDbProgress",
+      "line": 6885,
+      "module": "01-visual.js",
+      "score": 13
+    },
+    {
+      "name": "window.epDbHideProgress",
+      "line": 6888,
+      "module": "05-ai-functions.js",
+      "score": 17
+    },
+    {
+      "name": "window.epAskAI",
+      "line": 6941,
+      "module": "05-ai-functions.js",
+      "score": 31
+    },
+    {
+      "name": "window.EP_DB_REVIEW_V6",
+      "line": 7009,
+      "module": "04-database.js",
+      "score": 12
+    },
+    {
+      "name": "window.EP_DB_REVIEW",
+      "line": 7010,
+      "module": "04-database.js",
+      "score": 12
+    },
+    {
+      "name": "window.EP_V9_IMPORT_TARGET",
+      "line": 7011,
+      "module": "04-database.js",
+      "score": 13
+    },
+    {
+      "name": "window.EP_V7_IMPORT_TARGET",
+      "line": 7011,
+      "module": "04-database.js",
+      "score": 12
+    },
+    {
+      "name": "window.epReviewPageV6",
+      "line": 7014,
+      "module": "04-database.js",
+      "score": 13
+    },
+    {
+      "name": "window.epReadDbFileV9",
+      "line": 7048,
+      "module": "11-pdf-files.js",
+      "score": 21
+    },
+    {
+      "name": "window.epTriggerDbFileImport",
+      "line": 7060,
+      "module": "11-pdf-files.js",
+      "score": 12
+    },
+    {
+      "name": "window.EP_DB_ADMIN_SETTINGS_AI_STABILITY_V11",
+      "line": 7099,
+      "module": "07-settings.js",
+      "score": 14
+    },
+    {
+      "name": "window.EP_ADMIN_SERVER_DB_EDIT",
+      "line": 7112,
+      "module": "10-estimate-views.js",
+      "score": 5
+    },
+    {
+      "name": "window.epDbProgress",
+      "line": 7128,
+      "module": "01-visual.js",
+      "score": 10
+    },
+    {
+      "name": "window.epDbHideProgress",
+      "line": 7138,
+      "module": "01-visual.js",
+      "score": 17
+    },
+    {
+      "name": "window.epSetDbScope",
+      "line": 7145,
+      "module": "01-visual.js",
+      "score": 22
+    },
+    {
+      "name": "window.epOpenAdminServerDbFromSettings",
+      "line": 7147,
+      "module": "01-visual.js",
+      "score": 25
+    },
+    {
+      "name": "window.EP_ADMIN_SERVER_DB_EDIT",
+      "line": 7149,
+      "module": "01-visual.js",
+      "score": 26
+    },
+    {
+      "name": "window.EP_OPENING_ADMIN_SERVER_DB",
+      "line": 7150,
+      "module": "01-visual.js",
+      "score": 27
+    },
+    {
+      "name": "window.EP_OPENING_ADMIN_SERVER_DB",
+      "line": 7155,
+      "module": "01-visual.js",
+      "score": 20
+    },
+    {
+      "name": "window.EP_ADMIN_SERVER_DB_EDIT",
+      "line": 7165,
+      "module": "07-settings.js",
+      "score": 10
+    },
+    {
+      "name": "window.openModal",
+      "line": 7172,
+      "module": "07-settings.js",
+      "score": 11
+    },
+    {
+      "name": "window.EP_ADMIN_SERVER_DB_EDIT",
+      "line": 7195,
+      "module": "04-database.js",
+      "score": 12
+    },
+    {
+      "name": "window.epSetDbScope",
+      "line": 7207,
+      "module": "07-settings.js",
+      "score": 6
+    },
+    {
+      "name": "window.addDbItem",
+      "line": 7258,
+      "module": "04-database.js",
+      "score": 15
+    },
+    {
+      "name": "window.epSaveActiveDbV7",
+      "line": 7267,
+      "module": "04-database.js",
+      "score": 16
+    },
+    {
+      "name": "window.epTriggerDbFileImport",
+      "line": 7278,
+      "module": "04-database.js",
+      "score": 16
+    },
+    {
+      "name": "window.EP_V9_IMPORT_TARGET",
+      "line": 7282,
+      "module": "04-database.js",
+      "score": 15
+    },
+    {
+      "name": "window.EP_V7_IMPORT_TARGET",
+      "line": 7283,
+      "module": "04-database.js",
+      "score": 15
+    },
+    {
+      "name": "window.EP_V9_IMPORT_TARGET",
+      "line": 7292,
+      "module": "04-database.js",
+      "score": 20
+    },
+    {
+      "name": "window.EP_V7_IMPORT_TARGET",
+      "line": 7293,
+      "module": "04-database.js",
+      "score": 20
+    },
+    {
+      "name": "window.epReadDbFileV9",
+      "line": 7294,
+      "module": "04-database.js",
+      "score": 20
+    },
+    {
+      "name": "window.epOpenTextImport",
+      "line": 7301,
+      "module": "04-database.js",
+      "score": 18
+    },
+    {
+      "name": "window.EP_DB_REVIEW",
+      "line": 7305,
+      "module": "04-database.js",
+      "score": 17
+    },
+    {
+      "name": "window.EP_V9_IMPORT_TARGET",
+      "line": 7307,
+      "module": "04-database.js",
+      "score": 15
+    },
+    {
+      "name": "window.EP_V7_IMPORT_TARGET",
+      "line": 7308,
+      "module": "04-database.js",
+      "score": 14
+    },
+    {
+      "name": "window.EP_V9_IMPORT_TARGET",
+      "line": 7320,
+      "module": "11-pdf-files.js",
+      "score": 6
+    },
+    {
+      "name": "window.EP_V7_IMPORT_TARGET",
+      "line": 7320,
+      "module": "11-pdf-files.js",
+      "score": 6
+    },
+    {
+      "name": "window.epApplyReviewedDbItems",
+      "line": 7326,
+      "module": "11-pdf-files.js",
+      "score": 9
+    },
+    {
+      "name": "window.epAskAI",
+      "line": 7384,
+      "module": "04-database.js",
+      "score": 6
+    },
+    {
+      "name": "window.epWork",
+      "line": 7472,
+      "module": "02-shield-configurator.js",
+      "score": 12
+    },
+    {
+      "name": "window.renderMainTable",
+      "line": 7500,
+      "module": "02-shield-configurator.js",
+      "score": 15
+    },
+    {
+      "name": "window.addAuto",
+      "line": 7513,
+      "module": "02-shield-configurator.js",
+      "score": 14
+    },
+    {
+      "name": "window.epGenerateShieldFixed",
+      "line": 7526,
+      "module": "04-database.js",
+      "score": 15
+    },
+    {
+      "name": "window.generateCascadePanel",
+      "line": 7527,
+      "module": "04-database.js",
+      "score": 15
+    },
+    {
+      "name": "window.EP_V12_SWAP_LIST",
+      "line": 7616,
+      "module": "04-database.js",
+      "score": 10
+    },
+    {
+      "name": "window.openSwapModal",
+      "line": 7617,
+      "module": "01-visual.js",
+      "score": 11
+    },
+    {
+      "name": "window.swapTargetIdx",
+      "line": 7618,
+      "module": "04-database.js",
+      "score": 10
+    },
+    {
+      "name": "window.EP_V12_SWAP_LIST",
+      "line": 7636,
+      "module": "07-settings.js",
+      "score": 7
+    },
+    {
+      "name": "window.applySwap",
+      "line": 7650,
+      "module": "01-visual.js",
+      "score": 10
+    },
+    {
+      "name": "window.epV15IsShieldDevice",
+      "line": 7701,
+      "module": "02-shield-configurator.js",
+      "score": 18
+    },
+    {
+      "name": "window.epV15Purpose",
+      "line": 7705,
+      "module": "02-shield-configurator.js",
+      "score": 9
+    },
+    {
+      "name": "window.epV15GetAssignments",
+      "line": 7715,
+      "module": "03-socket-pool.js",
+      "score": 4
+    },
+    {
+      "name": "window.epV15BuildLinesFromConfig",
+      "line": 7727,
+      "module": "02-shield-configurator.js",
+      "score": 20
+    },
+    {
+      "name": "window.epV15InferAssignments",
+      "line": 7738,
+      "module": "02-shield-configurator.js",
+      "score": 7
+    },
+    {
+      "name": "window.epV15NormalizeCurrentEstimate",
+      "line": 7746,
+      "module": "02-shield-configurator.js",
+      "score": 11
+    },
+    {
+      "name": "window.currentEstimate",
+      "line": 7764,
+      "module": "01-visual.js",
+      "score": 5
+    },
+    {
+      "name": "window.epV15SelectVisible",
+      "line": 7767,
+      "module": "04-database.js",
+      "score": 6
+    },
+    {
+      "name": "window.epV15MoveSelectedActive",
+      "line": 7768,
+      "module": "01-visual.js",
+      "score": 7
+    },
+    {
+      "name": "window.renderMainTable",
+      "line": 7776,
+      "module": "01-visual.js",
+      "score": 15
+    },
+    {
+      "name": "window.showPreview",
+      "line": 7968,
+      "module": "01-visual.js",
+      "score": 13
+    },
+    {
+      "name": "window.epV16GenerateCascadePanel",
+      "line": 7973,
+      "module": "01-visual.js",
+      "score": 13
+    },
+    {
+      "name": "window.generateCascadePanel",
+      "line": 7974,
+      "module": "01-visual.js",
+      "score": 13
+    },
+    {
+      "name": "window.epGenerateShieldFixed",
+      "line": 7975,
+      "module": "01-visual.js",
+      "score": 15
+    },
+    {
+      "name": "window.renderMainTable",
+      "line": 7985,
+      "module": "01-visual.js",
+      "score": 14
+    },
+    {
+      "name": "window.epV17Normalize",
+      "line": 8071,
+      "module": "10-estimate-views.js",
+      "score": 13
+    },
+    {
+      "name": "window.epV17ShowDetails",
+      "line": 8078,
+      "module": "10-estimate-views.js",
+      "score": 14
+    },
+    {
+      "name": "window.showPreview",
+      "line": 8093,
+      "module": "01-visual.js",
+      "score": 29
+    },
+    {
+      "name": "window.renderMainTable",
+      "line": 8096,
+      "module": "01-visual.js",
+      "score": 21
+    },
+    {
+      "name": "window.generateCascadePanel",
+      "line": 8099,
+      "module": "01-visual.js",
+      "score": 11
+    },
+    {
+      "name": "window.epV17BulkMove",
+      "line": 8112,
+      "module": "04-database.js",
+      "score": 6
+    },
+    {
+      "name": "window.epV17BulkDelete",
+      "line": 8119,
+      "module": "01-visual.js",
+      "score": 8
+    },
+    {
+      "name": "window.matDB",
+      "line": 8183,
+      "module": "04-database.js",
+      "score": 80
+    },
+    {
+      "name": "window.workDB",
+      "line": 8184,
+      "module": "04-database.js",
+      "score": 84
+    },
+    {
+      "name": "window.EP_GLOBAL_MAT",
+      "line": 8193,
+      "module": "04-database.js",
+      "score": 69
+    },
+    {
+      "name": "window.EP_GLOBAL_WORK",
+      "line": 8193,
+      "module": "04-database.js",
+      "score": 71
+    },
+    {
+      "name": "window.EP_FORCE_GLOBAL",
+      "line": 8194,
+      "module": "04-database.js",
+      "score": 68
+    },
+    {
+      "name": "window.EP_ULTIMATE_DB_CACHE",
+      "line": 8195,
+      "module": "04-database.js",
+      "score": 60
+    },
+    {
+      "name": "window.EP_GLOBAL_DB_VISIBLE_CACHE",
+      "line": 8196,
+      "module": "04-database.js",
+      "score": 50
+    },
+    {
+      "name": "window.EP_MY_MAT",
+      "line": 8204,
+      "module": "04-database.js",
+      "score": 24
+    },
+    {
+      "name": "window.EP_MY_WORK",
+      "line": 8205,
+      "module": "04-database.js",
+      "score": 25
+    },
+    {
+      "name": "window.userMatDB",
+      "line": 8206,
+      "module": "04-database.js",
+      "score": 24
+    },
+    {
+      "name": "window.userWorkDB",
+      "line": 8206,
+      "module": "04-database.js",
+      "score": 22
+    },
+    {
+      "name": "window.epV18SetStatus",
+      "line": 8224,
+      "module": "04-database.js",
+      "score": 6
+    },
+    {
+      "name": "window.currentEstimate",
+      "line": 8260,
+      "module": "10-estimate-views.js",
+      "score": 21
+    },
+    {
+      "name": "window.currentEstimate",
+      "line": 8260,
+      "module": "10-estimate-views.js",
+      "score": 19
+    },
+    {
+      "name": "window.currentEstimate",
+      "line": 8267,
+      "module": "02-shield-configurator.js",
+      "score": 16
+    },
+    {
+      "name": "window.currentEstimate",
+      "line": 8267,
+      "module": "02-shield-configurator.js",
+      "score": 19
+    },
+    {
+      "name": "window.renderMainTable",
+      "line": 8271,
+      "module": "02-shield-configurator.js",
+      "score": 21
+    },
+    {
+      "name": "window.currentEstimate",
+      "line": 8271,
+      "module": "02-shield-configurator.js",
+      "score": 22
+    },
+    {
+      "name": "window.epV18GenerateShield",
+      "line": 8274,
+      "module": "02-shield-configurator.js",
+      "score": 26
+    },
+    {
+      "name": "window.currentShieldExtras",
+      "line": 8295,
+      "module": "02-shield-configurator.js",
+      "score": 37
+    },
+    {
+      "name": "window.epV18ShowDetails",
+      "line": 8319,
+      "module": "10-estimate-views.js",
+      "score": 13
+    },
+    {
+      "name": "window.currentEstimate",
+      "line": 8320,
+      "module": "10-estimate-views.js",
+      "score": 12
+    },
+    {
+      "name": "window.showPreview",
+      "line": 8330,
+      "module": "01-visual.js",
+      "score": 13
+    },
+    {
+      "name": "window.renderDbEditors",
+      "line": 8356,
+      "module": "04-database.js",
+      "score": 15
+    },
+    {
+      "name": "window.epV18SelectVisible",
+      "line": 8357,
+      "module": "04-database.js",
+      "score": 6
+    },
+    {
+      "name": "window.epV18MoveSelected",
+      "line": 8358,
+      "module": "04-database.js",
+      "score": 12
+    },
+    {
+      "name": "window.epV18DeleteSelected",
+      "line": 8365,
+      "module": "01-visual.js",
+      "score": 11
+    },
+    {
+      "name": "window.openMatCatalog",
+      "line": 8373,
+      "module": "01-visual.js",
+      "score": 15
+    },
+    {
+      "name": "window.openWorkCatalog",
+      "line": 8374,
+      "module": "04-database.js",
+      "score": 14
+    },
+    {
+      "name": "window.epSetDbScope",
+      "line": 8375,
+      "module": "04-database.js",
+      "score": 8
+    },
+    {
+      "name": "window.epReloadActiveDbV7",
+      "line": 8376,
+      "module": "01-visual.js",
+      "score": 6
+    },
+    {
+      "name": "window.epSaveActiveDbV7",
+      "line": 8377,
+      "module": "01-visual.js",
+      "score": 9
+    },
+    {
+      "name": "window.currentEstimate",
+      "line": 8385,
+      "module": "01-visual.js",
+      "score": 9
+    },
+    {
+      "name": "window.currentEstimate",
+      "line": 8468,
+      "module": "02-shield-configurator.js",
+      "score": 19
+    },
+    {
+      "name": "window.epV19GenerateShield",
+      "line": 8470,
+      "module": "02-shield-configurator.js",
+      "score": 21
+    },
+    {
+      "name": "window.currentShieldExtras",
+      "line": 8496,
+      "module": "02-shield-configurator.js",
+      "score": 36
+    },
+    {
+      "name": "window.epV19ShowDetails",
+      "line": 8522,
+      "module": "10-estimate-views.js",
+      "score": 14
+    },
+    {
+      "name": "window.epV18GenerateShield",
+      "line": 8533,
+      "module": "01-visual.js",
+      "score": 21
+    },
+    {
+      "name": "window.epV18ShowDetails",
+      "line": 8534,
+      "module": "01-visual.js",
+      "score": 22
+    },
+    {
+      "name": "window.showPreview",
+      "line": 8536,
+      "module": "01-visual.js",
+      "score": 17
+    },
+    {
+      "name": "window.currentEstimate",
+      "line": 8612,
+      "module": "10-estimate-views.js",
+      "score": 7
+    },
+    {
+      "name": "window.currentEstimate",
+      "line": 8612,
+      "module": "01-visual.js",
+      "score": 6
+    },
+    {
+      "name": "window.epV20GenerateShield",
+      "line": 8640,
+      "module": "02-shield-configurator.js",
+      "score": 24
+    },
+    {
+      "name": "window.currentShieldExtras",
+      "line": 8661,
+      "module": "02-shield-configurator.js",
+      "score": 37
+    },
+    {
+      "name": "window.epV20ShowDetails",
+      "line": 8688,
+      "module": "10-estimate-views.js",
+      "score": 15
+    },
+    {
+      "name": "window.epV18GenerateShield",
+      "line": 8700,
+      "module": "01-visual.js",
+      "score": 22
+    },
+    {
+      "name": "window.epV19GenerateShield",
+      "line": 8701,
+      "module": "01-visual.js",
+      "score": 22
+    },
+    {
+      "name": "window.epV18ShowDetails",
+      "line": 8702,
+      "module": "01-visual.js",
+      "score": 23
+    },
+    {
+      "name": "window.epV19ShowDetails",
+      "line": 8703,
+      "module": "01-visual.js",
+      "score": 21
+    },
+    {
+      "name": "window.showPreview",
+      "line": 8705,
+      "module": "01-visual.js",
+      "score": 17
+    },
+    {
+      "name": "window.generateCascadePanel",
+      "line": 8706,
+      "module": "04-database.js",
+      "score": 9
+    },
+    {
+      "name": "window.matDB",
+      "line": 8769,
+      "module": "04-database.js",
+      "score": 23
+    },
+    {
+      "name": "window.workDB",
+      "line": 8769,
+      "module": "04-database.js",
+      "score": 21
+    },
+    {
+      "name": "window.epV18SetStatus",
+      "line": 8772,
+      "module": "01-visual.js",
+      "score": 8
+    },
+    {
+      "name": "window.EP_GLOBAL_MAT",
+      "line": 8784,
+      "module": "04-database.js",
+      "score": 73
+    },
+    {
+      "name": "window.EP_GLOBAL_WORK",
+      "line": 8784,
+      "module": "04-database.js",
+      "score": 73
+    },
+    {
+      "name": "window.EP_FORCE_GLOBAL",
+      "line": 8785,
+      "module": "04-database.js",
+      "score": 69
+    },
+    {
+      "name": "window.EP_ULTIMATE_DB_CACHE",
+      "line": 8786,
+      "module": "04-database.js",
+      "score": 60
+    },
+    {
+      "name": "window.EP_GLOBAL_DB_VISIBLE_CACHE",
+      "line": 8787,
+      "module": "04-database.js",
+      "score": 53
+    },
+    {
+      "name": "window.EP_MY_MAT",
+      "line": 8794,
+      "module": "04-database.js",
+      "score": 28
+    },
+    {
+      "name": "window.EP_MY_WORK",
+      "line": 8795,
+      "module": "04-database.js",
+      "score": 29
+    },
+    {
+      "name": "window.userMatDB",
+      "line": 8796,
+      "module": "04-database.js",
+      "score": 29
+    },
+    {
+      "name": "window.userWorkDB",
+      "line": 8796,
+      "module": "04-database.js",
+      "score": 27
+    },
+    {
+      "name": "window.epV21UpdateSubs",
+      "line": 8874,
+      "module": "01-visual.js",
+      "score": 7
+    },
+    {
+      "name": "window.epV21SelectVisible",
+      "line": 8876,
+      "module": "01-visual.js",
+      "score": 5
+    },
+    {
+      "name": "window.epV21MoveSelected",
+      "line": 8879,
+      "module": "04-database.js",
+      "score": 11
+    },
+    {
+      "name": "window.epV21DeleteSelected",
+      "line": 8894,
+      "module": "04-database.js",
+      "score": 9
+    },
+    {
+      "name": "window.renderDbEditors",
+      "line": 8911,
+      "module": "01-visual.js",
+      "score": 20
+    },
+    {
+      "name": "window.openMatCatalog",
+      "line": 8913,
+      "module": "01-visual.js",
+      "score": 13
+    },
+    {
+      "name": "window.openWorkCatalog",
+      "line": 8914,
+      "module": "12-documents.js",
+      "score": 13
+    }
+  ],
+  "moved_markers": [
+    "handleGoogleAuth",
+    "checkLocalPinUser",
+    "showLoader",
+    "hideLoader",
+    "showToast",
+    "loginWithPin",
+    "confirmLogout",
+    "finishLoginSetup",
+    "openModal",
+    "closeModal",
+    "toggleMenu",
+    "changeTheme",
+    "updateMasterBadge",
+    "updateCoeffs",
+    "saveApiKey",
+    "saveQRs",
+    "fPrice",
+    "openSwapModal",
+    "applySwap",
+    "renderMainTable",
+    "syncDraft",
+    "clearCurrentEstimate",
+    "openMatCatalog",
+    "openWorkCatalog",
+    "toggleCat",
+    "promptAdd",
+    "confirmQtyAdd",
+    "addAuto",
+    "setPodr",
+    "setH",
+    "setP",
+    "modM",
+    "upUI",
+    "addGrp",
+    "popPool",
+    "rfPool",
+    "applyPoolToEstimate",
+    "modV",
+    "populateShieldExtras",
+    "addExtraToShieldConfig",
+    "renderShieldExtras",
+    "epAllDbItems",
+    "epFindDbItem",
+    "epV15BrandRu",
+    "epV15BrandCode",
+    "epV15CleanForName",
+    "epV15DetectModel",
+    "epV15DetectNominal",
+    "epV15DetectPoles",
+    "epV15AmpFromNominal",
+    "epV15FormatAutoName",
+    "epV15DetectLeakage",
+    "epV15FormatRcdName",
+    "epV15DisplayMaterialName",
+    "epV15MergeAssignments",
+    "epMat",
+    "epWork",
+    "epGetCheck",
+    "epGetVal",
+    "epAutoPrice",
+    "epDifPrice",
+    "generateCascadePanel",
+    "runAiCheck",
+    "aiSupply",
+    "aiPueHelper",
+    "compareShopsAI",
+    "getPDFHeader",
+    "categorizeEstimateItem",
+    "showPreview",
+    "refreshPreview",
+    "printAct",
+    "deleteAct",
+    "togglePay",
+    "updatePayPrepay",
+    "saveCust",
+    "saveLogic",
+    "renderLogicUI",
+    "openRecalcModal",
+    "updateRecalcUI",
+    "doRecalculate",
+    "renderChart",
+    "updateBuhUI",
+    "saveHist",
+    "updateHistList",
+    "openObjCard",
+    "closeObjCardAndReturn",
+    "addExtraWork",
+    "loadCustHistoryOptions",
+    "switchDbTab",
+    "renderDbEditors",
+    "addDbItem",
+    "requestPriceChange",
+    "listenForApprovals",
+    "approveUser",
+    "loadMasterDrafts",
+    "openAdminDraftView",
+    "renderAdminUsers",
+    "adminAddUser",
+    "deleteUser",
+    "renderItem",
+    "lookupKey",
+    "reqName",
+    "smartFindMat",
+    "canonicalName",
+    "mergeEstimate",
+    "boot",
+    "renderGlobalModalFixed",
+    "classify",
+    "sameSwapClass",
+    "upsertLocal",
+    "unhide",
+    "deleteToolbar",
+    "classify",
+    "sameClass"
+  ],
+  "module_counts": {
+    "10-estimate-views.js": 80,
+    "unknown": 97,
+    "08-accounting.js": 19,
+    "05-ai-functions.js": 59,
+    "03-socket-pool.js": 53,
+    "06-single-line-scheme.js": 5,
+    "12-documents.js": 38,
+    "04-database.js": 212,
+    "11-pdf-files.js": 16,
+    "07-settings.js": 30,
+    "02-shield-configurator.js": 83,
+    "01-visual.js": 49
+  },
+  "window_counts": {
+    "12-documents.js": 5,
+    "01-visual.js": 99,
+    "11-pdf-files.js": 10,
+    "05-ai-functions.js": 16,
+    "07-settings.js": 7,
+    "04-database.js": 277,
+    "10-estimate-views.js": 39,
+    "02-shield-configurator.js": 21,
+    "03-socket-pool.js": 1
+  }
+}
