@@ -4876,31 +4876,3 @@ function ensureChecks(){
   }
   
 
-
-
-/* =========================================================
- * V42 moved from 00-core.js
- * ========================================================= */
-
-
-/* V42 ESTIMATE FUNCTION: safeGet */
-function safeGet(key, def) { try { return localStorage.getItem(key) || def; } catch(e) { return def; } }
-
-
-
-/* V42 ESTIMATE FUNCTION: safeSet */
-function safeSet(key, val) { try { localStorage.setItem(key, val); } catch(e) {} }
-
-
-
-
-/* V42 ESTIMATE FUNCTION: savedChoices */
-function savedChoices(){ try{return JSON.parse(localStorage.getItem('ep_db_default_choices_v1')||'{}');}catch(e){return{};} }
-  
-
-
-/* V42 ESTIMATE FUNCTION: saveChoice */
-function saveChoice(key,id){ const m=savedChoices(); m[key]=id; localStorage.setItem('ep_db_default_choices_v1', JSON.stringify(m)); }
-  
-
-

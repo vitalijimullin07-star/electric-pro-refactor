@@ -33,12 +33,9 @@ window.onerror = function(message, source, lineno, colno, error) {
  */
 
 // === БЕЗОПАСНАЯ ОБОЛОЧКА И СИНХРОНИЗАЦИЯ ===
+function safeGet(key, def) { try { return localStorage.getItem(key) || def; } catch(e) { return def; } }
+function safeSet(key, val) { try { localStorage.setItem(key, val); } catch(e) {} }
 
-
-/* V42: moved function safeGet to 10-estimate-views.js */
-
-
-/* V42: moved function safeSet to 10-estimate-views.js */
 window.addEventListener('offline', () => { showToast("📵 Нет интернета. Работаем локально."); });
 window.addEventListener('online', () => { showToast("🌐 Связь восстановлена. Синхронизация..."); syncDraft(); });
 
@@ -2639,12 +2636,10 @@ window.epDbToggleSub = function(id,e){ if(e) e.stopPropagation(); const el=qs(id
     }catch(e){ console.error(e); if(oldRenderDb) oldRenderDb(); }
   };
 
+  function savedChoices(){ try{return JSON.parse(localStorage.getItem('ep_db_default_choices_v1')||'{}');}catch(e){return{};} }
+  function saveChoice(key,id){ const m=savedChoices(); m[key]=id; localStorage.setItem('ep_db_default_choices_v1', JSON.stringify(m)); }
   
 
-/* V42: moved function savedChoices to 10-estimate-views.js */
-
-
-/* V42: moved function saveChoice to 10-estimate-views.js */
 /* V40 SAFE: moved top-level function lookupKey to 02-shield-configurator.js */
 
 
