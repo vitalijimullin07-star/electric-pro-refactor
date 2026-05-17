@@ -5,22 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Электрик PRO v16.9 ERP</title>
-<!-- Electric PRO Refactor modules START -->
-<script src="js/00-core.js"></script>
-<script src="js/01-visual.js"></script>
-<script src="js/02-shield-configurator.js"></script>
-<script src="js/03-socket-pool.js"></script>
-<script src="js/04-database.js"></script>
-<script src="js/05-ai-functions.js"></script>
-<script src="js/06-single-line-scheme.js"></script>
-<script src="js/07-settings.js"></script>
-<script src="js/08-admin.js"></script>
-<script src="js/09-accounting.js"></script>
-<script src="js/10-estimate-views.js"></script>
-<script src="js/11-pdf-files.js"></script>
-<script src="js/12-documents.js"></script>
-<script src="js/app.js"></script>
-<!-- Electric PRO Refactor modules END -->
+    
+    <script src="js/blocks/block-01.js"></script>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -562,6 +548,8 @@
     </div>
 </div>
 
+<script src="js/blocks/block-02.js"></script>
+
 <!-- === EP SURGICAL DB AI MODALS === -->
 <input type="file" id="ep-db-file-input" style="display:none" accept=".xlsx,.xls,.csv,.json,.txt,image/*" />
 
@@ -590,6 +578,9 @@
         <button class="btn-primary" style="width:100%; margin-top:10px;" onclick="epRunTextImport()">🤖 Прочитать через ИИ</button>
     </div>
 </div>
+
+
+<script id="EP_SURGICAL_TZ_SCRIPT" src="js/blocks/block-03.js"></script>
 
 
 
@@ -623,17 +614,36 @@
         <div id="ep-proposal-body" style="max-height:60vh; overflow-y:auto;"></div>
     </div>
 </div>
+
+<script id="EP_FULL_WORKS_PROPOSALS_SCRIPT" src="js/blocks/block-04.js"></script>
 <!-- EP_FULL_WORKS_PROPOSALS_PATCH: end -->
+
+
+<script id="EP_SHIELD_UI_DB_FIX_SCRIPT" src="js/blocks/block-05.js"></script>
 <!-- EP_SHIELD_UI_DB_FIX_END -->
 
 
 <!-- EP_DB_RESTORE_AGGREGATE_START -->
 <!-- CSS block moved to public/css/visual.css -->
+<script id="EP_DB_RESTORE_AGGREGATE_SCRIPT" src="js/blocks/block-06.js"></script>
 <!-- EP_DB_RESTORE_AGGREGATE_END -->
+
+
+<script src="js/blocks/block-07.js"></script>
 
 
 
 <!-- removed obsolete duplicate DB patch: SURGICAL FIX 2026-05-13: local delete + global DB visible in Материалы/Работы -->
+
+
+
+<script src="js/blocks/block-08.js"></script>
+
+
+<script src="js/blocks/block-09.js"></script>
+
+
+<script src="js/blocks/block-10.js"></script>
 
 
 
@@ -653,6 +663,10 @@
 
 <!-- removed obsolete duplicate DB patch: FINAL LOCK CATALOG FIX 2026-05-13: overrides broken later patches -->
 
+
+
+<script src="js/blocks/block-11.js"></script>
+
 <div class="modal" id="dbFactoryResetModal">
   <div class="modal-content glass" style="max-width:600px;">
     <div class="close-x" onclick="closeModal('dbFactoryResetModal')">×</div>
@@ -667,19 +681,67 @@
   </div>
 </div>
 
+<script src="js/blocks/block-12.js"></script>
+
+
+
+<script src="js/blocks/block-13.js"></script>
+
+
+<script src="js/blocks/block-14.js"></script>
+
 <!-- EP_DB_IMPORT_ANTI_FREEZE_V6: paged-review-no-sticky-loader -->
+
+
+<script src="js/blocks/block-15.js"></script>
 
 <!-- EP_DB_ROLES_PROGRESS_V7: server-admin-only-my-master-progress-reload -->
 
+
+<script src="js/blocks/block-16.js"></script>
+
 <!-- EP_DB_SAVE_FIX_V8: strict-save-visible-firebase-errors-no-empty-reload -->
+
+<script src="js/blocks/block-17.js"></script>
 
 <!-- EP_DB_IMPORT_SERVER_SAVE_FIX_V9: imported-server-db-explicit-firebase-save -->
 
+<script id="EP_DB_AI_PHOTO_PDF_FIX_V10" src="js/blocks/block-18.js"></script>
+
+
+<script id="EP_DB_ADMIN_SETTINGS_AI_STABILITY_V11" src="js/blocks/block-19.js"></script>
+
+
+<script src="js/blocks/block-20.js"></script>
+
 <!-- EP_V12_SWAP_SHIELD_FIX: no-bp-no-bare-concrete-no-stuck-swap -->
+
+
+<script id="EP_V13_SHIELD_DETAIL_NAMES_BULK_DB" src="js/blocks/block-21.js"></script>
+
+
+<script src="js/blocks/block-22.js"></script>
+
+
+<script src="js/blocks/block-23.js"></script>
+
+
+
+<script id="EP_V17_VISIBLE_FORCE_FIX" src="js/blocks/block-24.js"></script>
 <!-- EP_V17_VISIBLE_FORCE_FIX_LOADED -->
+
+
+<script id="EP_V18_BULK_CHECKBOX_SHIELD_STATUS_FIX" src="js/blocks/block-25.js"></script>
 <!-- EP_V18_BULK_CHECKBOX_SHIELD_STATUS_FIX_LOADED -->
+
+
+<script id="EP_V19_SHIELD_MATH_RESTORE" src="js/blocks/block-26.js"></script>
 <!-- EP_V19_SHIELD_MATH_RESTORE_LOADED -->
+
+<script id="EP_V20_SHIELD_LOGIC_REAL_COUNTERS" src="js/blocks/block-27.js"></script>
 <!-- EP_V20_SHIELD_LOGIC_REAL_COUNTERS_LOADED -->
+
+<script id="EP_V21_STABLE_BULK_PANEL_FIX" src="js/blocks/block-28.js"></script>
 <!-- EP_V21_STABLE_BULK_PANEL_FIX_LOADED -->
 
 </body>
