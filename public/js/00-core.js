@@ -1,13 +1,6 @@
-/*
- * Electric PRO Refactor V22 Stable Runtime
- * ВАЖНО: это стабильный исполняемый слой.
- * Код собран из legacy/extracted-js-blocks/block-XX.js
- * строго в старом рабочем порядке.
- * Остальные модули пока являются рабочими зонами для будущего ручного переноса.
- */
-
-window.EP_REFACTOR_RUNTIME_VERSION = 'V22_STABLE_RUNTIME';
-console.log('Electric PRO V22 stable runtime loaded');
+/* Electric PRO V23 stable runtime: original block order */
+window.EP_REFACTOR_RUNTIME_VERSION='V23_BODY_END_RUNTIME';
+console.log('Electric PRO V23 runtime loaded at body end');
 
 
 
