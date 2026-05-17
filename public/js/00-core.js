@@ -88,12 +88,12 @@ const FULL_WORK_INIT=[{"id":"w44","c":"Алмазная резка","g":"Штр�
 // === FIREBASE INIT ===
 try {
     firebase.initializeApp({
-        apiKey: "AIzaSyBr_LVhNKtiNb--Vh5WHhvFuR-r47N3iCw",
-        authDomain: "electric-489f7.firebaseapp.com",
-        projectId: "electric-489f7",
-        storageBucket: "electric-489f7.firebasestorage.app",
-        messagingSenderId: "674960586951",
-        appId: "1:674960586951:web:522b0557e75bb97dea26e2"
+        apiKey: "AIzaSyDf_83fOauQddXE0luOJsU0toK1BaJ7TY8",
+        authDomain: "electric-pro-test.firebaseapp.com",
+        projectId: "electric-pro-test",
+        storageBucket: "electric-pro-test.firebasestorage.app",
+        messagingSenderId: "629482912356",
+        appId: "1:629482912356:web:7f386c27ce618fddc2fd71"
     });
     db = firebase.firestore();
     auth = firebase.auth();
