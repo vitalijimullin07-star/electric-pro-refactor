@@ -1,7 +1,8 @@
-// === CORE HELPERS ===
+/*
+ * Electric PRO Refactor
+ * Module: 00-core.js
+ * Generated from public/js/blocks/block-XX.js
+ * ВНИМАНИЕ: на этом этапе код только разложен по модулям.
+ * Подключение в index.html будем делать отдельным шагом после проверки.
+ */
 
-// === safeGet ===
-function safeGet(key, def) { try { return localStorage.getItem(key) || def; } catch(e) { return def; } }
-
-// === safeSet ===
-function safeSet(key, val) { try { localStorage.setItem(key, val); } catch(e) {} }
