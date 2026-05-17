@@ -1210,3 +1210,344 @@
 })();
 /* V53_DISABLE_BAD_SCHEME_EMBED_END */
 
+
+/* V54_EXACT_INLINE_TREE_SCHEME_START */
+(function(){
+  "use strict";
+
+  const VERSION = "V54_EXACT_INLINE_TREE_SCHEME";
+  const STYLE_ID = "ep-v54-scheme-style";
+  const ROW_ID = "ep-v54-scheme-row";
+  const BTN_ID = "ep-v54-scheme-btn";
+  const BOX_ID = "ep-v54-scheme-box";
+  const FRAME_ID = "ep-v54-scheme-frame";
+
+  function norm(s){
+    return String(s || "").replace(/\s+/g, " ").trim().toLowerCase();
+  }
+
+  function ensureStyle(){
+    if(document.getElementById(STYLE_ID)) return;
+
+    const style = document.createElement("style");
+    style.id = STYLE_ID;
+    style.textContent = `
+      #ep-single-line-launcher,
+      #ep-scheme-inside-shield,
+      #ep-sl-shield-host,
+      #ep-scheme-shield-row-v50,
+      #ep-scheme-shield-row-v51,
+      #ep-tree-scheme-inline-body-v52,
+      #ep-tree-scheme-modal-v51,
+      #ep-single-line-modal {
+        display:none!important;
+      }
+
+      #${ROW_ID}{
+        width:100%;
+        margin:10px 0 14px;
+      }
+
+      #${BTN_ID}{
+        width:100%;
+        border:0;
+        border-radius:18px;
+        padding:14px 16px;
+        background:linear-gradient(135deg,#4f46e5,#2563eb,#0891b2);
+        color:#fff;
+        font-size:16px;
+        font-weight:900;
+        box-shadow:0 10px 25px rgba(37,99,235,.30);
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        gap:8px;
+        cursor:pointer;
+      }
+
+      #${BTN_ID}:active{
+        transform:scale(.985);
+      }
+
+      #${BTN_ID} small{
+        font-size:12px;
+        font-weight:800;
+        opacity:.86;
+      }
+
+      #${BOX_ID}{
+        margin-top:12px;
+        border-radius:18px;
+        overflow:hidden;
+        border:1px solid rgba(17,24,39,.14);
+        box-shadow:0 10px 28px rgba(0,0,0,.12);
+        background:#f0f2f5;
+      }
+
+      #${BOX_ID}[hidden]{
+        display:none!important;
+      }
+
+      #${FRAME_ID}{
+        display:block;
+        width:100%;
+        height:74dvh;
+        min-height:560px;
+        border:0;
+        background:#f0f2f5;
+      }
+
+      @media(max-width:700px){
+        #${FRAME_ID}{
+          height:72dvh;
+          min-height:520px;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function removeOldBad(){
+    document.querySelectorAll(
+      "#ep-single-line-launcher, #ep-scheme-inside-shield, #ep-sl-shield-host, #ep-scheme-shield-row-v50, #ep-scheme-shield-row-v51, #ep-tree-scheme-inline-body-v52, #ep-tree-scheme-modal-v51, #ep-single-line-modal"
+    ).forEach(function(el){ el.remove(); });
+  }
+
+  function isVisible(el){
+    if(!el || !el.getBoundingClientRect) return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 10 && r.height > 10 && r.bottom > 0 && r.top < window.innerHeight;
+  }
+
+  function findManualBuildButton(){
+    const buttons = Array.from(document.querySelectorAll("button"));
+    return buttons.find(function(btn){
+      const t = norm(btn.textContent);
+      return isVisible(btn) && t.includes("ручная сборка");
+    }) || null;
+  }
+
+  function findShieldWhitePanelFromButton(btn){
+    if(!btn) return null;
+
+    let best = null;
+    let el = btn.parentElement;
+
+    while(el && el !== document.body){
+      const t = norm(el.textContent).slice(0,5000);
+      const r = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+
+      if(r && r.width > 280 && r.height > 260){
+        let score = 0;
+
+        if(t.includes("сборка щита")) score += 40;
+        if(t.includes("ручная сборка")) score += 30;
+        if(t.includes("настройки автоматики")) score += 20;
+        if(t.includes("помещения")) score += 10;
+        if(t.includes("кухни")) score += 5;
+        if(t.includes("ванные")) score += 5;
+
+        if(score > 0){
+          best = { el: el, score: score, area: r.width * r.height };
+        }
+      }
+
+      el = el.parentElement;
+    }
+
+    return best ? best.el : btn.parentElement;
+  }
+
+  function ensureRow(){
+    ensureStyle();
+    removeOldBad();
+
+    const manualBtn = findManualBuildButton();
+    if(!manualBtn) return null;
+
+    const panel = findShieldWhitePanelFromButton(manualBtn);
+    if(!panel) return null;
+
+    let row = document.getElementById(ROW_ID);
+
+    if(!row){
+      row = document.createElement("div");
+      row.id = ROW_ID;
+      row.innerHTML = `
+        <button type="button" id="${BTN_ID}">
+          <span>📐 Схема щита</span>
+          <small>дерево</small>
+        </button>
+        <div id="${BOX_ID}" hidden>
+          <iframe id="${FRAME_ID}" title="Схема щита"></iframe>
+        </div>
+      `;
+    }
+
+    if(!panel.contains(row)){
+      const host = manualBtn.closest("div") || manualBtn.parentElement;
+      host.insertAdjacentElement("afterend", row);
+    }
+
+    const btn = document.getElementById(BTN_ID);
+    if(btn && !btn.dataset.bound){
+      btn.dataset.bound = "1";
+      btn.addEventListener("click", toggleScheme);
+    }
+
+    return row;
+  }
+
+  function schemeHtml(){
+    return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<style>
+body{font-family:Arial,sans-serif;background:#f0f2f5;margin:0;display:flex;height:100dvh;overflow:hidden;flex-direction:column}
+.main-layout{display:flex;width:100%;flex:1;flex-direction:column;overflow:hidden}
+.canvas-container{flex:1;background:white;padding:10px;box-shadow:inset 0 0 10px rgba(0,0,0,.05);overflow:auto;position:relative}
+svg{display:block;background:#fff;margin:0 auto}
+.control-panel{width:100%;background:#fff;border-top:1px solid #ddd;display:flex;flex-direction:column;padding:12px 15px;box-sizing:border-box;overflow-y:auto;z-index:10;box-shadow:0 -4px 15px rgba(0,0,0,.08);max-height:48dvh;border-top-left-radius:12px;border-top-right-radius:12px}
+.panel-header{display:flex;justify-content:space-between;align-items:center}
+.panel-header h2{font-size:16px;margin:0;color:#333}
+.close-btn{background:none;border:none;font-size:26px;color:#999;cursor:pointer;padding:0 5px;line-height:1;margin-top:-4px;display:none}
+.editor-form{display:none;flex-direction:column;gap:8px;margin-top:10px}
+.actions-form{margin-top:12px;display:none;flex-direction:column;gap:8px}
+.form-group{display:flex;flex-direction:column;gap:2px}
+.form-row{display:flex;align-items:center;gap:8px;margin-top:2px}
+label{font-size:12px;color:#666;font-weight:bold}
+input[type=text],select{padding:8px;border:1px solid #ccc;border-radius:6px;font-size:13px;width:100%;box-sizing:border-box}
+input[type=checkbox]{width:16px;height:16px;cursor:pointer;margin:0}
+button{padding:10px;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-weight:bold}
+button.primary{background:#007bff;color:white}
+button.add-btn{background:#28a745;color:white;flex:1}
+button.delete{background:#dc3545;color:white}
+.no-selection{color:#888;font-style:italic;text-align:center;margin:10px 0;font-size:13px}
+.device-id{font-size:14px;font-weight:bold;text-anchor:start;fill:#111;pointer-events:none}
+.device-label{font-size:12px;text-anchor:start;fill:#444;pointer-events:none}
+.device-rating{font-size:13px;text-anchor:start;fill:#0056b3;font-weight:bold;pointer-events:none}
+.device-group{cursor:pointer;outline:none}
+.symbol-draw{stroke:black;stroke-width:2;fill:none}
+.device-group.selected .symbol-draw{stroke:#007bff;stroke-width:3;filter:drop-shadow(0 0 5px rgba(0,123,255,.4))}
+.device-group.selected .hitbox{fill:rgba(0,123,255,.05);stroke:#007bff;stroke-dasharray:4}
+.text-backdrop{fill:white;pointer-events:none}
+@media(min-width:992px){.main-layout{flex-direction:row}.control-panel{width:320px;border-top:none;border-left:1px solid #ddd;box-shadow:none;max-height:none;border-radius:0}}
+</style>
+</head>
+<body>
+<div class="main-layout">
+<div class="canvas-container">
+<svg id="diagram" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<symbol id="sym-mcb" viewBox="0 0 40 100"><line x1="20" y1="0" x2="20" y2="30" class="symbol-draw"/><line x1="20" y1="30" x2="10" y2="50" class="symbol-draw"/><circle cx="20" cy="55" r="2" fill="black"/><line x1="20" y1="55" x2="20" y2="100" class="symbol-draw"/><rect x="15" y="65" width="10" height="15" class="symbol-draw" stroke-width="1.5"/><line x1="15" y1="65" x2="25" y2="80" class="symbol-draw" stroke-width="1.5"/></symbol>
+<symbol id="sym-rcd" viewBox="0 0 40 100"><line x1="20" y1="0" x2="20" y2="30" class="symbol-draw"/><line x1="20" y1="30" x2="10" y2="50" class="symbol-draw"/><circle cx="20" cy="55" r="2" fill="black"/><line x1="20" y1="55" x2="20" y2="100" class="symbol-draw"/><ellipse cx="20" cy="75" rx="10" ry="15" class="symbol-draw" stroke-width="1.5"/></symbol>
+<symbol id="sym-rcbo" viewBox="0 0 40 100"><line x1="20" y1="0" x2="20" y2="30" class="symbol-draw"/><line x1="20" y1="30" x2="10" y2="50" class="symbol-draw"/><circle cx="20" cy="55" r="2" fill="black"/><line x1="20" y1="55" x2="20" y2="100" class="symbol-draw"/><rect x="15" y="62" width="10" height="10" class="symbol-draw" stroke-width="1.5"/><line x1="15" y1="62" x2="25" y2="72" class="symbol-draw" stroke-width="1.5"/><ellipse cx="20" cy="85" rx="8" ry="12" class="symbol-draw" stroke-width="1.5"/></symbol>
+<symbol id="sym-switch" viewBox="0 0 40 100"><line x1="20" y1="0" x2="20" y2="30" class="symbol-draw"/><line x1="20" y1="30" x2="10" y2="50" class="symbol-draw"/><circle cx="20" cy="55" r="2" fill="black"/><line x1="20" y1="55" x2="20" y2="100" class="symbol-draw"/><line x1="3" y1="50" x2="17" y2="50" class="symbol-draw"/></symbol>
+<symbol id="sym-relay" viewBox="0 0 40 100"><line x1="20" y1="0" x2="20" y2="25" class="symbol-draw"/><rect x="5" y="25" width="30" height="50" class="symbol-draw" stroke-width="1.5"/><text x="20" y="55" font-size="14" text-anchor="middle" font-weight="bold" pointer-events="none">U</text><line x1="20" y1="75" x2="20" y2="100" class="symbol-draw"/></symbol>
+<symbol id="sym-meter" viewBox="0 0 40 100"><line x1="20" y1="0" x2="20" y2="20" class="symbol-draw"/><rect x="5" y="20" width="30" height="60" class="symbol-draw" stroke-width="1.5"/><text x="20" y="55" font-size="10" text-anchor="middle" font-weight="bold" pointer-events="none">kWh</text><line x1="20" y1="80" x2="20" y2="100" class="symbol-draw"/></symbol>
+<symbol id="sym-spd" viewBox="0 0 40 100"><line x1="20" y1="0" x2="20" y2="30" class="symbol-draw"/><rect x="10" y="30" width="20" height="40" class="symbol-draw" stroke-width="1.5"/><line x1="10" y1="70" x2="30" y2="30" class="symbol-draw"/><line x1="20" y1="70" x2="20" y2="100" class="symbol-draw"/></symbol>
+<symbol id="sym-contactor" viewBox="0 0 40 100"><line x1="20" y1="0" x2="20" y2="30" class="symbol-draw"/><line x1="20" y1="30" x2="10" y2="50" class="symbol-draw"/><circle cx="20" cy="55" r="2" fill="black"/><line x1="20" y1="55" x2="20" y2="100" class="symbol-draw"/><rect x="15" y="70" width="10" height="15" class="symbol-draw" stroke-width="1.5"/><line x1="15" y1="70" x2="25" y2="85" class="symbol-draw"/></symbol>
+</defs>
+<g id="scheme-root"></g>
+</svg>
+</div>
+<aside class="control-panel">
+<div class="panel-header"><h2>Редактор</h2><button id="btn-close-panel" class="close-btn">&times;</button></div>
+<div id="no-selection-msg" class="no-selection">Кликните на аппарат для настройки</div>
+<form id="editor-form" class="editor-form">
+<div class="form-group"><label>Тип аппарата:</label><select id="edit-type"><option value="switch">Рубильник</option><option value="mcb">Автомат</option><option value="rcd">УЗО</option><option value="rcbo">Дифавтомат</option><option value="relay">Реле напряжения</option><option value="meter">Счётчик</option><option value="spd">УЗИП</option><option value="contactor">Контактор</option></select></div>
+<div style="display:flex;gap:8px"><div class="form-group" style="flex:1"><label>ID:</label><input type="text" id="edit-id"></div><div class="form-group" style="flex:2"><label>Номинал:</label><input type="text" id="edit-rating"></div></div>
+<div class="form-group"><label>Название группы:</label><input type="text" id="edit-label"></div>
+<div class="form-row"><input type="checkbox" id="edit-cross"><label for="edit-cross" style="cursor:pointer;color:#333">Кросс-модуль под аппаратом</label></div>
+<button type="submit" class="primary">Сохранить изменения</button>
+</form>
+<div id="actions-form" class="actions-form">
+<div style="border-top:1px solid #eee;padding-top:10px"><label style="margin-bottom:6px;display:block">Добавить вниз:</label><div style="display:flex;gap:8px"><select id="add-new-type" style="flex:1.2"><option value="mcb">Автомат</option><option value="rcd">УЗО</option><option value="rcbo">Дифавтомат</option><option value="switch">Рубильник</option><option value="relay">Реле</option><option value="meter">Счётчик</option><option value="spd">УЗИП</option><option value="contactor">Контактор</option></select><button id="btn-add" class="add-btn">+ Добавить</button></div></div>
+<button id="btn-delete" class="delete">Удалить весь узел</button>
+</div>
+</aside>
+</div>
+<script>
+const defaults={mcb:{label:'Новая линия',rating:'16A',prefix:'QF'},rcd:{label:'Групповое УЗО',rating:'40A/30mA',prefix:'QD'},rcbo:{label:'Дифавтомат',rating:'16A/30mA',prefix:'QFD'},switch:{label:'Рубильник',rating:'40A',prefix:'QS'},relay:{label:'Реле напр.',rating:'63A',prefix:'KV'},meter:{label:'Счётчик',rating:'60A',prefix:'PI'},spd:{label:'УЗИП',rating:'T2',prefix:'FV'},contactor:{label:'Контактор',rating:'25A',prefix:'KM'}};
+let schemeTree={id:'QS1',type:'switch',label:'Вводной рубильник',rating:'63A',isCrossModule:false,children:[{id:'KV1',type:'relay',label:'Реле напр.',rating:'63A',isCrossModule:true,children:[{id:'QD1',type:'rcd',label:'УЗО С/У',rating:'40A/30mA',children:[{id:'QF1',type:'mcb',label:'Бойлер',rating:'16A'}]},{id:'QFD1',type:'rcbo',label:'Стиральная маш.',rating:'16A/30mA',children:[]}]}]};
+try{const saved=localStorage.getItem('ep-tree-scheme-v54');if(saved)schemeTree=JSON.parse(saved)}catch(e){}
+const SPACING_X=140,SPACING_Y=220,START_Y=100,TEXT_OFFSET_X=30,svgNS='http://www.w3.org/2000/svg';
+const svg=document.getElementById('diagram'),schemeRoot=document.getElementById('scheme-root');
+let leafCount=0,selectedNodeId=null,maxDrawY=0;
+function save(){try{localStorage.setItem('ep-tree-scheme-v54',JSON.stringify(schemeTree))}catch(e){}}
+function drawLine(x1,y1,x2,y2,color='black',width=2,dash=''){const line=document.createElementNS(svgNS,'line');line.setAttribute('x1',x1);line.setAttribute('y1',y1);line.setAttribute('x2',x2);line.setAttribute('y2',y2);line.setAttribute('stroke',color);line.setAttribute('stroke-width',width);if(dash)line.setAttribute('stroke-dasharray',dash);schemeRoot.appendChild(line)}
+function drawTerminalCircle(x,y){const c=document.createElementNS(svgNS,'circle');c.setAttribute('cx',x);c.setAttribute('cy',y);c.setAttribute('r','3.5');c.setAttribute('fill','black');schemeRoot.appendChild(c)}
+function drawDevice(node){const group=document.createElementNS(svgNS,'g');group.setAttribute('transform','translate('+node.x+', '+node.y+')');group.setAttribute('class','device-group');group.setAttribute('data-id',node.id);const hit=document.createElementNS(svgNS,'rect');hit.setAttribute('x',-30);hit.setAttribute('y',-20);hit.setAttribute('width',180);hit.setAttribute('height',160);hit.setAttribute('fill','transparent');hit.setAttribute('class','hitbox');group.appendChild(hit);const use=document.createElementNS(svgNS,'use');use.setAttribute('href','#sym-'+node.type);use.setAttribute('x',-20);use.setAttribute('y',0);use.setAttribute('width',40);use.setAttribute('height',100);group.appendChild(use);const idt=document.createElementNS(svgNS,'text');idt.setAttribute('x',TEXT_OFFSET_X);idt.setAttribute('y',20);idt.setAttribute('class','device-id');idt.textContent=node.id;group.appendChild(idt);const has=node.children&&node.children.length>0;if(has||node.isCrossModule){const lab=document.createElementNS(svgNS,'text');lab.setAttribute('x',TEXT_OFFSET_X);lab.setAttribute('y',45);lab.setAttribute('class','device-label');lab.textContent=node.label;group.appendChild(lab);const rat=document.createElementNS(svgNS,'text');rat.setAttribute('x',TEXT_OFFSET_X);rat.setAttribute('y',65);rat.setAttribute('class','device-rating');rat.textContent=node.rating;group.appendChild(rat)}else{const lg=document.createElementNS(svgNS,'g');lg.setAttribute('transform','translate(0,115)');const bg=document.createElementNS(svgNS,'rect');bg.setAttribute('x',TEXT_OFFSET_X-5);bg.setAttribute('y',-10);bg.setAttribute('width',150);bg.setAttribute('height',35);bg.setAttribute('class','text-backdrop');lg.appendChild(bg);const lab=document.createElementNS(svgNS,'text');lab.setAttribute('x',TEXT_OFFSET_X);lab.setAttribute('y',5);lab.setAttribute('class','device-label');lab.textContent=node.label;lg.appendChild(lab);const rat=document.createElementNS(svgNS,'text');rat.setAttribute('x',TEXT_OFFSET_X);rat.setAttribute('y',23);rat.setAttribute('class','device-rating');rat.textContent=node.rating;lg.appendChild(rat);group.appendChild(lg)}schemeRoot.appendChild(group)}
+function calculatePositions(node,depth=0){node.y=START_Y+depth*SPACING_Y;if(node.y>maxDrawY)maxDrawY=node.y;if(!node.children||node.children.length===0){node.x=leafCount*SPACING_X;leafCount++}else{node.children.forEach(c=>calculatePositions(c,depth+1));node.x=(node.children[0].x+node.children[node.children.length-1].x)/2}}
+function shiftTree(node,offsetX){node.x+=offsetX;if(node.children)node.children.forEach(c=>shiftTree(c,offsetX))}
+function drawTree(node){drawDevice(node);if(node.id===schemeTree.id){const total=Math.max(1,leafCount-1)*SPACING_X;drawLine(node.x-50,30,node.x+total+50,30,'#28a745',3,'6 4');drawLine(node.x,30,node.x,node.y,'#28a745',2);drawLine(node.x-50,50,node.x+total+50,50,'#007bff',3);drawLine(node.x-10,50,node.x-10,node.y,'#007bff',2)}if(node.children&&node.children.length>0){let busbarY=node.y+115,lineStartY=node.y+100;if(node.isCrossModule){const cx=node.x-20,cy=node.y+110;const rect=document.createElementNS(svgNS,'rect');rect.setAttribute('x',cx);rect.setAttribute('y',cy);rect.setAttribute('width',40);rect.setAttribute('height',45);rect.setAttribute('fill','#f8f9fa');rect.setAttribute('stroke','#adb5bd');rect.setAttribute('rx',4);schemeRoot.appendChild(rect);drawLine(cx+8,cy+8,cx+8,cy+37,'#dc3545',2);drawLine(cx+16,cy+8,cx+16,cy+37,'#dc3545',2);drawLine(cx+24,cy+8,cx+24,cy+37,'#dc3545',2);drawLine(cx+32,cy+8,cx+32,cy+37,'#007bff',2);busbarY=cy+65;lineStartY=cy+45;drawLine(node.x,node.y+100,node.x,cy)}drawLine(node.x,lineStartY,node.x,busbarY);if(node.children.length>1)drawLine(node.children[0].x,busbarY,node.children[node.children.length-1].x,busbarY,'black',3);node.children.forEach(c=>{drawLine(c.x,busbarY,c.x,c.y);drawTree(c)})}else{const tailY=node.y+140;drawLine(node.x,node.y+100,node.x,tailY);drawTerminalCircle(node.x,tailY)}}
+function render(){schemeRoot.innerHTML='';leafCount=0;maxDrawY=0;calculatePositions(schemeTree);shiftTree(schemeTree,120);svg.setAttribute('width',Math.max(500,(leafCount*SPACING_X)+160));svg.setAttribute('height',maxDrawY+300);drawTree(schemeTree);reapplySelection()}
+const msg=document.getElementById('no-selection-msg'),editorForm=document.getElementById('editor-form'),actionsForm=document.getElementById('actions-form'),btnClosePanel=document.getElementById('btn-close-panel'),editType=document.getElementById('edit-type'),editId=document.getElementById('edit-id'),editLabel=document.getElementById('edit-label'),editRating=document.getElementById('edit-rating'),editCross=document.getElementById('edit-cross'),addNewType=document.getElementById('add-new-type'),btnAdd=document.getElementById('btn-add');
+function findNodeById(root,id){if(root.id===id)return root;if(root.children){for(let child of root.children){let found=findNodeById(child,id);if(found)return found}}return null}
+svg.addEventListener('click',e=>{let group=e.target;while(group&&group!==svg){if(group.classList&&group.classList.contains('device-group'))break;group=group.parentNode}if(group&&group!==svg)selectNode(group.getAttribute('data-id'));else selectNode(null)});
+btnClosePanel.addEventListener('click',()=>selectNode(null));
+function selectNode(id){selectedNodeId=id;document.querySelectorAll('.device-group.selected').forEach(el=>el.classList.remove('selected'));if(id){const group=document.querySelector('.device-group[data-id="'+id+'"]');if(group)group.classList.add('selected');const node=findNodeById(schemeTree,id);if(node){editType.value=node.type;editId.value=node.id;editLabel.value=node.label;editRating.value=node.rating;editCross.checked=!!node.isCrossModule;actionsForm.style.display='flex';msg.style.display='none';editorForm.style.display='flex';btnClosePanel.style.display='block'}}else{msg.style.display='block';editorForm.style.display='none';actionsForm.style.display='none';btnClosePanel.style.display='none'}}
+function reapplySelection(){if(selectedNodeId){const group=document.querySelector('.device-group[data-id="'+selectedNodeId+'"]');if(group)group.classList.add('selected')}}
+editorForm.addEventListener('submit',e=>{e.preventDefault();if(selectedNodeId){const node=findNodeById(schemeTree,selectedNodeId);if(node){node.type=editType.value;node.id=editId.value;node.label=editLabel.value;node.rating=editRating.value;node.isCrossModule=editCross.checked;selectedNodeId=node.id;save();render()}}});
+function getNextNodeId(type){let prefix=defaults[type].prefix||'QF',count=0;function countNodes(n){if(String(n.id||'').startsWith(prefix))count++;if(n.children)n.children.forEach(countNodes)}countNodes(schemeTree);return prefix+(count+1)}
+btnAdd.addEventListener('click',e=>{e.preventDefault();if(selectedNodeId){const parent=findNodeById(schemeTree,selectedNodeId);if(parent){if(!parent.children)parent.children=[];const type=addNewType.value,def=defaults[type];const id=getNextNodeId(type);parent.children.push({id,type,label:def.label,rating:def.rating,isCrossModule:false,children:[]});save();render();selectNode(id)}}});
+document.getElementById('btn-delete').addEventListener('click',e=>{e.preventDefault();if(selectedNodeId&&selectedNodeId!==schemeTree.id){if(!confirm('Точно удалить аппарат и все его отходящие линии?'))return;removeNode(schemeTree,selectedNodeId);selectedNodeId=null;save();render();selectNode(null)}});
+function removeNode(parent,id){if(parent.children){for(let i=0;i<parent.children.length;i++){if(parent.children[i].id===id){parent.children.splice(i,1);return true}if(removeNode(parent.children[i],id))return true}}return false}
+render();
+</script>
+</body>
+</html>`;
+  }
+
+  function toggleScheme(){
+    const row = ensureRow();
+    if(!row) return;
+
+    const box = document.getElementById(BOX_ID);
+    const frame = document.getElementById(FRAME_ID);
+
+    if(!box || !frame) return;
+
+    const willOpen = box.hidden;
+
+    if(willOpen && !frame.dataset.loaded){
+      frame.srcdoc = schemeHtml();
+      frame.dataset.loaded = "1";
+    }
+
+    box.hidden = !willOpen;
+
+    if(willOpen){
+      box.scrollIntoView({behavior:"smooth", block:"start"});
+    }
+  }
+
+  function boot(){
+    ensureStyle();
+    ensureRow();
+
+    const observer = new MutationObserver(function(){
+      ensureRow();
+      removeOldBad();
+    });
+
+    observer.observe(document.body,{
+      childList:true,
+      subtree:true,
+      attributes:true,
+      attributeFilter:["class","style"]
+    });
+
+    console.log("06-single-line-scheme.js", VERSION, "loaded");
+  }
+
+  if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
+})();
+/* V54_EXACT_INLINE_TREE_SCHEME_END */
+
