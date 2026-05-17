@@ -1170,36 +1170,223 @@
 })();
 
 
-/* V53_DISABLE_BAD_SCHEME_EMBED_START */
+/* V52_INLINE_SCHEME_IN_SHIELD_PANEL_START */
 (function(){
   "use strict";
 
-  const STYLE_ID = "ep-disable-bad-scheme-embed-v53";
+  const VERSION = "V52_INLINE_SCHEME_IN_SHIELD_PANEL";
+  const STYLE_ID = "ep-tree-scheme-inline-v52-style";
+  const BUTTON_ID = "ep-scheme-shield-btn-v51";
+  const BUTTON_ROW_ID = "ep-scheme-shield-row-v51";
+  const INLINE_BODY_ID = "ep-tree-scheme-inline-body-v52";
+  const MODAL_ID = "ep-tree-scheme-modal-v51";
 
-  function boot(){
+  function ensureStyle(){
     if(document.getElementById(STYLE_ID)) return;
 
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-      #ep-single-line-launcher,
-      #ep-scheme-inside-shield,
-      #ep-sl-shield-host,
-      #ep-scheme-shield-row-v50,
-      #ep-scheme-shield-row-v51,
-      #ep-tree-scheme-inline-body-v52,
-      #ep-tree-scheme-modal-v51,
-      #ep-single-line-modal {
+      #${INLINE_BODY_ID}{
+        width:100%;
+        margin-top:12px;
+        border-radius:18px;
+        overflow:hidden;
+      }
+
+      #${INLINE_BODY_ID}[hidden]{
         display:none!important;
       }
+
+      #${INLINE_BODY_ID} #${MODAL_ID}{
+        position:relative!important;
+        inset:auto!important;
+        z-index:auto!important;
+        width:100%!important;
+        height:76dvh!important;
+        min-height:520px!important;
+        max-height:none!important;
+        display:flex!important;
+        border-radius:18px!important;
+        overflow:hidden!important;
+        border:1px solid rgba(17,24,39,.14)!important;
+        box-shadow:0 10px 30px rgba(0,0,0,.14)!important;
+        background:#f0f2f5!important;
+      }
+
+      #${INLINE_BODY_ID} #${MODAL_ID} .ep-tree-topbar{
+        min-height:48px!important;
+        height:48px!important;
+        padding:7px 10px!important;
+      }
+
+      #${INLINE_BODY_ID} #${MODAL_ID} .ep-tree-title{
+        font-size:14px!important;
+      }
+
+      #${INLINE_BODY_ID} #${MODAL_ID} .ep-tree-title small{
+        display:none!important;
+      }
+
+      #${INLINE_BODY_ID} #${MODAL_ID} .ep-tree-main-layout{
+        min-height:0!important;
+      }
+
+      #${INLINE_BODY_ID} #${MODAL_ID} .ep-tree-canvas-container{
+        min-height:0!important;
+      }
+
+      #${INLINE_BODY_ID} #${MODAL_ID} .ep-tree-control-panel{
+        max-height:42dvh!important;
+      }
+
+      @media (max-width:700px){
+        #${INLINE_BODY_ID} #${MODAL_ID}{
+          height:72dvh!important;
+          min-height:500px!important;
+        }
+      }
     `;
+
     document.head.appendChild(style);
+  }
 
-    document.querySelectorAll(
-      "#ep-single-line-launcher, #ep-scheme-inside-shield, #ep-sl-shield-host, #ep-scheme-shield-row-v50, #ep-scheme-shield-row-v51, #ep-tree-scheme-inline-body-v52, #ep-tree-scheme-modal-v51, #ep-single-line-modal"
-    ).forEach(el => el.remove());
+  function findButtonRow(){
+    const row = document.getElementById(BUTTON_ROW_ID);
+    if(row) return row;
 
-    console.log("V53: bad scheme embed disabled");
+    const btn = document.getElementById(BUTTON_ID);
+    if(btn) return btn.parentElement;
+
+    return null;
+  }
+
+  function ensureInlineBody(){
+    ensureStyle();
+
+    const row = findButtonRow();
+    if(!row) return null;
+
+    let body = document.getElementById(INLINE_BODY_ID);
+
+    if(!body){
+      body = document.createElement("div");
+      body.id = INLINE_BODY_ID;
+      body.hidden = true;
+    }
+
+    if(row.nextElementSibling !== body){
+      row.insertAdjacentElement("afterend", body);
+    }
+
+    return body;
+  }
+
+  function moveModalIntoPanel(){
+    const body = ensureInlineBody();
+    const modal = document.getElementById(MODAL_ID);
+
+    if(!body || !modal) return false;
+
+    body.hidden = false;
+
+    if(!body.contains(modal)){
+      body.innerHTML = "";
+      body.appendChild(modal);
+    }
+
+    modal.style.display = "flex";
+    modal.classList.add("ep-tree-inline-v52");
+
+    body.scrollIntoView({
+      behavior:"smooth",
+      block:"start"
+    });
+
+    return true;
+  }
+
+  function openInlineScheme(e){
+    if(e){
+      e.preventDefault();
+      e.stopPropagation();
+      if(e.stopImmediatePropagation) e.stopImmediatePropagation();
+    }
+
+    const api = window.EP_SINGLE_LINE_SCHEME;
+
+    if(!api || typeof api.__v52OriginalOpen !== "function"){
+      alert("Модуль схемы ещё не готов");
+      return;
+    }
+
+    ensureInlineBody();
+
+    api.__v52OriginalOpen();
+
+    setTimeout(moveModalIntoPanel, 0);
+    setTimeout(moveModalIntoPanel, 80);
+    setTimeout(moveModalIntoPanel, 250);
+  }
+
+  function patchApi(){
+    const api = window.EP_SINGLE_LINE_SCHEME;
+    if(!api || api.__v52Patched) return;
+
+    api.__v52OriginalOpen = api.open;
+
+    api.open = function(){
+      openInlineScheme();
+    };
+
+    api.__v52Patched = true;
+    api.version = VERSION;
+
+    window.openSingleLineScheme = api.open;
+  }
+
+  function patchCloseButton(){
+    const modal = document.getElementById(MODAL_ID);
+    const body = document.getElementById(INLINE_BODY_ID);
+
+    if(!modal || !body) return;
+
+    const closeBtn = modal.querySelector('[data-action="close"]');
+    if(closeBtn && !closeBtn.dataset.v52Bound){
+      closeBtn.dataset.v52Bound = "1";
+      closeBtn.addEventListener("click", function(){
+        body.hidden = true;
+      }, true);
+    }
+  }
+
+  function boot(){
+    ensureStyle();
+    patchApi();
+    ensureInlineBody();
+    patchCloseButton();
+
+    document.addEventListener("click", function(e){
+      const btn = e.target && e.target.closest ? e.target.closest("#" + BUTTON_ID) : null;
+      if(btn){
+        openInlineScheme(e);
+      }
+    }, true);
+
+    const observer = new MutationObserver(function(){
+      patchApi();
+      ensureInlineBody();
+      patchCloseButton();
+    });
+
+    observer.observe(document.body,{
+      childList:true,
+      subtree:true,
+      attributes:true,
+      attributeFilter:["class","style"]
+    });
+
+    console.log("06-single-line-scheme.js", VERSION, "loaded");
   }
 
   if(document.readyState === "loading"){
@@ -1208,5 +1395,5 @@
     boot();
   }
 })();
-/* V53_DISABLE_BAD_SCHEME_EMBED_END */
+/* V52_INLINE_SCHEME_IN_SHIELD_PANEL_END */
 
