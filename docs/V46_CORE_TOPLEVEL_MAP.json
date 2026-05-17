@@ -1,0 +1,37 @@
+{
+  "file": "public/js/00-core.js",
+  "lines": 8924,
+  "bytes": 679035,
+  "top_level_functions": [
+    {
+      "name": "epNormText",
+      "line": 292,
+      "start": 30122,
+      "end": 30251,
+      "size": 129,
+      "module": "unknown",
+      "score": 0
+    },
+    {
+      "name": "swapLabel",
+      "line": 3444,
+      "start": 210870,
+      "end": 211029,
+      "size": 159,
+      "module": "unknown",
+      "score": 0
+    },
+    {
+      "name": "makeLocalCopy",
+      "line": 4157,
+      "start": 244510,
+      "end": 244857,
+      "size": 347,
+      "module": "unknown",
+      "score": 0
+    }
+  ],
+  "counts": {
+    "unknown": 3
+  }
+}
