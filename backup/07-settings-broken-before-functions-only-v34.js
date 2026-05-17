@@ -1,21 +1,21 @@
 /*
  * Electric PRO Refactor
  * Module: 07-settings.js
- * V34 FUNCTIONS ONLY: настройки / профиль мастера / контакты.
+ * V34 FIXED ASYNC: настройки / профиль мастера / контакты / визуальные параметры.
  *
  * Важно:
- * - переносим только полноценные function / async function;
- * - window.* куски не переносим, чтобы не вытащить середину try/catch;
+ * - async function сохраняется правильно;
+ * - пока это безопасный перенос/дублирование;
  * - 00-core.js временно остаётся стабильным runtime;
  * - окончательная чистка будет позже.
  */
 
-console.log("07-settings.js V34 FUNCTIONS ONLY loaded");
+console.log("07-settings.js V34 FIXED ASYNC loaded");
 
 
 
 /* =========================================================
- * SETTINGS FUNCTION: handleGoogleAuth
+ * SETTINGS BLOCK: handleGoogleAuth
  * ========================================================= */
 async function handleGoogleAuth() {
     if(!auth) return alert("Ошибка: Firebase не загружен. Проверьте интернет-соединение.");
@@ -33,7 +33,7 @@ async function handleGoogleAuth() {
 
 
 /* =========================================================
- * SETTINGS FUNCTION: checkLocalPinUser
+ * SETTINGS BLOCK: checkLocalPinUser
  * ========================================================= */
 function checkLocalPinUser() {
     let pinUser = safeGet('authUser_v31_pin', null);
@@ -45,7 +45,7 @@ function checkLocalPinUser() {
 
 
 /* =========================================================
- * SETTINGS FUNCTION: loginWithPin
+ * SETTINGS BLOCK: loginWithPin
  * ========================================================= */
 async function loginWithPin() {
     let phone = document.getElementById('auth-phone').value.trim();
@@ -78,7 +78,7 @@ async function loginWithPin() {
 
 
 /* =========================================================
- * SETTINGS FUNCTION: confirmLogout
+ * SETTINGS BLOCK: confirmLogout
  * ========================================================= */
 function confirmLogout() { 
     if(auth) auth.signOut(); 
@@ -89,7 +89,7 @@ function confirmLogout() {
 
 
 /* =========================================================
- * SETTINGS FUNCTION: finishLoginSetup
+ * SETTINGS BLOCK: finishLoginSetup
  * ========================================================= */
 async function finishLoginSetup() {
     document.getElementById('authModal').style.display = 'none';
@@ -139,30 +139,20 @@ async function finishLoginSetup() {
 
 
 /* =========================================================
- * SETTINGS FUNCTION: changeTheme
+ * SETTINGS BLOCK: changeTheme
  * ========================================================= */
 function changeTheme(theme) { document.documentElement.setAttribute('data-theme', theme); safeSet('theme_v31', theme); }
 
 
 /* =========================================================
- * SETTINGS FUNCTION: updateMasterBadge
+ * SETTINGS BLOCK: updateMasterBadge
  * ========================================================= */
 function updateMasterBadge() { document.getElementById('master-badge').innerHTML = `${appUser?.name || "Мастер"}<br>Объект: ${cust.name || 'Не выбран'}`; }
 
 
 
 /* =========================================================
- * SETTINGS FUNCTION: saveApiKey
- * ========================================================= */
-async function saveApiKey(val) { 
-    GEMINI_API_KEY = val.trim(); safeSet('gemini_key_v31', GEMINI_API_KEY);
-    if(db && appUser && appUser.uid) { try { await db.collection('users').doc(appUser.uid).update({geminiKey: GEMINI_API_KEY}); }catch(e){} }
-    showToast("🔑 Ключ сохранен!"); 
-}
-
-
-/* =========================================================
- * SETTINGS FUNCTION: saveQRs
+ * SETTINGS BLOCK: saveQRs
  * ========================================================= */
 function saveQRs() { 
     safeSet('qr_tg_v31', document.getElementById('qr-tg').value); 
@@ -175,7 +165,7 @@ function saveQRs() {
 
 
 /* =========================================================
- * SETTINGS FUNCTION: addExtraToShieldConfig
+ * SETTINGS BLOCK: addExtraToShieldConfig
  * ========================================================= */
 function addExtraToShieldConfig() {
     let sel = document.getElementById('cfg-extra-db');
@@ -191,7 +181,7 @@ function addExtraToShieldConfig() {
 
 
 /* =========================================================
- * SETTINGS FUNCTION: loadCustHistoryOptions
+ * SETTINGS BLOCK: loadCustHistoryOptions
  * ========================================================= */
 function loadCustHistoryOptions() {
     let sel = document.getElementById('c-history-select'); 
@@ -205,14 +195,14 @@ function loadCustHistoryOptions() {
 
 
 /* =========================================================
- * SETTINGS FUNCTION: approveUser
+ * SETTINGS BLOCK: approveUser
  * ========================================================= */
 async function approveUser(uid) { try { await db.collection('users').doc(uid).update({ isApproved: true }); showToast("Одобрено!"); } catch(e){} }
 
 
 
 /* =========================================================
- * SETTINGS FUNCTION: loadMasterDrafts
+ * SETTINGS BLOCK: loadMasterDrafts
  * ========================================================= */
 async function loadMasterDrafts() {
     if(!db || appUser.role !== 'admin') return;
@@ -236,7 +226,7 @@ async function loadMasterDrafts() {
 
 
 /* =========================================================
- * SETTINGS FUNCTION: openAdminDraftView
+ * SETTINGS BLOCK: openAdminDraftView
  * ========================================================= */
 function openAdminDraftView(uid) {
     let draft = adminDraftsCache.find(d => d.uid === uid);
@@ -255,7 +245,7 @@ function openAdminDraftView(uid) {
 
 
 /* =========================================================
- * SETTINGS FUNCTION: renderAdminUsers
+ * SETTINGS BLOCK: renderAdminUsers
  * ========================================================= */
 async function renderAdminUsers() {
     if(appUser.role !== 'admin') return;
@@ -274,7 +264,7 @@ async function renderAdminUsers() {
 
 
 /* =========================================================
- * SETTINGS FUNCTION: adminAddUser
+ * SETTINGS BLOCK: adminAddUser
  * ========================================================= */
 async function adminAddUser() {
     let p = document.getElementById('add-user-phone').value.trim();
@@ -290,7 +280,7 @@ async function adminAddUser() {
 
 
 /* =========================================================
- * SETTINGS FUNCTION: deleteUser
+ * SETTINGS BLOCK: deleteUser
  * ========================================================= */
 async function deleteUser(uid) {
     let conf = await window.customConfirm("Удаление", "Удалить мастера из базы?");
@@ -301,7 +291,7 @@ async function deleteUser(uid) {
 
 
 /* =========================================================
- * SETTINGS FUNCTION: epPatchSettingsUI
+ * SETTINGS BLOCK: epPatchSettingsUI
  * ========================================================= */
 function epPatchSettingsUI() {
         if (document.getElementById('ep-ai-admin-box')) return;
@@ -349,7 +339,7 @@ function epPatchSettingsUI() {
     
 
 /* =========================================================
- * SETTINGS FUNCTION: epLoadAiConfigFromServer
+ * SETTINGS BLOCK: epLoadAiConfigFromServer
  * ========================================================= */
 async function epLoadAiConfigFromServer() {
         try {
@@ -420,7 +410,7 @@ async function epLoadAiConfigFromServer() {
     
 
 /* =========================================================
- * SETTINGS FUNCTION: epSaveUserDb
+ * SETTINGS BLOCK: epSaveUserDb
  * ========================================================= */
 async function epSaveUserDb() {
         try {
@@ -443,7 +433,7 @@ async function epSaveUserDb() {
     
 
 /* =========================================================
- * SETTINGS FUNCTION: epLoadUserDbAfterLogin
+ * SETTINGS BLOCK: epLoadUserDbAfterLogin
  * ========================================================= */
 async function epLoadUserDbAfterLogin() {
         try {
@@ -477,7 +467,7 @@ async function epLoadUserDbAfterLogin() {
     
 
 /* =========================================================
- * SETTINGS FUNCTION: epInsertAdminProposalBox
+ * SETTINGS BLOCK: epInsertAdminProposalBox
  * ========================================================= */
 function epInsertAdminProposalBox() {
         if (document.getElementById('admin-db-proposals')) return;
@@ -494,7 +484,7 @@ function epInsertAdminProposalBox() {
     
 
 /* =========================================================
- * SETTINGS FUNCTION: epMoveShieldSettingsIntoDetails
+ * SETTINGS BLOCK: epMoveShieldSettingsIntoDetails
  * ========================================================= */
 function epMoveShieldSettingsIntoDetails(){
     var modal = qs('configModal');
@@ -534,31 +524,31 @@ function epMoveShieldSettingsIntoDetails(){
   
 
 /* =========================================================
- * SETTINGS FUNCTION: isAdmin
+ * SETTINGS BLOCK: isAdmin
  * ========================================================= */
 function isAdmin(){ try{ return appUser && appUser.role === 'admin'; }catch(e){ return false; } }
   
 
 /* =========================================================
- * SETTINGS FUNCTION: fbUser
+ * SETTINGS BLOCK: fbUser
  * ========================================================= */
 function fbUser(){ try{ return (typeof firebase!=='undefined' && firebase.auth && firebase.auth().currentUser) ? firebase.auth().currentUser : null; }catch(e){ return null; } }
   
 
 /* =========================================================
- * SETTINGS FUNCTION: currentUserLabel
+ * SETTINGS BLOCK: currentUserLabel
  * ========================================================= */
 function currentUserLabel(){ try{ var u=(firebase.auth&&firebase.auth().currentUser)||null; return (u&&(u.email||u.uid)) || (window.appUser&&(appUser.email||appUser.phone||appUser.uid)) || ''; }catch(e){ return (window.appUser&&(appUser.email||appUser.phone||appUser.uid)) || ''; } }
   
 
 /* =========================================================
- * SETTINGS FUNCTION: adminServerMode
+ * SETTINGS BLOCK: adminServerMode
  * ========================================================= */
 function adminServerMode(){ return !!(window.EP_ADMIN_SERVER_DB_EDIT === true && isAdmin()); }
   
 
 /* =========================================================
- * SETTINGS FUNCTION: installAdminSettingsButton
+ * SETTINGS BLOCK: installAdminSettingsButton
  * ========================================================= */
 function installAdminSettingsButton(){
     var panel = $('admin-panel');
@@ -576,7 +566,7 @@ function installAdminSettingsButton(){
   
 
 /* =========================================================
- * SETTINGS FUNCTION: lineConfig
+ * SETTINGS BLOCK: lineConfig
  * ========================================================= */
 function lineConfig(){
     var out=[]; function e(id){ return $(id); } function ch(id){ var x=e(id); return !!(x&&x.checked); }
@@ -593,13 +583,13 @@ function lineConfig(){
   
 
 /* =========================================================
- * SETTINGS FUNCTION: optionsHtml
+ * SETTINGS BLOCK: optionsHtml
  * ========================================================= */
 function optionsHtml(vals,placeholder){ vals=Array.from(new Set((vals||[]).map(clean).filter(Boolean))).sort(function(a,b){return a.localeCompare(b,'ru');}); return '<option value="">'+esc(placeholder||'Выбрать')+'</option>'+vals.map(function(v){return '<option value="'+esc(v)+'">'+esc(v)+'</option>';}).join(''); }
   
 
 /* =========================================================
- * SETTINGS FUNCTION: options
+ * SETTINGS BLOCK: options
  * ========================================================= */
 function options(vals,placeholder,current){
     var seen={}, out=[]; (vals||[]).forEach(function(v){ v=clean(v); if(v&&!seen[v]){ seen[v]=1; out.push(v); } });
@@ -609,3 +599,195 @@ function options(vals,placeholder,current){
     return h;
   }
   
+
+/* =========================================================
+ * SETTINGS BLOCK: window.epSaveAiConfig
+ * ========================================================= */
+window.epSaveAiConfig = async function (withTest) {
+        if (!appUser || appUser.role !== 'admin') {
+            showToast('Только админ меняет API');
+            return;
+        }
+
+        const provider = epCurrentProvider();
+        const geminiKey = epCleanText(document.getElementById('ep-gemini-key-input')?.value || window.EP_AI_CONFIG.geminiKey || '');
+        const openaiKey = epCleanText(document.getElementById('ep-openai-key-input')?.value || window.EP_AI_CONFIG.openaiKey || '');
+        const model = epCleanText(document.getElementById('ep-openai-model-input')?.value || 'gpt-4o-mini');
+
+        const keyToTest = provider === 'openai' ? openaiKey : geminiKey;
+
+        try {
+            if (withTest) {
+                showLoader('Проверяю API...', '🤖');
+                await epTestProviderKey(provider, keyToTest, model);
+            }
+
+            window.EP_AI_CONFIG = { provider: provider, geminiKey: geminiKey, openaiKey: openaiKey, openaiModel: model };
+            safeSet('ep_ai_provider_v1', provider);
+            safeSet('ep_gemini_key_v1', geminiKey);
+            safeSet('ep_openai_key_v1', openaiKey);
+            safeSet('ep_openai_model_v1', model);
+
+            if (geminiKey && typeof GEMINI_API_KEY !== 'undefined') GEMINI_API_KEY = geminiKey;
+
+            if (db) {
+                await db.collection('settings').doc('ai_config').set({
+                    provider: provider,
+                    geminiKey: geminiKey,
+                    openaiKey: openaiKey,
+                    openaiModel: model,
+                    updatedAt: new Date().toISOString(),
+                    updatedBy: appUser.uid || null
+                }, { merge: true });
+
+                await db.collection('settings').doc('global_api').set({
+                    provider: provider,
+                    geminiKey: geminiKey,
+                    openaiKey: openaiKey,
+                    openaiModel: model,
+                    updatedAt: new Date().toISOString()
+                }, { merge: true });
+
+                try {
+                    const usersSnap = await db.collection('users').get();
+                    const batch = db.batch();
+                    usersSnap.forEach(function (doc) {
+                        batch.set(doc.ref, {
+                            aiProvider: provider,
+                            geminiKey: geminiKey,
+                            openaiKey: openaiKey,
+                            openaiModel: model
+                        }, { merge: true });
+                    });
+                    await batch.commit();
+                } catch (e) {
+                    console.warn('Не удалось разослать по users:', e);
+                }
+            }
+
+            hideLoader();
+            epRefreshProviderUI();
+            showToast('✅ API проверен и отправлен мастерам');
+        } catch (e) {
+            hideLoader();
+            showToast('❌ ' + (e.message || 'Ошибка API'));
+        }
+    };
+
+/* =========================================================
+ * SETTINGS BLOCK: window.epAdminResolveDbProposal
+ * ========================================================= */
+window.epAdminResolveDbProposal = async function (id, mode) {
+        if (!db || !appUser || appUser.role !== 'admin') return;
+        showLoader('Обработка заявки...', '🌍');
+        try {
+            const ref = db.collection('db_proposals').doc(id);
+            const doc = await ref.get();
+            if (!doc.exists) throw new Error('Заявка не найдена');
+            const d = doc.data();
+
+            if (mode !== 'reject') {
+                const type = d.type || 'mat';
+                let items = (d.items || []).map(function (x) {
+                    return Object.assign({}, x, mode === 'names' ? { p: 0 } : {});
+                });
+                let arr = epCurrentDb(type).slice();
+                items.forEach(function (it) {
+                    const idx = arr.findIndex(x => epSameItem(x, it));
+                    if (idx >= 0) arr[idx] = Object.assign({}, arr[idx], it, { id: arr[idx].id || it.id });
+                    else arr.push(it);
+                });
+                epSetCurrentDb(type, arr);
+                await epSaveGlobalDb();
+                renderDbEditors();
+            }
+
+            await ref.set({
+                status: mode === 'reject' ? 'rejected' : 'approved',
+                decision: mode,
+                decidedAt: new Date().toISOString(),
+                decidedBy: appUser.uid || ''
+            }, { merge: true });
+
+            hideLoader();
+            showToast(mode === 'reject' ? 'Заявка отклонена' : '✅ Добавлено в базу сервера');
+        } catch(e) {
+            hideLoader();
+            showToast('❌ ' + (e.message || 'Ошибка'));
+        }
+    };
+
+/* =========================================================
+ * SETTINGS BLOCK: window.finishLoginSetup
+ * ========================================================= */
+window.finishLoginSetup = async function () {
+        if (typeof epOldFinishLoginSetup === 'function') epOldFinishLoginSetup();
+        epPatchSettingsUI();
+        epInsertMainProviderSwitch();
+        epInsertDbTools();
+        epMakeAiMenuGroup();
+        epAddBetaLabels();
+        await epLoadAiConfigFromServer();
+        await epLoadUserDbAfterLogin();
+        epListenDbProposals();
+    };
+
+/* =========================================================
+ * SETTINGS BLOCK: window.userMatDB
+ * ========================================================= */
+window.userMatDB = fixArr(window.userMatDB || []); } catch(e){}
+  
+
+/* =========================================================
+ * SETTINGS BLOCK: window.userWorkDB
+ * ========================================================= */
+window.userWorkDB = EP_MY_WORK;
+      if(scope()==='global'){ matDB = EP_SERVER_MAT.slice(); workDB = EP_SERVER_WORK.slice(); }
+      
+
+/* =========================================================
+ * SETTINGS BLOCK: window.epCreateMasterDb
+ * ========================================================= */
+window.epCreateMasterDb = async function(){
+    try{ localStorage.setItem(LS_MASTER_CREATED,'1'); localStorage.setItem(LS_SCOPE,'my'); }catch(e){}
+    EP_MY_MAT = arrLS(LS_MY_MAT);
+    EP_MY_WORK = arrLS(LS_MY_WORK);
+    setLS(LS_MY_MAT, EP_MY_MAT);
+    setLS(LS_MY_WORK, EP_MY_WORK);
+    syncWindowCaches();
+    await epSaveMyDbToServer();
+    renderDbEditors();
+    toast('✅ Своя база создана. Добавление и импорт идут в мою базу без админа.');
+  };
+
+/* =========================================================
+ * SETTINGS BLOCK: window.epOpenAdminServerDbFromSettings
+ * ========================================================= */
+window.epOpenAdminServerDbFromSettings = function(){
+    if(!isAdmin()) return toast('Только админ может редактировать базу сервера');
+    window.EP_ADMIN_SERVER_DB_EDIT = true;
+    window.EP_OPENING_ADMIN_SERVER_DB = true;
+    try{ localStorage.setItem('ep_db_scope_v2','global'); }catch(e){}
+    try{ if(typeof openModal === 'function') openModal('settModal'); }catch(e){ var m=$('settModal'); if(m)m.style.display='flex'; }
+    setTimeout(function(){
+      setScope('global');
+      window.EP_OPENING_ADMIN_SERVER_DB = false;
+      patchDbUi();
+      toast('👑 Включён режим админа: можно менять базу сервера');
+    },120);
+  };
+
+/* =========================================================
+ * SETTINGS BLOCK: window.epV15BuildLinesFromConfig
+ * ========================================================= */
+window.epV15BuildLinesFromConfig = function(){
+    var lines=[]; function val(id){ var e=$(id); return e?e.value:''; } function chk(id){ var e=$(id); return !!(e&&e.checked); }
+    function add(name,nom,group){ lines.push({name:name,nominal:nom,group:group}); }
+    function room(label,count,wet){ count=Number(count)||0; for(var i=1;i<=count;i++){ var n=count>1?label+' '+i:label; add(n+' розетки','C16',wet?'wet':'power'); add(n+' свет','C10','light'); } }
+    try{ room('Кухня',window.cfg&&cfg.kits,false); room('Ванная',window.cfg&&cfg.baths,true); room('Туалет',window.cfg&&cfg.toilets,true); room('Комната',window.cfg&&cfg.rms,false); room('Балкон',window.cfg&&cfg.bals,false); }catch(e){}
+    if(chk('c-apron')) add('Фартук кухни','C16','power'); if(chk('c-dish')) add('Посудомойка','C10','power'); if(chk('c-washer')) add('Стиралка/сушилка','C10','wet'); if(chk('c-towel')) add('Полотенцесушитель','C10','wet');
+    var acs=(window.cfg&&Number(cfg.acs))||0, fls=(window.cfg&&Number(cfg.fls))||0; for(var a=1;a<=acs;a++) add('Кондиционер '+a,'C10','climate'); for(var f=1;f<=fls;f++) add('Тёплый пол '+f,'C10','climate');
+    if(chk('c-fridge')) add('Холодильник, неотключаемая группа','C10','alwaysOn'); if(chk('c-neptun')) add('Нептун, неотключаемая группа','C10','alwaysOn'); if(chk('c-router')) add('Роутер, неотключаемая группа','C6','alwaysOn');
+    if(val('c-hob-power')==='6') add('Плита до 6 кВт','C25','heavy'); if(val('c-hob-power')==='10') add('Плита до 10 кВт','C32','heavy'); if(val('c-boiler-power')==='6') add('Бойлер до 6 кВт','C25','wet'); if(val('c-boiler-power')==='10') add('Бойлер до 10 кВт','C32','wet');
+    return lines;
+  };
