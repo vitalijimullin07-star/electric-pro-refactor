@@ -1097,80 +1097,110 @@
 })();
 
 
-/* V50_SCHEME_BUTTON_START */
+/* V49_SIMPLE_SCHEME_IN_SHIELD_START */
 (function(){
   "use strict";
 
-  const STYLE_ID = "ep-scheme-button-v50-style";
-  const BUTTON_ID = "ep-scheme-shield-btn-v50";
-  const ROW_ID = "ep-scheme-shield-row-v50";
-  const OLD_LAUNCHER_ID = "ep-single-line-launcher";
-  const OLD_HOST_1 = "ep-scheme-inside-shield";
-  const OLD_HOST_2 = "ep-sl-shield-host";
+  const HOST_ID = "ep-scheme-inside-shield";
+  const BODY_ID = "ep-scheme-inside-shield-body";
+  const OLD_BTN_ID = "ep-single-line-launcher";
+  const MODAL_ID = "ep-single-line-modal";
+  const STYLE_ID = "ep-scheme-inside-shield-style";
 
-  function ensureStyle(){
+  function css(){
     if(document.getElementById(STYLE_ID)) return;
-
-    const style = document.createElement("style");
-    style.id = STYLE_ID;
-    style.textContent = `
-      #${OLD_LAUNCHER_ID},
-      #${OLD_HOST_1},
-      #${OLD_HOST_2}{
-        display:none!important;
+    const s = document.createElement("style");
+    s.id = STYLE_ID;
+    s.textContent = `
+      #${OLD_BTN_ID}{display:none!important;}
+      #${HOST_ID}{
+        margin:14px 0;
+        padding:12px;
+        border-radius:16px;
+        border:1px solid rgba(17,24,39,.12);
+        background:rgba(17,24,39,.04);
       }
-
-      #${ROW_ID}{
-        margin:10px 0 12px;
+      #${HOST_ID} .ep-scheme-head{
         display:flex;
         align-items:center;
-        justify-content:center;
+        justify-content:space-between;
+        gap:10px;
+        flex-wrap:wrap;
       }
-
-      #${BUTTON_ID}{
-        width:100%;
-        border:none;
-        border-radius:16px;
-        padding:13px 16px;
-        background:linear-gradient(135deg,#4f46e5,#2563eb,#0891b2);
-        color:#fff;
+      #${HOST_ID} .ep-scheme-title{
         font-size:15px;
         font-weight:900;
-        letter-spacing:.2px;
-        box-shadow:0 10px 24px rgba(37,99,235,.28);
-        cursor:pointer;
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        gap:8px;
+        color:#111827;
       }
-
-      #${BUTTON_ID}:active{
-        transform:scale(.985);
-      }
-
-      #${BUTTON_ID} small{
-        opacity:.86;
+      #${HOST_ID} .ep-scheme-note{
         font-size:12px;
-        font-weight:700;
+        color:#6b7280;
+        margin-top:3px;
+      }
+      #${HOST_ID} button{
+        border:0;
+        border-radius:12px;
+        padding:10px 12px;
+        font-weight:900;
+        cursor:pointer;
+      }
+      #ep-open-scheme-in-shield{
+        background:#111827;
+        color:white;
+      }
+      #ep-hide-scheme-in-shield{
+        background:#e5e7eb;
+        color:#111827;
+      }
+      #${BODY_ID}{
+        margin-top:12px;
+      }
+      #${BODY_ID}[hidden]{
+        display:none!important;
+      }
+      #${MODAL_ID}.ep-embedded-scheme{
+        position:relative!important;
+        inset:auto!important;
+        z-index:auto!important;
+        width:100%!important;
+        height:74dvh!important;
+        min-height:520px!important;
+        border-radius:16px!important;
+        overflow:hidden!important;
+        border:1px solid rgba(17,24,39,.12)!important;
+        box-shadow:0 8px 28px rgba(0,0,0,.14)!important;
       }
     `;
-
-    document.head.appendChild(style);
+    document.head.appendChild(s);
   }
 
-  function removeBadOldBlocks(){
-    document.querySelectorAll("#" + OLD_LAUNCHER_ID + ", #" + OLD_HOST_1 + ", #" + OLD_HOST_2).forEach(el => {
-      el.remove();
-    });
+  function removeOldButton(){
+    document.querySelectorAll("#" + OLD_BTN_ID).forEach(el => el.remove());
   }
 
-  function text(el){
+  function txt(el){
     return String(el && el.textContent || "").toLowerCase();
   }
 
-  function findShieldPanel(){
-    const directSelectors = [
+  function score(el){
+    if(!el || el === document.body || el === document.documentElement) return 0;
+    const a = String((el.id||"") + " " + (el.className||"")).toLowerCase();
+    const t = txt(el).slice(0,4000);
+    let n = 0;
+
+    ["shield","щит","конфигуратор щита","сгенерировать щит","марка щита","марка автоматики","тип защиты"].forEach(w=>{
+      if(a.includes(w) || t.includes(w)) n += 10;
+    });
+
+    ["узо","диф","автомат","c16","c10","модули","линия"].forEach(w=>{
+      if(a.includes(w) || t.includes(w)) n += 2;
+    });
+
+    return n;
+  }
+
+  function findShield(){
+    const direct = [
       "#shield-configurator",
       "#shieldConfig",
       "#shield-panel",
@@ -1182,131 +1212,131 @@
       ".cascade-panel"
     ];
 
-    for(const selector of directSelectors){
-      const el = document.querySelector(selector);
+    for(const s of direct){
+      const el = document.querySelector(s);
       if(el) return el;
     }
 
-    const candidates = Array.from(document.querySelectorAll("section, aside, main, article, div"))
-      .filter(el => {
-        const t = text(el);
-        if(!t) return false;
-        if(el.closest("#ep-single-line-modal")) return false;
-
-        return (
-          t.includes("сборка щита") ||
-          t.includes("ручная сборка") ||
-          t.includes("настройки автоматики") ||
-          t.includes("марка щита") ||
-          t.includes("тип защиты") ||
-          t.includes("сгенерировать щит")
-        );
-      })
-      .map(el => {
-        const t = text(el).slice(0,5000);
-        let score = 0;
-
-        if(t.includes("сборка щита")) score += 30;
-        if(t.includes("ручная сборка")) score += 20;
-        if(t.includes("настройки автоматики")) score += 15;
-        if(t.includes("сгенерировать щит")) score += 15;
-        if(t.includes("марка щита")) score += 10;
-        if(t.includes("тип защиты")) score += 10;
-        if(t.includes("узо")) score += 3;
-        if(t.includes("диф")) score += 3;
-        if(t.includes("автомат")) score += 2;
-
-        const r = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
-        if(r && r.width > 280 && r.height > 250) score += 8;
-
-        return {el, score};
-      })
+    const arr = Array.from(document.querySelectorAll("main,section,article,aside,div"))
+      .filter(el => !el.closest("#" + MODAL_ID))
+      .map(el => ({el, score: score(el)}))
       .filter(x => x.score > 0)
       .sort((a,b) => b.score - a.score);
 
-    return candidates.length ? candidates[0].el : null;
+    return arr.length ? arr[0].el : null;
   }
 
-  function createButtonRow(){
-    let row = document.getElementById(ROW_ID);
-    if(row) return row;
+  function createHost(){
+    let host = document.getElementById(HOST_ID);
+    if(host) return host;
 
-    row = document.createElement("div");
-    row.id = ROW_ID;
-    row.innerHTML = `
-      <button type="button" id="${BUTTON_ID}">
-        <span>📐 Схема щита</span>
-        <small>открыть</small>
-      </button>
+    host = document.createElement("section");
+    host.id = HOST_ID;
+    host.innerHTML = `
+      <div class="ep-scheme-head">
+        <div>
+          <div class="ep-scheme-title">📐 Однолинейная схема</div>
+          <div class="ep-scheme-note">Открывается внутри конфигуратора щита</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="button" id="ep-open-scheme-in-shield">Открыть схему</button>
+          <button type="button" id="ep-hide-scheme-in-shield">Свернуть</button>
+        </div>
+      </div>
+      <div id="${BODY_ID}" hidden></div>
     `;
 
-    return row;
+    return host;
   }
 
-  function openScheme(){
-    const api = window.EP_SINGLE_LINE_SCHEME;
+  function mountHost(){
+    css();
+    removeOldButton();
 
-    if(api && typeof api.open === "function"){
-      api.open();
-      return;
+    const target = findShield();
+    if(!target) return false;
+
+    const host = createHost();
+    if(!target.contains(host)){
+      target.appendChild(host);
     }
 
-    if(typeof window.openSingleLineScheme === "function"){
-      window.openSingleLineScheme();
-      return;
+    const openBtn = document.getElementById("ep-open-scheme-in-shield");
+    const hideBtn = document.getElementById("ep-hide-scheme-in-shield");
+
+    if(openBtn && !openBtn.dataset.bound){
+      openBtn.dataset.bound = "1";
+      openBtn.addEventListener("click", openInsideShield);
     }
 
-    alert("Модуль схемы ещё не загрузился");
-  }
-
-  function mountButton(){
-    ensureStyle();
-    removeBadOldBlocks();
-
-    const panel = findShieldPanel();
-    if(!panel) return false;
-
-    const row = createButtonRow();
-
-    if(!panel.contains(row)){
-      const buttons = Array.from(panel.querySelectorAll("button"));
-      const manualBtn = buttons.find(btn => text(btn).includes("ручная сборка"));
-      const settingsBlock = Array.from(panel.querySelectorAll("div,section")).find(el => text(el).includes("настройки автоматики"));
-
-      if(manualBtn && manualBtn.parentElement){
-        manualBtn.parentElement.insertAdjacentElement("afterend", row);
-      } else if(settingsBlock && settingsBlock.parentElement){
-        settingsBlock.parentElement.insertBefore(row, settingsBlock);
-      } else {
-        panel.insertBefore(row, panel.firstChild ? panel.firstChild.nextSibling : null);
-      }
-    }
-
-    const btn = document.getElementById(BUTTON_ID);
-    if(btn && !btn.dataset.bound){
-      btn.dataset.bound = "1";
-      btn.addEventListener("click", openScheme);
+    if(hideBtn && !hideBtn.dataset.bound){
+      hideBtn.dataset.bound = "1";
+      hideBtn.addEventListener("click", () => {
+        const body = document.getElementById(BODY_ID);
+        if(body) body.hidden = true;
+      });
     }
 
     return true;
   }
 
+  function moveModal(){
+    const body = document.getElementById(BODY_ID);
+    const modal = document.getElementById(MODAL_ID);
+    if(!body || !modal) return false;
+
+    body.hidden = false;
+    modal.classList.add("ep-embedded-scheme");
+    modal.style.display = "flex";
+
+    if(!body.contains(modal)){
+      body.innerHTML = "";
+      body.appendChild(modal);
+    }
+
+    modal.scrollIntoView({behavior:"smooth", block:"start"});
+    return true;
+  }
+
+  function openInsideShield(){
+    mountHost();
+
+    const api = window.EP_SINGLE_LINE_SCHEME;
+    if(api && typeof api.__v49OriginalOpen === "function"){
+      api.__v49OriginalOpen();
+    } else if(api && typeof api.open === "function" && !api.__v49Patched){
+      api.open();
+    }
+
+    setTimeout(moveModal, 0);
+    setTimeout(moveModal, 80);
+    setTimeout(moveModal, 250);
+  }
+
+  function patchApi(){
+    const api = window.EP_SINGLE_LINE_SCHEME;
+    if(!api || api.__v49Patched) return;
+
+    api.__v49OriginalOpen = api.open;
+    api.open = openInsideShield;
+    api.__v49Patched = true;
+
+    window.openSingleLineScheme = openInsideShield;
+  }
+
   function boot(){
-    ensureStyle();
-    removeBadOldBlocks();
-    mountButton();
+    css();
+    removeOldButton();
+    patchApi();
+    mountHost();
 
     const obs = new MutationObserver(() => {
-      removeBadOldBlocks();
-      mountButton();
+      removeOldButton();
+      patchApi();
+      mountHost();
     });
 
-    obs.observe(document.body,{
-      childList:true,
-      subtree:true,
-      attributes:true,
-      attributeFilter:["class","style"]
-    });
+    obs.observe(document.body,{childList:true,subtree:true,attributes:true});
   }
 
   if(document.readyState === "loading"){
@@ -1315,7 +1345,7 @@
     boot();
   }
 
-  console.log("V50: beautiful scheme button in shield configurator loaded");
+  console.log("V49 simple: scheme inside shield loaded");
 })();
-/* V50_SCHEME_BUTTON_END */
+/* V49_SIMPLE_SCHEME_IN_SHIELD_END */
 
