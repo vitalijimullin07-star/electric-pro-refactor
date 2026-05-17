@@ -1,0 +1,167 @@
+# V39 Safe Module: PDF Files
+
+Файл: `public/js/11-pdf-files.js`
+
+Модуль пересобран безопасно: только полноценные `function / async function`, каждый блок проверен через `node --check`.
+
+Добавленные функции:
+
+- `checkLocalPinUser`
+- `showLoader`
+- `hideLoader`
+- `showToast`
+- `loginWithPin`
+- `finishLoginSetup`
+- `openModal`
+- `closeModal`
+- `toggleMenu`
+- `changeTheme`
+- `updateMasterBadge`
+- `updateCoeffs`
+- `saveQRs`
+- `openSwapModal`
+- `applySwap`
+- `renderMainTable`
+- `openMatCatalog`
+- `openWorkCatalog`
+- `toggleCat`
+- `promptAdd`
+- `confirmQtyAdd`
+- `setPodr`
+- `setH`
+- `setP`
+- `upUI`
+- `addGrp`
+- `rfPool`
+- `applyPoolToEstimate`
+- `modV`
+- `populateShieldExtras`
+- `addExtraToShieldConfig`
+- `renderShieldExtras`
+- `epGetCheck`
+- `epGetVal`
+- `runAiCheck`
+- `aiSupply`
+- `aiPueHelper`
+- `compareShopsAI`
+- `getPDFHeader`
+- `showPreview`
+- `refreshPreview`
+- `printAct`
+- `togglePay`
+- `saveCust`
+- `saveLogic`
+- `renderLogicUI`
+- `openRecalcModal`
+- `updateRecalcUI`
+- `doRecalculate`
+- `renderChart`
+- `updateBuhUI`
+- `saveHist`
+- `updateHistList`
+- `openObjCard`
+- `addExtraWork`
+- `loadCustHistoryOptions`
+- `switchDbTab`
+- `renderDbEditors`
+- `addDbItem`
+- `requestPriceChange`
+- `listenForApprovals`
+- `loadMasterDrafts`
+- `openAdminDraftView`
+- `renderAdminUsers`
+- `adminAddUser`
+- `epRefreshProviderUI`
+- `epInsertMainProviderSwitch`
+- `epMakeAiMenuGroup`
+- `epAddBetaLabels`
+- `epPatchSettingsUI`
+- `epLoadAiConfigFromServer`
+- `epLoadUserDbAfterLogin`
+- `epInsertDbTools`
+- `epReadFileAsText`
+- `epReadFileAsDataURL`
+- `epReadFileAsArrayBuffer`
+- `epReadDbFile`
+- `epShowDbReview`
+- `epGetReviewedSelected`
+- `epDownloadJson`
+- `epInsertAdminProposalBox`
+- `epListenDbProposals`
+- `epGetGlobalDb`
+- `epRenderGlobalDbModal`
+- `epInsertGlobalDbButton`
+- `epEnsureProposalBox`
+- `epRenderProposalList`
+- `epStartProposalV2`
+- `qs`
+- `epMoveShieldSettingsIntoDetails`
+- `epPatchGenerateButton`
+- `loadGlobalDb`
+- `loadGlobal`
+- `$`
+- `readGlobal`
+- `esc`
+- `epLoadDbFromServer`
+- `downloadJson`
+- `commitCollection`
+- `refreshMyFromServer`
+- `refreshServerFromServer`
+- `fileText`
+- `fileBuffer`
+- `saveVisibleEdits`
+- `renderReviewPage`
+- `showReview`
+- `aiFromImage`
+- `readDbFileV6`
+- `ensureProgress`
+- `ensurePanel`
+- `renderPanel`
+- `tuneStaticBlocks`
+- `fileTextProgress`
+- `fileBufferProgress`
+- `readDbFile`
+- `reloadFromRemoteCurrent`
+- `injectDebugButton`
+- `collectReviewed`
+- `readGlobalDoc`
+- `saveGlobalImport`
+- `showReviewV9`
+- `fileToDataURL`
+- `askOpenAI`
+- `aiFromImageFile`
+- `aiFromPdfFile`
+- `patchLabels`
+- `installAdminSettingsButton`
+- `patchDbUi`
+- `compressImageDataUrl`
+- `timeoutPromise`
+- `patchShieldButton`
+- `showDetailsV16`
+- `bindButtons`
+- `addBadge`
+- `patchDbBulk`
+- `saveArr`
+- `ensureBadge`
+- `renderMainDirect`
+- `selectedChecks`
+- `injectChecks`
+- `patchButtons`
+- `setStatus`
+- `activeType`
+- `fillSelectors`
+- `ensureChecks`
+- `selected`
+
+Пропущенные блоки:
+
+- `epEscape` — `/tmp/tmpk8gpqhc_.js:2779`
+- `epEsc` — `/tmp/tmpp4pwkwpf.js:2168`
+- `safeText` — `/tmp/tmp4wen60q5.js:2118`
+- `safe` — `/tmp/tmpc0kmig2r.js:2235`
+- `safeHtml` — `/tmp/tmplatq57t2.js:2503`
+- `safe` — `/tmp/tmpg474bv88.js:2385`
+- `esc` — `/tmp/tmpaz6oeev7.js:2486`
+- `esc` — `/tmp/tmpdh8b492d.js:2633`
+
+`00-core.js` пока не очищался.

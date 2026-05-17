@@ -1,0 +1,185 @@
+# V39 Safe Module: AI Functions
+
+Файл: `public/js/05-ai-functions.js`
+
+Модуль пересобран безопасно: только полноценные `function / async function`, каждый блок проверен через `node --check`.
+
+Добавленные функции:
+
+- `handleGoogleAuth`
+- `loginWithPin`
+- `finishLoginSetup`
+- `updateCoeffs`
+- `saveApiKey`
+- `saveQRs`
+- `applySwap`
+- `renderMainTable`
+- `syncDraft`
+- `clearCurrentEstimate`
+- `promptAdd`
+- `addAuto`
+- `epV15DetectModel`
+- `epV15FormatAutoName`
+- `epV15FormatRcdName`
+- `epV15MergeAssignments`
+- `epMat`
+- `epWork`
+- `generateCascadePanel`
+- `mat`
+- `work`
+- `runAiCheck`
+- `aiSupply`
+- `aiPueHelper`
+- `compareShopsAI`
+- `showPreview`
+- `deleteAct`
+- `doRecalculate`
+- `renderChart`
+- `saveHist`
+- `openObjCard`
+- `addExtraWork`
+- `addDbItem`
+- `requestPriceChange`
+- `listenForApprovals`
+- `approveUser`
+- `loadMasterDrafts`
+- `renderAdminUsers`
+- `adminAddUser`
+- `deleteUser`
+- `epNormProvider`
+- `epCurrentProvider`
+- `epCurrentKey`
+- `epSetAiProvider`
+- `epRefreshProviderUI`
+- `epInsertMainProviderSwitch`
+- `epMakeAiMenuGroup`
+- `epPatchSettingsUI`
+- `epTestProviderKey`
+- `epLoadAiConfigFromServer`
+- `epCallGemini`
+- `epExtractOpenAiText`
+- `epCallOpenAI`
+- `epAskAI`
+- `epParseLooseTableText`
+- `epParseJsonArray`
+- `epNormalizeItems`
+- `epSaveUserDb`
+- `epSaveGlobalDb`
+- `epLoadUserDbAfterLogin`
+- `epInsertDbTools`
+- `epReadDbFile`
+- `epAiNormalizeImage`
+- `epAiNormalizeDbText`
+- `epShowDbReview`
+- `epGetReviewedSelected`
+- `epSendDbProposal`
+- `epInitialApply`
+- `epGetGlobalDb`
+- `epInsertGlobalDbButton`
+- `epRenderProposalList`
+- `epMoveShieldSettingsIntoDetails`
+- `epRenderGrouped`
+- `boot`
+- `smartFindMat`
+- `mergeEstimate`
+- `mergeEstimateFixed`
+- `shieldRowsForDetails`
+- `detailNote`
+- `saveLocalDb`
+- `loadGlobalDb`
+- `groupHtml`
+- `saveMyDb`
+- `loadGlobal`
+- `renderList`
+- `readGlobal`
+- `renderItems`
+- `esc`
+- `epSaveMyDbToServer`
+- `epSaveServerDbToServer`
+- `epSendServerProposal`
+- `epLoadDbFromServer`
+- `commitCollection`
+- `install`
+- `setMy`
+- `setServer`
+- `syncMainArrays`
+- `saveMyRemote`
+- `saveServerRemote`
+- `syncActiveArrays`
+- `refreshMyFromServer`
+- `refreshServerFromServer`
+- `renderReviewPage`
+- `showReview`
+- `aiFromImage`
+- `aiFromText`
+- `readDbFileV6`
+- `syncMain`
+- `sendProposal`
+- `reloadActiveDb`
+- `tuneStaticBlocks`
+- `readDbFile`
+- `currentEmail`
+- `isAdmin`
+- `firebaseHint`
+- `explainErr`
+- `reloadFromRemoteCurrent`
+- `rerender`
+- `currentUserLabel`
+- `explain`
+- `readGlobalDoc`
+- `saveGlobalImport`
+- `saveMyImport`
+- `sendServerProposal`
+- `showReviewV9`
+- `provider`
+- `keyForProvider`
+- `openAiModel`
+- `extractTextFromOpenAI`
+- `askOpenAI`
+- `askGemini`
+- `normItem`
+- `importPrompt`
+- `aiFromImageFile`
+- `aiFromPdfFile`
+- `patchLabels`
+- `explainServerEdit`
+- `patchDbUi`
+- `compressImageDataUrl`
+- `timeoutPromise`
+- `patchShieldButton`
+- `epV16GenerateCascadePanel`
+- `getAssignV16`
+- `showDetailsV16`
+- `assignmentsOf`
+- `syncActiveToMain`
+- `saveArr`
+- `autoName`
+- `rcdName`
+- `makeItem`
+- `mergeAssignments`
+- `directAddShield`
+- `renderMainDirect`
+- `assigns`
+- `addShieldToEstimate`
+- `getAssigns`
+- `patchButtons`
+- `modelFromDbName`
+- `item`
+- `addUniqueAssign`
+- `directAdd`
+- `ensurePanel`
+
+Пропущенные блоки:
+
+- `epEscape` — `/tmp/tmpjpxkjw2w.js:2526`
+- `epTryJsonParseLoose` — `/tmp/tmp45e9599i.js:1500`
+- `epEsc` — `/tmp/tmpkc01qym6.js:2214`
+- `safeText` — `/tmp/tmpvlj42uay.js:2112`
+- `safe` — `/tmp/tmpg0df5wai.js:2258`
+- `safeHtml` — `/tmp/tmp2h3v9uhl.js:2583`
+- `safe` — `/tmp/tmppvdihbdz.js:2554`
+- `esc` — `/tmp/tmpwwpavj57.js:2727`
+- `esc` — `/tmp/tmpwi0y6861.js:2948`
+- `parseJsonLoose` — `/tmp/tmpptz89aql.js:3555`
+
+`00-core.js` пока не очищался.

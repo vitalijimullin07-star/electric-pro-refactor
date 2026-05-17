@@ -1,0 +1,150 @@
+# V39 Safe Module: Settings
+
+Файл: `public/js/07-settings.js`
+
+Модуль пересобран безопасно: только полноценные `function / async function`, каждый блок проверен через `node --check`.
+
+Добавленные функции:
+
+- `handleGoogleAuth`
+- `checkLocalPinUser`
+- `loginWithPin`
+- `confirmLogout`
+- `finishLoginSetup`
+- `openModal`
+- `changeTheme`
+- `updateMasterBadge`
+- `saveApiKey`
+- `saveQRs`
+- `openSwapModal`
+- `syncDraft`
+- `openWorkCatalog`
+- `populateShieldExtras`
+- `addExtraToShieldConfig`
+- `renderShieldExtras`
+- `epAllDbItems`
+- `generateCascadePanel`
+- `runAiCheck`
+- `aiSupply`
+- `aiPueHelper`
+- `compareShopsAI`
+- `showPreview`
+- `printAct`
+- `saveCust`
+- `renderChart`
+- `saveHist`
+- `updateHistList`
+- `openObjCard`
+- `loadCustHistoryOptions`
+- `renderDbEditors`
+- `addDbItem`
+- `requestPriceChange`
+- `listenForApprovals`
+- `approveUser`
+- `loadMasterDrafts`
+- `openAdminDraftView`
+- `renderAdminUsers`
+- `adminAddUser`
+- `deleteUser`
+- `epCurrentKey`
+- `epSetAiProvider`
+- `epRefreshProviderUI`
+- `epPatchSettingsUI`
+- `epTestProviderKey`
+- `epLoadAiConfigFromServer`
+- `epCallGemini`
+- `epCallOpenAI`
+- `epSaveUserDb`
+- `epSaveGlobalDb`
+- `epLoadUserDbAfterLogin`
+- `epShowDbReview`
+- `epSendDbProposal`
+- `epInsertAdminProposalBox`
+- `epListenDbProposals`
+- `epInitialApply`
+- `epRenderGroupedList`
+- `epGetGlobalDb`
+- `epEnsureProposalBox`
+- `epRenderProposalList`
+- `epStartProposalV2`
+- `epMoveShieldSettingsIntoDetails`
+- `epNormalizeMaterialsDb`
+- `epRenderGrouped`
+- `boot`
+- `renderGrouped`
+- `renderItem`
+- `renderGroupedFixed`
+- `saveLocalDb`
+- `loadGlobalDb`
+- `groupHtml`
+- `classify`
+- `saveMyDb`
+- `loadGlobal`
+- `renderList`
+- `toolbar`
+- `readGlobal`
+- `renderItems`
+- `deleteToolbar`
+- `esc`
+- `uid`
+- `isAdmin`
+- `syncWindowCaches`
+- `epSaveMyDbToServer`
+- `epSaveServerDbToServer`
+- `epSendServerProposal`
+- `epLoadDbFromServer`
+- `sourceSwitcherHtml`
+- `editorTop`
+- `editorRow`
+- `serverModalRow`
+- `setMy`
+- `saveMyRemote`
+- `saveServerRemote`
+- `setMyArrays`
+- `refreshServerFromServer`
+- `renderReviewPage`
+- `ensureProgress`
+- `sendProposal`
+- `renderPanel`
+- `fbUser`
+- `currentEmail`
+- `reloadFromRemoteCurrent`
+- `currentUserLabel`
+- `readGlobalDoc`
+- `saveGlobalImport`
+- `saveMyImport`
+- `sendServerProposal`
+- `provider`
+- `keyForProvider`
+- `openAiModel`
+- `askOpenAI`
+- `askGemini`
+- `showReview`
+- `adminServerMode`
+- `installAdminSettingsButton`
+- `patchDbUi`
+- `patchAll`
+- `collectDb`
+- `epV16GenerateCascadePanel`
+- `showDetailsV16`
+- `lineConfig`
+- `patchDbBulk`
+- `saveArr`
+- `optionsHtml`
+- `buildBulkPanel`
+- `options`
+- `fillSelectors`
+- `panelHtml`
+
+Пропущенные блоки:
+
+- `epEscape` — `/tmp/tmp9axr0ye1.js:2453`
+- `epEsc` — `/tmp/tmpgluyuig5.js:1792`
+- `safeText` — `/tmp/tmp2nocr48c.js:1746`
+- `safe` — `/tmp/tmpulxqr9iq.js:1914`
+- `safeHtml` — `/tmp/tmpg260in00.js:2221`
+- `safe` — `/tmp/tmpab4i6fk2.js:2142`
+- `esc` — `/tmp/tmpfs0b6iwn.js:2351`
+- `esc` — `/tmp/tmpv8q6g_mu.js:2590`
+
+`00-core.js` пока не очищался.

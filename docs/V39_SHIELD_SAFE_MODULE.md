@@ -1,0 +1,147 @@
+# V39 Safe Module: Shield Configurator
+
+Файл: `public/js/02-shield-configurator.js`
+
+Модуль пересобран безопасно: только полноценные `function / async function`, каждый блок проверен через `node --check`.
+
+Добавленные функции:
+
+- `renderMainTable`
+- `confirmQtyAdd`
+- `addAuto`
+- `upUI`
+- `rfPool`
+- `modV`
+- `populateShieldExtras`
+- `addExtraToShieldConfig`
+- `renderShieldExtras`
+- `epV15BrandRu`
+- `epV15BrandCode`
+- `epV15CleanForName`
+- `epV15DetectModel`
+- `epV15DetectNominal`
+- `epV15DetectPoles`
+- `epV15AmpFromNominal`
+- `epV15FormatAutoName`
+- `epV15DetectLeakage`
+- `epV15FormatRcdName`
+- `epV15DisplayMaterialName`
+- `epV15MergeAssignments`
+- `epMat`
+- `epWork`
+- `epAutoPrice`
+- `epDifPrice`
+- `generateCascadePanel`
+- `groupAssignment`
+- `addProtection`
+- `runAiCheck`
+- `showPreview`
+- `saveLogic`
+- `renderLogicUI`
+- `doRecalculate`
+- `listenForApprovals`
+- `renderAdminUsers`
+- `epAddBetaLabels`
+- `epPatchSettingsUI`
+- `epLoadAiConfigFromServer`
+- `epInferCategory`
+- `epInferSubcategory`
+- `epAiNormalizeImage`
+- `epShowDbReview`
+- `epInsertAdminProposalBox`
+- `epRenderGroupedList`
+- `epEnsureProposalBox`
+- `getCfgCount`
+- `epMoveShieldSettingsIntoDetails`
+- `epMatGroupName`
+- `epNormalizeMaterialsDb`
+- `fixArr`
+- `epRenderGrouped`
+- `epPatchDbRenderers`
+- `autoPrice`
+- `difPrice`
+- `epPatchGenerateButton`
+- `normalizeMaterialDb`
+- `renderItem`
+- `lookupKey`
+- `reqName`
+- `smartFindMat`
+- `canonicalName`
+- `detectRcdType`
+- `normalizeDbItem`
+- `renderGroupedFixed`
+- `reqDisplayName`
+- `strictFindMaterial`
+- `cleanCanonicalName`
+- `lineFromRaw`
+- `shieldRowsForDetails`
+- `detailNote`
+- `groupHtml`
+- `classify`
+- `sameSwapClass`
+- `renderList`
+- `toolbar`
+- `sameClass`
+- `renderItems`
+- `deleteToolbar`
+- `esc`
+- `sourceSwitcherHtml`
+- `catalogRow`
+- `editorTop`
+- `editorRow`
+- `autoGroupMaterial`
+- `autoGroupWork`
+- `reviewedItems`
+- `inferCat`
+- `inferSub`
+- `collectReviewed`
+- `ensureProgress`
+- `makeManualItem`
+- `normItem`
+- `showReview`
+- `fixShieldWorkItem`
+- `patchShieldButton`
+- `epV16GenerateCascadePanel`
+- `isShieldDeviceV16`
+- `getAssignV16`
+- `purposeV16`
+- `showDetailsV16`
+- `bindButtons`
+- `lineConfig`
+- `isDevice`
+- `assignmentsOf`
+- `deviceName`
+- `purposeOf`
+- `patchDbBulk`
+- `saveArr`
+- `dbFindAuto`
+- `dbFindRcd`
+- `autoName`
+- `rcdName`
+- `rcdPrice`
+- `cfgNum`
+- `directAddShield`
+- `renderMainDirect`
+- `isShieldDevice`
+- `buildBulkPanel`
+- `cfgN`
+- `buildLines`
+- `addShieldToEstimate`
+- `patchButtons`
+- `count`
+- `directAdd`
+- `setStatus`
+- `panelHtml`
+
+Пропущенные блоки:
+
+- `epEscape` — `/tmp/tmprbdfp0_f.js:2282`
+- `epEsc` — `/tmp/tmp__6it87l.js:1446`
+- `safeText` — `/tmp/tmpj7g_7t3i.js:1348`
+- `safe` — `/tmp/tmpazbhavj3.js:1621`
+- `safeHtml` — `/tmp/tmpfhccvc6z.js:2012`
+- `safe` — `/tmp/tmpna05i6zf.js:2198`
+- `esc` — `/tmp/tmp1dvmg68w.js:2374`
+- `esc` — `/tmp/tmpf8ywxqvx.js:2571`
+
+`00-core.js` пока не очищался.

@@ -1,0 +1,164 @@
+# V39 Safe Module: Visual
+
+Файл: `public/js/01-visual.js`
+
+Модуль пересобран безопасно: только полноценные `function / async function`, каждый блок проверен через `node --check`.
+
+Добавленные функции:
+
+- `handleGoogleAuth`
+- `checkLocalPinUser`
+- `showLoader`
+- `hideLoader`
+- `showToast`
+- `loginWithPin`
+- `confirmLogout`
+- `finishLoginSetup`
+- `openModal`
+- `closeModal`
+- `toggleMenu`
+- `changeTheme`
+- `updateMasterBadge`
+- `updateCoeffs`
+- `saveApiKey`
+- `saveQRs`
+- `openSwapModal`
+- `applySwap`
+- `renderMainTable`
+- `clearCurrentEstimate`
+- `openMatCatalog`
+- `openWorkCatalog`
+- `promptAdd`
+- `confirmQtyAdd`
+- `addAuto`
+- `modM`
+- `addGrp`
+- `applyPoolToEstimate`
+- `addExtraToShieldConfig`
+- `renderShieldExtras`
+- `generateCascadePanel`
+- `runAiCheck`
+- `aiSupply`
+- `aiPueHelper`
+- `compareShopsAI`
+- `showPreview`
+- `deleteAct`
+- `saveCust`
+- `saveLogic`
+- `renderLogicUI`
+- `openRecalcModal`
+- `doRecalculate`
+- `renderChart`
+- `saveHist`
+- `openObjCard`
+- `closeObjCardAndReturn`
+- `addExtraWork`
+- `switchDbTab`
+- `renderDbEditors`
+- `addDbItem`
+- `requestPriceChange`
+- `approveUser`
+- `openAdminDraftView`
+- `renderAdminUsers`
+- `adminAddUser`
+- `deleteUser`
+- `epNormProvider`
+- `epCurrentKey`
+- `epSetAiProvider`
+- `epRefreshProviderUI`
+- `epInsertMainProviderSwitch`
+- `epMakeAiMenuGroup`
+- `epPatchSettingsUI`
+- `epTestProviderKey`
+- `epLoadAiConfigFromServer`
+- `epExtractOpenAiText`
+- `epCallOpenAI`
+- `epAskAI`
+- `epParseLooseTableText`
+- `epInsertDbTools`
+- `epReadDbFile`
+- `epAiNormalizeImage`
+- `epAiNormalizeDbText`
+- `epShowDbReview`
+- `epRenderGroupedList`
+- `epRenderGlobalDbModal`
+- `epInsertGlobalDbButton`
+- `epRenderProposalList`
+- `epStartProposalV2`
+- `epInitFullWorksPatch`
+- `epMoveShieldSettingsIntoDetails`
+- `epRenderGrouped`
+- `epPatchDbRenderers`
+- `toast`
+- `renderGrouped`
+- `renderItem`
+- `renderGroupedFixed`
+- `renderGlobalModalFixed`
+- `msg`
+- `renderList`
+- `renderItems`
+- `unhide`
+- `esc`
+- `sourceSwitcherHtml`
+- `renderCatalog`
+- `editorTop`
+- `renderDbRows`
+- `serverModalRow`
+- `renderServerModalList`
+- `epRefreshDbScopeUi`
+- `install`
+- `rerender`
+- `updateButtons`
+- `rerenderOpenScreens`
+- `hardHideLoader`
+- `showReadLoader`
+- `renderReviewPage`
+- `showReview`
+- `aiFromImage`
+- `aiFromText`
+- `readDbFileV6`
+- `showProgress`
+- `hideProgress`
+- `reloadActiveDb`
+- `renderPanel`
+- `tuneStaticBlocks`
+- `editorRow`
+- `renderRows`
+- `downloadJson`
+- `readDbFile`
+- `progress`
+- `showReviewV9`
+- `provider`
+- `keyForProvider`
+- `openAiModel`
+- `extractTextFromOpenAI`
+- `askOpenAI`
+- `normalDbButtonWasClicked`
+- `patchShieldButton`
+- `boot`
+- `epV16GenerateCascadePanel`
+- `showDetailsV16`
+- `addBadge`
+- `patchDbBulk`
+- `saveArr`
+- `ensureBadge`
+- `renderMainDirect`
+- `addShieldToEstimate`
+- `directAdd`
+- `setStatus`
+- `hideOldBulk`
+- `ensurePanel`
+- `selected`
+
+Пропущенные блоки:
+
+- `epEscape` — `/tmp/tmpdnpu8uwb.js:2815`
+- `epEsc` — `/tmp/tmpe7okar2a.js:2255`
+- `safeText` — `/tmp/tmpt2ggdq63.js:2210`
+- `safe` — `/tmp/tmpnaa4stsg.js:2377`
+- `safeHtml` — `/tmp/tmp6kw6hne3.js:2684`
+- `safe` — `/tmp/tmpkdbqtwm7.js:2605`
+- `esc` — `/tmp/tmp5fli0mm7.js:2704`
+- `esc` — `/tmp/tmpr24pclby.js:2869`
+
+`00-core.js` пока не очищался.

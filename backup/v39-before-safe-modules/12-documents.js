@@ -1,75 +1,35 @@
 /*
  * Electric PRO Refactor
- * Module: 01-visual.js
- * V39 SAFE: Visual.
+ * Module: 12-documents.js
+ * V38: автоматическое составление документов.
+ *
+ * Блок для будущих документов:
+ * - договор;
+ * - акт выполненных работ;
+ * - акт приёма-передачи;
+ * - шаблоны документов;
+ * - автозаполнение заказчика и исполнителя.
  *
  * Важно:
  * - модуль пересобран безопасно;
- * - переносим только полноценные function / async function;
  * - каждый блок проверяется через node --check;
- * - 00-core.js временно остаётся стабильным runtime.
+ * - 00-core.js временно остаётся стабильным runtime;
+ * - окончательная чистка будет позже.
  */
 
-console.log("01-visual.js V39 SAFE loaded");
+console.log("12-documents.js V38 loaded");
 
 
 
 /* =========================================================
- * VISUAL FUNCTION: handleGoogleAuth
- * ========================================================= */
-async function handleGoogleAuth() {
-    if(!auth) return alert("Ошибка: Firebase не загружен. Проверьте интернет-соединение.");
-    showLoader("Подключение к Google...", "🔄");
-    try { 
-        const provider = new firebase.auth.GoogleAuthProvider();
-        provider.setCustomParameters({ prompt: 'select_account' });
-        await auth.signInWithPopup(provider); 
-    } catch(e) { 
-        hideLoader();
-        if(e.code !== 'auth/popup-closed-by-user') alert("Сбой Google Auth: " + e.message); 
-    }
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: checkLocalPinUser
- * ========================================================= */
-function checkLocalPinUser() {
-    let pinUser = safeGet('authUser_v31_pin', null);
-    if (pinUser) { 
-        try { appUser = JSON.parse(pinUser); finishLoginSetup(); } catch(e){ document.getElementById('authModal').style.display='flex'; } 
-    } else { document.getElementById('authModal').style.display='flex'; }
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: showLoader
+ * DOCUMENT FUNCTION: showLoader
  * ========================================================= */
 function showLoader(text, icon = '☁️') { document.getElementById('loader-icon').innerText = icon; document.getElementById('loader-text').innerText = text; document.getElementById('global-loader').classList.add('show'); }
 
 
 
 /* =========================================================
- * VISUAL FUNCTION: hideLoader
- * ========================================================= */
-function hideLoader() { document.getElementById('global-loader').classList.remove('show'); }
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: showToast
- * ========================================================= */
-function showToast(msg) { let t = document.getElementById('toast'); t.innerText = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); }
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: loginWithPin
+ * DOCUMENT FUNCTION: loginWithPin
  * ========================================================= */
 async function loginWithPin() {
     let phone = document.getElementById('auth-phone').value.trim();
@@ -103,19 +63,7 @@ async function loginWithPin() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: confirmLogout
- * ========================================================= */
-function confirmLogout() { 
-    if(auth) auth.signOut(); 
-    safeSet('authUser_v31_pin', ''); 
-    window.location.reload(); 
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: finishLoginSetup
+ * DOCUMENT FUNCTION: finishLoginSetup
  * ========================================================= */
 async function finishLoginSetup() {
     document.getElementById('authModal').style.display = 'none';
@@ -166,74 +114,7 @@ async function finishLoginSetup() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: openModal
- * ========================================================= */
-function openModal(id) { 
-    if(id === 'custModal') loadCustHistoryOptions(); 
-    if(id === 'logicModal') renderLogicUI(); 
-    if(id === 'settModal') renderDbEditors(); 
-    if(id === 'configModal') populateShieldExtras();
-    if(id === 'buhModal') setTimeout(renderChart, 100);
-    document.getElementById(id).style.display='flex'; 
-}
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: closeModal
- * ========================================================= */
-function closeModal(id) { document.getElementById(id).style.display='none'; }
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: toggleMenu
- * ========================================================= */
-function toggleMenu() { document.getElementById('burger-menu').classList.toggle('open'); document.getElementById('burger-overlay').classList.toggle('open'); }
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: changeTheme
- * ========================================================= */
-function changeTheme(theme) { document.documentElement.setAttribute('data-theme', theme); safeSet('theme_v31', theme); }
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: updateMasterBadge
- * ========================================================= */
-function updateMasterBadge() { document.getElementById('master-badge').innerHTML = `${appUser?.name || "Мастер"}<br>Объект: ${cust.name || 'Не выбран'}`; }
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: updateCoeffs
- * ========================================================= */
-function updateCoeffs() {
-    coeffs.mat = Number(document.getElementById('m-coeff').value);
-    coeffs.work = Number(document.getElementById('w-coeff').value);
-    safeSet('coeffs_v31', JSON.stringify(coeffs));
-    renderMainTable();
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: saveApiKey
- * ========================================================= */
-async function saveApiKey(val) { 
-    GEMINI_API_KEY = val.trim(); safeSet('gemini_key_v31', GEMINI_API_KEY);
-    if(db && appUser && appUser.uid) { try { await db.collection('users').doc(appUser.uid).update({geminiKey: GEMINI_API_KEY}); }catch(e){} }
-    showToast("🔑 Ключ сохранен!"); 
-}
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: saveQRs
+ * DOCUMENT FUNCTION: saveQRs
  * ========================================================= */
 function saveQRs() { 
     safeSet('qr_tg_v31', document.getElementById('qr-tg').value); 
@@ -247,192 +128,28 @@ function saveQRs() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: openSwapModal
+ * DOCUMENT FUNCTION: upUI
  * ========================================================= */
-function openSwapModal(idx) {
-    swapTargetIdx = idx;
-    let current = currentEstimate[idx];
-    let sel = document.getElementById('swap-select');
-    let isMat = current.type === 'mat';
-    let dbToUse = isMat ? matDB : workDB;
-    
-    let opts = dbToUse.map(x => `<option value="${x.id}" ${x.n===current.n ? 'selected' : ''}>${x.n} (${x.p} ₽)</option>`).join('');
-    sel.innerHTML = opts;
-    openModal('swapModal');
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: applySwap
- * ========================================================= */
-function applySwap() {
-    if(swapTargetIdx < 0) return;
-    let selId = document.getElementById('swap-select').value;
-    let current = currentEstimate[swapTargetIdx];
-    let isMat = current.type === 'mat';
-    let dbToUse = isMat ? matDB : workDB;
-    let newItem = dbToUse.find(x => x.id === selId);
-    
-    if(newItem) {
-        currentEstimate[swapTargetIdx].n = newItem.n;
-        currentEstimate[swapTargetIdx].p = newItem.p;
-        renderMainTable();
-        closeModal('swapModal');
-        showToast("Заменено!");
-    }
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: renderMainTable
- * ========================================================= */
-function renderMainTable() {
-    const tb = document.querySelector("#mainTable tbody"); tb.innerHTML = ""; let total = 0;
-    currentEstimate.forEach((it, idx) => {
-        let sum = fPrice(it) * it.q; total += sum;
-        tb.innerHTML += `<tr>
-            <td class="col-name editable-name" onclick="openSwapModal(${idx})" title="Нажмите для замены">${it.n}</td>
-            <td class="col-qty"><input type="number" value="${it.q}" onchange="currentEstimate[${idx}].q=Number(this.value); renderMainTable();" style="width:50px; padding:6px; margin:0; text-align:center;"></td>
-            <td class="col-sum">${sum} P</td>
-            <td style="text-align:right;"><button onclick="currentEstimate.splice(${idx},1);renderMainTable();" class="btn-danger" style="padding:6px; border-radius:8px; width:auto; margin:0;">✕</button></td>
-        </tr>`;
+function upUI() { 
+    ['soc', 'sw', 'pass', 'cross', 'tv', 'tpol'].forEach(k => {
+        let el = document.getElementById('v-'+k);
+        if(el) el.innerText = window['st_'+k];
     });
-    document.getElementById('tot-all').innerText = total.toLocaleString() + ' P'; syncDraft();
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: clearCurrentEstimate
- * ========================================================= */
-async function clearCurrentEstimate() { let c = await window.customConfirm("Очистка", "Очистить смету?"); if(c){ currentEstimate=[]; renderMainTable(); } }
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: openMatCatalog
- * ========================================================= */
-function openMatCatalog() { 
-    let cats = {}; matDB.forEach(m => { let c = m.c || "ОБЩЕЕ"; if(!cats[c]) cats[c] = []; cats[c].push(m); }); 
-    let html = ""; let idx = 0;
-    for(let c in cats) { 
-        let sid = 'mcat_' + (idx++);
-        html += `<div class="cat-header" onclick="toggleCat('${sid}')">${c}</div><div class="cat-body" id="${sid}">`;
-        cats[c].forEach(m => { html += `<div class="mat-item"><div style="flex:1; font-size:12px; font-weight:600;">${m.n}<br><span style="color:var(--gray); font-size:11px; font-weight:normal;">${m.p} P / ${m.u}</span></div><button class="mat-add-btn" onclick="promptAdd('${m.id}', 'mat')">+ Добавить</button></div>`; });
-        html += `</div>`;
-    } document.getElementById('mat-cat-list').innerHTML = html; openModal('matCatModal'); 
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: openWorkCatalog
- * ========================================================= */
-function openWorkCatalog() { 
-    let cats = {}; workDB.forEach(w => { let c = w.c || "ОБЩЕЕ"; if(!cats[c]) cats[c] = []; cats[c].push(w); });
-    let html = ""; let idx = 0;
-    for(let c in cats) { 
-        let sid = 'wcat_' + (idx++);
-        html += `<div class="cat-header" style="color:var(--orange); border-color:rgba(245,158,11,0.2); background:rgba(245,158,11,0.08);" onclick="toggleCat('${sid}')">${c}</div><div class="cat-body" id="${sid}">`;
-        cats[c].forEach(w => { html += `<div class="mat-item"><div style="flex:1; font-size:12px; font-weight:600;">${w.n}<br><span style="color:var(--gray); font-size:11px; font-weight:normal;">${w.p} P / ${w.u}</span></div><button class="mat-add-btn" style="background:var(--orange);" onclick="promptAdd('${w.id}', 'work')">+ Добавить</button></div>`; });
-        html += `</div>`;
-    } document.getElementById('work-cat-list').innerHTML = html; openModal('workModal'); 
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: promptAdd
- * ========================================================= */
-function promptAdd(id, type) { 
-    let dbArr = (type==='mat'?matDB:workDB); let item = dbArr.find(x => String(x.id) === String(id)); 
-    if(!item) return; pendingAdd = { item, type }; 
-    document.getElementById('qty-prompt-name').innerText = item.n; 
-    document.getElementById('qty-input').value = 1; 
-    openModal('qtyPromptModal'); 
-}
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: confirmQtyAdd
- * ========================================================= */
-function confirmQtyAdd() { 
-    let q = Number(document.getElementById('qty-input').value); 
-    if(q > 0) { addAuto([{...pendingAdd.item, q: q, type: pendingAdd.type}], 'man_'+Date.now()); } 
-    closeModal('qtyPromptModal'); showToast("Добавлено!");
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: addAuto
- * ========================================================= */
-function addAuto(items, tag) {
-    currentEstimate = currentEstimate.filter(it => it.tag !== tag);
-    const map = {};
-    const out = [];
-    (items || []).forEach(src => {
-        if (!src) return;
-        const it = Object.assign({}, src);
-        it.tag = tag;
-        const key = [it.tag || '', it.type || '', it.n || '', Number(it.p) || 0, it.u || 'шт'].join('|');
-        let rec = map[key];
-        if (!rec) {
-            rec = Object.assign({}, it, { q: 0 });
-            map[key] = rec;
-            out.push(rec);
-        }
-        rec.q += Number(it.q) || 0;
-        epV15MergeAssignments(rec, it);
-    });
-    currentEstimate = currentEstimate.concat(out);
-    renderMainTable();
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: modM
- * ========================================================= */
-function modM(t, v) { 
-    let currentP = st_soc + st_sw + st_pass + st_cross + st_tv + st_tpol;
-    if (v > 0 && currentP >= 6) return showToast("Максимум 6 постов в одной рамке!");
-    if (v < 0 && window['st_'+t] <= 0) return;
     
-    window['st_'+t] += v; 
-    upUI(); 
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: addGrp
- * ========================================================= */
-function addGrp() { 
-    let totalMechs = st_soc + st_sw + st_pass + st_cross + st_tv + st_tpol;
-    if(totalMechs === 0) return showToast("Сначала добавьте механизмы!");
+    st_p = st_soc + st_sw + st_pass + st_cross + st_tv + st_tpol;
+    let autoEl = document.getElementById('auto-posts');
+    if(autoEl) autoEl.innerText = st_p || 1; 
+    if(st_p === 0) st_p = 1; 
     
-    pool.push({ p:st_p, h:st_h, q:st_q, soc:st_soc, sw:st_sw, pass:st_pass, cross:st_cross, tv:st_tv, tpol:st_tpol, route: document.getElementById('g-routing').value, podr: st_podr }); 
-    rfPool(); 
+    let qEl = document.getElementById('v-q');
+    if(qEl) qEl.innerText = st_q; 
 }
 
 
 
 
 /* =========================================================
- * VISUAL FUNCTION: applyPoolToEstimate
+ * DOCUMENT FUNCTION: applyPoolToEstimate
  * ========================================================= */
 function applyPoolToEstimate() {
     if(!pool.length) return showToast("❌ Пул пуст!");
@@ -570,35 +287,43 @@ function applyPoolToEstimate() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: addExtraToShieldConfig
+ * DOCUMENT FUNCTION: epV15FormatAutoName
  * ========================================================= */
-function addExtraToShieldConfig() {
-    let sel = document.getElementById('cfg-extra-db');
-    let q = Number(document.getElementById('cfg-extra-q').value) || 1;
-    if(!sel.value) return showToast("Выберите аппарат!");
-    let item = matDB.find(m => m.id === sel.value);
-    if(item) {
-        currentShieldExtras.push({...item, q: q});
-        renderShieldExtras();
-    }
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: renderShieldExtras
- * ========================================================= */
-function renderShieldExtras() {
-    document.getElementById('shield-extras-list').innerHTML = currentShieldExtras.map((ex, i) =>
-        `<div style="display:flex; justify-content:space-between; font-size:11px; border-bottom:1px dashed rgba(0,0,0,0.1); padding:4px;"><span>${ex.n} <b style="color:var(--primary);">(x${ex.q})</b></span><span style="color:red; font-size:16px; font-weight:bold; cursor:pointer;" onclick="currentShieldExtras.splice(${i},1); renderShieldExtras();">✕</span></div>`
-    ).join('');
+function epV15FormatAutoName(found, label, meta) {
+    meta = meta || {};
+    const src = [label, found && found.n, meta.rawLabel].join(' ');
+    const brand = epV15BrandRu(meta.brand || epV15BrandCode(src));
+    let nominal = epV15DetectNominal(src, meta);
+    if (!nominal && /A472|А472/i.test(src)) nominal = 'C40';
+    let poles = epV15DetectPoles(src, meta) || '1P';
+    const model = epV15DetectModel(src, 'automatic') || (epV15BrandCode(brand).toUpperCase()==='IEK' ? 'ВА47-29' : '');
+    if (/вводн/i.test(src) && !nominal) return epV15CleanForName(['Вводной автомат', poles === '1P' ? '2P' : poles, brand, model].filter(Boolean).join(' '));
+    return epV15CleanForName([nominal || 'Автомат', poles, brand, model].filter(Boolean).join(' '));
 }
 
 
 
 /* =========================================================
- * VISUAL FUNCTION: generateCascadePanel
+ * DOCUMENT FUNCTION: epV15FormatRcdName
+ * ========================================================= */
+function epV15FormatRcdName(found, label, meta) {
+    meta = meta || {};
+    const src = [label, found && found.n, meta.rawLabel].join(' ');
+    const kraw = String(meta.kind || label || '').toLowerCase();
+    const kind = kraw.includes('dif') || /диф/i.test(src) ? 'ДИФ' : 'УЗО';
+    const brand = epV15BrandRu(meta.brand || epV15BrandCode(src));
+    const poles = epV15DetectPoles(src, meta) || (kind === 'ДИФ' ? '1P+N' : '2P');
+    const amp = Number(meta.amp || meta.current || 40) || 40;
+    const leakage = epV15DetectLeakage(src, meta) || 30;
+    const typ = meta.rcdType || (String(src).match(/тип\s*([AАBВCС]+)/iu)||[])[1] || 'A';
+    const model = epV15DetectModel(src, kind) || (epV15BrandCode(brand).toUpperCase()==='IEK' ? (kind==='ДИФ'?'АВДТ32':'ВД1-63') : '');
+    return epV15CleanForName([kind, poles, amp + 'A', leakage + 'мА', 'тип ' + String(typ).toUpperCase().replace('А','A').replace('В','B').replace('С','C'), brand, model].filter(Boolean).join(' '));
+}
+
+
+
+/* =========================================================
+ * DOCUMENT FUNCTION: generateCascadePanel
  * ========================================================= */
 function generateCascadePanel() {
     const bBox = epGetVal('cfg-brand-box', 'Tekfor');
@@ -744,78 +469,7 @@ function generateCascadePanel() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: runAiCheck
- * ========================================================= */
-async function runAiCheck() { 
-    if(!GEMINI_API_KEY) return showToast("❌ Нужен ключ ИИ в настройках");
-    showLoader("ИИ анализирует...", "🤖");
-    try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-        const estNames = currentEstimate.map(i => i.n).join(", ");
-        const promptText = `Я электрик. Смета: ${estNames}. Найди логические ошибки (забыл крепеж, рамки, УЗО). Верни ТОЛЬКО JSON массив: [{"reason": "Объяснение", "suggestedName": "Название из стандартных материалов"}]. Если всё идеально, верни пустой массив [].`;
-        const payload = { contents: [{ parts: [{text: promptText }] }] };
-        const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-        const data = await response.json(); hideLoader();
-        if(data.error) throw new Error(data.error.message);
-        let aiText = data.candidates[0].content.parts[0].text.replace(/```[a-z]*\n?/g, '').replace(/```/g, '').trim();
-        const suggestions = JSON.parse(aiText);
-        if (suggestions.length === 0) return showToast("✨ Всё идеально! Смета полная.");
-        document.getElementById('ai-modal-title').innerText = "✨ ИИ-Аналитика";
-        document.getElementById('ai-suggestions').innerHTML = suggestions.map(s => `<div style="background:var(--bg); padding: 12px; border-radius: 10px; margin-bottom:10px; border-left:4px solid var(--ai);"><div style="font-size: 12px; font-weight:bold; margin-bottom:8px;">${s.reason}</div><div style="display:flex; justify-content:space-between; align-items:center;"><span style="font-size:13px; color:var(--primary); font-weight:bold;">${s.suggestedName}</span><button onclick="addAuto([{n:'${s.suggestedName}', q:1, p:0, type:'mat'}], 'ai_add'); closeModal('aiModal');" style="background:var(--ai); padding:6px 12px; font-size:11px; color:white; border:none; border-radius:6px; width:auto; margin:0;">+ Добавить</button></div></div>`).join("");
-        openModal('aiModal');
-    } catch(e) { hideLoader(); showToast("❌ Сбой ИИ: Проверьте ключ"); }
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: aiSupply
- * ========================================================= */
-async function aiSupply() {
-    if(!GEMINI_API_KEY) return showToast("❌ Нужен ключ ИИ");
-    showLoader("ИИ формирует закупку...", "🤖");
-    try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-        const mats = currentEstimate.filter(i=>i.type==='mat').map(i=>`${i.n} - ${i.q}`).join(", ");
-        const promptText = `Смета материалов: ${mats}. Раздели их на логичные категории для удобной закупки в магазине (Кабели, Автоматика, Черновые и т.д.). Выведи в чистом HTML формате (используй <h3>, <ul>, <li>, <b>).`;
-        const payload = { contents: [{ parts: [{text: promptText }] }] };
-        const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-        const data = await response.json(); hideLoader();
-        let aiText = data.candidates[0].content.parts[0].text.replace(/```[a-z]*\n?/g, '').replace(/```/g, '').trim();
-        document.getElementById('ai-modal-title').innerText = "📦 ИИ-Снабженец";
-        document.getElementById('ai-suggestions').innerHTML = `<div style="font-size:13px; line-height:1.5;">${aiText}</div>`;
-        openModal('aiModal');
-    } catch(e) { hideLoader(); showToast("❌ Сбой ИИ"); }
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: aiPueHelper
- * ========================================================= */
-async function aiPueHelper() { 
-    if(!GEMINI_API_KEY) return showToast("❌ Нужен ключ ИИ");
-    showLoader("ИИ думает...", "🤖");
-    try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-        const promptText = `Смета: ${currentEstimate.map(i=>i.n).join(", ")}. Какие нормы ПУЭ нужны? Напиши кратко в HTML (без markdown, используй теги <p>, <ul>, <b>).`;
-        const payload = { contents: [{ parts: [{text: promptText }] }] };
-        const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-        const data = await response.json(); hideLoader();
-        let aiText = data.candidates[0].content.parts[0].text.replace(/```[a-z]*\n?/g, '').replace(/```/g, '').trim();
-        document.getElementById('ai-modal-title').innerText = "📚 ПУЭ Справка";
-        document.getElementById('ai-suggestions').innerHTML = `<div style="font-size:13px; line-height:1.5;">${aiText}</div>`;
-        openModal('aiModal');
-    } catch(e) { hideLoader(); showToast("❌ Сбой ИИ"); }
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: compareShopsAI
+ * DOCUMENT FUNCTION: compareShopsAI
  * ========================================================= */
 async function compareShopsAI() {
     if(!GEMINI_API_KEY) return showToast("❌ Нужен ключ ИИ");
@@ -838,7 +492,7 @@ async function compareShopsAI() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: showPreview
+ * DOCUMENT FUNCTION: showPreview
  * ========================================================= */
 function showPreview(mode, isActOverride = false, customTitle = null) { 
     currentPreviewMode = mode;
@@ -954,7 +608,30 @@ function showPreview(mode, isActOverride = false, customTitle = null) {
 
 
 /* =========================================================
- * VISUAL FUNCTION: deleteAct
+ * DOCUMENT FUNCTION: printAct
+ * ========================================================= */
+function printAct() {
+    if(!currentCardId) return;
+    let obj = hDB.find(x => x.id === currentCardId);
+    if(!obj) return;
+    
+    let tempEstimate = currentEstimate;
+    let tempCust = cust;
+    
+    currentEstimate = obj.estimate || [];
+    cust = { name: obj.name, addr: obj.addr, phone: obj.phone };
+    
+    showPreview('client', true, 'АКТ ВЫПОЛНЕННЫХ РАБОТ');
+    
+    currentEstimate = tempEstimate;
+    cust = tempCust;
+}
+
+
+
+
+/* =========================================================
+ * DOCUMENT FUNCTION: deleteAct
  * ========================================================= */
 async function deleteAct() {
     if(!currentCardId) return;
@@ -976,7 +653,7 @@ async function deleteAct() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: saveCust
+ * DOCUMENT FUNCTION: saveCust
  * ========================================================= */
 function saveCust() { 
     cust.name = document.getElementById('c-name').value; 
@@ -990,7 +667,7 @@ function saveCust() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: saveLogic
+ * DOCUMENT FUNCTION: saveLogic
  * ========================================================= */
 function saveLogic() { 
     appLogic.priceSoc = Number(document.getElementById('logic-price-soc').value) || 500;
@@ -1019,7 +696,7 @@ function saveLogic() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderLogicUI
+ * DOCUMENT FUNCTION: renderLogicUI
  * ========================================================= */
 function renderLogicUI() { 
     document.getElementById('logic-price-soc').value = appLogic.priceSoc || 500; 
@@ -1047,7 +724,7 @@ function renderLogicUI() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: openRecalcModal
+ * DOCUMENT FUNCTION: openRecalcModal
  * ========================================================= */
 function openRecalcModal() { 
     globalRecalcCab = 0; globalRecalcSht = 0;
@@ -1058,36 +735,17 @@ function openRecalcModal() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: doRecalculate
+ * DOCUMENT FUNCTION: updateRecalcUI
  * ========================================================= */
-function doRecalculate() {
+function updateRecalcUI() { 
     let ceilCab = Number(document.getElementById('r-ceil-input').value) || 0; let floorCab = Math.max(0, globalRecalcCab - ceilCab - globalRecalcSht);
-    const rmList = ["Гофра ПВХ", "Лента монтажная", "Площадка под стяжку", "Стяжки нейлоновые", "Стяжка нейлоновая", "Прокладка кабеля", "Клипса в штробу", "Газовый баллон", "Гвозди для прямого", "Смесь штукатурная", "Амортизация: Коронка алмазная"];
-    currentEstimate = currentEstimate.filter(it => !rmList.some(rm => it.n.includes(rm))); let m=[], w=[];
-    let calcFloorCab = Math.ceil(floorCab * 1.1); let calcCeilCab = Math.ceil(ceilCab * 1.1); let calcGofra = Math.ceil(calcFloorCab * 1.05);
-    let boxesCount = 0; currentEstimate.forEach(it => { if(it.n.toLowerCase().includes('подрозетн') && it.type === 'work') boxesCount += Number(it.q); });
-    let mixKg = Math.ceil(boxesCount * 0.3); if(mixKg > 0) m.push({ n: "Смесь штукатурная/алебастр (кг)", q: mixKg, p: 40, type: 'mat' });
-    let crowns = Math.ceil(boxesCount / 80); if(crowns > 0) m.push({ n: "Амортизация: Коронка алмазная", q: crowns, p: 3500, type: 'mat' });
-
-    if (calcFloorCab > 0) { 
-        m.push({ n: "Гофра ПВХ/ПНД с протяжкой", q: calcGofra, p: 25, type: 'mat' }); m.push({ n: "Лента монтажная (перфолента)", q: Math.ceil(calcFloorCab * 0.0033), p: 580, type: 'mat' }); w.push({ n: "Прокладка кабеля в гофре (пол)", q: calcFloorCab, p: appLogic.priceCabCeil || 150, type: 'work' }); 
-    }
-    if (calcCeilCab > 0) {
-        let totalBases = Math.ceil(calcCeilCab * 3); let basePacks = Math.ceil(totalBases / 100);
-        if(basePacks > 0) { m.push({ n: `Площадка под стяжку (уп. 100шт)`, q: basePacks, p: 500, type: 'mat' }); m.push({ n: `Стяжка нейлоновая 400х5 (уп. 100шт)`, q: basePacks, p: 350, type: 'mat' }); }
-        let nailPacks = Math.floor((totalBases + 700) / 1000); if(totalBases > 0 && nailPacks < 1) nailPacks = 1; m.push({ n: "Гвозди для прямого монтажа 3х19 мм (1000 шт)", q: nailPacks, p: 1905, type: 'mat' });
-        let gas = Math.ceil(totalBases / 1100); if(totalBases > 0 && gas < 1) gas = 1; m.push({ n: "Газовый баллон 80 мл 165 мм", q: gas, p: 550, type: 'mat' }); w.push({ n: "Прокладка кабеля (без гофры)", q: calcCeilCab, p: appLogic.priceCabCeil || 120, type: 'work' });
-    }
-    if (globalRecalcSht > 0) { let clipsPacks = Math.ceil((globalRecalcSht * 3) / 100); if(clipsPacks > 0) m.push({ n: `Клипса в штробу (уп. 100шт)`, q: clipsPacks, p: 250, type: 'mat' }); }
-    
-    addAuto(m, 'recalc_m'); addAuto(w, 'recalc_w'); closeModal('recalcModal'); showToast("✅ Трассы пересчитаны!");
+    document.getElementById('r-res-sht').innerText = globalRecalcSht + ' м'; document.getElementById('r-res-ceil').innerText = ceilCab + ' м'; document.getElementById('r-res-floor').innerText = floorCab + ' м'; 
 }
 
 
 
-
 /* =========================================================
- * VISUAL FUNCTION: renderChart
+ * DOCUMENT FUNCTION: renderChart
  * ========================================================= */
 function renderChart() {
     let ctxEl = document.getElementById('buhChart');
@@ -1130,21 +788,22 @@ function renderChart() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: saveHist
+ * DOCUMENT FUNCTION: updateBuhUI
  * ========================================================= */
-async function saveHist() {
-    const finalTotal = parseInt(document.getElementById('b-final').innerText) || 0;
-    let act = { id: Date.now(), name: cust.name, phone: cust.phone, addr: cust.addr, total: finalTotal, date: new Date().toLocaleDateString(), estimate: JSON.parse(JSON.stringify(currentEstimate)), masterName: appUser.name, masterUid: appUser.uid, payments: { mat: false, cut: false, rough: false, fine: false, extra: false, prepay: Number(document.getElementById('b-prepay').value) || 0 } };
-    hDB.push(act); safeSet('h_v31', JSON.stringify(hDB)); updateHistList(); renderChart();
-    try { if(db) { await db.collection('history').doc(String(act.id)).set(act); await db.collection('drafts').doc(appUser.uid).delete(); currentEstimate = []; renderMainTable(); } } catch(e){}
-    showToast("✅ Объект сохранен в Облако!"); closeModal('buhModal');
+function updateBuhUI() {
+    let sumW = 0, sumM = 0, matBase = 0, workBase = 0;
+    currentEstimate.forEach(it => { let price = fPrice(it); if(it.type==='work') { sumW += price * it.q; workBase += (it.p||0) * it.q; } else { sumM += price * it.q; matBase += (it.p||0) * it.q; } });
+    let disc = Number(document.getElementById('b-discount').value) || 0, prep = Number(document.getElementById('b-prepay').value) || 0;
+    document.getElementById('b-work').innerText = sumW + ' P'; document.getElementById('b-mat').innerText = sumM + ' P'; 
+    document.getElementById('p-total').innerText = (workBase + (sumM - matBase)) + ' P'; 
+    document.getElementById('b-final').innerText = (sumW + sumM - disc - prep) + ' P';
 }
 
 
 
 
 /* =========================================================
- * VISUAL FUNCTION: openObjCard
+ * DOCUMENT FUNCTION: openObjCard
  * ========================================================= */
 function openObjCard(id) {
     closeModal('buhModal'); currentCardId = id; const obj = hDB.find(x => x.id === id); if(!obj) return; 
@@ -1194,15 +853,7 @@ function openObjCard(id) {
 
 
 /* =========================================================
- * VISUAL FUNCTION: closeObjCardAndReturn
- * ========================================================= */
-function closeObjCardAndReturn() { closeModal('objCardModal'); openModal('buhModal'); }
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: addExtraWork
+ * DOCUMENT FUNCTION: addExtraWork
  * ========================================================= */
 async function addExtraWork() { 
     const n = document.getElementById('extra-work-name').value.trim(); const p = Number(document.getElementById('extra-work-price').value); 
@@ -1218,7 +869,7 @@ async function addExtraWork() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: switchDbTab
+ * DOCUMENT FUNCTION: switchDbTab
  * ========================================================= */
 function switchDbTab(tab) { 
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active')); 
@@ -1231,7 +882,7 @@ function switchDbTab(tab) {
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderDbEditors
+ * DOCUMENT FUNCTION: renderDbEditors
  * ========================================================= */
 function renderDbEditors() {
     let catsM = [...new Set(matDB.map(m=>m.c || 'Разное'))];
@@ -1267,7 +918,7 @@ function renderDbEditors() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: addDbItem
+ * DOCUMENT FUNCTION: addDbItem
  * ========================================================= */
 async function addDbItem() {
     if(appUser.role !== 'admin') return showToast("Только админ может добавлять");
@@ -1293,71 +944,7 @@ async function addDbItem() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: requestPriceChange
- * ========================================================= */
-async function requestPriceChange(type, id, newPrice) { 
-    newPrice = Number(newPrice); 
-    if (appUser.role === 'admin') { 
-        let dbArr = type === 'mat' ? matDB : workDB; let item = dbArr.find(x => x.id === id); 
-        if (item) item.p = newPrice; priceOverrides[id] = newPrice; 
-        try { if(db) { await db.collection('settings').doc('price_overrides').set({overrides: priceOverrides}); await db.collection('settings').doc('global_db').set({matDB: matDB, workDB: workDB}); } } catch(e){} 
-        showToast("✅ Цена изменена"); 
-    } else { showToast("Отправлено админу"); } 
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: approveUser
- * ========================================================= */
-async function approveUser(uid) { try { await db.collection('users').doc(uid).update({ isApproved: true }); showToast("Одобрено!"); } catch(e){} }
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: openAdminDraftView
- * ========================================================= */
-function openAdminDraftView(uid) {
-    let draft = adminDraftsCache.find(d => d.uid === uid);
-    if(!draft) return;
-    let html = `<h3 style="margin-top:0; color:var(--primary);">${draft.masterName}</h3>`;
-    html += `<p style="font-size:12px; color:var(--gray); margin-bottom:15px;">Объект: ${draft.cust?.name || 'Не указан'} (${draft.cust?.addr || 'Нет адреса'})</p>`;
-    html += `<table class="pdf-table" style="width:100%;">`;
-    (draft.estimate || []).forEach(it => {
-        html += `<tr><td>${it.n}</td><td style="text-align:center;">x${it.q}</td><td style="text-align:right; font-weight:bold;">${fPrice(it) * it.q} ₽</td></tr>`;
-    });
-    html += `</table><h3 style="text-align:right; color:var(--primary);">Итого: ${draft.total} ₽</h3>`;
-    document.getElementById('admin-draft-content').innerHTML = html;
-    openModal('adminDraftModal');
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: renderAdminUsers
- * ========================================================= */
-async function renderAdminUsers() {
-    if(appUser.role !== 'admin') return;
-    try {
-        if(db) {
-            const snap = await db.collection('users').get();
-            let html = snap.docs.map(doc => {
-                let u = doc.data();
-                return `<div class="emp-row" style="flex-wrap: wrap; gap: 5px;"><div><b>${u.name}</b><br><span style="font-size:10px; color:var(--gray);">${u.phone || u.email} (${u.role})</span></div> <button class="btn-danger" style="padding:6px 10px; width:auto; margin:0;" onclick="deleteUser('${doc.id}')">✕</button></div>`;
-            }).join('');
-            document.getElementById('admin-users-list').innerHTML = html || "<span style='font-size:11px; color:gray;'>Нет сотрудников</span>";
-        }
-    } catch(e) { console.error("Render users error", e); }
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: adminAddUser
+ * DOCUMENT FUNCTION: adminAddUser
  * ========================================================= */
 async function adminAddUser() {
     let p = document.getElementById('add-user-phone').value.trim();
@@ -1374,60 +961,7 @@ async function adminAddUser() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: deleteUser
- * ========================================================= */
-async function deleteUser(uid) {
-    let conf = await window.customConfirm("Удаление", "Удалить мастера из базы?");
-    if(conf && db) { try { await db.collection('users').doc(uid).delete(); renderAdminUsers(); showToast("Удален"); } catch(e){} }
-}
-
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: epNormProvider
- * ========================================================= */
-function epNormProvider(p) {
-        return p === 'openai' ? 'openai' : 'gemini';
-    }
-
-    
-
-
-/* =========================================================
- * VISUAL FUNCTION: epCurrentKey
- * ========================================================= */
-function epCurrentKey() {
-        const p = epCurrentProvider();
-        if (p === 'openai') return window.EP_AI_CONFIG.openaiKey || safeGet('ep_openai_key_v1', '');
-        return window.EP_AI_CONFIG.geminiKey || (typeof GEMINI_API_KEY !== 'undefined' ? GEMINI_API_KEY : '') || safeGet('gemini_key_v31', '');
-    }
-
-    
-
-
-/* =========================================================
- * VISUAL FUNCTION: epSetAiProvider
- * ========================================================= */
-function epSetAiProvider(provider, saveRemote) {
-        provider = epNormProvider(provider);
-        window.EP_AI_CONFIG.provider = provider;
-        safeSet('ep_ai_provider_v1', provider);
-        epRefreshProviderUI();
-
-        if (saveRemote && db && appUser && appUser.role === 'admin') {
-            epSaveAiConfig(false);
-        } else if (saveRemote && appUser && appUser.role !== 'admin') {
-            showToast('ИИ-провайдер: ' + (provider === 'openai' ? 'OpenAI' : 'Gemini'));
-        }
-    }
-
-    
-
-
-/* =========================================================
- * VISUAL FUNCTION: epRefreshProviderUI
+ * DOCUMENT FUNCTION: epRefreshProviderUI
  * ========================================================= */
 function epRefreshProviderUI() {
         const p = epCurrentProvider();
@@ -1453,7 +987,7 @@ function epRefreshProviderUI() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: epInsertMainProviderSwitch
+ * DOCUMENT FUNCTION: epInsertMainProviderSwitch
  * ========================================================= */
 function epInsertMainProviderSwitch() {
         if (document.getElementById('ep-main-ai-switch')) return;
@@ -1482,7 +1016,7 @@ function epInsertMainProviderSwitch() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: epMakeAiMenuGroup
+ * DOCUMENT FUNCTION: epMakeAiMenuGroup
  * ========================================================= */
 function epMakeAiMenuGroup() {
         const menu = document.getElementById('burger-menu');
@@ -1520,7 +1054,7 @@ function epMakeAiMenuGroup() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: epPatchSettingsUI
+ * DOCUMENT FUNCTION: epPatchSettingsUI
  * ========================================================= */
 function epPatchSettingsUI() {
         if (document.getElementById('ep-ai-admin-box')) return;
@@ -1569,43 +1103,7 @@ function epPatchSettingsUI() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: epTestProviderKey
- * ========================================================= */
-async function epTestProviderKey(provider, key, model) {
-        provider = epNormProvider(provider);
-        if (!key) throw new Error('Введите API-ключ');
-
-        if (provider === 'openai') {
-            const r = await fetch('https://api.openai.com/v1/responses', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-                body: JSON.stringify({
-                    model: model || 'gpt-4o-mini',
-                    input: [{ role: 'user', content: [{ type: 'input_text', text: 'Ответь одним словом: ok' }] }],
-                    max_output_tokens: 20
-                })
-            });
-            const data = await r.json();
-            if (!r.ok || data.error) throw new Error(data.error ? data.error.message : 'OpenAI API error');
-            return true;
-        }
-
-        const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(key);
-        const r = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: [{ parts: [{ text: 'Ответь одним словом: ok' }] }] })
-        });
-        const data = await r.json();
-        if (!r.ok || data.error) throw new Error(data.error ? data.error.message : 'Gemini API error');
-        return true;
-    }
-
-    
-
-
-/* =========================================================
- * VISUAL FUNCTION: epLoadAiConfigFromServer
+ * DOCUMENT FUNCTION: epLoadAiConfigFromServer
  * ========================================================= */
 async function epLoadAiConfigFromServer() {
         try {
@@ -1677,7 +1175,7 @@ async function epLoadAiConfigFromServer() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: epExtractOpenAiText
+ * DOCUMENT FUNCTION: epExtractOpenAiText
  * ========================================================= */
 function epExtractOpenAiText(data) {
         if (data.output_text) return data.output_text;
@@ -1695,86 +1193,7 @@ function epExtractOpenAiText(data) {
 
 
 /* =========================================================
- * VISUAL FUNCTION: epCallOpenAI
- * ========================================================= */
-async function epCallOpenAI(promptText, opts) {
-        const key = window.EP_AI_CONFIG.openaiKey || safeGet('ep_openai_key_v1', '');
-        if (!key) throw new Error('Нужен OpenAI API ключ');
-
-        const content = [{ type: 'input_text', text: promptText }];
-        if (opts && opts.imageDataUrl) {
-            content.push({
-                type: 'input_image',
-                image_url: opts.imageDataUrl,
-                detail: (opts && opts.imageDetail) ? opts.imageDetail : 'high'
-            });
-        }
-
-        const body = {
-            model: window.EP_AI_CONFIG.openaiModel || 'gpt-4o-mini',
-            input: [{ role: 'user', content: content }],
-            max_output_tokens: opts && opts.maxTokens ? opts.maxTokens : 5000
-        };
-
-        const r = await fetch('https://api.openai.com/v1/responses', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-            body: JSON.stringify(body)
-        });
-        const data = await r.json();
-        if (!r.ok || data.error) throw new Error(data.error ? data.error.message : 'OpenAI API error');
-        return epExtractOpenAiText(data);
-    }
-
-    
-
-
-/* =========================================================
- * VISUAL FUNCTION: epAskAI
- * ========================================================= */
-async function epAskAI(promptText, opts) {
-        await epLoadAiConfigFromServer();
-        const provider = epCurrentProvider();
-        if (provider === 'openai') return epCallOpenAI(promptText, opts || {});
-        return epCallGemini(promptText, opts || {});
-    }
-
-    
-
-
-/* =========================================================
- * VISUAL FUNCTION: epParseLooseTableText
- * ========================================================= */
-function epParseLooseTableText(t, type) {
-        const lines = epStripCode(t).split(/\r?\n/).map(x => x.trim()).filter(Boolean);
-        const out = [];
-        lines.forEach(function(line) {
-            if (/^(№|номер|код|артикул|итого|сумма|json|категория)/i.test(line)) return;
-            let s = line.replace(/[|;]/g, '\t').replace(/\s{2,}/g, '\t');
-            const parts = s.split(/\t+/).map(x => x.trim()).filter(Boolean);
-            const unitIdx = parts.findIndex(x => /^(шт|м|м2|м²|м3|м³|упак|уп|компл|кг|л)$/i.test(x));
-            if (unitIdx > 0) {
-                let nameParts = parts.slice(0, unitIdx).filter(x => !/^\d+$/.test(x) && !/^[A-ZА-Я0-9\-.]{3,15}$/i.test(x));
-                let name = nameParts.join(' ').trim();
-                let nums = parts.slice(unitIdx + 1).map(epMoney).filter(n => n > 0);
-                let p = nums.length ? nums[0] : 0;
-                if (name.length > 3) out.push({ c: epInferCategory(name, type), n: name, p: p, u: parts[unitIdx] });
-            } else {
-                const nums = line.match(/\d+[\d\s]*[,.]?\d*/g) || [];
-                if (nums.length && line.length > 8) {
-                    let p = epMoney(nums[nums.length - 1]);
-                    let name = line.replace(/^[\d\s.№-]+/, '').replace(/\d+[\d\s]*[,.]?\d*\s*$/, '').trim();
-                    if (name.length > 4) out.push({ c: epInferCategory(name, type), n: name, p: p, u: 'шт' });
-                }
-            }
-        });
-        return out;
-    }
-    
-
-
-/* =========================================================
- * VISUAL FUNCTION: epInsertDbTools
+ * DOCUMENT FUNCTION: epInsertDbTools
  * ========================================================= */
 function epInsertDbTools() {
         if (document.getElementById('ep-db-ai-tools')) return;
@@ -1801,210 +1220,123 @@ function epInsertDbTools() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: epReadDbFile
+ * DOCUMENT FUNCTION: epExtractItemsFromSheetRows
  * ========================================================= */
-async function epReadDbFile(file, type) {
-        showLoader('Читаю файл...', '📥');
-        try {
-            const name = file.name || '';
-            const lower = name.toLowerCase();
+function epExtractItemsFromSheetRows(rows, type) {
+        const out = [];
+        let currentCat = type === 'work' ? 'Работы' : 'Разное';
+        let currentSubcat = 'Разное';
 
-            if (file.type.startsWith('image/')) {
-                const imageDataUrl = await epReadFileAsDataURL(file);
-                await epAiNormalizeImage(imageDataUrl, type, name);
-                return;
-            }
+        (rows || []).forEach(function(row) {
+            const cells = (Array.isArray(row) ? row : Object.values(row || {})).map(epCleanCell);
+            const nonEmpty = cells.filter(x => x);
+            if (!nonEmpty.length) return;
 
-            if (lower.endsWith('.json')) {
-                const txt = await epReadFileAsText(file);
-                let raw = JSON.parse(txt);
-                if (raw.matDB && type === 'mat') raw = raw.matDB;
-                if (raw.workDB && type === 'work') raw = raw.workDB;
-                epShowDbReview(epNormalizeItems(raw, type), type, name);
-                return;
-            }
-            if (lower.endsWith('.xlsx') || lower.endsWith('.xls') || lower.endsWith('.csv')) {
-                let rows = [];
-                if (window.XLSX) {
-                    const ab = await epReadFileAsArrayBuffer(file);
-                    const wb = XLSX.read(ab, { type: 'array' });
-                    const ws = wb.Sheets[wb.SheetNames[0]];
-                    rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+            const rowText = nonEmpty.join(' ');
+            if (/^(№|номер|код|артикул)$/i.test(rowText)) return;
+            if (/наименование/i.test(rowText) && /(ед|цена|стоимость)/i.test(rowText)) return;
+
+            const unitIdx = cells.findIndex(epIsUnitCell);
+            const numIdxs = cells.map((v, i) => epIsNumberLikeCell(v) ? i : -1).filter(i => i >= 0);
+            const priceIdxs = numIdxs.filter(i => unitIdx < 0 || i > unitIdx);
+            const priceIdx = priceIdxs.length ? priceIdxs[0] : (numIdxs.length ? numIdxs[numIdxs.length - 1] : -1);
+            const hasPrice = priceIdx >= 0 && epMoney(cells[priceIdx]) > 0;
+            const hasUnit = unitIdx >= 0;
+
+            // Строка-раздел без цены и единицы
+            if (!hasPrice && !hasUnit) {
+                let title = nonEmpty.find(x => !/^\d+(\.\d+)*\.?$/.test(x)) || rowText;
+                title = epTitleCaseRu(title);
+                if (!title || title.length < 3) return;
+
+                const first = nonEmpty[0] || '';
+                if (/^\d+\.$/.test(first) || /работ/i.test(title) || title === title.toUpperCase()) {
+                    currentCat = title;
+                    currentSubcat = 'Разное';
+                } else if (/^\d+\.\d+/.test(first) || /:$/.test(rowText) || nonEmpty.length <= 2) {
+                    currentSubcat = title;
+                } else if (type === 'work') {
+                    currentSubcat = title;
                 } else {
-                    const txt = await epReadFileAsText(file);
-                    rows = txt.split(/\r?\n/).map(function(line) {
-                        return line.split(';').length > line.split(',').length ? line.split(';') : line.split(',');
-                    });
+                    currentCat = title;
                 }
-
-                // Сначала разбираем Excel/CSV локально, построчно: каждая строка = отдельная позиция.
-                // ИИ нужен только как запасной вариант, если таблица слишком кривая.
-                const localItems = epExtractItemsFromSheetRows(rows, type);
-                if (localItems.length) {
-                    hideLoader();
-                    epShowDbReview(localItems, type, name);
-                    return;
-                }
-
-                await epAiNormalizeDbText(JSON.stringify(rows).slice(0, 90000), type, name);
                 return;
             }
 
-            const txt = await epReadFileAsText(file);
-            await epAiNormalizeDbText(txt, type, name);
-        } catch (e) {
-            hideLoader();
-            showToast('❌ ' + (e.message || 'Ошибка импорта'));
-        }
-    }
+            let nameCandidates = cells.map((v, i) => ({ v, i }))
+                .filter(x => x.v)
+                .filter(x => x.i !== unitIdx && x.i !== priceIdx)
+                .filter(x => !epIsNumberLikeCell(x.v))
+                .filter(x => !epLooksLikeCodeOrNumber(x.v))
+                .filter(x => !/^(ед|ед изм|цена|сумма|стоимость|кол-во|количество)$/i.test(x.v));
 
-    
+            if (!nameCandidates.length) return;
+            nameCandidates.sort((a, b) => b.v.length - a.v.length);
+            const name = epCleanText(nameCandidates[0].v);
+            if (!name || name.length < 4) return;
 
+            const cat = currentCat && currentCat !== 'Разное' ? currentCat : epInferCategory(name, type);
+            const subcat = currentSubcat && currentSubcat !== 'Разное' ? currentSubcat : epInferSubcategory(name, cat, type);
+            const unit = hasUnit ? epNormalizeUnit(cells[unitIdx]) : 'шт';
+            const price = hasPrice ? epMoney(cells[priceIdx]) : 0;
 
-/* =========================================================
- * VISUAL FUNCTION: epAiNormalizeImage
- * ========================================================= */
-async function epAiNormalizeImage(imageDataUrl, type, source) {
-        showLoader('ИИ читает таблицу с изображения...', '👁️');
-        let rawAnswer = '';
-        try {
-            const prompt = `Ты профессионально распознаёшь русские сметы, счета и прайсы электромонтажных материалов.
-На изображении таблица. Нужно извлечь ВСЕ видимые строки с позициями для базы ${epDbTypeLabel(type)}.
-
-Правила:
-1. Читай каждую строку таблицы, даже если качество среднее.
-2. Не возвращай пустой массив, если видны строки с товарами/работами.
-3. Для имени n бери колонку с наименованием/описанием, НЕ артикул и НЕ номер строки.
-4. c — главная категория: Кабель, Трубы, Расходники, Автоматика, Слаботочка, Чистовое, Работы, Щит, Разное.
-5. sc — подкатегория. Определи точнее: ВВГ, ПУГВ, SAT/TV, UTP/FTP, Подрозетники, Крепёж, Клеммники, Коробки, Щиты, Автоматы, УЗО, Дифавтоматы, Розетки, Выключатели и т.д.
-6. p — цена за единицу. Если есть две суммы, бери меньшую как цену за единицу, большую не бери как цену.
-7. u — единица измерения: шт, м, упак, компл, кг, л и т.д.
-8. Если цену не видно — p=0. Если единицу не видно — u="шт". Если подкатегорию не понял — sc="Разное".
-9. Верни СТРОГО JSON-массив без текста вокруг.
-
-Формат строго такой:
-[
-  {"n":"ВВГ-Пнг(A)-LS ГОСТ Конкорд 3x1,5","c":"Кабель","sc":"ВВГ","p":58.43,"u":"м"},
-  {"n":"Подрозетник бетон 68x60","c":"Расходники","sc":"Подрозетники","p":12,"u":"шт"}
-]`;
-
-            rawAnswer = await epAskAI(prompt, { imageDataUrl: imageDataUrl, imageDetail: 'high', maxTokens: 9000 });
-            let parsed = epParseJsonArray(rawAnswer);
-            let items = epNormalizeItems(parsed, type);
-
-            if (!items.length) {
-                const retryPrompt = `Ты ответил без позиций. Посмотри изображение ещё раз. Там таблица со строками, например кабели, подрозетники, клеммники, автоматы, расходники. Извлеки хотя бы 10-30 видимых строк. Верни только JSON массив [{"n":"Имя позиции","c":"Категория","sc":"Подкатегория","p":0,"u":"шт"}]. Не объясняй.`;
-                rawAnswer = await epAskAI(retryPrompt, { imageDataUrl: imageDataUrl, imageDetail: 'high', maxTokens: 9000 });
-                parsed = epParseJsonArray(rawAnswer);
-                items = epNormalizeItems(parsed, type);
-            }
-
-            hideLoader();
-            epShowDbReview(items, type, source, rawAnswer);
-        } catch (e) {
-            hideLoader();
-            showToast('❌ ' + (e.message || 'ИИ не прочитал изображение'));
-        }
-    }
-
-    
-
-
-/* =========================================================
- * VISUAL FUNCTION: epAiNormalizeDbText
- * ========================================================= */
-async function epAiNormalizeDbText(rawText, type, source) {
-        showLoader('ИИ структурирует базу...', '🤖');
-        let rawAnswer = '';
-        try {
-            const prompt = 'Ты помощник электрика. Приведи данные к базе ' + epDbTypeLabel(type) + '. Верни ТОЛЬКО JSON массив объектов: [{"n":"Имя позиции","c":"Категория","sc":"Подкатегория","p":123,"u":"шт"}]. n — имя/наименование позиции. c — главная категория. sc — подкатегория. p — цена за единицу, не итоговая сумма. u — единица измерения. Если цены нет, p=0. Если категории нет, определи сам: Кабель, Трубы, Расходники, Автоматика, Слаботочка, Чистовое, Работы, Щит, Разное. Если подкатегории нет, определи сам или поставь "Разное". Не возвращай пустой массив, если в данных есть строки с позициями. Данные: ' + String(rawText).slice(0, 90000);
-            rawAnswer = await epAskAI(prompt, { maxTokens: 8000 });
-            const items = epNormalizeItems(epParseJsonArray(rawAnswer), type);
-            hideLoader();
-            epShowDbReview(items, type, source, rawAnswer);
-        } catch (e) {
-            hideLoader();
-            showToast('❌ ' + (e.message || 'ИИ не обработал данные'));
-        }
-    }
-
-    
-
-
-/* =========================================================
- * VISUAL FUNCTION: epShowDbReview
- * ========================================================= */
-function epShowDbReview(items, type, source, rawAnswer) {
-        window.EP_DB_REVIEW = { type: type, items: items, source: source || '' };
-        document.getElementById('ep-db-ai-review-title').innerText = 'Импорт ' + epDbTypeLabel(type) + ': ' + (source || '');
-        const list = document.getElementById('ep-db-ai-review-list');
-
-        if (!items.length) {
-            list.innerHTML = `<div style="padding:12px; color:var(--danger); font-weight:800;">ИИ не нашёл позиции. Попробуйте другой файл, текст или сделайте скрин крупнее.</div><details style="margin-top:10px; font-size:11px; color:var(--gray);"><summary>Показать ответ ИИ</summary><pre style="white-space:pre-wrap; max-height:220px; overflow:auto;">${epEscape(rawAnswer || '')}</pre></details>`;
-        } else {
-            list.innerHTML = items.map(function (it, idx) {
-                return `<div class="ep-db-review-row">
-                    <input type="checkbox" id="ep-db-check-${idx}" checked>
-                    <div class="ep-db-review-fields">
-                        <div><label>Имя</label><input id="ep-db-name-${idx}" value="${epEscape(it.n)}" placeholder="Имя / наименование"></div>
-                        <div class="ep-db-review-2col">
-                            <div><label>Категория</label><input id="ep-db-cat-${idx}" value="${epEscape(it.c)}" placeholder="Категория"></div>
-                            <div><label class="ep-db-subcat-label">Подкатегория</label><input id="ep-db-subcat-${idx}" value="${epEscape(it.sc || 'Разное')}" placeholder="Подкатегория"></div>
-                        </div>
-                        <div class="ep-db-review-2col">
-                            <div><label>Цена за единицу</label><input id="ep-db-price-${idx}" type="number" step="0.01" value="${Number(it.p)||0}" placeholder="Цена"></div>
-                            <div><label>Единица</label><input id="ep-db-unit-${idx}" value="${epEscape(it.u || 'шт')}" placeholder="шт / м / упак"></div>
-                        </div>
-                    </div>
-                </div>`;
-            }).join('');
-        }
-
-        openModal('ep-db-ai-review-modal');
-    }
-
-    
-
-
-/* =========================================================
- * VISUAL FUNCTION: epRenderGroupedList
- * ========================================================= */
-function epRenderGroupedList(arr, type, opts) {
-        opts = opts || {};
-        const cats = epGroupCatalog(arr, type);
-        let html = '';
-        let idx = 0;
-        Object.keys(cats).sort((a,b)=>a.localeCompare(b,'ru')).forEach(function(c) {
-            const cid = (opts.prefix || 'ep_cat') + '_' + epId(type + '_' + idx++);
-            const catStyle = type === 'work' ? 'style="color:var(--orange); border-color:rgba(245,158,11,.2); background:rgba(245,158,11,.08);"' : '';
-            html += `<div class="cat-header" ${catStyle} onclick="toggleCat('${cid}')">${epEsc(c)} <span>▼</span></div><div class="cat-body" id="${cid}">`;
-            Object.keys(cats[c]).sort((a,b)=>a.localeCompare(b,'ru')).forEach(function(g) {
-                const sid = (opts.prefix || 'ep_sub') + '_' + epId(type + '_' + idx++);
-                html += `<div class="ep-subcat-header" onclick="epToggleSubCat('${sid}', event)">${epEsc(g)} <span>открыть</span></div><div class="ep-subcat-body" id="${sid}">`;
-                cats[c][g].sort((a,b)=>String(a.n||'').localeCompare(String(b.n||''), 'ru')).forEach(function(it) {
-                    if (!it.id) it.id = 'ep_' + type + '_' + Math.abs((String(it.c)+String(it.g)+String(it.n)).split('').reduce((h,ch)=>((h<<5)-h+ch.charCodeAt(0))|0,0));
-                    const id = epEsc(it.id);
-                    const itemTitle = epEsc(it.n || 'Позиция');
-                    if (opts.mode === 'editor') {
-                        html += `<div class="emp-row"><div style="flex:1;"><div class="ep-db-item-title">${itemTitle}</div><div class="ep-db-item-meta">${epEsc(g)} • ${Number(it.p)||0} ₽ / ${epEsc(it.u || 'шт')}</div></div><div class="ep-row-actions"><input type="number" value="${Number(it.p)||0}" onchange="requestPriceChange('${type}','${id}',this.value)" style="width:74px;margin:0;padding:5px;text-align:center;"><button class="btn-danger" onclick="epDeleteDbItem('${type}','${id}')" title="Удалить">🗑</button></div></div>`;
-                    } else if (opts.mode === 'global') {
-                        html += `<label class="mat-item ep-select-row"><input type="checkbox" class="ep-global-check" data-type="${type}" data-id="${id}"><div style="flex:1;"><div class="ep-db-item-title">${itemTitle}</div><div class="ep-db-item-meta">${epEsc(c)} • ${epEsc(g)} • ${Number(it.p)||0} ₽ / ${epEsc(it.u || 'шт')}</div></div></label>`;
-                    } else {
-                        html += `<div class="mat-item"><div style="flex:1;"><div class="ep-db-item-title">${itemTitle}</div><div class="ep-db-item-meta">${epEsc(g)} • ${Number(it.p)||0} ₽ / ${epEsc(it.u || 'шт')}</div></div><button class="mat-add-btn" style="${type === 'work' ? 'background:var(--orange);' : ''} width:auto; margin:0;" onclick="epPromptGroupedAdd('${id}','${type}')">+ Добавить</button></div>`;
-                    }
-                });
-                html += '</div>';
+            out.push({
+                id: (type === 'work' ? 'w' : 'm') + '_sheet_' + Date.now() + '_' + out.length,
+                n: name,
+                c: cat || (type === 'work' ? 'Работы' : 'Разное'),
+                sc: subcat || 'Разное',
+                p: price,
+                u: unit
             });
-            html += '</div>';
         });
-        return html || '<p style="color:var(--gray);font-size:12px;">Позиций нет</p>';
+
+        return out;
+    }
+    
+
+
+/* =========================================================
+ * DOCUMENT FUNCTION: epGetReviewedSelected
+ * ========================================================= */
+function epGetReviewedSelected() {
+        const items = window.EP_DB_REVIEW.items || [];
+        return items.map(function (it, idx) {
+            const checked = document.getElementById('ep-db-check-' + idx)?.checked;
+            if (!checked) return null;
+            return {
+                id: it.id || (window.EP_DB_REVIEW.type === 'work' ? 'w' : 'm') + '_ai_' + Date.now() + '_' + idx,
+                c: epCleanText(document.getElementById('ep-db-cat-' + idx)?.value) || 'Разное',
+                sc: epCleanText(document.getElementById('ep-db-subcat-' + idx)?.value) || 'Разное',
+                n: epCleanText(document.getElementById('ep-db-name-' + idx)?.value),
+                p: epMoney(document.getElementById('ep-db-price-' + idx)?.value),
+                u: epCleanText(document.getElementById('ep-db-unit-' + idx)?.value) || 'шт'
+            };
+        }).filter(Boolean).filter(function (x) { return x.n; });
     }
 
     
 
 
 /* =========================================================
- * VISUAL FUNCTION: epRenderGlobalDbModal
+ * DOCUMENT FUNCTION: epInsertAdminProposalBox
+ * ========================================================= */
+function epInsertAdminProposalBox() {
+        if (document.getElementById('admin-db-proposals')) return;
+        const panel = document.getElementById('admin-panel');
+        if (!panel) return;
+        const box = document.createElement('div');
+        box.innerHTML = `
+            <h4 style="color:var(--primary); margin: 10px 0 5px;">🌍 Заявки в базу сервера:</h4>
+            <div id="admin-db-proposals" style="margin-bottom:10px; border:1px solid var(--primary); background:rgba(79,70,229,.05); border-radius:8px; padding:8px; max-height:240px; overflow-y:auto; font-size:12px;"></div>
+        `;
+        panel.insertBefore(box, panel.firstChild.nextSibling);
+    }
+
+    
+
+
+/* =========================================================
+ * DOCUMENT FUNCTION: epRenderGlobalDbModal
  * ========================================================= */
 function epRenderGlobalDbModal() {
         const matBtn = document.getElementById('ep-global-tab-mat'); const workBtn = document.getElementById('ep-global-tab-work');
@@ -2017,7 +1349,7 @@ function epRenderGlobalDbModal() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: epInsertGlobalDbButton
+ * DOCUMENT FUNCTION: epInsertGlobalDbButton
  * ========================================================= */
 function epInsertGlobalDbButton() {
         if (document.getElementById('ep-global-db-entry')) return;
@@ -2030,50 +1362,23 @@ function epInsertGlobalDbButton() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: epRenderProposalList
+ * DOCUMENT FUNCTION: epEnsureProposalBox
  * ========================================================= */
-function epRenderProposalList() {
-        const cont = epEnsureProposalBox(); if (!cont) return;
-        const entries = Object.entries(window.EP_DB_PROPOSALS_CACHE_V2 || {});
-        if (!entries.length) { cont.innerHTML = '<span style="color:var(--gray);">Новых заявок нет</span>'; return; }
-        cont.innerHTML = entries.map(function([id,d]) {
-            const items = Array.isArray(d.items) ? d.items : [];
-            const decisions = d.itemDecisions || {};
-            const done = Object.keys(decisions).length;
-            const preview = items.slice(0,3).map(x => epEsc(epProposalItemName(x))).join('<br>');
-            return `<div class="ep-proposal-open-card" onclick="epOpenProposalDetail('${id}')"><b>${epEsc(d.masterName || d.uid || 'Мастер')}</b><span class="ep-proposal-badge">${d.type === 'work' ? 'Работы' : 'Материалы'}</span><div style="font-size:11px;color:var(--gray);margin-top:4px;">${epEsc(d.action || '')} • ${items.length} поз. • обработано ${done}/${items.length}</div><div style="font-size:11px;margin-top:6px;">${preview}${items.length>3?'<br>...':''}</div><button class="btn-info" style="width:100%;margin-top:8px;padding:9px;" onclick="event.stopPropagation(); epOpenProposalDetail('${id}')">Открыть заявку</button></div>`;
-        }).join('');
+function epEnsureProposalBox() {
+        let cont = document.getElementById('admin-db-proposals');
+        if (cont) return cont;
+        const panel = document.getElementById('admin-panel');
+        if (!panel) return null;
+        const box = document.createElement('div');
+        box.innerHTML = `<h4 style="color:var(--primary); margin:10px 0 5px;">🌍 Заявки в базу сервера:</h4><div id="admin-db-proposals" style="margin-bottom:10px; border:1px solid var(--primary); background:rgba(79,70,229,.05); border-radius:8px; padding:8px; max-height:260px; overflow-y:auto; font-size:12px;"></div>`;
+        panel.insertBefore(box, panel.firstChild ? panel.firstChild.nextSibling : null);
+        return document.getElementById('admin-db-proposals');
     }
     
 
 
 /* =========================================================
- * VISUAL FUNCTION: epStartProposalV2
- * ========================================================= */
-function epStartProposalV2() {
-        if (!db || !appUser || appUser.role !== 'admin') return;
-        const cont = epEnsureProposalBox(); if (!cont || cont.dataset.v2listen === '1') return;
-        cont.dataset.v2listen = '1';
-        db.collection('db_proposals').where('status','==','pending').onSnapshot(function(snap) {
-            window.EP_DB_PROPOSALS_CACHE_V2 = {};
-            snap.forEach(function(doc) { window.EP_DB_PROPOSALS_CACHE_V2[doc.id] = Object.assign({}, doc.data() || {}, { id: doc.id }); });
-            epRenderProposalList();
-        }, function(e) { cont.innerHTML = '<span style="color:var(--danger);">Ошибка заявок: ' + epEsc(e.message) + '</span>'; });
-    }
-    
-
-
-/* =========================================================
- * VISUAL FUNCTION: epInitFullWorksPatch
- * ========================================================= */
-function epInitFullWorksPatch() {
-        epInsertGlobalDbButton(); epNormalizeAllWorkDb(); if (typeof renderDbEditors === 'function') renderDbEditors(); epStartProposalV2();
-    }
-    
-
-
-/* =========================================================
- * VISUAL FUNCTION: epMoveShieldSettingsIntoDetails
+ * DOCUMENT FUNCTION: epMoveShieldSettingsIntoDetails
  * ========================================================= */
 function epMoveShieldSettingsIntoDetails(){
     var modal = qs('configModal');
@@ -2114,296 +1419,40 @@ function epMoveShieldSettingsIntoDetails(){
 
 
 /* =========================================================
- * VISUAL FUNCTION: epRenderGrouped
+ * DOCUMENT FUNCTION: normalizeMaterialDb
  * ========================================================= */
-function epRenderGrouped(arr, type, mode, prefix){
-    var data = epGroupedData(arr, type);
-    var html = '', i = 0;
-    Object.keys(data).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
-      var cid = prefix + '_c_' + (i++);
-      var catStyle = type === 'work' ? 'style="color:var(--orange); border-color:rgba(245,158,11,0.2); background:rgba(245,158,11,0.08);"' : '';
-      html += '<div class="cat-header" '+catStyle+' onclick="toggleCat(\''+cid+'\')">'+safeText(c)+' <span>▼</span></div><div class="cat-body" id="'+cid+'">';
-      Object.keys(data[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
-        var sid = prefix + '_s_' + (i++);
-        html += '<div class="ep-db-sub-header" onclick="epToggleShieldDbSub(\''+sid+'\', event)">'+safeText(g)+' <small>открыть</small></div><div class="ep-db-sub-body" id="'+sid+'">';
-        data[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it){
-          var id = safeText(it.id);
-          var meta = safeText(g)+' • '+(Number(it.p)||0)+' ₽ / '+safeText(it.u || 'шт');
-          if (mode === 'editor') {
-            html += '<div class="emp-row"><div style="flex:1;"><div class="ep-db-item-title">'+safeText(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div><div class="ep-row-actions"><input type="number" value="'+(Number(it.p)||0)+'" onchange="requestPriceChange(\''+type+'\',\''+id+'\',this.value)" style="width:74px;margin:0;padding:5px;text-align:center;"><button class="btn-danger" onclick="epDeleteDbItem && epDeleteDbItem(\''+type+'\',\''+id+'\')" title="Удалить">🗑</button></div></div>';
-          } else {
-            var color = type === 'work' ? 'background:var(--orange);' : '';
-            html += '<div class="mat-item"><div style="flex:1;"><div class="ep-db-item-title">'+safeText(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div><button class="mat-add-btn" style="'+color+' width:auto; margin:0;" onclick="epPromptShieldGroupedAdd(\''+id+'\',\''+type+'\')">+ Добавить</button></div>';
-          }
-        });
-        html += '</div>';
-      });
-      html += '</div>';
-    });
-    return html || '<div style="color:var(--gray);font-size:12px;padding:10px;">Позиции не найдены</div>';
-  }
-
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: epPatchDbRenderers
- * ========================================================= */
-function epPatchDbRenderers(){
-    var oldMat = window.openMatCatalog;
-    var oldWork = window.openWorkCatalog;
-    var oldRender = window.renderDbEditors;
-    window.openMatCatalog = function(){ epNormalizeMaterialsDb(); var el=qs('mat-cat-list'); if(el) el.innerHTML = epRenderGrouped(window.matDB || [], 'mat', 'catalog', 'mat_shield'); if(typeof openModal==='function') openModal('matCatModal'); else if(oldMat) oldMat(); };
-    window.openWorkCatalog = function(){ var el=qs('work-cat-list'); if(el) el.innerHTML = epRenderGrouped(window.workDB || [], 'work', 'catalog', 'work_shield'); if(typeof openModal==='function') openModal('workModal'); else if(oldWork) oldWork(); };
-    window.renderDbEditors = function(){
-      epNormalizeMaterialsDb();
-      var catsEl = qs('db-cats');
-      if (catsEl) catsEl.innerHTML = uniq([].concat((window.matDB||[]).map(function(x){return x.c;}),(window.workDB||[]).map(function(x){return x.c;}))).map(function(c){return '<option value="'+safeText(c)+'">';}).join('');
-      var em=qs('editor-mat-list'); if(em) em.innerHTML = epRenderGrouped(window.matDB || [], 'mat', 'editor', 'db_mat_shield');
-      var ew=qs('editor-work-list'); if(ew) ew.innerHTML = epRenderGrouped(window.workDB || [], 'work', 'editor', 'db_work_shield');
-    };
-  }
-
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: toast
- * ========================================================= */
-function toast(t){ if(typeof showToast==='function') showToast(t); else console.log(t); }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: renderGrouped
- * ========================================================= */
-function renderGrouped(arr, type, prefix){
-    arr = arr || [];
-    const cats = {};
-    arr.forEach(it => { const c = it.c || 'Разное'; (cats[c]||(cats[c]={direct:[], groups:{}})); const g=getGroup(it); if(g){ (cats[c].groups[g]||(cats[c].groups[g]=[])).push(it); } else cats[c].direct.push(it); });
-    let html = ''; let ci = 0;
-    Object.keys(cats).sort().forEach(function(c){
-      const cid = prefix+'_cat_'+(ci++);
-      const color = type==='work' ? 'color:var(--orange);background:rgba(245,158,11,.08);' : '';
-      html += '<div class="cat-header" style="'+color+'" onclick="toggleCat(\''+cid+'\')">'+safe(c)+'</div><div class="cat-body" id="'+cid+'">';
-      const cat = cats[c]; let gi = 0;
-      Object.keys(cat.groups).sort().forEach(function(g){
-        const gid = cid+'_g_'+(gi++);
-        html += '<div class="ep-db-sub-header" onclick="epDbToggleSub(\''+gid+'\', event)"><span>'+safe(g)+'</span><small>открыть</small></div><div class="ep-db-sub-body" id="'+gid+'">';
-        cat.groups[g].forEach(it => { html += renderItem(it,type); });
-        html += '</div>';
-      });
-      cat.direct.forEach(it => { html += renderItem(it,type); });
-      html += '</div>';
-    });
-    return html || '<div style="padding:15px;color:var(--gray);font-weight:700;">База пустая или ещё загружается</div>';
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: renderItem
- * ========================================================= */
-function renderItem(it,type){
-    const id = String(it.id || '');
-    const meta = [getGroup(it), it.brand, it.nominal, it.curve, it.rcdType, it.leakage].filter(Boolean).join(' • ');
-    const btnColor = type==='work' ? 'background:var(--orange);' : '';
-    return '<div class="mat-item"><div style="flex:1;"><div class="ep-db-item-title">'+safe(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+safe(meta)+' '+safe(Number(it.p)||0)+' ₽ / '+safe(it.u || 'шт')+'</div></div><button class="mat-add-btn" style="'+btnColor+'width:auto;margin:0;" onclick="promptAdd(\''+safe(id)+'\', \''+type+'\')">+ Добавить</button></div>';
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: renderGroupedFixed
- * ========================================================= */
-function renderGroupedFixed(arr, type, prefix){
-    normalizeDbs();
-    arr = type === 'work' ? arrByType('work') : arrByType('mat');
-    var data = {};
+function normalizeMaterialDb(){
+    const arr = dbArr('mat') || [];
     arr.forEach(function(it){
-      if(!it) return;
-      var c = it.c || 'Разное';
-      var g = it.g || it.sc || it.subcategory || 'Разное';
-      if(!data[c]) data[c] = {};
-      if(!data[c][g]) data[c][g] = [];
-      data[c][g].push(it);
+      if(!it || !it.n) return;
+      const n = norm((it.c||'')+' '+(it.g||'')+' '+(it.sc||'')+' '+it.n);
+      const raw = String(it.n||'');
+      if(/(диф|дифавтомат|dif)/i.test(raw) || n.includes('диф')){ it.c='Автоматика'; setGroup(it,'ДИФы'); it.kind=it.kind||'dif'; }
+      else if(/\bузо\b/i.test(raw) || n.includes(' uzo ') || n.includes(' узо ')){ it.c='Автоматика'; setGroup(it,'УЗО'); it.kind=it.kind||'uzo'; }
+      else if(/уздп/i.test(raw) || n.includes('уздп') || n.includes('дугов')){ it.c='Автоматика'; setGroup(it,'УЗДП'); it.kind=it.kind||'uzdp'; }
+      else if(/узм|реле напряж/i.test(raw) || n.includes('реле напряж')){ it.c='Автоматика'; setGroup(it,'УЗМ / реле напряжения'); it.kind=it.kind||'voltage_relay'; }
+      else if(/реле времени/i.test(raw) || n.includes('реле времени')){ it.c='Автоматика'; setGroup(it,'Реле времени'); it.kind=it.kind||'time_relay'; }
+      else if(/контактор/i.test(raw) || n.includes('контактор')){ it.c='Автоматика'; setGroup(it,'Контакторы'); it.kind=it.kind||'contactor'; }
+      else if(/автомат|\b[abcdсавд]\s?\d{1,3}\b/i.test(raw) || /(^|\s)c\s?\d{1,3}(\s|$)/.test(n)){ it.c='Автоматика'; setGroup(it,'Автоматы'); it.kind=it.kind||'automatic'; }
+      else if(/щит|корпус|бокс/i.test(raw) || n.includes('корпус')){ it.c='Щитовое'; setGroup(it, (/наклад/i.test(raw)||n.includes('наклад')) ? 'Корпуса → Накладной' : 'Корпуса → Встраиваемый'); it.kind=it.kind||'shield_box'; }
+      else if(/ншви|наконеч/i.test(raw) || n.includes('наконеч')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Наконечники'); it.kind=it.kind||'lug_pack'; }
+      else if(/пугв|пугов|провод/i.test(raw) || n.includes('пугв')){ it.c=it.c||'Щитовое'; if(it.c==='Щитовое' || n.includes('пугв')) setGroup(it,'Расходка под сборку → Провода'); it.kind=it.kind||'pugv'; }
+      else if(/шин|клемм/i.test(raw) || n.includes('шина') || n.includes('клемм')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Шинки / клеммники'); it.kind=it.kind||'busbar'; }
+      else if(/греб/i.test(raw) || n.includes('греб')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Гребёнки'); it.kind=it.kind||'comb_bus'; }
+      else if(/din|дин|рейк|огранич/i.test(raw) || n.includes('din')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → DIN-рейки / ограничители'); it.kind=it.kind||'din'; }
+      else if(/маркир|бирк/i.test(raw) || n.includes('маркир')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Маркировка'); it.kind=it.kind||'marking'; }
+      else if(/сальник|кабельн.*ввод/i.test(raw) || n.includes('сальник')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Кабельные вводы'); it.kind=it.kind||'cable_gland'; }
+      if(!it.brand) it.brand = detectBrand(raw) || it.brand;
+      if(!it.nominal) it.nominal = detectNominal(raw) || it.nominal;
     });
-    var html = '', i = 0;
-    Object.keys(data).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
-      var cid = prefix + '_cat_' + (i++);
-      var catStyle = type === 'work' ? 'style="color:var(--orange);background:rgba(245,158,11,.08);"' : '';
-      html += '<div class="cat-header" '+catStyle+' onclick="toggleCat(\''+cid+'\')">'+safeHtml(c)+'</div><div class="cat-body" id="'+cid+'">';
-      Object.keys(data[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
-        var gid = prefix + '_grp_' + (i++);
-        html += '<div class="ep-db-sub-header" onclick="epDbToggleSubFixed(\''+gid+'\', event)"><span>'+safeHtml(g)+'</span><small>открыть</small></div><div class="ep-db-sub-body" id="'+gid+'">';
-        data[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it){
-          var id = safeHtml(String(it.id||''));
-          var meta = [g, it.brand, it.nominal, it.leakage ? it.leakage+'мА' : '', it.rcdType].filter(Boolean).join(' • ');
-          var color = type === 'work' ? 'background:var(--orange);' : '';
-          html += '<div class="mat-item"><div style="flex:1;"><div class="ep-db-item-title">'+safeHtml(it.n||'Позиция')+'</div><div class="ep-db-item-meta">'+safeHtml(meta)+' '+(Number(it.p)||0)+' ₽ / '+safeHtml(it.u||'шт')+'</div></div><button class="mat-add-btn" style="'+color+' width:auto;margin:0;" onclick="promptAdd(\''+id+'\', \''+type+'\')">+ Добавить</button></div>';
-        });
-        html += '</div>';
-      });
-      html += '</div>';
-    });
-    return html || '<div style="padding:15px;color:var(--gray);font-weight:700;">База пустая или ещё загружается</div>';
+    setDbArr('mat', arr);
   }
 
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderGlobalModalFixed
- * ========================================================= */
-function renderGlobalModalFixed(){
-    var type = window.EP_GLOBAL_DB_TAB_FIXED || 'mat';
-    var matBtn = qs('ep-global-tab-mat'), workBtn = qs('ep-global-tab-work');
-    if(matBtn) matBtn.classList.toggle('active', type === 'mat');
-    if(workBtn) workBtn.classList.toggle('active', type === 'work');
-    var list = qs('ep-global-db-list');
-    if(!list) return;
-    var cache = window.EP_GLOBAL_DB_VISIBLE_CACHE || {};
-    var arr = (type === 'work' ? (cache.workDB || []) : (cache.matDB || [])).map(function(x){ return Object.assign({}, x, {__src:'global'}); });
-    list.innerHTML = groupHtml(arr, type, 'global_fixed_'+type, 'global');
-  }
-
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: msg
- * ========================================================= */
-function msg(t){ if(typeof showToast === 'function') showToast(t); else alert(t); }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: renderList
- * ========================================================= */
-function renderList(arr,type,prefix,mode){
-    var data = {};
-    (arr || []).forEach(function(it){
-      var c = it.c || 'Разное';
-      var g = groupOf(it) || 'Разное';
-      if(!data[c]) data[c] = {};
-      if(!data[c][g]) data[c][g] = [];
-      data[c][g].push(it);
-    });
-    var html = '', i = 0;
-    Object.keys(data).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
-      var cid = prefix + '_c_' + (i++);
-      var catStyle = type === 'work' ? 'style="color:var(--orange);background:rgba(245,158,11,.08);"' : '';
-      html += '<div class="cat-header" '+catStyle+' onclick="toggleCat(\''+cid+'\')">'+esc(c)+'</div><div class="cat-body" id="'+cid+'">';
-      Object.keys(data[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
-        var gid = prefix + '_g_' + (i++);
-        html += '<div class="ep-db-sub-header" onclick="epHardToggleDbSub(\''+gid+'\', event)"><span>'+esc(g)+'</span><small>открыть</small></div><div class="ep-db-sub-body" id="'+gid+'">';
-        data[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it,idx){
-          var sk = sigKey(type,it);
-          var src = it.__src === 'global' ? '<span style="color:#8B5CF6;font-weight:900;">🌍 серверная</span>' : '<span style="color:#10B981;font-weight:900;">👤 моя</span>';
-          var meta = esc(g) + ' • ' + src + ' • ' + (Number(it.p)||0) + ' ₽ / ' + esc(it.u || 'шт');
-          if(mode === 'global'){
-            html += '<label class="mat-item ep-select-row">' +
-              '<input type="checkbox" class="ep-global-check" data-type="'+type+'" data-sig="'+esc(sk)+'" data-id="'+esc(String(it.id||''))+'" style="width:22px;height:22px;accent-color:var(--primary);">' +
-              '<div style="flex:1;"><div class="ep-db-item-title">'+esc(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div></label>';
-          } else if(mode === 'editor'){
-            html += '<div class="emp-row" style="align-items:flex-start;">' +
-              '<label style="display:flex;gap:8px;align-items:flex-start;flex:1;">' +
-              '<input type="checkbox" class="ep-db-delete-check" data-type="'+type+'" data-sig="'+esc(sk)+'" data-id="'+esc(String(it.id||''))+'" style="width:22px;height:22px;accent-color:#EF4444;margin-top:4px;">' +
-              '<div style="flex:1;"><b>'+esc(it.n || 'Позиция')+'</b><br><span style="color:var(--gray);font-size:10px;">'+meta+'</span></div></label>' +
-              '<div class="ep-row-actions">' +
-              '<input type="number" value="'+(Number(it.p)||0)+'" onchange="requestPriceChange(\''+type+'\', \''+esc(String(it.id||''))+'\', this.value)" style="width:72px;margin:0;padding:4px;text-align:center;">' +
-              '<button class="btn-danger" onclick="epHardDeleteLocalPosition(\''+type+'\', \''+esc(sk)+'\', \''+esc(String(it.id||''))+'\')" style="white-space:nowrap;">Удалить позицию</button>' +
-              '</div></div>';
-          } else {
-            var color = type === 'work' ? 'background:var(--orange);' : '';
-            html += '<div class="mat-item"><div style="flex:1;"><div class="ep-db-item-title">'+esc(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div>' +
-              '<button class="mat-add-btn" style="'+color+'width:auto;margin:0;" onclick="promptAdd(\''+esc(sk)+'\', \''+type+'\')">+ Добавить</button></div>';
-          }
-        });
-        html += '</div>';
-      });
-      html += '</div>';
-    });
-    return html || '<div style="padding:15px;color:var(--gray);font-weight:700;">Позиции не найдены</div>';
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: renderItems
- * ========================================================= */
-function renderItems(arr,type,prefix,mode){
-    var data = {};
-    (arr || []).forEach(function(it){
-      var c = it.c || 'Разное';
-      var g = groupOf(it) || 'Разное';
-      if(!data[c]) data[c] = {};
-      if(!data[c][g]) data[c][g] = [];
-      data[c][g].push(it);
-    });
-
-    var html = '', n = 0;
-    Object.keys(data).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
-      var cid = prefix + '_c_' + (n++);
-      var catStyle = type === 'work' ? 'style="color:var(--orange);background:rgba(245,158,11,.08);"' : '';
-      html += '<div class="cat-header" '+catStyle+' onclick="toggleCat(\''+cid+'\')">'+esc(c)+'</div><div class="cat-body" id="'+cid+'">';
-      Object.keys(data[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
-        var gid = prefix + '_g_' + (n++);
-        html += '<div class="ep-db-sub-header" onclick="epUltimateToggleSub(\''+gid+'\', event)"><span>'+esc(g)+'</span><small>открыть</small></div><div class="ep-db-sub-body" id="'+gid+'">';
-        data[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it){
-          var encoded = encodeItem(it);
-          var sk = sig(type,it);
-          var src = it.__src === 'global'
-            ? '<span style="color:#8B5CF6;font-weight:900;">🌍 серверная</span>'
-            : '<span style="color:#10B981;font-weight:900;">👤 моя</span>';
-          var meta = esc(g) + ' • ' + src + ' • ' + (Number(it.p)||0) + ' ₽ / ' + esc(it.u || 'шт');
-
-          if(mode === 'global'){
-            html += '<label class="mat-item ep-select-row">' +
-              '<input type="checkbox" class="ep-global-check" data-type="'+type+'" data-item="'+esc(encoded)+'" data-sig="'+esc(sk)+'" style="width:22px;height:22px;accent-color:var(--primary);">' +
-              '<div style="flex:1;"><div class="ep-db-item-title">'+esc(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div></label>';
-          } else if(mode === 'editor'){
-            html += '<div class="emp-row" style="align-items:flex-start;">' +
-              '<label style="display:flex;gap:8px;align-items:flex-start;flex:1;">' +
-              '<input type="checkbox" class="ep-db-delete-check" data-type="'+type+'" data-item="'+esc(encoded)+'" data-sig="'+esc(sk)+'" style="width:22px;height:22px;accent-color:#EF4444;margin-top:4px;">' +
-              '<div style="flex:1;"><b>'+esc(it.n || 'Позиция')+'</b><br><span style="color:var(--gray);font-size:10px;">'+meta+'</span></div></label>' +
-              '<div class="ep-row-actions">' +
-              '<input type="number" value="'+(Number(it.p)||0)+'" onchange="epUltimateEditPrice(\''+type+'\', \''+esc(encoded)+'\', this.value)" style="width:74px;margin:0;padding:4px;text-align:center;">' +
-              '<button class="btn-danger" onclick="epUltimateDeleteOne(\''+type+'\', \''+esc(encoded)+'\')" style="white-space:nowrap;">Удалить позицию</button>' +
-              '</div></div>';
-          } else {
-            var color = type === 'work' ? 'background:var(--orange);' : '';
-            html += '<div class="mat-item"><div style="flex:1;"><div class="ep-db-item-title">'+esc(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div>' +
-              '<button class="mat-add-btn" style="'+color+'width:auto;margin:0;" onclick="promptAdd(\''+esc(encoded)+'\', \''+type+'\')">+ Добавить</button></div>';
-          }
-        });
-        html += '</div>';
-      });
-      html += '</div>';
-    });
-
-    return html || '<div style="padding:15px;color:var(--gray);font-weight:700;">Позиции не найдены</div>';
-  }
-
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: unhide
- * ========================================================= */
-function unhide(type,it){
-    var del = delSet(type);
-    del.delete(idkey(it));
-    del.delete(sig(type,it));
-    if(it && it.originGlobalId) del.delete('id:' + String(it.originGlobalId));
-    saveDel(type,del);
-  }
-
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: esc
+ * DOCUMENT FUNCTION: esc
  * ========================================================= */
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g,function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
   function cleanText(s){ return String(s || '').toLowerCase().replace(/ё/g,'е').replace(/×/g,'x').replace(/х/g,'x').replace(/[^a-zа-я0-9]+/g,' ').trim(); }
@@ -2671,52 +1720,33 @@ function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g,function(m
 
 
 /* =========================================================
- * VISUAL FUNCTION: sourceSwitcherHtml
+ * DOCUMENT FUNCTION: activeLabel
  * ========================================================= */
-function sourceSwitcherHtml(type){
-    return '<div style="border:1px solid var(--primary);border-radius:14px;padding:10px;margin:0 0 12px;background:rgba(79,70,229,.06);">'+
-      '<div style="font-weight:900;color:var(--primary);margin-bottom:6px;">Источник: '+(type==='work'?'Работы':'Материалы')+'</div>'+
-      '<div style="font-size:11px;color:var(--gray);margin-bottom:8px;">В смету и каталог попадает только выбранный источник. Вперемешку не считаем.</div>'+
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'+
-        '<button class="'+(scope()==='my'?'btn-success':'btn-info')+'" style="margin:0;padding:10px;" onclick="epSetDbScope(&quot;my&quot;); '+(type==='work'?'openWorkCatalog()':'openMatCatalog()')+'">👤 Моя база</button>'+
-        '<button class="'+(scope()==='global'?'btn-success':'btn-info')+'" style="margin:0;padding:10px;" onclick="epSetDbScope(&quot;global&quot;); '+(type==='work'?'openWorkCatalog()':'openMatCatalog()')+'">🌍 База сервера</button>'+
-      '</div>'+
-    '</div>';
+function activeLabel(){ return scope()==='global' ? '🌍 База сервера' : '👤 Моя база'; }
+  
+
+
+/* =========================================================
+ * DOCUMENT FUNCTION: activeArr
+ * ========================================================= */
+function activeArr(type){ return scope()==='global' ? serverArr(type) : myArr(type); }
+
+  
+
+
+/* =========================================================
+ * DOCUMENT FUNCTION: setActiveDb
+ * ========================================================= */
+function setActiveDb(type, arr){
+    if(scope()==='global') saveServerLocal(type, arr, isAdmin());
+    else saveMyLocal(type, arr);
   }
 
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderCatalog
- * ========================================================= */
-function renderCatalog(type){
-    var arr = activeArr(type);
-    var html = sourceSwitcherHtml(type);
-    if(!arr.length){
-      return html + '<div style="padding:16px;border:1px dashed var(--border);border-radius:14px;text-align:center;color:var(--gray);font-weight:800;">'+activeLabel()+' пустая.<br><br>'+(scope()==='my'?'Можно добавить вручную, импортом или взять позицию из базы сервера.':'После полного сброса база сервера пустая. Админ может заполнить её вручную или импортом.')+'</div>';
-    }
-    var cats={}, i=0;
-    arr.forEach(function(it){ var c=it.c||'Разное'; var g=groupOf(it)||'Без группы'; if(!cats[c]) cats[c]={}; if(!cats[c][g]) cats[c][g]=[]; cats[c][g].push(it); });
-    Object.keys(cats).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
-      var cid='ep_cat_'+type+'_'+(i++);
-      html += '<div class="cat-header" onclick="epDbToggle(&quot;'+cid+'&quot;, event)">'+esc(c)+'</div><div class="cat-body" id="'+cid+'">';
-      Object.keys(cats[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
-        var gid='ep_sub_'+type+'_'+(i++);
-        html += '<div class="sub-cat-header" onclick="epDbToggle(&quot;'+gid+'&quot;, event)">'+esc(g)+' ▾</div><div class="sub-cat-body" id="'+gid+'">';
-        cats[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it){ html += catalogRow(type,it); });
-        html += '</div>';
-      });
-      html += '</div>';
-    });
-    return html;
-  }
-
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: editorTop
+ * DOCUMENT FUNCTION: editorTop
  * ========================================================= */
 function editorTop(type){
     var title=type==='work'?'работ':'материалов';
@@ -2748,330 +1778,71 @@ function editorTop(type){
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderDbRows
+ * DOCUMENT FUNCTION: activeTarget
  * ========================================================= */
-function renderDbRows(type){
-    var arr=activeArr(type);
-    var html=editorTop(type);
-    if(!arr.length){
-      html += '<div style="padding:15px;border:1px dashed var(--border);border-radius:12px;text-align:center;color:var(--gray);font-weight:800;">'+activeLabel()+' пустая.</div>';
-      return html;
-    }
-    var cats={}, i=0;
-    arr.forEach(function(it){ var c=it.c||'Разное'; var g=groupOf(it)||'Без группы'; if(!cats[c]) cats[c]={}; if(!cats[c][g]) cats[c][g]=[]; cats[c][g].push(it); });
-    Object.keys(cats).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
-      var cid='db_cat_'+type+'_'+(i++);
-      html += '<div class="cat-header" onclick="epDbToggle(&quot;'+cid+'&quot;, event)">'+esc(c)+'</div><div class="cat-body" id="'+cid+'">';
-      Object.keys(cats[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
-        var gid='db_sub_'+type+'_'+(i++);
-        html += '<div class="sub-cat-header" onclick="epDbToggle(&quot;'+gid+'&quot;, event)">'+esc(g)+' ▾</div><div class="sub-cat-body" id="'+gid+'">';
-        cats[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it){ html += editorRow(type,it); });
-        html += '</div>';
-      });
-      html += '</div>';
-    });
-    return html;
-  }
+function activeTarget(){ return (isAdmin() && scope() === 'global') ? 'global' : 'my'; }
 
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: serverModalRow
+ * DOCUMENT FUNCTION: syncActiveArrays
  * ========================================================= */
-function serverModalRow(type,it){
-    var item=enc(it);
-    var sub=(groupOf(it)?groupOf(it)+' • ':'')+(Number(it.p)||0)+' ₽ / '+(it.u||'шт');
-    return '<label class="mat-item ep-select-row"><input type="checkbox" class="ep-global-check" data-type="'+type+'" data-item="'+esc(item)+'" style="width:22px;height:22px;accent-color:var(--primary);"><div style="flex:1;"><b>'+esc(it.n||'Позиция')+'</b><br><span style="color:var(--gray);font-size:11px;">'+esc(sub)+'</span></div></label>';
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: renderServerModalList
- * ========================================================= */
-function renderServerModalList(type){
-    var arr=serverArr(type), html='';
-    if(!arr.length) return '<div style="padding:16px;border:1px dashed var(--border);border-radius:14px;text-align:center;color:var(--gray);font-weight:800;">База сервера пустая.</div>';
-    var cats={}, i=0;
-    arr.forEach(function(it){ var c=it.c||'Разное'; var g=groupOf(it)||'Без группы'; if(!cats[c]) cats[c]={}; if(!cats[c][g]) cats[c][g]=[]; cats[c][g].push(it); });
-    Object.keys(cats).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
-      var cid='srv_cat_'+type+'_'+(i++);
-      html += '<div class="cat-header" onclick="epDbToggle(&quot;'+cid+'&quot;, event)">'+esc(c)+'</div><div class="cat-body" id="'+cid+'">';
-      Object.keys(cats[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
-        var gid='srv_sub_'+type+'_'+(i++);
-        html += '<div class="sub-cat-header" onclick="epDbToggle(&quot;'+gid+'&quot;, event)">'+esc(g)+' ▾</div><div class="sub-cat-body" id="'+gid+'">';
-        cats[c][g].forEach(function(it){ html += serverModalRow(type,it); });
-        html += '</div>';
-      });
-      html += '</div>';
-    });
-    return html;
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: epRefreshDbScopeUi
- * ========================================================= */
-function epRefreshDbScopeUi(){
-    var my=$('ep-scope-my-btn'), gl=$('ep-scope-global-btn'), st=$('ep-db-scope-status'), cleanSt=$('ep-clean-status-line');
-    if(my){ my.className=scope()==='my'?'btn-success':'btn-info'; my.textContent='👤 Моя база'; }
-    if(gl){ gl.className=scope()==='global'?'btn-success':'btn-info'; gl.textContent='🌍 База сервера'; }
-    if(st) st.innerHTML='Сейчас выбрано: <b>'+activeLabel()+'</b>. '+(scope()==='my'?'Считаем и показываем только мою базу.':'Считаем и показываем только базу сервера.');
-    if(cleanSt) cleanSt.textContent='Активная база: '+activeLabel()+'. Материалы: '+activeArr('mat').length+', работы: '+activeArr('work').length+'.';
-  }
-
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: install
- * ========================================================= */
-function install(){
-    syncWindowCaches();
-    epRefreshDbScopeUi();
+function syncActiveArrays(){
     try{
-      openMatCatalog=window.openMatCatalog;
-      openWorkCatalog=window.openWorkCatalog;
-      renderDbEditors=window.renderDbEditors;
-      promptAdd=window.promptAdd;
-      addDbItem=window.addDbItem;
-      requestPriceChange=window.requestPriceChange;
-    }catch(e){}
-  }
-
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: rerender
- * ========================================================= */
-function rerender(){
-    try{ if(typeof renderDbEditors === 'function') renderDbEditors(); }catch(e){}
-    try{ if(window.renderDbEditors && window.renderDbEditors !== renderDbEditors) window.renderDbEditors(); }catch(e){}
-    try{ if(typeof window.epRefreshDbScopeUi === 'function') window.epRefreshDbScopeUi(); }catch(e){}
-    setTimeout(function(){ try{ if(typeof renderDbEditors === 'function') renderDbEditors(); }catch(e){} },80);
-    setTimeout(function(){ try{ if(typeof renderDbEditors === 'function') renderDbEditors(); }catch(e){} },500);
-  }
-
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: updateButtons
- * ========================================================= */
-function updateButtons(){
-    var my = $('ep-scope-my-btn'), gl = $('ep-scope-global-btn'), st = $('ep-db-scope-status'), clean = $('ep-clean-status-line');
-    if(my) my.className = getScope() === 'my' ? 'btn-success' : 'btn-info';
-    if(gl) gl.className = getScope() === 'global' ? 'btn-success' : 'btn-info';
-    if(my) my.textContent = '👤 Моя база';
-    if(gl) gl.textContent = '🌍 База сервера';
-    var matCount = getScope() === 'global' ? ((window.EP_GLOBAL_MAT || []).length) : ((window.EP_MY_MAT || []).length);
-    var workCount = getScope() === 'global' ? ((window.EP_GLOBAL_WORK || []).length) : ((window.EP_MY_WORK || []).length);
-    if(st) st.innerHTML = 'Сейчас выбрано: <b>' + label() + '</b>. Данные автообновлены при переключении.';
-    if(clean) clean.textContent = 'Активная база: ' + label() + '. Материалы: ' + matCount + ', работы: ' + workCount + '.';
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: rerenderOpenScreens
- * ========================================================= */
-function rerenderOpenScreens(){
-    syncActiveArrays();
-    updateButtons();
-    try{ if(typeof renderDbEditors === 'function') renderDbEditors(); }catch(e){}
-    try{ if(window.renderDbEditors && window.renderDbEditors !== renderDbEditors) window.renderDbEditors(); }catch(e){}
-    if(isVisible('matCatModal')){
-      setTimeout(function(){ try{ if(typeof openMatCatalog === 'function') openMatCatalog(); }catch(e){} }, 20);
-    }
-    if(isVisible('workModal')){
-      setTimeout(function(){ try{ if(typeof openWorkCatalog === 'function') openWorkCatalog(); }catch(e){} }, 20);
-    }
-    if(isVisible('globalDbModal') && typeof window.epRenderServerDbModal === 'function'){
-      try{ window.epRenderServerDbModal(); }catch(e){}
-    }
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: hardHideLoader
- * ========================================================= */
-function hardHideLoader(){
-    try{ if(typeof hideLoader === 'function') hideLoader(); }catch(e){}
-    try{ var l = $('global-loader'); if(l) l.classList.remove('show'); }catch(e){}
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: showReadLoader
- * ========================================================= */
-function showReadLoader(text, icon){ try{ if(typeof showLoader === 'function') showLoader(text || 'Читаю файл...', icon || '📥'); }catch(e){} }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: renderReviewPage
- * ========================================================= */
-function renderReviewPage(){
-    var st = window.EP_DB_REVIEW_V6;
-    window.EP_DB_REVIEW = { type: st.type, items: st.items, source: st.source };
-    var title = $('ep-db-ai-review-title');
-    if(title) title.innerText = 'Импорт ' + (st.type === 'work' ? 'работ' : 'материалов') + ': ' + (st.source || 'файл');
-    var list = $('ep-db-ai-review-list');
-    if(!list) return;
-    var total = st.items.length;
-    if(!total){
-      list.innerHTML = '<div style="padding:12px;color:var(--danger);font-weight:800;">Позиции не найдены. Проверьте файл или попробуйте импортировать другой формат.</div>';
-      return;
-    }
-    var pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-    st.page = Math.max(0, Math.min(st.page || 0, pages - 1));
-    var start = st.page * PAGE_SIZE;
-    var end = Math.min(start + PAGE_SIZE, total);
-    var html = '<div style="position:sticky;top:0;z-index:2;background:var(--card-bg,rgba(255,255,255,.95));padding:8px;border-radius:12px;margin-bottom:8px;border:1px solid var(--border);">' +
-      '<b>Найдено: ' + total + '</b> • выбрано: <b id="ep-v6-selected-count">' + selectedCount() + '</b><br>' +
-      '<span style="font-size:11px;color:var(--gray);">Показаны строки ' + (start+1) + '–' + end + ' из ' + total + '. Большой файл не грузится весь на экран, поэтому телефон не зависает.</span>' +
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">' +
-      '<button type="button" class="btn-info" onclick="epReviewPageV6(-1)" ' + (st.page<=0?'disabled':'') + '>← Назад</button>' +
-      '<button type="button" class="btn-info" onclick="epReviewPageV6(1)" ' + (st.page>=pages-1?'disabled':'') + '>Вперёд →</button>' +
-      '</div></div>';
-    for(var i=start;i<end;i++){
-      var it = st.items[i] || {};
-      var ed = st.editCache[i] || it;
-      html += '<div class="ep-db-review-row">' +
-        '<input type="checkbox" id="ep-db-check-' + i + '" ' + (st.selected[i] !== false ? 'checked' : '') + ' onchange="epReviewToggleV6(' + i + ', this.checked)">' +
-        '<div class="ep-db-review-fields">' +
-          '<div><label>Имя</label><input id="ep-db-name-' + i + '" value="' + esc(ed.n || '') + '" placeholder="Имя / наименование"></div>' +
-          '<div class="ep-db-review-2col">' +
-            '<div><label>Категория</label><input id="ep-db-cat-' + i + '" value="' + esc(ed.c || 'Разное') + '" placeholder="Категория"></div>' +
-            '<div><label class="ep-db-subcat-label">Подкатегория</label><input id="ep-db-subcat-' + i + '" value="' + esc(ed.sc || ed.g || 'Разное') + '" placeholder="Подкатегория"></div>' +
-          '</div>' +
-          '<div class="ep-db-review-2col">' +
-            '<div><label>Цена за единицу</label><input id="ep-db-price-' + i + '" type="number" step="0.01" value="' + (Number(ed.p)||0) + '" placeholder="Цена"></div>' +
-            '<div><label>Единица</label><input id="ep-db-unit-' + i + '" value="' + esc(ed.u || 'шт') + '" placeholder="шт / м / упак"></div>' +
-          '</div>' +
-        '</div></div>';
-    }
-    list.innerHTML = html;
-    setTimeout(hardHideLoader, 0);
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: showReview
- * ========================================================= */
-function showReview(items,type,source){
-    hardHideLoader();
-    items = unique((items || []).filter(Boolean), type);
-    var selected = {};
-    items.forEach(function(_,i){ selected[i] = true; });
-    window.EP_DB_REVIEW_V6 = { type:type, items:items, source:source || '', page:0, selected:selected, editCache:{} };
-    window.EP_DB_REVIEW = { type:type, items:items, source:source || '' };
-    renderReviewPage();
-    try{ if(typeof openModal === 'function') openModal('ep-db-ai-review-modal'); }catch(e){ var m=$('ep-db-ai-review-modal'); if(m) m.style.display='flex'; }
-    setTimeout(hardHideLoader, 20);
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: aiFromImage
- * ========================================================= */
-async function aiFromImage(file,type){
-    if(typeof window.epAskAI !== 'function') throw new Error('ИИ не подключён');
-    var dataUrl = await new Promise(function(resolve,reject){ var r = new FileReader(); r.onload=function(){resolve(r.result);}; r.onerror=reject; r.readAsDataURL(file); });
-    showReadLoader('ИИ читает изображение...', '👁️');
-    var prompt = 'Распознай таблицу для базы электрика. Верни строго JSON массив объектов [{"n":"Имя позиции","c":"Категория","sc":"Подкатегория","p":123,"u":"шт"}]. Если цены нет p=0. Без текста вокруг.';
-    var ans = await window.epAskAI(prompt, { imageDataUrl:dataUrl, imageDetail:'high', maxTokens:9000 });
-    var arr = [];
-    try{ var m = String(ans || '').match(/\[[\s\S]*\]/); arr = JSON.parse(m ? m[0] : ans); }catch(e){ arr = []; }
-    return jsonToItems(arr,type);
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: aiFromText
- * ========================================================= */
-async function aiFromText(txt,type){
-    if(typeof window.epAskAI !== 'function') throw new Error('ИИ не подключён');
-    showReadLoader('ИИ структурирует базу...', '🤖');
-    var prompt = 'Приведи данные к базе электрика. Верни строго JSON массив объектов [{"n":"Имя позиции","c":"Категория","sc":"Подкатегория","p":123,"u":"шт"}]. Данные: ' + String(txt || '').slice(0,90000);
-    var ans = await window.epAskAI(prompt, { maxTokens:8000 });
-    var arr = [];
-    try{ var m = String(ans || '').match(/\[[\s\S]*\]/); arr = JSON.parse(m ? m[0] : ans); }catch(e){ arr = []; }
-    return jsonToItems(arr,type);
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: readDbFileV6
- * ========================================================= */
-async function readDbFileV6(file,type){
-    var safety = setTimeout(hardHideLoader, 25000);
-    showReadLoader('Читаю файл...', '📥');
-    try{
-      var name = file.name || '';
-      var lower = name.toLowerCase();
-      var items = [];
-      if(file.type && file.type.indexOf('image/') === 0){
-        items = await aiFromImage(file,type);
-      } else if(/\.json$/i.test(lower)){
-        var txt = await fileText(file);
-        items = jsonToItems(JSON.parse(txt), type);
-      } else if(/\.(xlsx|xls)$/i.test(lower)){
-        if(!window.XLSX) throw new Error('Библиотека XLSX не загрузилась. Сохраните файл как CSV или JSON.');
-        var ab = await fileBuffer(file);
-        var wb = XLSX.read(ab, {type:'array'});
-        var rows = [];
-        wb.SheetNames.forEach(function(sh){
-          var ws = wb.Sheets[sh];
-          rows = rows.concat(XLSX.utils.sheet_to_json(ws, {header:1, defval:''}));
-        });
-        items = rowsToItems(rows,type);
-      } else if(/\.csv$/i.test(lower)){
-        items = rowsToItems(csvRows(await fileText(file)), type);
+      if(getScope() === 'global'){
+        var sm = Array.isArray(window.EP_GLOBAL_MAT) ? window.EP_GLOBAL_MAT : getServerFromCache('mat');
+        var sw = Array.isArray(window.EP_GLOBAL_WORK) ? window.EP_GLOBAL_WORK : getServerFromCache('work');
+        window.matDB = sm.slice();
+        window.workDB = sw.slice();
+        try{ matDB = window.matDB; workDB = window.workDB; }catch(e){}
       } else {
-        var raw = await fileText(file);
-        items = rowsToItems(csvRows(raw), type);
-        if(!items.length) items = await aiFromText(raw,type);
+        var mm = Array.isArray(window.EP_MY_MAT) ? window.EP_MY_MAT : readArr(LS_MY_MAT);
+        var mw = Array.isArray(window.EP_MY_WORK) ? window.EP_MY_WORK : readArr(LS_MY_WORK);
+        window.matDB = mm.slice();
+        window.workDB = mw.slice();
+        try{ matDB = window.matDB; workDB = window.workDB; }catch(e){}
       }
-      clearTimeout(safety);
-      hardHideLoader();
-      showReview(items,type,name);
-    }catch(e){
-      clearTimeout(safety);
-      hardHideLoader();
-      toast('❌ ' + (e.message || 'Ошибка импорта'));
-      console.error('EP V6 import error', e);
-    }
+    }catch(e){ console.warn('EP V5 sync active arrays failed', e); }
   }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: showProgress
+ * DOCUMENT FUNCTION: canEditActive
  * ========================================================= */
-function showProgress(title,pct,txt){ ensureProgress(); var p=$('ep-v7-progress'), f=$('ep-v7-progress-fill'), t=$('ep-v7-progress-title'), x=$('ep-v7-progress-txt'); if(p)p.style.display='flex'; if(t)t.textContent=title||'Выполняю...'; if(f)f.style.width=Math.max(0,Math.min(100,Math.round(pct||0)))+'%'; if(x)x.textContent=(txt||'')+' '+Math.max(0,Math.min(100,Math.round(pct||0)))+'%'; try{ if(typeof hideLoader==='function') hideLoader(); }catch(e){} }
+function canEditActive(){ return scope()==='my' || (scope()==='global' && isAdmin()); }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: hideProgress
+ * DOCUMENT FUNCTION: active
  * ========================================================= */
-function hideProgress(){ var p=$('ep-v7-progress'); if(p)p.style.display='none'; }
-
+function active(type){ return scope()==='global'?getServer(type):getMy(type); }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: reloadActiveDb
+ * DOCUMENT FUNCTION: ensureProgress
+ * ========================================================= */
+function ensureProgress(){
+    if($('ep-v7-progress')) return;
+    var css=document.createElement('style'); css.id='ep-v7-style'; css.textContent='\
+#ep-v7-progress{position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.62);display:none;align-items:center;justify-content:center;padding:18px;}\
+#ep-v7-progress .box{width:min(460px,94vw);border-radius:20px;background:var(--card-bg,#fff);box-shadow:0 24px 70px rgba(0,0,0,.35);padding:18px;border:1px solid var(--border,#e5e7eb);}\
+#ep-v7-progress .title{font-weight:900;color:var(--primary,#4f46e5);font-size:17px;margin-bottom:8px;}\
+#ep-v7-progress .bar{height:16px;background:rgba(148,163,184,.25);border-radius:999px;overflow:hidden;border:1px solid rgba(148,163,184,.35);}\
+#ep-v7-progress .fill{height:100%;width:0%;background:linear-gradient(90deg,#2563eb,#10b981);transition:width .18s ease;}\
+#ep-v7-progress .txt{font-size:12px;color:var(--gray,#64748b);font-weight:800;margin-top:8px;}\
+.ep-v7-panel{border:2px solid var(--primary);border-radius:16px;padding:12px;margin:10px 0 15px;background:rgba(79,70,229,.06)}\
+.ep-v7-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.ep-v7-actions button{margin:0;padding:10px}.ep-v7-note{font-size:11px;color:var(--gray);font-weight:800;margin-top:8px}.ep-v7-locked{opacity:.55}.ep-v7-row{display:flex;gap:8px;align-items:flex-start}.ep-v7-row input[type=number]:disabled{opacity:.55;background:rgba(148,163,184,.15)}'; document.head.appendChild(css);
+    var d=document.createElement('div'); d.id='ep-v7-progress'; d.innerHTML='<div class="box"><div class="title" id="ep-v7-progress-title">Выполняю...</div><div class="bar"><div class="fill" id="ep-v7-progress-fill"></div></div><div class="txt" id="ep-v7-progress-txt">0%</div></div>'; document.body.appendChild(d);
+  }
+  
+
+
+/* =========================================================
+ * DOCUMENT FUNCTION: reloadActiveDb
  * ========================================================= */
 async function reloadActiveDb(){
     try{ syncMain(scope()); if(typeof window.epRefreshActiveDbNow==='function') await window.epRefreshActiveDbNow(true); }catch(e){ console.warn('EP V7 reload active db failed',e); }
@@ -3084,167 +1855,19 @@ async function reloadActiveDb(){
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderPanel
+ * DOCUMENT FUNCTION: readGlobalDoc
  * ========================================================= */
-function renderPanel(){
-    var p=ensurePanel(); if(!p) return;
-    var s=scope(), admin=isAdmin(), my=s==='my';
-    var title=my?'👤 Моя база данных':'🌍 База сервера';
-    var matCount=active('mat').length, workCount=active('work').length;
-    var note=my
-      ? 'Это личная база текущего мастера. Импорт, экспорт, цены и замена позиций меняют только эту базу.'
-      : (admin?'Вы админ: можно импортировать, заменять, редактировать цены и сохранять базу сервера.':'Просмотр базы сервера. Мастер не меняет сервер напрямую: можно экспортировать, взять позицию себе или отправить импорт заявкой админу.');
-    var html='<div style="font-weight:900;color:var(--primary);font-size:15px;">'+title+'</div>'+
-      '<div class="ep-v7-note">'+note+'<br>Материалы: <b>'+matCount+'</b>, работы: <b>'+workCount+'</b>. Вперемешку базы не считаются.</div>'+
-      '<div class="ep-v7-actions">';
-    if(my || admin){
-      html+='<button class="btn-info" onclick="epTriggerDbFileImport(\'mat\')">📥 Импорт материалов</button>'+
-            '<button class="btn-work" onclick="epTriggerDbFileImport(\'work\')">📥 Импорт работ</button>'+
-            '<button class="btn-vendor" onclick="epOpenTextImport && epOpenTextImport(\'mat\')">📝 Материалы текстом</button>'+
-            '<button class="btn-vendor" onclick="epOpenTextImport && epOpenTextImport(\'work\')">📝 Работы текстом</button>';
-    } else {
-      html+='<button class="btn-info" onclick="epTriggerServerProposalImportV7(\'mat\')">📨 Материалы заявкой админу</button>'+
-            '<button class="btn-work" onclick="epTriggerServerProposalImportV7(\'work\')">📨 Работы заявкой админу</button>'+
-            '<button class="btn-vendor" onclick="epOpenTextImportServerProposalV7(\'mat\')">📝 Материалы заявкой</button>'+
-            '<button class="btn-vendor" onclick="epOpenTextImportServerProposalV7(\'work\')">📝 Работы заявкой</button>';
-    }
-    html+='<button class="btn-success" onclick="epExportActiveDb()">📤 Экспорт этой базы</button>'+
-          '<button class="btn-info" onclick="epReloadActiveDbV7()">🔄 Обновить / перезагрузить</button>';
-    if(canEditActive()) html+='<button class="btn-primary" onclick="epSaveActiveDbV7()">💾 Сохранить базу</button>';
-    if(my) html+='<button class="btn-danger" onclick="epOpenDbFactoryResetModal && epOpenDbFactoryResetModal()">🧹 Очистка / сброс</button>';
-    else if(admin) html+='<button class="btn-danger" onclick="epOpenDbFactoryResetModal && epOpenDbFactoryResetModal()">🧹 Очистка сервера</button>';
-    html+='</div>';
-    if(!my && !admin) html+='<div class="ep-v7-note">Редактирование, сохранение, замена и цены сервера заблокированы для мастера.</div>';
-    p.innerHTML=html;
+async function readGlobalDoc(){
+    if(!(typeof db!=='undefined'&&db)) throw new Error('Firebase db не подключён.');
+    var snap=await db.collection('settings').doc('global_db').get();
+    var data=snap.exists?(snap.data()||{}):{};
+    return {matDB:Array.isArray(data.matDB)?data.matDB:[], workDB:Array.isArray(data.workDB)?data.workDB:[], raw:data};
   }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: tuneStaticBlocks
- * ========================================================= */
-function tuneStaticBlocks(){
-    renderPanel();
-    var my=$('ep-scope-my-btn'), gl=$('ep-scope-global-btn'), st=$('ep-db-scope-status');
-    if(my){ my.className=scope()==='my'?'btn-success':'btn-info'; my.textContent='👤 Моя база данных'; }
-    if(gl){ gl.className=scope()==='global'?'btn-success':'btn-info'; gl.textContent='🌍 База сервера'; }
-    if(st) st.innerHTML='Главный переключатель: <b>'+label()+'</b>. Отображение и расчёт идут только из выбранного источника.';
-    var old=$('ep-db-ai-tools'); if(old) old.style.display='none';
-    var clean=$('ep-clean-status-line'); if(clean) clean.textContent='Активная база: '+label()+'. Материалы: '+active('mat').length+', работы: '+active('work').length+'.';
-    var addBtn=document.querySelector('#settModal button[onclick="addDbItem()"]');
-    var addBlock=null;
-    if(addBtn){ var x=addBtn.parentElement; while(x&&x.id!=='settModal'){ if((x.querySelector&&x.querySelector('#db-new-cat'))){ addBlock=x; break; } x=x.parentElement; } }
-    if(addBlock){ addBlock.style.display=canEditActive()?'block':'none'; }
-    if(addBtn){ addBtn.textContent=scope()==='global'?' + Добавить в базу сервера':' + Добавить в мою базу'; }
-  }
-
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: editorRow
- * ========================================================= */
-function editorRow(type,it){
-    var s=scope(), editable=canEditActive(), admin=isAdmin();
-    var item=encodeURIComponent(JSON.stringify(it||{}));
-    var sub=(groupOf(it)?groupOf(it)+' • ':'')+(Number(it.p)||0)+' ₽ / '+(it.u||'шт');
-    var check=editable?'<input type="checkbox" class="ep-v7-select" data-type="'+type+'" data-id="'+esc(String(it.id||''))+'" style="width:20px;height:20px;accent-color:#EF4444;margin:4px 3px 0 0;">':'';
-    var price='<input type="number" '+(editable?'':'disabled')+' value="'+(Number(it.p)||0)+'" data-id="'+esc(String(it.id||''))+'" data-type="'+type+'" onchange="epChangePriceV7(this.dataset.type,this.dataset.id,this.value)" style="width:76px;margin:0;padding:4px;text-align:center;">';
-    var copy=(s==='global'&&!admin)?'<button class="btn-info" style="width:auto;margin:0;padding:7px;" data-type="'+type+'" data-item="'+esc(item)+'" onclick="epCopyOneServerToMy(this.dataset.type,this.dataset.item)">В мою</button>':'';
-    return '<div class="emp-row ep-v7-row '+(!editable?'ep-v7-locked':'')+'">'+check+'<div style="flex:1;"><b>'+esc(it.n||'Позиция')+'</b><br><span style="color:var(--gray);font-size:10px;">'+esc(sub)+'</span></div>'+price+copy+'</div>';
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: renderRows
- * ========================================================= */
-function renderRows(type){
-    var arr=active(type), html=editorTop(type);
-    if(!arr.length) return html+'<div style="padding:15px;border:1px dashed var(--border);border-radius:12px;text-align:center;color:var(--gray);font-weight:800;">'+label()+' пустая.</div>';
-    var cats={},i=0; arr.forEach(function(it){ var c=it.c||'Разное', g=groupOf(it)||'Без группы'; if(!cats[c])cats[c]={}; if(!cats[c][g])cats[c][g]=[]; cats[c][g].push(it); });
-    Object.keys(cats).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){ var cid='v7_cat_'+type+'_'+(i++); html+='<div class="cat-header" onclick="epDbToggle && epDbToggle(&quot;'+cid+'&quot;, event)">'+esc(c)+'</div><div class="cat-body" id="'+cid+'">'; Object.keys(cats[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){ var gid='v7_sub_'+type+'_'+(i++); html+='<div class="sub-cat-header" onclick="epDbToggle && epDbToggle(&quot;'+gid+'&quot;, event)">'+esc(g)+' ▾</div><div class="sub-cat-body" id="'+gid+'">'; cats[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it){ html+=editorRow(type,it); }); html+='</div>'; }); html+='</div>'; });
-    return html;
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: downloadJson
- * ========================================================= */
-function downloadJson(filename,data){
-    showProgress('Экспорт базы',25,'Подготовка файла');
-    var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json;charset=utf-8'});
-    showProgress('Экспорт базы',70,'Скачивание');
-    var url=URL.createObjectURL(blob), a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(function(){URL.revokeObjectURL(url);},1000);
-    showProgress('Экспорт базы',100,'Готово'); setTimeout(function(){hideProgress(); reloadActiveDb();},500);
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: readDbFile
- * ========================================================= */
-async function readDbFile(file,type,target){ showProgress('Импорт базы',5,'Старт'); var name=file.name||'', lower=name.toLowerCase(), items=[]; if(file.type&&file.type.indexOf('image/')===0){ hideProgress(); if(typeof window.epAskAI==='function' && typeof oldTrigger==='function'){ return oldTrigger(type); } return toast('Для фото нужен ИИ.'); } if(/\.json$/i.test(lower)){ var txt=await fileTextProgress(file,showProgress); showProgress('Импорт базы',55,'Разбор JSON'); items=jsonToItems(JSON.parse(txt),type); } else if(/\.(xlsx|xls)$/i.test(lower)){ if(!window.XLSX) throw new Error('Библиотека XLSX не загрузилась. Сохраните файл как CSV или JSON.'); var ab=await fileBufferProgress(file,showProgress); showProgress('Импорт базы',55,'Разбор Excel'); var wb=XLSX.read(ab,{type:'array'}), rows=[]; wb.SheetNames.forEach(function(sh){ rows=rows.concat(XLSX.utils.sheet_to_json(wb.Sheets[sh],{header:1,defval:''})); }); showProgress('Импорт базы',78,'Подготовка строк'); items=rowsToItems(rows,type); } else { var raw=await fileTextProgress(file,showProgress); showProgress('Импорт базы',60,'Разбор текста/CSV'); items=rowsToItems(csvRows(raw),type); }
-    showProgress('Импорт базы',100,'Открываю проверку'); setTimeout(hideProgress,250); showReview(items,type,name,target); }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: progress
- * ========================================================= */
-function progress(title,pct,txt){ ensureProgress(); var p=$('ep-v9-progress'),f=$('ep-v9-fill'),t=$('ep-v9-title'),x=$('ep-v9-txt'); if(p)p.style.display='flex'; if(t)t.textContent=title||'Выполняю...'; if(f)f.style.width=Math.max(0,Math.min(100,Math.round(pct||0)))+'%'; if(x)x.textContent=(txt||'')+' '+Math.max(0,Math.min(100,Math.round(pct||0)))+'%'; try{ if(typeof hideLoader==='function') hideLoader(); }catch(e){} }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: showReviewV9
- * ========================================================= */
-function showReviewV9(items,type,source,target){
-    items=unique((items||[]).filter(Boolean),type); var selected={}; items.forEach(function(_,i){selected[i]=true;});
-    window.EP_DB_REVIEW_V6={type:type,items:items,source:source||'',page:0,selected:selected,editCache:{}};
-    window.EP_DB_REVIEW={type:type,items:items,source:source||''}; window.EP_V9_IMPORT_TARGET=target; window.EP_V7_IMPORT_TARGET=target;
-    var title=$('ep-db-ai-review-title'); if(title) title.innerText='Импорт '+(type==='work'?'работ':'материалов')+': '+(source||'файл')+' → '+(target==='global'?'База сервера':target==='server_proposal'?'Заявка админу':'Моя база');
-    if(typeof window.epReviewPageV6==='function') window.epReviewPageV6(0); else {
-      var list=$('ep-db-ai-review-list'); if(list) list.innerHTML=items.map(function(it,i){ return '<div class="ep-db-review-row"><input type="checkbox" id="ep-db-check-'+i+'" checked><div class="ep-db-review-fields"><div><label>Имя</label><input id="ep-db-name-'+i+'" value="'+esc(it.n)+'"></div><div class="ep-db-review-2col"><div><label>Категория</label><input id="ep-db-cat-'+i+'" value="'+esc(it.c)+'"></div><div><label>Подкатегория</label><input id="ep-db-subcat-'+i+'" value="'+esc(it.sc||it.g||'Разное')+'"></div></div><div class="ep-db-review-2col"><div><label>Цена</label><input id="ep-db-price-'+i+'" type="number" value="'+(Number(it.p)||0)+'"></div><div><label>Единица</label><input id="ep-db-unit-'+i+'" value="'+esc(it.u||'шт')+'"></div></div></div></div>'; }).join('');
-    }
-    try{ if(typeof openModal==='function') openModal('ep-db-ai-review-modal'); }catch(e){ var m=$('ep-db-ai-review-modal'); if(m)m.style.display='flex'; }
-    setTimeout(hideProgress,200);
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: provider
- * ========================================================= */
-function provider(){
-    try{ var p=(window.EP_AI_CONFIG&&window.EP_AI_CONFIG.provider)||safeGet('ep_ai_provider_v1','gemini'); return p==='openai'?'openai':'gemini'; }catch(e){ return 'gemini'; }
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: keyForProvider
- * ========================================================= */
-function keyForProvider(p){
-    try{
-      if(p==='openai') return (window.EP_AI_CONFIG&&window.EP_AI_CONFIG.openaiKey)||safeGet('ep_openai_key_v1','');
-      return (window.EP_AI_CONFIG&&window.EP_AI_CONFIG.geminiKey)||(typeof GEMINI_API_KEY!=='undefined'?GEMINI_API_KEY:'')||safeGet('gemini_key_v31','');
-    }catch(e){ return ''; }
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: openAiModel
- * ========================================================= */
-function openAiModel(){ try{ return (window.EP_AI_CONFIG&&window.EP_AI_CONFIG.openaiModel)||safeGet('ep_openai_model_v1','gpt-4o-mini')||'gpt-4o-mini'; }catch(e){ return 'gpt-4o-mini'; } }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: extractTextFromOpenAI
+ * DOCUMENT FUNCTION: extractTextFromOpenAI
  * ========================================================= */
 function extractTextFromOpenAI(data){
     if(data && data.output_text) return data.output_text;
@@ -3256,72 +1879,54 @@ function extractTextFromOpenAI(data){
 
 
 /* =========================================================
- * VISUAL FUNCTION: askOpenAI
+ * DOCUMENT FUNCTION: patchDbUi
  * ========================================================= */
-async function askOpenAI(promptText, opts){
-    var key=keyForProvider('openai'); if(!key) throw new Error('Нужен OpenAI API ключ');
-    var content=[{type:'input_text', text:promptText}];
-    if(opts && opts.fileDataUrl){
-      content.push({ type:'input_file', filename: opts.fileName || 'import.pdf', file_data: opts.fileDataUrl });
-    } else if(opts && opts.imageDataUrl){
-      content.push({ type:'input_image', image_url: opts.imageDataUrl, detail: opts.imageDetail || 'high' });
+function patchDbUi(){
+    installAdminSettingsButton();
+    var isGlobal = scope() === 'global';
+    var serverEdit = adminServerMode();
+    var panel = $('ep-v7-db-panel');
+    if(panel){
+      var oldNote = $('ep-v11-server-mode-note'); if(oldNote) oldNote.remove();
+      var note = document.createElement('div');
+      note.id = 'ep-v11-server-mode-note';
+      note.style.cssText = 'font-size:11px;font-weight:900;line-height:1.35;margin:8px 0;padding:9px;border-radius:12px;';
+      if(isGlobal && serverEdit){
+        note.style.border = '1px solid var(--danger)'; note.style.color = 'var(--danger)'; note.style.background='rgba(239,68,68,.08)';
+        note.textContent = '👑 Режим админа: разрешены импорт, замена, цены и сохранение базы сервера.';
+        panel.insertBefore(note, panel.firstChild);
+      } else if(isGlobal){
+        note.style.border = '1px solid var(--border)'; note.style.color = 'var(--gray)'; note.style.background='rgba(100,116,139,.08)';
+        note.textContent = explainServerEdit();
+        panel.insertBefore(note, panel.firstChild);
+      }
+      Array.prototype.forEach.call(panel.querySelectorAll('button'), function(btn){
+        var s=txt(btn);
+        if(isGlobal && !serverEdit && /Импорт|текстом|заявк|Сохранить базу|Очистка сервера|Очистка \/ сброс/.test(s)){
+          btn.style.display='none';
+        }
+      });
     }
-    var r=await fetch('https://api.openai.com/v1/responses',{
-      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
-      body:JSON.stringify({ model:openAiModel(), input:[{role:'user', content:content}], max_output_tokens:(opts&&opts.maxTokens)||9000 })
-    });
-    var data=await r.json().catch(function(){return {};});
-    if(!r.ok || data.error) throw new Error((data.error&&data.error.message)||'OpenAI API error');
-    return extractTextFromOpenAI(data);
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: normalDbButtonWasClicked
- * ========================================================= */
-function normalDbButtonWasClicked(e){
-    var b = e && e.target && e.target.closest ? e.target.closest('button') : null;
-    if(!b) return false;
-    var s = txt(b);
-    return /База данных/.test(s) && !/База сервера/.test(s) && b.id !== 'ep-v11-admin-server-db-btn';
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: patchShieldButton
- * ========================================================= */
-function patchShieldButton(){
-    var base = window.epGenerateShieldFixed || window.generateCascadePanel;
-    if(typeof base==='function' && !base.__ep_v12_wrapped){
-      var wrapped=function(){
-        var r=base.apply(this, arguments);
-        setTimeout(function(){ normalizeCurrentEstimate(); try{ if(typeof renderMainTable==='function') renderMainTable(); }catch(e){} },60);
-        return r;
-      };
-      wrapped.__ep_v12_wrapped=true;
-      window.epGenerateShieldFixed=wrapped;
-      window.generateCascadePanel=wrapped;
-      try{ generateCascadePanel=wrapped; }catch(e){}
+    var addBtn = document.querySelector('#settModal button[onclick="addDbItem()"]');
+    if(addBtn){
+      var block=addBtn.parentElement;
+      if(block) block.style.display = (!isGlobal || serverEdit) ? 'block' : 'none';
+      addBtn.textContent = isGlobal ? '+ Добавить в базу сервера' : '+ Добавить в мою базу';
     }
-    Array.prototype.forEach.call(document.querySelectorAll('button'), function(btn){
-      if((btn.textContent||'').indexOf('Сгенерировать щит')>=0) btn.onclick=window.generateCascadePanel;
-    });
+    if(isGlobal && !serverEdit){
+      Array.prototype.forEach.call(document.querySelectorAll('#editor-mat-list input,#editor-work-list input,#editor-mat-list select,#editor-work-list select,#editor-mat-list textarea,#editor-work-list textarea'), function(el){ el.disabled = true; });
+      Array.prototype.forEach.call(document.querySelectorAll('#editor-mat-list button,#editor-work-list button'), function(btn){
+        var s=txt(btn);
+        if(/Сохранить|Удалить|Замени|✕|🗑/.test(s)) btn.style.display='none';
+      });
+    }
   }
 
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: boot
- * ========================================================= */
-function boot(){ patchShieldButton(); normalizeCurrentEstimate(); try{ if(typeof renderMainTable==='function') renderMainTable(); }catch(e){} }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: epV16GenerateCascadePanel
+ * DOCUMENT FUNCTION: epV16GenerateCascadePanel
  * ========================================================= */
 function epV16GenerateCascadePanel() {
     const bBox = epGetVal('cfg-brand-box', 'Tekfor');
@@ -3465,29 +2070,7 @@ function epV16GenerateCascadePanel() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: showDetailsV16
- * ========================================================= */
-function showDetailsV16(customTitle){
-    normalizeV16();
-    try{ currentPreviewMode='details'; }catch(e){}
-    var html = (typeof getPDFHeader==='function') ? getPDFHeader(customTitle || 'ДЕТАЛИЗАЦИЯ ЩИТА') : '<h2>ДЕТАЛИЗАЦИЯ ЩИТА</h2>';
-    var f=$('pdf-filters'); if(f) f.style.display='none';
-    var items=(window.currentEstimate||[]).filter(isShieldDeviceV16);
-    html += '<table class="pdf-table"><tr><th>Что отвечает / линия</th><th>Аппарат</th><th>Назначение</th></tr>';
-    if(!items.length) html += '<tr><td colspan="3" style="text-align:center;color:var(--gray);font-weight:900;">Щит ещё не сгенерирован</td></tr>';
-    else items.forEach(function(it){
-      var lines=getAssignV16(it); if(!lines.length) lines=['назначение не указано — нажми «Сгенерировать щит» ещё раз'];
-      html += '<tr><td style="font-weight:bold;color:var(--primary);">'+lines.map(esc).join('<br>')+'</td><td>'+esc(it.n)+(Number(it.q)>1?' × '+Number(it.q):'')+'</td><td>'+esc(purposeV16(it))+'</td></tr>';
-    });
-    html += '</table>';
-    var p=$('p-cont'); if(p) p.innerHTML=html;
-    if(typeof openModal==='function') openModal('previewModal');
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: addBadge
+ * DOCUMENT FUNCTION: addBadge
  * ========================================================= */
 function addBadge(){
     if($('ep-v17-badge')) return;
@@ -3500,20 +2083,21 @@ function addBadge(){
 
 
 /* =========================================================
- * VISUAL FUNCTION: patchDbBulk
+ * DOCUMENT FUNCTION: syncActiveToMain
  * ========================================================= */
-function patchDbBulk(){
-    var modal=$('settModal'); if(!modal || $('ep-v17-bulk-box')) return;
-    var host=$('editor-mat-list') || $('editor-work-list'); if(!host) return;
-    var box=document.createElement('div'); box.id='ep-v17-bulk-box'; box.style.cssText='margin:12px 0;padding:12px;border:2px dashed #8b5cf6;border-radius:16px;background:#faf5ff;';
-    box.innerHTML='<b style="color:#5b21b6;display:block;margin-bottom:8px;">Массовое управление V17</b><div style="font-size:12px;color:#64748b;font-weight:800;margin-bottom:8px;">Выделение и перенос работают по галочкам в текущей открытой базе. Если галочек нет — значит открыт старый список, нажми Обновить / перезагрузить.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><input id="ep-v17-move-cat" placeholder="Категория"><input id="ep-v17-move-sub" placeholder="Подкатегория"></div><button onclick="epV17BulkMove()" style="margin-top:8px;background:#8b5cf6;color:white;">📦 Переместить выбранные</button><button onclick="epV17BulkDelete()" style="margin-top:8px;background:#ef4444;color:white;">🗑 Удалить выбранные</button>';
-    host.parentNode.insertBefore(box,host);
+function syncActiveToMain(src){
+    src=src||scope();
+    try{
+      window.matDB = getArr('mat',src);
+      window.workDB = getArr('work',src);
+      try{ matDB = window.matDB; workDB = window.workDB; }catch(e){}
+    }catch(e){}
   }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: saveArr
+ * DOCUMENT FUNCTION: saveArr
  * ========================================================= */
 async function saveArr(type,arr){
     var src=scope(); type=type==='work'?'work':'mat'; arr=unique(arr,type);
@@ -3546,60 +2130,44 @@ async function saveArr(type,arr){
 
 
 /* =========================================================
- * VISUAL FUNCTION: ensureBadge
+ * DOCUMENT FUNCTION: activeTypeFromUi
  * ========================================================= */
-function ensureBadge(){
-    var b=$('ep-v18-status-badge');
-    if(!b){
-      b=document.createElement('div'); b.id='ep-v18-status-badge';
-      b.style.cssText='position:fixed;left:10px;bottom:12px;z-index:2147483647;border-radius:999px;padding:8px 13px;color:#fff;font-size:12px;font-weight:1000;box-shadow:0 10px 30px rgba(0,0,0,.25);border:2px solid rgba(255,255,255,.55);letter-spacing:.2px;';
-      document.body.appendChild(b);
-    }
-    return b;
+function activeTypeFromUi(){ var m=$('editor-mat-list'), w=$('editor-work-list'); if(m && m.offsetParent!==null) return 'mat'; if(w && w.offsetParent!==null) return 'work'; return lastOpenedType||'mat'; }
+  
+
+
+/* =========================================================
+ * DOCUMENT FUNCTION: buildBulkPanel
+ * ========================================================= */
+function buildBulkPanel(){
+    var arr=getArr('mat').concat(getArr('work'));
+    var cats=arr.map(function(x){return x.c||'Разное';}); var subs=arr.map(function(x){return groupOf(x)||'Без группы';});
+    return '<div id="ep-v18-bulk-box" style="margin:12px 0;padding:12px;border:2px dashed #16a34a;border-radius:16px;background:#f0fdf4;">'+
+      '<b style="color:#166534;display:block;margin-bottom:7px;">Массовое управление V18</b>'+ 
+      '<div style="font-size:12px;color:#64748b;font-weight:800;margin-bottom:8px;">Ставь галочки слева от позиций. Перемещение идёт в выбранную существующую категорию/подкатегорию активной базы.</div>'+ 
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;"><select id="ep-v18-move-cat">'+optionsHtml(cats,'Категория')+'</select><select id="ep-v18-move-sub">'+optionsHtml(subs,'Подкатегория')+'</select></div>'+ 
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><button class="btn-info" style="margin:0;padding:10px;" onclick="epV18SelectVisible(true)">✅ Выделить видимые</button><button class="btn-vendor" style="margin:0;padding:10px;" onclick="epV18SelectVisible(false)">⬜ Снять галочки</button><button class="btn-success" style="margin:0;padding:10px;" onclick="epV18MoveSelected()">📦 Переместить выбранные</button><button class="btn-danger" style="margin:0;padding:10px;" onclick="epV18DeleteSelected()">🗑 Удалить выбранные</button></div>'+ 
+    '</div>';
   }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderMainDirect
+ * DOCUMENT FUNCTION: activeMatDb
  * ========================================================= */
-function renderMainDirect(){
-    var tb=document.querySelector('#mainTable tbody'); if(!tb) return;
-    var arr=[]; try{ arr=Array.isArray(currentEstimate)?currentEstimate:(Array.isArray(window.currentEstimate)?window.currentEstimate:[]); }catch(e){ arr=Array.isArray(window.currentEstimate)?window.currentEstimate:[]; }
-    tb.innerHTML=''; var total=0;
-    arr.forEach(function(it,idx){ var q=Number(it.q)||0, sum=(typeof fPrice==='function'?fPrice(it):(Number(it.p)||0))*q; total+=sum; tb.insertAdjacentHTML('beforeend','<tr><td class="col-name editable-name" onclick="openSwapModal('+idx+')" title="Нажмите для замены">'+esc(it.n)+'</td><td class="col-qty"><input type="number" value="'+esc(q)+'" onchange="currentEstimate['+idx+'].q=Number(this.value); window.currentEstimate=currentEstimate; renderMainTable();" style="width:50px;padding:6px;margin:0;text-align:center;"></td><td class="col-sum">'+Math.round(sum)+' P</td><td style="text-align:right;"><button onclick="currentEstimate.splice('+idx+',1); window.currentEstimate=currentEstimate; renderMainTable();" class="btn-danger" style="padding:6px;border-radius:8px;width:auto;margin:0;">✕</button></td></tr>'); });
-    var tot=$('tot-all'); if(tot) tot.innerText=total.toLocaleString('ru-RU')+' P';
-    try{ if(typeof syncDraft==='function') syncDraft(); }catch(e){}
+function activeMatDb(){
+    var out=[];
+    try{ if(Array.isArray(window.matDB)) out=out.concat(window.matDB); }catch(e){}
+    try{ if(Array.isArray(window.EP_MY_MAT)) out=out.concat(window.EP_MY_MAT); }catch(e){}
+    try{ if(Array.isArray(window.EP_GLOBAL_MAT)) out=out.concat(window.EP_GLOBAL_MAT); }catch(e){}
+    try{ var c=JSON.parse(localStorage.getItem('ep_global_cache_force_v1')||'{}'); if(Array.isArray(c.matDB)) out=out.concat(c.matDB); }catch(e){}
+    return out;
   }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: addShieldToEstimate
- * ========================================================= */
-function addShieldToEstimate(items){
-    // Use original addAuto if possible, because it also syncs totals and storage. Items are already aggregated by V19.
-    try{ if(typeof addAuto==='function'){ addAuto(items,'shield'); return; } }catch(e){}
-    try{ window.currentEstimate=(Array.isArray(window.currentEstimate)?window.currentEstimate:[]).filter(function(it){return it.tag!=='shield'&&it.tag!=='shield_info';}).concat(items); currentEstimate=window.currentEstimate; if(typeof renderMainTable==='function') renderMainTable(); }catch(e){}
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: directAdd
- * ========================================================= */
-function directAdd(items){
-    var map={}, out=[];
-    (items||[]).forEach(function(src){ if(!src||!src.n) return; var it=Object.assign({},src,{tag:src.tag||'shield'}); var k=[it.tag,it.type,it.n,it.p,it.u].join('|'); var rec=map[k]; if(!rec){ rec=Object.assign({},it,{q:0,epAssignments:[],epMergedDetails:[]}); map[k]=rec; out.push(rec); } rec.q += Number(it.q)||1; addUniqueAssign(rec,[].concat(it.epAssignments||[],it.epMergedDetails||[],it.epAssignment||[])); });
-    try{ currentEstimate=(Array.isArray(currentEstimate)?currentEstimate:[]).filter(function(x){ return x && x.tag!=='shield' && x.tag!=='shield_info'; }).concat(out); window.currentEstimate=currentEstimate; }catch(e){ window.currentEstimate=(window.currentEstimate||[]).filter(function(x){ return x && x.tag!=='shield' && x.tag!=='shield_info'; }).concat(out); }
-    try{ if(typeof renderMainTable==='function') renderMainTable(); else if(typeof renderMainDirect==='function') renderMainDirect(); }catch(e){}
-    try{ if(typeof syncDraft==='function') syncDraft(); }catch(e){}
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: setStatus
+ * DOCUMENT FUNCTION: setStatus
  * ========================================================= */
 function setStatus(state,msg){
     try{ if(typeof window.epV18SetStatus==='function'){ window.epV18SetStatus(state,msg); return; } }catch(e){}
@@ -3613,31 +2181,14 @@ function setStatus(state,msg){
 
 
 /* =========================================================
- * VISUAL FUNCTION: hideOldBulk
+ * DOCUMENT FUNCTION: activeType
  * ========================================================= */
-function hideOldBulk(){
-    ['ep-v17-bulk-box','ep-v18-bulk-box'].forEach(function(id){ var el=$(id); if(el){ el.style.display='none'; el.setAttribute('aria-hidden','true'); } });
+function activeType(){
+    var m=$('editor-mat-list'), w=$('editor-work-list');
+    if(m && m.offsetParent!==null) return 'mat';
+    if(w && w.offsetParent!==null) return 'work';
+    try{ var activeBtn=Array.prototype.find.call(document.querySelectorAll('#settModal button'),function(b){ return /Материалы/.test(b.textContent||'') && /active|white|#fff/.test(b.className+' '+b.style.background); }); if(activeBtn) return 'mat'; }catch(e){}
+    return 'mat';
   }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: ensurePanel
- * ========================================================= */
-function ensurePanel(){
-    hideOldBulk();
-    var host=visibleHost(); if(!host) return;
-    var box=$('ep-v21-bulk-box');
-    if(!box){ host.insertAdjacentHTML('beforebegin',panelHtml()); fillSelectors(true); }
-    else if(!box.parentNode || !document.body.contains(box)){ host.insertAdjacentHTML('beforebegin',panelHtml()); fillSelectors(true); }
-    ensureChecks(); hideOldBulk();
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: selected
- * ========================================================= */
-function selected(){ return Array.prototype.slice.call(document.querySelectorAll('#settModal .ep-v21-check:checked, #settModal .ep-v18-check:checked')); }
   
 

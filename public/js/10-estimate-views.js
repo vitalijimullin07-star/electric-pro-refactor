@@ -1,28 +1,114 @@
 /*
  * Electric PRO Refactor
  * Module: 10-estimate-views.js
- * V36: поставщику / смета / детализация / табличные виды.
+ * V39 SAFE: Estimate Views.
  *
  * Важно:
+ * - модуль пересобран безопасно;
  * - переносим только полноценные function / async function;
- * - window.* куски пока не переносим;
- * - 00-core.js временно остаётся стабильным runtime;
- * - окончательная чистка будет позже.
+ * - каждый блок проверяется через node --check;
+ * - 00-core.js временно остаётся стабильным runtime.
  */
 
-console.log("10-estimate-views.js V36 loaded");
+console.log("10-estimate-views.js V39 SAFE loaded");
 
 
 
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: fPrice
+ * ESTIMATE VIEWS FUNCTION: handleGoogleAuth
  * ========================================================= */
-function fPrice(it) { return Math.round((it.p || 0) * (1 + (it.type === 'mat'? coeffs.mat: coeffs.work) / 100)); }
+async function handleGoogleAuth() {
+    if(!auth) return alert("Ошибка: Firebase не загружен. Проверьте интернет-соединение.");
+    showLoader("Подключение к Google...", "🔄");
+    try { 
+        const provider = new firebase.auth.GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: 'select_account' });
+        await auth.signInWithPopup(provider); 
+    } catch(e) { 
+        hideLoader();
+        if(e.code !== 'auth/popup-closed-by-user') alert("Сбой Google Auth: " + e.message); 
+    }
+}
+
 
 
 
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: renderMainTable
+ * ESTIMATE VIEWS FUNCTION: finishLoginSetup
+ * ========================================================= */
+async function finishLoginSetup() {
+    document.getElementById('authModal').style.display = 'none';
+    document.getElementById('waitingModal').style.display = 'none';
+    document.getElementById('main-app').style.display = 'block';
+    
+    if (appUser.geminiKey) { GEMINI_API_KEY = appUser.geminiKey; document.getElementById('api-key-input').value = GEMINI_API_KEY; }
+    
+    if(appUser.role === 'admin') { 
+        document.getElementById('admin-panel').style.display = 'block'; 
+        listenForApprovals(); 
+        loadMasterDrafts(); 
+        renderAdminUsers(); 
+    }
+    
+    let savedTheme = safeGet('theme_v31', 'light'); changeTheme(savedTheme); document.getElementById('theme-select').value = savedTheme;
+    document.getElementById('m-coeff').value = coeffs.mat; document.getElementById('w-coeff').value = coeffs.work;
+    document.getElementById('qr-tg').value = safeGet('qr_tg_v31', ''); 
+    document.getElementById('qr-wa').value = safeGet('qr_wa_v31', '');
+    document.getElementById('qr-vk').value = safeGet('qr_vk_v31', '');
+    document.getElementById('ai-shops').value = safeGet('ai_shops_v31', 'Лемана ПРО, ВсеИнструменты, Петрович');
+
+    showLoader('Синхронизация...', '☁️');
+    try {
+        if(db) {
+            const dbDoc = await db.collection('settings').doc('global_db').get();
+            if(dbDoc.exists) { matDB = dbDoc.data().matDB || FULL_MAT_INIT; workDB = dbDoc.data().workDB || FULL_WORK_INIT; }
+            else { matDB = FULL_MAT_INIT; workDB = FULL_WORK_INIT; }
+            const logicDoc = await db.collection('settings').doc('global_logic').get();
+            if(logicDoc.exists) appLogic = Object.assign(appLogic, logicDoc.data());
+            
+            const histSnap = await db.collection('history').get();
+            hDB = histSnap.docs.map(doc => doc.data());
+            const draftDoc = await db.collection('drafts').doc(appUser.uid).get();
+            if(draftDoc.exists && currentEstimate.length === 0) { 
+                currentEstimate = draftDoc.data().estimate || []; 
+                let c = draftDoc.data().cust;
+                if(c) { cust = c; safeSet('cust_v31', JSON.stringify(cust)); }
+            }
+        } else { matDB = FULL_MAT_INIT; workDB = FULL_WORK_INIT; }
+    } catch(e) { matDB = FULL_MAT_INIT; workDB = FULL_WORK_INIT; console.error(e); }
+    
+    hideLoader(); updateMasterBadge(); renderMainTable(); updateHistList();
+    if(!(cust && cust.name)) { setTimeout(() => { openModal('custModal'); }, 400); }
+}
+
+
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: applySwap
+ * ========================================================= */
+function applySwap() {
+    if(swapTargetIdx < 0) return;
+    let selId = document.getElementById('swap-select').value;
+    let current = currentEstimate[swapTargetIdx];
+    let isMat = current.type === 'mat';
+    let dbToUse = isMat ? matDB : workDB;
+    let newItem = dbToUse.find(x => x.id === selId);
+    
+    if(newItem) {
+        currentEstimate[swapTargetIdx].n = newItem.n;
+        currentEstimate[swapTargetIdx].p = newItem.p;
+        renderMainTable();
+        closeModal('swapModal');
+        showToast("Заменено!");
+    }
+}
+
+
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: renderMainTable
  * ========================================================= */
 function renderMainTable() {
     const tb = document.querySelector("#mainTable tbody"); tb.innerHTML = ""; let total = 0;
@@ -40,15 +126,24 @@ function renderMainTable() {
 
 
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: clearCurrentEstimate
+ * ESTIMATE VIEWS FUNCTION: syncDraft
+ * ========================================================= */
+async function syncDraft() { try { safeSet('est_v31', JSON.stringify(currentEstimate)); if(db && appUser && appUser.uid) await db.collection('drafts').doc(appUser.uid).set({ estimate: currentEstimate, cust: cust, timestamp: new Date().toISOString() }); } catch(e){} }
+
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: clearCurrentEstimate
  * ========================================================= */
 async function clearCurrentEstimate() { let c = await window.customConfirm("Очистка", "Очистить смету?"); if(c){ currentEstimate=[]; renderMainTable(); } }
 
 
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: openWorkCatalog
+ * ESTIMATE VIEWS FUNCTION: openWorkCatalog
  * ========================================================= */
 function openWorkCatalog() { 
     let cats = {}; workDB.forEach(w => { let c = w.c || "ОБЩЕЕ"; if(!cats[c]) cats[c] = []; cats[c].push(w); });
@@ -63,8 +158,22 @@ function openWorkCatalog() {
 
 
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: confirmQtyAdd
+ * ESTIMATE VIEWS FUNCTION: promptAdd
+ * ========================================================= */
+function promptAdd(id, type) { 
+    let dbArr = (type==='mat'?matDB:workDB); let item = dbArr.find(x => String(x.id) === String(id)); 
+    if(!item) return; pendingAdd = { item, type }; 
+    document.getElementById('qty-prompt-name').innerText = item.n; 
+    document.getElementById('qty-input').value = 1; 
+    openModal('qtyPromptModal'); 
+}
+
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: confirmQtyAdd
  * ========================================================= */
 function confirmQtyAdd() { 
     let q = Number(document.getElementById('qty-input').value); 
@@ -74,8 +183,61 @@ function confirmQtyAdd() {
 
 
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: applyPoolToEstimate
+ * ESTIMATE VIEWS FUNCTION: addAuto
+ * ========================================================= */
+function addAuto(items, tag) {
+    currentEstimate = currentEstimate.filter(it => it.tag !== tag);
+    const map = {};
+    const out = [];
+    (items || []).forEach(src => {
+        if (!src) return;
+        const it = Object.assign({}, src);
+        it.tag = tag;
+        const key = [it.tag || '', it.type || '', it.n || '', Number(it.p) || 0, it.u || 'шт'].join('|');
+        let rec = map[key];
+        if (!rec) {
+            rec = Object.assign({}, it, { q: 0 });
+            map[key] = rec;
+            out.push(rec);
+        }
+        rec.q += Number(it.q) || 0;
+        epV15MergeAssignments(rec, it);
+    });
+    currentEstimate = currentEstimate.concat(out);
+    renderMainTable();
+}
+
+
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: addGrp
+ * ========================================================= */
+function addGrp() { 
+    let totalMechs = st_soc + st_sw + st_pass + st_cross + st_tv + st_tpol;
+    if(totalMechs === 0) return showToast("Сначала добавьте механизмы!");
+    
+    pool.push({ p:st_p, h:st_h, q:st_q, soc:st_soc, sw:st_sw, pass:st_pass, cross:st_cross, tv:st_tv, tpol:st_tpol, route: document.getElementById('g-routing').value, podr: st_podr }); 
+    rfPool(); 
+}
+
+
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: rfPool
+ * ========================================================= */
+function rfPool() { 
+    document.getElementById('pool-disp').innerHTML = pool.map((g,i) => `<div style="display:flex; justify-content:space-between; padding:8px; border-bottom:1px solid var(--border);"><b>${g.p}п на ${g.h}см (x${g.q}) [${g.podr}]</b> <button onclick="pool.splice(${i},1);rfPool();" style="width:auto; margin:0; background:none; color:red; font-size:16px;">✕</button></div>`).join(""); 
+}
+
+
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: applyPoolToEstimate
  * ========================================================= */
 function applyPoolToEstimate() {
     if(!pool.length) return showToast("❌ Пул пуст!");
@@ -211,18 +373,26 @@ function applyPoolToEstimate() {
 
 
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: renderShieldExtras
+ * ESTIMATE VIEWS FUNCTION: addExtraToShieldConfig
  * ========================================================= */
-function renderShieldExtras() {
-    document.getElementById('shield-extras-list').innerHTML = currentShieldExtras.map((ex, i) =>
-        `<div style="display:flex; justify-content:space-between; font-size:11px; border-bottom:1px dashed rgba(0,0,0,0.1); padding:4px;"><span>${ex.n} <b style="color:var(--primary);">(x${ex.q})</b></span><span style="color:red; font-size:16px; font-weight:bold; cursor:pointer;" onclick="currentShieldExtras.splice(${i},1); renderShieldExtras();">✕</span></div>`
-    ).join('');
+function addExtraToShieldConfig() {
+    let sel = document.getElementById('cfg-extra-db');
+    let q = Number(document.getElementById('cfg-extra-q').value) || 1;
+    if(!sel.value) return showToast("Выберите аппарат!");
+    let item = matDB.find(m => m.id === sel.value);
+    if(item) {
+        currentShieldExtras.push({...item, q: q});
+        renderShieldExtras();
+    }
 }
 
 
+
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epAllDbItems
+ * ESTIMATE VIEWS FUNCTION: epAllDbItems
  * ========================================================= */
 function epAllDbItems(type) {
     const local = type === 'work' ? (workDB || []) : (matDB || []);
@@ -232,8 +402,9 @@ function epAllDbItems(type) {
 
 
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epFindDbItem
+ * ESTIMATE VIEWS FUNCTION: epFindDbItem
  * ========================================================= */
 function epFindDbItem(type, words) {
     const arr = epAllDbItems(type);
@@ -253,22 +424,53 @@ function epFindDbItem(type, words) {
 
 
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epV15DisplayMaterialName
+ * ESTIMATE VIEWS FUNCTION: epV15MergeAssignments
  * ========================================================= */
-function epV15DisplayMaterialName(found, label, meta) {
-    meta = meta || {};
-    const k = String(meta.kind || '').toLowerCase();
-    const src = [label, found && found.n].join(' ');
-    if (k.includes('automatic') || k.includes('breaker') || /\bавтомат\b|A472|А472/i.test(src)) return epV15FormatAutoName(found, label, meta);
-    if (k.includes('узо') || k.includes('uzo') || k.includes('dif') || /узо|диф/i.test(src)) return epV15FormatRcdName(found, label, meta);
-    if (found && found.n) return epV15CleanForName(found.n);
-    return epV15CleanForName(label || 'Позиция');
+function epV15MergeAssignments(dst, src) {
+    const vals = [];
+    [src && src.epAssignment, src && src.dbMeta && src.dbMeta.assignment].forEach(v => { if(v) vals.push(v); });
+    if (Array.isArray(src && src.epAssignments)) vals.push(...src.epAssignments);
+    if (Array.isArray(src && src.epMergedDetails)) vals.push(...src.epMergedDetails);
+    if (!dst.epAssignments) dst.epAssignments = [];
+    if (!dst.epMergedDetails) dst.epMergedDetails = [];
+    vals.map(v => String(v || '').trim()).filter(Boolean).forEach(v => {
+        if (v && !/^(позиция щита|назначение не указано)$/i.test(v) && !dst.epAssignments.includes(v)) dst.epAssignments.push(v);
+        if (v && !/^(позиция щита|назначение не указано)$/i.test(v) && !dst.epMergedDetails.includes(v)) dst.epMergedDetails.push(v);
+    });
 }
 
 
+
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epWork
+ * ESTIMATE VIEWS FUNCTION: epMat
+ * ========================================================= */
+function epMat(label, q, fallbackPrice, words, meta) {
+    const m = meta || {};
+    const found = epFindDbItem('mat', words || [label]);
+    const name = epV15DisplayMaterialName(found, label, Object.assign({}, m, { rawLabel: label, brand: m.brand || epGetVal('cfg-brand-auto', 'IEK') }));
+    const out = {
+        n: found ? name : `⚠️ ${name} [${m.category || 'Материалы'}${m.subcategory ? ' → ' + m.subcategory : ''}] — добавить в БД`,
+        q: q,
+        p: found ? (Number(found.p) || Number(fallbackPrice) || 0) : (Number(fallbackPrice) || 0),
+        u: (found && found.u) || m.unit || 'шт',
+        type: 'mat',
+        sourceId: found && found.id ? found.id : null,
+        needDb: !found,
+        dbMeta: Object.assign({}, m, { rawLabel: label, brand: m.brand || epGetVal('cfg-brand-auto', 'IEK'), foundName: found && found.n ? found.n : '' }),
+        epRawLabel: label
+    };
+    if (m.assignment) { out.epAssignment = m.assignment; out.epAssignments = [m.assignment]; out.epMergedDetails = [m.assignment]; }
+    return out;
+}
+
+
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: epWork
  * ========================================================= */
 function epWork(label, q, price, words, meta) {
     const m = meta || {};
@@ -299,30 +501,168 @@ function epWork(label, q, price, words, meta) {
 
 
 
-/* =========================================================
- * ESTIMATE VIEW FUNCTION: epAutoPrice
- * ========================================================= */
-function epAutoPrice(brand) { return brand === 'ABB' ? 350 : 155; }
-
 
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epDifPrice
+ * ESTIMATE VIEWS FUNCTION: generateCascadePanel
  * ========================================================= */
-function epDifPrice(brand) { return brand === 'ABB' ? 4500 : 3600; }
+function generateCascadePanel() {
+    const bBox = epGetVal('cfg-brand-box', 'Tekfor');
+    const bAuto = epGetVal('cfg-brand-auto', 'IEK');
+    const sWall = epGetVal('cfg-shield-wall', 'Бетон');
+    const ph = parseInt(epGetVal('cfg-phase', '1')) || 1;
+    const curve = epGetVal('cfg-auto-curve', 'C');
+    const rcdType = epGetVal('cfg-rcd-type', 'A');
+    const protectionType = epGetVal('cfg-protection-type', 'uzo_auto');
+    const isMaster = epGetCheck('cfg-master');
+    const heavySeparate = epGetCheck('cfg-heavy-separate');
 
-
-
-/* =========================================================
- * ESTIMATE VIEW FUNCTION: addLine
- * ========================================================= */
-function addLine(name, nominal, group, opts) {
+    let m = [], w = [], lines = [], protectionDevices = [], warnings = [];
+    function addLine(name, nominal, group, opts) {
         const o = opts || {};
         lines.push({ name, nominal, group, curve: o.curve || curve, nonSwitchable: !!o.nonSwitchable, wet: group === 'wet' || !!o.wet });
     }
-    
+    function addRoom(label, count, wetPower) {
+        for (let i = 1; i <= count; i++) {
+            const n = count > 1 ? `${label} ${i}` : label;
+            addLine(`${n} розетки`, 'C16', wetPower ? 'wet' : 'power', { wet: wetPower });
+            addLine(`${n} свет`, 'C10', 'light');
+        }
+    }
+    addRoom('Кухня', cfg.kits || 0, false);
+    addRoom('Ванная', cfg.baths || 0, true);
+    addRoom('Туалет', cfg.toilets || 0, true);
+    addRoom('Комната', cfg.rms || 0, false);
+    addRoom('Балкон', cfg.bals || 0, false);
+    if (epGetCheck('c-apron')) addLine('Фартук кухни', 'C16', 'power');
+    if (epGetCheck('c-dish')) addLine('Посудомойка', 'C10', 'power');
+    if (epGetCheck('c-washer')) addLine('Стиралка/сушилка', 'C10', 'wet', { wet: true });
+    if (epGetCheck('c-towel')) addLine('Полотенцесушитель', 'C10', 'wet', { wet: true });
+    for (let i = 1; i <= (cfg.acs || 0); i++) addLine(`Кондиционер ${i}`, 'C10', 'climate');
+    for (let i = 1; i <= (cfg.fls || 0); i++) addLine(`Тёплый пол ${i}`, 'C10', 'climate');
+    if (epGetCheck('c-fridge')) addLine('Холодильник, неотключаемая группа', 'C10', 'alwaysOn', { nonSwitchable: true });
+    if (epGetCheck('c-neptun')) addLine('Нептун, неотключаемая группа', 'C10', 'alwaysOn', { nonSwitchable: true });
+    if (epGetCheck('c-router')) addLine('Роутер, неотключаемая группа', 'C6', 'alwaysOn', { nonSwitchable: true });
+    const hobPower = epGetVal('c-hob-power', 'none');
+    if (hobPower === '6') addLine('Плита до 6 кВт', 'C25', heavySeparate ? 'heavy' : 'power');
+    if (hobPower === '10') addLine('Плита до 10 кВт', 'C32', heavySeparate ? 'heavy' : 'power');
+    const boilerPower = epGetVal('c-boiler-power', 'none');
+    if (boilerPower === '6') addLine('Бойлер до 6 кВт', 'C25', 'wet', { wet: true });
+    if (boilerPower === '10') addLine('Бойлер до 10 кВт', 'C32', 'wet', { wet: true });
+
+    const groupNames = { power: 'Силовые линии', climate: 'Климат', wet: 'Влажные зоны', light: 'Освещение', heavy: 'Большая техника', alwaysOn: 'Неотключаемые группы' };
+    const presentGroups = Array.from(new Set(lines.map(l => l.group))).filter(Boolean);
+    function groupAssignment(group, leakage) {
+        const ls = lines.filter(l => l.group === group).map(l => l.name);
+        const head = group === 'wet' ? 'Влажные зоны / защита 10 мА' : (groupNames[group] || group);
+        return ls.length ? `${head}: ${ls.join(', ')}` : head;
+    }
+    function addProtection(group, mode) {
+        const leakage = group === 'wet' ? 10 : 30;
+        const kind = mode || (protectionType === 'dif_auto' ? 'ДИФ' : 'УЗО');
+        protectionDevices.push({ group, kind, leakage, rcdType, modules: 2, assignment: groupAssignment(group, leakage) });
+        if (group === 'wet' && leakage !== 10) warnings.push('Влажные зоны должны быть 10 мА');
+    }
+    if (protectionType === 'main_dif_auto') protectionDevices.push({ group: 'main', kind: 'Главный ДИФ', leakage: 30, rcdType, modules: 2, assignment: 'Вводная групповая защита всего щита' });
+    else if (protectionType === 'mixed') presentGroups.forEach(g => addProtection(g, g === 'wet' ? 'ДИФ' : 'УЗО'));
+    else presentGroups.forEach(g => addProtection(g, protectionType === 'dif_auto' ? 'ДИФ' : 'УЗО'));
+
+    function mat(label, q, price, words, meta, assignment) {
+        meta = Object.assign({}, meta || {}, { brand: bAuto });
+        if (assignment) meta.assignment = assignment;
+        const it = epMat(label, q, price, words, meta);
+        if (assignment) { it.epAssignment = assignment; it.epAssignments = [assignment]; it.epMergedDetails = [assignment]; }
+        return it;
+    }
+    function work(label, q, price, words, meta, assignment) {
+        meta = Object.assign({}, meta || {});
+        if (assignment) meta.assignment = assignment;
+        const it = epWork(label, q, price, words, meta);
+        if (assignment) { it.epAssignment = assignment; it.epAssignments = [assignment]; it.epMergedDetails = [assignment]; }
+        return it;
+    }
+
+    m.push(mat(`Вводной автомат ${ph}ф ${bAuto}`, 1, bAuto === 'ABB' ? 3500 : 1800, ['автомат', 'вводной', bAuto, ph + 'ф'], { category: 'Автоматика', subcategory: 'Автоматы', kind: 'input_breaker', unit: 'шт', poles: ph === 3 ? '4P' : '2P' }, 'Вводной аппарат щита'));
+    protectionDevices.forEach(pd => {
+        const label = pd.kind === 'Главный ДИФ' ? `Главный ДИФ ${bAuto} ${pd.leakage}мА тип ${pd.rcdType}` : `${pd.kind} ${groupNames[pd.group] || pd.group} ${pd.leakage}мА тип ${pd.rcdType} ${bAuto}`;
+        m.push(mat(label, 1, epDifPrice(bAuto), [pd.kind, bAuto, pd.leakage + 'мА', pd.rcdType, groupNames[pd.group] || pd.group], { category: 'Автоматика', subcategory: pd.kind === 'ДИФ' || pd.kind === 'Главный ДИФ' ? 'ДИФы' : 'УЗО', kind: pd.kind === 'ДИФ' || pd.kind === 'Главный ДИФ' ? 'dif' : 'uzo', leakage: pd.leakage, rcdType: pd.rcdType, amp: 40, poles: pd.kind === 'ДИФ' ? '1P+N' : '2P', modules: 2 }, pd.assignment));
+    });
+    lines.forEach(line => {
+        const label = `Автомат ${line.nominal} тип ${line.curve} ${bAuto} — ${line.name}`;
+        m.push(mat(label, 1, epAutoPrice(bAuto), ['автомат', bAuto, line.nominal, line.curve], { category: 'Автоматика', subcategory: 'Автоматы', kind: 'automatic', nominal: line.nominal, curve: line.curve, modules: 1, poles: '1P' }, line.name));
+    });
+    if (epGetCheck('cfg-uzm')) {
+        const q = ph === 3 ? 3 : 1;
+        m.push(mat(`Реле напряжения ${bAuto}`, q, 4500, ['реле напряжения', 'узм', bAuto], { category: 'Автоматика', subcategory: 'УЗМ / реле напряжения', kind: 'voltage_relay', modules: ph === 3 ? 6 : 2 }, 'Защита от перенапряжения'));
+    }
+    if (isMaster) {
+        const lightLines = lines.filter(l => l.group === 'light').map(l => l.name).join(', ') || 'световые группы';
+        m.push(mat(`Контактор C40 ${bAuto} — мастер-кнопка света`, 1, 2200, ['контактор', 'C40', bAuto], { category: 'Автоматика', subcategory: 'Контакторы', kind: 'contactor', modules: 2 }, 'Мастер-кнопка только на свет: ' + lightLines));
+        m.push(mat(`Автомат C40 тип ${curve} ${bAuto} — байпас мастер-кнопки`, 1, bAuto === 'ABB' ? 600 : 380, ['автомат', 'C40', bAuto, curve], { category: 'Автоматика', subcategory: 'Автоматы', kind: 'automatic', nominal: 'C40', curve: curve, modules: 1, poles: '1P' }, 'Байпас мастер-кнопки света'));
+    }
+    currentShieldExtras.forEach(ex => m.push({ n: ex.n, q: ex.q, p: ex.p, u: ex.u || 'шт', type: 'mat', epAssignment: 'Дополнительный аппарат защиты', epAssignments: ['Дополнительный аппарат защиты'], epMergedDetails: ['Дополнительный аппарат защиты'] }));
+
+    const onePoleCount = lines.length + (isMaster ? 1 : 0);
+    const twoPoleProtectionCount = protectionDevices.length;
+    const relayModules = epGetCheck('cfg-uzm') ? (ph === 3 ? 6 : 2) : 0;
+    const masterModules = isMaster ? 3 : 0;
+    const extraModules = currentShieldExtras.reduce((s, ex) => s + (Number(ex.modules || 1) * Number(ex.q || 1)), 0);
+    const totalModules = Math.ceil(onePoleCount + twoPoleProtectionCount * 2 + relayModules + masterModules + extraModules + (ph === 3 ? 3 : 2));
+    const boxSize = [6,12,24,36,48,60,72].find(s => s >= totalModules) || 72;
+    if (totalModules > 72) warnings.push('Нужно больше 72 модулей — требуется второй щит или пересборка схемы');
+
+    m.unshift(mat(`Щит ${sWall === 'Накладной' ? 'накладной' : 'встраиваемый'} ${bBox} ${boxSize}М`, 1, bBox === 'ABB' ? 6510 : 2660, ['щит', bBox, String(boxSize), sWall === 'Накладной' ? 'накладной' : 'встраиваемый'], { brand: bBox, category: 'Щитовое', subcategory: 'Корпуса', kind: 'shield_box', modules: boxSize, mountType: sWall === 'Накладной' ? 'surface' : 'built_in' }, 'Корпус щита'));
+    const comb1P = Math.ceil(onePoleCount / 12), comb2P = Math.ceil(twoPoleProtectionCount / 6), rows = Math.ceil(boxSize / 12);
+    const pugvSize = Number(appLogic.shieldPugvSize || 6), pugvMeters = Math.max(4, Math.ceil(totalModules * 0.4)), nshviPacks = Math.max(1, Math.ceil(boxSize / 48));
+    if (comb1P > 0) m.push(mat('Гребёнка 1P 25см', comb1P, 250, ['гребенка', '1P', '25'], { category: 'Щитовое', subcategory: 'Гребёнки', kind: 'comb_bus_1p' }, 'Питание однополюсных автоматов'));
+    if (comb2P > 0) m.push(mat('Гребёнка 2P 25см', comb2P, 450, ['гребенка', '2P', '25'], { category: 'Щитовое', subcategory: 'Гребёнки', kind: 'comb_bus_2p' }, 'Питание УЗО/ДИФ'));
+    if (twoPoleProtectionCount > 0) m.push(mat('Нулевая шинка N на группу УЗО/ДИФ', twoPoleProtectionCount, 285, ['шина', 'N', 'ноль', 'DIN'], { category: 'Щитовое', subcategory: 'Шины N/PE', kind: 'neutral_bus' }, 'N-шинки по группам защиты'));
+    m.push(mat(`PE-шина на ${appLogic.shieldPeBusContacts || 26} контактов`, 1, 770, ['PE', 'шина', '26'], { category: 'Щитовое', subcategory: 'Шины N/PE', kind: 'pe_bus' }, 'Защитное заземление PE'));
+    m.push(mat('DIN-рейка / комплект DIN для щита', rows, 180, ['DIN', 'рейка'], { category: 'Щитовое', subcategory: 'DIN', kind: 'din_rail' }, 'Крепление аппаратов на DIN-рейке'));
+    m.push(mat('Ограничитель на DIN-рейку', rows * 2, 35, ['ограничитель', 'DIN'], { category: 'Щитовое', subcategory: 'DIN', kind: 'din_stopper' }, 'Фиксация аппаратов на DIN-рейке'));
+    m.push(mat(`Провод ПуГВ 1×${pugvSize}`, pugvMeters, 85, ['ПуГВ', '1x' + pugvSize, '1×' + pugvSize], { category: 'Щитовое', subcategory: 'Провода', kind: 'pugv', unit: 'м.п.' }, 'Внутренняя разводка щита'));
+    m.push(mat(`НШВИ 1×${pugvSize}, упак. 100 шт`, nshviPacks, 225, ['НШВИ', '1x' + pugvSize, '1×' + pugvSize], { category: 'Щитовое', subcategory: 'Наконечники', kind: 'lug_pack' }, 'Опрессовка проводов щита'));
+    m.push(mat('Маркировка линий / бирки', lines.length, 15, ['маркировка', 'бирки'], { category: 'Щитовое', subcategory: 'Маркировка', kind: 'marking_tag' }, 'Маркировка линий'));
+    if (epGetCheck('cfg-cable-glands')) m.push(mat('Кабельные вводы / сальники', 1, 250, ['кабельный ввод', 'сальник'], { category: 'Щитовое', subcategory: 'Кабельные вводы', kind: 'cable_gland' }, 'Ввод кабелей в щит'));
+
+    if (sWall !== 'Накладной') w.push(work(`Ниша щита ${boxSize}М (${sWall})`, boxSize, appLogic.shieldNichePerModule || 400, ['ниша', 'щит', sWall, String(boxSize)], { unit: 'мод.', category: 'Штробление и резка', subcategory: 'Ниши щита' }, 'Ниша под корпус щита'));
+    if (sWall !== 'Накладной') w.push(work(`Штроба 100×50, под трассу кабелей (${sWall})`, 2, appLogic.shieldInputGroovePrice || 1500, ['штроба', '100x50', sWall, 'трасса', 'кабелей'], { unit: 'м.п.', category: 'Штробление и резка', subcategory: 'Штроба 100×50 под трассу кабелей' }, 'Штроба под ввод/трассу кабелей'));
+    w.push(work('Сборка щита', totalModules, appLogic.priceShield || 500, ['сборка', 'щит'], { unit: 'мод.', category: 'Щитовое', subcategory: 'Сборка щита' }, 'Сборка модульного щита'));
+    w.push(work('Установка щита', 1, appLogic.shieldInstallPrice || 2500, ['установка', 'щит'], { unit: 'шт', category: 'Щитовое', subcategory: 'Монтаж щита' }, 'Монтаж корпуса щита'));
+    w.push(work('Подключение вводного кабеля', 1, appLogic.shieldInputConnectPrice || 1500, ['подключение', 'вводного', 'кабеля'], { unit: 'шт', category: 'Щитовое', subcategory: 'Монтаж щита' }, 'Подключение ввода'));
+    w.push(work('Прозвонка / проверка линий', lines.length, appLogic.shieldTestLinePrice || 150, ['прозвонка', 'проверка', 'линий'], { unit: 'линия', category: 'Щитовое', subcategory: 'Проверка линий' }, 'Проверка каждой линии'));
+    w.push(work('Маркировка линий', lines.length, appLogic.shieldMarkLinePrice || 100, ['маркировка', 'линий'], { unit: 'линия', category: 'Щитовое', subcategory: 'Маркировка линий' }, 'Маркировка каждой линии'));
+    if (epGetCheck('cfg-scheme')) w.push(work('Составление однолинейной схемы щита', 1, appLogic.shieldSchemePrice || 4000, ['однолинейная', 'схема', 'щит'], { unit: 'шт', category: 'Щитовое', subcategory: 'Документация' }, 'Однолинейная схема'));
+    const info = [
+        { n: `ℹ️ Щит: занято ${totalModules} мод.; корпус ${boxSize}М; свободно ${Math.max(0, boxSize - totalModules)} мод.`, q: 1, p: 0, type: 'work', tag: 'shield_info' },
+        { n: `ℹ️ Защита: ${protectionType}; автоматы тип ${curve}; УЗО/ДИФ тип ${rcdType}; влажные зоны 10мА`, q: 1, p: 0, type: 'work', tag: 'shield_info' },
+        { n: `ℹ️ Гребёнки: 1P ${comb1P}×25см; 2P ${comb2P}×25см; N-шинок ${twoPoleProtectionCount}; PE-шина ${appLogic.shieldPeBusContacts || 26} контактов`, q: 1, p: 0, type: 'work', tag: 'shield_info' }
+    ];
+    warnings.forEach(x => info.push({ n: `⚠️ ${x}`, q: 1, p: 0, type: 'work', tag: 'shield_info' }));
+    addAuto(m.concat(w).concat(info), 'shield');
+    currentShieldExtras = [];
+    closeModal('configModal');
+    showToast('✅ Щит сгенерирован V15');
+}
+
+
+
+
 
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: work
+ * ESTIMATE VIEWS FUNCTION: mat
+ * ========================================================= */
+function mat(label, q, price, words, meta, assignment) {
+        meta = Object.assign({}, meta || {}, { brand: bAuto });
+        if (assignment) meta.assignment = assignment;
+        const it = epMat(label, q, price, words, meta);
+        if (assignment) { it.epAssignment = assignment; it.epAssignments = [assignment]; it.epMergedDetails = [assignment]; }
+        return it;
+    }
+    
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: work
  * ========================================================= */
 function work(label, q, price, words, meta, assignment) {
         meta = Object.assign({}, meta || {});
@@ -334,8 +674,103 @@ function work(label, q, price, words, meta, assignment) {
 
     
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: categorizeEstimateItem
+ * ESTIMATE VIEWS FUNCTION: runAiCheck
+ * ========================================================= */
+async function runAiCheck() { 
+    if(!GEMINI_API_KEY) return showToast("❌ Нужен ключ ИИ в настройках");
+    showLoader("ИИ анализирует...", "🤖");
+    try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+        const estNames = currentEstimate.map(i => i.n).join(", ");
+        const promptText = `Я электрик. Смета: ${estNames}. Найди логические ошибки (забыл крепеж, рамки, УЗО). Верни ТОЛЬКО JSON массив: [{"reason": "Объяснение", "suggestedName": "Название из стандартных материалов"}]. Если всё идеально, верни пустой массив [].`;
+        const payload = { contents: [{ parts: [{text: promptText }] }] };
+        const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+        const data = await response.json(); hideLoader();
+        if(data.error) throw new Error(data.error.message);
+        let aiText = data.candidates[0].content.parts[0].text.replace(/```[a-z]*\n?/g, '').replace(/```/g, '').trim();
+        const suggestions = JSON.parse(aiText);
+        if (suggestions.length === 0) return showToast("✨ Всё идеально! Смета полная.");
+        document.getElementById('ai-modal-title').innerText = "✨ ИИ-Аналитика";
+        document.getElementById('ai-suggestions').innerHTML = suggestions.map(s => `<div style="background:var(--bg); padding: 12px; border-radius: 10px; margin-bottom:10px; border-left:4px solid var(--ai);"><div style="font-size: 12px; font-weight:bold; margin-bottom:8px;">${s.reason}</div><div style="display:flex; justify-content:space-between; align-items:center;"><span style="font-size:13px; color:var(--primary); font-weight:bold;">${s.suggestedName}</span><button onclick="addAuto([{n:'${s.suggestedName}', q:1, p:0, type:'mat'}], 'ai_add'); closeModal('aiModal');" style="background:var(--ai); padding:6px 12px; font-size:11px; color:white; border:none; border-radius:6px; width:auto; margin:0;">+ Добавить</button></div></div>`).join("");
+        openModal('aiModal');
+    } catch(e) { hideLoader(); showToast("❌ Сбой ИИ: Проверьте ключ"); }
+}
+
+
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: aiSupply
+ * ========================================================= */
+async function aiSupply() {
+    if(!GEMINI_API_KEY) return showToast("❌ Нужен ключ ИИ");
+    showLoader("ИИ формирует закупку...", "🤖");
+    try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+        const mats = currentEstimate.filter(i=>i.type==='mat').map(i=>`${i.n} - ${i.q}`).join(", ");
+        const promptText = `Смета материалов: ${mats}. Раздели их на логичные категории для удобной закупки в магазине (Кабели, Автоматика, Черновые и т.д.). Выведи в чистом HTML формате (используй <h3>, <ul>, <li>, <b>).`;
+        const payload = { contents: [{ parts: [{text: promptText }] }] };
+        const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+        const data = await response.json(); hideLoader();
+        let aiText = data.candidates[0].content.parts[0].text.replace(/```[a-z]*\n?/g, '').replace(/```/g, '').trim();
+        document.getElementById('ai-modal-title').innerText = "📦 ИИ-Снабженец";
+        document.getElementById('ai-suggestions').innerHTML = `<div style="font-size:13px; line-height:1.5;">${aiText}</div>`;
+        openModal('aiModal');
+    } catch(e) { hideLoader(); showToast("❌ Сбой ИИ"); }
+}
+
+
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: aiPueHelper
+ * ========================================================= */
+async function aiPueHelper() { 
+    if(!GEMINI_API_KEY) return showToast("❌ Нужен ключ ИИ");
+    showLoader("ИИ думает...", "🤖");
+    try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+        const promptText = `Смета: ${currentEstimate.map(i=>i.n).join(", ")}. Какие нормы ПУЭ нужны? Напиши кратко в HTML (без markdown, используй теги <p>, <ul>, <b>).`;
+        const payload = { contents: [{ parts: [{text: promptText }] }] };
+        const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+        const data = await response.json(); hideLoader();
+        let aiText = data.candidates[0].content.parts[0].text.replace(/```[a-z]*\n?/g, '').replace(/```/g, '').trim();
+        document.getElementById('ai-modal-title').innerText = "📚 ПУЭ Справка";
+        document.getElementById('ai-suggestions').innerHTML = `<div style="font-size:13px; line-height:1.5;">${aiText}</div>`;
+        openModal('aiModal');
+    } catch(e) { hideLoader(); showToast("❌ Сбой ИИ"); }
+}
+
+
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: compareShopsAI
+ * ========================================================= */
+async function compareShopsAI() {
+    if(!GEMINI_API_KEY) return showToast("❌ Нужен ключ ИИ");
+    showLoader("Сравнение цен...", "🤖");
+    try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+        let shops = document.getElementById('ai-shops').value || "Лемана ПРО, Петрович";
+        const promptText = `Материалы: ${currentEstimate.filter(i=>i.type==='mat').map(i=>i.n).join(", ")}. Создай HTML таблицу (class="pdf-table") с МАКСИМАЛЬНЫМИ (самыми высокими) розничными ценами ГОСТ в магазинах: ${shops}. Верни только HTML.`;
+        const payload = { contents: [{ parts: [{text: promptText }] }] };
+        const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+        const data = await response.json(); hideLoader();
+        let aiText = data.candidates[0].content.parts[0].text.replace(/```[a-z]*\n?/g, '').replace(/```/g, '').trim();
+        document.getElementById('ai-modal-title').innerText = "🛒 Макс. Цены ГОСТ";
+        document.getElementById('ai-suggestions').innerHTML = `<div style="overflow-x:auto;">${aiText}</div>`;
+        openModal('aiModal');
+    } catch(e) { hideLoader(); showToast("❌ Сбой ИИ"); }
+}
+
+
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: categorizeEstimateItem
  * ========================================================= */
 function categorizeEstimateItem(it) {
     if (it.type === 'mat') return 1;
@@ -349,8 +784,9 @@ function categorizeEstimateItem(it) {
 
 
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: showPreview
+ * ESTIMATE VIEWS FUNCTION: showPreview
  * ========================================================= */
 function showPreview(mode, isActOverride = false, customTitle = null) { 
     currentPreviewMode = mode;
@@ -464,15 +900,17 @@ function showPreview(mode, isActOverride = false, customTitle = null) {
 
 
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: refreshPreview
+ * ESTIMATE VIEWS FUNCTION: refreshPreview
  * ========================================================= */
 function refreshPreview() { showPreview(currentPreviewMode); }
 
 
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: printAct
+ * ESTIMATE VIEWS FUNCTION: printAct
  * ========================================================= */
 function printAct() {
     if(!currentCardId) return;
@@ -493,35 +931,38 @@ function printAct() {
 
 
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: renderLogicUI
+ * ESTIMATE VIEWS FUNCTION: doRecalculate
  * ========================================================= */
-function renderLogicUI() { 
-    document.getElementById('logic-price-soc').value = appLogic.priceSoc || 500; 
-    document.getElementById('logic-price-shield').value = appLogic.priceShield || 500; 
-    document.getElementById('logic-price-drill').value = appLogic.priceDrill || 600; 
-    document.getElementById('logic-price-shtroba').value = appLogic.priceShtroba || 550; 
-    document.getElementById('logic-price-cab-ceil').value = appLogic.priceCabCeil || 120; 
+function doRecalculate() {
+    let ceilCab = Number(document.getElementById('r-ceil-input').value) || 0; let floorCab = Math.max(0, globalRecalcCab - ceilCab - globalRecalcSht);
+    const rmList = ["Гофра ПВХ", "Лента монтажная", "Площадка под стяжку", "Стяжки нейлоновые", "Стяжка нейлоновая", "Прокладка кабеля", "Клипса в штробу", "Газовый баллон", "Гвозди для прямого", "Смесь штукатурная", "Амортизация: Коронка алмазная"];
+    currentEstimate = currentEstimate.filter(it => !rmList.some(rm => it.n.includes(rm))); let m=[], w=[];
+    let calcFloorCab = Math.ceil(floorCab * 1.1); let calcCeilCab = Math.ceil(ceilCab * 1.1); let calcGofra = Math.ceil(calcFloorCab * 1.05);
+    let boxesCount = 0; currentEstimate.forEach(it => { if(it.n.toLowerCase().includes('подрозетн') && it.type === 'work') boxesCount += Number(it.q); });
+    let mixKg = Math.ceil(boxesCount * 0.3); if(mixKg > 0) m.push({ n: "Смесь штукатурная/алебастр (кг)", q: mixKg, p: 40, type: 'mat' });
+    let crowns = Math.ceil(boxesCount / 80); if(crowns > 0) m.push({ n: "Амортизация: Коронка алмазная", q: crowns, p: 3500, type: 'mat' });
 
-    document.getElementById('logic-shield-install').value = appLogic.shieldInstallPrice || 2500;
-    document.getElementById('logic-shield-input-connect').value = appLogic.shieldInputConnectPrice || 1500;
-    document.getElementById('logic-shield-test-line').value = appLogic.shieldTestLinePrice || 150;
-    document.getElementById('logic-shield-mark-line').value = appLogic.shieldMarkLinePrice || 100;
-    document.getElementById('logic-shield-scheme').value = appLogic.shieldSchemePrice || 4000;
-    document.getElementById('logic-shield-niche-module').value = appLogic.shieldNichePerModule || 400;
-    document.getElementById('logic-shield-input-groove').value = appLogic.shieldInputGroovePrice || 1500;
-
-    document.getElementById('logic-soc-jb').value = appLogic.socketsPerJb || 3; 
-    document.getElementById('logic-conn-soc').value = appLogic.connPerSocJb || 3; 
-    document.getElementById('logic-conn-sw').value = appLogic.connPerSwJb || 3; 
-    document.getElementById('logic-conn-pass').value = appLogic.connPerPassJb || 4; 
+    if (calcFloorCab > 0) { 
+        m.push({ n: "Гофра ПВХ/ПНД с протяжкой", q: calcGofra, p: 25, type: 'mat' }); m.push({ n: "Лента монтажная (перфолента)", q: Math.ceil(calcFloorCab * 0.0033), p: 580, type: 'mat' }); w.push({ n: "Прокладка кабеля в гофре (пол)", q: calcFloorCab, p: appLogic.priceCabCeil || 150, type: 'work' }); 
+    }
+    if (calcCeilCab > 0) {
+        let totalBases = Math.ceil(calcCeilCab * 3); let basePacks = Math.ceil(totalBases / 100);
+        if(basePacks > 0) { m.push({ n: `Площадка под стяжку (уп. 100шт)`, q: basePacks, p: 500, type: 'mat' }); m.push({ n: `Стяжка нейлоновая 400х5 (уп. 100шт)`, q: basePacks, p: 350, type: 'mat' }); }
+        let nailPacks = Math.floor((totalBases + 700) / 1000); if(totalBases > 0 && nailPacks < 1) nailPacks = 1; m.push({ n: "Гвозди для прямого монтажа 3х19 мм (1000 шт)", q: nailPacks, p: 1905, type: 'mat' });
+        let gas = Math.ceil(totalBases / 1100); if(totalBases > 0 && gas < 1) gas = 1; m.push({ n: "Газовый баллон 80 мл 165 мм", q: gas, p: 550, type: 'mat' }); w.push({ n: "Прокладка кабеля (без гофры)", q: calcCeilCab, p: appLogic.priceCabCeil || 120, type: 'work' });
+    }
+    if (globalRecalcSht > 0) { let clipsPacks = Math.ceil((globalRecalcSht * 3) / 100); if(clipsPacks > 0) m.push({ n: `Клипса в штробу (уп. 100шт)`, q: clipsPacks, p: 250, type: 'mat' }); }
+    
+    addAuto(m, 'recalc_m'); addAuto(w, 'recalc_w'); closeModal('recalcModal'); showToast("✅ Трассы пересчитаны!");
 }
 
 
 
 
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: renderChart
+ * ESTIMATE VIEWS FUNCTION: renderChart
  * ========================================================= */
 function renderChart() {
     let ctxEl = document.getElementById('buhChart');
@@ -562,8 +1003,99 @@ function renderChart() {
 
 
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: addExtraWork
+ * ESTIMATE VIEWS FUNCTION: updateBuhUI
+ * ========================================================= */
+function updateBuhUI() {
+    let sumW = 0, sumM = 0, matBase = 0, workBase = 0;
+    currentEstimate.forEach(it => { let price = fPrice(it); if(it.type==='work') { sumW += price * it.q; workBase += (it.p||0) * it.q; } else { sumM += price * it.q; matBase += (it.p||0) * it.q; } });
+    let disc = Number(document.getElementById('b-discount').value) || 0, prep = Number(document.getElementById('b-prepay').value) || 0;
+    document.getElementById('b-work').innerText = sumW + ' P'; document.getElementById('b-mat').innerText = sumM + ' P'; 
+    document.getElementById('p-total').innerText = (workBase + (sumM - matBase)) + ' P'; 
+    document.getElementById('b-final').innerText = (sumW + sumM - disc - prep) + ' P';
+}
+
+
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: saveHist
+ * ========================================================= */
+async function saveHist() {
+    const finalTotal = parseInt(document.getElementById('b-final').innerText) || 0;
+    let act = { id: Date.now(), name: cust.name, phone: cust.phone, addr: cust.addr, total: finalTotal, date: new Date().toLocaleDateString(), estimate: JSON.parse(JSON.stringify(currentEstimate)), masterName: appUser.name, masterUid: appUser.uid, payments: { mat: false, cut: false, rough: false, fine: false, extra: false, prepay: Number(document.getElementById('b-prepay').value) || 0 } };
+    hDB.push(act); safeSet('h_v31', JSON.stringify(hDB)); updateHistList(); renderChart();
+    try { if(db) { await db.collection('history').doc(String(act.id)).set(act); await db.collection('drafts').doc(appUser.uid).delete(); currentEstimate = []; renderMainTable(); } } catch(e){}
+    showToast("✅ Объект сохранен в Облако!"); closeModal('buhModal');
+}
+
+
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: updateHistList
+ * ========================================================= */
+function updateHistList() {
+    let viewHDB = appUser.role === 'admin' ? hDB : hDB.filter(h => h.masterUid === appUser.uid);
+    document.getElementById('h-stat').innerHTML = viewHDB.map((h, i) => `<div style="background:rgba(255,255,255,0.6); padding:10px; border-radius:10px; border:1px solid var(--border); margin-bottom:8px; cursor:pointer;" onclick="openObjCard(${h.id})"><div style="display:flex; justify-content:space-between; margin-bottom:6px;"><b style="color:var(--text); font-size:13px;">${h.name || 'Без имени'}</b><b style="color:var(--primary);">${h.total} P</b></div><div style="font-size:10px; color:var(--gray);">Дата: ${h.date} ${appUser.role === 'admin' ? `<br><span style="color:var(--orange);">Мастер: ${h.masterName}</span>` : ''}</div></div>`).join("");
+}
+
+
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: openObjCard
+ * ========================================================= */
+function openObjCard(id) {
+    closeModal('buhModal'); currentCardId = id; const obj = hDB.find(x => x.id === id); if(!obj) return; 
+    
+    document.getElementById('card-obj-name').innerHTML = `${obj.name || 'Без имени'}<br><span style="font-size:12px; color:var(--gray); font-weight:normal;">📞 ${obj.phone || 'Нет тел.'} | 📍 ${obj.addr || 'Нет адреса'}</span>`; 
+    
+    let sumMat = 0, sumCut = 0, sumRough = 0, sumFine = 0, sumExtra = 0;
+    let htmlMat='', htmlCut='', htmlRough='', htmlFine='', htmlExtra='';
+    
+    if(obj.estimate) {
+        obj.estimate.forEach(it => {
+            let sum = fPrice(it) * it.q;
+            let row = `<div class="act-item-row"><span>${it.n} <b style="color:var(--primary);">(x${it.q})</b></span><b>${sum} ₽</b></div>`;
+            let cat = categorizeEstimateItem(it);
+
+            if(it.tag === 'extra') { sumExtra += sum; htmlExtra += row; }
+            else if(cat === 1) { sumMat += sum; htmlMat += row; }
+            else if(cat === 2) { sumCut += sum; htmlCut += row; }
+            else if(cat === 4) { sumFine += sum; htmlFine += row; }
+            else { sumRough += sum; htmlRough += row; }
+        });
+    }
+
+    let finalHtml = '';
+    if(htmlMat) finalHtml += `<div class="act-group-title" style="background:#10B981;"><span>1. Материалы</span><span>${sumMat} ₽</span></div>${htmlMat}`;
+    if(htmlCut) finalHtml += `<div class="act-group-title" style="background:#F59E0B;"><span>2. Штробление и резка</span><span>${sumCut} ₽</span></div>${htmlCut}`;
+    if(htmlRough) finalHtml += `<div class="act-group-title" style="background:#64748B;"><span>3. Черновая электрика</span><span>${sumRough} ₽</span></div>${htmlRough}`;
+    if(htmlFine) finalHtml += `<div class="act-group-title" style="background:#3B82F6;"><span>4. Чистовая электрика</span><span>${sumFine} ₽</span></div>${htmlFine}`;
+    if(htmlExtra) finalHtml += `<div class="act-group-title" style="background:#EF4444;"><span>Дополнительные работы</span><span>${sumExtra} ₽</span></div>${htmlExtra}`;
+
+    if(!finalHtml) finalHtml = "<p style='font-size:12px; color:gray;'>Нет данных по смете</p>";
+
+    document.getElementById('card-acts-container').innerHTML = finalHtml;
+    
+    let pay = obj.payments || {};
+    document.getElementById('pay-mat').checked = !!pay.mat;
+    document.getElementById('pay-cut').checked = !!pay.cut;
+    document.getElementById('pay-rough').checked = !!pay.rough;
+    document.getElementById('pay-fine').checked = !!pay.fine;
+    document.getElementById('pay-extra').checked = !!pay.extra;
+    document.getElementById('pay-prepay').value = pay.prepay || 0;
+
+    openModal('objCardModal'); 
+}
+
+
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: addExtraWork
  * ========================================================= */
 async function addExtraWork() { 
     const n = document.getElementById('extra-work-name').value.trim(); const p = Number(document.getElementById('extra-work-price').value); 
@@ -577,8 +1109,9 @@ async function addExtraWork() {
 
 
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: renderDbEditors
+ * ESTIMATE VIEWS FUNCTION: renderDbEditors
  * ========================================================= */
 function renderDbEditors() {
     let catsM = [...new Set(matDB.map(m=>m.c || 'Разное'))];
@@ -612,8 +1145,9 @@ function renderDbEditors() {
 
 
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: addDbItem
+ * ESTIMATE VIEWS FUNCTION: addDbItem
  * ========================================================= */
 async function addDbItem() {
     if(appUser.role !== 'admin') return showToast("Только админ может добавлять");
@@ -637,8 +1171,9 @@ async function addDbItem() {
 
 
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: requestPriceChange
+ * ESTIMATE VIEWS FUNCTION: requestPriceChange
  * ========================================================= */
 async function requestPriceChange(type, id, newPrice) { 
     newPrice = Number(newPrice); 
@@ -652,27 +1187,54 @@ async function requestPriceChange(type, id, newPrice) {
 
 
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: renderAdminUsers
+ * ESTIMATE VIEWS FUNCTION: loadMasterDrafts
  * ========================================================= */
-async function renderAdminUsers() {
-    if(appUser.role !== 'admin') return;
+async function loadMasterDrafts() {
+    if(!db || appUser.role !== 'admin') return;
     try {
-        if(db) {
-            const snap = await db.collection('users').get();
-            let html = snap.docs.map(doc => {
-                let u = doc.data();
-                return `<div class="emp-row" style="flex-wrap: wrap; gap: 5px;"><div><b>${u.name}</b><br><span style="font-size:10px; color:var(--gray);">${u.phone || u.email} (${u.role})</span></div> <button class="btn-danger" style="padding:6px 10px; width:auto; margin:0;" onclick="deleteUser('${doc.id}')">✕</button></div>`;
-            }).join('');
-            document.getElementById('admin-users-list').innerHTML = html || "<span style='font-size:11px; color:gray;'>Нет сотрудников</span>";
-        }
-    } catch(e) { console.error("Render users error", e); }
+        const snap = await db.collection('drafts').get(); 
+        const usersSnap = await db.collection('users').get();
+        let users = usersSnap.docs.map(d => ({id: d.id, ...d.data()})); 
+        adminDraftsCache = [];
+        let draftsHtml = '';
+        snap.forEach(doc => {
+            let data = doc.data(); let master = users.find(u => u.id === doc.id); let mName = master ? master.name : 'Неизвестный мастер'; let total = 0;
+            if(data.estimate) { data.estimate.forEach(it => { total += fPrice(it) * it.q; }); }
+            data.masterName = mName; data.uid = doc.id; data.total = total;
+            adminDraftsCache.push(data);
+            draftsHtml += `<div class="emp-row" style="flex-direction:column; align-items:flex-start; cursor:pointer;" onclick="openAdminDraftView('${doc.id}')"><div style="width:100%; display:flex; justify-content:space-between;"><b>${mName}</b> <span style="color:var(--primary); font-weight:bold;">${total} Р</span></div><span style="font-size:10px; color:var(--gray);">Объект: ${data.cust ? data.cust.name : 'Не указан'} | Поз: ${data.estimate ? data.estimate.length : 0}</span></div>`;
+        }); 
+        document.getElementById('admin-drafts-list').innerHTML = draftsHtml || "<span style='font-size:11px; color:gray;'>Активных смет нет</span>";
+    } catch(e) { console.error("Load drafts error", e); }
 }
 
 
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epNormProvider
+ * ESTIMATE VIEWS FUNCTION: openAdminDraftView
+ * ========================================================= */
+function openAdminDraftView(uid) {
+    let draft = adminDraftsCache.find(d => d.uid === uid);
+    if(!draft) return;
+    let html = `<h3 style="margin-top:0; color:var(--primary);">${draft.masterName}</h3>`;
+    html += `<p style="font-size:12px; color:var(--gray); margin-bottom:15px;">Объект: ${draft.cust?.name || 'Не указан'} (${draft.cust?.addr || 'Нет адреса'})</p>`;
+    html += `<table class="pdf-table" style="width:100%;">`;
+    (draft.estimate || []).forEach(it => {
+        html += `<tr><td>${it.n}</td><td style="text-align:center;">x${it.q}</td><td style="text-align:right; font-weight:bold;">${fPrice(it) * it.q} ₽</td></tr>`;
+    });
+    html += `</table><h3 style="text-align:right; color:var(--primary);">Итого: ${draft.total} ₽</h3>`;
+    document.getElementById('admin-draft-content').innerHTML = html;
+    openModal('adminDraftModal');
+}
+
+
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: epNormProvider
  * ========================================================= */
 function epNormProvider(p) {
         return p === 'openai' ? 'openai' : 'gemini';
@@ -680,8 +1242,9 @@ function epNormProvider(p) {
 
     
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epCurrentProvider
+ * ESTIMATE VIEWS FUNCTION: epCurrentProvider
  * ========================================================= */
 function epCurrentProvider() {
         return epNormProvider(window.EP_AI_CONFIG.provider || safeGet('ep_ai_provider_v1', 'gemini'));
@@ -689,8 +1252,9 @@ function epCurrentProvider() {
 
     
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epSetAiProvider
+ * ESTIMATE VIEWS FUNCTION: epSetAiProvider
  * ========================================================= */
 function epSetAiProvider(provider, saveRemote) {
         provider = epNormProvider(provider);
@@ -707,8 +1271,9 @@ function epSetAiProvider(provider, saveRemote) {
 
     
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epRefreshProviderUI
+ * ESTIMATE VIEWS FUNCTION: epRefreshProviderUI
  * ========================================================= */
 function epRefreshProviderUI() {
         const p = epCurrentProvider();
@@ -732,8 +1297,9 @@ function epRefreshProviderUI() {
 
     
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epInsertMainProviderSwitch
+ * ESTIMATE VIEWS FUNCTION: epInsertMainProviderSwitch
  * ========================================================= */
 function epInsertMainProviderSwitch() {
         if (document.getElementById('ep-main-ai-switch')) return;
@@ -760,8 +1326,58 @@ function epInsertMainProviderSwitch() {
 
     
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epTestProviderKey
+ * ESTIMATE VIEWS FUNCTION: epPatchSettingsUI
+ * ========================================================= */
+function epPatchSettingsUI() {
+        if (document.getElementById('ep-ai-admin-box')) return;
+
+        const oldInput = document.getElementById('api-key-input');
+        if (!oldInput) return;
+
+        const h4 = oldInput.previousElementSibling;
+        if (h4) h4.style.display = 'none';
+        oldInput.style.display = 'none';
+
+        const box = document.createElement('div');
+        box.id = 'ep-ai-admin-box';
+        box.style.cssText = 'padding:12px; background:rgba(79,70,229,.06); border:1px solid rgba(79,70,229,.25); border-radius:14px; margin-bottom:14px;';
+        box.innerHTML = `
+            <h4 style="color:var(--primary); margin:0 0 8px;">🤖 ИИ-провайдер</h4>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
+                <label class="ep-ai-choice"><input type="radio" name="ep-ai-provider-admin" value="gemini" onchange="epSetAiProvider('gemini', false)"> Gemini</label>
+                <label class="ep-ai-choice"><input type="radio" name="ep-ai-provider-admin" value="openai" onchange="epSetAiProvider('openai', false)"> OpenAI</label>
+            </div>
+
+            <div id="ep-ai-admin-keys">
+                <label style="font-size:11px; font-weight:800; color:var(--gray);">Gemini API</label>
+                <input type="password" id="ep-gemini-key-input" placeholder="AIza..." style="margin-bottom:8px;">
+
+                <label style="font-size:11px; font-weight:800; color:var(--gray);">OpenAI API</label>
+                <input type="password" id="ep-openai-key-input" placeholder="sk-..." style="margin-bottom:8px;">
+
+                <label style="font-size:11px; font-weight:800; color:var(--gray);">OpenAI модель</label>
+                <input type="text" id="ep-openai-model-input" value="gpt-4o-mini" style="margin-bottom:8px;">
+
+                <button class="btn-primary" style="width:100%; margin-bottom:8px;" onclick="epSaveAiConfig(true)">✅ Проверить и отправить мастерам</button>
+                <button class="btn-danger" style="width:100%; background:var(--gray);" onclick="epClearLocalAiKeys()">🧹 Очистить старые локальные ключи</button>
+            </div>
+
+            <div id="ep-ai-master-info" style="display:none; font-size:12px; font-weight:900; padding:10px; border-radius:10px; background:rgba(16,185,129,.1); color:var(--success);">
+                ИИ подключён администратором
+            </div>
+        `;
+
+        oldInput.parentNode.insertBefore(box, oldInput.nextSibling);
+    }
+
+    
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: epTestProviderKey
  * ========================================================= */
 async function epTestProviderKey(provider, key, model) {
         provider = epNormProvider(provider);
@@ -795,8 +1411,174 @@ async function epTestProviderKey(provider, key, model) {
 
     
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epParseLooseTableText
+ * ESTIMATE VIEWS FUNCTION: epLoadAiConfigFromServer
+ * ========================================================= */
+async function epLoadAiConfigFromServer() {
+        try {
+            let data = null;
+
+            if (db) {
+                const cfgDoc = await db.collection('settings').doc('ai_config').get();
+                if (cfgDoc.exists) data = cfgDoc.data();
+
+                if (!data) {
+                    const oldDoc = await db.collection('settings').doc('global_api').get();
+                    if (oldDoc.exists) data = oldDoc.data();
+                }
+
+                if (appUser && appUser.uid) {
+                    const userDoc = await db.collection('users').doc(appUser.uid).get();
+                    if (userDoc.exists) {
+                        const u = userDoc.data();
+                        data = Object.assign({}, data || {}, {
+                            provider: u.aiProvider || (data && data.provider),
+                            geminiKey: u.geminiKey || (data && data.geminiKey),
+                            openaiKey: u.openaiKey || (data && data.openaiKey),
+                            openaiModel: u.openaiModel || (data && data.openaiModel)
+                        });
+                    }
+                }
+            }
+
+            if (data) {
+                window.EP_AI_CONFIG.provider = epNormProvider(data.provider || window.EP_AI_CONFIG.provider);
+                window.EP_AI_CONFIG.geminiKey = data.geminiKey || data.key || window.EP_AI_CONFIG.geminiKey || '';
+                window.EP_AI_CONFIG.openaiKey = data.openaiKey || window.EP_AI_CONFIG.openaiKey || '';
+                window.EP_AI_CONFIG.openaiModel = data.openaiModel || window.EP_AI_CONFIG.openaiModel || 'gpt-4o-mini';
+            } else {
+                window.EP_AI_CONFIG.geminiKey = safeGet('ep_gemini_key_v1', '') || safeGet('gemini_key_v31', '');
+                window.EP_AI_CONFIG.openaiKey = safeGet('ep_openai_key_v1', '');
+                window.EP_AI_CONFIG.openaiModel = safeGet('ep_openai_model_v1', 'gpt-4o-mini');
+            }
+
+            safeSet('ep_ai_provider_v1', window.EP_AI_CONFIG.provider);
+            if (window.EP_AI_CONFIG.geminiKey && typeof GEMINI_API_KEY !== 'undefined') GEMINI_API_KEY = window.EP_AI_CONFIG.geminiKey;
+
+            const g = document.getElementById('ep-gemini-key-input');
+            const o = document.getElementById('ep-openai-key-input');
+            const m = document.getElementById('ep-openai-model-input');
+            if (g) g.value = window.EP_AI_CONFIG.geminiKey || '';
+            if (o) o.value = window.EP_AI_CONFIG.openaiKey || '';
+            if (m) m.value = window.EP_AI_CONFIG.openaiModel || 'gpt-4o-mini';
+
+            const keysBox = document.getElementById('ep-ai-admin-keys');
+            const masterInfo = document.getElementById('ep-ai-master-info');
+            if (keysBox && masterInfo && appUser) {
+                if (appUser.role === 'admin') {
+                    keysBox.style.display = 'block';
+                    masterInfo.style.display = 'none';
+                } else {
+                    keysBox.style.display = 'none';
+                    masterInfo.style.display = 'block';
+                }
+            }
+
+            epRefreshProviderUI();
+        } catch (e) {
+            console.warn('AI config load error:', e);
+        }
+    }
+
+    
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: epCallGemini
+ * ========================================================= */
+async function epCallGemini(promptText, opts) {
+        const key = window.EP_AI_CONFIG.geminiKey || (typeof GEMINI_API_KEY !== 'undefined' ? GEMINI_API_KEY : '') || safeGet('gemini_key_v31', '');
+        if (!key) throw new Error('Нужен Gemini API ключ');
+
+        const parts = [{ text: promptText }];
+        if (opts && opts.imageDataUrl) {
+            const match = opts.imageDataUrl.match(/^data:(.*?);base64,(.*)$/);
+            if (match) parts.push({ inline_data: { mime_type: match[1], data: match[2] } });
+        }
+
+        const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(key);
+        const r = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: [{ parts: parts }] })
+        });
+        const data = await r.json();
+        if (!r.ok || data.error) throw new Error(data.error ? data.error.message : 'Gemini API error');
+        return (((data.candidates || [])[0] || {}).content || {}).parts?.map(p => p.text || '').join('') || '';
+    }
+
+    
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: epExtractOpenAiText
+ * ========================================================= */
+function epExtractOpenAiText(data) {
+        if (data.output_text) return data.output_text;
+        let out = '';
+        (data.output || []).forEach(function (item) {
+            (item.content || []).forEach(function (c) {
+                if (c.text) out += c.text;
+                if (c.type === 'output_text' && c.text) out += c.text;
+            });
+        });
+        return out;
+    }
+
+    
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: epCallOpenAI
+ * ========================================================= */
+async function epCallOpenAI(promptText, opts) {
+        const key = window.EP_AI_CONFIG.openaiKey || safeGet('ep_openai_key_v1', '');
+        if (!key) throw new Error('Нужен OpenAI API ключ');
+
+        const content = [{ type: 'input_text', text: promptText }];
+        if (opts && opts.imageDataUrl) {
+            content.push({
+                type: 'input_image',
+                image_url: opts.imageDataUrl,
+                detail: (opts && opts.imageDetail) ? opts.imageDetail : 'high'
+            });
+        }
+
+        const body = {
+            model: window.EP_AI_CONFIG.openaiModel || 'gpt-4o-mini',
+            input: [{ role: 'user', content: content }],
+            max_output_tokens: opts && opts.maxTokens ? opts.maxTokens : 5000
+        };
+
+        const r = await fetch('https://api.openai.com/v1/responses', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+            body: JSON.stringify(body)
+        });
+        const data = await r.json();
+        if (!r.ok || data.error) throw new Error(data.error ? data.error.message : 'OpenAI API error');
+        return epExtractOpenAiText(data);
+    }
+
+    
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: epAskAI
+ * ========================================================= */
+async function epAskAI(promptText, opts) {
+        await epLoadAiConfigFromServer();
+        const provider = epCurrentProvider();
+        if (provider === 'openai') return epCallOpenAI(promptText, opts || {});
+        return epCallGemini(promptText, opts || {});
+    }
+
+    
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: epParseLooseTableText
  * ========================================================= */
 function epParseLooseTableText(t, type) {
         const lines = epStripCode(t).split(/\r?\n/).map(x => x.trim()).filter(Boolean);
@@ -825,8 +1607,33 @@ function epParseLooseTableText(t, type) {
     }
     
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epNormalizeItems
+ * ESTIMATE VIEWS FUNCTION: epParseJsonArray
+ * ========================================================= */
+function epParseJsonArray(t) {
+        const parsed = epTryJsonParseLoose(t);
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed && typeof parsed === 'object') {
+            const keys = ['items', 'positions', 'rows', 'data', 'result', 'materials', 'works', 'материалы', 'работы', 'позиции'];
+            for (const k of keys) {
+                if (Array.isArray(parsed[k])) return parsed[k];
+            }
+        }
+
+        // Бывает, ИИ возвращает не массив, а цепочку объектов:
+        // {"n":"..."},{"n":"..."},{"n":"..."}
+        const objects = epExtractJsonObjectsLoose(t);
+        if (objects.length) return objects;
+
+        return epParseLooseTableText(t, 'mat');
+    }
+
+    
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: epNormalizeItems
  * ========================================================= */
 function epNormalizeItems(raw, type) {
         let arr = [];
@@ -876,8 +1683,36 @@ function epNormalizeItems(raw, type) {
 
     
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epExtractItemsFromSheetRows
+ * ESTIMATE VIEWS FUNCTION: epInsertDbTools
+ * ========================================================= */
+function epInsertDbTools() {
+        if (document.getElementById('ep-db-ai-tools')) return;
+        const tabs = document.querySelector('#settModal .tabs-container');
+        if (!tabs) return;
+
+        const box = document.createElement('div');
+        box.id = 'ep-db-ai-tools';
+        box.innerHTML = `
+            <h3>🤖 Импорт / экспорт базы через ИИ</h3>
+            <div class="ep-db-ai-grid">
+                <button class="btn-info" onclick="epTriggerDbFileImport('mat')">📥 Материалы: Excel / JSON / фото / скрин</button>
+                <button class="btn-work" onclick="epTriggerDbFileImport('work')">📥 Работы: Excel / JSON / фото / скрин</button>
+                <button class="btn-vendor" onclick="epOpenTextImport('mat')">📝 Материалы из текста</button>
+                <button class="btn-vendor" onclick="epOpenTextImport('work')">📝 Работы из текста</button>
+                <button class="btn-success" onclick="epExportMyDb()">📤 Экспорт моей базы</button>
+                <button class="btn-shield" onclick="epExportGlobalDb()">🌍 Экспорт базы сервера</button>
+            </div>
+        `;
+        tabs.parentNode.insertBefore(box, tabs);
+    }
+
+    
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: epExtractItemsFromSheetRows
  * ========================================================= */
 function epExtractItemsFromSheetRows(rows, type) {
         const out = [];
@@ -951,8 +1786,197 @@ function epExtractItemsFromSheetRows(rows, type) {
     }
     
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epSameItem
+ * ESTIMATE VIEWS FUNCTION: epReadDbFile
+ * ========================================================= */
+async function epReadDbFile(file, type) {
+        showLoader('Читаю файл...', '📥');
+        try {
+            const name = file.name || '';
+            const lower = name.toLowerCase();
+
+            if (file.type.startsWith('image/')) {
+                const imageDataUrl = await epReadFileAsDataURL(file);
+                await epAiNormalizeImage(imageDataUrl, type, name);
+                return;
+            }
+
+            if (lower.endsWith('.json')) {
+                const txt = await epReadFileAsText(file);
+                let raw = JSON.parse(txt);
+                if (raw.matDB && type === 'mat') raw = raw.matDB;
+                if (raw.workDB && type === 'work') raw = raw.workDB;
+                epShowDbReview(epNormalizeItems(raw, type), type, name);
+                return;
+            }
+            if (lower.endsWith('.xlsx') || lower.endsWith('.xls') || lower.endsWith('.csv')) {
+                let rows = [];
+                if (window.XLSX) {
+                    const ab = await epReadFileAsArrayBuffer(file);
+                    const wb = XLSX.read(ab, { type: 'array' });
+                    const ws = wb.Sheets[wb.SheetNames[0]];
+                    rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+                } else {
+                    const txt = await epReadFileAsText(file);
+                    rows = txt.split(/\r?\n/).map(function(line) {
+                        return line.split(';').length > line.split(',').length ? line.split(';') : line.split(',');
+                    });
+                }
+
+                // Сначала разбираем Excel/CSV локально, построчно: каждая строка = отдельная позиция.
+                // ИИ нужен только как запасной вариант, если таблица слишком кривая.
+                const localItems = epExtractItemsFromSheetRows(rows, type);
+                if (localItems.length) {
+                    hideLoader();
+                    epShowDbReview(localItems, type, name);
+                    return;
+                }
+
+                await epAiNormalizeDbText(JSON.stringify(rows).slice(0, 90000), type, name);
+                return;
+            }
+
+            const txt = await epReadFileAsText(file);
+            await epAiNormalizeDbText(txt, type, name);
+        } catch (e) {
+            hideLoader();
+            showToast('❌ ' + (e.message || 'Ошибка импорта'));
+        }
+    }
+
+    
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: epAiNormalizeImage
+ * ========================================================= */
+async function epAiNormalizeImage(imageDataUrl, type, source) {
+        showLoader('ИИ читает таблицу с изображения...', '👁️');
+        let rawAnswer = '';
+        try {
+            const prompt = `Ты профессионально распознаёшь русские сметы, счета и прайсы электромонтажных материалов.
+На изображении таблица. Нужно извлечь ВСЕ видимые строки с позициями для базы ${epDbTypeLabel(type)}.
+
+Правила:
+1. Читай каждую строку таблицы, даже если качество среднее.
+2. Не возвращай пустой массив, если видны строки с товарами/работами.
+3. Для имени n бери колонку с наименованием/описанием, НЕ артикул и НЕ номер строки.
+4. c — главная категория: Кабель, Трубы, Расходники, Автоматика, Слаботочка, Чистовое, Работы, Щит, Разное.
+5. sc — подкатегория. Определи точнее: ВВГ, ПУГВ, SAT/TV, UTP/FTP, Подрозетники, Крепёж, Клеммники, Коробки, Щиты, Автоматы, УЗО, Дифавтоматы, Розетки, Выключатели и т.д.
+6. p — цена за единицу. Если есть две суммы, бери меньшую как цену за единицу, большую не бери как цену.
+7. u — единица измерения: шт, м, упак, компл, кг, л и т.д.
+8. Если цену не видно — p=0. Если единицу не видно — u="шт". Если подкатегорию не понял — sc="Разное".
+9. Верни СТРОГО JSON-массив без текста вокруг.
+
+Формат строго такой:
+[
+  {"n":"ВВГ-Пнг(A)-LS ГОСТ Конкорд 3x1,5","c":"Кабель","sc":"ВВГ","p":58.43,"u":"м"},
+  {"n":"Подрозетник бетон 68x60","c":"Расходники","sc":"Подрозетники","p":12,"u":"шт"}
+]`;
+
+            rawAnswer = await epAskAI(prompt, { imageDataUrl: imageDataUrl, imageDetail: 'high', maxTokens: 9000 });
+            let parsed = epParseJsonArray(rawAnswer);
+            let items = epNormalizeItems(parsed, type);
+
+            if (!items.length) {
+                const retryPrompt = `Ты ответил без позиций. Посмотри изображение ещё раз. Там таблица со строками, например кабели, подрозетники, клеммники, автоматы, расходники. Извлеки хотя бы 10-30 видимых строк. Верни только JSON массив [{"n":"Имя позиции","c":"Категория","sc":"Подкатегория","p":0,"u":"шт"}]. Не объясняй.`;
+                rawAnswer = await epAskAI(retryPrompt, { imageDataUrl: imageDataUrl, imageDetail: 'high', maxTokens: 9000 });
+                parsed = epParseJsonArray(rawAnswer);
+                items = epNormalizeItems(parsed, type);
+            }
+
+            hideLoader();
+            epShowDbReview(items, type, source, rawAnswer);
+        } catch (e) {
+            hideLoader();
+            showToast('❌ ' + (e.message || 'ИИ не прочитал изображение'));
+        }
+    }
+
+    
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: epAiNormalizeDbText
+ * ========================================================= */
+async function epAiNormalizeDbText(rawText, type, source) {
+        showLoader('ИИ структурирует базу...', '🤖');
+        let rawAnswer = '';
+        try {
+            const prompt = 'Ты помощник электрика. Приведи данные к базе ' + epDbTypeLabel(type) + '. Верни ТОЛЬКО JSON массив объектов: [{"n":"Имя позиции","c":"Категория","sc":"Подкатегория","p":123,"u":"шт"}]. n — имя/наименование позиции. c — главная категория. sc — подкатегория. p — цена за единицу, не итоговая сумма. u — единица измерения. Если цены нет, p=0. Если категории нет, определи сам: Кабель, Трубы, Расходники, Автоматика, Слаботочка, Чистовое, Работы, Щит, Разное. Если подкатегории нет, определи сам или поставь "Разное". Не возвращай пустой массив, если в данных есть строки с позициями. Данные: ' + String(rawText).slice(0, 90000);
+            rawAnswer = await epAskAI(prompt, { maxTokens: 8000 });
+            const items = epNormalizeItems(epParseJsonArray(rawAnswer), type);
+            hideLoader();
+            epShowDbReview(items, type, source, rawAnswer);
+        } catch (e) {
+            hideLoader();
+            showToast('❌ ' + (e.message || 'ИИ не обработал данные'));
+        }
+    }
+
+    
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: epShowDbReview
+ * ========================================================= */
+function epShowDbReview(items, type, source, rawAnswer) {
+        window.EP_DB_REVIEW = { type: type, items: items, source: source || '' };
+        document.getElementById('ep-db-ai-review-title').innerText = 'Импорт ' + epDbTypeLabel(type) + ': ' + (source || '');
+        const list = document.getElementById('ep-db-ai-review-list');
+
+        if (!items.length) {
+            list.innerHTML = `<div style="padding:12px; color:var(--danger); font-weight:800;">ИИ не нашёл позиции. Попробуйте другой файл, текст или сделайте скрин крупнее.</div><details style="margin-top:10px; font-size:11px; color:var(--gray);"><summary>Показать ответ ИИ</summary><pre style="white-space:pre-wrap; max-height:220px; overflow:auto;">${epEscape(rawAnswer || '')}</pre></details>`;
+        } else {
+            list.innerHTML = items.map(function (it, idx) {
+                return `<div class="ep-db-review-row">
+                    <input type="checkbox" id="ep-db-check-${idx}" checked>
+                    <div class="ep-db-review-fields">
+                        <div><label>Имя</label><input id="ep-db-name-${idx}" value="${epEscape(it.n)}" placeholder="Имя / наименование"></div>
+                        <div class="ep-db-review-2col">
+                            <div><label>Категория</label><input id="ep-db-cat-${idx}" value="${epEscape(it.c)}" placeholder="Категория"></div>
+                            <div><label class="ep-db-subcat-label">Подкатегория</label><input id="ep-db-subcat-${idx}" value="${epEscape(it.sc || 'Разное')}" placeholder="Подкатегория"></div>
+                        </div>
+                        <div class="ep-db-review-2col">
+                            <div><label>Цена за единицу</label><input id="ep-db-price-${idx}" type="number" step="0.01" value="${Number(it.p)||0}" placeholder="Цена"></div>
+                            <div><label>Единица</label><input id="ep-db-unit-${idx}" value="${epEscape(it.u || 'шт')}" placeholder="шт / м / упак"></div>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        openModal('ep-db-ai-review-modal');
+    }
+
+    
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: epGetReviewedSelected
+ * ========================================================= */
+function epGetReviewedSelected() {
+        const items = window.EP_DB_REVIEW.items || [];
+        return items.map(function (it, idx) {
+            const checked = document.getElementById('ep-db-check-' + idx)?.checked;
+            if (!checked) return null;
+            return {
+                id: it.id || (window.EP_DB_REVIEW.type === 'work' ? 'w' : 'm') + '_ai_' + Date.now() + '_' + idx,
+                c: epCleanText(document.getElementById('ep-db-cat-' + idx)?.value) || 'Разное',
+                sc: epCleanText(document.getElementById('ep-db-subcat-' + idx)?.value) || 'Разное',
+                n: epCleanText(document.getElementById('ep-db-name-' + idx)?.value),
+                p: epMoney(document.getElementById('ep-db-price-' + idx)?.value),
+                u: epCleanText(document.getElementById('ep-db-unit-' + idx)?.value) || 'шт'
+            };
+        }).filter(Boolean).filter(function (x) { return x.n; });
+    }
+
+    
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: epSameItem
  * ========================================================= */
 function epSameItem(a, b) {
         return epCleanText(a.n).toLowerCase() === epCleanText(b.n).toLowerCase()
@@ -962,18 +1986,108 @@ function epSameItem(a, b) {
 
     
 
-/* =========================================================
- * ESTIMATE VIEW FUNCTION: epMaterialFromName
- * ========================================================= */
-function epMaterialFromName(name) {
-        const s = String(name || '');
-        const m = s.match(/\((Бетон|Кирпич|Панелька|Мягкий\s*мат\.?|Мягкий материал|ГКЛ|Все типы)\)/i);
-        return m ? m[1].replace(/Мягкий\s*материал/i, 'Мягкий мат.').replace(/ГКЛ/i, 'Мягкий мат.') : '';
-    }
-    
 
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epNormalizeWorkItem
+ * ESTIMATE VIEWS FUNCTION: epSendDbProposal
+ * ========================================================= */
+async function epSendDbProposal(type, items, action) {
+        if (!db || !appUser || appUser.role === 'admin' || !items.length) return;
+        try {
+            await db.collection('db_proposals').add({
+                uid: appUser.uid || '',
+                masterName: appUser.name || appUser.email || '',
+                type: type,
+                action: action,
+                items: items,
+                status: 'pending',
+                createdAt: new Date().toISOString()
+            });
+        } catch(e) {
+            console.warn('proposal error', e);
+        }
+    }
+
+    
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: epInsertAdminProposalBox
+ * ========================================================= */
+function epInsertAdminProposalBox() {
+        if (document.getElementById('admin-db-proposals')) return;
+        const panel = document.getElementById('admin-panel');
+        if (!panel) return;
+        const box = document.createElement('div');
+        box.innerHTML = `
+            <h4 style="color:var(--primary); margin: 10px 0 5px;">🌍 Заявки в базу сервера:</h4>
+            <div id="admin-db-proposals" style="margin-bottom:10px; border:1px solid var(--primary); background:rgba(79,70,229,.05); border-radius:8px; padding:8px; max-height:240px; overflow-y:auto; font-size:12px;"></div>
+        `;
+        panel.insertBefore(box, panel.firstChild.nextSibling);
+    }
+
+    
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: epListenDbProposals
+ * ========================================================= */
+function epListenDbProposals() {
+        if (!db || !appUser || appUser.role !== 'admin') return;
+        epInsertAdminProposalBox();
+        const cont = document.getElementById('admin-db-proposals');
+        if (!cont || cont.dataset.listen === '1') return;
+        cont.dataset.listen = '1';
+
+        db.collection('db_proposals').where('status', '==', 'pending').onSnapshot(function (snap) {
+            if (snap.empty) {
+                cont.innerHTML = `<span style="color:var(--gray);">Новых заявок нет</span>`;
+                return;
+            }
+            cont.innerHTML = '';
+            snap.forEach(function (doc) {
+                const d = doc.data();
+                const items = d.items || [];
+                cont.innerHTML += `<div class="ep-db-admin-proposal">
+                    <b>${epEscape(d.masterName || d.uid || 'Мастер')}</b>
+                    <div style="color:var(--gray); font-size:11px;">${d.type === 'work' ? 'Работы' : 'Материалы'} • ${epEscape(d.action || '')} • ${items.length} поз.</div>
+                    <div style="font-size:11px; margin-top:5px;">${items.slice(0,3).map(x => epEscape(x.n) + (x.sc ? ' <span style="color:var(--gray);">[' + epEscape(x.sc) + ']</span>' : '')).join('<br>')}${items.length > 3 ? '<br>...' : ''}</div>
+                    <div class="ep-mini-actions">
+                        <button class="btn-success" onclick="epAdminResolveDbProposal('${doc.id}','full')">✅ Добавить полностью</button>
+                        <button class="btn-primary" onclick="epAdminResolveDbProposal('${doc.id}','names')">🏷 Только название без суммы</button>
+                        <button class="btn-danger" onclick="epAdminResolveDbProposal('${doc.id}','reject')">❌ Отклонить</button>
+                    </div>
+                </div>`;
+            });
+        }, function (e) {
+            cont.innerHTML = `<span style="color:var(--danger);">Ошибка заявок: ${epEscape(e.message)}</span>`;
+        });
+    }
+
+    
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: epInitialApply
+ * ========================================================= */
+function epInitialApply() {
+        epPatchSettingsUI();
+        epInsertMainProviderSwitch();
+        epInsertDbTools();
+        epMakeAiMenuGroup();
+        epAddBetaLabels();
+        epRefreshProviderUI();
+        if (appUser) {
+            epLoadAiConfigFromServer();
+            epLoadUserDbAfterLogin();
+            epListenDbProposals();
+        }
+    }
+
+    
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: epNormalizeWorkItem
  * ========================================================= */
 function epNormalizeWorkItem(x) {
         const it = Object.assign({}, x || {});
@@ -1000,19 +2114,9 @@ function epNormalizeWorkItem(x) {
     }
     
 
-/* =========================================================
- * ESTIMATE VIEW FUNCTION: epDisplayWorkName
- * ========================================================= */
-function epDisplayWorkName(it) {
-        const g = it.g || it.sc || '';
-        const n = it.n || '';
-        if (g && n && !String(n).toLowerCase().includes(String(g).toLowerCase())) return g + ' — ' + n;
-        return n || g || 'Позиция';
-    }
-    
 
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epEstimateCopy
+ * ESTIMATE VIEWS FUNCTION: epEstimateCopy
  * ========================================================= */
 function epEstimateCopy(it, type) {
         const copy = Object.assign({}, it);
@@ -1021,8 +2125,9 @@ function epEstimateCopy(it, type) {
     }
     
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epMergeFullWorksInto
+ * ESTIMATE VIEWS FUNCTION: epMergeFullWorksInto
  * ========================================================= */
 function epMergeFullWorksInto(arr) {
         let out = (arr || []).map(epNormalizeWorkItem);
@@ -1034,17 +2139,9 @@ function epMergeFullWorksInto(arr) {
     }
     
 
-/* =========================================================
- * ESTIMATE VIEW FUNCTION: epNormalizeAllWorkDb
- * ========================================================= */
-function epNormalizeAllWorkDb() {
-        workDB = epMergeFullWorksInto(workDB || []);
-        try { if (typeof safeSet === 'function') safeSet('user_db_work_v31', JSON.stringify(workDB)); } catch(e){}
-    }
-    
 
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epRenderGroupedList
+ * ESTIMATE VIEWS FUNCTION: epRenderGroupedList
  * ========================================================= */
 function epRenderGroupedList(arr, type, opts) {
         opts = opts || {};
@@ -1079,26 +2176,32 @@ function epRenderGroupedList(arr, type, opts) {
 
     
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epRenderGlobalDbModal
+ * ESTIMATE VIEWS FUNCTION: epEnsureProposalBox
  * ========================================================= */
-function epRenderGlobalDbModal() {
-        const matBtn = document.getElementById('ep-global-tab-mat'); const workBtn = document.getElementById('ep-global-tab-work');
-        if (matBtn) matBtn.classList.toggle('active', epGlobalDbType === 'mat'); if (workBtn) workBtn.classList.toggle('active', epGlobalDbType === 'work');
-        const list = document.getElementById('ep-global-db-list'); if (!list) return;
-        const arr = epGlobalDbType === 'work' ? epGlobalDbCache.workDB : epGlobalDbCache.matDB;
-        list.innerHTML = epRenderGroupedList(arr || [], epGlobalDbType, { prefix:'global_full', mode:'global' });
+function epEnsureProposalBox() {
+        let cont = document.getElementById('admin-db-proposals');
+        if (cont) return cont;
+        const panel = document.getElementById('admin-panel');
+        if (!panel) return null;
+        const box = document.createElement('div');
+        box.innerHTML = `<h4 style="color:var(--primary); margin:10px 0 5px;">🌍 Заявки в базу сервера:</h4><div id="admin-db-proposals" style="margin-bottom:10px; border:1px solid var(--primary); background:rgba(79,70,229,.05); border-radius:8px; padding:8px; max-height:260px; overflow-y:auto; font-size:12px;"></div>`;
+        panel.insertBefore(box, panel.firstChild ? panel.firstChild.nextSibling : null);
+        return document.getElementById('admin-db-proposals');
     }
     
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epProposalItemName
+ * ESTIMATE VIEWS FUNCTION: epProposalItemName
  * ========================================================= */
 function epProposalItemName(x) { return [x.g || x.sc || '', x.n || ''].filter(Boolean).join(' — ') || 'Позиция'; }
     
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epRenderProposalList
+ * ESTIMATE VIEWS FUNCTION: epRenderProposalList
  * ========================================================= */
 function epRenderProposalList() {
         const cont = epEnsureProposalBox(); if (!cont) return;
@@ -1114,16 +2217,9 @@ function epRenderProposalList() {
     }
     
 
-/* =========================================================
- * ESTIMATE VIEW FUNCTION: epInitFullWorksPatch
- * ========================================================= */
-function epInitFullWorksPatch() {
-        epInsertGlobalDbButton(); epNormalizeAllWorkDb(); if (typeof renderDbEditors === 'function') renderDbEditors(); epStartProposalV2();
-    }
-    
 
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epMoveShieldSettingsIntoDetails
+ * ESTIMATE VIEWS FUNCTION: epMoveShieldSettingsIntoDetails
  * ========================================================= */
 function epMoveShieldSettingsIntoDetails(){
     var modal = qs('configModal');
@@ -1162,29 +2258,45 @@ function epMoveShieldSettingsIntoDetails(){
 
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epNormalizeMaterialsDb
+ * ESTIMATE VIEWS FUNCTION: epMatGroupName
  * ========================================================= */
-function epNormalizeMaterialsDb(){
-    function fixArr(arr){
-      if (!Array.isArray(arr)) return [];
-      arr.forEach(function(it){
-        if(!it || typeof it !== 'object') return;
-        if(!it.id) it.id = 'm_' + Math.abs(norm([it.c,it.g,it.n,it.p].join('_')).split('').reduce(function(h,ch){return ((h<<5)-h+ch.charCodeAt(0))|0;},0));
-        var grp = epMatGroupName(it);
-        // Меняем только автоматику/щитовое, остальное не трогаем.
-        if (grp.c === 'Автоматика' || grp.c === 'Щитовое') { it.c = grp.c; it.g = grp.g; it.sc = grp.g; }
-      });
-      return arr;
+function epMatGroupName(item){
+    var text = norm([item.c,item.g,item.sc,item.n,item.kind,item.brand,item.nominal].join(' '));
+    var name = norm(item.n);
+    var c = norm(item.c);
+
+    if (text.includes('уздп') || text.includes('дугов')) return {c:'Автоматика', g:'УЗДП'};
+    if (text.includes('узм') || text.includes('реле напряж')) return {c:'Автоматика', g:'УЗМ / реле напряжения'};
+    if (text.includes('диф') || text.includes('дифф')) return {c:'Автоматика', g:'ДИФы'};
+    if (text.includes('узо')) return {c:'Автоматика', g:'УЗО'};
+    if (text.includes('автомат') || text.match(/\bc\s*(6|10|16|25|32|40)\b/)) return {c:'Автоматика', g:'Автоматы'};
+    if (text.includes('реле времени')) return {c:'Автоматика', g:'Реле времени'};
+    if (text.includes('контактор') || text.includes('пускател')) return {c:'Автоматика', g:'Контакторы'};
+    if (text.includes('реле')) return {c:'Автоматика', g:'Прочие реле'};
+
+    if (text.includes('щит') || text.includes('шкаф') || text.includes('корпус')) {
+      if (text.includes('наклад')) return {c:'Щитовое', g:'Корпуса → Накладной'};
+      if (text.includes('встра') || text.includes('внутр')) return {c:'Щитовое', g:'Корпуса → Встраиваемый'};
+      return {c:'Щитовое', g:'Корпуса'};
     }
-    try { window.matDB = fixArr(window.matDB || []); } catch(e){}
-    try { window.userMatDB = fixArr(window.userMatDB || []); } catch(e){}
+    if (text.includes('ншви') || text.includes('наконеч')) return {c:'Щитовое', g:'Расходка под сборку → Наконечники'};
+    if (text.includes('пугв') || (text.includes('провод') && c !== 'кабель')) return {c:'Щитовое', g:'Расходка под сборку → Провода'};
+    if (text.includes('шин') || text.includes('клемм')) return {c:'Щитовое', g:'Расходка под сборку → Шинки / клеммники'};
+    if (text.includes('греб') || text.includes('comb')) return {c:'Щитовое', g:'Расходка под сборку → Гребёнки'};
+    if (text.includes('din') || text.includes('рейк') || text.includes('огранич')) return {c:'Щитовое', g:'Расходка под сборку → DIN-рейки / ограничители'};
+    if (text.includes('маркиров') || text.includes('бирк')) return {c:'Щитовое', g:'Расходка под сборку → Маркировка'};
+    if (text.includes('сальник') || text.includes('кабельный ввод')) return {c:'Щитовое', g:'Расходка под сборку → Кабельные вводы'};
+
+    return {c:item.c || 'Разное', g:item.g || item.sc || 'Разное'};
   }
 
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epRenderGrouped
+ * ESTIMATE VIEWS FUNCTION: epRenderGrouped
  * ========================================================= */
 function epRenderGrouped(arr, type, mode, prefix){
     var data = epGroupedData(arr, type);
@@ -1215,28 +2327,9 @@ function epRenderGrouped(arr, type, mode, prefix){
 
   
 
-/* =========================================================
- * ESTIMATE VIEW FUNCTION: epPatchDbRenderers
- * ========================================================= */
-function epPatchDbRenderers(){
-    var oldMat = window.openMatCatalog;
-    var oldWork = window.openWorkCatalog;
-    var oldRender = window.renderDbEditors;
-    window.openMatCatalog = function(){ epNormalizeMaterialsDb(); var el=qs('mat-cat-list'); if(el) el.innerHTML = epRenderGrouped(window.matDB || [], 'mat', 'catalog', 'mat_shield'); if(typeof openModal==='function') openModal('matCatModal'); else if(oldMat) oldMat(); };
-    window.openWorkCatalog = function(){ var el=qs('work-cat-list'); if(el) el.innerHTML = epRenderGrouped(window.workDB || [], 'work', 'catalog', 'work_shield'); if(typeof openModal==='function') openModal('workModal'); else if(oldWork) oldWork(); };
-    window.renderDbEditors = function(){
-      epNormalizeMaterialsDb();
-      var catsEl = qs('db-cats');
-      if (catsEl) catsEl.innerHTML = uniq([].concat((window.matDB||[]).map(function(x){return x.c;}),(window.workDB||[]).map(function(x){return x.c;}))).map(function(c){return '<option value="'+safeText(c)+'">';}).join('');
-      var em=qs('editor-mat-list'); if(em) em.innerHTML = epRenderGrouped(window.matDB || [], 'mat', 'editor', 'db_mat_shield');
-      var ew=qs('editor-work-list'); if(ew) ew.innerHTML = epRenderGrouped(window.workDB || [], 'work', 'editor', 'db_work_shield');
-    };
-  }
-
-  
 
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: epFindItem
+ * ESTIMATE VIEWS FUNCTION: epFindItem
  * ========================================================= */
 function epFindItem(type, words){
     var ws = (words || []).map(norm).filter(Boolean);
@@ -1251,52 +2344,16 @@ function epFindItem(type, words){
   }
   
 
-/* =========================================================
- * ESTIMATE VIEW FUNCTION: autoPrice
- * ========================================================= */
-function autoPrice(){ return bAuto === 'ABB' ? 350 : 155; }
-      
 
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: difPrice
+ * ESTIMATE VIEWS FUNCTION: boot
  * ========================================================= */
-function difPrice(){ return bAuto === 'ABB' ? 4500 : 3600; }
-      
-
-/* =========================================================
- * ESTIMATE VIEW FUNCTION: normalizeMaterialDb
- * ========================================================= */
-function normalizeMaterialDb(){
-    const arr = dbArr('mat') || [];
-    arr.forEach(function(it){
-      if(!it || !it.n) return;
-      const n = norm((it.c||'')+' '+(it.g||'')+' '+(it.sc||'')+' '+it.n);
-      const raw = String(it.n||'');
-      if(/(диф|дифавтомат|dif)/i.test(raw) || n.includes('диф')){ it.c='Автоматика'; setGroup(it,'ДИФы'); it.kind=it.kind||'dif'; }
-      else if(/\bузо\b/i.test(raw) || n.includes(' uzo ') || n.includes(' узо ')){ it.c='Автоматика'; setGroup(it,'УЗО'); it.kind=it.kind||'uzo'; }
-      else if(/уздп/i.test(raw) || n.includes('уздп') || n.includes('дугов')){ it.c='Автоматика'; setGroup(it,'УЗДП'); it.kind=it.kind||'uzdp'; }
-      else if(/узм|реле напряж/i.test(raw) || n.includes('реле напряж')){ it.c='Автоматика'; setGroup(it,'УЗМ / реле напряжения'); it.kind=it.kind||'voltage_relay'; }
-      else if(/реле времени/i.test(raw) || n.includes('реле времени')){ it.c='Автоматика'; setGroup(it,'Реле времени'); it.kind=it.kind||'time_relay'; }
-      else if(/контактор/i.test(raw) || n.includes('контактор')){ it.c='Автоматика'; setGroup(it,'Контакторы'); it.kind=it.kind||'contactor'; }
-      else if(/автомат|\b[abcdсавд]\s?\d{1,3}\b/i.test(raw) || /(^|\s)c\s?\d{1,3}(\s|$)/.test(n)){ it.c='Автоматика'; setGroup(it,'Автоматы'); it.kind=it.kind||'automatic'; }
-      else if(/щит|корпус|бокс/i.test(raw) || n.includes('корпус')){ it.c='Щитовое'; setGroup(it, (/наклад/i.test(raw)||n.includes('наклад')) ? 'Корпуса → Накладной' : 'Корпуса → Встраиваемый'); it.kind=it.kind||'shield_box'; }
-      else if(/ншви|наконеч/i.test(raw) || n.includes('наконеч')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Наконечники'); it.kind=it.kind||'lug_pack'; }
-      else if(/пугв|пугов|провод/i.test(raw) || n.includes('пугв')){ it.c=it.c||'Щитовое'; if(it.c==='Щитовое' || n.includes('пугв')) setGroup(it,'Расходка под сборку → Провода'); it.kind=it.kind||'pugv'; }
-      else if(/шин|клемм/i.test(raw) || n.includes('шина') || n.includes('клемм')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Шинки / клеммники'); it.kind=it.kind||'busbar'; }
-      else if(/греб/i.test(raw) || n.includes('греб')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Гребёнки'); it.kind=it.kind||'comb_bus'; }
-      else if(/din|дин|рейк|огранич/i.test(raw) || n.includes('din')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → DIN-рейки / ограничители'); it.kind=it.kind||'din'; }
-      else if(/маркир|бирк/i.test(raw) || n.includes('маркир')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Маркировка'); it.kind=it.kind||'marking'; }
-      else if(/сальник|кабельн.*ввод/i.test(raw) || n.includes('сальник')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Кабельные вводы'); it.kind=it.kind||'cable_gland'; }
-      if(!it.brand) it.brand = detectBrand(raw) || it.brand;
-      if(!it.nominal) it.nominal = detectNominal(raw) || it.nominal;
-    });
-    setDbArr('mat', arr);
-  }
-
+function boot(){ epMoveShieldSettingsIntoDetails(); epPatchDbRenderers(); epNormalizeMaterialsDb(); epPatchGenerateButton(); }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: renderGrouped
+ * ESTIMATE VIEWS FUNCTION: renderGrouped
  * ========================================================= */
 function renderGrouped(arr, type, prefix){
     arr = arr || [];
@@ -1321,8 +2378,9 @@ function renderGrouped(arr, type, prefix){
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: renderItem
+ * ESTIMATE VIEWS FUNCTION: renderItem
  * ========================================================= */
 function renderItem(it,type){
     const id = String(it.id || '');
@@ -1332,8 +2390,45 @@ function renderItem(it,type){
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: mergeEstimate
+ * ESTIMATE VIEWS FUNCTION: smartFindMat
+ * ========================================================= */
+function smartFindMat(label, words, meta){
+    normalizeMaterialDb();
+    const arr = dbArr('mat') || [];
+    meta = meta || {};
+    const key = lookupKey('mat', meta, label);
+    const saved = savedChoices()[key];
+    if(saved){ const found = arr.find(x => String(x.id)===String(saved)); if(found) return {item: found, key}; }
+    const brand = meta.brand || detectBrand(label) || '';
+    const nominal = meta.nominal || detectNominal(label) || '';
+    const kind = String(meta.kind||'').toLowerCase();
+    const searchWords = (words || []).concat([label, brand, nominal, kind]).filter(Boolean).map(norm).filter(Boolean);
+    let best=null, bestScore=-999;
+    arr.forEach(function(it){
+      const blob = norm([it.c,it.g,it.sc,it.subcategory,it.kind,it.brand,it.nominal,it.curve,it.rcdType,it.leakage,it.n].filter(Boolean).join(' '));
+      let score = 0;
+      if(kind && blob.includes(norm(kind))) score += 4;
+      if(kind.includes('automatic') && (blob.includes('автомат') || blob.includes('automatic'))) score += 5;
+      if(kind.includes('dif') && blob.includes('диф')) score += 5;
+      if(kind.includes('uzo') && blob.includes('узо')) score += 5;
+      if(brand){ if(blob.includes(norm(brand))) score += 8; else score -= 20; }
+      if(nominal){ if(blob.replace(/\s+/g,'').includes(norm(nominal).replace(/\s+/g,''))) score += 10; else if(kind.includes('automatic') || kind.includes('breaker')) score -= 30; }
+      if(meta.curve && blob.includes(norm(meta.curve))) score += 2;
+      if(meta.leakage && blob.includes(norm(meta.leakage+'ма'))) score += 4;
+      searchWords.forEach(w => { if(w && blob.includes(w)) score += 1; });
+      if(score > bestScore){ bestScore=score; best=it; }
+    });
+    if(best && bestScore >= 6) return {item:best, key};
+    return {item:null, key};
+  }
+
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: mergeEstimate
  * ========================================================= */
 function mergeEstimate(){
     try{
@@ -1352,8 +2447,9 @@ function mergeEstimate(){
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: normalizeDbItem
+ * ESTIMATE VIEWS FUNCTION: normalizeDbItem
  * ========================================================= */
 function normalizeDbItem(it, type){
     if(!it) return it;
@@ -1415,8 +2511,22 @@ function normalizeDbItem(it, type){
 
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: renderGroupedFixed
+ * ESTIMATE VIEWS FUNCTION: normalizeDbs
+ * ========================================================= */
+function normalizeDbs(){
+    var mats = arrByType('mat').map(function(x){ return normalizeDbItem(x,'mat'); });
+    var works = arrByType('work').map(function(x){ return normalizeDbItem(x,'work'); });
+    setArrByType('mat', mats);
+    setArrByType('work', works);
+  }
+
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: renderGroupedFixed
  * ========================================================= */
 function renderGroupedFixed(arr, type, prefix){
     normalizeDbs();
@@ -1453,91 +2563,9 @@ function renderGroupedFixed(arr, type, prefix){
 
   
 
-/* =========================================================
- * ESTIMATE VIEW FUNCTION: strictFindMaterial
- * ========================================================= */
-function strictFindMaterial(label, meta){
-    normalizeDbs();
-    meta = meta || {};
-    var arr = arrByType('mat');
-    var brand = meta.brand || detectBrand(label) || '';
-    var nominal = meta.nominal || detectNominal(label) || '';
-    var kind = String(meta.kind || '').toLowerCase();
-    var leakage = meta.leakage || detectLeakage(label);
-    var rcdType = meta.rcdType || detectRcdType(label);
-    var isBreaker = kind.indexOf('automatic') >= 0 || kind.indexOf('breaker') >= 0 || !!nominal;
-    var isDif = kind.indexOf('dif') >= 0 || /диф/i.test(label);
-    var isUzo = kind.indexOf('uzo') >= 0 || /узо/i.test(label);
-
-    var best = null, bestScore = -999;
-    arr.forEach(function(it){
-      var blob = norm([it.c,it.g,it.sc,it.subcategory,it.kind,it.brand,it.nominal,it.leakage,it.rcdType,it.n].filter(Boolean).join(' '));
-      var raw = String(it.n || '');
-      var score = 0;
-
-      if(isBreaker) {
-        if(!(blob.indexOf('автомат') >= 0 || String(it.kind||'').toLowerCase().indexOf('automatic') >= 0 || String(it.kind||'').toLowerCase().indexOf('breaker') >= 0)) return;
-        if(nominal && blob.replace(/\s+/g,'').indexOf(norm(nominal).replace(/\s+/g,'')) < 0) return;
-        score += 20;
-      }
-
-      if(isDif) {
-        if(blob.indexOf('диф') < 0 && String(it.kind||'').toLowerCase().indexOf('dif') < 0) return;
-        if(leakage && blob.indexOf(norm(leakage + 'ма')) < 0 && String(it.leakage||'') !== String(leakage)) return;
-        if(rcdType && blob.indexOf(norm(rcdType)) < 0 && String(it.rcdType||'').toUpperCase() !== String(rcdType).toUpperCase()) score -= 3;
-        if(norm(raw) === 'диф' || norm(raw) === 'дифы') score -= 100;
-        score += 20;
-      }
-
-      if(isUzo) {
-        if(blob.indexOf('узо') < 0 && String(it.kind||'').toLowerCase().indexOf('uzo') < 0) return;
-        if(leakage && blob.indexOf(norm(leakage + 'ма')) < 0 && String(it.leakage||'') !== String(leakage)) return;
-        if(rcdType && blob.indexOf(norm(rcdType)) < 0 && String(it.rcdType||'').toUpperCase() !== String(rcdType).toUpperCase()) score -= 3;
-        if(norm(raw) === 'узо') score -= 100;
-        score += 20;
-      }
-
-      if(brand) {
-        if(blob.indexOf(norm(brand)) >= 0) score += 15;
-        else score -= 30;
-      }
-
-      if(!isBreaker && !isDif && !isUzo) {
-        var words = norm(label).split(/\s+/).filter(Boolean);
-        words.forEach(function(w){ if(blob.indexOf(w) >= 0) score += 1; });
-      }
-
-      if(score > bestScore) { bestScore = score; best = it; }
-    });
-
-    if(best && bestScore >= 10) return best;
-    return null;
-  }
-
-  
 
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: lineFromRaw
- * ========================================================= */
-function lineFromRaw(raw, fallbackName){
-    raw = String(raw || '');
-    var after = raw.split('—').slice(1).join('—').trim();
-    if(after) return after;
-    var n = String(fallbackName || raw || '');
-    if(/вводн/i.test(n)) return 'Вводная линия';
-    if(/реле напряж/i.test(n)) return 'Защита от перенапряжения';
-    if(/контактор/i.test(n)) return 'Мастер-кнопка света';
-    if(/байпас/i.test(n)) return 'Байпас мастер-кнопки света';
-    if(/греб/i.test(n)) return 'Питание модульной автоматики';
-    if(/нулев/i.test(n) || /N на группу/i.test(n)) return 'Нулевые шинки по группам защиты';
-    if(/PE-шина/i.test(n)) return 'Защитное заземление PE';
-    return 'Позиция щита';
-  }
-
-  
-
-/* =========================================================
- * ESTIMATE VIEW FUNCTION: mergeEstimateFixed
+ * ESTIMATE VIEWS FUNCTION: mergeEstimateFixed
  * ========================================================= */
 function mergeEstimateFixed(){
     try{
@@ -1571,8 +2599,9 @@ function mergeEstimateFixed(){
 
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: shieldRowsForDetails
+ * ESTIMATE VIEWS FUNCTION: shieldRowsForDetails
  * ========================================================= */
 function shieldRowsForDetails(){
     var rows = [];
@@ -1607,8 +2636,9 @@ function shieldRowsForDetails(){
 
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: detailNote
+ * ESTIMATE VIEWS FUNCTION: detailNote
  * ========================================================= */
 function detailNote(app, line){
     var n = String(app || '');
@@ -1622,8 +2652,9 @@ function detailNote(app, line){
 
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: itemKey
+ * ESTIMATE VIEWS FUNCTION: itemKey
  * ========================================================= */
 function itemKey(type, it){
     if(!it) return '';
@@ -1632,25 +2663,136 @@ function itemKey(type, it){
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: renderGlobalModalFixed
+ * ESTIMATE VIEWS FUNCTION: saveLocalDb
  * ========================================================= */
-function renderGlobalModalFixed(){
-    var type = window.EP_GLOBAL_DB_TAB_FIXED || 'mat';
-    var matBtn = qs('ep-global-tab-mat'), workBtn = qs('ep-global-tab-work');
-    if(matBtn) matBtn.classList.toggle('active', type === 'mat');
-    if(workBtn) workBtn.classList.toggle('active', type === 'work');
-    var list = qs('ep-global-db-list');
-    if(!list) return;
-    var cache = window.EP_GLOBAL_DB_VISIBLE_CACHE || {};
-    var arr = (type === 'work' ? (cache.workDB || []) : (cache.matDB || [])).map(function(x){ return Object.assign({}, x, {__src:'global'}); });
-    list.innerHTML = groupHtml(arr, type, 'global_fixed_'+type, 'global');
+function saveLocalDb(){
+    try{
+      if(typeof safeSet === 'function'){
+        safeSet('user_db_mat_v31', JSON.stringify(localArr('mat')));
+        safeSet('user_db_work_v31', JSON.stringify(localArr('work')));
+      } else {
+        localStorage.setItem('user_db_mat_v31', JSON.stringify(localArr('mat')));
+        localStorage.setItem('user_db_work_v31', JSON.stringify(localArr('work')));
+      }
+    }catch(e){}
+    try{
+      if(typeof db !== 'undefined' && db && typeof appUser !== 'undefined' && appUser && appUser.uid){
+        db.collection('user_db').doc(appUser.uid).set({
+          uid: appUser.uid,
+          name: appUser.name || appUser.email || '',
+          matDB: localArr('mat'),
+          workDB: localArr('work'),
+          updatedAt: new Date().toISOString()
+        }, { merge:true });
+      }
+    }catch(e){}
   }
 
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: renderList
+ * ESTIMATE VIEWS FUNCTION: mergedArr
+ * ========================================================= */
+function mergedArr(type){
+    var local = localArr(type).map(function(x){ return Object.assign({}, x, {__src:'local'}); });
+    var cache = window.EP_GLOBAL_DB_VISIBLE_CACHE || {};
+    var global = (type === 'work' ? (cache.workDB || []) : (cache.matDB || [])).map(function(x){ return Object.assign({}, x, {__src:'global'}); });
+    var del = deletedSet(type);
+    var map = new Map();
+
+    local.forEach(function(it){
+      var k1 = itemKey(type,it), k2 = sigKey(type,it);
+      if(del.has(k1) || del.has(k2)) return;
+      map.set(k2, it);
+    });
+    global.forEach(function(it){
+      var k1 = itemKey(type,it), k2 = sigKey(type,it);
+      if(del.has(k1) || del.has(k2)) return;
+      if(!map.has(k2)) map.set(k2, it);
+    });
+    return Array.from(map.values());
+  }
+
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: groupHtml
+ * ========================================================= */
+function groupHtml(arr, type, prefix, mode){
+    var data = {};
+    (arr || []).forEach(function(it){
+      var c = it.c || 'Разное';
+      var g = getGroup(it) || 'Разное';
+      if(!data[c]) data[c] = {};
+      if(!data[c][g]) data[c][g] = [];
+      data[c][g].push(it);
+    });
+    var html = '', idx = 0;
+    Object.keys(data).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
+      var cid = prefix + '_c_' + (idx++);
+      var catStyle = type === 'work' ? 'style="color:var(--orange);background:rgba(245,158,11,.08);"' : '';
+      html += '<div class="cat-header" '+catStyle+' onclick="toggleCat(\''+cid+'\')">'+safe(c)+'</div><div class="cat-body" id="'+cid+'">';
+      Object.keys(data[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
+        var gid = prefix + '_g_' + (idx++);
+        html += '<div class="ep-db-sub-header" onclick="epToggleSmartSub(\''+gid+'\', event)"><span>'+safe(g)+'</span><small>открыть</small></div><div class="ep-db-sub-body" id="'+gid+'">';
+        data[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it){
+          var k = sigKey(type,it);
+          var src = it.__src === 'global' ? '<span style="color:#8B5CF6;font-weight:900;">🌍 серверная</span>' : '<span style="color:#10B981;font-weight:900;">👤 моя</span>';
+          var meta = safe(g) + ' • ' + src + ' • ' + (Number(it.p)||0) + ' ₽ / ' + safe(it.u || 'шт');
+          if(mode === 'global'){
+            html += '<label class="mat-item ep-select-row">' +
+              '<input type="checkbox" class="ep-global-check" data-key="'+safe(k)+'" data-type="'+type+'" style="width:22px;height:22px;accent-color:var(--primary);">' +
+              '<div style="flex:1;"><div class="ep-db-item-title">'+safe(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div></label>';
+          } else {
+            var color = type === 'work' ? 'background:var(--orange);' : '';
+            html += '<div class="mat-item"><div style="flex:1;"><div class="ep-db-item-title">'+safe(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div>' +
+              '<button class="mat-add-btn" style="'+color+'width:auto;margin:0;" onclick="promptAdd(\''+safe(k)+'\', \''+type+'\')">+ Добавить</button></div>';
+          }
+        });
+        html += '</div>';
+      });
+      html += '</div>';
+    });
+    return html || '<div style="padding:15px;color:var(--gray);font-weight:700;">Позиции не найдены</div>';
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: saveMyDb
+ * ========================================================= */
+async function saveMyDb(){
+    try{
+      if(typeof safeSet === 'function'){
+        safeSet('user_db_mat_v31', JSON.stringify(localDb('mat')));
+        safeSet('user_db_work_v31', JSON.stringify(localDb('work')));
+      } else {
+        localStorage.setItem('user_db_mat_v31', JSON.stringify(localDb('mat')));
+        localStorage.setItem('user_db_work_v31', JSON.stringify(localDb('work')));
+      }
+    }catch(e){}
+    try{
+      if(typeof db !== 'undefined' && db && typeof appUser !== 'undefined' && appUser && appUser.uid){
+        await db.collection('user_db').doc(appUser.uid).set({
+          uid: appUser.uid,
+          name: appUser.name || appUser.email || '',
+          matDB: localDb('mat'),
+          workDB: localDb('work'),
+          updatedAt: new Date().toISOString()
+        }, { merge:true });
+      }
+    }catch(e){ console.warn('saveMyDb', e); }
+  }
+
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: renderList
  * ========================================================= */
 function renderList(arr,type,prefix,mode){
     var data = {};
@@ -1700,24 +2842,45 @@ function renderList(arr,type,prefix,mode){
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: encodeItem
+ * ESTIMATE VIEWS FUNCTION: toolbar
+ * ========================================================= */
+function toolbar(type){
+    var title = type === 'mat' ? 'Материалы' : 'Работы';
+    return '<div style="border:1px solid var(--border);border-radius:14px;padding:10px;margin:10px 0;background:rgba(239,68,68,.05);">' +
+      '<div style="font-weight:900;color:var(--danger);margin-bottom:6px;">🗑 Удаление позиций: '+title+'</div>' +
+      '<div style="font-size:11px;color:var(--gray);margin-bottom:8px;">Удаляет/скрывает только у мастера. База сервера не трогается.</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">' +
+      '<button class="btn-info" style="margin:0;padding:10px;" onclick="epHardSelectDelete(\''+type+'\', true)">✅ Выделить все</button>' +
+      '<button class="btn-vendor" style="margin:0;padding:10px;" onclick="epHardSelectDelete(\''+type+'\', false)">⬜ Убрать галочки</button>' +
+      '</div>' +
+      '<button class="btn-danger" style="width:100%;margin:0;padding:12px;" onclick="epHardDeleteSelected(\''+type+'\')">Удалить выбранные у мастера</button>' +
+      '</div>';
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: encodeItem
  * ========================================================= */
 function encodeItem(it){
     try { return encodeURIComponent(JSON.stringify(it || {})); } catch(e){ return ''; }
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: decodeItem
+ * ESTIMATE VIEWS FUNCTION: decodeItem
  * ========================================================= */
 function decodeItem(v){
     try { return JSON.parse(decodeURIComponent(v || '{}')); } catch(e){ return null; }
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: renderItems
+ * ESTIMATE VIEWS FUNCTION: renderItems
  * ========================================================= */
 function renderItems(arr,type,prefix,mode){
     var data = {};
@@ -1774,8 +2937,394 @@ function renderItems(arr,type,prefix,mode){
 
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: renderCatalog
+ * ESTIMATE VIEWS FUNCTION: deleteToolbar
+ * ========================================================= */
+function deleteToolbar(type){
+    var title = type === 'mat' ? 'Материалы' : 'Работы';
+    return '<div style="border:1px solid var(--border);border-radius:14px;padding:10px;margin:10px 0;background:rgba(239,68,68,.05);">' +
+      '<div style="font-weight:900;color:var(--danger);margin-bottom:6px;">🗑 Удаление позиций: '+title+'</div>' +
+      '<div style="font-size:11px;color:var(--gray);margin-bottom:8px;">Удаляет/скрывает только у мастера. База сервера не трогается.</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">' +
+      '<button class="btn-info" style="margin:0;padding:10px;" onclick="epUltimateSelectDelete(\''+type+'\', true)">✅ Выделить все</button>' +
+      '<button class="btn-vendor" style="margin:0;padding:10px;" onclick="epUltimateSelectDelete(\''+type+'\', false)">⬜ Убрать галочки</button>' +
+      '</div>' +
+      '<button class="btn-danger" style="width:100%;margin:0;padding:12px;" onclick="epUltimateDeleteSelected(\''+type+'\')">Удалить выбранные у мастера</button>' +
+      '</div>';
+  }
+
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: esc
+ * ========================================================= */
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g,function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
+  function cleanText(s){ return String(s || '').toLowerCase().replace(/ё/g,'е').replace(/×/g,'x').replace(/х/g,'x').replace(/[^a-zа-я0-9]+/g,' ').trim(); }
+  function clone(x){ var y=Object.assign({}, x || {}); delete y.__src; delete y.__encoded; return y; }
+  function arrLS(k){ try{ var a=JSON.parse(localStorage.getItem(k)||'[]'); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
+  function objLS(k){ try{ var o=JSON.parse(localStorage.getItem(k)||'{}'); return o && typeof o === 'object' ? o : {}; }catch(e){ return {}; } }
+  function setLS(k,a){ try{ if(typeof safeSet==='function') safeSet(k, JSON.stringify(a||[])); else localStorage.setItem(k, JSON.stringify(a||[])); }catch(e){} }
+  function setObjLS(k,o){ try{ localStorage.setItem(k, JSON.stringify(o||{})); }catch(e){} }
+  function cleanMode(){ return localStorage.getItem(LS_CLEAN) === '1'; }
+  function scope(){ return localStorage.getItem(LS_SCOPE) === 'global' ? 'global' : 'my'; }
+  function activeLabel(){ return scope()==='global' ? '🌍 База сервера' : '👤 Моя база'; }
+  function uid(){ try{ return appUser && appUser.uid ? appUser.uid : ''; }catch(e){ return ''; } }
+  function isAdmin(){ try{ return appUser && appUser.role === 'admin'; }catch(e){ return false; } }
+  function groupOf(it){ return (it && (it.g || it.sc || it.subcategory || it.group)) || ''; }
+  function sig(type,it){ return type + '|' + cleanText([it && it.c, groupOf(it), it && it.n, it && it.u].filter(Boolean).join('|')); }
+  function enc(it){ try{ return encodeURIComponent(JSON.stringify(clone(it))); }catch(e){ return ''; } }
+  function dec(v){ try{ return JSON.parse(decodeURIComponent(v || '{}')); }catch(e){ return null; } }
+
+  function unique(arr,type){
+    var seen={}, out=[];
+    (arr||[]).forEach(function(raw){
+      var it=clone(raw);
+      if(!it.n) return;
+      var k=sig(type,it);
+      if(seen[k]) return;
+      seen[k]=1;
+      out.push(it);
+    });
+    return out;
+  }
+
+  function myArr(type){ return type==='work' ? EP_MY_WORK : EP_MY_MAT; }
+  function serverArr(type){ return type==='work' ? EP_SERVER_WORK : EP_SERVER_MAT; }
+  function activeArr(type){ return scope()==='global' ? serverArr(type) : myArr(type); }
+
+  function syncWindowCaches(){
+    try{
+      window.EP_MY_MAT = EP_MY_MAT;
+      window.EP_MY_WORK = EP_MY_WORK;
+      window.EP_GLOBAL_MAT = EP_SERVER_MAT;
+      window.EP_GLOBAL_WORK = EP_SERVER_WORK;
+      window.EP_FORCE_GLOBAL = {matDB:EP_SERVER_MAT, workDB:EP_SERVER_WORK};
+      window.EP_ULTIMATE_DB_CACHE = {matDB:EP_SERVER_MAT, workDB:EP_SERVER_WORK, ts:Date.now()};
+      window.EP_GLOBAL_DB_VISIBLE_CACHE = {matDB:EP_SERVER_MAT, workDB:EP_SERVER_WORK, ts:Date.now()};
+      window.userMatDB = EP_MY_MAT;
+      window.userWorkDB = EP_MY_WORK;
+      if(scope()==='global'){ matDB = EP_SERVER_MAT.slice(); workDB = EP_SERVER_WORK.slice(); }
+      else { matDB = EP_MY_MAT.slice(); workDB = EP_MY_WORK.slice(); }
+    }catch(e){}
+  }
+
+  function saveMyLocal(type, arr){
+    arr = unique(arr||[], type);
+    if(type==='work') EP_MY_WORK = arr; else EP_MY_MAT = arr;
+    setLS(LS_MY_MAT, EP_MY_MAT);
+    setLS(LS_MY_WORK, EP_MY_WORK);
+    try{ localStorage.setItem(LS_MASTER_CREATED,'1'); }catch(e){}
+    syncWindowCaches();
+    epSaveMyDbToServer();
+  }
+
+  function saveServerLocal(type, arr, saveDirect){
+    arr = unique(arr||[], type);
+    if(type==='work') EP_SERVER_WORK = arr; else EP_SERVER_MAT = arr;
+    setObjLS(LS_SERVER_CACHE, {matDB:EP_SERVER_MAT, workDB:EP_SERVER_WORK, cleanMode:cleanMode(), ts:Date.now()});
+    syncWindowCaches();
+    if(saveDirect) epSaveServerDbToServer();
+  }
+
+  function setActiveDb(type, arr){
+    if(scope()==='global') saveServerLocal(type, arr, isAdmin());
+    else saveMyLocal(type, arr);
+  }
+
+  function upsert(arr,type,it){
+    it = clone(it);
+    if(!it.id) it.id = (type==='work'?'w':'m') + '_local_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+    var k=sig(type,it);
+    var idx=(arr||[]).findIndex(function(x){ return sig(type,x)===k || (it.id && String(x.id||'')===String(it.id)); });
+    if(idx>=0) arr[idx]=Object.assign({}, arr[idx], it, {id:arr[idx].id || it.id});
+    else arr.push(it);
+    return arr;
+  }
+
+  async function epSaveMyDbToServer(){
+    try{
+      if(typeof db !== 'undefined' && db && uid()){
+        await db.collection('user_db').doc(uid()).set({
+          uid: uid(),
+          masterName: (appUser && (appUser.name || appUser.email)) || '',
+          matDB: EP_MY_MAT,
+          workDB: EP_MY_WORK,
+          created: true,
+          updatedAt: new Date().toISOString()
+        }, {merge:true});
+      }
+    }catch(e){ console.warn('save my db failed', e); }
+  }
+
+  async function epSaveServerDbToServer(){
+    try{
+      if(typeof db !== 'undefined' && db && isAdmin()){
+        await db.collection('settings').doc('global_db').set({
+          matDB: EP_SERVER_MAT,
+          workDB: EP_SERVER_WORK,
+          cleanMode: cleanMode(),
+          updatedAt: new Date().toISOString()
+        }, {merge:true});
+      }
+    }catch(e){ console.warn('save server db failed', e); }
+  }
+
+  async function epSendServerProposal(type,items,action){
+    try{
+      if(typeof db !== 'undefined' && db){
+        await db.collection('db_proposals').add({
+          uid: uid() || '',
+          masterName: (appUser && (appUser.name || appUser.email)) || '',
+          type: type,
+          action: action,
+          items: Array.isArray(items) ? items.map(clone) : items,
+          target: 'server_db',
+          status: 'pending',
+          createdAt: new Date().toISOString()
+        });
+      }
+    }catch(e){ console.warn('server proposal failed', e); }
+  }
+
+  async function epLoadDbFromServer(){
+    EP_MY_MAT = arrLS(LS_MY_MAT);
+    EP_MY_WORK = arrLS(LS_MY_WORK);
+    var cache = objLS(LS_SERVER_CACHE);
+    if(!Array.isArray(cache.matDB) && !Array.isArray(cache.workDB)) cache = objLS(LS_OLD_SERVER_CACHE);
+    if(Array.isArray(cache.matDB)) EP_SERVER_MAT = cache.matDB;
+    if(Array.isArray(cache.workDB)) EP_SERVER_WORK = cache.workDB;
+    if(cache.cleanMode) try{ localStorage.setItem(LS_CLEAN,'1'); }catch(e){}
+
+    try{
+      if(typeof db !== 'undefined' && db){
+        var gdoc = await db.collection('settings').doc('global_db').get();
+        if(gdoc.exists){
+          EP_SERVER_DOC_SEEN = true;
+          var gd = gdoc.data() || {};
+          EP_SERVER_MAT = Array.isArray(gd.matDB) ? gd.matDB : [];
+          EP_SERVER_WORK = Array.isArray(gd.workDB) ? gd.workDB : [];
+          if(gd.cleanMode || gd.resetAt) try{ localStorage.setItem(LS_CLEAN,'1'); }catch(e){}
+          setObjLS(LS_SERVER_CACHE, {matDB:EP_SERVER_MAT, workDB:EP_SERVER_WORK, cleanMode:cleanMode(), ts:Date.now()});
+        } else if(isAdmin() && !cleanMode()) {
+          EP_SERVER_DOC_SEEN = false;
+          await db.collection('settings').doc('global_db').set({matDB:EP_SERVER_MAT, workDB:EP_SERVER_WORK, createdAt:new Date().toISOString()}, {merge:true});
+        }
+
+        if(uid()){
+          var udoc = await db.collection('user_db').doc(uid()).get();
+          if(udoc.exists){
+            var ud = udoc.data() || {};
+            EP_MY_MAT = Array.isArray(ud.matDB) ? ud.matDB : EP_MY_MAT;
+            EP_MY_WORK = Array.isArray(ud.workDB) ? ud.workDB : EP_MY_WORK;
+            setLS(LS_MY_MAT, EP_MY_MAT);
+            setLS(LS_MY_WORK, EP_MY_WORK);
+            try{ localStorage.setItem(LS_MASTER_CREATED,'1'); }catch(e){}
+          }
+        }
+      }
+    }catch(e){ console.warn('load db failed', e); }
+
+    var hasCache = Array.isArray(cache.matDB) || Array.isArray(cache.workDB);
+    if(!cleanMode() && !EP_SERVER_DOC_SEEN && !hasCache){
+      EP_SERVER_MAT = TOP_MAT_DB.slice();
+      EP_SERVER_WORK = TOP_WORK_DB.slice();
+    }
+
+    EP_MY_MAT = unique(EP_MY_MAT, 'mat');
+    EP_MY_WORK = unique(EP_MY_WORK, 'work');
+    EP_SERVER_MAT = unique(EP_SERVER_MAT, 'mat');
+    EP_SERVER_WORK = unique(EP_SERVER_WORK, 'work');
+    syncWindowCaches();
+    epRefreshDbScopeUi();
+  }
+
+  function sourceSwitcherHtml(type){
+    return '<div style="border:1px solid var(--primary);border-radius:14px;padding:10px;margin:0 0 12px;background:rgba(79,70,229,.06);">'+
+      '<div style="font-weight:900;color:var(--primary);margin-bottom:6px;">Источник: '+(type==='work'?'Работы':'Материалы')+'</div>'+
+      '<div style="font-size:11px;color:var(--gray);margin-bottom:8px;">В смету и каталог попадает только выбранный источник. Вперемешку не считаем.</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'+
+        '<button class="'+(scope()==='my'?'btn-success':'btn-info')+'" style="margin:0;padding:10px;" onclick="epSetDbScope(&quot;my&quot;); '+(type==='work'?'openWorkCatalog()':'openMatCatalog()')+'">👤 Моя база</button>'+
+        '<button class="'+(scope()==='global'?'btn-success':'btn-info')+'" style="margin:0;padding:10px;" onclick="epSetDbScope(&quot;global&quot;); '+(type==='work'?'openWorkCatalog()':'openMatCatalog()')+'">🌍 База сервера</button>'+
+      '</div>'+
+    '</div>';
+  }
+
+  window.epDbToggle = function(id,e){ if(e) e.stopPropagation(); var el=$(id); if(el) el.classList.toggle('active'); };
+
+  function renderCatalog(type){
+    var arr = activeArr(type);
+    var html = sourceSwitcherHtml(type);
+    if(!arr.length){
+      return html + '<div style="padding:16px;border:1px dashed var(--border);border-radius:14px;text-align:center;color:var(--gray);font-weight:800;">'+activeLabel()+' пустая.<br><br>'+(scope()==='my'?'Можно добавить вручную, импортом или взять позицию из базы сервера.':'После полного сброса база сервера пустая. Админ может заполнить её вручную или импортом.')+'</div>';
+    }
+    var cats={}, i=0;
+    arr.forEach(function(it){ var c=it.c||'Разное'; var g=groupOf(it)||'Без группы'; if(!cats[c]) cats[c]={}; if(!cats[c][g]) cats[c][g]=[]; cats[c][g].push(it); });
+    Object.keys(cats).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
+      var cid='ep_cat_'+type+'_'+(i++);
+      html += '<div class="cat-header" onclick="epDbToggle(&quot;'+cid+'&quot;, event)">'+esc(c)+'</div><div class="cat-body" id="'+cid+'">';
+      Object.keys(cats[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
+        var gid='ep_sub_'+type+'_'+(i++);
+        html += '<div class="sub-cat-header" onclick="epDbToggle(&quot;'+gid+'&quot;, event)">'+esc(g)+' ▾</div><div class="sub-cat-body" id="'+gid+'">';
+        cats[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it){ html += catalogRow(type,it); });
+        html += '</div>';
+      });
+      html += '</div>';
+    });
+    return html;
+  }
+
+  function catalogRow(type,it){
+    var item=enc(it);
+    var sub=(groupOf(it)?groupOf(it)+' • ':'')+(Number(it.p)||0)+' ₽ / '+(it.u||'шт');
+    var copyBtn = scope()==='global' ? '<button class="btn-info" style="width:auto;margin:0 0 0 6px;padding:8px;" data-type="'+type+'" data-item="'+esc(item)+'" onclick="epCopyOneServerToMy(this.dataset.type,this.dataset.item)">В мою</button>' : '';
+    return '<div class="mat-item"><div style="flex:1;font-size:12px;font-weight:600;"><b>'+esc(it.n||'Позиция')+'</b><br><span style="color:var(--gray);font-size:11px;font-weight:normal;">'+esc(sub)+'</span></div><button class="mat-add-btn" style="'+(type==='work'?'background:var(--orange);':'')+'" data-item="'+esc(item)+'" data-type="'+type+'" onclick="promptAdd(this.dataset.item,this.dataset.type)">+ Добавить</button>'+copyBtn+'</div>';
+  }
+
+  window.openMatCatalog = function(){ syncWindowCaches(); var x=$('mat-cat-list'); if(x) x.innerHTML=renderCatalog('mat'); if(typeof openModal==='function') openModal('matCatModal'); };
+  window.openWorkCatalog = function(){ syncWindowCaches(); var x=$('work-cat-list'); if(x) x.innerHTML=renderCatalog('work'); if(typeof openModal==='function') openModal('workModal'); };
+
+  window.promptAdd = function(v,type){
+    var it=dec(v);
+    if(!it || !it.n) it=activeArr(type).find(function(x){return String(x.id||'')===String(v);});
+    if(!it) return toast('Позиция не найдена');
+    pendingAdd={item:clone(it), type:type};
+    var n=$('qty-prompt-name'), q=$('qty-input');
+    if(n) n.innerText=it.n||'Позиция';
+    if(q) q.value=1;
+    if(typeof openModal==='function') openModal('qtyPromptModal');
+  };
+
+  function editorTop(type){
+    var title=type==='work'?'работ':'материалов';
+    var s=scope(), admin=isAdmin(), editable=canEditActive();
+    var hint=s==='my'?'Редактируется личная база мастера.':(admin?'Редактируется база сервера.':'Сервер открыт только для просмотра и копирования в мою базу.');
+    var html='<div style="border:1px solid var(--primary);border-radius:14px;padding:10px;margin:0 0 12px;background:rgba(79,70,229,.05);">'+
+      '<div style="font-weight:900;color:var(--primary);">'+label()+' — '+title+'</div>'+
+      '<div style="font-size:11px;color:var(--gray);font-weight:800;margin-top:4px;">'+hint+' Позиций: '+active(type).length+'.</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">'+
+      '<button class="'+(s==='my'?'btn-success':'btn-info')+'" style="margin:0;padding:10px;" onclick="epSetDbScope(\'my\')">👤 Моя база</button>'+
+      '<button class="'+(s==='global'?'btn-success':'btn-info')+'" style="margin:0;padding:10px;" onclick="epSetDbScope(\'global\')">🌍 База сервера</button></div>';
+    if(editable){
+      html+='<div style="border:1px dashed var(--border);border-radius:12px;padding:8px;margin-top:8px;background:rgba(255,255,255,.35);">'+
+        '<div style="font-weight:900;color:var(--primary);font-size:12px;margin-bottom:6px;">Массовые действия: выделить → перенести / удалить</div>'+
+        '<input id="ep-v15-move-cat-'+type+'" placeholder="Категория, куда перенести" style="margin-bottom:6px;">'+
+        '<input id="ep-v15-move-sub-'+type+'" placeholder="Группа / подкатегория" style="margin-bottom:8px;">'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'+
+        '<button class="btn-info" style="margin:0;padding:9px;" onclick="epV15SelectVisible(\''+type+'\',true)">✅ Выделить</button>'+
+        '<button class="btn-vendor" style="margin:0;padding:9px;" onclick="epV15SelectVisible(\''+type+'\',false)">⬜ Снять</button>'+
+        '<button class="btn-success" style="margin:0;padding:9px;" onclick="epV15MoveSelectedActive(\''+type+'\')">📦 Перенести</button>'+
+        '<button class="btn-danger" style="margin:0;padding:9px;" onclick="epDeleteSelectedActiveV7()">🗑 Удалить выбранные</button></div></div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;"><button class="btn-success" style="margin:0;padding:9px;" onclick="epSaveActiveDbV7()">💾 Сохранить</button><button class="btn-info" style="margin:0;padding:9px;" onclick="epReloadActiveDbV7()">🔄 Обновить</button></div>';
+    }
+    if(s==='global'&&!admin){ html+='<div class="ep-v7-note">Серверные цены и позиции мастер не меняет. Для своей сметы нажми «В мою».</div>'; }
+    return html+'</div>';
+  }
+
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: epSendServerProposal
+ * ========================================================= */
+async function epSendServerProposal(type,items,action){
+    try{
+      if(typeof db !== 'undefined' && db){
+        await db.collection('db_proposals').add({
+          uid: uid() || '',
+          masterName: (appUser && (appUser.name || appUser.email)) || '',
+          type: type,
+          action: action,
+          items: Array.isArray(items) ? items.map(clone) : items,
+          target: 'server_db',
+          status: 'pending',
+          createdAt: new Date().toISOString()
+        });
+      }
+    }catch(e){ console.warn('server proposal failed', e); }
+  }
+
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: epLoadDbFromServer
+ * ========================================================= */
+async function epLoadDbFromServer(){
+    EP_MY_MAT = arrLS(LS_MY_MAT);
+    EP_MY_WORK = arrLS(LS_MY_WORK);
+    var cache = objLS(LS_SERVER_CACHE);
+    if(!Array.isArray(cache.matDB) && !Array.isArray(cache.workDB)) cache = objLS(LS_OLD_SERVER_CACHE);
+    if(Array.isArray(cache.matDB)) EP_SERVER_MAT = cache.matDB;
+    if(Array.isArray(cache.workDB)) EP_SERVER_WORK = cache.workDB;
+    if(cache.cleanMode) try{ localStorage.setItem(LS_CLEAN,'1'); }catch(e){}
+
+    try{
+      if(typeof db !== 'undefined' && db){
+        var gdoc = await db.collection('settings').doc('global_db').get();
+        if(gdoc.exists){
+          EP_SERVER_DOC_SEEN = true;
+          var gd = gdoc.data() || {};
+          EP_SERVER_MAT = Array.isArray(gd.matDB) ? gd.matDB : [];
+          EP_SERVER_WORK = Array.isArray(gd.workDB) ? gd.workDB : [];
+          if(gd.cleanMode || gd.resetAt) try{ localStorage.setItem(LS_CLEAN,'1'); }catch(e){}
+          setObjLS(LS_SERVER_CACHE, {matDB:EP_SERVER_MAT, workDB:EP_SERVER_WORK, cleanMode:cleanMode(), ts:Date.now()});
+        } else if(isAdmin() && !cleanMode()) {
+          EP_SERVER_DOC_SEEN = false;
+          await db.collection('settings').doc('global_db').set({matDB:EP_SERVER_MAT, workDB:EP_SERVER_WORK, createdAt:new Date().toISOString()}, {merge:true});
+        }
+
+        if(uid()){
+          var udoc = await db.collection('user_db').doc(uid()).get();
+          if(udoc.exists){
+            var ud = udoc.data() || {};
+            EP_MY_MAT = Array.isArray(ud.matDB) ? ud.matDB : EP_MY_MAT;
+            EP_MY_WORK = Array.isArray(ud.workDB) ? ud.workDB : EP_MY_WORK;
+            setLS(LS_MY_MAT, EP_MY_MAT);
+            setLS(LS_MY_WORK, EP_MY_WORK);
+            try{ localStorage.setItem(LS_MASTER_CREATED,'1'); }catch(e){}
+          }
+        }
+      }
+    }catch(e){ console.warn('load db failed', e); }
+
+    var hasCache = Array.isArray(cache.matDB) || Array.isArray(cache.workDB);
+    if(!cleanMode() && !EP_SERVER_DOC_SEEN && !hasCache){
+      EP_SERVER_MAT = TOP_MAT_DB.slice();
+      EP_SERVER_WORK = TOP_WORK_DB.slice();
+    }
+
+    EP_MY_MAT = unique(EP_MY_MAT, 'mat');
+    EP_MY_WORK = unique(EP_MY_WORK, 'work');
+    EP_SERVER_MAT = unique(EP_SERVER_MAT, 'mat');
+    EP_SERVER_WORK = unique(EP_SERVER_WORK, 'work');
+    syncWindowCaches();
+    epRefreshDbScopeUi();
+  }
+
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: sourceSwitcherHtml
+ * ========================================================= */
+function sourceSwitcherHtml(type){
+    return '<div style="border:1px solid var(--primary);border-radius:14px;padding:10px;margin:0 0 12px;background:rgba(79,70,229,.06);">'+
+      '<div style="font-weight:900;color:var(--primary);margin-bottom:6px;">Источник: '+(type==='work'?'Работы':'Материалы')+'</div>'+
+      '<div style="font-size:11px;color:var(--gray);margin-bottom:8px;">В смету и каталог попадает только выбранный источник. Вперемешку не считаем.</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'+
+        '<button class="'+(scope()==='my'?'btn-success':'btn-info')+'" style="margin:0;padding:10px;" onclick="epSetDbScope(&quot;my&quot;); '+(type==='work'?'openWorkCatalog()':'openMatCatalog()')+'">👤 Моя база</button>'+
+        '<button class="'+(scope()==='global'?'btn-success':'btn-info')+'" style="margin:0;padding:10px;" onclick="epSetDbScope(&quot;global&quot;); '+(type==='work'?'openWorkCatalog()':'openMatCatalog()')+'">🌍 База сервера</button>'+
+      '</div>'+
+    '</div>';
+  }
+
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: renderCatalog
  * ========================================================= */
 function renderCatalog(type){
     var arr = activeArr(type);
@@ -1801,8 +3350,9 @@ function renderCatalog(type){
 
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: catalogRow
+ * ESTIMATE VIEWS FUNCTION: catalogRow
  * ========================================================= */
 function catalogRow(type,it){
     var item=enc(it);
@@ -1813,8 +3363,41 @@ function catalogRow(type,it){
 
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: renderDbRows
+ * ESTIMATE VIEWS FUNCTION: editorTop
+ * ========================================================= */
+function editorTop(type){
+    var title=type==='work'?'работ':'материалов';
+    var s=scope(), admin=isAdmin(), editable=canEditActive();
+    var hint=s==='my'?'Редактируется личная база мастера.':(admin?'Редактируется база сервера.':'Сервер открыт только для просмотра и копирования в мою базу.');
+    var html='<div style="border:1px solid var(--primary);border-radius:14px;padding:10px;margin:0 0 12px;background:rgba(79,70,229,.05);">'+
+      '<div style="font-weight:900;color:var(--primary);">'+label()+' — '+title+'</div>'+
+      '<div style="font-size:11px;color:var(--gray);font-weight:800;margin-top:4px;">'+hint+' Позиций: '+active(type).length+'.</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">'+
+      '<button class="'+(s==='my'?'btn-success':'btn-info')+'" style="margin:0;padding:10px;" onclick="epSetDbScope(\'my\')">👤 Моя база</button>'+
+      '<button class="'+(s==='global'?'btn-success':'btn-info')+'" style="margin:0;padding:10px;" onclick="epSetDbScope(\'global\')">🌍 База сервера</button></div>';
+    if(editable){
+      html+='<div style="border:1px dashed var(--border);border-radius:12px;padding:8px;margin-top:8px;background:rgba(255,255,255,.35);">'+
+        '<div style="font-weight:900;color:var(--primary);font-size:12px;margin-bottom:6px;">Массовые действия: выделить → перенести / удалить</div>'+
+        '<input id="ep-v15-move-cat-'+type+'" placeholder="Категория, куда перенести" style="margin-bottom:6px;">'+
+        '<input id="ep-v15-move-sub-'+type+'" placeholder="Группа / подкатегория" style="margin-bottom:8px;">'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'+
+        '<button class="btn-info" style="margin:0;padding:9px;" onclick="epV15SelectVisible(\''+type+'\',true)">✅ Выделить</button>'+
+        '<button class="btn-vendor" style="margin:0;padding:9px;" onclick="epV15SelectVisible(\''+type+'\',false)">⬜ Снять</button>'+
+        '<button class="btn-success" style="margin:0;padding:9px;" onclick="epV15MoveSelectedActive(\''+type+'\')">📦 Перенести</button>'+
+        '<button class="btn-danger" style="margin:0;padding:9px;" onclick="epDeleteSelectedActiveV7()">🗑 Удалить выбранные</button></div></div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;"><button class="btn-success" style="margin:0;padding:9px;" onclick="epSaveActiveDbV7()">💾 Сохранить</button><button class="btn-info" style="margin:0;padding:9px;" onclick="epReloadActiveDbV7()">🔄 Обновить</button></div>';
+    }
+    if(s==='global'&&!admin){ html+='<div class="ep-v7-note">Серверные цены и позиции мастер не меняет. Для своей сметы нажми «В мою».</div>'; }
+    return html+'</div>';
+  }
+
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: renderDbRows
  * ========================================================= */
 function renderDbRows(type){
     var arr=activeArr(type);
@@ -1841,8 +3424,9 @@ function renderDbRows(type){
 
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: editorRow
+ * ESTIMATE VIEWS FUNCTION: editorRow
  * ========================================================= */
 function editorRow(type,it){
     var item=enc(it);
@@ -1854,8 +3438,9 @@ function editorRow(type,it){
 
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: reviewedItems
+ * ESTIMATE VIEWS FUNCTION: reviewedItems
  * ========================================================= */
 function reviewedItems(){
     var src=(window.EP_DB_REVIEW && window.EP_DB_REVIEW.items) || [];
@@ -1880,8 +3465,24 @@ function reviewedItems(){
 
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: autoGroupMaterial
+ * ESTIMATE VIEWS FUNCTION: localFullCleanOnly
+ * ========================================================= */
+function localFullCleanOnly(){
+    CLEAN_KEYS.forEach(function(k){ try{ localStorage.removeItem(k); }catch(e){} });
+    try{ localStorage.setItem(LS_CLEAN,'1'); localStorage.setItem(LS_SCOPE,'my'); }catch(e){}
+    EP_MY_MAT=[]; EP_MY_WORK=[]; EP_SERVER_MAT=[]; EP_SERVER_WORK=[]; EP_SERVER_DOC_SEEN=true;
+    setLS(LS_MY_MAT, []); setLS(LS_MY_WORK, []);
+    setObjLS(LS_SERVER_CACHE, {matDB:[], workDB:[], cleanMode:true, ts:Date.now()});
+    syncWindowCaches();
+  }
+
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: autoGroupMaterial
  * ========================================================= */
 function autoGroupMaterial(item){
     var it=clone(item); var n=cleanText([it.n,it.c,it.g,it.sc].join(' '));
@@ -1907,8 +3508,9 @@ function autoGroupMaterial(item){
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: autoGroupWork
+ * ESTIMATE VIEWS FUNCTION: autoGroupWork
  * ========================================================= */
 function autoGroupWork(item){
     var it=clone(item); var n=cleanText([it.n,it.c,it.g,it.sc].join(' '));
@@ -1926,8 +3528,9 @@ function autoGroupWork(item){
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: serverModalRow
+ * ESTIMATE VIEWS FUNCTION: serverModalRow
  * ========================================================= */
 function serverModalRow(type,it){
     var item=enc(it);
@@ -1936,8 +3539,9 @@ function serverModalRow(type,it){
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: renderServerModalList
+ * ESTIMATE VIEWS FUNCTION: renderServerModalList
  * ========================================================= */
 function renderServerModalList(type){
     var arr=serverArr(type), html='';
@@ -1959,41 +3563,35 @@ function renderServerModalList(type){
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: rerender
+ * ESTIMATE VIEWS FUNCTION: install
  * ========================================================= */
-function rerender(){
-    try{ if(typeof renderDbEditors === 'function') renderDbEditors(); }catch(e){}
-    try{ if(window.renderDbEditors && window.renderDbEditors !== renderDbEditors) window.renderDbEditors(); }catch(e){}
-    try{ if(typeof window.epRefreshDbScopeUi === 'function') window.epRefreshDbScopeUi(); }catch(e){}
-    setTimeout(function(){ try{ if(typeof renderDbEditors === 'function') renderDbEditors(); }catch(e){} },80);
-    setTimeout(function(){ try{ if(typeof renderDbEditors === 'function') renderDbEditors(); }catch(e){} },500);
+function install(){
+    syncWindowCaches();
+    epRefreshDbScopeUi();
+    try{
+      openMatCatalog=window.openMatCatalog;
+      openWorkCatalog=window.openWorkCatalog;
+      renderDbEditors=window.renderDbEditors;
+      promptAdd=window.promptAdd;
+      addDbItem=window.addDbItem;
+      requestPriceChange=window.requestPriceChange;
+    }catch(e){}
   }
 
   
 
-/* =========================================================
- * ESTIMATE VIEW FUNCTION: rerenderOpenScreens
- * ========================================================= */
-function rerenderOpenScreens(){
-    syncActiveArrays();
-    updateButtons();
-    try{ if(typeof renderDbEditors === 'function') renderDbEditors(); }catch(e){}
-    try{ if(window.renderDbEditors && window.renderDbEditors !== renderDbEditors) window.renderDbEditors(); }catch(e){}
-    if(isVisible('matCatModal')){
-      setTimeout(function(){ try{ if(typeof openMatCatalog === 'function') openMatCatalog(); }catch(e){} }, 20);
-    }
-    if(isVisible('workModal')){
-      setTimeout(function(){ try{ if(typeof openWorkCatalog === 'function') openWorkCatalog(); }catch(e){} }, 20);
-    }
-    if(isVisible('globalDbModal') && typeof window.epRenderServerDbModal === 'function'){
-      try{ window.epRenderServerDbModal(); }catch(e){}
-    }
-  }
-  
 
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: csvRows
+ * ESTIMATE VIEWS FUNCTION: writeArr
+ * ========================================================= */
+function writeArr(k,a){ try{ if(typeof safeSet === 'function') safeSet(k, JSON.stringify(a || [])); else localStorage.setItem(k, JSON.stringify(a || [])); }catch(e){ try{ localStorage.setItem(k, JSON.stringify(a || [])); }catch(_e){} } }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: csvRows
  * ========================================================= */
 function csvRows(txt){
     var lines = String(txt || '').split(/\r?\n/).filter(function(x){ return x.trim(); });
@@ -2013,8 +3611,9 @@ function csvRows(txt){
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: normItem
+ * ESTIMATE VIEWS FUNCTION: normItem
  * ========================================================= */
 function normItem(raw,type,idx){
     raw = raw || {};
@@ -2028,8 +3627,9 @@ function normItem(raw,type,idx){
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: rowsToItems
+ * ESTIMATE VIEWS FUNCTION: rowsToItems
  * ========================================================= */
 function rowsToItems(rows,type){
     rows = rows || [];
@@ -2071,8 +3671,16 @@ function rowsToItems(rows,type){
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: jsonToItems
+ * ESTIMATE VIEWS FUNCTION: cell
+ * ========================================================= */
+function cell(row,i){ return cleanText((row || [])[i]); }
+    
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: jsonToItems
  * ========================================================= */
 function jsonToItems(raw,type){
     if(raw && raw.matDB && type === 'mat') raw = raw.matDB;
@@ -2085,8 +3693,35 @@ function jsonToItems(raw,type){
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: renderReviewPage
+ * ESTIMATE VIEWS FUNCTION: saveVisibleEdits
+ * ========================================================= */
+function saveVisibleEdits(){
+    var st = window.EP_DB_REVIEW_V6;
+    var start = (st.page || 0) * PAGE_SIZE;
+    var end = Math.min(start + PAGE_SIZE, st.items.length);
+    for(var i=start;i<end;i++){
+      var item = st.items[i] || {};
+      var ch = $('ep-db-check-' + i);
+      if(ch) st.selected[i] = !!ch.checked;
+      var n = $('ep-db-name-' + i), c = $('ep-db-cat-' + i), sc = $('ep-db-subcat-' + i), p = $('ep-db-price-' + i), u = $('ep-db-unit-' + i);
+      if(n || c || sc || p || u){
+        st.editCache[i] = {
+          n: n ? n.value : item.n,
+          c: c ? c.value : item.c,
+          sc: sc ? sc.value : (item.sc || item.g || 'Разное'),
+          p: p ? p.value : item.p,
+          u: u ? u.value : item.u
+        };
+      }
+    }
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: renderReviewPage
  * ========================================================= */
 function renderReviewPage(){
     var st = window.EP_DB_REVIEW_V6;
@@ -2133,8 +3768,161 @@ function renderReviewPage(){
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: renderPanel
+ * ESTIMATE VIEWS FUNCTION: showReview
+ * ========================================================= */
+function showReview(items,type,source){
+    hardHideLoader();
+    items = unique((items || []).filter(Boolean), type);
+    var selected = {};
+    items.forEach(function(_,i){ selected[i] = true; });
+    window.EP_DB_REVIEW_V6 = { type:type, items:items, source:source || '', page:0, selected:selected, editCache:{} };
+    window.EP_DB_REVIEW = { type:type, items:items, source:source || '' };
+    renderReviewPage();
+    try{ if(typeof openModal === 'function') openModal('ep-db-ai-review-modal'); }catch(e){ var m=$('ep-db-ai-review-modal'); if(m) m.style.display='flex'; }
+    setTimeout(hardHideLoader, 20);
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: aiFromImage
+ * ========================================================= */
+async function aiFromImage(file,type){
+    if(typeof window.epAskAI !== 'function') throw new Error('ИИ не подключён');
+    var dataUrl = await new Promise(function(resolve,reject){ var r = new FileReader(); r.onload=function(){resolve(r.result);}; r.onerror=reject; r.readAsDataURL(file); });
+    showReadLoader('ИИ читает изображение...', '👁️');
+    var prompt = 'Распознай таблицу для базы электрика. Верни строго JSON массив объектов [{"n":"Имя позиции","c":"Категория","sc":"Подкатегория","p":123,"u":"шт"}]. Если цены нет p=0. Без текста вокруг.';
+    var ans = await window.epAskAI(prompt, { imageDataUrl:dataUrl, imageDetail:'high', maxTokens:9000 });
+    var arr = [];
+    try{ var m = String(ans || '').match(/\[[\s\S]*\]/); arr = JSON.parse(m ? m[0] : ans); }catch(e){ arr = []; }
+    return jsonToItems(arr,type);
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: aiFromText
+ * ========================================================= */
+async function aiFromText(txt,type){
+    if(typeof window.epAskAI !== 'function') throw new Error('ИИ не подключён');
+    showReadLoader('ИИ структурирует базу...', '🤖');
+    var prompt = 'Приведи данные к базе электрика. Верни строго JSON массив объектов [{"n":"Имя позиции","c":"Категория","sc":"Подкатегория","p":123,"u":"шт"}]. Данные: ' + String(txt || '').slice(0,90000);
+    var ans = await window.epAskAI(prompt, { maxTokens:8000 });
+    var arr = [];
+    try{ var m = String(ans || '').match(/\[[\s\S]*\]/); arr = JSON.parse(m ? m[0] : ans); }catch(e){ arr = []; }
+    return jsonToItems(arr,type);
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: readDbFileV6
+ * ========================================================= */
+async function readDbFileV6(file,type){
+    var safety = setTimeout(hardHideLoader, 25000);
+    showReadLoader('Читаю файл...', '📥');
+    try{
+      var name = file.name || '';
+      var lower = name.toLowerCase();
+      var items = [];
+      if(file.type && file.type.indexOf('image/') === 0){
+        items = await aiFromImage(file,type);
+      } else if(/\.json$/i.test(lower)){
+        var txt = await fileText(file);
+        items = jsonToItems(JSON.parse(txt), type);
+      } else if(/\.(xlsx|xls)$/i.test(lower)){
+        if(!window.XLSX) throw new Error('Библиотека XLSX не загрузилась. Сохраните файл как CSV или JSON.');
+        var ab = await fileBuffer(file);
+        var wb = XLSX.read(ab, {type:'array'});
+        var rows = [];
+        wb.SheetNames.forEach(function(sh){
+          var ws = wb.Sheets[sh];
+          rows = rows.concat(XLSX.utils.sheet_to_json(ws, {header:1, defval:''}));
+        });
+        items = rowsToItems(rows,type);
+      } else if(/\.csv$/i.test(lower)){
+        items = rowsToItems(csvRows(await fileText(file)), type);
+      } else {
+        var raw = await fileText(file);
+        items = rowsToItems(csvRows(raw), type);
+        if(!items.length) items = await aiFromText(raw,type);
+      }
+      clearTimeout(safety);
+      hardHideLoader();
+      showReview(items,type,name);
+    }catch(e){
+      clearTimeout(safety);
+      hardHideLoader();
+      toast('❌ ' + (e.message || 'Ошибка импорта'));
+      console.error('EP V6 import error', e);
+    }
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: collectReviewed
+ * ========================================================= */
+function collectReviewed(){
+    saveVisibleEdits();
+    var st = window.EP_DB_REVIEW_V6;
+    var type = st.type === 'work' ? 'work' : 'mat';
+    var out = [];
+    (st.items || []).forEach(function(base,i){
+      if(st.selected[i] === false) return;
+      var ed = st.editCache[i] || base || {};
+      var it = normItem({
+        id: base.id,
+        n: ed.n || base.n,
+        c: ed.c || base.c,
+        sc: ed.sc || ed.g || base.sc || base.g,
+        p: ed.p != null ? ed.p : base.p,
+        u: ed.u || base.u
+      }, type, i);
+      if(it){ try{ if(typeof window.epAutoGroupItem === 'function') it = window.epAutoGroupItem(type,it); }catch(e){} out.push(it); }
+    });
+    return {type:type, items:out};
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: ensureProgress
+ * ========================================================= */
+function ensureProgress(){
+    if($('ep-v7-progress')) return;
+    var css=document.createElement('style'); css.id='ep-v7-style'; css.textContent='\
+#ep-v7-progress{position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.62);display:none;align-items:center;justify-content:center;padding:18px;}\
+#ep-v7-progress .box{width:min(460px,94vw);border-radius:20px;background:var(--card-bg,#fff);box-shadow:0 24px 70px rgba(0,0,0,.35);padding:18px;border:1px solid var(--border,#e5e7eb);}\
+#ep-v7-progress .title{font-weight:900;color:var(--primary,#4f46e5);font-size:17px;margin-bottom:8px;}\
+#ep-v7-progress .bar{height:16px;background:rgba(148,163,184,.25);border-radius:999px;overflow:hidden;border:1px solid rgba(148,163,184,.35);}\
+#ep-v7-progress .fill{height:100%;width:0%;background:linear-gradient(90deg,#2563eb,#10b981);transition:width .18s ease;}\
+#ep-v7-progress .txt{font-size:12px;color:var(--gray,#64748b);font-weight:800;margin-top:8px;}\
+.ep-v7-panel{border:2px solid var(--primary);border-radius:16px;padding:12px;margin:10px 0 15px;background:rgba(79,70,229,.06)}\
+.ep-v7-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.ep-v7-actions button{margin:0;padding:10px}.ep-v7-note{font-size:11px;color:var(--gray);font-weight:800;margin-top:8px}.ep-v7-locked{opacity:.55}.ep-v7-row{display:flex;gap:8px;align-items:flex-start}.ep-v7-row input[type=number]:disabled{opacity:.55;background:rgba(148,163,184,.15)}'; document.head.appendChild(css);
+    var d=document.createElement('div'); d.id='ep-v7-progress'; d.innerHTML='<div class="box"><div class="title" id="ep-v7-progress-title">Выполняю...</div><div class="bar"><div class="fill" id="ep-v7-progress-fill"></div></div><div class="txt" id="ep-v7-progress-txt">0%</div></div>'; document.body.appendChild(d);
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: sendProposal
+ * ========================================================= */
+async function sendProposal(type,items,reason,onp){
+    try{
+      if(onp)onp(72,'Отправка заявки админу');
+      if(typeof window.epSendServerProposal==='function'){ await window.epSendServerProposal(type,items,reason||'server_import_request'); return true; }
+      if(typeof db!=='undefined'&&db){ await db.collection('db_proposals').add({type:type,items:items,reason:reason||'server_import_request',uid:uid(),userEmail:(window.appUser&&appUser.email)||'',createdAt:new Date().toISOString(),status:'new'}); return true; }
+    }catch(e){ console.warn('EP V7 proposal failed',e); }
+    return false;
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: renderPanel
  * ========================================================= */
 function renderPanel(){
     var p=ensurePanel(); if(!p) return;
@@ -2169,8 +3957,9 @@ function renderPanel(){
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: renderRows
+ * ESTIMATE VIEWS FUNCTION: renderRows
  * ========================================================= */
 function renderRows(type){
     var arr=active(type), html=editorTop(type);
@@ -2181,8 +3970,77 @@ function renderRows(type){
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: makeManualItem
+ * ESTIMATE VIEWS FUNCTION: fileTextProgress
+ * ========================================================= */
+function fileTextProgress(file,onp){ return new Promise(function(resolve,reject){ var r=new FileReader(); r.onprogress=function(e){ if(e.lengthComputable&&onp)onp(Math.min(45,10+e.loaded/e.total*35),'Чтение файла');}; r.onload=function(){resolve(String(r.result||''));}; r.onerror=reject; r.readAsText(file); }); }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: fileBufferProgress
+ * ========================================================= */
+function fileBufferProgress(file,onp){ return new Promise(function(resolve,reject){ var r=new FileReader(); r.onprogress=function(e){ if(e.lengthComputable&&onp)onp(Math.min(45,10+e.loaded/e.total*35),'Чтение файла');}; r.onload=function(){resolve(r.result);}; r.onerror=reject; r.readAsArrayBuffer(file); }); }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: readDbFile
+ * ========================================================= */
+async function readDbFile(file,type,target){ showProgress('Импорт базы',5,'Старт'); var name=file.name||'', lower=name.toLowerCase(), items=[]; if(file.type&&file.type.indexOf('image/')===0){ hideProgress(); if(typeof window.epAskAI==='function' && typeof oldTrigger==='function'){ return oldTrigger(type); } return toast('Для фото нужен ИИ.'); } if(/\.json$/i.test(lower)){ var txt=await fileTextProgress(file,showProgress); showProgress('Импорт базы',55,'Разбор JSON'); items=jsonToItems(JSON.parse(txt),type); } else if(/\.(xlsx|xls)$/i.test(lower)){ if(!window.XLSX) throw new Error('Библиотека XLSX не загрузилась. Сохраните файл как CSV или JSON.'); var ab=await fileBufferProgress(file,showProgress); showProgress('Импорт базы',55,'Разбор Excel'); var wb=XLSX.read(ab,{type:'array'}), rows=[]; wb.SheetNames.forEach(function(sh){ rows=rows.concat(XLSX.utils.sheet_to_json(wb.Sheets[sh],{header:1,defval:''})); }); showProgress('Импорт базы',78,'Подготовка строк'); items=rowsToItems(rows,type); } else { var raw=await fileTextProgress(file,showProgress); showProgress('Импорт базы',60,'Разбор текста/CSV'); items=rowsToItems(csvRows(raw),type); }
+    showProgress('Импорт базы',100,'Открываю проверку'); setTimeout(hideProgress,250); showReview(items,type,name,target); }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: saveMyRemote
+ * ========================================================= */
+async function saveMyRemote(onp){
+    writeArr(LS_MY_MAT,getMy('mat'));
+    writeArr(LS_MY_WORK,getMy('work'));
+    try{ localStorage.setItem('ep_master_db_created_v1','1'); }catch(e){}
+    if(onp)onp('Сохраняю мою базу',45,'Локально');
+    if(!(typeof db!=='undefined'&&db)) throw new Error('Firebase db не подключён. Локально сохранено, но на сервер не ушло.');
+    if(!uid()) throw new Error('Нет uid мастера. Перезайдите в аккаунт.');
+    if(onp)onp('Сохраняю мою базу',70,'Запись user_db/'+uid());
+    await db.collection('user_db').doc(uid()).set({
+      uid:uid(),
+      masterName:(window.appUser&&(appUser.name||appUser.email||appUser.phone))||'',
+      matDB:getMy('mat'),
+      workDB:getMy('work'),
+      created:true,
+      updatedAt:new Date().toISOString()
+    },{merge:true});
+    if(onp)onp('Сохраняю мою базу',92,'Сервер подтвердил');
+    return true;
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: saveServerRemote
+ * ========================================================= */
+async function saveServerRemote(onp){
+    writeObj(LS_SERVER_CACHE,{matDB:getServer('mat'),workDB:getServer('work'),ts:Date.now()});
+    if(!isAdmin()) throw new Error('Серверную базу сохраняет только админ.');
+    if(!(typeof db!=='undefined'&&db)) throw new Error('Firebase db не подключён.');
+    if(onp)onp('Сохраняю базу сервера',65,'Запись settings/global_db');
+    await db.collection('settings').doc('global_db').set({
+      matDB:getServer('mat'),
+      workDB:getServer('work'),
+      cleanMode:true,
+      updatedAt:new Date().toISOString(),
+      updatedBy:(window.appUser&&(appUser.email||appUser.phone||appUser.uid))||''
+    },{merge:true});
+    if(onp)onp('Сохраняю базу сервера',92,'Сервер подтвердил');
+    return true;
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: makeManualItem
  * ========================================================= */
 function makeManualItem(type){
     var cat=$('db-new-cat')?clean($('db-new-cat').value):'';
@@ -2197,16 +4055,87 @@ function makeManualItem(type){
 
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: provider
+ * ESTIMATE VIEWS FUNCTION: saveGlobalImport
+ * ========================================================= */
+async function saveGlobalImport(type,items,replace){
+    if(!isAdmin()) throw new Error('Импорт в базу сервера может делать только админ.');
+    if(!(typeof db!=='undefined'&&db)) throw new Error('Firebase db не подключён.');
+    progress('Запись в базу сервера',20,'Читаю текущую базу сервера');
+    var current=await readGlobalDoc().catch(function(){ return {matDB:getServer('mat'),workDB:getServer('work'),raw:{}}; });
+    var targetArr=(type==='work'?current.workDB:current.matDB).slice();
+    items.forEach(function(it,idx){ targetArr=upsert(targetArr,type,it,!!replace); if(idx%25===0) progress('Запись в базу сервера',25+Math.min(40,idx/Math.max(1,items.length)*40),'Добавляю строки'); });
+    var finalMat=type==='mat'?unique(targetArr,'mat'):unique(current.matDB,'mat');
+    var finalWork=type==='work'?unique(targetArr,'work'):unique(current.workDB,'work');
+    setServer('mat',finalMat); setServer('work',finalWork);
+    progress('Запись в базу сервера',72,'Отправляю в Firebase settings/global_db');
+    await db.collection('settings').doc('global_db').set({matDB:finalMat,workDB:finalWork,cleanMode:true,updatedAt:new Date().toISOString(),updatedBy:currentUserLabel()}, {merge:true});
+    progress('Запись в базу сервера',88,'Проверяю запись');
+    var verify=await readGlobalDoc();
+    setServer('mat',verify.matDB); setServer('work',verify.workDB); syncMain('global');
+    var savedCount=(type==='work'?verify.workDB:verify.matDB).length;
+    if(savedCount < items.length) throw new Error('Firebase вернул слишком мало позиций после записи. Проверь правила или структуру settings/global_db.');
+    return savedCount;
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: saveMyImport
+ * ========================================================= */
+async function saveMyImport(type,items,replace){
+    var arr=getMy(type); items.forEach(function(it,idx){ arr=upsert(arr,type,it,!!replace); if(idx%25===0) progress('Запись в мою базу',20+Math.min(40,idx/Math.max(1,items.length)*40),'Добавляю строки'); });
+    setMy(type,arr); progress('Запись в мою базу',68,'Локально сохранено');
+    if(typeof db!=='undefined'&&db&&uid()){
+      await db.collection('user_db').doc(uid()).set({uid:uid(),masterName:(window.appUser&&(appUser.name||appUser.email||appUser.phone))||'',matDB:getMy('mat'),workDB:getMy('work'),created:true,updatedAt:new Date().toISOString()}, {merge:true});
+      progress('Запись в мою базу',90,'Сервер подтвердил');
+    }
+    return getMy(type).length;
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: sendServerProposal
+ * ========================================================= */
+async function sendServerProposal(type,items){
+    if(!(typeof db!=='undefined'&&db)) throw new Error('Firebase db не подключён.');
+    progress('Отправляю заявку админу',60,'db_proposals');
+    await db.collection('db_proposals').add({type:type,items:items.map(clone),reason:'import_to_server',target:'server_db',uid:uid(),masterName:(window.appUser&&(appUser.name||appUser.email||appUser.phone))||'',userEmail:currentUserLabel(),status:'pending',createdAt:new Date().toISOString()});
+    return true;
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: showReviewV9
+ * ========================================================= */
+function showReviewV9(items,type,source,target){
+    items=unique((items||[]).filter(Boolean),type); var selected={}; items.forEach(function(_,i){selected[i]=true;});
+    window.EP_DB_REVIEW_V6={type:type,items:items,source:source||'',page:0,selected:selected,editCache:{}};
+    window.EP_DB_REVIEW={type:type,items:items,source:source||''}; window.EP_V9_IMPORT_TARGET=target; window.EP_V7_IMPORT_TARGET=target;
+    var title=$('ep-db-ai-review-title'); if(title) title.innerText='Импорт '+(type==='work'?'работ':'материалов')+': '+(source||'файл')+' → '+(target==='global'?'База сервера':target==='server_proposal'?'Заявка админу':'Моя база');
+    if(typeof window.epReviewPageV6==='function') window.epReviewPageV6(0); else {
+      var list=$('ep-db-ai-review-list'); if(list) list.innerHTML=items.map(function(it,i){ return '<div class="ep-db-review-row"><input type="checkbox" id="ep-db-check-'+i+'" checked><div class="ep-db-review-fields"><div><label>Имя</label><input id="ep-db-name-'+i+'" value="'+esc(it.n)+'"></div><div class="ep-db-review-2col"><div><label>Категория</label><input id="ep-db-cat-'+i+'" value="'+esc(it.c)+'"></div><div><label>Подкатегория</label><input id="ep-db-subcat-'+i+'" value="'+esc(it.sc||it.g||'Разное')+'"></div></div><div class="ep-db-review-2col"><div><label>Цена</label><input id="ep-db-price-'+i+'" type="number" value="'+(Number(it.p)||0)+'"></div><div><label>Единица</label><input id="ep-db-unit-'+i+'" value="'+esc(it.u||'шт')+'"></div></div></div></div>'; }).join('');
+    }
+    try{ if(typeof openModal==='function') openModal('ep-db-ai-review-modal'); }catch(e){ var m=$('ep-db-ai-review-modal'); if(m)m.style.display='flex'; }
+    setTimeout(hideProgress,200);
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: provider
  * ========================================================= */
 function provider(){
     try{ var p=(window.EP_AI_CONFIG&&window.EP_AI_CONFIG.provider)||safeGet('ep_ai_provider_v1','gemini'); return p==='openai'?'openai':'gemini'; }catch(e){ return 'gemini'; }
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: keyForProvider
+ * ESTIMATE VIEWS FUNCTION: keyForProvider
  * ========================================================= */
 function keyForProvider(p){
     try{
@@ -2216,14 +4145,190 @@ function keyForProvider(p){
   }
   
 
-/* =========================================================
- * ESTIMATE VIEW FUNCTION: appPrice
- * ========================================================= */
-function appPrice(key, def){ try{ return money((window.appLogic||{})[key]) || def; }catch(e){ return def; } }
-  
 
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: fixShieldWorkItem
+ * ESTIMATE VIEWS FUNCTION: extractTextFromOpenAI
+ * ========================================================= */
+function extractTextFromOpenAI(data){
+    if(data && data.output_text) return data.output_text;
+    var out='';
+    ((data&&data.output)||[]).forEach(function(item){ ((item&&item.content)||[]).forEach(function(c){ if(c&&c.text) out+=c.text; if(c&&c.type==='output_text'&&c.text) out+=c.text; }); });
+    return out;
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: askOpenAI
+ * ========================================================= */
+async function askOpenAI(promptText, opts){
+    var key=keyForProvider('openai'); if(!key) throw new Error('Нужен OpenAI API ключ');
+    var content=[{type:'input_text', text:promptText}];
+    if(opts && opts.fileDataUrl){
+      content.push({ type:'input_file', filename: opts.fileName || 'import.pdf', file_data: opts.fileDataUrl });
+    } else if(opts && opts.imageDataUrl){
+      content.push({ type:'input_image', image_url: opts.imageDataUrl, detail: opts.imageDetail || 'high' });
+    }
+    var r=await fetch('https://api.openai.com/v1/responses',{
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body:JSON.stringify({ model:openAiModel(), input:[{role:'user', content:content}], max_output_tokens:(opts&&opts.maxTokens)||9000 })
+    });
+    var data=await r.json().catch(function(){return {};});
+    if(!r.ok || data.error) throw new Error((data.error&&data.error.message)||'OpenAI API error');
+    return extractTextFromOpenAI(data);
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: askGemini
+ * ========================================================= */
+async function askGemini(promptText, opts){
+    var key=keyForProvider('gemini'); if(!key) throw new Error('Нужен Gemini API ключ');
+    var parts=[{text:promptText}];
+    var dataUrl=(opts&&opts.fileDataUrl)||(opts&&opts.imageDataUrl)||'';
+    if(dataUrl){
+      var m=dataUrl.match(/^data:([^;]+);base64,(.*)$/i);
+      if(m) parts.push({ inline_data:{ mime_type:m[1], data:m[2] } });
+    }
+    var url='https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key='+encodeURIComponent(key);
+    var r=await fetch(url,{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({contents:[{parts:parts}]}) });
+    var data=await r.json().catch(function(){return {};});
+    if(!r.ok || data.error) throw new Error((data.error&&data.error.message)||'Gemini API error');
+    return ((((data.candidates||[])[0]||{}).content||{}).parts||[]).map(function(p){return p.text||'';}).join('');
+  }
+
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: normalize
+ * ========================================================= */
+function normalize(raw,type){ var arr=Array.isArray(raw)?raw:(raw&&typeof raw==='object'?(raw.items||raw.positions||raw.data||raw.materials||raw.works||raw['позиции']||[]):[]); return (arr||[]).map(function(x,i){return normItem(x,type,i);}).filter(Boolean); }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: unique
+ * ========================================================= */
+function unique(items,type){ var seen={}; return (items||[]).filter(function(it){ var k=[it.n,it.c,it.sc,it.u,Number(it.p)||0].join('|').toLowerCase(); if(seen[k])return false; seen[k]=1; return true; }); }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: importPrompt
+ * ========================================================= */
+function importPrompt(type, kind){
+    return 'Ты профессионально распознаёшь русские прайсы, счета, сметы и таблицы электромонтажных '+(type==='work'?'работ':'материалов')+'. '+
+      'Источник: '+kind+'. Извлеки ВСЕ строки с позициями. Верни ТОЛЬКО JSON массив объектов без текста вокруг. '+
+      'Формат строго: [{"n":"Имя позиции","c":"Категория","sc":"Подкатегория","p":123,"u":"шт"}]. '+
+      'n — полное наименование, не артикул и не номер строки. p — цена за единицу, не итоговая сумма; если цены нет p=0. '+
+      'u — единица: шт, м, м.п., упак, компл, кг, л. c/sc определи сам по электрике. Не возвращай пустой массив, если видны позиции.';
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: aiFromImageFile
+ * ========================================================= */
+async function aiFromImageFile(file,type,target){
+    progress('ИИ-импорт фото',15,'Читаю изображение');
+    var dataUrl=await fileToDataURL(file);
+    progress('ИИ-импорт фото',35,'Отправляю в ИИ');
+    var ans=await window.epAskAI(importPrompt(type,'фото или скрин таблицы'),{imageDataUrl:dataUrl,imageDetail:'high',maxTokens:9000});
+    progress('ИИ-импорт фото',85,'Разбираю ответ');
+    var items=normalize(parseJsonLoose(ans),type);
+    showReview(items,type,file.name||'фото',target,ans);
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: aiFromPdfFile
+ * ========================================================= */
+async function aiFromPdfFile(file,type,target){
+    var maxMb=18;
+    if(file.size && file.size > maxMb*1024*1024) throw new Error('PDF слишком большой. Сделай файл до '+maxMb+' МБ или загрузи несколько страниц отдельно.');
+    progress('ИИ-импорт PDF',15,'Читаю PDF');
+    var dataUrl=await fileToDataURL(file);
+    progress('ИИ-импорт PDF',35,'Отправляю PDF в ИИ');
+    var ans=await window.epAskAI(importPrompt(type,'PDF прайс/счёт/смета'),{fileDataUrl:dataUrl,fileName:file.name||'import.pdf',mimeType:dataMime(dataUrl)||'application/pdf',maxTokens:12000});
+    progress('ИИ-импорт PDF',85,'Разбираю ответ');
+    var items=normalize(parseJsonLoose(ans),type);
+    showReview(items,type,file.name||'PDF',target,ans);
+  }
+
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: installAdminSettingsButton
+ * ========================================================= */
+function installAdminSettingsButton(){
+    var panel = $('admin-panel');
+    if(!panel || $('ep-v11-admin-server-db-btn')) return;
+    var box = document.createElement('div');
+    box.id = 'ep-v11-admin-server-db-btn';
+    box.style.cssText = 'margin:12px 0;padding:10px;border:1px solid var(--primary);border-radius:12px;background:rgba(79,70,229,.07);';
+    box.innerHTML = '<div style="font-weight:900;color:var(--primary);margin-bottom:6px;">🌍 База сервера</div>'
+      + '<div style="font-size:11px;color:var(--gray);line-height:1.35;margin-bottom:8px;">Импорт, замена, цены и сохранение глобальной базы выполняются только отсюда, чтобы личный импорт админа случайно не улетел на сервер.</div>'
+      + '<button type="button" class="btn-primary" style="width:100%;padding:12px;margin:0;" onclick="epOpenAdminServerDbFromSettings()">👑 Открыть редактирование базы сервера</button>';
+    var firstH = panel.querySelector('h4');
+    if(firstH) panel.insertBefore(box, firstH); else panel.appendChild(box);
+  }
+
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: patchDbUi
+ * ========================================================= */
+function patchDbUi(){
+    installAdminSettingsButton();
+    var isGlobal = scope() === 'global';
+    var serverEdit = adminServerMode();
+    var panel = $('ep-v7-db-panel');
+    if(panel){
+      var oldNote = $('ep-v11-server-mode-note'); if(oldNote) oldNote.remove();
+      var note = document.createElement('div');
+      note.id = 'ep-v11-server-mode-note';
+      note.style.cssText = 'font-size:11px;font-weight:900;line-height:1.35;margin:8px 0;padding:9px;border-radius:12px;';
+      if(isGlobal && serverEdit){
+        note.style.border = '1px solid var(--danger)'; note.style.color = 'var(--danger)'; note.style.background='rgba(239,68,68,.08)';
+        note.textContent = '👑 Режим админа: разрешены импорт, замена, цены и сохранение базы сервера.';
+        panel.insertBefore(note, panel.firstChild);
+      } else if(isGlobal){
+        note.style.border = '1px solid var(--border)'; note.style.color = 'var(--gray)'; note.style.background='rgba(100,116,139,.08)';
+        note.textContent = explainServerEdit();
+        panel.insertBefore(note, panel.firstChild);
+      }
+      Array.prototype.forEach.call(panel.querySelectorAll('button'), function(btn){
+        var s=txt(btn);
+        if(isGlobal && !serverEdit && /Импорт|текстом|заявк|Сохранить базу|Очистка сервера|Очистка \/ сброс/.test(s)){
+          btn.style.display='none';
+        }
+      });
+    }
+    var addBtn = document.querySelector('#settModal button[onclick="addDbItem()"]');
+    if(addBtn){
+      var block=addBtn.parentElement;
+      if(block) block.style.display = (!isGlobal || serverEdit) ? 'block' : 'none';
+      addBtn.textContent = isGlobal ? '+ Добавить в базу сервера' : '+ Добавить в мою базу';
+    }
+    if(isGlobal && !serverEdit){
+      Array.prototype.forEach.call(document.querySelectorAll('#editor-mat-list input,#editor-work-list input,#editor-mat-list select,#editor-work-list select,#editor-mat-list textarea,#editor-work-list textarea'), function(el){ el.disabled = true; });
+      Array.prototype.forEach.call(document.querySelectorAll('#editor-mat-list button,#editor-work-list button'), function(btn){
+        var s=txt(btn);
+        if(/Сохранить|Удалить|Замени|✕|🗑/.test(s)) btn.style.display='none';
+      });
+    }
+  }
+
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: fixShieldWorkItem
  * ========================================================= */
 function fixShieldWorkItem(it, originalLabel){
     if(!it) return it;
@@ -2273,8 +4378,9 @@ function fixShieldWorkItem(it, originalLabel){
 
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: normalizeCurrentEstimate
+ * ESTIMATE VIEWS FUNCTION: normalizeCurrentEstimate
  * ========================================================= */
 function normalizeCurrentEstimate(){
     try{
@@ -2288,8 +4394,196 @@ function normalizeCurrentEstimate(){
 
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: showDetailsV16
+ * ESTIMATE VIEWS FUNCTION: patchShieldButton
+ * ========================================================= */
+function patchShieldButton(){
+    var base = window.epGenerateShieldFixed || window.generateCascadePanel;
+    if(typeof base==='function' && !base.__ep_v12_wrapped){
+      var wrapped=function(){
+        var r=base.apply(this, arguments);
+        setTimeout(function(){ normalizeCurrentEstimate(); try{ if(typeof renderMainTable==='function') renderMainTable(); }catch(e){} },60);
+        return r;
+      };
+      wrapped.__ep_v12_wrapped=true;
+      window.epGenerateShieldFixed=wrapped;
+      window.generateCascadePanel=wrapped;
+      try{ generateCascadePanel=wrapped; }catch(e){}
+    }
+    Array.prototype.forEach.call(document.querySelectorAll('button'), function(btn){
+      if((btn.textContent||'').indexOf('Сгенерировать щит')>=0) btn.onclick=window.generateCascadePanel;
+    });
+  }
+
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: epV16GenerateCascadePanel
+ * ========================================================= */
+function epV16GenerateCascadePanel() {
+    const bBox = epGetVal('cfg-brand-box', 'Tekfor');
+    const bAuto = epGetVal('cfg-brand-auto', 'IEK');
+    const sWall = epGetVal('cfg-shield-wall', 'Бетон');
+    const ph = parseInt(epGetVal('cfg-phase', '1')) || 1;
+    const curve = epGetVal('cfg-auto-curve', 'C');
+    const rcdType = epGetVal('cfg-rcd-type', 'A');
+    const protectionType = epGetVal('cfg-protection-type', 'uzo_auto');
+    const isMaster = epGetCheck('cfg-master');
+    const heavySeparate = epGetCheck('cfg-heavy-separate');
+
+    let m = [], w = [], lines = [], protectionDevices = [], warnings = [];
+    function addLine(name, nominal, group, opts) {
+        const o = opts || {};
+        lines.push({ name, nominal, group, curve: o.curve || curve, nonSwitchable: !!o.nonSwitchable, wet: group === 'wet' || !!o.wet });
+    }
+    function addRoom(label, count, wetPower) {
+        for (let i = 1; i <= count; i++) {
+            const n = count > 1 ? `${label} ${i}` : label;
+            addLine(`${n} розетки`, 'C16', wetPower ? 'wet' : 'power', { wet: wetPower });
+            addLine(`${n} свет`, 'C10', 'light');
+        }
+    }
+    addRoom('Кухня', cfg.kits || 0, false);
+    addRoom('Ванная', cfg.baths || 0, true);
+    addRoom('Туалет', cfg.toilets || 0, true);
+    addRoom('Комната', cfg.rms || 0, false);
+    addRoom('Балкон', cfg.bals || 0, false);
+    if (epGetCheck('c-apron')) addLine('Фартук кухни', 'C16', 'power');
+    if (epGetCheck('c-dish')) addLine('Посудомойка', 'C10', 'power');
+    if (epGetCheck('c-washer')) addLine('Стиралка/сушилка', 'C10', 'wet', { wet: true });
+    if (epGetCheck('c-towel')) addLine('Полотенцесушитель', 'C10', 'wet', { wet: true });
+    for (let i = 1; i <= (cfg.acs || 0); i++) addLine(`Кондиционер ${i}`, 'C10', 'climate');
+    for (let i = 1; i <= (cfg.fls || 0); i++) addLine(`Тёплый пол ${i}`, 'C10', 'climate');
+    if (epGetCheck('c-fridge')) addLine('Холодильник, неотключаемая группа', 'C10', 'alwaysOn', { nonSwitchable: true });
+    if (epGetCheck('c-neptun')) addLine('Нептун, неотключаемая группа', 'C10', 'alwaysOn', { nonSwitchable: true });
+    if (epGetCheck('c-router')) addLine('Роутер, неотключаемая группа', 'C6', 'alwaysOn', { nonSwitchable: true });
+    const hobPower = epGetVal('c-hob-power', 'none');
+    if (hobPower === '6') addLine('Плита до 6 кВт', 'C25', heavySeparate ? 'heavy' : 'power');
+    if (hobPower === '10') addLine('Плита до 10 кВт', 'C32', heavySeparate ? 'heavy' : 'power');
+    const boilerPower = epGetVal('c-boiler-power', 'none');
+    if (boilerPower === '6') addLine('Бойлер до 6 кВт', 'C25', 'wet', { wet: true });
+    if (boilerPower === '10') addLine('Бойлер до 10 кВт', 'C32', 'wet', { wet: true });
+
+    const groupNames = { power: 'Силовые линии', climate: 'Климат', wet: 'Влажные зоны', light: 'Освещение', heavy: 'Большая техника', alwaysOn: 'Неотключаемые группы' };
+    const presentGroups = Array.from(new Set(lines.map(l => l.group))).filter(Boolean);
+    function groupAssignment(group, leakage) {
+        const ls = lines.filter(l => l.group === group).map(l => l.name);
+        const head = group === 'wet' ? 'Влажные зоны / защита 10 мА' : (groupNames[group] || group);
+        return ls.length ? `${head}: ${ls.join(', ')}` : head;
+    }
+    function addProtection(group, mode) {
+        const leakage = group === 'wet' ? 10 : 30;
+        const kind = mode || (protectionType === 'dif_auto' ? 'ДИФ' : 'УЗО');
+        protectionDevices.push({ group, kind, leakage, rcdType, modules: 2, assignment: groupAssignment(group, leakage) });
+        if (group === 'wet' && leakage !== 10) warnings.push('Влажные зоны должны быть 10 мА');
+    }
+    if (protectionType === 'main_dif_auto') protectionDevices.push({ group: 'main', kind: 'Главный ДИФ', leakage: 30, rcdType, modules: 2, assignment: 'Вводная групповая защита всего щита' });
+    else if (protectionType === 'mixed') presentGroups.forEach(g => addProtection(g, g === 'wet' ? 'ДИФ' : 'УЗО'));
+    else presentGroups.forEach(g => addProtection(g, protectionType === 'dif_auto' ? 'ДИФ' : 'УЗО'));
+
+    function mat(label, q, price, words, meta, assignment) {
+        meta = Object.assign({}, meta || {}, { brand: bAuto });
+        if (assignment) meta.assignment = assignment;
+        const it = epMat(label, q, price, words, meta);
+        if (assignment) { it.epAssignment = assignment; it.epAssignments = [assignment]; it.epMergedDetails = [assignment]; }
+        return it;
+    }
+    function work(label, q, price, words, meta, assignment) {
+        meta = Object.assign({}, meta || {});
+        if (assignment) meta.assignment = assignment;
+        const it = epWork(label, q, price, words, meta);
+        if (assignment) { it.epAssignment = assignment; it.epAssignments = [assignment]; it.epMergedDetails = [assignment]; }
+        return it;
+    }
+
+    m.push(mat(`Вводной автомат ${ph}ф ${bAuto}`, 1, bAuto === 'ABB' ? 3500 : 1800, ['автомат', 'вводной', bAuto, ph + 'ф'], { category: 'Автоматика', subcategory: 'Автоматы', kind: 'input_breaker', unit: 'шт', poles: ph === 3 ? '4P' : '2P' }, 'Вводной аппарат щита'));
+    protectionDevices.forEach(pd => {
+        const label = pd.kind === 'Главный ДИФ' ? `Главный ДИФ ${bAuto} ${pd.leakage}мА тип ${pd.rcdType}` : `${pd.kind} ${groupNames[pd.group] || pd.group} ${pd.leakage}мА тип ${pd.rcdType} ${bAuto}`;
+        m.push(mat(label, 1, epDifPrice(bAuto), [pd.kind, bAuto, pd.leakage + 'мА', pd.rcdType, groupNames[pd.group] || pd.group], { category: 'Автоматика', subcategory: pd.kind === 'ДИФ' || pd.kind === 'Главный ДИФ' ? 'ДИФы' : 'УЗО', kind: pd.kind === 'ДИФ' || pd.kind === 'Главный ДИФ' ? 'dif' : 'uzo', leakage: pd.leakage, rcdType: pd.rcdType, amp: 40, poles: pd.kind === 'ДИФ' ? '1P+N' : '2P', modules: 2 }, pd.assignment));
+    });
+    lines.forEach(line => {
+        const label = `Автомат ${line.nominal} тип ${line.curve} ${bAuto} — ${line.name}`;
+        m.push(mat(label, 1, epAutoPrice(bAuto), ['автомат', bAuto, line.nominal, line.curve], { category: 'Автоматика', subcategory: 'Автоматы', kind: 'automatic', nominal: line.nominal, curve: line.curve, modules: 1, poles: '1P' }, line.name));
+    });
+    if (epGetCheck('cfg-uzm')) {
+        const q = ph === 3 ? 3 : 1;
+        m.push(mat(`Реле напряжения ${bAuto}`, q, 4500, ['реле напряжения', 'узм', bAuto], { category: 'Автоматика', subcategory: 'УЗМ / реле напряжения', kind: 'voltage_relay', modules: ph === 3 ? 6 : 2 }, 'Защита от перенапряжения'));
+    }
+    if (isMaster) {
+        const lightLines = lines.filter(l => l.group === 'light').map(l => l.name).join(', ') || 'световые группы';
+        m.push(mat(`Контактор C40 ${bAuto} — мастер-кнопка света`, 1, 2200, ['контактор', 'C40', bAuto], { category: 'Автоматика', subcategory: 'Контакторы', kind: 'contactor', modules: 2 }, 'Мастер-кнопка только на свет: ' + lightLines));
+        m.push(mat(`Автомат C40 тип ${curve} ${bAuto} — байпас мастер-кнопки`, 1, bAuto === 'ABB' ? 600 : 380, ['автомат', 'C40', bAuto, curve], { category: 'Автоматика', subcategory: 'Автоматы', kind: 'automatic', nominal: 'C40', curve: curve, modules: 1, poles: '1P' }, 'Байпас мастер-кнопки света'));
+    }
+    currentShieldExtras.forEach(ex => m.push({ n: ex.n, q: ex.q, p: ex.p, u: ex.u || 'шт', type: 'mat', epAssignment: 'Дополнительный аппарат защиты', epAssignments: ['Дополнительный аппарат защиты'], epMergedDetails: ['Дополнительный аппарат защиты'] }));
+
+    const onePoleCount = lines.length + (isMaster ? 1 : 0);
+    const twoPoleProtectionCount = protectionDevices.length;
+    const relayModules = epGetCheck('cfg-uzm') ? (ph === 3 ? 6 : 2) : 0;
+    const masterModules = isMaster ? 3 : 0;
+    const extraModules = currentShieldExtras.reduce((s, ex) => s + (Number(ex.modules || 1) * Number(ex.q || 1)), 0);
+    const totalModules = Math.ceil(onePoleCount + twoPoleProtectionCount * 2 + relayModules + masterModules + extraModules + (ph === 3 ? 3 : 2));
+    const boxSize = [6,12,24,36,48,60,72].find(s => s >= totalModules) || 72;
+    if (totalModules > 72) warnings.push('Нужно больше 72 модулей — требуется второй щит или пересборка схемы');
+
+    m.unshift(mat(`Щит ${sWall === 'Накладной' ? 'накладной' : 'встраиваемый'} ${bBox} ${boxSize}М`, 1, bBox === 'ABB' ? 6510 : 2660, ['щит', bBox, String(boxSize), sWall === 'Накладной' ? 'накладной' : 'встраиваемый'], { brand: bBox, category: 'Щитовое', subcategory: 'Корпуса', kind: 'shield_box', modules: boxSize, mountType: sWall === 'Накладной' ? 'surface' : 'built_in' }, 'Корпус щита'));
+    const comb1P = Math.ceil(onePoleCount / 12), comb2P = Math.ceil(twoPoleProtectionCount / 6), rows = Math.ceil(boxSize / 12);
+    const pugvSize = Number(appLogic.shieldPugvSize || 6), pugvMeters = Math.max(4, Math.ceil(totalModules * 0.4)), nshviPacks = Math.max(1, Math.ceil(boxSize / 48));
+    if (comb1P > 0) m.push(mat('Гребёнка 1P 25см', comb1P, 250, ['гребенка', '1P', '25'], { category: 'Щитовое', subcategory: 'Гребёнки', kind: 'comb_bus_1p' }, 'Питание однополюсных автоматов'));
+    if (comb2P > 0) m.push(mat('Гребёнка 2P 25см', comb2P, 450, ['гребенка', '2P', '25'], { category: 'Щитовое', subcategory: 'Гребёнки', kind: 'comb_bus_2p' }, 'Питание УЗО/ДИФ'));
+    if (twoPoleProtectionCount > 0) m.push(mat('Нулевая шинка N на группу УЗО/ДИФ', twoPoleProtectionCount, 285, ['шина', 'N', 'ноль', 'DIN'], { category: 'Щитовое', subcategory: 'Шины N/PE', kind: 'neutral_bus' }, 'N-шинки по группам защиты'));
+    m.push(mat(`PE-шина на ${appLogic.shieldPeBusContacts || 26} контактов`, 1, 770, ['PE', 'шина', '26'], { category: 'Щитовое', subcategory: 'Шины N/PE', kind: 'pe_bus' }, 'Защитное заземление PE'));
+    m.push(mat('DIN-рейка / комплект DIN для щита', rows, 180, ['DIN', 'рейка'], { category: 'Щитовое', subcategory: 'DIN', kind: 'din_rail' }, 'Крепление аппаратов на DIN-рейке'));
+    m.push(mat('Ограничитель на DIN-рейку', rows * 2, 35, ['ограничитель', 'DIN'], { category: 'Щитовое', subcategory: 'DIN', kind: 'din_stopper' }, 'Фиксация аппаратов на DIN-рейке'));
+    m.push(mat(`Провод ПуГВ 1×${pugvSize}`, pugvMeters, 85, ['ПуГВ', '1x' + pugvSize, '1×' + pugvSize], { category: 'Щитовое', subcategory: 'Провода', kind: 'pugv', unit: 'м.п.' }, 'Внутренняя разводка щита'));
+    m.push(mat(`НШВИ 1×${pugvSize}, упак. 100 шт`, nshviPacks, 225, ['НШВИ', '1x' + pugvSize, '1×' + pugvSize], { category: 'Щитовое', subcategory: 'Наконечники', kind: 'lug_pack' }, 'Опрессовка проводов щита'));
+    m.push(mat('Маркировка линий / бирки', lines.length, 15, ['маркировка', 'бирки'], { category: 'Щитовое', subcategory: 'Маркировка', kind: 'marking_tag' }, 'Маркировка линий'));
+    if (epGetCheck('cfg-cable-glands')) m.push(mat('Кабельные вводы / сальники', 1, 250, ['кабельный ввод', 'сальник'], { category: 'Щитовое', subcategory: 'Кабельные вводы', kind: 'cable_gland' }, 'Ввод кабелей в щит'));
+
+    if (sWall !== 'Накладной') w.push(work(`Ниша щита ${boxSize}М (${sWall})`, boxSize, appLogic.shieldNichePerModule || 400, ['ниша', 'щит', sWall, String(boxSize)], { unit: 'мод.', category: 'Штробление и резка', subcategory: 'Ниши щита' }, 'Ниша под корпус щита'));
+    if (sWall !== 'Накладной') w.push(work(`Штроба 100×50, под трассу кабелей (${sWall})`, 2, appLogic.shieldInputGroovePrice || 1500, ['штроба', '100x50', sWall, 'трасса', 'кабелей'], { unit: 'м.п.', category: 'Штробление и резка', subcategory: 'Штроба 100×50 под трассу кабелей' }, 'Штроба под ввод/трассу кабелей'));
+    w.push(work('Сборка щита', totalModules, appLogic.priceShield || 500, ['сборка', 'щит'], { unit: 'мод.', category: 'Щитовое', subcategory: 'Сборка щита' }, 'Сборка модульного щита'));
+    w.push(work('Установка щита', 1, appLogic.shieldInstallPrice || 2500, ['установка', 'щит'], { unit: 'шт', category: 'Щитовое', subcategory: 'Монтаж щита' }, 'Монтаж корпуса щита'));
+    w.push(work('Подключение вводного кабеля', 1, appLogic.shieldInputConnectPrice || 1500, ['подключение', 'вводного', 'кабеля'], { unit: 'шт', category: 'Щитовое', subcategory: 'Монтаж щита' }, 'Подключение ввода'));
+    w.push(work('Прозвонка / проверка линий', lines.length, appLogic.shieldTestLinePrice || 150, ['прозвонка', 'проверка', 'линий'], { unit: 'линия', category: 'Щитовое', subcategory: 'Проверка линий' }, 'Проверка каждой линии'));
+    w.push(work('Маркировка линий', lines.length, appLogic.shieldMarkLinePrice || 100, ['маркировка', 'линий'], { unit: 'линия', category: 'Щитовое', subcategory: 'Маркировка линий' }, 'Маркировка каждой линии'));
+    if (epGetCheck('cfg-scheme')) w.push(work('Составление однолинейной схемы щита', 1, appLogic.shieldSchemePrice || 4000, ['однолинейная', 'схема', 'щит'], { unit: 'шт', category: 'Щитовое', subcategory: 'Документация' }, 'Однолинейная схема'));
+    const info = [
+        { n: `ℹ️ Щит: занято ${totalModules} мод.; корпус ${boxSize}М; свободно ${Math.max(0, boxSize - totalModules)} мод.`, q: 1, p: 0, type: 'work', tag: 'shield_info' },
+        { n: `ℹ️ Защита: ${protectionType}; автоматы тип ${curve}; УЗО/ДИФ тип ${rcdType}; влажные зоны 10мА`, q: 1, p: 0, type: 'work', tag: 'shield_info' },
+        { n: `ℹ️ Гребёнки: 1P ${comb1P}×25см; 2P ${comb2P}×25см; N-шинок ${twoPoleProtectionCount}; PE-шина ${appLogic.shieldPeBusContacts || 26} контактов`, q: 1, p: 0, type: 'work', tag: 'shield_info' }
+    ];
+    warnings.forEach(x => info.push({ n: `⚠️ ${x}`, q: 1, p: 0, type: 'work', tag: 'shield_info' }));
+    addAuto(m.concat(w).concat(info), 'shield');
+    currentShieldExtras = [];
+    closeModal('configModal');
+    showToast('✅ Щит сгенерирован V16');
+}
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: getAssignV16
+ * ========================================================= */
+function getAssignV16(it){
+    if(window.epV15GetAssignments) return window.epV15GetAssignments(it);
+    var out=[]; function add(v){v=String(v||'').trim(); if(v && !/позиция щита|общая \/ вводная|назначение не указано/i.test(v) && out.indexOf(v)<0) out.push(v);}
+    if(it){ if(Array.isArray(it.epAssignments)) it.epAssignments.forEach(add); if(Array.isArray(it.epMergedDetails)) it.epMergedDetails.forEach(add); add(it.epAssignment); if(it.dbMeta) add(it.dbMeta.assignment); }
+    return out;
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: normalizeV16
+ * ========================================================= */
+function normalizeV16(){ if(window.epV15NormalizeCurrentEstimate) window.epV15NormalizeCurrentEstimate(); }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: showDetailsV16
  * ========================================================= */
 function showDetailsV16(customTitle){
     normalizeV16();
@@ -2309,37 +4603,100 @@ function showDetailsV16(customTitle){
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: lineConfig
+ * ESTIMATE VIEWS FUNCTION: addBadge
  * ========================================================= */
-function lineConfig(){
-    var out=[]; function e(id){ return $(id); } function ch(id){ var x=e(id); return !!(x&&x.checked); }
-    function add(n,nom,g){ out.push({name:n,nominal:nom,group:g}); }
-    function room(label,count,wet){ count=Number(count)||0; for(var i=1;i<=count;i++){ var p=count>1?label+' '+i:label; add(p+' розетки','C16',wet?'wet':'power'); add(p+' свет','C10','light'); } }
-    try{ room('Кухня',window.cfg&&cfg.kits,false); room('Ванная',window.cfg&&cfg.baths,true); room('Туалет',window.cfg&&cfg.toilets,true); room('Комната',window.cfg&&cfg.rms,false); room('Балкон',window.cfg&&cfg.bals,false); }catch(e){}
-    if(ch('c-apron')) add('Фартук кухни','C16','power'); if(ch('c-dish')) add('Посудомойка','C10','power'); if(ch('c-washer')) add('Стиралка/сушилка','C10','wet'); if(ch('c-towel')) add('Полотенцесушитель','C10','wet');
-    var acs=(window.cfg&&Number(cfg.acs))||0, fls=(window.cfg&&Number(cfg.fls))||0; for(var a=1;a<=acs;a++) add('Кондиционер '+a,'C10','climate'); for(var f=1;f<=fls;f++) add('Тёплый пол '+f,'C10','climate');
-    if(ch('c-fridge')) add('Холодильник, неотключаемая группа','C10','alwaysOn'); if(ch('c-neptun')) add('Нептун, неотключаемая группа','C10','alwaysOn'); if(ch('c-router')) add('Роутер, неотключаемая группа','C6','alwaysOn');
-    var hp=e('c-hob-power')?e('c-hob-power').value:'none'; if(hp==='6') add('Плита до 6 кВт','C25','heavy'); if(hp==='10') add('Плита до 10 кВт','C32','heavy');
-    var bp=e('c-boiler-power')?e('c-boiler-power').value:'none'; if(bp==='6') add('Бойлер до 6 кВт','C25','wet'); if(bp==='10') add('Бойлер до 10 кВт','C32','wet');
-    return out;
+function addBadge(){
+    if($('ep-v17-badge')) return;
+    var d=document.createElement('div'); d.id='ep-v17-badge';
+    d.style.cssText='position:fixed;left:8px;bottom:8px;z-index:2147483647;background:#111827;color:#fff;border:2px solid #22c55e;border-radius:999px;padding:6px 10px;font:900 11px system-ui;box-shadow:0 8px 24px rgba(0,0,0,.35);opacity:.92;';
+    d.textContent='✅ V17 активна';
+    document.body.appendChild(d);
   }
   
 
-/* =========================================================
- * ESTIMATE VIEW FUNCTION: rcdPrice
- * ========================================================= */
-function rcdPrice(leak,brand,kind){ var hit=dbFindRcd(leak,brand,kind); if(hit) return money(hit.p); return leak===10?3600:1195; }
-  
 
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: makeItem
+ * ESTIMATE VIEWS FUNCTION: assignmentsOf
+ * ========================================================= */
+function assignmentsOf(it){
+    var out=[]; function add(v){ v=clean(v); if(v && !/^(позиция щита|общая|общая \/ вводная|назначение не указано)/i.test(v) && out.indexOf(v)<0) out.push(v); }
+    if(it){ if(Array.isArray(it.epAssignments)) it.epAssignments.forEach(add); if(Array.isArray(it.epMergedDetails)) it.epMergedDetails.forEach(add); add(it.epAssignment); if(it.dbMeta) add(it.dbMeta.assignment); }
+    if(out.length) return out;
+    var n=txt(it&&it.n), raw=txt(it&&it.epRawLabel), k=txt(it&&it.dbMeta&&it.dbMeta.kind), q=Math.max(1,Number(it&&it.q)||1), lines=lineConfig();
+    if(/вводн|input_breaker/i.test(n+' '+raw+' '+k)) return ['Вводной аппарат щита'];
+    if(/10\s*мА/i.test(n+' '+raw) && /узо|диф/i.test(n+' '+raw)) return ['Влажные зоны / защита 10 мА: '+lines.filter(function(x){return x.group==='wet';}).map(function(x){return x.name;}).join(', ')].filter(function(x){return !/:\s*$/.test(x);});
+    if(/30\s*мА/i.test(n+' '+raw) && /узо|диф/i.test(n+' '+raw)) return ['Группа защиты 30 мА: силовые/освещение/климат/неотключаемые линии'];
+    var nom=nominalOf(it); if(nom){ var list=lines.filter(function(x){return x.nominal===nom;}).slice(0,q).map(function(x){return x.name;}); if(list.length) return list; }
+    return [];
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: patchDbBulk
+ * ========================================================= */
+function patchDbBulk(){
+    var modal=$('settModal'); if(!modal || $('ep-v17-bulk-box')) return;
+    var host=$('editor-mat-list') || $('editor-work-list'); if(!host) return;
+    var box=document.createElement('div'); box.id='ep-v17-bulk-box'; box.style.cssText='margin:12px 0;padding:12px;border:2px dashed #8b5cf6;border-radius:16px;background:#faf5ff;';
+    box.innerHTML='<b style="color:#5b21b6;display:block;margin-bottom:8px;">Массовое управление V17</b><div style="font-size:12px;color:#64748b;font-weight:800;margin-bottom:8px;">Выделение и перенос работают по галочкам в текущей открытой базе. Если галочек нет — значит открыт старый список, нажми Обновить / перезагрузить.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><input id="ep-v17-move-cat" placeholder="Категория"><input id="ep-v17-move-sub" placeholder="Подкатегория"></div><button onclick="epV17BulkMove()" style="margin-top:8px;background:#8b5cf6;color:white;">📦 Переместить выбранные</button><button onclick="epV17BulkDelete()" style="margin-top:8px;background:#ef4444;color:white;">🗑 Удалить выбранные</button>';
+    host.parentNode.insertBefore(box,host);
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: setLS
+ * ========================================================= */
+function setLS(k,v){ try{ if(typeof safeSet==='function') safeSet(k,JSON.stringify(v||[])); else localStorage.setItem(k,JSON.stringify(v||[])); }catch(e){ try{ localStorage.setItem(k,JSON.stringify(v||[])); }catch(_e){} } }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: ensureBadge
+ * ========================================================= */
+function ensureBadge(){
+    var b=$('ep-v18-status-badge');
+    if(!b){
+      b=document.createElement('div'); b.id='ep-v18-status-badge';
+      b.style.cssText='position:fixed;left:10px;bottom:12px;z-index:2147483647;border-radius:999px;padding:8px 13px;color:#fff;font-size:12px;font-weight:1000;box-shadow:0 10px 30px rgba(0,0,0,.25);border:2px solid rgba(255,255,255,.55);letter-spacing:.2px;';
+      document.body.appendChild(b);
+    }
+    return b;
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: makeItem
  * ========================================================= */
 function makeItem(n,q,p,type,meta,assign){ var it=Object.assign({n:n,q:Number(q)||1,p:money(p),u:(meta&&meta.unit)||'шт',type:type||'mat',tag:'shield'},meta||{}); if(assign){ it.epAssignment=assign; it.epAssignments=[assign]; it.epMergedDetails=[assign]; if(!it.dbMeta) it.dbMeta={}; it.dbMeta.assignment=assign; } return it; }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: renderMainDirect
+ * ESTIMATE VIEWS FUNCTION: mergeAssignments
+ * ========================================================= */
+function mergeAssignments(rec,it){ var arr=rec.epAssignments||[]; function add(v){ v=clean(v); if(v && arr.indexOf(v)<0) arr.push(v); } if(Array.isArray(it.epAssignments)) it.epAssignments.forEach(add); if(Array.isArray(it.epMergedDetails)) it.epMergedDetails.forEach(add); add(it.epAssignment); if(it.dbMeta) add(it.dbMeta.assignment); rec.epAssignments=arr; rec.epMergedDetails=arr.slice(); rec.epAssignment=arr[0]||rec.epAssignment||''; if(!rec.dbMeta) rec.dbMeta={}; rec.dbMeta.assignment=rec.epAssignment; }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: directAddShield
+ * ========================================================= */
+function directAddShield(items){
+    var map={},out=[];
+    (items||[]).forEach(function(src){ if(!src || !src.n) return; var it=clone(src); it.tag='shield'; var key=[it.tag,it.type||'',it.n||'',Number(it.p)||0,it.u||'шт'].join('|'); var rec=map[key]; if(!rec){ rec=Object.assign({},it,{q:0,epAssignments:[],epMergedDetails:[]}); map[key]=rec; out.push(rec); } rec.q += Number(it.q)||0; mergeAssignments(rec,it); });
+    try{ currentEstimate=(Array.isArray(currentEstimate)?currentEstimate:[]).filter(function(it){ return it.tag!=='shield' && it.tag!=='shield_info'; }).concat(out); window.currentEstimate=currentEstimate; }catch(e){ window.currentEstimate=out; }
+    try{ localStorage.setItem('est_v31',JSON.stringify(currentEstimate)); }catch(e){}
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: renderMainDirect
  * ========================================================= */
 function renderMainDirect(){
     var tb=document.querySelector('#mainTable tbody'); if(!tb) return;
@@ -2351,41 +4708,42 @@ function renderMainDirect(){
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: groupLines
+ * ESTIMATE VIEWS FUNCTION: assigns
  * ========================================================= */
-function groupLines(lines){
-    var m={};
-    lines.forEach(function(l){ var key=curveNom(l.nominal,l.curve); if(!m[key]) m[key]={nominal:key, lines:[], groups:{}}; m[key].lines.push(l.name); m[key].groups[l.group]=true; });
-    return Object.keys(m).map(function(k){ return m[k]; });
+function assigns(it){ var out=[]; function add(v){ v=clean(v); if(v && !/позиция щита|назначение не указано/i.test(v) && out.indexOf(v)<0) out.push(v); } if(it){ if(Array.isArray(it.epAssignments)) it.epAssignments.forEach(add); if(Array.isArray(it.epMergedDetails)) it.epMergedDetails.forEach(add); add(it.epAssignment); if(it.dbMeta) add(it.dbMeta.assignment); } return out; }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: buildBulkPanel
+ * ========================================================= */
+function buildBulkPanel(){
+    var arr=getArr('mat').concat(getArr('work'));
+    var cats=arr.map(function(x){return x.c||'Разное';}); var subs=arr.map(function(x){return groupOf(x)||'Без группы';});
+    return '<div id="ep-v18-bulk-box" style="margin:12px 0;padding:12px;border:2px dashed #16a34a;border-radius:16px;background:#f0fdf4;">'+
+      '<b style="color:#166534;display:block;margin-bottom:7px;">Массовое управление V18</b>'+ 
+      '<div style="font-size:12px;color:#64748b;font-weight:800;margin-bottom:8px;">Ставь галочки слева от позиций. Перемещение идёт в выбранную существующую категорию/подкатегорию активной базы.</div>'+ 
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;"><select id="ep-v18-move-cat">'+optionsHtml(cats,'Категория')+'</select><select id="ep-v18-move-sub">'+optionsHtml(subs,'Подкатегория')+'</select></div>'+ 
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><button class="btn-info" style="margin:0;padding:10px;" onclick="epV18SelectVisible(true)">✅ Выделить видимые</button><button class="btn-vendor" style="margin:0;padding:10px;" onclick="epV18SelectVisible(false)">⬜ Снять галочки</button><button class="btn-success" style="margin:0;padding:10px;" onclick="epV18MoveSelected()">📦 Переместить выбранные</button><button class="btn-danger" style="margin:0;padding:10px;" onclick="epV18DeleteSelected()">🗑 Удалить выбранные</button></div>'+ 
+    '</div>';
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: buildLines
+ * ESTIMATE VIEWS FUNCTION: injectChecks
  * ========================================================= */
-function buildLines(curve){
-    var lines=[];
-    function add(name,nom,group,opts){ opts=opts||{}; lines.push({name:name,nominal:nom,curve:curve,group:group,wet:group==='wet'||!!opts.wet,nonSwitchable:!!opts.nonSwitchable}); }
-    function room(label,count,wet){ count=Number(count)||0; for(var i=1;i<=count;i++){ var n=count>1?label+' '+i:label; add(n+' розетки','C16',wet?'wet':'power',{wet:wet}); add(n+' свет','C10','light'); } }
-    room('Кухня',cfgN('kits'),false); room('Ванная',cfgN('baths'),true); room('Туалет',cfgN('toilets'),true); room('Комната',cfgN('rms'),false); room('Балкон',cfgN('bals'),false);
-    if(chk('c-apron')) add('Фартук кухни','C16','power');
-    if(chk('c-dish')) add('Посудомойка','C10','power');
-    if(chk('c-washer')) add('Стиралка/сушилка','C10','wet',{wet:true});
-    if(chk('c-towel')) add('Полотенцесушитель','C10','wet',{wet:true});
-    for(var a=1;a<=cfgN('acs');a++) add('Кондиционер '+a,'C10','climate');
-    for(var f=1;f<=cfgN('fls');f++) add('Тёплый пол '+f,'C10','climate');
-    if(chk('c-fridge')) add('Холодильник, неотключаемая группа','C10','alwaysOn',{nonSwitchable:true});
-    if(chk('c-neptun')) add('Нептун, неотключаемая группа','C10','alwaysOn',{nonSwitchable:true});
-    if(chk('c-router')) add('Роутер, неотключаемая группа','C6','alwaysOn',{nonSwitchable:true});
-    var hp=val('c-hob-power','none'); if(hp==='6') add('Плита до 6 кВт','C25',chk('cfg-heavy-separate')?'heavy':'power'); if(hp==='10') add('Плита до 10 кВт','C32',chk('cfg-heavy-separate')?'heavy':'power');
-    var bp=val('c-boiler-power','none'); if(bp==='6') add('Бойлер до 6 кВт','C25','wet',{wet:true}); if(bp==='10') add('Бойлер до 10 кВт','C32','wet',{wet:true});
-    return lines;
+function injectChecks(){
+    ['editor-mat-list','editor-work-list'].forEach(function(id){ var box=$(id); if(!box) return; var type=id.indexOf('work')>=0?'work':'mat'; Array.prototype.forEach.call(box.querySelectorAll('.emp-row,.mat-item'),function(row,idx){ if(row.querySelector('.ep-v18-check')) return; var price=row.querySelector('input[type="number"][data-id]'); var itemBtn=row.querySelector('[data-item]'); var did=price?price.getAttribute('data-id'):''; var dtype=price?price.getAttribute('data-type'):type; if(!did && itemBtn){ try{ var raw=decodeURIComponent(escape(atob(itemBtn.getAttribute('data-item')))); var obj=JSON.parse(raw); did=obj.id||''; dtype=itemBtn.getAttribute('data-type')||type; }catch(e){} } if(!did){ did='v18row_'+type+'_'+idx+'_'+clean(row.textContent).slice(0,40); }
+      var ch=document.createElement('input'); ch.type='checkbox'; ch.className='ep-v18-check'; ch.dataset.type=dtype||type; ch.dataset.id=did; ch.style.cssText='width:22px;height:22px;min-width:22px;accent-color:#16a34a;margin:7px 10px 0 0;'; row.insertBefore(ch,row.firstChild); }); });
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: addShieldToEstimate
+ * ESTIMATE VIEWS FUNCTION: addShieldToEstimate
  * ========================================================= */
 function addShieldToEstimate(items){
     // Use original addAuto if possible, because it also syncs totals and storage. Items are already aggregated by V19.
@@ -2394,8 +4752,23 @@ function addShieldToEstimate(items){
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: item
+ * ESTIMATE VIEWS FUNCTION: getAssigns
+ * ========================================================= */
+function getAssigns(it){ var out=[]; function add(v){ v=String(v||'').trim(); if(v && !/позиция щита|назначение не указано/i.test(v) && out.indexOf(v)<0) out.push(v); } if(!it) return out; if(Array.isArray(it.epAssignments)) it.epAssignments.forEach(add); if(Array.isArray(it.epMergedDetails)) it.epMergedDetails.forEach(add); add(it.epAssignment); if(it.dbMeta) add(it.dbMeta.assignment); return out; }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: patchButtons
+ * ========================================================= */
+function patchButtons(){ try{ Array.prototype.forEach.call(document.querySelectorAll('button'),function(b){ var t=b.textContent||''; if(t.indexOf('Сгенерировать щит')>=0) b.onclick=window.epV19GenerateShield; if(t.indexOf('Детализация')>=0) b.onclick=window.epV19ShowDetails; }); }catch(e){} }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: item
  * ========================================================= */
 function item(n,q,p,type,meta,assigns){
     var a=[]; if(Array.isArray(assigns)) a=assigns.map(clean).filter(Boolean); else if(assigns) a=[clean(assigns)].filter(Boolean);
@@ -2405,8 +4778,76 @@ function item(n,q,p,type,meta,assigns){
   }
   
 
+
 /* =========================================================
- * ESTIMATE VIEW FUNCTION: rowId
+ * ESTIMATE VIEWS FUNCTION: addUniqueAssign
+ * ========================================================= */
+function addUniqueAssign(rec,arr){
+    rec.epAssignments=rec.epAssignments||[]; rec.epMergedDetails=rec.epMergedDetails||[];
+    (arr||[]).forEach(function(v){ v=clean(v); if(v && !/позиция щита|назначение не указано/i.test(v) && rec.epAssignments.indexOf(v)<0){ rec.epAssignments.push(v); rec.epMergedDetails.push(v); } });
+    rec.epAssignment=rec.epAssignments[0]||rec.epAssignment||''; rec.dbMeta=Object.assign({},rec.dbMeta||{}, {assignment:rec.epAssignment});
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: directAdd
+ * ========================================================= */
+function directAdd(items){
+    var map={}, out=[];
+    (items||[]).forEach(function(src){ if(!src||!src.n) return; var it=Object.assign({},src,{tag:src.tag||'shield'}); var k=[it.tag,it.type,it.n,it.p,it.u].join('|'); var rec=map[k]; if(!rec){ rec=Object.assign({},it,{q:0,epAssignments:[],epMergedDetails:[]}); map[k]=rec; out.push(rec); } rec.q += Number(it.q)||1; addUniqueAssign(rec,[].concat(it.epAssignments||[],it.epMergedDetails||[],it.epAssignment||[])); });
+    try{ currentEstimate=(Array.isArray(currentEstimate)?currentEstimate:[]).filter(function(x){ return x && x.tag!=='shield' && x.tag!=='shield_info'; }).concat(out); window.currentEstimate=currentEstimate; }catch(e){ window.currentEstimate=(window.currentEstimate||[]).filter(function(x){ return x && x.tag!=='shield' && x.tag!=='shield_info'; }).concat(out); }
+    try{ if(typeof renderMainTable==='function') renderMainTable(); else if(typeof renderMainDirect==='function') renderMainDirect(); }catch(e){}
+    try{ if(typeof syncDraft==='function') syncDraft(); }catch(e){}
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: setArrLS
+ * ========================================================= */
+function setArrLS(k,a){ try{ if(typeof safeSet==='function') safeSet(k, JSON.stringify(a||[])); else localStorage.setItem(k, JSON.stringify(a||[])); }catch(e){ try{ localStorage.setItem(k, JSON.stringify(a||[])); }catch(_e){} } }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: setStatus
+ * ========================================================= */
+function setStatus(state,msg){
+    try{ if(typeof window.epV18SetStatus==='function'){ window.epV18SetStatus(state,msg); return; } }catch(e){}
+    var b=$('ep-v18-status-badge')||document.createElement('div');
+    b.id='ep-v18-status-badge';
+    b.style.cssText='position:fixed;left:10px;bottom:12px;z-index:2147483647;border-radius:999px;padding:8px 13px;color:#fff;font-size:12px;font-weight:1000;box-shadow:0 10px 30px rgba(0,0,0,.25);border:2px solid rgba(255,255,255,.55);letter-spacing:.2px;background:'+(state==='upload'?'#dc2626':state==='download'?'#2563eb':state==='error'?'#991b1b':'#16a34a')+';';
+    b.textContent=(state==='upload'?'🔴 ':state==='download'?'🔵 ':state==='error'?'⚠️ ':'✅ ')+(msg||'V21 активна');
+    if(!b.parentNode) document.body.appendChild(b);
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: panelHtml
+ * ========================================================= */
+function panelHtml(){
+    return '<div id="ep-v21-bulk-box" style="margin:12px 0;padding:12px;border:2px dashed #16a34a;border-radius:16px;background:#f0fdf4;">'+
+      '<b style="color:#166534;display:block;margin-bottom:7px;">Массовое управление V21</b>'+ 
+      '<div style="font-size:12px;color:#64748b;font-weight:800;margin-bottom:8px;">Галочки ставятся слева от позиций. Категория/подкатегория выбираются из существующих и больше не закрываются сами.</div>'+ 
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">'+
+        '<select id="ep-v21-move-cat" onchange="epV21UpdateSubs()"><option value="">Категория</option></select>'+ 
+        '<select id="ep-v21-move-sub"><option value="">Подкатегория</option></select>'+ 
+      '</div>'+ 
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'+
+        '<button class="btn-info" style="margin:0;padding:10px;" onclick="epV21SelectVisible(true)">✅ Выделить видимые</button>'+ 
+        '<button class="btn-vendor" style="margin:0;padding:10px;" onclick="epV21SelectVisible(false)">⬜ Снять галочки</button>'+ 
+        '<button class="btn-success" style="margin:0;padding:10px;" onclick="epV21MoveSelected()">📦 Переместить выбранные</button>'+ 
+        '<button class="btn-danger" style="margin:0;padding:10px;" onclick="epV21DeleteSelected()">🗑 Удалить выбранные</button>'+ 
+      '</div>'+ 
+    '</div>';
+  }
+  
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: rowId
  * ========================================================= */
 function rowId(row,type,idx){
     var price=row.querySelector('input[type="number"][data-id]'); if(price && price.getAttribute('data-id')) return {id:price.getAttribute('data-id'), type:price.getAttribute('data-type')||type};
@@ -2415,3 +4856,23 @@ function rowId(row,type,idx){
     return {id:'v21row_'+type+'_'+idx+'_'+clean(row.textContent).slice(0,40), type:type};
   }
   
+
+
+/* =========================================================
+ * ESTIMATE VIEWS FUNCTION: ensureChecks
+ * ========================================================= */
+function ensureChecks(){
+    ['editor-mat-list','editor-work-list'].forEach(function(id){
+      var box=$(id); if(!box) return; var type=id.indexOf('work')>=0?'work':'mat';
+      Array.prototype.forEach.call(box.querySelectorAll('.emp-row,.mat-item'),function(row,idx){
+        var old=row.querySelector('.ep-v18-check,.ep-v21-check');
+        if(old){ old.classList.add('ep-v21-check'); return; }
+        var info=rowId(row,type,idx);
+        var ch=document.createElement('input'); ch.type='checkbox'; ch.className='ep-v21-check'; ch.dataset.type=info.type||type; ch.dataset.id=info.id;
+        ch.style.cssText='width:22px;height:22px;min-width:22px;accent-color:#16a34a;margin:7px 10px 0 0;';
+        row.insertBefore(ch,row.firstChild);
+      });
+    });
+  }
+  
+
