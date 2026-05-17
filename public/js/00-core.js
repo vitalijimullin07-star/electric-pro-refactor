@@ -88,7 +88,7 @@ const FULL_WORK_INIT=[{"id":"w44","c":"Алмазная резка","g":"Штр�
 // === FIREBASE INIT ===
 try {
     firebase.initializeApp({
-        apiKey: "AIzaSyDf_83fOauQddXE0luOJsU0toK1BaJ7TY8",
+        apiKey: "AIzaSyDf_83fOauQddXE0lu0Jsu0toK1BaJ7TY8",
         authDomain: "electric-pro-test.firebaseapp.com",
         projectId: "electric-pro-test",
         storageBucket: "electric-pro-test.firebasestorage.app",
