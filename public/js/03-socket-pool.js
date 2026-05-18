@@ -669,14 +669,35 @@ function switchDbTab(tab) {
 /* =========================================================
  * SOCKET POOL FUNCTION: renderDbEditors
  * ========================================================= */
-
 function renderDbEditors() {
-  if (window.EP_DB_LEGACY_PURGE_V90 && typeof window.EP_DB_LEGACY_PURGE_V90.openNewDatabase === "function") {
-    return window.EP_DB_LEGACY_PURGE_V90.openNewDatabase();
-  }
-  location.href = "database-v90.html?v=v90-no-legacy-ui";
-}
+    let catsM = [...new Set(matDB.map(m=>m.c || 'Разное'))];
+    let catsW = [...new Set(workDB.map(w=>w.c || 'Разное'))];
+    document.getElementById('db-cats').innerHTML = [...new Set([...catsM, ...catsW])].map(c=>`<option value="${c}">`).join('');
 
+    let htmlMat = '';
+    let mGroups = {}; matDB.forEach(m => { mGroups[m.c||'Разное'] = mGroups[m.c||'Разное'] || []; mGroups[m.c||'Разное'].push(m); });
+    Object.keys(mGroups).forEach((c, idx) => {
+        let sid = 'db_m_'+idx;
+        htmlMat += `<div class="cat-header" onclick="toggleCat('${sid}')">${c}</div><div class="cat-body" id="${sid}">`;
+        mGroups[c].forEach(m => {
+            htmlMat += `<div class="emp-row"><div><b>${m.n}</b><br><span style="color:var(--gray);font-size:10px;">${m.p} ₽ / ${m.u}</span></div> <input type="number" value="${m.p}" onchange="requestPriceChange('mat', '${m.id}', this.value)" style="width:60px;margin:0;padding:4px;text-align:center;"></div>`;
+        });
+        htmlMat += `</div>`;
+    });
+    document.getElementById('editor-mat-list').innerHTML = htmlMat;
+
+    let htmlWork = '';
+    let wGroups = {}; workDB.forEach(w => { wGroups[w.c||'Разное'] = wGroups[w.c||'Разное'] || []; wGroups[w.c||'Разное'].push(w); });
+    Object.keys(wGroups).forEach((c, idx) => {
+        let sid = 'db_w_'+idx;
+        htmlWork += `<div class="cat-header" style="color:var(--orange); border-color:rgba(245,158,11,0.2); background:rgba(245,158,11,0.08);" onclick="toggleCat('${sid}')">${c}</div><div class="cat-body" id="${sid}">`;
+        wGroups[c].forEach(w => {
+            htmlWork += `<div class="emp-row"><div><b>${w.n}</b><br><span style="color:var(--gray);font-size:10px;">${w.p} ₽ / ${w.u}</span></div> <input type="number" value="${w.p}" onchange="requestPriceChange('work', '${w.id}', this.value)" style="width:60px;margin:0;padding:4px;text-align:center;"></div>`;
+        });
+        htmlWork += `</div>`;
+    });
+    document.getElementById('editor-work-list').innerHTML = htmlWork;
+}
 
 
 

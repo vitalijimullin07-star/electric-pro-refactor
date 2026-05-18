@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>Electric PRO — Новая база V90</title>
+  <title>Electric PRO — Новая база V91</title>
   <style>
     *{box-sizing:border-box}
     body{margin:0;font-family:Arial,sans-serif;background:#f3f4f6;color:#111827}
@@ -25,7 +25,7 @@
 <body>
   <div class="top">
     <div>
-      <div class="title">Новая база V90</div>
+      <div class="title">Новая база V91</div>
       <div class="sub">чистое ядро · старая база отключена</div>
     </div>
     <button class="back" id="backBtn">Назад</button>
@@ -33,28 +33,28 @@
 
   <div class="wrap">
     <div class="card">
-      <div class="pill">База очищена. Теперь строим новую с нуля.</div>
+      <div class="pill">Старая база отключена. Новая база пустая.</div>
       <div class="grid">
         <button class="green" id="myBtn">Моя база</button>
         <button class="blue" id="serverBtn">База сервера</button>
       </div>
-      <p>Следующий шаг — V91: новая Моя база как файловый менеджер.</p>
+      <p>Следующий шаг — создать новую «Мою базу» как файловый менеджер, потом новую «Базу сервера».</p>
     </div>
 
     <div class="card">
       <b>Текущее состояние:</b>
       <pre id="stateOut"></pre>
-      <button class="red" id="resetBtn">Повторно очистить ядро</button>
+      <button class="red" id="resetBtn">Очистить новое ядро</button>
     </div>
   </div>
 
 <script>
 (function(){
-  const STATE_KEY = "EP_DB_STATE_V90";
+  const STATE_KEY = "EP_DB_STATE_V91";
 
   function emptyState(){
     return {
-      version: "V90_EMPTY_CORE",
+      version: "V91_CLEAN_DATABASE_CORE",
       activeScope: "my",
       role: "master",
       server: { materials: [], works: [] },
@@ -65,14 +65,15 @@
   }
 
   function readState(){
-    try{
+    try {
       return JSON.parse(localStorage.getItem(STATE_KEY)) || emptyState();
-    }catch(e){
+    } catch(e) {
       return emptyState();
     }
   }
 
   function saveState(state){
+    state.updatedAt = Date.now();
     localStorage.setItem(STATE_KEY, JSON.stringify(state));
   }
 
@@ -81,35 +82,33 @@
   }
 
   document.getElementById("backBtn").onclick = () => {
-    if(history.length > 1) history.back();
-    else location.href = "index.html?v=v90-safe-clean";
+    if (history.length > 1) history.back();
+    else location.href = "index.html?v=v91-clean-db-start";
   };
 
   document.getElementById("myBtn").onclick = () => {
     const s = readState();
     s.activeScope = "my";
-    s.updatedAt = Date.now();
     saveState(s);
     render();
-    alert("Активна: Моя база. Редактор создадим следующим шагом V91.");
+    alert("Активна: Моя база. Редактор создадим следующим шагом.");
   };
 
   document.getElementById("serverBtn").onclick = () => {
     const s = readState();
     s.activeScope = "server";
-    s.updatedAt = Date.now();
     saveState(s);
     render();
-    alert("Активна: База сервера. Витрину создадим следующим шагом V92.");
+    alert("Активна: База сервера. Витрину создадим следующим шагом.");
   };
 
   document.getElementById("resetBtn").onclick = () => {
-    if(!confirm("Повторно очистить новое ядро V90?")) return;
+    if (!confirm("Очистить новое ядро V91?")) return;
     saveState(emptyState());
     render();
   };
 
-  if(!localStorage.getItem(STATE_KEY)){
+  if (!localStorage.getItem(STATE_KEY)) {
     saveState(emptyState());
   }
 
