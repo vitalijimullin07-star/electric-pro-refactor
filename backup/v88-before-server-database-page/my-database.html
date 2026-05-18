@@ -206,7 +206,6 @@
 
   const preset = {};
 
-  Object.keys(preset).forEach((k)=>delete preset[k]); // V88_EMPTY_PRESET
   let active = "materials";
   let db = { materials: [], works: [] };
 
@@ -672,9 +671,9 @@
 
   
   $("backBtn").onclick = () => {
-    sessionStorage.setItem("ep_return_to_database_v88", "1");
+    sessionStorage.setItem("ep_return_to_database_v87", "1");
     if (history.length > 1) history.back();
-    else location.href = "index.html?v=return-to-database-v88";
+    else location.href = "index.html?v=return-to-database";
   };
 
   load();
