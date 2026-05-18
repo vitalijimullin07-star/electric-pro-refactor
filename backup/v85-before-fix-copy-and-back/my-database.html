@@ -140,7 +140,7 @@
       <div class="title">📁 Моя база</div>
       <div class="sub">личный файловый менеджер мастера · V83</div>
     </div>
-    <button class="back" id="backBtn" type="button">← Назад</button>
+    <a class="back" href="index.html?v=back-from-my-db">← Назад</a>
   </div>
 
   <div class="wrap">
@@ -678,12 +678,6 @@
   $("fileInput").onchange = (e) => e.target.files[0] && importJsonFile(e.target.files[0]);
   $("clearDb").onclick = clearDb;
   $("aiBtn").onclick = () => alert("ИИ-импорт подключим следующим шагом: фото, Excel, текст, скриншоты.");
-
-  
-  $("backBtn").onclick = () => {
-    if (history.length > 1) history.back();
-    else location.href = "index.html";
-  };
 
   load();
   render();
