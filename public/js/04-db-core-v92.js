@@ -1,9 +1,9 @@
 (function(){
   "use strict";
 
-  const VERSION = "V91_CLEAN_DATABASE_CORE";
-  const STATE_KEY = "EP_DB_STATE_V91";
-  const RESET_FLAG = "EP_DB_OLD_KEYS_REMOVED_V91";
+  const VERSION = "V92_CLEAN_DB_CORE";
+  const STATE_KEY = "EP_DB_STATE_V92";
+  const RESET_FLAG = "EP_DB_OLD_KEYS_REMOVED_V92";
 
   function emptyState(){
     return {
@@ -29,55 +29,28 @@
   function saveState(state){
     state.updatedAt = Date.now();
     localStorage.setItem(STATE_KEY, JSON.stringify(state));
-    window.EP_DB_STATE_V91 = state;
+    window.EP_DB_STATE_V92 = state;
     return state;
   }
 
-  function removeOldDbKeysOnce(){
+  function clearOldDbKeysOnce(){
     try {
       if (localStorage.getItem(RESET_FLAG) === VERSION) return;
 
       const deleteWords = [
-        "ep_db",
-        "ep_my_db",
-        "ep_server_db",
-        "ep_server_material",
-        "ep_server_work",
-        "db_proposal",
-        "global_db",
-        "user_db",
-        "matdb",
-        "workdb",
-        "usermatdb",
-        "userworkdb",
-        "ep_my_mat",
-        "ep_my_work",
-        "ep_global_mat",
-        "ep_global_work",
-        "materials_v",
-        "works_v",
-        "database_v",
-        "db_material",
-        "db_work"
+        "ep_db", "ep_my_db", "ep_server_db",
+        "ep_server_material", "ep_server_work",
+        "db_proposal", "global_db", "user_db",
+        "matdb", "workdb", "usermatdb", "userworkdb",
+        "ep_my_mat", "ep_my_work", "ep_global_mat", "ep_global_work",
+        "materials_v", "works_v", "database_v", "db_material", "db_work"
       ];
 
       const excludeWords = [
-        "estimate",
-        "smeta",
-        "customer",
-        "client",
-        "settings",
-        "profile",
-        "auth",
-        "firebase",
-        "token",
-        "theme",
-        "color",
-        "visual",
-        "shield",
-        "pdf",
-        "document",
-        "accounting"
+        "estimate", "smeta", "customer", "client",
+        "settings", "profile", "auth", "firebase", "token",
+        "theme", "color", "visual", "shield", "pdf",
+        "document", "accounting"
       ];
 
       const keys = [];
@@ -98,18 +71,18 @@
 
       localStorage.setItem(STATE_KEY, JSON.stringify(emptyState()));
       localStorage.setItem(RESET_FLAG, VERSION);
-      localStorage.setItem("EP_DB_CLEAN_START_V91_AT", String(Date.now()));
+      localStorage.setItem("EP_DB_CLEAN_START_V92_AT", String(Date.now()));
 
-      console.log("V91 old DB keys removed:", removed);
+      console.log("V92 old DB keys removed:", removed);
     } catch(e) {
-      console.warn("V91 remove old DB keys error:", e);
+      console.warn("V92 clear old db keys error:", e);
     }
   }
 
   function applyGlobals(){
     const state = readState();
 
-    window.EP_DB_STATE_V91 = state;
+    window.EP_DB_STATE_V92 = state;
 
     window.matDB = [];
     window.workDB = [];
@@ -122,26 +95,21 @@
 
     window.EP_DB = {
       version: VERSION,
-
       getState: readState,
-
       saveState: function(next){
         const current = readState();
         const merged = Object.assign({}, current, next || {});
         return saveState(merged);
       },
-
       getScope: function(){
         return readState().activeScope || "my";
       },
-
       setScope: function(scope){
         const state = readState();
         state.activeScope = scope === "server" ? "server" : "my";
         saveState(state);
         return state.activeScope;
       },
-
       getActiveStore: function(type){
         const state = readState();
         const scope = state.activeScope === "server" ? "server" : "my";
@@ -152,11 +120,11 @@
   }
 
   function openDatabase(){
-    location.href = "database-v91.html?v=v91-clean-db-start";
+    location.href = "database-v92.html?v=v92-main-restored";
   }
 
   function boot(){
-    removeOldDbKeysOnce();
+    clearOldDbKeysOnce();
 
     if (!localStorage.getItem(STATE_KEY)) {
       saveState(emptyState());
@@ -164,19 +132,19 @@
 
     applyGlobals();
 
-    window.EP_DB_OPEN_V91 = openDatabase;
+    window.EP_DB_OPEN_V92 = openDatabase;
 
-    console.log("04-db-core-v91.js", VERSION, "loaded");
+    console.log("04-db-core-v92.js", VERSION, "loaded");
   }
 
-  window.EP_DB_CORE_V91 = {
+  window.EP_DB_CORE_V92 = {
     version: VERSION,
     emptyState,
     readState,
     saveState,
     openDatabase,
     applyGlobals,
-    removeOldDbKeysOnce
+    clearOldDbKeysOnce
   };
 
   if (document.readyState === "loading") {
