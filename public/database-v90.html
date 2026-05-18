@@ -26,7 +26,7 @@
   <div class="top">
     <div>
       <div class="title">Новая база V90</div>
-      <div class="sub">пустое ядро · всё старое удалено</div>
+      <div class="sub">чистое ядро · старая база отключена</div>
     </div>
     <button class="back" id="backBtn">Назад</button>
   </div>
@@ -38,13 +38,13 @@
         <button class="green" id="myBtn">Моя база</button>
         <button class="blue" id="serverBtn">База сервера</button>
       </div>
-      <p>Сейчас это только чистое ядро. Следующий шаг — V91: новая Моя база как файловый менеджер.</p>
+      <p>Следующий шаг — V91: новая Моя база как файловый менеджер.</p>
     </div>
 
     <div class="card">
       <b>Текущее состояние:</b>
       <pre id="stateOut"></pre>
-      <button class="red" id="resetBtn">Повторно очистить базу</button>
+      <button class="red" id="resetBtn">Повторно очистить ядро</button>
     </div>
   </div>
 
@@ -82,12 +82,13 @@
 
   document.getElementById("backBtn").onclick = () => {
     if(history.length > 1) history.back();
-    else location.href = "index.html?v=v90-back";
+    else location.href = "index.html?v=v90-safe-clean";
   };
 
   document.getElementById("myBtn").onclick = () => {
     const s = readState();
     s.activeScope = "my";
+    s.updatedAt = Date.now();
     saveState(s);
     render();
     alert("Активна: Моя база. Редактор создадим следующим шагом V91.");
@@ -96,13 +97,14 @@
   document.getElementById("serverBtn").onclick = () => {
     const s = readState();
     s.activeScope = "server";
+    s.updatedAt = Date.now();
     saveState(s);
     render();
     alert("Активна: База сервера. Витрину создадим следующим шагом V92.");
   };
 
   document.getElementById("resetBtn").onclick = () => {
-    if(!confirm("Повторно очистить новую базу V90?")) return;
+    if(!confirm("Повторно очистить новое ядро V90?")) return;
     saveState(emptyState());
     render();
   };

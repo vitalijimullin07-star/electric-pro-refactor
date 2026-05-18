@@ -1,85 +1,9 @@
-/*
- * Electric PRO Refactor
- * V90 Database Core Empty
- */
-
 (function(){
   "use strict";
 
-  const VERSION = "V90_DATABASE_CORE_EMPTY";
+  const VERSION = "V90_DATABASE_CORE_EMPTY_SAFE";
   const STATE_KEY = "EP_DB_STATE_V90";
-  const RESET_FLAG = "EP_DB_NUCLEAR_RESET_V90_DONE";
-
-  const exactKeys = new Set([
-    "matDB",
-    "workDB",
-    "userMatDB",
-    "userWorkDB",
-    "EP_MY_MAT",
-    "EP_MY_WORK",
-    "EP_GLOBAL_MAT",
-    "EP_GLOBAL_WORK",
-    "ep_db_my_materials_v67",
-    "ep_db_my_works_v67",
-    "ep_db_my_materials_v79",
-    "ep_db_my_works_v79",
-    "ep_my_db_materials_v83",
-    "ep_my_db_works_v83",
-    "ep_server_db_materials_v88",
-    "ep_server_db_works_v88",
-    "ep_server_materials_v88",
-    "ep_server_works_v88",
-    "ep_db_custom_categories_v72",
-    "ep_my_db_categories_v83",
-    "ep_db_proposals_v67",
-    "ep_db_proposals_v89",
-    "ep_active_db_scope_v60",
-    "ep_active_db_scope_v67",
-    "ep_db_scope"
-  ]);
-
-  const patterns = [
-    "ep_db",
-    "ep_my_db",
-    "ep_server_db",
-    "ep_server_material",
-    "ep_server_work",
-    "db_proposal",
-    "global_db",
-    "user_db",
-    "matdb",
-    "workdb",
-    "usermatdb",
-    "userworkdb",
-    "ep_my_mat",
-    "ep_my_work",
-    "ep_global_mat",
-    "ep_global_work",
-    "materials_v",
-    "works_v",
-    "database_v",
-    "db_material",
-    "db_work"
-  ];
-
-  const exclude = [
-    "estimate",
-    "smeta",
-    "customer",
-    "client",
-    "settings",
-    "profile",
-    "auth",
-    "firebase",
-    "token",
-    "theme",
-    "color",
-    "visual",
-    "shield",
-    "pdf",
-    "document",
-    "accounting"
-  ];
+  const RESET_FLAG = "EP_DB_NUCLEAR_RESET_V90_DONE_SAFE";
 
   function emptyState(){
     return {
@@ -89,19 +13,8 @@
       server: { materials: [], works: [] },
       my: { materials: [], works: [] },
       proposals: [],
-      resetAt: Date.now(),
       updatedAt: Date.now()
     };
-  }
-
-  function shouldDeleteKey(key){
-    const raw = String(key || "");
-    const k = raw.toLowerCase();
-
-    if(exactKeys.has(raw)) return true;
-    if(exclude.some(x => k.includes(x))) return false;
-
-    return patterns.some(x => k.includes(x));
   }
 
   function readState(){
@@ -119,35 +32,75 @@
     return state;
   }
 
-  function hardResetOnce(){
+  function clearOldDatabaseKeysOnce(){
     try{
       if(localStorage.getItem(RESET_FLAG) === VERSION) return;
+
+      const deleteWords = [
+        "ep_db",
+        "ep_my_db",
+        "ep_server_db",
+        "ep_server_material",
+        "ep_server_work",
+        "db_proposal",
+        "global_db",
+        "user_db",
+        "matdb",
+        "workdb",
+        "usermatdb",
+        "userworkdb",
+        "ep_my_mat",
+        "ep_my_work",
+        "ep_global_mat",
+        "ep_global_work",
+        "materials_v",
+        "works_v",
+        "database_v",
+        "db_material",
+        "db_work"
+      ];
+
+      const excludeWords = [
+        "estimate",
+        "smeta",
+        "customer",
+        "client",
+        "settings",
+        "profile",
+        "auth",
+        "firebase",
+        "token",
+        "theme",
+        "color",
+        "visual",
+        "shield",
+        "pdf",
+        "document",
+        "accounting"
+      ];
 
       const keys = [];
       for(let i = 0; i < localStorage.length; i++){
         keys.push(localStorage.key(i));
       }
 
-      let removed = 0;
-
-      keys.forEach(key => {
-        if(shouldDeleteKey(key)){
+      keys.forEach((key)=>{
+        const k = String(key || "").toLowerCase();
+        if(excludeWords.some((x)=>k.includes(x))) return;
+        if(deleteWords.some((x)=>k.includes(x))){
           localStorage.removeItem(key);
-          removed++;
         }
       });
 
       saveState(emptyState());
       localStorage.setItem(RESET_FLAG, VERSION);
       localStorage.setItem("EP_DB_FULL_RESET_V90_AT", String(Date.now()));
-
-      console.log("V90 database nuclear reset complete. Removed keys:", removed);
     }catch(e){
-      console.warn("V90 reset error:", e);
+      console.warn("V90 clear old database keys error:", e);
     }
   }
 
-  function applyEmptyGlobals(){
+  function applyGlobals(){
     const state = readState();
 
     window.EP_DB_STATE = state;
@@ -157,7 +110,6 @@
     window.workDB = [];
     window.userMatDB = [];
     window.userWorkDB = [];
-
     window.EP_MY_MAT = [];
     window.EP_MY_WORK = [];
     window.EP_GLOBAL_MAT = [];
@@ -165,9 +117,7 @@
 
     window.EP_DB = window.EP_DB || {};
 
-    window.EP_DB.getState = function(){
-      return readState();
-    };
+    window.EP_DB.getState = readState;
 
     window.EP_DB.saveState = function(next){
       const current = readState();
@@ -197,42 +147,28 @@
   }
 
   function openNewDatabase(){
-    location.href = "database-v90.html?v=v90-empty-core";
-  }
-
-  function routeOldDatabaseClicks(){
-    document.addEventListener("click", function(e){
-      const target = e.target && e.target.closest ? e.target.closest("button,a,div") : null;
-      if(!target) return;
-
-      const t = String(target.innerText || target.textContent || "")
-        .replace(/\s+/g, " ")
-        .trim()
-        .toLowerCase();
-
-      if(t === "база данных" || t.includes("открыть новую базу") || t.includes("база сервера") || t.includes("моя база")){
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        openNewDatabase();
-      }
-    }, true);
+    location.href = "database-v90.html?v=v90-safe-clean";
   }
 
   function boot(){
-    hardResetOnce();
-    applyEmptyGlobals();
-    routeOldDatabaseClicks();
+    clearOldDatabaseKeysOnce();
+
+    if(!localStorage.getItem(STATE_KEY)){
+      saveState(emptyState());
+    }
+
+    applyGlobals();
 
     console.log("04-database-core-v90.js", VERSION, "loaded");
   }
 
   window.EP_DB_V90 = {
     version: VERSION,
-    hardResetOnce,
-    applyEmptyGlobals,
+    getState: readState,
+    saveState,
     openNewDatabase,
-    getState: readState
+    applyGlobals,
+    clearOldDatabaseKeysOnce
   };
 
   if(document.readyState === "loading"){
