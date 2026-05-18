@@ -1,7 +1,7 @@
 /*
  * Electric PRO Refactor
- * Module: 12-documents.js
- * V39 SAFE: Documents.
+ * Module: 05-ai-functions.js
+ * V39 SAFE: AI Functions.
  *
  * Важно:
  * - модуль пересобран безопасно;
@@ -10,47 +10,31 @@
  * - 00-core.js временно остаётся стабильным runtime.
  */
 
-console.log("12-documents.js V39 SAFE loaded");
+console.log("05-ai-functions.js V39 SAFE loaded");
 
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: checkLocalPinUser
+ * AI FUNCTIONS FUNCTION: handleGoogleAuth
  * ========================================================= */
-function checkLocalPinUser() {
-    let pinUser = safeGet('authUser_v31_pin', null);
-    if (pinUser) { 
-        try { appUser = JSON.parse(pinUser); finishLoginSetup(); } catch(e){ document.getElementById('authModal').style.display='flex'; } 
-    } else { document.getElementById('authModal').style.display='flex'; }
+async function handleGoogleAuth() {
+    if(!auth) return alert("Ошибка: Firebase не загружен. Проверьте интернет-соединение.");
+    showLoader("Подключение к Google...", "🔄");
+    try { 
+        const provider = new firebase.auth.GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: 'select_account' });
+        await auth.signInWithPopup(provider); 
+    } catch(e) { 
+        hideLoader();
+        if(e.code !== 'auth/popup-closed-by-user') alert("Сбой Google Auth: " + e.message); 
+    }
 }
 
 
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: showLoader
- * ========================================================= */
-function showLoader(text, icon = '☁️') { document.getElementById('loader-icon').innerText = icon; document.getElementById('loader-text').innerText = text; document.getElementById('global-loader').classList.add('show'); }
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: hideLoader
- * ========================================================= */
-function hideLoader() { document.getElementById('global-loader').classList.remove('show'); }
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: showToast
- * ========================================================= */
-function showToast(msg) { let t = document.getElementById('toast'); t.innerText = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); }
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: loginWithPin
+ * AI FUNCTIONS FUNCTION: loginWithPin
  * ========================================================= */
 async function loginWithPin() {
     let phone = document.getElementById('auth-phone').value.trim();
@@ -84,7 +68,7 @@ async function loginWithPin() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: finishLoginSetup
+ * AI FUNCTIONS FUNCTION: finishLoginSetup
  * ========================================================= */
 async function finishLoginSetup() {
     document.getElementById('authModal').style.display = 'none';
@@ -135,50 +119,7 @@ async function finishLoginSetup() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: openModal
- * ========================================================= */
-function openModal(id) { 
-    if(id === 'custModal') loadCustHistoryOptions(); 
-    if(id === 'logicModal') renderLogicUI(); 
-    if(id === 'settModal') renderDbEditors(); 
-    if(id === 'configModal') populateShieldExtras();
-    if(id === 'buhModal') setTimeout(renderChart, 100);
-    document.getElementById(id).style.display='flex'; 
-}
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: closeModal
- * ========================================================= */
-function closeModal(id) { document.getElementById(id).style.display='none'; }
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: toggleMenu
- * ========================================================= */
-function toggleMenu() { document.getElementById('burger-menu').classList.toggle('open'); document.getElementById('burger-overlay').classList.toggle('open'); }
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: changeTheme
- * ========================================================= */
-function changeTheme(theme) { document.documentElement.setAttribute('data-theme', theme); safeSet('theme_v31', theme); }
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: updateMasterBadge
- * ========================================================= */
-function updateMasterBadge() { document.getElementById('master-badge').innerHTML = `${appUser?.name || "Мастер"}<br>Объект: ${cust.name || 'Не выбран'}`; }
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: updateCoeffs
+ * AI FUNCTIONS FUNCTION: updateCoeffs
  * ========================================================= */
 function updateCoeffs() {
     coeffs.mat = Number(document.getElementById('m-coeff').value);
@@ -191,7 +132,18 @@ function updateCoeffs() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: saveQRs
+ * AI FUNCTIONS FUNCTION: saveApiKey
+ * ========================================================= */
+async function saveApiKey(val) { 
+    GEMINI_API_KEY = val.trim(); safeSet('gemini_key_v31', GEMINI_API_KEY);
+    if(db && appUser && appUser.uid) { try { await db.collection('users').doc(appUser.uid).update({geminiKey: GEMINI_API_KEY}); }catch(e){} }
+    showToast("🔑 Ключ сохранен!"); 
+}
+
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: saveQRs
  * ========================================================= */
 function saveQRs() { 
     safeSet('qr_tg_v31', document.getElementById('qr-tg').value); 
@@ -205,25 +157,7 @@ function saveQRs() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: openSwapModal
- * ========================================================= */
-function openSwapModal(idx) {
-    swapTargetIdx = idx;
-    let current = currentEstimate[idx];
-    let sel = document.getElementById('swap-select');
-    let isMat = current.type === 'mat';
-    let dbToUse = isMat ? matDB : workDB;
-    
-    let opts = dbToUse.map(x => `<option value="${x.id}" ${x.n===current.n ? 'selected' : ''}>${x.n} (${x.p} ₽)</option>`).join('');
-    sel.innerHTML = opts;
-    openModal('swapModal');
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: applySwap
+ * AI FUNCTIONS FUNCTION: applySwap
  * ========================================================= */
 function applySwap() {
     if(swapTargetIdx < 0) return;
@@ -246,7 +180,7 @@ function applySwap() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: renderMainTable
+ * AI FUNCTIONS FUNCTION: renderMainTable
  * ========================================================= */
 function renderMainTable() {
     const tb = document.querySelector("#mainTable tbody"); tb.innerHTML = ""; let total = 0;
@@ -266,49 +200,22 @@ function renderMainTable() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: openMatCatalog
+ * AI FUNCTIONS FUNCTION: syncDraft
  * ========================================================= */
-function openMatCatalog() { 
-    let cats = {}; matDB.forEach(m => { let c = m.c || "ОБЩЕЕ"; if(!cats[c]) cats[c] = []; cats[c].push(m); }); 
-    let html = ""; let idx = 0;
-    for(let c in cats) { 
-        let sid = 'mcat_' + (idx++);
-        html += `<div class="cat-header" onclick="toggleCat('${sid}')">${c}</div><div class="cat-body" id="${sid}">`;
-        cats[c].forEach(m => { html += `<div class="mat-item"><div style="flex:1; font-size:12px; font-weight:600;">${m.n}<br><span style="color:var(--gray); font-size:11px; font-weight:normal;">${m.p} P / ${m.u}</span></div><button class="mat-add-btn" onclick="promptAdd('${m.id}', 'mat')">+ Добавить</button></div>`; });
-        html += `</div>`;
-    } document.getElementById('mat-cat-list').innerHTML = html; openModal('matCatModal'); 
-}
+async function syncDraft() { try { safeSet('est_v31', JSON.stringify(currentEstimate)); if(db && appUser && appUser.uid) await db.collection('drafts').doc(appUser.uid).set({ estimate: currentEstimate, cust: cust, timestamp: new Date().toISOString() }); } catch(e){} }
+
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: clearCurrentEstimate
+ * ========================================================= */
+async function clearCurrentEstimate() { let c = await window.customConfirm("Очистка", "Очистить смету?"); if(c){ currentEstimate=[]; renderMainTable(); } }
 
 
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: openWorkCatalog
- * ========================================================= */
-function openWorkCatalog() { 
-    let cats = {}; workDB.forEach(w => { let c = w.c || "ОБЩЕЕ"; if(!cats[c]) cats[c] = []; cats[c].push(w); });
-    let html = ""; let idx = 0;
-    for(let c in cats) { 
-        let sid = 'wcat_' + (idx++);
-        html += `<div class="cat-header" style="color:var(--orange); border-color:rgba(245,158,11,0.2); background:rgba(245,158,11,0.08);" onclick="toggleCat('${sid}')">${c}</div><div class="cat-body" id="${sid}">`;
-        cats[c].forEach(w => { html += `<div class="mat-item"><div style="flex:1; font-size:12px; font-weight:600;">${w.n}<br><span style="color:var(--gray); font-size:11px; font-weight:normal;">${w.p} P / ${w.u}</span></div><button class="mat-add-btn" style="background:var(--orange);" onclick="promptAdd('${w.id}', 'work')">+ Добавить</button></div>`; });
-        html += `</div>`;
-    } document.getElementById('work-cat-list').innerHTML = html; openModal('workModal'); 
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: toggleCat
- * ========================================================= */
-function toggleCat(id) { let el = document.getElementById(id); el.classList.toggle('active'); }
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: promptAdd
+ * AI FUNCTIONS FUNCTION: promptAdd
  * ========================================================= */
 function promptAdd(id, type) { 
     let dbArr = (type==='mat'?matDB:workDB); let item = dbArr.find(x => String(x.id) === String(id)); 
@@ -321,278 +228,62 @@ function promptAdd(id, type) {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: confirmQtyAdd
+ * AI FUNCTIONS FUNCTION: addAuto
  * ========================================================= */
-function confirmQtyAdd() { 
-    let q = Number(document.getElementById('qty-input').value); 
-    if(q > 0) { addAuto([{...pendingAdd.item, q: q, type: pendingAdd.type}], 'man_'+Date.now()); } 
-    closeModal('qtyPromptModal'); showToast("Добавлено!");
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: setPodr
- * ========================================================= */
-function setPodr(v, el) { st_podr = v; document.querySelectorAll('#podr-tiles .tile').forEach(t=>t.classList.remove('active')); el.classList.add('active'); }
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: setH
- * ========================================================= */
-function setH(v, el) { st_h = v; if(el){ document.querySelectorAll('#h-tiles .tile').forEach(t=>t.classList.remove('active')); el.classList.add('active'); } }
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: setP
- * ========================================================= */
-function setP(v) { st_p = v; document.querySelectorAll('#p-tiles .tile').forEach((t,i) => { if(i===v-1) t.classList.add('active'); else t.classList.remove('active'); }); }
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: upUI
- * ========================================================= */
-function upUI() { 
-    ['soc', 'sw', 'pass', 'cross', 'tv', 'tpol'].forEach(k => {
-        let el = document.getElementById('v-'+k);
-        if(el) el.innerText = window['st_'+k];
+function addAuto(items, tag) {
+    currentEstimate = currentEstimate.filter(it => it.tag !== tag);
+    const map = {};
+    const out = [];
+    (items || []).forEach(src => {
+        if (!src) return;
+        const it = Object.assign({}, src);
+        it.tag = tag;
+        const key = [it.tag || '', it.type || '', it.n || '', Number(it.p) || 0, it.u || 'шт'].join('|');
+        let rec = map[key];
+        if (!rec) {
+            rec = Object.assign({}, it, { q: 0 });
+            map[key] = rec;
+            out.push(rec);
+        }
+        rec.q += Number(it.q) || 0;
+        epV15MergeAssignments(rec, it);
     });
-    
-    st_p = st_soc + st_sw + st_pass + st_cross + st_tv + st_tpol;
-    let autoEl = document.getElementById('auto-posts');
-    if(autoEl) autoEl.innerText = st_p || 1; 
-    if(st_p === 0) st_p = 1; 
-    
-    let qEl = document.getElementById('v-q');
-    if(qEl) qEl.innerText = st_q; 
+    currentEstimate = currentEstimate.concat(out);
+    renderMainTable();
 }
 
 
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: addGrp
+ * AI FUNCTIONS FUNCTION: epV15DetectModel
  * ========================================================= */
-function addGrp() { 
-    let totalMechs = st_soc + st_sw + st_pass + st_cross + st_tv + st_tpol;
-    if(totalMechs === 0) return showToast("Сначала добавьте механизмы!");
-    
-    pool.push({ p:st_p, h:st_h, q:st_q, soc:st_soc, sw:st_sw, pass:st_pass, cross:st_cross, tv:st_tv, tpol:st_tpol, route: document.getElementById('g-routing').value, podr: st_podr }); 
-    rfPool(); 
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: rfPool
- * ========================================================= */
-function rfPool() { 
-    document.getElementById('pool-disp').innerHTML = pool.map((g,i) => `<div style="display:flex; justify-content:space-between; padding:8px; border-bottom:1px solid var(--border);"><b>${g.p}п на ${g.h}см (x${g.q}) [${g.podr}]</b> <button onclick="pool.splice(${i},1);rfPool();" style="width:auto; margin:0; background:none; color:red; font-size:16px;">✕</button></div>`).join(""); 
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: applyPoolToEstimate
- * ========================================================= */
-function applyPoolToEstimate() {
-    if(!pool.length) return showToast("❌ Пул пуст!");
-    let mode = document.getElementById('montage-mode').value;
-    let connMode = document.getElementById('conn-mode') ? document.getElementById('conn-mode').value : 'gml';
-    let wall = document.getElementById('g-wall').value;
-    let useKk = document.getElementById('pool-cable-channel').checked;
-    let useSurf = document.getElementById('pool-surface').checked;
-    let ceilH = Number(cust.ceil) || 270;
-
-    let res = { m_sh: 0, m_sh_50: 0, stdPodr: 0, deepPodr: 0, koposPodr: 0, mechs: { soc:0, sw:0, pass:0, cross:0, tv:0, tpol:0 }, frames: {1:0,2:0,3:0,4:0,5:0,6:0} };
-
-    let swJbs = 0; let passJbs = 0; let totalSocDrops = 0;
-
-    pool.forEach(g => {
-        let isSw = (g.sw > 0 || g.cross > 0);
-        let isPass = (g.pass > 0);
-        let isSoc = (g.soc > 0 || g.tv > 0);
-        
-        let drop = (isSw || isPass) ? (ceilH - g.h)/100 : (g.route === 'ceiling' ? (ceilH - g.h)/100 : g.h/100);
-
-        if(g.tpol > 0) { res.m_sh_50 += (g.h/100) * g.q; if(g.route === 'ceiling') res.m_sh += (drop - g.h/100) * g.q; } else { res.m_sh += drop * g.q; }
-        
-        // Логика распаек
-        if(mode === 'classic') {
-            if(isPass) passJbs += 1 * g.q;
-            else if(isSw) swJbs += 1 * g.q;
-            else if(isSoc && g.tpol === 0) totalSocDrops += 1 * g.q; 
-        } else {
-            if(isPass) passJbs += 1 * g.q;
-            else if(isSw) swJbs += 1 * g.q;
-            if(isSoc && !isPass && !isSw && g.tpol===0) totalSocDrops += 1 * g.q; 
-        }
-
-        let deepCount = 0;
-        let stdCount = 0;
-        
-        if (mode === 'gyn') {
-            deepCount = g.p * g.q; 
-        } else {
-            deepCount = (g.sw + g.pass + g.cross + g.tpol) * g.q; 
-            stdCount = Math.max(0, (g.p * g.q) - deepCount);
-        }
-        
-        if(g.podr === 'kopos') { res.koposPodr += g.p * g.q; } 
-        else if(g.podr === 'deep') { res.deepPodr += g.p * g.q; } 
-        else { res.deepPodr += deepCount; res.stdPodr += stdCount; } 
-        
-        res.mechs.soc += g.soc * g.q; res.mechs.sw += g.sw * g.q; res.mechs.pass += g.pass * g.q; res.mechs.cross += g.cross * g.q; res.mechs.tv += g.tv * g.q; res.mechs.tpol += g.tpol * g.q;
-        if(g.p >= 1 && g.p <= 6) res.frames[g.p] += g.q;
-    });
-
-    let socJbs = 0;
-    if(mode === 'classic') {
-        let socsPerBox = appLogic.socketsPerJb || 3;
-        socJbs = Math.ceil(totalSocDrops / socsPerBox);
-    } else {
-        socJbs = totalSocDrops;
-    }
-
-    let totalBoxes = swJbs + passJbs + socJbs;
-    
-    // Считаем коннекторы
-    let mConnSoc = appLogic.connPerSocJb || 3;
-    let mConnSw = appLogic.connPerSwJb || 3;
-    let mConnPass = appLogic.connPerPassJb || 4;
-    let totalConn = (socJbs * mConnSoc) + (swJbs * mConnSw) + (passJbs * mConnPass);
-
-    let m = [], w = [];
-    let prSoc = appLogic.priceSoc || 500; let prDrill = appLogic.priceDrill || 600; let prShtr = appLogic.priceShtroba || 550;
-
-    if(!useSurf) {
-        if(res.stdPodr > 0) m.push({ n: "Подрозетник стандарт (ГКЛ/Бетон)", q: res.stdPodr, p: 20, type: 'mat' });
-        if(res.deepPodr > 0) m.push({ n: "Подрозетник глубокий 68х64", q: res.deepPodr, p: 12, type: 'mat' });
-        if(res.koposPodr > 0) m.push({ n: "Подрозетник Короѕ 75мм", q: res.koposPodr, p: 95, type: 'mat' });
-    }
-    
-    if(mode === 'classic' && totalBoxes > 0) {
-        m.push({ n: "Коробка распределительная 100х100х40", q: totalBoxes, p: 120, type: 'mat' });
-    }
-    
-    if(totalConn > 0) {
-        if(connMode === 'gml') {
-            m.push({ n: "Гильза ГМЛ 4/6", q: totalConn, p: 15, type: 'mat' });
-            m.push({ n: "Термоусадка 12/4 (м)", q: Math.ceil(totalBoxes * 0.2), p: 80, type: 'mat' });
-        } else if(connMode === 'wago') {
-            m.push({ n: "Клемма WAGO", q: totalConn, p: 25, type: 'mat' });
-        } else {
-            m.push({ n: "Изолента / ТУТ (Пайка/СИЗ)", q: Math.ceil(totalBoxes * 0.2), p: 100, type: 'mat' });
-        }
-    }
-    
-    if(res.mechs.soc > 0) m.push({ n: "Розетка 220В (механизм)", q: res.mechs.soc, p: 250, type: 'mat' });
-    if((res.mechs.sw+res.mechs.pass+res.mechs.cross) > 0) m.push({ n: "Выключатель (механизм)", q: res.mechs.sw+res.mechs.pass+res.mechs.cross, p: 280, type: 'mat' });
-    if(res.mechs.tv > 0) m.push({ n: "Слаботочная розетка (механизм)", q: res.mechs.tv, p: 350, type: 'mat' });
-    for(let i=1; i<=6; i++) { if(res.frames[i] > 0) m.push({ n: `Рамка ${i} пост(а)`, q: res.frames[i], p: i*50, type: 'mat' }); }
-
-    if(totalBoxes > 0) {
-        if(mode === 'classic') {
-            let connPrice = connMode === 'gml' ? 800 : (connMode === 'solder' ? 900 : 600);
-            w.push({ n: `Сборка распред. коробки (${connMode === 'gml' ? 'ГМЛ' : (connMode === 'solder' ? 'Пайка' : 'WAGO')})`, q: totalBoxes, p: connPrice, type: 'work' });
-        } else {
-            let connPrice = connMode === 'gml' ? 600 : (connMode === 'solder' ? 700 : 450);
-            w.push({ n: `Коммутация в подрозетнике (${connMode === 'gml' ? 'ГМЛ' : (connMode === 'solder' ? 'Пайка' : 'WAGO')})`, q: totalBoxes, p: connPrice, type: 'work' });
-        }
-    }
-    
-    if(useKk) {
-        if(res.m_sh > 0) w.push({ n: `Монтаж кабель-канала`, q: Math.ceil(res.m_sh), p: 150, type: 'work' });
-        if(res.m_sh_50 > 0) w.push({ n: `Монтаж кабель-канала (широкий)`, q: Math.ceil(res.m_sh_50), p: 200, type: 'work' });
-    } else {
-        if(res.m_sh > 0) w.push({ n: `Штроба 25х30 (${wall})`, q: Math.ceil(res.m_sh), p: prShtr, type: 'work' });
-        if(res.m_sh_50 > 0) w.push({ n: `Штроба 50х50 (${wall})`, q: Math.ceil(res.m_sh_50), p: prShtr*1.8, type: 'work' });
-    }
-
-    if(useSurf) {
-        let sumMechs = res.mechs.soc + res.mechs.sw + res.mechs.pass + res.mechs.cross + res.mechs.tv + res.mechs.tpol;
-        if(sumMechs > 0) w.push({ n: `Установка накладного механизма`, q: sumMechs, p: prSoc, type: 'work' });
-    } else {
-        if(res.stdPodr > 0) w.push({ n: `Высверливание подрозетников (45мм)`, q: res.stdPodr, p: prDrill, type: 'work' });
-        if(res.deepPodr > 0) w.push({ n: `Высверливание подрозетников (64мм)`, q: res.deepPodr, p: prDrill+100, type: 'work' });
-        let totalPodr = res.stdPodr + res.deepPodr + res.koposPodr;
-        if(totalPodr > 0) w.push({ n: `Вклейка подрозетников`, q: totalPodr, p: 100, type: 'work' });
-        
-        if(res.mechs.soc>0) w.push({n: `Установка розетки 220B`, q:res.mechs.soc, p:prSoc, type:'work'});
-        if(res.mechs.sw>0 || res.mechs.pass>0 || res.mechs.cross>0) w.push({n: `Установка выключателя`, q:res.mechs.sw+res.mechs.pass+res.mechs.cross, p:prSoc, type:'work'});
-        if(res.mechs.tv>0) w.push({n: `Установка слаботочной розетки`, q:res.mechs.tv, p:prSoc, type:'work'});
-        if(res.mechs.tpol>0) w.push({n: `Установка терморегулятора`, q:res.mechs.tpol, p:prSoc+400, type:'work'});
-    }
-
-    addAuto(m.concat(w), 'rough'); pool=[]; rfPool(); closeModal('roughModal'); showToast("✅ Пул добавлен!");
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: modV
- * ========================================================= */
-function modV(id, val) { cfg[id] = Math.max(0, (cfg[id] || 0) + val); const el = document.getElementById('v-'+id); if(el) el.innerText = cfg[id]; }
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: populateShieldExtras
- * ========================================================= */
-function populateShieldExtras() {
-    let sel = document.getElementById('cfg-extra-db');
-    if(!sel) return;
-    let html = '<option value="">-- Выбрать из базы --</option>';
-    matDB.forEach(m => {
-        if(m.c === 'Автоматика' || m.c === 'Щитовое') {
-            html += `<option value="${m.id}">${m.n} (${m.p} ₽)</option>`;
-        }
-    });
-    sel.innerHTML = html;
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: addExtraToShieldConfig
- * ========================================================= */
-function addExtraToShieldConfig() {
-    let sel = document.getElementById('cfg-extra-db');
-    let q = Number(document.getElementById('cfg-extra-q').value) || 1;
-    if(!sel.value) return showToast("Выберите аппарат!");
-    let item = matDB.find(m => m.id === sel.value);
-    if(item) {
-        currentShieldExtras.push({...item, q: q});
-        renderShieldExtras();
-    }
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: renderShieldExtras
- * ========================================================= */
-function renderShieldExtras() {
-    document.getElementById('shield-extras-list').innerHTML = currentShieldExtras.map((ex, i) =>
-        `<div style="display:flex; justify-content:space-between; font-size:11px; border-bottom:1px dashed rgba(0,0,0,0.1); padding:4px;"><span>${ex.n} <b style="color:var(--primary);">(x${ex.q})</b></span><span style="color:red; font-size:16px; font-weight:bold; cursor:pointer;" onclick="currentShieldExtras.splice(${i},1); renderShieldExtras();">✕</span></div>`
-    ).join('');
+function epV15DetectModel(s, kind) {
+    s = String(s || '');
+    const patterns = [
+        /ВА\s*47\s*[-–—]?\s*29/iu,
+        /ВД\s*1\s*[-–—]?\s*63/iu,
+        /АВДТ\s*32/iu,
+        /АД\s*12/iu,
+        /Easy\s*9/iu,
+        /Acti\s*9/iu,
+        /SH\s*20\d/iu,
+        /S\s*20\d/iu,
+        /DX\s*3/iu,
+        /TX\s*3/iu
+    ];
+    for (const p of patterns) { const m = s.match(p); if (m) return epV15CleanForName(m[0]).replace(/\s*[-–—]\s*/g,'-'); }
+    const k = String(kind || '').toLowerCase();
+    if (k.includes('dif') || /диф/i.test(s)) return epV15BrandCode(s).toUpperCase()==='IEK' ? 'АВДТ32' : '';
+    if (k.includes('uzo') || k.includes('узо') || /узо|диф/i.test(s)) return epV15BrandCode(s).toUpperCase()==='IEK' ? 'ВД1-63' : '';
+    if (/автомат|breaker|ВА47|IEK|ИЭК/i.test(s)) return epV15BrandCode(s).toUpperCase()==='IEK' ? 'ВА47-29' : '';
+    return '';
 }
 
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epV15FormatAutoName
+ * AI FUNCTIONS FUNCTION: epV15FormatAutoName
  * ========================================================= */
 function epV15FormatAutoName(found, label, meta) {
     meta = meta || {};
@@ -609,7 +300,7 @@ function epV15FormatAutoName(found, label, meta) {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epV15FormatRcdName
+ * AI FUNCTIONS FUNCTION: epV15FormatRcdName
  * ========================================================= */
 function epV15FormatRcdName(found, label, meta) {
     meta = meta || {};
@@ -628,36 +319,84 @@ function epV15FormatRcdName(found, label, meta) {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epV15DisplayMaterialName
+ * AI FUNCTIONS FUNCTION: epV15MergeAssignments
  * ========================================================= */
-function epV15DisplayMaterialName(found, label, meta) {
-    meta = meta || {};
-    const k = String(meta.kind || '').toLowerCase();
-    const src = [label, found && found.n].join(' ');
-    if (k.includes('automatic') || k.includes('breaker') || /\bавтомат\b|A472|А472/i.test(src)) return epV15FormatAutoName(found, label, meta);
-    if (k.includes('узо') || k.includes('uzo') || k.includes('dif') || /узо|диф/i.test(src)) return epV15FormatRcdName(found, label, meta);
-    if (found && found.n) return epV15CleanForName(found.n);
-    return epV15CleanForName(label || 'Позиция');
+function epV15MergeAssignments(dst, src) {
+    const vals = [];
+    [src && src.epAssignment, src && src.dbMeta && src.dbMeta.assignment].forEach(v => { if(v) vals.push(v); });
+    if (Array.isArray(src && src.epAssignments)) vals.push(...src.epAssignments);
+    if (Array.isArray(src && src.epMergedDetails)) vals.push(...src.epMergedDetails);
+    if (!dst.epAssignments) dst.epAssignments = [];
+    if (!dst.epMergedDetails) dst.epMergedDetails = [];
+    vals.map(v => String(v || '').trim()).filter(Boolean).forEach(v => {
+        if (v && !/^(позиция щита|назначение не указано)$/i.test(v) && !dst.epAssignments.includes(v)) dst.epAssignments.push(v);
+        if (v && !/^(позиция щита|назначение не указано)$/i.test(v) && !dst.epMergedDetails.includes(v)) dst.epMergedDetails.push(v);
+    });
 }
 
 
 
+
 /* =========================================================
- * DOCUMENTS FUNCTION: epGetCheck
+ * AI FUNCTIONS FUNCTION: epMat
  * ========================================================= */
-function epGetCheck(id) { const el = document.getElementById(id); return !!(el && el.checked); }
+function epMat(label, q, fallbackPrice, words, meta) {
+    const m = meta || {};
+    const found = epFindDbItem('mat', words || [label]);
+    const name = epV15DisplayMaterialName(found, label, Object.assign({}, m, { rawLabel: label, brand: m.brand || epGetVal('cfg-brand-auto', 'IEK') }));
+    const out = {
+        n: found ? name : `⚠️ ${name} [${m.category || 'Материалы'}${m.subcategory ? ' → ' + m.subcategory : ''}] — добавить в БД`,
+        q: q,
+        p: found ? (Number(found.p) || Number(fallbackPrice) || 0) : (Number(fallbackPrice) || 0),
+        u: (found && found.u) || m.unit || 'шт',
+        type: 'mat',
+        sourceId: found && found.id ? found.id : null,
+        needDb: !found,
+        dbMeta: Object.assign({}, m, { rawLabel: label, brand: m.brand || epGetVal('cfg-brand-auto', 'IEK'), foundName: found && found.n ? found.n : '' }),
+        epRawLabel: label
+    };
+    if (m.assignment) { out.epAssignment = m.assignment; out.epAssignments = [m.assignment]; out.epMergedDetails = [m.assignment]; }
+    return out;
+}
+
 
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epGetVal
+ * AI FUNCTIONS FUNCTION: epWork
  * ========================================================= */
-function epGetVal(id, def) { const el = document.getElementById(id); return el ? el.value : def; }
+function epWork(label, q, price, words, meta) {
+    const m = meta || {};
+    const found = epFindDbItem('work', words || [label]);
+    let name = label;
+    if (found && found.n) {
+        const bad = (/установка\s+бп\s+в\s+щит/i.test(found.n) && /установка\s+щит/i.test(label)) ||
+                    (/^\s*(бетон|кирпич|панелька|мягкий)/i.test(found.n) && /штроб|ниша/i.test(label));
+        name = bad ? label : found.n;
+    }
+    if (/штроб/i.test(label) && /100\s*[×xх]\s*50/i.test(label)) name = label.replace(/ВВОДНАЯ\s*/i, '').replace(/\s+/g,' ').trim();
+    const out = {
+        n: name,
+        q: q,
+        p: found ? (Number(found.p) || Number(price) || 0) : (Number(price) || 0),
+        u: (found && found.u) || m.unit || 'шт',
+        type: 'work',
+        sourceId: found && found.id ? found.id : null,
+        logicPrice: !found,
+        dbMeta: Object.assign({}, m, { rawLabel: label, foundName: found && found.n ? found.n : '' }),
+        epRawLabel: label
+    };
+    if (m.category) out.c = m.category;
+    if (m.subcategory) { out.g = m.subcategory; out.sc = m.subcategory; out.subcategory = m.subcategory; }
+    if (m.assignment) { out.epAssignment = m.assignment; out.epAssignments = [m.assignment]; out.epMergedDetails = [m.assignment]; }
+    return out;
+}
+
 
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: generateCascadePanel
+ * AI FUNCTIONS FUNCTION: generateCascadePanel
  * ========================================================= */
 function generateCascadePanel() {
     const bBox = epGetVal('cfg-brand-box', 'Tekfor');
@@ -803,7 +542,34 @@ function generateCascadePanel() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: runAiCheck
+ * AI FUNCTIONS FUNCTION: mat
+ * ========================================================= */
+function mat(label, q, price, words, meta, assignment) {
+        meta = Object.assign({}, meta || {}, { brand: bAuto });
+        if (assignment) meta.assignment = assignment;
+        const it = epMat(label, q, price, words, meta);
+        if (assignment) { it.epAssignment = assignment; it.epAssignments = [assignment]; it.epMergedDetails = [assignment]; }
+        return it;
+    }
+    
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: work
+ * ========================================================= */
+function work(label, q, price, words, meta, assignment) {
+        meta = Object.assign({}, meta || {});
+        if (assignment) meta.assignment = assignment;
+        const it = epWork(label, q, price, words, meta);
+        if (assignment) { it.epAssignment = assignment; it.epAssignments = [assignment]; it.epMergedDetails = [assignment]; }
+        return it;
+    }
+
+    
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: runAiCheck
  * ========================================================= */
 async function runAiCheck() { 
     if(!GEMINI_API_KEY) return showToast("❌ Нужен ключ ИИ в настройках");
@@ -829,7 +595,7 @@ async function runAiCheck() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: aiSupply
+ * AI FUNCTIONS FUNCTION: aiSupply
  * ========================================================= */
 async function aiSupply() {
     if(!GEMINI_API_KEY) return showToast("❌ Нужен ключ ИИ");
@@ -852,7 +618,7 @@ async function aiSupply() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: aiPueHelper
+ * AI FUNCTIONS FUNCTION: aiPueHelper
  * ========================================================= */
 async function aiPueHelper() { 
     if(!GEMINI_API_KEY) return showToast("❌ Нужен ключ ИИ");
@@ -874,7 +640,7 @@ async function aiPueHelper() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: compareShopsAI
+ * AI FUNCTIONS FUNCTION: compareShopsAI
  * ========================================================= */
 async function compareShopsAI() {
     if(!GEMINI_API_KEY) return showToast("❌ Нужен ключ ИИ");
@@ -897,7 +663,7 @@ async function compareShopsAI() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: showPreview
+ * AI FUNCTIONS FUNCTION: showPreview
  * ========================================================= */
 function showPreview(mode, isActOverride = false, customTitle = null) { 
     currentPreviewMode = mode;
@@ -1013,30 +779,7 @@ function showPreview(mode, isActOverride = false, customTitle = null) {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: printAct
- * ========================================================= */
-function printAct() {
-    if(!currentCardId) return;
-    let obj = hDB.find(x => x.id === currentCardId);
-    if(!obj) return;
-    
-    let tempEstimate = currentEstimate;
-    let tempCust = cust;
-    
-    currentEstimate = obj.estimate || [];
-    cust = { name: obj.name, addr: obj.addr, phone: obj.phone };
-    
-    showPreview('client', true, 'АКТ ВЫПОЛНЕННЫХ РАБОТ');
-    
-    currentEstimate = tempEstimate;
-    cust = tempCust;
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: deleteAct
+ * AI FUNCTIONS FUNCTION: deleteAct
  * ========================================================= */
 async function deleteAct() {
     if(!currentCardId) return;
@@ -1058,114 +801,7 @@ async function deleteAct() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: togglePay
- * ========================================================= */
-function togglePay(field) {
-    let obj = hDB.find(x => x.id === currentCardId);
-    if(obj) {
-        if(!obj.payments) obj.payments = {};
-        obj.payments[field] = document.getElementById('pay-' + field).checked;
-        safeSet('h_v31', JSON.stringify(hDB));
-        if(db) db.collection('history').doc(String(obj.id)).update({ payments: obj.payments }).catch(()=>{});
-    }
-}
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: saveCust
- * ========================================================= */
-function saveCust() { 
-    cust.name = document.getElementById('c-name').value; 
-    cust.addr = document.getElementById('c-addr').value;
-    cust.ceil = document.getElementById('c-ceil').value;
-    cust.phone = document.getElementById('c-phone').value;
-    safeSet('cust_v31', JSON.stringify(cust)); 
-    closeModal('custModal'); updateMasterBadge(); 
-}
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: saveLogic
- * ========================================================= */
-function saveLogic() { 
-    appLogic.priceSoc = Number(document.getElementById('logic-price-soc').value) || 500;
-    appLogic.priceShield = Number(document.getElementById('logic-price-shield').value) || 500;
-    appLogic.priceDrill = Number(document.getElementById('logic-price-drill').value) || 600;
-    appLogic.priceShtroba = Number(document.getElementById('logic-price-shtroba').value) || 550;
-    appLogic.priceCabCeil = Number(document.getElementById('logic-price-cab-ceil').value) || 120;
-
-    appLogic.shieldInstallPrice = Number(document.getElementById('logic-shield-install').value) || 2500;
-    appLogic.shieldInputConnectPrice = Number(document.getElementById('logic-shield-input-connect').value) || 1500;
-    appLogic.shieldTestLinePrice = Number(document.getElementById('logic-shield-test-line').value) || 150;
-    appLogic.shieldMarkLinePrice = Number(document.getElementById('logic-shield-mark-line').value) || 100;
-    appLogic.shieldSchemePrice = Number(document.getElementById('logic-shield-scheme').value) || 4000;
-    appLogic.shieldNichePerModule = Number(document.getElementById('logic-shield-niche-module').value) || 400;
-    appLogic.shieldInputGroovePrice = Number(document.getElementById('logic-shield-input-groove').value) || 1500;
-    
-    appLogic.socketsPerJb = Number(document.getElementById('logic-soc-jb').value) || 3;
-    appLogic.connPerSocJb = Number(document.getElementById('logic-conn-soc').value) || 3;
-    appLogic.connPerSwJb = Number(document.getElementById('logic-conn-sw').value) || 3;
-    appLogic.connPerPassJb = Number(document.getElementById('logic-conn-pass').value) || 4;
-
-    safeSet('appLogic_v31', JSON.stringify(appLogic));
-    showToast('Логика сохранена!'); closeModal('logicModal'); 
-}
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: renderLogicUI
- * ========================================================= */
-function renderLogicUI() { 
-    document.getElementById('logic-price-soc').value = appLogic.priceSoc || 500; 
-    document.getElementById('logic-price-shield').value = appLogic.priceShield || 500; 
-    document.getElementById('logic-price-drill').value = appLogic.priceDrill || 600; 
-    document.getElementById('logic-price-shtroba').value = appLogic.priceShtroba || 550; 
-    document.getElementById('logic-price-cab-ceil').value = appLogic.priceCabCeil || 120; 
-
-    document.getElementById('logic-shield-install').value = appLogic.shieldInstallPrice || 2500;
-    document.getElementById('logic-shield-input-connect').value = appLogic.shieldInputConnectPrice || 1500;
-    document.getElementById('logic-shield-test-line').value = appLogic.shieldTestLinePrice || 150;
-    document.getElementById('logic-shield-mark-line').value = appLogic.shieldMarkLinePrice || 100;
-    document.getElementById('logic-shield-scheme').value = appLogic.shieldSchemePrice || 4000;
-    document.getElementById('logic-shield-niche-module').value = appLogic.shieldNichePerModule || 400;
-    document.getElementById('logic-shield-input-groove').value = appLogic.shieldInputGroovePrice || 1500;
-
-    document.getElementById('logic-soc-jb').value = appLogic.socketsPerJb || 3; 
-    document.getElementById('logic-conn-soc').value = appLogic.connPerSocJb || 3; 
-    document.getElementById('logic-conn-sw').value = appLogic.connPerSwJb || 3; 
-    document.getElementById('logic-conn-pass').value = appLogic.connPerPassJb || 4; 
-}
-
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: openRecalcModal
- * ========================================================= */
-function openRecalcModal() { 
-    globalRecalcCab = 0; globalRecalcSht = 0;
-    currentEstimate.forEach(it => { let nameLower = it.n.toLowerCase(); if (nameLower.includes('ввг') || nameLower.includes('bbг') || nameLower.includes('провод') || nameLower.includes('кабель')) globalRecalcCab += Number(it.q); if (nameLower.includes('штроб') && !nameLower.includes('вводная')) globalRecalcSht += Number(it.q); }); 
-    document.getElementById('r-cab').innerText = globalRecalcCab + ' м'; document.getElementById('r-sht').innerText = globalRecalcSht + ' м'; document.getElementById('r-ceil-input').value = 0; updateRecalcUI(); openModal('recalcModal'); 
-}
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: updateRecalcUI
- * ========================================================= */
-function updateRecalcUI() { 
-    let ceilCab = Number(document.getElementById('r-ceil-input').value) || 0; let floorCab = Math.max(0, globalRecalcCab - ceilCab - globalRecalcSht);
-    document.getElementById('r-res-sht').innerText = globalRecalcSht + ' м'; document.getElementById('r-res-ceil').innerText = ceilCab + ' м'; document.getElementById('r-res-floor').innerText = floorCab + ' м'; 
-}
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: doRecalculate
+ * AI FUNCTIONS FUNCTION: doRecalculate
  * ========================================================= */
 function doRecalculate() {
     let ceilCab = Number(document.getElementById('r-ceil-input').value) || 0; let floorCab = Math.max(0, globalRecalcCab - ceilCab - globalRecalcSht);
@@ -1194,7 +830,7 @@ function doRecalculate() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: renderChart
+ * AI FUNCTIONS FUNCTION: renderChart
  * ========================================================= */
 function renderChart() {
     let ctxEl = document.getElementById('buhChart');
@@ -1237,22 +873,7 @@ function renderChart() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: updateBuhUI
- * ========================================================= */
-function updateBuhUI() {
-    let sumW = 0, sumM = 0, matBase = 0, workBase = 0;
-    currentEstimate.forEach(it => { let price = fPrice(it); if(it.type==='work') { sumW += price * it.q; workBase += (it.p||0) * it.q; } else { sumM += price * it.q; matBase += (it.p||0) * it.q; } });
-    let disc = Number(document.getElementById('b-discount').value) || 0, prep = Number(document.getElementById('b-prepay').value) || 0;
-    document.getElementById('b-work').innerText = sumW + ' P'; document.getElementById('b-mat').innerText = sumM + ' P'; 
-    document.getElementById('p-total').innerText = (workBase + (sumM - matBase)) + ' P'; 
-    document.getElementById('b-final').innerText = (sumW + sumM - disc - prep) + ' P';
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: saveHist
+ * AI FUNCTIONS FUNCTION: saveHist
  * ========================================================= */
 async function saveHist() {
     const finalTotal = parseInt(document.getElementById('b-final').innerText) || 0;
@@ -1266,18 +887,7 @@ async function saveHist() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: updateHistList
- * ========================================================= */
-function updateHistList() {
-    let viewHDB = appUser.role === 'admin' ? hDB : hDB.filter(h => h.masterUid === appUser.uid);
-    document.getElementById('h-stat').innerHTML = viewHDB.map((h, i) => `<div style="background:rgba(255,255,255,0.6); padding:10px; border-radius:10px; border:1px solid var(--border); margin-bottom:8px; cursor:pointer;" onclick="openObjCard(${h.id})"><div style="display:flex; justify-content:space-between; margin-bottom:6px;"><b style="color:var(--text); font-size:13px;">${h.name || 'Без имени'}</b><b style="color:var(--primary);">${h.total} P</b></div><div style="font-size:10px; color:var(--gray);">Дата: ${h.date} ${appUser.role === 'admin' ? `<br><span style="color:var(--orange);">Мастер: ${h.masterName}</span>` : ''}</div></div>`).join("");
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: openObjCard
+ * AI FUNCTIONS FUNCTION: openObjCard
  * ========================================================= */
 function openObjCard(id) {
     closeModal('buhModal'); currentCardId = id; const obj = hDB.find(x => x.id === id); if(!obj) return; 
@@ -1327,7 +937,7 @@ function openObjCard(id) {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: addExtraWork
+ * AI FUNCTIONS FUNCTION: addExtraWork
  * ========================================================= */
 async function addExtraWork() { 
     const n = document.getElementById('extra-work-name').value.trim(); const p = Number(document.getElementById('extra-work-price').value); 
@@ -1343,71 +953,7 @@ async function addExtraWork() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: loadCustHistoryOptions
- * ========================================================= */
-function loadCustHistoryOptions() {
-    let sel = document.getElementById('c-history-select'); 
-    if(!sel) return;
-    let opts = '<option value="">📥 Загрузить (История)</option>'; 
-    let uniqueCusts = []; hDB.forEach(h => { if(h.name && !uniqueCusts.find(c => c.name === h.name)) uniqueCusts.push(h); }); 
-    uniqueCusts.forEach(h => { opts += `<option value="${h.id}">${h.name} (${h.date})</option>`; }); 
-    sel.innerHTML = opts;
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: switchDbTab
- * ========================================================= */
-function switchDbTab(tab) { 
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active')); 
-    document.getElementById(tab === 'mat' ? 'btnTabMat' : 'btnTabWork').classList.add('active'); 
-    document.getElementById('editor-mat-list').style.display = tab === 'mat' ? 'block' : 'none'; 
-    document.getElementById('editor-work-list').style.display = tab === 'work' ? 'block' : 'none'; 
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: renderDbEditors
- * ========================================================= */
-function renderDbEditors() {
-    let catsM = [...new Set(matDB.map(m=>m.c || 'Разное'))];
-    let catsW = [...new Set(workDB.map(w=>w.c || 'Разное'))];
-    document.getElementById('db-cats').innerHTML = [...new Set([...catsM, ...catsW])].map(c=>`<option value="${c}">`).join('');
-
-    let htmlMat = '';
-    let mGroups = {}; matDB.forEach(m => { mGroups[m.c||'Разное'] = mGroups[m.c||'Разное'] || []; mGroups[m.c||'Разное'].push(m); });
-    Object.keys(mGroups).forEach((c, idx) => {
-        let sid = 'db_m_'+idx;
-        htmlMat += `<div class="cat-header" onclick="toggleCat('${sid}')">${c}</div><div class="cat-body" id="${sid}">`;
-        mGroups[c].forEach(m => {
-            htmlMat += `<div class="emp-row"><div><b>${m.n}</b><br><span style="color:var(--gray);font-size:10px;">${m.p} ₽ / ${m.u}</span></div> <input type="number" value="${m.p}" onchange="requestPriceChange('mat', '${m.id}', this.value)" style="width:60px;margin:0;padding:4px;text-align:center;"></div>`;
-        });
-        htmlMat += `</div>`;
-    });
-    document.getElementById('editor-mat-list').innerHTML = htmlMat;
-
-    let htmlWork = '';
-    let wGroups = {}; workDB.forEach(w => { wGroups[w.c||'Разное'] = wGroups[w.c||'Разное'] || []; wGroups[w.c||'Разное'].push(w); });
-    Object.keys(wGroups).forEach((c, idx) => {
-        let sid = 'db_w_'+idx;
-        htmlWork += `<div class="cat-header" style="color:var(--orange); border-color:rgba(245,158,11,0.2); background:rgba(245,158,11,0.08);" onclick="toggleCat('${sid}')">${c}</div><div class="cat-body" id="${sid}">`;
-        wGroups[c].forEach(w => {
-            htmlWork += `<div class="emp-row"><div><b>${w.n}</b><br><span style="color:var(--gray);font-size:10px;">${w.p} ₽ / ${w.u}</span></div> <input type="number" value="${w.p}" onchange="requestPriceChange('work', '${w.id}', this.value)" style="width:60px;margin:0;padding:4px;text-align:center;"></div>`;
-        });
-        htmlWork += `</div>`;
-    });
-    document.getElementById('editor-work-list').innerHTML = htmlWork;
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: addDbItem
+ * AI FUNCTIONS FUNCTION: addDbItem
  * ========================================================= */
 async function addDbItem() {
     if(appUser.role !== 'admin') return showToast("Только админ может добавлять");
@@ -1433,7 +979,7 @@ async function addDbItem() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: requestPriceChange
+ * AI FUNCTIONS FUNCTION: requestPriceChange
  * ========================================================= */
 async function requestPriceChange(type, id, newPrice) { 
     newPrice = Number(newPrice); 
@@ -1449,7 +995,7 @@ async function requestPriceChange(type, id, newPrice) {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: listenForApprovals
+ * AI FUNCTIONS FUNCTION: listenForApprovals
  * ========================================================= */
 function listenForApprovals() {
     if(!db) return;
@@ -1469,7 +1015,15 @@ function listenForApprovals() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: loadMasterDrafts
+ * AI FUNCTIONS FUNCTION: approveUser
+ * ========================================================= */
+async function approveUser(uid) { try { await db.collection('users').doc(uid).update({ isApproved: true }); showToast("Одобрено!"); } catch(e){} }
+
+
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: loadMasterDrafts
  * ========================================================= */
 async function loadMasterDrafts() {
     if(!db || appUser.role !== 'admin') return;
@@ -1494,27 +1048,7 @@ async function loadMasterDrafts() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: openAdminDraftView
- * ========================================================= */
-function openAdminDraftView(uid) {
-    let draft = adminDraftsCache.find(d => d.uid === uid);
-    if(!draft) return;
-    let html = `<h3 style="margin-top:0; color:var(--primary);">${draft.masterName}</h3>`;
-    html += `<p style="font-size:12px; color:var(--gray); margin-bottom:15px;">Объект: ${draft.cust?.name || 'Не указан'} (${draft.cust?.addr || 'Нет адреса'})</p>`;
-    html += `<table class="pdf-table" style="width:100%;">`;
-    (draft.estimate || []).forEach(it => {
-        html += `<tr><td>${it.n}</td><td style="text-align:center;">x${it.q}</td><td style="text-align:right; font-weight:bold;">${fPrice(it) * it.q} ₽</td></tr>`;
-    });
-    html += `</table><h3 style="text-align:right; color:var(--primary);">Итого: ${draft.total} ₽</h3>`;
-    document.getElementById('admin-draft-content').innerHTML = html;
-    openModal('adminDraftModal');
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: renderAdminUsers
+ * AI FUNCTIONS FUNCTION: renderAdminUsers
  * ========================================================= */
 async function renderAdminUsers() {
     if(appUser.role !== 'admin') return;
@@ -1534,7 +1068,7 @@ async function renderAdminUsers() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: adminAddUser
+ * AI FUNCTIONS FUNCTION: adminAddUser
  * ========================================================= */
 async function adminAddUser() {
     let p = document.getElementById('add-user-phone').value.trim();
@@ -1551,7 +1085,70 @@ async function adminAddUser() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epRefreshProviderUI
+ * AI FUNCTIONS FUNCTION: deleteUser
+ * ========================================================= */
+async function deleteUser(uid) {
+    let conf = await window.customConfirm("Удаление", "Удалить мастера из базы?");
+    if(conf && db) { try { await db.collection('users').doc(uid).delete(); renderAdminUsers(); showToast("Удален"); } catch(e){} }
+}
+
+
+
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: epNormProvider
+ * ========================================================= */
+function epNormProvider(p) {
+        return p === 'openai' ? 'openai' : 'gemini';
+    }
+
+    
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: epCurrentProvider
+ * ========================================================= */
+function epCurrentProvider() {
+        return epNormProvider(window.EP_AI_CONFIG.provider || safeGet('ep_ai_provider_v1', 'gemini'));
+    }
+
+    
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: epCurrentKey
+ * ========================================================= */
+function epCurrentKey() {
+        const p = epCurrentProvider();
+        if (p === 'openai') return window.EP_AI_CONFIG.openaiKey || safeGet('ep_openai_key_v1', '');
+        return window.EP_AI_CONFIG.geminiKey || (typeof GEMINI_API_KEY !== 'undefined' ? GEMINI_API_KEY : '') || safeGet('gemini_key_v31', '');
+    }
+
+    
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: epSetAiProvider
+ * ========================================================= */
+function epSetAiProvider(provider, saveRemote) {
+        provider = epNormProvider(provider);
+        window.EP_AI_CONFIG.provider = provider;
+        safeSet('ep_ai_provider_v1', provider);
+        epRefreshProviderUI();
+
+        if (saveRemote && db && appUser && appUser.role === 'admin') {
+            epSaveAiConfig(false);
+        } else if (saveRemote && appUser && appUser.role !== 'admin') {
+            showToast('ИИ-провайдер: ' + (provider === 'openai' ? 'OpenAI' : 'Gemini'));
+        }
+    }
+
+    
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: epRefreshProviderUI
  * ========================================================= */
 function epRefreshProviderUI() {
         const p = epCurrentProvider();
@@ -1577,7 +1174,7 @@ function epRefreshProviderUI() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epInsertMainProviderSwitch
+ * AI FUNCTIONS FUNCTION: epInsertMainProviderSwitch
  * ========================================================= */
 function epInsertMainProviderSwitch() {
         if (document.getElementById('ep-main-ai-switch')) return;
@@ -1606,7 +1203,7 @@ function epInsertMainProviderSwitch() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epMakeAiMenuGroup
+ * AI FUNCTIONS FUNCTION: epMakeAiMenuGroup
  * ========================================================= */
 function epMakeAiMenuGroup() {
         const menu = document.getElementById('burger-menu');
@@ -1644,25 +1241,7 @@ function epMakeAiMenuGroup() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epAddBetaLabels
- * ========================================================= */
-function epAddBetaLabels() {
-        Array.from(document.querySelectorAll('button')).forEach(function (b) {
-            const t = epCleanText(b.textContent);
-            if (t.includes('Конфигуратор щита') && !t.includes('бета')) {
-                b.innerHTML = b.innerHTML.replace('Конфигуратор щита', 'Конфигуратор щита <span class="ep-beta-label">(бета)</span>');
-            }
-            if (t.includes('Пул розеток') && !t.includes('бета')) {
-                b.innerHTML = b.innerHTML.replace(/Пул розеток и\s*В?\S?M|Пул розеток и BIM|Пул розеток и ВІM/iu, 'Пул розеток и BIM <span class="ep-beta-label">(бета)</span>');
-            }
-        });
-    }
-
-    
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: epPatchSettingsUI
+ * AI FUNCTIONS FUNCTION: epPatchSettingsUI
  * ========================================================= */
 function epPatchSettingsUI() {
         if (document.getElementById('ep-ai-admin-box')) return;
@@ -1711,7 +1290,43 @@ function epPatchSettingsUI() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epLoadAiConfigFromServer
+ * AI FUNCTIONS FUNCTION: epTestProviderKey
+ * ========================================================= */
+async function epTestProviderKey(provider, key, model) {
+        provider = epNormProvider(provider);
+        if (!key) throw new Error('Введите API-ключ');
+
+        if (provider === 'openai') {
+            const r = await fetch('https://api.openai.com/v1/responses', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+                body: JSON.stringify({
+                    model: model || 'gpt-4o-mini',
+                    input: [{ role: 'user', content: [{ type: 'input_text', text: 'Ответь одним словом: ok' }] }],
+                    max_output_tokens: 20
+                })
+            });
+            const data = await r.json();
+            if (!r.ok || data.error) throw new Error(data.error ? data.error.message : 'OpenAI API error');
+            return true;
+        }
+
+        const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(key);
+        const r = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: [{ parts: [{ text: 'Ответь одним словом: ok' }] }] })
+        });
+        const data = await r.json();
+        if (!r.ok || data.error) throw new Error(data.error ? data.error.message : 'Gemini API error');
+        return true;
+    }
+
+    
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: epLoadAiConfigFromServer
  * ========================================================= */
 async function epLoadAiConfigFromServer() {
         try {
@@ -1783,7 +1398,34 @@ async function epLoadAiConfigFromServer() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epExtractOpenAiText
+ * AI FUNCTIONS FUNCTION: epCallGemini
+ * ========================================================= */
+async function epCallGemini(promptText, opts) {
+        const key = window.EP_AI_CONFIG.geminiKey || (typeof GEMINI_API_KEY !== 'undefined' ? GEMINI_API_KEY : '') || safeGet('gemini_key_v31', '');
+        if (!key) throw new Error('Нужен Gemini API ключ');
+
+        const parts = [{ text: promptText }];
+        if (opts && opts.imageDataUrl) {
+            const match = opts.imageDataUrl.match(/^data:(.*?);base64,(.*)$/);
+            if (match) parts.push({ inline_data: { mime_type: match[1], data: match[2] } });
+        }
+
+        const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(key);
+        const r = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: [{ parts: parts }] })
+        });
+        const data = await r.json();
+        if (!r.ok || data.error) throw new Error(data.error ? data.error.message : 'Gemini API error');
+        return (((data.candidates || [])[0] || {}).content || {}).parts?.map(p => p.text || '').join('') || '';
+    }
+
+    
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: epExtractOpenAiText
  * ========================================================= */
 function epExtractOpenAiText(data) {
         if (data.output_text) return data.output_text;
@@ -1801,7 +1443,197 @@ function epExtractOpenAiText(data) {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epLoadUserDbAfterLogin
+ * AI FUNCTIONS FUNCTION: epCallOpenAI
+ * ========================================================= */
+async function epCallOpenAI(promptText, opts) {
+        const key = window.EP_AI_CONFIG.openaiKey || safeGet('ep_openai_key_v1', '');
+        if (!key) throw new Error('Нужен OpenAI API ключ');
+
+        const content = [{ type: 'input_text', text: promptText }];
+        if (opts && opts.imageDataUrl) {
+            content.push({
+                type: 'input_image',
+                image_url: opts.imageDataUrl,
+                detail: (opts && opts.imageDetail) ? opts.imageDetail : 'high'
+            });
+        }
+
+        const body = {
+            model: window.EP_AI_CONFIG.openaiModel || 'gpt-4o-mini',
+            input: [{ role: 'user', content: content }],
+            max_output_tokens: opts && opts.maxTokens ? opts.maxTokens : 5000
+        };
+
+        const r = await fetch('https://api.openai.com/v1/responses', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+            body: JSON.stringify(body)
+        });
+        const data = await r.json();
+        if (!r.ok || data.error) throw new Error(data.error ? data.error.message : 'OpenAI API error');
+        return epExtractOpenAiText(data);
+    }
+
+    
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: epAskAI
+ * ========================================================= */
+async function epAskAI(promptText, opts) {
+        await epLoadAiConfigFromServer();
+        const provider = epCurrentProvider();
+        if (provider === 'openai') return epCallOpenAI(promptText, opts || {});
+        return epCallGemini(promptText, opts || {});
+    }
+
+    
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: epParseLooseTableText
+ * ========================================================= */
+function epParseLooseTableText(t, type) {
+        const lines = epStripCode(t).split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+        const out = [];
+        lines.forEach(function(line) {
+            if (/^(№|номер|код|артикул|итого|сумма|json|категория)/i.test(line)) return;
+            let s = line.replace(/[|;]/g, '\t').replace(/\s{2,}/g, '\t');
+            const parts = s.split(/\t+/).map(x => x.trim()).filter(Boolean);
+            const unitIdx = parts.findIndex(x => /^(шт|м|м2|м²|м3|м³|упак|уп|компл|кг|л)$/i.test(x));
+            if (unitIdx > 0) {
+                let nameParts = parts.slice(0, unitIdx).filter(x => !/^\d+$/.test(x) && !/^[A-ZА-Я0-9\-.]{3,15}$/i.test(x));
+                let name = nameParts.join(' ').trim();
+                let nums = parts.slice(unitIdx + 1).map(epMoney).filter(n => n > 0);
+                let p = nums.length ? nums[0] : 0;
+                if (name.length > 3) out.push({ c: epInferCategory(name, type), n: name, p: p, u: parts[unitIdx] });
+            } else {
+                const nums = line.match(/\d+[\d\s]*[,.]?\d*/g) || [];
+                if (nums.length && line.length > 8) {
+                    let p = epMoney(nums[nums.length - 1]);
+                    let name = line.replace(/^[\d\s.№-]+/, '').replace(/\d+[\d\s]*[,.]?\d*\s*$/, '').trim();
+                    if (name.length > 4) out.push({ c: epInferCategory(name, type), n: name, p: p, u: 'шт' });
+                }
+            }
+        });
+        return out;
+    }
+    
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: epParseJsonArray
+ * ========================================================= */
+function epParseJsonArray(t) {
+        const parsed = epTryJsonParseLoose(t);
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed && typeof parsed === 'object') {
+            const keys = ['items', 'positions', 'rows', 'data', 'result', 'materials', 'works', 'материалы', 'работы', 'позиции'];
+            for (const k of keys) {
+                if (Array.isArray(parsed[k])) return parsed[k];
+            }
+        }
+
+        // Бывает, ИИ возвращает не массив, а цепочку объектов:
+        // {"n":"..."},{"n":"..."},{"n":"..."}
+        const objects = epExtractJsonObjectsLoose(t);
+        if (objects.length) return objects;
+
+        return epParseLooseTableText(t, 'mat');
+    }
+
+    
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: epNormalizeItems
+ * ========================================================= */
+function epNormalizeItems(raw, type) {
+        let arr = [];
+        if (Array.isArray(raw)) arr = raw;
+        else if (raw && typeof raw === 'object') {
+            arr = raw.items || raw.positions || raw.rows || raw.data || raw.result || raw.materials || raw.works || raw['позиции'] || raw['материалы'] || raw['работы'] || [];
+        }
+        return arr.map(function (x, i) {
+            if (Array.isArray(x)) {
+                x = { n: x[1] || x[0], c: x[0], sc: x[2], p: x[3], u: x[4] };
+            }
+
+            const name = epCleanText(
+                x.n || x.name || x.title || x.item || x.position || x.material || x.work || x.itemName ||
+                x['Имя'] || x['Название'] || x['Наименование'] || x['Наименование позиции'] || x['Товар'] || x['Материал'] || x['Работа'] ||
+                x['номенклатура'] || x['наименование'] || x['позиция'] || ''
+            );
+
+            const cat = epCleanText(
+                x.c || x.cat || x.category || x.group ||
+                x['Категория'] || x['Группа'] || x['категория'] || ''
+            ) || epInferCategory(name, type);
+
+            const subcat = epCleanText(
+                x.sc || x.subcat || x.subcategory || x.subCategory || x.sub_group || x.section ||
+                x['Подкатегория'] || x['Подраздел'] || x['Раздел'] || x['подкатегория'] || x['подраздел'] || ''
+            ) || epInferSubcategory(name, cat, type);
+
+            const unit = epCleanText(
+                x.u || x.unit || x.measure || x.measurement ||
+                x['Ед'] || x['Ед.'] || x['Ед. изм'] || x['Ед.изм.'] || x['Единица'] || x['Единица измерения'] || x['единица'] || x['ед'] || 'шт'
+            ) || 'шт';
+
+            const priceRaw = x.p || x.price || x.cost || x.unitPrice || x.unit_price ||
+                x['Цена'] || x['Цена ₽'] || x['Цена руб'] || x['Цена за ед.'] || x['Цена за единицу'] || x['Стоимость'] || x['цена'] || 0;
+
+            return {
+                id: x.id || (type === 'work' ? 'w' : 'm') + '_ai_' + Date.now() + '_' + i,
+                n: name,
+                c: cat || 'Разное',
+                sc: subcat || 'Разное',
+                p: epMoney(priceRaw),
+                u: unit
+            };
+        }).filter(function (x) { return x.n && x.n.length > 2; });
+    }
+
+    
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: epSaveUserDb
+ * ========================================================= */
+async function epSaveUserDb() {
+        try {
+            safeSet('user_db_mat_v31', JSON.stringify(matDB));
+            safeSet('user_db_work_v31', JSON.stringify(workDB));
+            if (db && appUser && appUser.uid) {
+                await db.collection('user_db').doc(appUser.uid).set({
+                    uid: appUser.uid,
+                    name: appUser.name || appUser.email || '',
+                    matDB: matDB,
+                    workDB: workDB,
+                    updatedAt: new Date().toISOString()
+                }, { merge: true });
+            }
+        } catch (e) {
+            console.warn('save user db error', e);
+        }
+    }
+
+    
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: epSaveGlobalDb
+ * ========================================================= */
+async function epSaveGlobalDb() {
+        if (!db) return;
+        await db.collection('settings').doc('global_db').set({ matDB: matDB, workDB: workDB, updatedAt: new Date().toISOString() }, { merge: true });
+    }
+
+    
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: epLoadUserDbAfterLogin
  * ========================================================= */
 async function epLoadUserDbAfterLogin() {
         try {
@@ -1836,7 +1668,7 @@ async function epLoadUserDbAfterLogin() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epInsertDbTools
+ * AI FUNCTIONS FUNCTION: epInsertDbTools
  * ========================================================= */
 function epInsertDbTools() {
         if (document.getElementById('ep-db-ai-tools')) return;
@@ -1863,83 +1695,138 @@ function epInsertDbTools() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epExtractItemsFromSheetRows
+ * AI FUNCTIONS FUNCTION: epReadDbFile
  * ========================================================= */
-function epExtractItemsFromSheetRows(rows, type) {
-        const out = [];
-        let currentCat = type === 'work' ? 'Работы' : 'Разное';
-        let currentSubcat = 'Разное';
+async function epReadDbFile(file, type) {
+        showLoader('Читаю файл...', '📥');
+        try {
+            const name = file.name || '';
+            const lower = name.toLowerCase();
 
-        (rows || []).forEach(function(row) {
-            const cells = (Array.isArray(row) ? row : Object.values(row || {})).map(epCleanCell);
-            const nonEmpty = cells.filter(x => x);
-            if (!nonEmpty.length) return;
-
-            const rowText = nonEmpty.join(' ');
-            if (/^(№|номер|код|артикул)$/i.test(rowText)) return;
-            if (/наименование/i.test(rowText) && /(ед|цена|стоимость)/i.test(rowText)) return;
-
-            const unitIdx = cells.findIndex(epIsUnitCell);
-            const numIdxs = cells.map((v, i) => epIsNumberLikeCell(v) ? i : -1).filter(i => i >= 0);
-            const priceIdxs = numIdxs.filter(i => unitIdx < 0 || i > unitIdx);
-            const priceIdx = priceIdxs.length ? priceIdxs[0] : (numIdxs.length ? numIdxs[numIdxs.length - 1] : -1);
-            const hasPrice = priceIdx >= 0 && epMoney(cells[priceIdx]) > 0;
-            const hasUnit = unitIdx >= 0;
-
-            // Строка-раздел без цены и единицы
-            if (!hasPrice && !hasUnit) {
-                let title = nonEmpty.find(x => !/^\d+(\.\d+)*\.?$/.test(x)) || rowText;
-                title = epTitleCaseRu(title);
-                if (!title || title.length < 3) return;
-
-                const first = nonEmpty[0] || '';
-                if (/^\d+\.$/.test(first) || /работ/i.test(title) || title === title.toUpperCase()) {
-                    currentCat = title;
-                    currentSubcat = 'Разное';
-                } else if (/^\d+\.\d+/.test(first) || /:$/.test(rowText) || nonEmpty.length <= 2) {
-                    currentSubcat = title;
-                } else if (type === 'work') {
-                    currentSubcat = title;
-                } else {
-                    currentCat = title;
-                }
+            if (file.type.startsWith('image/')) {
+                const imageDataUrl = await epReadFileAsDataURL(file);
+                await epAiNormalizeImage(imageDataUrl, type, name);
                 return;
             }
 
-            let nameCandidates = cells.map((v, i) => ({ v, i }))
-                .filter(x => x.v)
-                .filter(x => x.i !== unitIdx && x.i !== priceIdx)
-                .filter(x => !epIsNumberLikeCell(x.v))
-                .filter(x => !epLooksLikeCodeOrNumber(x.v))
-                .filter(x => !/^(ед|ед изм|цена|сумма|стоимость|кол-во|количество)$/i.test(x.v));
+            if (lower.endsWith('.json')) {
+                const txt = await epReadFileAsText(file);
+                let raw = JSON.parse(txt);
+                if (raw.matDB && type === 'mat') raw = raw.matDB;
+                if (raw.workDB && type === 'work') raw = raw.workDB;
+                epShowDbReview(epNormalizeItems(raw, type), type, name);
+                return;
+            }
+            if (lower.endsWith('.xlsx') || lower.endsWith('.xls') || lower.endsWith('.csv')) {
+                let rows = [];
+                if (window.XLSX) {
+                    const ab = await epReadFileAsArrayBuffer(file);
+                    const wb = XLSX.read(ab, { type: 'array' });
+                    const ws = wb.Sheets[wb.SheetNames[0]];
+                    rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+                } else {
+                    const txt = await epReadFileAsText(file);
+                    rows = txt.split(/\r?\n/).map(function(line) {
+                        return line.split(';').length > line.split(',').length ? line.split(';') : line.split(',');
+                    });
+                }
 
-            if (!nameCandidates.length) return;
-            nameCandidates.sort((a, b) => b.v.length - a.v.length);
-            const name = epCleanText(nameCandidates[0].v);
-            if (!name || name.length < 4) return;
+                // Сначала разбираем Excel/CSV локально, построчно: каждая строка = отдельная позиция.
+                // ИИ нужен только как запасной вариант, если таблица слишком кривая.
+                const localItems = epExtractItemsFromSheetRows(rows, type);
+                if (localItems.length) {
+                    hideLoader();
+                    epShowDbReview(localItems, type, name);
+                    return;
+                }
 
-            const cat = currentCat && currentCat !== 'Разное' ? currentCat : epInferCategory(name, type);
-            const subcat = currentSubcat && currentSubcat !== 'Разное' ? currentSubcat : epInferSubcategory(name, cat, type);
-            const unit = hasUnit ? epNormalizeUnit(cells[unitIdx]) : 'шт';
-            const price = hasPrice ? epMoney(cells[priceIdx]) : 0;
+                await epAiNormalizeDbText(JSON.stringify(rows).slice(0, 90000), type, name);
+                return;
+            }
 
-            out.push({
-                id: (type === 'work' ? 'w' : 'm') + '_sheet_' + Date.now() + '_' + out.length,
-                n: name,
-                c: cat || (type === 'work' ? 'Работы' : 'Разное'),
-                sc: subcat || 'Разное',
-                p: price,
-                u: unit
-            });
-        });
-
-        return out;
+            const txt = await epReadFileAsText(file);
+            await epAiNormalizeDbText(txt, type, name);
+        } catch (e) {
+            hideLoader();
+            showToast('❌ ' + (e.message || 'Ошибка импорта'));
+        }
     }
+
     
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epShowDbReview
+ * AI FUNCTIONS FUNCTION: epAiNormalizeImage
+ * ========================================================= */
+async function epAiNormalizeImage(imageDataUrl, type, source) {
+        showLoader('ИИ читает таблицу с изображения...', '👁️');
+        let rawAnswer = '';
+        try {
+            const prompt = `Ты профессионально распознаёшь русские сметы, счета и прайсы электромонтажных материалов.
+На изображении таблица. Нужно извлечь ВСЕ видимые строки с позициями для базы ${epDbTypeLabel(type)}.
+
+Правила:
+1. Читай каждую строку таблицы, даже если качество среднее.
+2. Не возвращай пустой массив, если видны строки с товарами/работами.
+3. Для имени n бери колонку с наименованием/описанием, НЕ артикул и НЕ номер строки.
+4. c — главная категория: Кабель, Трубы, Расходники, Автоматика, Слаботочка, Чистовое, Работы, Щит, Разное.
+5. sc — подкатегория. Определи точнее: ВВГ, ПУГВ, SAT/TV, UTP/FTP, Подрозетники, Крепёж, Клеммники, Коробки, Щиты, Автоматы, УЗО, Дифавтоматы, Розетки, Выключатели и т.д.
+6. p — цена за единицу. Если есть две суммы, бери меньшую как цену за единицу, большую не бери как цену.
+7. u — единица измерения: шт, м, упак, компл, кг, л и т.д.
+8. Если цену не видно — p=0. Если единицу не видно — u="шт". Если подкатегорию не понял — sc="Разное".
+9. Верни СТРОГО JSON-массив без текста вокруг.
+
+Формат строго такой:
+[
+  {"n":"ВВГ-Пнг(A)-LS ГОСТ Конкорд 3x1,5","c":"Кабель","sc":"ВВГ","p":58.43,"u":"м"},
+  {"n":"Подрозетник бетон 68x60","c":"Расходники","sc":"Подрозетники","p":12,"u":"шт"}
+]`;
+
+            rawAnswer = await epAskAI(prompt, { imageDataUrl: imageDataUrl, imageDetail: 'high', maxTokens: 9000 });
+            let parsed = epParseJsonArray(rawAnswer);
+            let items = epNormalizeItems(parsed, type);
+
+            if (!items.length) {
+                const retryPrompt = `Ты ответил без позиций. Посмотри изображение ещё раз. Там таблица со строками, например кабели, подрозетники, клеммники, автоматы, расходники. Извлеки хотя бы 10-30 видимых строк. Верни только JSON массив [{"n":"Имя позиции","c":"Категория","sc":"Подкатегория","p":0,"u":"шт"}]. Не объясняй.`;
+                rawAnswer = await epAskAI(retryPrompt, { imageDataUrl: imageDataUrl, imageDetail: 'high', maxTokens: 9000 });
+                parsed = epParseJsonArray(rawAnswer);
+                items = epNormalizeItems(parsed, type);
+            }
+
+            hideLoader();
+            epShowDbReview(items, type, source, rawAnswer);
+        } catch (e) {
+            hideLoader();
+            showToast('❌ ' + (e.message || 'ИИ не прочитал изображение'));
+        }
+    }
+
+    
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: epAiNormalizeDbText
+ * ========================================================= */
+async function epAiNormalizeDbText(rawText, type, source) {
+        showLoader('ИИ структурирует базу...', '🤖');
+        let rawAnswer = '';
+        try {
+            const prompt = 'Ты помощник электрика. Приведи данные к базе ' + epDbTypeLabel(type) + '. Верни ТОЛЬКО JSON массив объектов: [{"n":"Имя позиции","c":"Категория","sc":"Подкатегория","p":123,"u":"шт"}]. n — имя/наименование позиции. c — главная категория. sc — подкатегория. p — цена за единицу, не итоговая сумма. u — единица измерения. Если цены нет, p=0. Если категории нет, определи сам: Кабель, Трубы, Расходники, Автоматика, Слаботочка, Чистовое, Работы, Щит, Разное. Если подкатегории нет, определи сам или поставь "Разное". Не возвращай пустой массив, если в данных есть строки с позициями. Данные: ' + String(rawText).slice(0, 90000);
+            rawAnswer = await epAskAI(prompt, { maxTokens: 8000 });
+            const items = epNormalizeItems(epParseJsonArray(rawAnswer), type);
+            hideLoader();
+            epShowDbReview(items, type, source, rawAnswer);
+        } catch (e) {
+            hideLoader();
+            showToast('❌ ' + (e.message || 'ИИ не обработал данные'));
+        }
+    }
+
+    
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: epShowDbReview
  * ========================================================= */
 function epShowDbReview(items, type, source, rawAnswer) {
         window.EP_DB_REVIEW = { type: type, items: items, source: source || '' };
@@ -1974,7 +1861,7 @@ function epShowDbReview(items, type, source, rawAnswer) {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epGetReviewedSelected
+ * AI FUNCTIONS FUNCTION: epGetReviewedSelected
  * ========================================================= */
 function epGetReviewedSelected() {
         const items = window.EP_DB_REVIEW.items || [];
@@ -1996,7 +1883,7 @@ function epGetReviewedSelected() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epSendDbProposal
+ * AI FUNCTIONS FUNCTION: epSendDbProposal
  * ========================================================= */
 async function epSendDbProposal(type, items, action) {
         if (!db || !appUser || appUser.role === 'admin' || !items.length) return;
@@ -2019,78 +1906,27 @@ async function epSendDbProposal(type, items, action) {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epDownloadJson
+ * AI FUNCTIONS FUNCTION: epInitialApply
  * ========================================================= */
-function epDownloadJson(filename, data) {
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = filename;
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+function epInitialApply() {
+        epPatchSettingsUI();
+        epInsertMainProviderSwitch();
+        epInsertDbTools();
+        epMakeAiMenuGroup();
+        epAddBetaLabels();
+        epRefreshProviderUI();
+        if (appUser) {
+            epLoadAiConfigFromServer();
+            epLoadUserDbAfterLogin();
+            epListenDbProposals();
+        }
     }
 
     
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epInsertAdminProposalBox
- * ========================================================= */
-function epInsertAdminProposalBox() {
-        if (document.getElementById('admin-db-proposals')) return;
-        const panel = document.getElementById('admin-panel');
-        if (!panel) return;
-        const box = document.createElement('div');
-        box.innerHTML = `
-            <h4 style="color:var(--primary); margin: 10px 0 5px;">🌍 Заявки в базу сервера:</h4>
-            <div id="admin-db-proposals" style="margin-bottom:10px; border:1px solid var(--primary); background:rgba(79,70,229,.05); border-radius:8px; padding:8px; max-height:240px; overflow-y:auto; font-size:12px;"></div>
-        `;
-        panel.insertBefore(box, panel.firstChild.nextSibling);
-    }
-
-    
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: epListenDbProposals
- * ========================================================= */
-function epListenDbProposals() {
-        if (!db || !appUser || appUser.role !== 'admin') return;
-        epInsertAdminProposalBox();
-        const cont = document.getElementById('admin-db-proposals');
-        if (!cont || cont.dataset.listen === '1') return;
-        cont.dataset.listen = '1';
-
-        db.collection('db_proposals').where('status', '==', 'pending').onSnapshot(function (snap) {
-            if (snap.empty) {
-                cont.innerHTML = `<span style="color:var(--gray);">Новых заявок нет</span>`;
-                return;
-            }
-            cont.innerHTML = '';
-            snap.forEach(function (doc) {
-                const d = doc.data();
-                const items = d.items || [];
-                cont.innerHTML += `<div class="ep-db-admin-proposal">
-                    <b>${epEscape(d.masterName || d.uid || 'Мастер')}</b>
-                    <div style="color:var(--gray); font-size:11px;">${d.type === 'work' ? 'Работы' : 'Материалы'} • ${epEscape(d.action || '')} • ${items.length} поз.</div>
-                    <div style="font-size:11px; margin-top:5px;">${items.slice(0,3).map(x => epEscape(x.n) + (x.sc ? ' <span style="color:var(--gray);">[' + epEscape(x.sc) + ']</span>' : '')).join('<br>')}${items.length > 3 ? '<br>...' : ''}</div>
-                    <div class="ep-mini-actions">
-                        <button class="btn-success" onclick="epAdminResolveDbProposal('${doc.id}','full')">✅ Добавить полностью</button>
-                        <button class="btn-primary" onclick="epAdminResolveDbProposal('${doc.id}','names')">🏷 Только название без суммы</button>
-                        <button class="btn-danger" onclick="epAdminResolveDbProposal('${doc.id}','reject')">❌ Отклонить</button>
-                    </div>
-                </div>`;
-            });
-        }, function (e) {
-            cont.innerHTML = `<span style="color:var(--danger);">Ошибка заявок: ${epEscape(e.message)}</span>`;
-        });
-    }
-
-    
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: epGetGlobalDb
+ * AI FUNCTIONS FUNCTION: epGetGlobalDb
  * ========================================================= */
 async function epGetGlobalDb() {
         try {
@@ -2108,20 +1944,7 @@ async function epGetGlobalDb() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epRenderGlobalDbModal
- * ========================================================= */
-function epRenderGlobalDbModal() {
-        const matBtn = document.getElementById('ep-global-tab-mat'); const workBtn = document.getElementById('ep-global-tab-work');
-        if (matBtn) matBtn.classList.toggle('active', epGlobalDbType === 'mat'); if (workBtn) workBtn.classList.toggle('active', epGlobalDbType === 'work');
-        const list = document.getElementById('ep-global-db-list'); if (!list) return;
-        const arr = epGlobalDbType === 'work' ? epGlobalDbCache.workDB : epGlobalDbCache.matDB;
-        list.innerHTML = epRenderGroupedList(arr || [], epGlobalDbType, { prefix:'global_full', mode:'global' });
-    }
-    
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: epInsertGlobalDbButton
+ * AI FUNCTIONS FUNCTION: epInsertGlobalDbButton
  * ========================================================= */
 function epInsertGlobalDbButton() {
         if (document.getElementById('ep-global-db-entry')) return;
@@ -2134,46 +1957,25 @@ function epInsertGlobalDbButton() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epEnsureProposalBox
+ * AI FUNCTIONS FUNCTION: epRenderProposalList
  * ========================================================= */
-function epEnsureProposalBox() {
-        let cont = document.getElementById('admin-db-proposals');
-        if (cont) return cont;
-        const panel = document.getElementById('admin-panel');
-        if (!panel) return null;
-        const box = document.createElement('div');
-        box.innerHTML = `<h4 style="color:var(--primary); margin:10px 0 5px;">🌍 Заявки в базу сервера:</h4><div id="admin-db-proposals" style="margin-bottom:10px; border:1px solid var(--primary); background:rgba(79,70,229,.05); border-radius:8px; padding:8px; max-height:260px; overflow-y:auto; font-size:12px;"></div>`;
-        panel.insertBefore(box, panel.firstChild ? panel.firstChild.nextSibling : null);
-        return document.getElementById('admin-db-proposals');
+function epRenderProposalList() {
+        const cont = epEnsureProposalBox(); if (!cont) return;
+        const entries = Object.entries(window.EP_DB_PROPOSALS_CACHE_V2 || {});
+        if (!entries.length) { cont.innerHTML = '<span style="color:var(--gray);">Новых заявок нет</span>'; return; }
+        cont.innerHTML = entries.map(function([id,d]) {
+            const items = Array.isArray(d.items) ? d.items : [];
+            const decisions = d.itemDecisions || {};
+            const done = Object.keys(decisions).length;
+            const preview = items.slice(0,3).map(x => epEsc(epProposalItemName(x))).join('<br>');
+            return `<div class="ep-proposal-open-card" onclick="epOpenProposalDetail('${id}')"><b>${epEsc(d.masterName || d.uid || 'Мастер')}</b><span class="ep-proposal-badge">${d.type === 'work' ? 'Работы' : 'Материалы'}</span><div style="font-size:11px;color:var(--gray);margin-top:4px;">${epEsc(d.action || '')} • ${items.length} поз. • обработано ${done}/${items.length}</div><div style="font-size:11px;margin-top:6px;">${preview}${items.length>3?'<br>...':''}</div><button class="btn-info" style="width:100%;margin-top:8px;padding:9px;" onclick="event.stopPropagation(); epOpenProposalDetail('${id}')">Открыть заявку</button></div>`;
+        }).join('');
     }
     
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epStartProposalV2
- * ========================================================= */
-function epStartProposalV2() {
-        if (!db || !appUser || appUser.role !== 'admin') return;
-        const cont = epEnsureProposalBox(); if (!cont || cont.dataset.v2listen === '1') return;
-        cont.dataset.v2listen = '1';
-        db.collection('db_proposals').where('status','==','pending').onSnapshot(function(snap) {
-            window.EP_DB_PROPOSALS_CACHE_V2 = {};
-            snap.forEach(function(doc) { window.EP_DB_PROPOSALS_CACHE_V2[doc.id] = Object.assign({}, doc.data() || {}, { id: doc.id }); });
-            epRenderProposalList();
-        }, function(e) { cont.innerHTML = '<span style="color:var(--danger);">Ошибка заявок: ' + epEsc(e.message) + '</span>'; });
-    }
-    
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: qs
- * ========================================================= */
-function qs(id){ return document.getElementById(id); }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: epMoveShieldSettingsIntoDetails
+ * AI FUNCTIONS FUNCTION: epMoveShieldSettingsIntoDetails
  * ========================================================= */
 function epMoveShieldSettingsIntoDetails(){
     var modal = qs('configModal');
@@ -2214,151 +2016,222 @@ function epMoveShieldSettingsIntoDetails(){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epMatGroupName
+ * AI FUNCTIONS FUNCTION: epRenderGrouped
  * ========================================================= */
-function epMatGroupName(item){
-    var text = norm([item.c,item.g,item.sc,item.n,item.kind,item.brand,item.nominal].join(' '));
-    var name = norm(item.n);
-    var c = norm(item.c);
-
-    if (text.includes('уздп') || text.includes('дугов')) return {c:'Автоматика', g:'УЗДП'};
-    if (text.includes('узм') || text.includes('реле напряж')) return {c:'Автоматика', g:'УЗМ / реле напряжения'};
-    if (text.includes('диф') || text.includes('дифф')) return {c:'Автоматика', g:'ДИФы'};
-    if (text.includes('узо')) return {c:'Автоматика', g:'УЗО'};
-    if (text.includes('автомат') || text.match(/\bc\s*(6|10|16|25|32|40)\b/)) return {c:'Автоматика', g:'Автоматы'};
-    if (text.includes('реле времени')) return {c:'Автоматика', g:'Реле времени'};
-    if (text.includes('контактор') || text.includes('пускател')) return {c:'Автоматика', g:'Контакторы'};
-    if (text.includes('реле')) return {c:'Автоматика', g:'Прочие реле'};
-
-    if (text.includes('щит') || text.includes('шкаф') || text.includes('корпус')) {
-      if (text.includes('наклад')) return {c:'Щитовое', g:'Корпуса → Накладной'};
-      if (text.includes('встра') || text.includes('внутр')) return {c:'Щитовое', g:'Корпуса → Встраиваемый'};
-      return {c:'Щитовое', g:'Корпуса'};
-    }
-    if (text.includes('ншви') || text.includes('наконеч')) return {c:'Щитовое', g:'Расходка под сборку → Наконечники'};
-    if (text.includes('пугв') || (text.includes('провод') && c !== 'кабель')) return {c:'Щитовое', g:'Расходка под сборку → Провода'};
-    if (text.includes('шин') || text.includes('клемм')) return {c:'Щитовое', g:'Расходка под сборку → Шинки / клеммники'};
-    if (text.includes('греб') || text.includes('comb')) return {c:'Щитовое', g:'Расходка под сборку → Гребёнки'};
-    if (text.includes('din') || text.includes('рейк') || text.includes('огранич')) return {c:'Щитовое', g:'Расходка под сборку → DIN-рейки / ограничители'};
-    if (text.includes('маркиров') || text.includes('бирк')) return {c:'Щитовое', g:'Расходка под сборку → Маркировка'};
-    if (text.includes('сальник') || text.includes('кабельный ввод')) return {c:'Щитовое', g:'Расходка под сборку → Кабельные вводы'};
-
-    return {c:item.c || 'Разное', g:item.g || item.sc || 'Разное'};
-  }
-
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: epPatchGenerateButton
- * ========================================================= */
-function epPatchGenerateButton(){
-    window.generateCascadePanel = window.epGenerateShieldFixed;
-    Array.from(document.querySelectorAll('button')).forEach(function(btn){ if((btn.textContent||'').includes('Сгенерировать щит')) btn.onclick = window.epGenerateShieldFixed; });
-  }
-
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: normalizeMaterialDb
- * ========================================================= */
-function normalizeMaterialDb(){
-    const arr = dbArr('mat') || [];
-    arr.forEach(function(it){
-      if(!it || !it.n) return;
-      const n = norm((it.c||'')+' '+(it.g||'')+' '+(it.sc||'')+' '+it.n);
-      const raw = String(it.n||'');
-      if(/(диф|дифавтомат|dif)/i.test(raw) || n.includes('диф')){ it.c='Автоматика'; setGroup(it,'ДИФы'); it.kind=it.kind||'dif'; }
-      else if(/\bузо\b/i.test(raw) || n.includes(' uzo ') || n.includes(' узо ')){ it.c='Автоматика'; setGroup(it,'УЗО'); it.kind=it.kind||'uzo'; }
-      else if(/уздп/i.test(raw) || n.includes('уздп') || n.includes('дугов')){ it.c='Автоматика'; setGroup(it,'УЗДП'); it.kind=it.kind||'uzdp'; }
-      else if(/узм|реле напряж/i.test(raw) || n.includes('реле напряж')){ it.c='Автоматика'; setGroup(it,'УЗМ / реле напряжения'); it.kind=it.kind||'voltage_relay'; }
-      else if(/реле времени/i.test(raw) || n.includes('реле времени')){ it.c='Автоматика'; setGroup(it,'Реле времени'); it.kind=it.kind||'time_relay'; }
-      else if(/контактор/i.test(raw) || n.includes('контактор')){ it.c='Автоматика'; setGroup(it,'Контакторы'); it.kind=it.kind||'contactor'; }
-      else if(/автомат|\b[abcdсавд]\s?\d{1,3}\b/i.test(raw) || /(^|\s)c\s?\d{1,3}(\s|$)/.test(n)){ it.c='Автоматика'; setGroup(it,'Автоматы'); it.kind=it.kind||'automatic'; }
-      else if(/щит|корпус|бокс/i.test(raw) || n.includes('корпус')){ it.c='Щитовое'; setGroup(it, (/наклад/i.test(raw)||n.includes('наклад')) ? 'Корпуса → Накладной' : 'Корпуса → Встраиваемый'); it.kind=it.kind||'shield_box'; }
-      else if(/ншви|наконеч/i.test(raw) || n.includes('наконеч')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Наконечники'); it.kind=it.kind||'lug_pack'; }
-      else if(/пугв|пугов|провод/i.test(raw) || n.includes('пугв')){ it.c=it.c||'Щитовое'; if(it.c==='Щитовое' || n.includes('пугв')) setGroup(it,'Расходка под сборку → Провода'); it.kind=it.kind||'pugv'; }
-      else if(/шин|клемм/i.test(raw) || n.includes('шина') || n.includes('клемм')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Шинки / клеммники'); it.kind=it.kind||'busbar'; }
-      else if(/греб/i.test(raw) || n.includes('греб')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Гребёнки'); it.kind=it.kind||'comb_bus'; }
-      else if(/din|дин|рейк|огранич/i.test(raw) || n.includes('din')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → DIN-рейки / ограничители'); it.kind=it.kind||'din'; }
-      else if(/маркир|бирк/i.test(raw) || n.includes('маркир')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Маркировка'); it.kind=it.kind||'marking'; }
-      else if(/сальник|кабельн.*ввод/i.test(raw) || n.includes('сальник')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Кабельные вводы'); it.kind=it.kind||'cable_gland'; }
-      if(!it.brand) it.brand = detectBrand(raw) || it.brand;
-      if(!it.nominal) it.nominal = detectNominal(raw) || it.nominal;
+function epRenderGrouped(arr, type, mode, prefix){
+    var data = epGroupedData(arr, type);
+    var html = '', i = 0;
+    Object.keys(data).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
+      var cid = prefix + '_c_' + (i++);
+      var catStyle = type === 'work' ? 'style="color:var(--orange); border-color:rgba(245,158,11,0.2); background:rgba(245,158,11,0.08);"' : '';
+      html += '<div class="cat-header" '+catStyle+' onclick="toggleCat(\''+cid+'\')">'+safeText(c)+' <span>▼</span></div><div class="cat-body" id="'+cid+'">';
+      Object.keys(data[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
+        var sid = prefix + '_s_' + (i++);
+        html += '<div class="ep-db-sub-header" onclick="epToggleShieldDbSub(\''+sid+'\', event)">'+safeText(g)+' <small>открыть</small></div><div class="ep-db-sub-body" id="'+sid+'">';
+        data[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it){
+          var id = safeText(it.id);
+          var meta = safeText(g)+' • '+(Number(it.p)||0)+' ₽ / '+safeText(it.u || 'шт');
+          if (mode === 'editor') {
+            html += '<div class="emp-row"><div style="flex:1;"><div class="ep-db-item-title">'+safeText(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div><div class="ep-row-actions"><input type="number" value="'+(Number(it.p)||0)+'" onchange="requestPriceChange(\''+type+'\',\''+id+'\',this.value)" style="width:74px;margin:0;padding:5px;text-align:center;"><button class="btn-danger" onclick="epDeleteDbItem && epDeleteDbItem(\''+type+'\',\''+id+'\')" title="Удалить">🗑</button></div></div>';
+          } else {
+            var color = type === 'work' ? 'background:var(--orange);' : '';
+            html += '<div class="mat-item"><div style="flex:1;"><div class="ep-db-item-title">'+safeText(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div><button class="mat-add-btn" style="'+color+' width:auto; margin:0;" onclick="epPromptShieldGroupedAdd(\''+id+'\',\''+type+'\')">+ Добавить</button></div>';
+          }
+        });
+        html += '</div>';
+      });
+      html += '</div>';
     });
-    setDbArr('mat', arr);
+    return html || '<div style="color:var(--gray);font-size:12px;padding:10px;">Позиции не найдены</div>';
   }
 
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: normalizeDbItem
+ * AI FUNCTIONS FUNCTION: boot
  * ========================================================= */
-function normalizeDbItem(it, type){
-    if(!it) return it;
-    if(!it.id) {
-      it.id = (type === 'work' ? 'w_' : 'm_') + Date.now() + '_' + Math.random().toString(36).slice(2,8);
-    }
-    if(type === 'mat') {
-      var raw = String([it.c,it.g,it.sc,it.subcategory,it.n].filter(Boolean).join(' '));
-      var n = norm(raw);
-      if(/диф|дифавтомат|dif/i.test(raw)){
-        it.c = 'Автоматика'; it.g = it.g || it.sc || 'ДИФы'; it.sc = it.sc || it.g; it.kind = it.kind || 'dif';
-      } else if(/узо/i.test(raw)) {
-        it.c = 'Автоматика'; it.g = it.g || it.sc || 'УЗО'; it.sc = it.sc || it.g; it.kind = it.kind || 'uzo';
-      } else if(/уздп|дугов/i.test(raw)) {
-        it.c = 'Автоматика'; it.g = it.g || it.sc || 'УЗДП'; it.sc = it.sc || it.g; it.kind = it.kind || 'uzdp';
-      } else if(/узм|реле напряж/i.test(raw)) {
-        it.c = 'Автоматика'; it.g = it.g || it.sc || 'УЗМ / реле напряжения'; it.sc = it.sc || it.g; it.kind = it.kind || 'voltage_relay';
-      } else if(/реле времени/i.test(raw)) {
-        it.c = 'Автоматика'; it.g = it.g || it.sc || 'Реле времени'; it.sc = it.sc || it.g; it.kind = it.kind || 'time_relay';
-      } else if(/контактор/i.test(raw)) {
-        it.c = 'Автоматика'; it.g = it.g || it.sc || 'Контакторы'; it.sc = it.sc || it.g; it.kind = it.kind || 'contactor';
-      } else if(/автомат|(^|\s)[abcdсавд]\s?\d{1,3}(\s|$)/i.test(raw)) {
-        it.c = 'Автоматика'; it.g = it.g || it.sc || 'Автоматы'; it.sc = it.sc || it.g; it.kind = it.kind || 'automatic';
-      } else if(/щит|корпус|бокс/i.test(raw)) {
-        it.c = 'Щитовое';
-        var g = /наклад/i.test(raw) ? 'Корпуса → Накладной' : 'Корпуса → Встраиваемый';
-        it.g = it.g || it.sc || g; it.sc = it.sc || it.g; it.kind = it.kind || 'shield_box';
-      } else if(/ншви|наконеч/i.test(raw)) {
-        it.c = 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → Наконечники'; it.sc = it.sc || it.g; it.kind = it.kind || 'lug_pack';
-      } else if(/пугв|провод/i.test(raw)) {
-        it.c = it.c || 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → Провода'; it.sc = it.sc || it.g; it.kind = it.kind || 'pugv';
-      } else if(/шин|клемм/i.test(raw)) {
-        it.c = 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → Шинки / клеммники'; it.sc = it.sc || it.g; it.kind = it.kind || 'busbar';
-      } else if(/греб/i.test(raw)) {
-        it.c = 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → Гребёнки'; it.sc = it.sc || it.g; it.kind = it.kind || 'comb_bus';
-      } else if(/din|дин|рейк|огранич/i.test(raw)) {
-        it.c = 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → DIN-рейки / ограничители'; it.sc = it.sc || it.g; it.kind = it.kind || 'din';
-      } else if(/маркир|бирк/i.test(raw)) {
-        it.c = 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → Маркировка'; it.sc = it.sc || it.g; it.kind = it.kind || 'marking';
-      }
-      it.brand = it.brand || detectBrand(raw);
-      it.nominal = it.nominal || detectNominal(raw);
-      it.leakage = it.leakage || detectLeakage(raw);
-      it.rcdType = it.rcdType || detectRcdType(raw);
-    }
-    if(type === 'work') {
-      var wr = String([it.c,it.g,it.sc,it.subcategory,it.n].filter(Boolean).join(' '));
-      if(/ниша.*щит|щит.*ниша|штроб|резк|алмаз|высверл|отверст/i.test(wr)) {
-        it.c = it.c || 'Штробление и резка';
-        if(/ниша.*щит|щит.*ниша/i.test(wr)) {
-          it.c = 'Штробление и резка';
-          it.g = it.g || it.sc || 'Ниши щита';
-          it.sc = it.sc || it.g;
+function boot(){ epMoveShieldSettingsIntoDetails(); epPatchDbRenderers(); epNormalizeMaterialsDb(); epPatchGenerateButton(); }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: smartFindMat
+ * ========================================================= */
+function smartFindMat(label, words, meta){
+    normalizeMaterialDb();
+    const arr = dbArr('mat') || [];
+    meta = meta || {};
+    const key = lookupKey('mat', meta, label);
+    const saved = savedChoices()[key];
+    if(saved){ const found = arr.find(x => String(x.id)===String(saved)); if(found) return {item: found, key}; }
+    const brand = meta.brand || detectBrand(label) || '';
+    const nominal = meta.nominal || detectNominal(label) || '';
+    const kind = String(meta.kind||'').toLowerCase();
+    const searchWords = (words || []).concat([label, brand, nominal, kind]).filter(Boolean).map(norm).filter(Boolean);
+    let best=null, bestScore=-999;
+    arr.forEach(function(it){
+      const blob = norm([it.c,it.g,it.sc,it.subcategory,it.kind,it.brand,it.nominal,it.curve,it.rcdType,it.leakage,it.n].filter(Boolean).join(' '));
+      let score = 0;
+      if(kind && blob.includes(norm(kind))) score += 4;
+      if(kind.includes('automatic') && (blob.includes('автомат') || blob.includes('automatic'))) score += 5;
+      if(kind.includes('dif') && blob.includes('диф')) score += 5;
+      if(kind.includes('uzo') && blob.includes('узо')) score += 5;
+      if(brand){ if(blob.includes(norm(brand))) score += 8; else score -= 20; }
+      if(nominal){ if(blob.replace(/\s+/g,'').includes(norm(nominal).replace(/\s+/g,''))) score += 10; else if(kind.includes('automatic') || kind.includes('breaker')) score -= 30; }
+      if(meta.curve && blob.includes(norm(meta.curve))) score += 2;
+      if(meta.leakage && blob.includes(norm(meta.leakage+'ма'))) score += 4;
+      searchWords.forEach(w => { if(w && blob.includes(w)) score += 1; });
+      if(score > bestScore){ bestScore=score; best=it; }
+    });
+    if(best && bestScore >= 6) return {item:best, key};
+    return {item:null, key};
+  }
+
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: mergeEstimate
+ * ========================================================= */
+function mergeEstimate(){
+    try{
+      if(!Array.isArray(currentEstimate)) return;
+      const map = new Map();
+      currentEstimate.forEach(function(it){
+        if(!it) return;
+        const name = canonicalName(it);
+        const key = [it.type||'', it.sourceId||'', name, Number(it.p)||0, it.u||'шт', it.tag||''].join('|');
+        if(!map.has(key)) map.set(key, Object.assign({}, it, { n:name, q:Number(it.q)||0, epMergedDetails: [] }));
+        else map.get(key).q += Number(it.q)||0;
+        const rec = map.get(key); if(it.n && it.n !== name) rec.epMergedDetails.push(it.n);
+      });
+      currentEstimate = Array.from(map.values()).filter(x => Number(x.q) !== 0);
+    }catch(e){ console.error('mergeEstimate', e); }
+  }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: mergeEstimateFixed
+ * ========================================================= */
+function mergeEstimateFixed(){
+    try{
+      if(!Array.isArray(currentEstimate)) return;
+      var map = new Map();
+      currentEstimate.forEach(function(it){
+        if(!it) return;
+        var originalName = String(it.n || '');
+        if(/^ДИФ$/i.test(originalName.trim()) || /^УЗО$/i.test(originalName.trim())) return; // лишняя обобщённая позиция
+        var name = cleanCanonicalName(it);
+        var key = [it.type||'', it.sourceId||'', name, Number(it.p)||0, it.u||'шт', it.tag||''].join('|');
+        if(!map.has(key)) {
+          map.set(key, Object.assign({}, it, {
+            n: name,
+            q: Number(it.q)||0,
+            epMergedDetails: [],
+            epRawLabels: []
+          }));
+        } else {
+          map.get(key).q += Number(it.q)||0;
+        }
+        var rec = map.get(key);
+        var raw = it.epRawLabel || originalName;
+        if(raw && rec.epRawLabels.indexOf(raw) < 0) rec.epRawLabels.push(raw);
+        var line = lineFromRaw(raw, name);
+        if(line && rec.epMergedDetails.indexOf(line) < 0) rec.epMergedDetails.push(line);
+      });
+      currentEstimate = Array.from(map.values()).filter(function(x){ return Number(x.q) !== 0; });
+    }catch(e){ console.error('mergeEstimateFixed', e); }
+  }
+
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: shieldRowsForDetails
+ * ========================================================= */
+function shieldRowsForDetails(){
+    var rows = [];
+    (currentEstimate || []).forEach(function(it){
+      var n = String((it && it.n) || '');
+      if(!/(Автомат|ДИФ|УЗО|Реле|Контактор|Вводной)/i.test(n)) return;
+
+      var details = Array.isArray(it.epMergedDetails) && it.epMergedDetails.length ? it.epMergedDetails.slice() : [lineFromRaw(it.epRawLabel || n, n)];
+
+      if(/ДИФ|УЗО/i.test(n)) {
+        if(/10\s*мА/i.test(n)) details = ['Влажные зоны / защита 10 мА'];
+        else if(/30\s*мА/i.test(n) && /ДИФ|УЗО/i.test(n)) {
+          if(/Климат/i.test(n)) details = ['Климат / кондиционеры / тёплые полы'];
+          else if(/Освещ/i.test(n)) details = ['Освещение / группы мастер-кнопки'];
+          else if(/Неотключ/i.test(n)) details = ['Неотключаемые группы / холодильник / Нептун / роутер'];
+          else if(/Больш/i.test(n)) details = ['Большая техника / плита / бойлер'];
+          else if(/Силов/i.test(n)) details = ['Силовые линии / розеточные группы'];
+          else details = ['Группа защиты'];
         }
       }
-    }
-    return it;
+
+      details.forEach(function(line){
+        rows.push({
+          line: line,
+          app: n,
+          note: detailNote(n, line)
+        });
+      });
+    });
+    return rows;
   }
 
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: loadGlobalDb
+ * AI FUNCTIONS FUNCTION: detailNote
+ * ========================================================= */
+function detailNote(app, line){
+    var n = String(app || '');
+    if(/Вводной/i.test(n)) return 'ввод питания щита';
+    if(/ДИФ|УЗО/i.test(n)) return /10\s*мА/i.test(n) ? 'защита влажных зон 10 мА' : 'групповая защита 30 мА';
+    if(/Автомат/i.test(n)) return 'отдельный автомат линии';
+    if(/Реле напряж/i.test(n)) return 'защита от перенапряжения';
+    if(/Контактор/i.test(n)) return 'мастер-кнопка только на свет';
+    return '';
+  }
+
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: saveLocalDb
+ * ========================================================= */
+function saveLocalDb(){
+    try{
+      if(typeof safeSet === 'function'){
+        safeSet('user_db_mat_v31', JSON.stringify(localArr('mat')));
+        safeSet('user_db_work_v31', JSON.stringify(localArr('work')));
+      } else {
+        localStorage.setItem('user_db_mat_v31', JSON.stringify(localArr('mat')));
+        localStorage.setItem('user_db_work_v31', JSON.stringify(localArr('work')));
+      }
+    }catch(e){}
+    try{
+      if(typeof db !== 'undefined' && db && typeof appUser !== 'undefined' && appUser && appUser.uid){
+        db.collection('user_db').doc(appUser.uid).set({
+          uid: appUser.uid,
+          name: appUser.name || appUser.email || '',
+          matDB: localArr('mat'),
+          workDB: localArr('work'),
+          updatedAt: new Date().toISOString()
+        }, { merge:true });
+      }
+    }catch(e){}
+  }
+
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: loadGlobalDb
  * ========================================================= */
 async function loadGlobalDb(force){
     if(!force && window.EP_GLOBAL_DB_VISIBLE_CACHE.loadedAt && Date.now() - window.EP_GLOBAL_DB_VISIBLE_CACHE.loadedAt < 12000){
@@ -2385,61 +2258,79 @@ async function loadGlobalDb(force){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: renderGlobalModalFixed
+ * AI FUNCTIONS FUNCTION: groupHtml
  * ========================================================= */
-function renderGlobalModalFixed(){
-    var type = window.EP_GLOBAL_DB_TAB_FIXED || 'mat';
-    var matBtn = qs('ep-global-tab-mat'), workBtn = qs('ep-global-tab-work');
-    if(matBtn) matBtn.classList.toggle('active', type === 'mat');
-    if(workBtn) workBtn.classList.toggle('active', type === 'work');
-    var list = qs('ep-global-db-list');
-    if(!list) return;
-    var cache = window.EP_GLOBAL_DB_VISIBLE_CACHE || {};
-    var arr = (type === 'work' ? (cache.workDB || []) : (cache.matDB || [])).map(function(x){ return Object.assign({}, x, {__src:'global'}); });
-    list.innerHTML = groupHtml(arr, type, 'global_fixed_'+type, 'global');
+function groupHtml(arr, type, prefix, mode){
+    var data = {};
+    (arr || []).forEach(function(it){
+      var c = it.c || 'Разное';
+      var g = getGroup(it) || 'Разное';
+      if(!data[c]) data[c] = {};
+      if(!data[c][g]) data[c][g] = [];
+      data[c][g].push(it);
+    });
+    var html = '', idx = 0;
+    Object.keys(data).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
+      var cid = prefix + '_c_' + (idx++);
+      var catStyle = type === 'work' ? 'style="color:var(--orange);background:rgba(245,158,11,.08);"' : '';
+      html += '<div class="cat-header" '+catStyle+' onclick="toggleCat(\''+cid+'\')">'+safe(c)+'</div><div class="cat-body" id="'+cid+'">';
+      Object.keys(data[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
+        var gid = prefix + '_g_' + (idx++);
+        html += '<div class="ep-db-sub-header" onclick="epToggleSmartSub(\''+gid+'\', event)"><span>'+safe(g)+'</span><small>открыть</small></div><div class="ep-db-sub-body" id="'+gid+'">';
+        data[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it){
+          var k = sigKey(type,it);
+          var src = it.__src === 'global' ? '<span style="color:#8B5CF6;font-weight:900;">🌍 серверная</span>' : '<span style="color:#10B981;font-weight:900;">👤 моя</span>';
+          var meta = safe(g) + ' • ' + src + ' • ' + (Number(it.p)||0) + ' ₽ / ' + safe(it.u || 'шт');
+          if(mode === 'global'){
+            html += '<label class="mat-item ep-select-row">' +
+              '<input type="checkbox" class="ep-global-check" data-key="'+safe(k)+'" data-type="'+type+'" style="width:22px;height:22px;accent-color:var(--primary);">' +
+              '<div style="flex:1;"><div class="ep-db-item-title">'+safe(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div></label>';
+          } else {
+            var color = type === 'work' ? 'background:var(--orange);' : '';
+            html += '<div class="mat-item"><div style="flex:1;"><div class="ep-db-item-title">'+safe(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div>' +
+              '<button class="mat-add-btn" style="'+color+'width:auto;margin:0;" onclick="promptAdd(\''+safe(k)+'\', \''+type+'\')">+ Добавить</button></div>';
+          }
+        });
+        html += '</div>';
+      });
+      html += '</div>';
+    });
+    return html || '<div style="padding:15px;color:var(--gray);font-weight:700;">Позиции не найдены</div>';
+  }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: saveMyDb
+ * ========================================================= */
+async function saveMyDb(){
+    try{
+      if(typeof safeSet === 'function'){
+        safeSet('user_db_mat_v31', JSON.stringify(localDb('mat')));
+        safeSet('user_db_work_v31', JSON.stringify(localDb('work')));
+      } else {
+        localStorage.setItem('user_db_mat_v31', JSON.stringify(localDb('mat')));
+        localStorage.setItem('user_db_work_v31', JSON.stringify(localDb('work')));
+      }
+    }catch(e){}
+    try{
+      if(typeof db !== 'undefined' && db && typeof appUser !== 'undefined' && appUser && appUser.uid){
+        await db.collection('user_db').doc(appUser.uid).set({
+          uid: appUser.uid,
+          name: appUser.name || appUser.email || '',
+          matDB: localDb('mat'),
+          workDB: localDb('work'),
+          updatedAt: new Date().toISOString()
+        }, { merge:true });
+      }
+    }catch(e){ console.warn('saveMyDb', e); }
   }
 
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: classify
- * ========================================================= */
-function classify(it){
-    var meta = (it && it.dbMeta) || {};
-    var n = norm([it && it.n, it && it.c, getGroup(it), meta.kind, meta.category, meta.subcategory].filter(Boolean).join(' '));
-    var raw = String((it && it.n) || '');
-    if(meta.kind) {
-      var k = String(meta.kind).toLowerCase();
-      if(k.indexOf('dif') >= 0) return 'dif';
-      if(k.indexOf('uzo') >= 0) return 'uzo';
-      if(k.indexOf('automatic') >= 0 || k.indexOf('breaker') >= 0) return 'auto';
-      if(k.indexOf('voltage') >= 0) return 'voltage_relay';
-      if(k.indexOf('contactor') >= 0) return 'contactor';
-    }
-    if(/диф/i.test(raw) || n.indexOf('диф') >= 0) return 'dif';
-    if(/узо/i.test(raw) || n.indexOf('узо') >= 0) return 'uzo';
-    if(/уздп|дугов/i.test(raw) || n.indexOf('уздп') >= 0) return 'uzdp';
-    if(/узм|реле напряж/i.test(raw) || n.indexOf('реле напряж') >= 0) return 'voltage_relay';
-    if(/реле времени/i.test(raw) || n.indexOf('реле времени') >= 0) return 'time_relay';
-    if(/контактор/i.test(raw) || n.indexOf('контактор') >= 0) return 'contactor';
-    if(/автомат|(^|\s)[abcdсавд]\s?\d{1,3}(\s|$)/i.test(raw) || /\bc\s?\d{1,3}\b/.test(n)) return 'auto';
-    if(/кабель|ввг|провод|пугв|utp|ftp|нг/i.test(raw) || n.indexOf('кабель') >= 0 || n.indexOf('ввг') >= 0) return 'cable';
-    if(/щит|корпус|бокс/i.test(raw) || n.indexOf('корпус') >= 0) return 'shield_box';
-    if(/греб/i.test(raw)) return 'comb';
-    if(/ншви|наконеч/i.test(raw)) return 'lug';
-    if(/шин|клемм/i.test(raw)) return 'bus';
-    if(/din|дин|рейк|огранич/i.test(raw)) return 'din';
-    if(/маркир|бирк/i.test(raw)) return 'marking';
-    if((it && it.type) === 'work') return 'work:' + norm([(it.c||''), getGroup(it)].join('|'));
-    return 'other:' + norm([(it && it.c) || '', getGroup(it)].join('|'));
-  }
-
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: loadGlobal
+ * AI FUNCTIONS FUNCTION: loadGlobal
  * ========================================================= */
 async function loadGlobal(force){
     if(!force && window.EP_HARD_GLOBAL_CACHE.loadedAt && Date.now() - window.EP_HARD_GLOBAL_CACHE.loadedAt < 8000) return window.EP_HARD_GLOBAL_CACHE;
@@ -2466,14 +2357,59 @@ async function loadGlobal(force){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: $
+ * AI FUNCTIONS FUNCTION: renderList
  * ========================================================= */
-function $(id){ return document.getElementById(id); }
+function renderList(arr,type,prefix,mode){
+    var data = {};
+    (arr || []).forEach(function(it){
+      var c = it.c || 'Разное';
+      var g = groupOf(it) || 'Разное';
+      if(!data[c]) data[c] = {};
+      if(!data[c][g]) data[c][g] = [];
+      data[c][g].push(it);
+    });
+    var html = '', i = 0;
+    Object.keys(data).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
+      var cid = prefix + '_c_' + (i++);
+      var catStyle = type === 'work' ? 'style="color:var(--orange);background:rgba(245,158,11,.08);"' : '';
+      html += '<div class="cat-header" '+catStyle+' onclick="toggleCat(\''+cid+'\')">'+esc(c)+'</div><div class="cat-body" id="'+cid+'">';
+      Object.keys(data[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
+        var gid = prefix + '_g_' + (i++);
+        html += '<div class="ep-db-sub-header" onclick="epHardToggleDbSub(\''+gid+'\', event)"><span>'+esc(g)+'</span><small>открыть</small></div><div class="ep-db-sub-body" id="'+gid+'">';
+        data[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it,idx){
+          var sk = sigKey(type,it);
+          var src = it.__src === 'global' ? '<span style="color:#8B5CF6;font-weight:900;">🌍 серверная</span>' : '<span style="color:#10B981;font-weight:900;">👤 моя</span>';
+          var meta = esc(g) + ' • ' + src + ' • ' + (Number(it.p)||0) + ' ₽ / ' + esc(it.u || 'шт');
+          if(mode === 'global'){
+            html += '<label class="mat-item ep-select-row">' +
+              '<input type="checkbox" class="ep-global-check" data-type="'+type+'" data-sig="'+esc(sk)+'" data-id="'+esc(String(it.id||''))+'" style="width:22px;height:22px;accent-color:var(--primary);">' +
+              '<div style="flex:1;"><div class="ep-db-item-title">'+esc(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div></label>';
+          } else if(mode === 'editor'){
+            html += '<div class="emp-row" style="align-items:flex-start;">' +
+              '<label style="display:flex;gap:8px;align-items:flex-start;flex:1;">' +
+              '<input type="checkbox" class="ep-db-delete-check" data-type="'+type+'" data-sig="'+esc(sk)+'" data-id="'+esc(String(it.id||''))+'" style="width:22px;height:22px;accent-color:#EF4444;margin-top:4px;">' +
+              '<div style="flex:1;"><b>'+esc(it.n || 'Позиция')+'</b><br><span style="color:var(--gray);font-size:10px;">'+meta+'</span></div></label>' +
+              '<div class="ep-row-actions">' +
+              '<input type="number" value="'+(Number(it.p)||0)+'" onchange="requestPriceChange(\''+type+'\', \''+esc(String(it.id||''))+'\', this.value)" style="width:72px;margin:0;padding:4px;text-align:center;">' +
+              '<button class="btn-danger" onclick="epHardDeleteLocalPosition(\''+type+'\', \''+esc(sk)+'\', \''+esc(String(it.id||''))+'\')" style="white-space:nowrap;">Удалить позицию</button>' +
+              '</div></div>';
+          } else {
+            var color = type === 'work' ? 'background:var(--orange);' : '';
+            html += '<div class="mat-item"><div style="flex:1;"><div class="ep-db-item-title">'+esc(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div>' +
+              '<button class="mat-add-btn" style="'+color+'width:auto;margin:0;" onclick="promptAdd(\''+esc(sk)+'\', \''+type+'\')">+ Добавить</button></div>';
+          }
+        });
+        html += '</div>';
+      });
+      html += '</div>';
+    });
+    return html || '<div style="padding:15px;color:var(--gray);font-weight:700;">Позиции не найдены</div>';
+  }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: readGlobal
+ * AI FUNCTIONS FUNCTION: readGlobal
  * ========================================================= */
 async function readGlobal(force){
     if(!force && window.EP_ULTIMATE_DB_CACHE.ts && Date.now() - window.EP_ULTIMATE_DB_CACHE.ts < 6000) return window.EP_ULTIMATE_DB_CACHE;
@@ -2510,7 +2446,66 @@ async function readGlobal(force){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: esc
+ * AI FUNCTIONS FUNCTION: renderItems
+ * ========================================================= */
+function renderItems(arr,type,prefix,mode){
+    var data = {};
+    (arr || []).forEach(function(it){
+      var c = it.c || 'Разное';
+      var g = groupOf(it) || 'Разное';
+      if(!data[c]) data[c] = {};
+      if(!data[c][g]) data[c][g] = [];
+      data[c][g].push(it);
+    });
+
+    var html = '', n = 0;
+    Object.keys(data).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
+      var cid = prefix + '_c_' + (n++);
+      var catStyle = type === 'work' ? 'style="color:var(--orange);background:rgba(245,158,11,.08);"' : '';
+      html += '<div class="cat-header" '+catStyle+' onclick="toggleCat(\''+cid+'\')">'+esc(c)+'</div><div class="cat-body" id="'+cid+'">';
+      Object.keys(data[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
+        var gid = prefix + '_g_' + (n++);
+        html += '<div class="ep-db-sub-header" onclick="epUltimateToggleSub(\''+gid+'\', event)"><span>'+esc(g)+'</span><small>открыть</small></div><div class="ep-db-sub-body" id="'+gid+'">';
+        data[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it){
+          var encoded = encodeItem(it);
+          var sk = sig(type,it);
+          var src = it.__src === 'global'
+            ? '<span style="color:#8B5CF6;font-weight:900;">🌍 серверная</span>'
+            : '<span style="color:#10B981;font-weight:900;">👤 моя</span>';
+          var meta = esc(g) + ' • ' + src + ' • ' + (Number(it.p)||0) + ' ₽ / ' + esc(it.u || 'шт');
+
+          if(mode === 'global'){
+            html += '<label class="mat-item ep-select-row">' +
+              '<input type="checkbox" class="ep-global-check" data-type="'+type+'" data-item="'+esc(encoded)+'" data-sig="'+esc(sk)+'" style="width:22px;height:22px;accent-color:var(--primary);">' +
+              '<div style="flex:1;"><div class="ep-db-item-title">'+esc(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div></label>';
+          } else if(mode === 'editor'){
+            html += '<div class="emp-row" style="align-items:flex-start;">' +
+              '<label style="display:flex;gap:8px;align-items:flex-start;flex:1;">' +
+              '<input type="checkbox" class="ep-db-delete-check" data-type="'+type+'" data-item="'+esc(encoded)+'" data-sig="'+esc(sk)+'" style="width:22px;height:22px;accent-color:#EF4444;margin-top:4px;">' +
+              '<div style="flex:1;"><b>'+esc(it.n || 'Позиция')+'</b><br><span style="color:var(--gray);font-size:10px;">'+meta+'</span></div></label>' +
+              '<div class="ep-row-actions">' +
+              '<input type="number" value="'+(Number(it.p)||0)+'" onchange="epUltimateEditPrice(\''+type+'\', \''+esc(encoded)+'\', this.value)" style="width:74px;margin:0;padding:4px;text-align:center;">' +
+              '<button class="btn-danger" onclick="epUltimateDeleteOne(\''+type+'\', \''+esc(encoded)+'\')" style="white-space:nowrap;">Удалить позицию</button>' +
+              '</div></div>';
+          } else {
+            var color = type === 'work' ? 'background:var(--orange);' : '';
+            html += '<div class="mat-item"><div style="flex:1;"><div class="ep-db-item-title">'+esc(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div>' +
+              '<button class="mat-add-btn" style="'+color+'width:auto;margin:0;" onclick="promptAdd(\''+esc(encoded)+'\', \''+type+'\')">+ Добавить</button></div>';
+          }
+        });
+        html += '</div>';
+      });
+      html += '</div>';
+    });
+
+    return html || '<div style="padding:15px;color:var(--gray);font-weight:700;">Позиции не найдены</div>';
+  }
+
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: esc
  * ========================================================= */
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g,function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
   function cleanText(s){ return String(s || '').toLowerCase().replace(/ё/g,'е').replace(/×/g,'x').replace(/х/g,'x').replace(/[^a-zа-я0-9]+/g,' ').trim(); }
@@ -2778,33 +2773,47 @@ function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g,function(m
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: activeLabel
+ * AI FUNCTIONS FUNCTION: epSaveMyDbToServer
  * ========================================================= */
-function activeLabel(){ return scope()==='global' ? '🌍 База сервера' : '👤 Моя база'; }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: activeArr
- * ========================================================= */
-function activeArr(type){ return scope()==='global' ? serverArr(type) : myArr(type); }
-
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: setActiveDb
- * ========================================================= */
-function setActiveDb(type, arr){
-    if(scope()==='global') saveServerLocal(type, arr, isAdmin());
-    else saveMyLocal(type, arr);
+async function epSaveMyDbToServer(){
+    try{
+      if(typeof db !== 'undefined' && db && uid()){
+        await db.collection('user_db').doc(uid()).set({
+          uid: uid(),
+          masterName: (appUser && (appUser.name || appUser.email)) || '',
+          matDB: EP_MY_MAT,
+          workDB: EP_MY_WORK,
+          created: true,
+          updatedAt: new Date().toISOString()
+        }, {merge:true});
+      }
+    }catch(e){ console.warn('save my db failed', e); }
   }
 
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epSendServerProposal
+ * AI FUNCTIONS FUNCTION: epSaveServerDbToServer
+ * ========================================================= */
+async function epSaveServerDbToServer(){
+    try{
+      if(typeof db !== 'undefined' && db && isAdmin()){
+        await db.collection('settings').doc('global_db').set({
+          matDB: EP_SERVER_MAT,
+          workDB: EP_SERVER_WORK,
+          cleanMode: cleanMode(),
+          updatedAt: new Date().toISOString()
+        }, {merge:true});
+      }
+    }catch(e){ console.warn('save server db failed', e); }
+  }
+
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: epSendServerProposal
  * ========================================================= */
 async function epSendServerProposal(type,items,action){
     try{
@@ -2827,7 +2836,7 @@ async function epSendServerProposal(type,items,action){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epLoadDbFromServer
+ * AI FUNCTIONS FUNCTION: epLoadDbFromServer
  * ========================================================= */
 async function epLoadDbFromServer(){
     EP_MY_MAT = arrLS(LS_MY_MAT);
@@ -2885,108 +2894,7 @@ async function epLoadDbFromServer(){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: renderCatalog
- * ========================================================= */
-function renderCatalog(type){
-    var arr = activeArr(type);
-    var html = sourceSwitcherHtml(type);
-    if(!arr.length){
-      return html + '<div style="padding:16px;border:1px dashed var(--border);border-radius:14px;text-align:center;color:var(--gray);font-weight:800;">'+activeLabel()+' пустая.<br><br>'+(scope()==='my'?'Можно добавить вручную, импортом или взять позицию из базы сервера.':'После полного сброса база сервера пустая. Админ может заполнить её вручную или импортом.')+'</div>';
-    }
-    var cats={}, i=0;
-    arr.forEach(function(it){ var c=it.c||'Разное'; var g=groupOf(it)||'Без группы'; if(!cats[c]) cats[c]={}; if(!cats[c][g]) cats[c][g]=[]; cats[c][g].push(it); });
-    Object.keys(cats).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
-      var cid='ep_cat_'+type+'_'+(i++);
-      html += '<div class="cat-header" onclick="epDbToggle(&quot;'+cid+'&quot;, event)">'+esc(c)+'</div><div class="cat-body" id="'+cid+'">';
-      Object.keys(cats[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
-        var gid='ep_sub_'+type+'_'+(i++);
-        html += '<div class="sub-cat-header" onclick="epDbToggle(&quot;'+gid+'&quot;, event)">'+esc(g)+' ▾</div><div class="sub-cat-body" id="'+gid+'">';
-        cats[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it){ html += catalogRow(type,it); });
-        html += '</div>';
-      });
-      html += '</div>';
-    });
-    return html;
-  }
-
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: editorTop
- * ========================================================= */
-function editorTop(type){
-    var title=type==='work'?'работ':'материалов';
-    var s=scope(), admin=isAdmin(), editable=canEditActive();
-    var hint=s==='my'?'Редактируется личная база мастера.':(admin?'Редактируется база сервера.':'Сервер открыт только для просмотра и копирования в мою базу.');
-    var html='<div style="border:1px solid var(--primary);border-radius:14px;padding:10px;margin:0 0 12px;background:rgba(79,70,229,.05);">'+
-      '<div style="font-weight:900;color:var(--primary);">'+label()+' — '+title+'</div>'+
-      '<div style="font-size:11px;color:var(--gray);font-weight:800;margin-top:4px;">'+hint+' Позиций: '+active(type).length+'.</div>'+
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">'+
-      '<button class="'+(s==='my'?'btn-success':'btn-info')+'" style="margin:0;padding:10px;" onclick="epSetDbScope(\'my\')">👤 Моя база</button>'+
-      '<button class="'+(s==='global'?'btn-success':'btn-info')+'" style="margin:0;padding:10px;" onclick="epSetDbScope(\'global\')">🌍 База сервера</button></div>';
-    if(editable){
-      html+='<div style="border:1px dashed var(--border);border-radius:12px;padding:8px;margin-top:8px;background:rgba(255,255,255,.35);">'+
-        '<div style="font-weight:900;color:var(--primary);font-size:12px;margin-bottom:6px;">Массовые действия: выделить → перенести / удалить</div>'+
-        '<input id="ep-v15-move-cat-'+type+'" placeholder="Категория, куда перенести" style="margin-bottom:6px;">'+
-        '<input id="ep-v15-move-sub-'+type+'" placeholder="Группа / подкатегория" style="margin-bottom:8px;">'+
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'+
-        '<button class="btn-info" style="margin:0;padding:9px;" onclick="epV15SelectVisible(\''+type+'\',true)">✅ Выделить</button>'+
-        '<button class="btn-vendor" style="margin:0;padding:9px;" onclick="epV15SelectVisible(\''+type+'\',false)">⬜ Снять</button>'+
-        '<button class="btn-success" style="margin:0;padding:9px;" onclick="epV15MoveSelectedActive(\''+type+'\')">📦 Перенести</button>'+
-        '<button class="btn-danger" style="margin:0;padding:9px;" onclick="epDeleteSelectedActiveV7()">🗑 Удалить выбранные</button></div></div>'+
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;"><button class="btn-success" style="margin:0;padding:9px;" onclick="epSaveActiveDbV7()">💾 Сохранить</button><button class="btn-info" style="margin:0;padding:9px;" onclick="epReloadActiveDbV7()">🔄 Обновить</button></div>';
-    }
-    if(s==='global'&&!admin){ html+='<div class="ep-v7-note">Серверные цены и позиции мастер не меняет. Для своей сметы нажми «В мою».</div>'; }
-    return html+'</div>';
-  }
-
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: renderDbRows
- * ========================================================= */
-function renderDbRows(type){
-    var arr=activeArr(type);
-    var html=editorTop(type);
-    if(!arr.length){
-      html += '<div style="padding:15px;border:1px dashed var(--border);border-radius:12px;text-align:center;color:var(--gray);font-weight:800;">'+activeLabel()+' пустая.</div>';
-      return html;
-    }
-    var cats={}, i=0;
-    arr.forEach(function(it){ var c=it.c||'Разное'; var g=groupOf(it)||'Без группы'; if(!cats[c]) cats[c]={}; if(!cats[c][g]) cats[c][g]=[]; cats[c][g].push(it); });
-    Object.keys(cats).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
-      var cid='db_cat_'+type+'_'+(i++);
-      html += '<div class="cat-header" onclick="epDbToggle(&quot;'+cid+'&quot;, event)">'+esc(c)+'</div><div class="cat-body" id="'+cid+'">';
-      Object.keys(cats[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
-        var gid='db_sub_'+type+'_'+(i++);
-        html += '<div class="sub-cat-header" onclick="epDbToggle(&quot;'+gid+'&quot;, event)">'+esc(g)+' ▾</div><div class="sub-cat-body" id="'+gid+'">';
-        cats[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it){ html += editorRow(type,it); });
-        html += '</div>';
-      });
-      html += '</div>';
-    });
-    return html;
-  }
-
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: downloadJson
- * ========================================================= */
-function downloadJson(filename,data){
-    var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json;charset=utf-8'});
-    var url=URL.createObjectURL(blob);
-    var a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(function(){URL.revokeObjectURL(url);},1000);
-  }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: commitCollection
+ * AI FUNCTIONS FUNCTION: commitCollection
  * ========================================================= */
 async function commitCollection(collection, mode){
     if(typeof db === 'undefined' || !db) return 0;
@@ -3007,57 +2915,120 @@ async function commitCollection(collection, mode){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: autoGroupMaterial
+ * AI FUNCTIONS FUNCTION: install
  * ========================================================= */
-function autoGroupMaterial(item){
-    var it=clone(item); var n=cleanText([it.n,it.c,it.g,it.sc].join(' '));
-    if(/utp|ftp|cat5|cat6|витая|интернет|tv|sat|коаксиал|слаботоч/.test(n)){ it.c='Слаботочка'; it.g=/tv|sat|коаксиал/.test(n)?'ТВ / коаксиальный кабель':'Интернет / витая пара'; }
-    else if(/кабель|ввг|провод|пугв|пв 3|нг/.test(n)){ if(/пугв|пв 3/.test(n)){ it.c='Щитовое'; it.g='Расходка под сборку / Провода'; } else { it.c='Кабель'; if(/1\.5|1 5|3x1 5|3 1 5/.test(n)) it.g='Силовой кабель 3×1.5'; else if(/2\.5|2 5|3x2 5|3 2 5/.test(n)) it.g='Силовой кабель 3×2.5'; else if(/3x4|3 4|x4/.test(n)) it.g='Силовой кабель 3×4'; else if(/3x6|3 6|x6/.test(n)) it.g='Силовой кабель 3×6'; else it.g='Силовой кабель'; } }
-    else if(/гофр|труб|пнд|пвх/.test(n)){ it.c='Трубы'; it.g=/20/.test(n)?'Гофра / труба 20 мм':'Гофра / трубы'; }
-    else if(/диф|дифф/.test(n)){ it.c='Автоматика'; it.g='ДИФы'; }
-    else if(/узо|вд1/.test(n)){ it.c='Автоматика'; it.g='УЗО'; }
-    else if(/уздп|дугов/.test(n)){ it.c='Автоматика'; it.g='УЗДП'; }
-    else if(/узм|реле напряж/.test(n)){ it.c='Автоматика'; it.g='УЗМ / реле напряжения'; }
-    else if(/реле времени/.test(n)){ it.c='Автоматика'; it.g='Реле времени'; }
-    else if(/контактор|пускател/.test(n)){ it.c='Автоматика'; it.g='Контакторы'; }
-    else if(/автомат|ва47|sh201|1p|2p|3p|c10|c16|c25|c32|c40/.test(n)){ it.c='Автоматика'; it.g='Автоматы'; }
-    else if(/щит|шкаф|корпус|бокс|щрв|tekfor|uk6/.test(n)){ it.c='Щитовое'; if(/внутр|встра|скрыт/.test(n)) it.g='Корпуса / Встраиваемый'; else if(/наклад/.test(n)) it.g='Корпуса / Накладной'; else it.g='Корпуса'; }
-    else if(/ншви|наконеч/.test(n)){ it.c='Щитовое'; it.g='Расходка под сборку / Наконечники'; }
-    else if(/шин|клемм|n |pe |ноль|земл/.test(n)){ it.c='Щитовое'; it.g='Расходка под сборку / Шинки и клеммники'; }
-    else if(/греб/.test(n)){ it.c='Щитовое'; it.g='Расходка под сборку / Гребёнки'; }
-    else if(/din|дин|рейк|огранич/.test(n)){ it.c='Щитовое'; it.g='Расходка под сборку / DIN-рейки и ограничители'; }
-    else if(/маркир|бирк/.test(n)){ it.c='Щитовое'; it.g='Расходка под сборку / Маркировка'; }
-    else if(/подрозет|коробк|гмл|гильз|термоусад|стяжк|лента|гвозд|баллон|площадк/.test(n)){ it.c='Расходники'; if(/подрозет/.test(n)) it.g='Подрозетники'; else if(/коробк/.test(n)) it.g='Распределительные коробки'; else if(/гмл|гильз|термоусад/.test(n)) it.g='Соединения'; else it.g='Прочая расходка'; }
-    else { it.c=it.c&&it.c!=='Разное'?it.c:'Прочее'; it.g=it.g||it.sc||'Без группы'; }
-    it.sc=it.g; return it;
-  }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: epRefreshDbScopeUi
- * ========================================================= */
-function epRefreshDbScopeUi(){
-    var my=$('ep-scope-my-btn'), gl=$('ep-scope-global-btn'), st=$('ep-db-scope-status'), cleanSt=$('ep-clean-status-line');
-    if(my){ my.className=scope()==='my'?'btn-success':'btn-info'; my.textContent='👤 Моя база'; }
-    if(gl){ gl.className=scope()==='global'?'btn-success':'btn-info'; gl.textContent='🌍 База сервера'; }
-    if(st) st.innerHTML='Сейчас выбрано: <b>'+activeLabel()+'</b>. '+(scope()==='my'?'Считаем и показываем только мою базу.':'Считаем и показываем только базу сервера.');
-    if(cleanSt) cleanSt.textContent='Активная база: '+activeLabel()+'. Материалы: '+activeArr('mat').length+', работы: '+activeArr('work').length+'.';
+function install(){
+    syncWindowCaches();
+    epRefreshDbScopeUi();
+    try{
+      openMatCatalog=window.openMatCatalog;
+      openWorkCatalog=window.openWorkCatalog;
+      renderDbEditors=window.renderDbEditors;
+      promptAdd=window.promptAdd;
+      addDbItem=window.addDbItem;
+      requestPriceChange=window.requestPriceChange;
+    }catch(e){}
   }
 
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: activeTarget
+ * AI FUNCTIONS FUNCTION: setMy
  * ========================================================= */
-function activeTarget(){ return (isAdmin() && scope() === 'global') ? 'global' : 'my'; }
-
+function setMy(type,arr){
+    arr = unique(arr, type);
+    if(type === 'work') window.EP_MY_WORK = arr; else window.EP_MY_MAT = arr;
+    writeArr(LS_MY_MAT, type === 'mat' ? arr : getMy('mat'));
+    writeArr(LS_MY_WORK, type === 'work' ? arr : getMy('work'));
+    try{ window.userMatDB = getMy('mat'); window.userWorkDB = getMy('work'); }catch(e){}
+    syncMainArrays('my');
+  }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: syncActiveArrays
+ * AI FUNCTIONS FUNCTION: setServer
+ * ========================================================= */
+function setServer(type,arr){
+    arr = unique(arr, type);
+    if(type === 'work') window.EP_GLOBAL_WORK = arr; else window.EP_GLOBAL_MAT = arr;
+    var mat = type === 'mat' ? arr : getServer('mat');
+    var work = type === 'work' ? arr : getServer('work');
+    try{
+      window.EP_FORCE_GLOBAL = {matDB:mat, workDB:work};
+      window.EP_ULTIMATE_DB_CACHE = {matDB:mat, workDB:work, ts:Date.now()};
+      window.EP_GLOBAL_DB_VISIBLE_CACHE = {matDB:mat, workDB:work, ts:Date.now()};
+    }catch(e){}
+    writeObj(LS_SERVER_CACHE, {matDB:mat, workDB:work, ts:Date.now()});
+    syncMainArrays('global');
+  }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: syncMainArrays
+ * ========================================================= */
+function syncMainArrays(target){
+    try{
+      var use = target || activeTarget();
+      if(use === 'global'){
+        window.matDB = getServer('mat');
+        window.workDB = getServer('work');
+        try{ matDB = window.matDB; workDB = window.workDB; }catch(e){}
+      } else {
+        window.matDB = getMy('mat');
+        window.workDB = getMy('work');
+        try{ matDB = window.matDB; workDB = window.workDB; }catch(e){}
+      }
+    }catch(e){}
+  }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: saveMyRemote
+ * ========================================================= */
+async function saveMyRemote(){
+    try{
+      if(typeof db !== 'undefined' && db && uid()){
+        await db.collection('user_db').doc(uid()).set({
+          uid: uid(),
+          masterName: (window.appUser && (appUser.name || appUser.email)) || '',
+          matDB: getMy('mat'),
+          workDB: getMy('work'),
+          created: true,
+          updatedAt: new Date().toISOString()
+        }, {merge:true});
+        return true;
+      }
+    }catch(e){ console.warn('EP V4 save my import failed', e); }
+    return false;
+  }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: saveServerRemote
+ * ========================================================= */
+async function saveServerRemote(){
+    try{
+      if(typeof db !== 'undefined' && db && isAdmin()){
+        await db.collection('settings').doc('global_db').set({
+          matDB: getServer('mat'),
+          workDB: getServer('work'),
+          updatedAt: new Date().toISOString()
+        }, {merge:true});
+        return true;
+      }
+    }catch(e){ console.warn('EP V4 save server import failed', e); }
+    return false;
+  }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: syncActiveArrays
  * ========================================================= */
 function syncActiveArrays(){
     try{
@@ -3080,7 +3051,7 @@ function syncActiveArrays(){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: refreshMyFromServer
+ * AI FUNCTIONS FUNCTION: refreshMyFromServer
  * ========================================================= */
 async function refreshMyFromServer(){
     var mat = Array.isArray(window.EP_MY_MAT) ? window.EP_MY_MAT : readArr(LS_MY_MAT);
@@ -3101,7 +3072,7 @@ async function refreshMyFromServer(){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: refreshServerFromServer
+ * AI FUNCTIONS FUNCTION: refreshServerFromServer
  * ========================================================= */
 async function refreshServerFromServer(){
     var mat = Array.isArray(window.EP_GLOBAL_MAT) ? window.EP_GLOBAL_MAT : getServerFromCache('mat');
@@ -3125,70 +3096,170 @@ async function refreshServerFromServer(){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: inferSub
+ * AI FUNCTIONS FUNCTION: renderReviewPage
  * ========================================================= */
-function inferSub(name,cat,type){
-    var s = norm(name);
-    if(type === 'work'){
-      if(/бетон/.test(s)) return 'Бетон';
-      if(/кирпич/.test(s)) return 'Кирпич';
-      if(/монолит|панел/.test(s)) return 'Панель / монолит';
-      return cat || 'Работы';
+function renderReviewPage(){
+    var st = window.EP_DB_REVIEW_V6;
+    window.EP_DB_REVIEW = { type: st.type, items: st.items, source: st.source };
+    var title = $('ep-db-ai-review-title');
+    if(title) title.innerText = 'Импорт ' + (st.type === 'work' ? 'работ' : 'материалов') + ': ' + (st.source || 'файл');
+    var list = $('ep-db-ai-review-list');
+    if(!list) return;
+    var total = st.items.length;
+    if(!total){
+      list.innerHTML = '<div style="padding:12px;color:var(--danger);font-weight:800;">Позиции не найдены. Проверьте файл или попробуйте импортировать другой формат.</div>';
+      return;
     }
-    if(/c\s*\d+|с\s*\d+|автомат/.test(s)) return 'Автоматы';
-    if(/диф/.test(s)) return 'ДИФы';
-    if(/узо/.test(s)) return 'УЗО';
-    if(/узм|реле напряж/.test(s)) return 'УЗМ / реле напряжения';
-    if(/контактор/.test(s)) return 'Контакторы';
-    if(/ввг/.test(s)) return 'ВВГ';
-    if(/пугв/.test(s)) return 'ПуГВ';
-    if(/utp|ftp/.test(s)) return 'UTP / FTP';
-    if(/подрозет/.test(s)) return 'Подрозетники';
-    if(/клемм|wago/.test(s)) return 'Клеммники';
-    if(/гребен/.test(s)) return 'Гребёнки';
-    if(/шин/.test(s)) return 'Шинки / клеммники';
-    if(/din|дин|рейк/.test(s)) return 'DIN-рейки / ограничители';
-    if(/щит|бокс|корпус/.test(s)) return 'Корпуса';
-    return 'Разное';
+    var pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    st.page = Math.max(0, Math.min(st.page || 0, pages - 1));
+    var start = st.page * PAGE_SIZE;
+    var end = Math.min(start + PAGE_SIZE, total);
+    var html = '<div style="position:sticky;top:0;z-index:2;background:var(--card-bg,rgba(255,255,255,.95));padding:8px;border-radius:12px;margin-bottom:8px;border:1px solid var(--border);">' +
+      '<b>Найдено: ' + total + '</b> • выбрано: <b id="ep-v6-selected-count">' + selectedCount() + '</b><br>' +
+      '<span style="font-size:11px;color:var(--gray);">Показаны строки ' + (start+1) + '–' + end + ' из ' + total + '. Большой файл не грузится весь на экран, поэтому телефон не зависает.</span>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">' +
+      '<button type="button" class="btn-info" onclick="epReviewPageV6(-1)" ' + (st.page<=0?'disabled':'') + '>← Назад</button>' +
+      '<button type="button" class="btn-info" onclick="epReviewPageV6(1)" ' + (st.page>=pages-1?'disabled':'') + '>Вперёд →</button>' +
+      '</div></div>';
+    for(var i=start;i<end;i++){
+      var it = st.items[i] || {};
+      var ed = st.editCache[i] || it;
+      html += '<div class="ep-db-review-row">' +
+        '<input type="checkbox" id="ep-db-check-' + i + '" ' + (st.selected[i] !== false ? 'checked' : '') + ' onchange="epReviewToggleV6(' + i + ', this.checked)">' +
+        '<div class="ep-db-review-fields">' +
+          '<div><label>Имя</label><input id="ep-db-name-' + i + '" value="' + esc(ed.n || '') + '" placeholder="Имя / наименование"></div>' +
+          '<div class="ep-db-review-2col">' +
+            '<div><label>Категория</label><input id="ep-db-cat-' + i + '" value="' + esc(ed.c || 'Разное') + '" placeholder="Категория"></div>' +
+            '<div><label class="ep-db-subcat-label">Подкатегория</label><input id="ep-db-subcat-' + i + '" value="' + esc(ed.sc || ed.g || 'Разное') + '" placeholder="Подкатегория"></div>' +
+          '</div>' +
+          '<div class="ep-db-review-2col">' +
+            '<div><label>Цена за единицу</label><input id="ep-db-price-' + i + '" type="number" step="0.01" value="' + (Number(ed.p)||0) + '" placeholder="Цена"></div>' +
+            '<div><label>Единица</label><input id="ep-db-unit-' + i + '" value="' + esc(ed.u || 'шт') + '" placeholder="шт / м / упак"></div>' +
+          '</div>' +
+        '</div></div>';
+    }
+    list.innerHTML = html;
+    setTimeout(hardHideLoader, 0);
   }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: canEditActive
+ * AI FUNCTIONS FUNCTION: showReview
  * ========================================================= */
-function canEditActive(){ return scope()==='my' || (scope()==='global' && isAdmin()); }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: active
- * ========================================================= */
-function active(type){ return scope()==='global'?getServer(type):getMy(type); }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: ensureProgress
- * ========================================================= */
-function ensureProgress(){
-    if($('ep-v7-progress')) return;
-    var css=document.createElement('style'); css.id='ep-v7-style'; css.textContent='\
-#ep-v7-progress{position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.62);display:none;align-items:center;justify-content:center;padding:18px;}\
-#ep-v7-progress .box{width:min(460px,94vw);border-radius:20px;background:var(--card-bg,#fff);box-shadow:0 24px 70px rgba(0,0,0,.35);padding:18px;border:1px solid var(--border,#e5e7eb);}\
-#ep-v7-progress .title{font-weight:900;color:var(--primary,#4f46e5);font-size:17px;margin-bottom:8px;}\
-#ep-v7-progress .bar{height:16px;background:rgba(148,163,184,.25);border-radius:999px;overflow:hidden;border:1px solid rgba(148,163,184,.35);}\
-#ep-v7-progress .fill{height:100%;width:0%;background:linear-gradient(90deg,#2563eb,#10b981);transition:width .18s ease;}\
-#ep-v7-progress .txt{font-size:12px;color:var(--gray,#64748b);font-weight:800;margin-top:8px;}\
-.ep-v7-panel{border:2px solid var(--primary);border-radius:16px;padding:12px;margin:10px 0 15px;background:rgba(79,70,229,.06)}\
-.ep-v7-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.ep-v7-actions button{margin:0;padding:10px}.ep-v7-note{font-size:11px;color:var(--gray);font-weight:800;margin-top:8px}.ep-v7-locked{opacity:.55}.ep-v7-row{display:flex;gap:8px;align-items:flex-start}.ep-v7-row input[type=number]:disabled{opacity:.55;background:rgba(148,163,184,.15)}'; document.head.appendChild(css);
-    var d=document.createElement('div'); d.id='ep-v7-progress'; d.innerHTML='<div class="box"><div class="title" id="ep-v7-progress-title">Выполняю...</div><div class="bar"><div class="fill" id="ep-v7-progress-fill"></div></div><div class="txt" id="ep-v7-progress-txt">0%</div></div>'; document.body.appendChild(d);
+function showReview(items,type,source){
+    hardHideLoader();
+    items = unique((items || []).filter(Boolean), type);
+    var selected = {};
+    items.forEach(function(_,i){ selected[i] = true; });
+    window.EP_DB_REVIEW_V6 = { type:type, items:items, source:source || '', page:0, selected:selected, editCache:{} };
+    window.EP_DB_REVIEW = { type:type, items:items, source:source || '' };
+    renderReviewPage();
+    try{ if(typeof openModal === 'function') openModal('ep-db-ai-review-modal'); }catch(e){ var m=$('ep-db-ai-review-modal'); if(m) m.style.display='flex'; }
+    setTimeout(hardHideLoader, 20);
   }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: reloadActiveDb
+ * AI FUNCTIONS FUNCTION: aiFromImage
+ * ========================================================= */
+async function aiFromImage(file,type){
+    if(typeof window.epAskAI !== 'function') throw new Error('ИИ не подключён');
+    var dataUrl = await new Promise(function(resolve,reject){ var r = new FileReader(); r.onload=function(){resolve(r.result);}; r.onerror=reject; r.readAsDataURL(file); });
+    showReadLoader('ИИ читает изображение...', '👁️');
+    var prompt = 'Распознай таблицу для базы электрика. Верни строго JSON массив объектов [{"n":"Имя позиции","c":"Категория","sc":"Подкатегория","p":123,"u":"шт"}]. Если цены нет p=0. Без текста вокруг.';
+    var ans = await window.epAskAI(prompt, { imageDataUrl:dataUrl, imageDetail:'high', maxTokens:9000 });
+    var arr = [];
+    try{ var m = String(ans || '').match(/\[[\s\S]*\]/); arr = JSON.parse(m ? m[0] : ans); }catch(e){ arr = []; }
+    return jsonToItems(arr,type);
+  }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: aiFromText
+ * ========================================================= */
+async function aiFromText(txt,type){
+    if(typeof window.epAskAI !== 'function') throw new Error('ИИ не подключён');
+    showReadLoader('ИИ структурирует базу...', '🤖');
+    var prompt = 'Приведи данные к базе электрика. Верни строго JSON массив объектов [{"n":"Имя позиции","c":"Категория","sc":"Подкатегория","p":123,"u":"шт"}]. Данные: ' + String(txt || '').slice(0,90000);
+    var ans = await window.epAskAI(prompt, { maxTokens:8000 });
+    var arr = [];
+    try{ var m = String(ans || '').match(/\[[\s\S]*\]/); arr = JSON.parse(m ? m[0] : ans); }catch(e){ arr = []; }
+    return jsonToItems(arr,type);
+  }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: readDbFileV6
+ * ========================================================= */
+async function readDbFileV6(file,type){
+    var safety = setTimeout(hardHideLoader, 25000);
+    showReadLoader('Читаю файл...', '📥');
+    try{
+      var name = file.name || '';
+      var lower = name.toLowerCase();
+      var items = [];
+      if(file.type && file.type.indexOf('image/') === 0){
+        items = await aiFromImage(file,type);
+      } else if(/\.json$/i.test(lower)){
+        var txt = await fileText(file);
+        items = jsonToItems(JSON.parse(txt), type);
+      } else if(/\.(xlsx|xls)$/i.test(lower)){
+        if(!window.XLSX) throw new Error('Библиотека XLSX не загрузилась. Сохраните файл как CSV или JSON.');
+        var ab = await fileBuffer(file);
+        var wb = XLSX.read(ab, {type:'array'});
+        var rows = [];
+        wb.SheetNames.forEach(function(sh){
+          var ws = wb.Sheets[sh];
+          rows = rows.concat(XLSX.utils.sheet_to_json(ws, {header:1, defval:''}));
+        });
+        items = rowsToItems(rows,type);
+      } else if(/\.csv$/i.test(lower)){
+        items = rowsToItems(csvRows(await fileText(file)), type);
+      } else {
+        var raw = await fileText(file);
+        items = rowsToItems(csvRows(raw), type);
+        if(!items.length) items = await aiFromText(raw,type);
+      }
+      clearTimeout(safety);
+      hardHideLoader();
+      showReview(items,type,name);
+    }catch(e){
+      clearTimeout(safety);
+      hardHideLoader();
+      toast('❌ ' + (e.message || 'Ошибка импорта'));
+      console.error('EP V6 import error', e);
+    }
+  }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: syncMain
+ * ========================================================= */
+function syncMain(target){ try{ var use=target||scope(); window.matDB=(use==='global'?getServer('mat'):getMy('mat')); window.workDB=(use==='global'?getServer('work'):getMy('work')); try{matDB=window.matDB;workDB=window.workDB;}catch(e){} }catch(e){} }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: sendProposal
+ * ========================================================= */
+async function sendProposal(type,items,reason,onp){
+    try{
+      if(onp)onp(72,'Отправка заявки админу');
+      if(typeof window.epSendServerProposal==='function'){ await window.epSendServerProposal(type,items,reason||'server_import_request'); return true; }
+      if(typeof db!=='undefined'&&db){ await db.collection('db_proposals').add({type:type,items:items,reason:reason||'server_import_request',uid:uid(),userEmail:(window.appUser&&appUser.email)||'',createdAt:new Date().toISOString(),status:'new'}); return true; }
+    }catch(e){ console.warn('EP V7 proposal failed',e); }
+    return false;
+  }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: reloadActiveDb
  * ========================================================= */
 async function reloadActiveDb(){
     try{ syncMain(scope()); if(typeof window.epRefreshActiveDbNow==='function') await window.epRefreshActiveDbNow(true); }catch(e){ console.warn('EP V7 reload active db failed',e); }
@@ -3201,56 +3272,7 @@ async function reloadActiveDb(){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: ensurePanel
- * ========================================================= */
-function ensurePanel(){
-    var toolbar=$('ep-db-scope-toolbar'); if(!toolbar) return null;
-    var p=$('ep-v7-db-panel');
-    if(!p){ p=document.createElement('div'); p.id='ep-v7-db-panel'; p.className='ep-v7-panel'; toolbar.parentNode.insertBefore(p, toolbar.nextSibling); }
-    return p;
-  }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: renderPanel
- * ========================================================= */
-function renderPanel(){
-    var p=ensurePanel(); if(!p) return;
-    var s=scope(), admin=isAdmin(), my=s==='my';
-    var title=my?'👤 Моя база данных':'🌍 База сервера';
-    var matCount=active('mat').length, workCount=active('work').length;
-    var note=my
-      ? 'Это личная база текущего мастера. Импорт, экспорт, цены и замена позиций меняют только эту базу.'
-      : (admin?'Вы админ: можно импортировать, заменять, редактировать цены и сохранять базу сервера.':'Просмотр базы сервера. Мастер не меняет сервер напрямую: можно экспортировать, взять позицию себе или отправить импорт заявкой админу.');
-    var html='<div style="font-weight:900;color:var(--primary);font-size:15px;">'+title+'</div>'+
-      '<div class="ep-v7-note">'+note+'<br>Материалы: <b>'+matCount+'</b>, работы: <b>'+workCount+'</b>. Вперемешку базы не считаются.</div>'+
-      '<div class="ep-v7-actions">';
-    if(my || admin){
-      html+='<button class="btn-info" onclick="epTriggerDbFileImport(\'mat\')">📥 Импорт материалов</button>'+
-            '<button class="btn-work" onclick="epTriggerDbFileImport(\'work\')">📥 Импорт работ</button>'+
-            '<button class="btn-vendor" onclick="epOpenTextImport && epOpenTextImport(\'mat\')">📝 Материалы текстом</button>'+
-            '<button class="btn-vendor" onclick="epOpenTextImport && epOpenTextImport(\'work\')">📝 Работы текстом</button>';
-    } else {
-      html+='<button class="btn-info" onclick="epTriggerServerProposalImportV7(\'mat\')">📨 Материалы заявкой админу</button>'+
-            '<button class="btn-work" onclick="epTriggerServerProposalImportV7(\'work\')">📨 Работы заявкой админу</button>'+
-            '<button class="btn-vendor" onclick="epOpenTextImportServerProposalV7(\'mat\')">📝 Материалы заявкой</button>'+
-            '<button class="btn-vendor" onclick="epOpenTextImportServerProposalV7(\'work\')">📝 Работы заявкой</button>';
-    }
-    html+='<button class="btn-success" onclick="epExportActiveDb()">📤 Экспорт этой базы</button>'+
-          '<button class="btn-info" onclick="epReloadActiveDbV7()">🔄 Обновить / перезагрузить</button>';
-    if(canEditActive()) html+='<button class="btn-primary" onclick="epSaveActiveDbV7()">💾 Сохранить базу</button>';
-    if(my) html+='<button class="btn-danger" onclick="epOpenDbFactoryResetModal && epOpenDbFactoryResetModal()">🧹 Очистка / сброс</button>';
-    else if(admin) html+='<button class="btn-danger" onclick="epOpenDbFactoryResetModal && epOpenDbFactoryResetModal()">🧹 Очистка сервера</button>';
-    html+='</div>';
-    if(!my && !admin) html+='<div class="ep-v7-note">Редактирование, сохранение, замена и цены сервера заблокированы для мастера.</div>';
-    p.innerHTML=html;
-  }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: tuneStaticBlocks
+ * AI FUNCTIONS FUNCTION: tuneStaticBlocks
  * ========================================================= */
 function tuneStaticBlocks(){
     renderPanel();
@@ -3271,7 +3293,58 @@ function tuneStaticBlocks(){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: reloadFromRemoteCurrent
+ * AI FUNCTIONS FUNCTION: readDbFile
+ * ========================================================= */
+async function readDbFile(file,type,target){ showProgress('Импорт базы',5,'Старт'); var name=file.name||'', lower=name.toLowerCase(), items=[]; if(file.type&&file.type.indexOf('image/')===0){ hideProgress(); if(typeof window.epAskAI==='function' && typeof oldTrigger==='function'){ return oldTrigger(type); } return toast('Для фото нужен ИИ.'); } if(/\.json$/i.test(lower)){ var txt=await fileTextProgress(file,showProgress); showProgress('Импорт базы',55,'Разбор JSON'); items=jsonToItems(JSON.parse(txt),type); } else if(/\.(xlsx|xls)$/i.test(lower)){ if(!window.XLSX) throw new Error('Библиотека XLSX не загрузилась. Сохраните файл как CSV или JSON.'); var ab=await fileBufferProgress(file,showProgress); showProgress('Импорт базы',55,'Разбор Excel'); var wb=XLSX.read(ab,{type:'array'}), rows=[]; wb.SheetNames.forEach(function(sh){ rows=rows.concat(XLSX.utils.sheet_to_json(wb.Sheets[sh],{header:1,defval:''})); }); showProgress('Импорт базы',78,'Подготовка строк'); items=rowsToItems(rows,type); } else { var raw=await fileTextProgress(file,showProgress); showProgress('Импорт базы',60,'Разбор текста/CSV'); items=rowsToItems(csvRows(raw),type); }
+    showProgress('Импорт базы',100,'Открываю проверку'); setTimeout(hideProgress,250); showReview(items,type,name,target); }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: currentEmail
+ * ========================================================= */
+function currentEmail(){ try{ return String((window.appUser&&appUser.email) || (fbUser()&&fbUser().email) || '').toLowerCase(); }catch(e){ return ''; } }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: isAdmin
+ * ========================================================= */
+function isAdmin(){
+    try{
+      var em=currentEmail();
+      var ph=String((window.appUser&&appUser.phone)||'');
+      return !!(window.appUser && appUser.role==='admin') || ADMIN_EMAILS.indexOf(em)>=0 || ADMIN_PHONES.indexOf(ph)>=0;
+    }catch(e){ return false; }
+  }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: firebaseHint
+ * ========================================================= */
+function firebaseHint(){
+    var fbu=fbUser();
+    if(!fbu) return 'Нет Firebase-входа. Серверная запись может быть запрещена правилами Firebase. Для админа лучше войти через Google-аккаунт администратора.';
+    return 'Firebase: '+(fbu.email||fbu.uid)+'.';
+  }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: explainErr
+ * ========================================================= */
+function explainErr(e){
+    var msg=(e&&(e.message||e.code))?String(e.message||e.code):'неизвестная ошибка';
+    if(/permission|Missing or insufficient/i.test(msg)) return 'Firebase запретил запись: Missing or insufficient permissions. Нужно настроить Firestore Rules или войти админом через Google.';
+    return msg;
+  }
+
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: reloadFromRemoteCurrent
  * ========================================================= */
 async function reloadFromRemoteCurrent(){
     try{
@@ -3290,18 +3363,29 @@ async function reloadFromRemoteCurrent(){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: injectDebugButton
+ * AI FUNCTIONS FUNCTION: rerender
  * ========================================================= */
-function injectDebugButton(){
-    var p=$('ep-v7-db-panel'); if(!p || $('ep-v8-fb-debug-btn')) return;
-    var b=document.createElement('button'); b.id='ep-v8-fb-debug-btn'; b.className='btn-info'; b.style.cssText='width:100%;margin-top:8px;padding:10px;'; b.textContent='🔎 Проверить Firebase-сохранение'; b.onclick=function(){ window.epFirebaseDbDebug(); };
-    p.appendChild(b);
-  }
+function rerender(){ try{ syncMain(scope()); if(typeof renderDbEditors==='function') renderDbEditors(); }catch(e){} try{ if(typeof rf==='function') rf(); }catch(e){} }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: readGlobalDoc
+ * AI FUNCTIONS FUNCTION: currentUserLabel
+ * ========================================================= */
+function currentUserLabel(){ try{ var u=(firebase.auth&&firebase.auth().currentUser)||null; return (u&&(u.email||u.uid)) || (window.appUser&&(appUser.email||appUser.phone||appUser.uid)) || ''; }catch(e){ return (window.appUser&&(appUser.email||appUser.phone||appUser.uid)) || ''; } }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: explain
+ * ========================================================= */
+function explain(e){ var msg=(e&&(e.message||e.code))?String(e.message||e.code):String(e||'Ошибка'); if(/permission|insufficient/i.test(msg)) return 'Firebase запретил запись: Missing or insufficient permissions. Проверь вход админа через Google и Firestore Rules.'; return msg; }
+
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: readGlobalDoc
  * ========================================================= */
 async function readGlobalDoc(){
     if(!(typeof db!=='undefined'&&db)) throw new Error('Firebase db не подключён.');
@@ -3313,7 +3397,7 @@ async function readGlobalDoc(){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: saveGlobalImport
+ * AI FUNCTIONS FUNCTION: saveGlobalImport
  * ========================================================= */
 async function saveGlobalImport(type,items,replace){
     if(!isAdmin()) throw new Error('Импорт в базу сервера может делать только админ.');
@@ -3338,7 +3422,79 @@ async function saveGlobalImport(type,items,replace){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: extractTextFromOpenAI
+ * AI FUNCTIONS FUNCTION: saveMyImport
+ * ========================================================= */
+async function saveMyImport(type,items,replace){
+    var arr=getMy(type); items.forEach(function(it,idx){ arr=upsert(arr,type,it,!!replace); if(idx%25===0) progress('Запись в мою базу',20+Math.min(40,idx/Math.max(1,items.length)*40),'Добавляю строки'); });
+    setMy(type,arr); progress('Запись в мою базу',68,'Локально сохранено');
+    if(typeof db!=='undefined'&&db&&uid()){
+      await db.collection('user_db').doc(uid()).set({uid:uid(),masterName:(window.appUser&&(appUser.name||appUser.email||appUser.phone))||'',matDB:getMy('mat'),workDB:getMy('work'),created:true,updatedAt:new Date().toISOString()}, {merge:true});
+      progress('Запись в мою базу',90,'Сервер подтвердил');
+    }
+    return getMy(type).length;
+  }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: sendServerProposal
+ * ========================================================= */
+async function sendServerProposal(type,items){
+    if(!(typeof db!=='undefined'&&db)) throw new Error('Firebase db не подключён.');
+    progress('Отправляю заявку админу',60,'db_proposals');
+    await db.collection('db_proposals').add({type:type,items:items.map(clone),reason:'import_to_server',target:'server_db',uid:uid(),masterName:(window.appUser&&(appUser.name||appUser.email||appUser.phone))||'',userEmail:currentUserLabel(),status:'pending',createdAt:new Date().toISOString()});
+    return true;
+  }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: showReviewV9
+ * ========================================================= */
+function showReviewV9(items,type,source,target){
+    items=unique((items||[]).filter(Boolean),type); var selected={}; items.forEach(function(_,i){selected[i]=true;});
+    window.EP_DB_REVIEW_V6={type:type,items:items,source:source||'',page:0,selected:selected,editCache:{}};
+    window.EP_DB_REVIEW={type:type,items:items,source:source||''}; window.EP_V9_IMPORT_TARGET=target; window.EP_V7_IMPORT_TARGET=target;
+    var title=$('ep-db-ai-review-title'); if(title) title.innerText='Импорт '+(type==='work'?'работ':'материалов')+': '+(source||'файл')+' → '+(target==='global'?'База сервера':target==='server_proposal'?'Заявка админу':'Моя база');
+    if(typeof window.epReviewPageV6==='function') window.epReviewPageV6(0); else {
+      var list=$('ep-db-ai-review-list'); if(list) list.innerHTML=items.map(function(it,i){ return '<div class="ep-db-review-row"><input type="checkbox" id="ep-db-check-'+i+'" checked><div class="ep-db-review-fields"><div><label>Имя</label><input id="ep-db-name-'+i+'" value="'+esc(it.n)+'"></div><div class="ep-db-review-2col"><div><label>Категория</label><input id="ep-db-cat-'+i+'" value="'+esc(it.c)+'"></div><div><label>Подкатегория</label><input id="ep-db-subcat-'+i+'" value="'+esc(it.sc||it.g||'Разное')+'"></div></div><div class="ep-db-review-2col"><div><label>Цена</label><input id="ep-db-price-'+i+'" type="number" value="'+(Number(it.p)||0)+'"></div><div><label>Единица</label><input id="ep-db-unit-'+i+'" value="'+esc(it.u||'шт')+'"></div></div></div></div>'; }).join('');
+    }
+    try{ if(typeof openModal==='function') openModal('ep-db-ai-review-modal'); }catch(e){ var m=$('ep-db-ai-review-modal'); if(m)m.style.display='flex'; }
+    setTimeout(hideProgress,200);
+  }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: provider
+ * ========================================================= */
+function provider(){
+    try{ var p=(window.EP_AI_CONFIG&&window.EP_AI_CONFIG.provider)||safeGet('ep_ai_provider_v1','gemini'); return p==='openai'?'openai':'gemini'; }catch(e){ return 'gemini'; }
+  }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: keyForProvider
+ * ========================================================= */
+function keyForProvider(p){
+    try{
+      if(p==='openai') return (window.EP_AI_CONFIG&&window.EP_AI_CONFIG.openaiKey)||safeGet('ep_openai_key_v1','');
+      return (window.EP_AI_CONFIG&&window.EP_AI_CONFIG.geminiKey)||(typeof GEMINI_API_KEY!=='undefined'?GEMINI_API_KEY:'')||safeGet('gemini_key_v31','');
+    }catch(e){ return ''; }
+  }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: openAiModel
+ * ========================================================= */
+function openAiModel(){ try{ return (window.EP_AI_CONFIG&&window.EP_AI_CONFIG.openaiModel)||safeGet('ep_openai_model_v1','gpt-4o-mini')||'gpt-4o-mini'; }catch(e){ return 'gpt-4o-mini'; } }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: extractTextFromOpenAI
  * ========================================================= */
 function extractTextFromOpenAI(data){
     if(data && data.output_text) return data.output_text;
@@ -3350,7 +3506,112 @@ function extractTextFromOpenAI(data){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: patchLabels
+ * AI FUNCTIONS FUNCTION: askOpenAI
+ * ========================================================= */
+async function askOpenAI(promptText, opts){
+    var key=keyForProvider('openai'); if(!key) throw new Error('Нужен OpenAI API ключ');
+    var content=[{type:'input_text', text:promptText}];
+    if(opts && opts.fileDataUrl){
+      content.push({ type:'input_file', filename: opts.fileName || 'import.pdf', file_data: opts.fileDataUrl });
+    } else if(opts && opts.imageDataUrl){
+      content.push({ type:'input_image', image_url: opts.imageDataUrl, detail: opts.imageDetail || 'high' });
+    }
+    var r=await fetch('https://api.openai.com/v1/responses',{
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body:JSON.stringify({ model:openAiModel(), input:[{role:'user', content:content}], max_output_tokens:(opts&&opts.maxTokens)||9000 })
+    });
+    var data=await r.json().catch(function(){return {};});
+    if(!r.ok || data.error) throw new Error((data.error&&data.error.message)||'OpenAI API error');
+    return extractTextFromOpenAI(data);
+  }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: askGemini
+ * ========================================================= */
+async function askGemini(promptText, opts){
+    var key=keyForProvider('gemini'); if(!key) throw new Error('Нужен Gemini API ключ');
+    var parts=[{text:promptText}];
+    var dataUrl=(opts&&opts.fileDataUrl)||(opts&&opts.imageDataUrl)||'';
+    if(dataUrl){
+      var m=dataUrl.match(/^data:([^;]+);base64,(.*)$/i);
+      if(m) parts.push({ inline_data:{ mime_type:m[1], data:m[2] } });
+    }
+    var url='https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key='+encodeURIComponent(key);
+    var r=await fetch(url,{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({contents:[{parts:parts}]}) });
+    var data=await r.json().catch(function(){return {};});
+    if(!r.ok || data.error) throw new Error((data.error&&data.error.message)||'Gemini API error');
+    return ((((data.candidates||[])[0]||{}).content||{}).parts||[]).map(function(p){return p.text||'';}).join('');
+  }
+
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: normItem
+ * ========================================================= */
+function normItem(x,type,i){
+    x=x||{};
+    var name=clean(x.n||x.name||x.title||x.item||x.position||x.material||x.work||x['Имя']||x['Название']||x['Наименование']||x['Товар']||x['Материал']||x['Работа']||x['позиция']||'');
+    if(!name || name.length<3)return null;
+    var cat=clean(x.c||x.cat||x.category||x.group||x['Категория']||x['Группа']||'')||inferCat(name,type);
+    var sc=clean(x.sc||x.subcat||x.subcategory||x.subCategory||x.section||x.g||x['Подкатегория']||x['Раздел']||'')||inferSub(name,cat,type);
+    var unit=clean(x.u||x.unit||x.measure||x['Ед']||x['Ед.']||x['Единица']||x['Единица измерения']||'шт')||'шт';
+    var price=x.p||x.price||x.cost||x.unitPrice||x['Цена']||x['Цена ₽']||x['Цена за единицу']||x['Стоимость']||0;
+    return { id:x.id||((type==='work'?'w':'m')+'_ai_v10_'+Date.now()+'_'+i), n:name, c:cat, sc:sc, g:sc, p:money(price), u:unit };
+  }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: importPrompt
+ * ========================================================= */
+function importPrompt(type, kind){
+    return 'Ты профессионально распознаёшь русские прайсы, счета, сметы и таблицы электромонтажных '+(type==='work'?'работ':'материалов')+'. '+
+      'Источник: '+kind+'. Извлеки ВСЕ строки с позициями. Верни ТОЛЬКО JSON массив объектов без текста вокруг. '+
+      'Формат строго: [{"n":"Имя позиции","c":"Категория","sc":"Подкатегория","p":123,"u":"шт"}]. '+
+      'n — полное наименование, не артикул и не номер строки. p — цена за единицу, не итоговая сумма; если цены нет p=0. '+
+      'u — единица: шт, м, м.п., упак, компл, кг, л. c/sc определи сам по электрике. Не возвращай пустой массив, если видны позиции.';
+  }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: aiFromImageFile
+ * ========================================================= */
+async function aiFromImageFile(file,type,target){
+    progress('ИИ-импорт фото',15,'Читаю изображение');
+    var dataUrl=await fileToDataURL(file);
+    progress('ИИ-импорт фото',35,'Отправляю в ИИ');
+    var ans=await window.epAskAI(importPrompt(type,'фото или скрин таблицы'),{imageDataUrl:dataUrl,imageDetail:'high',maxTokens:9000});
+    progress('ИИ-импорт фото',85,'Разбираю ответ');
+    var items=normalize(parseJsonLoose(ans),type);
+    showReview(items,type,file.name||'фото',target,ans);
+  }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: aiFromPdfFile
+ * ========================================================= */
+async function aiFromPdfFile(file,type,target){
+    var maxMb=18;
+    if(file.size && file.size > maxMb*1024*1024) throw new Error('PDF слишком большой. Сделай файл до '+maxMb+' МБ или загрузи несколько страниц отдельно.');
+    progress('ИИ-импорт PDF',15,'Читаю PDF');
+    var dataUrl=await fileToDataURL(file);
+    progress('ИИ-импорт PDF',35,'Отправляю PDF в ИИ');
+    var ans=await window.epAskAI(importPrompt(type,'PDF прайс/счёт/смета'),{fileDataUrl:dataUrl,fileName:file.name||'import.pdf',mimeType:dataMime(dataUrl)||'application/pdf',maxTokens:12000});
+    progress('ИИ-импорт PDF',85,'Разбираю ответ');
+    var items=normalize(parseJsonLoose(ans),type);
+    showReview(items,type,file.name||'PDF',target,ans);
+  }
+
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: patchLabels
  * ========================================================= */
 function patchLabels(){
     var input=$('ep-db-file-input'); if(input) input.setAttribute('accept','.xlsx,.xls,.csv,.json,.txt,.pdf,image/*');
@@ -3365,26 +3626,15 @@ function patchLabels(){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: installAdminSettingsButton
+ * AI FUNCTIONS FUNCTION: explainServerEdit
  * ========================================================= */
-function installAdminSettingsButton(){
-    var panel = $('admin-panel');
-    if(!panel || $('ep-v11-admin-server-db-btn')) return;
-    var box = document.createElement('div');
-    box.id = 'ep-v11-admin-server-db-btn';
-    box.style.cssText = 'margin:12px 0;padding:10px;border:1px solid var(--primary);border-radius:12px;background:rgba(79,70,229,.07);';
-    box.innerHTML = '<div style="font-weight:900;color:var(--primary);margin-bottom:6px;">🌍 База сервера</div>'
-      + '<div style="font-size:11px;color:var(--gray);line-height:1.35;margin-bottom:8px;">Импорт, замена, цены и сохранение глобальной базы выполняются только отсюда, чтобы личный импорт админа случайно не улетел на сервер.</div>'
-      + '<button type="button" class="btn-primary" style="width:100%;padding:12px;margin:0;" onclick="epOpenAdminServerDbFromSettings()">👑 Открыть редактирование базы сервера</button>';
-    var firstH = panel.querySelector('h4');
-    if(firstH) panel.insertBefore(box, firstH); else panel.appendChild(box);
-  }
+function explainServerEdit(){ return '🌍 Базу сервера меняем только через Настройки → Админ панель → База сервера. Здесь сервер открыт для просмотра/выбора, чтобы случайно не залить личный импорт в глобальную базу.'; }
 
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: patchDbUi
+ * AI FUNCTIONS FUNCTION: patchDbUi
  * ========================================================= */
 function patchDbUi(){
     installAdminSettingsButton();
@@ -3431,7 +3681,7 @@ function patchDbUi(){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: compressImageDataUrl
+ * AI FUNCTIONS FUNCTION: compressImageDataUrl
  * ========================================================= */
 async function compressImageDataUrl(dataUrl){
     dataUrl = String(dataUrl || '');
@@ -3461,7 +3711,18 @@ async function compressImageDataUrl(dataUrl){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: patchShieldButton
+ * AI FUNCTIONS FUNCTION: timeoutPromise
+ * ========================================================= */
+function timeoutPromise(ms, label){
+    return new Promise(function(_,reject){
+      setTimeout(function(){ reject(new Error(label || 'ИИ долго не отвечает. Попробуй фото крупнее/светлее, меньший PDF или другой ИИ-провайдер.')); }, ms);
+    });
+  }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: patchShieldButton
  * ========================================================= */
 function patchShieldButton(){
     var base = window.epGenerateShieldFixed || window.generateCascadePanel;
@@ -3485,43 +3746,7 @@ function patchShieldButton(){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: collectDb
- * ========================================================= */
-function collectDb(type){
-    var out=[];
-    var activeScope='my'; try{ activeScope=localStorage.getItem('ep_db_scope_v2')==='global'?'global':'my'; }catch(e){}
-    if(type==='work'){
-      pushArr(out, activeScope==='global'?(window.workDB||[]):(window.workDB||[]), activeScope==='global'?'global':'my');
-      pushArr(out, window.EP_MY_WORK, 'my'); pushArr(out, window.userWorkDB, 'my');
-      pushArr(out, window.EP_GLOBAL_WORK, 'global');
-      pushArr(out, window.EP_FORCE_GLOBAL && window.EP_FORCE_GLOBAL.workDB, 'global');
-      pushArr(out, window.EP_ULTIMATE_DB_CACHE && window.EP_ULTIMATE_DB_CACHE.workDB, 'global');
-      pushArr(out, window.EP_GLOBAL_DB_VISIBLE_CACHE && window.EP_GLOBAL_DB_VISIBLE_CACHE.workDB, 'global');
-      pushArr(out, readArr('user_db_work_v31'), 'my');
-      pushArr(out, readObj('ep_global_cache_force_v1').workDB, 'global');
-    } else {
-      pushArr(out, activeScope==='global'?(window.matDB||[]):(window.matDB||[]), activeScope==='global'?'global':'my');
-      pushArr(out, window.EP_MY_MAT, 'my'); pushArr(out, window.userMatDB, 'my');
-      pushArr(out, window.EP_GLOBAL_MAT, 'global');
-      pushArr(out, window.EP_FORCE_GLOBAL && window.EP_FORCE_GLOBAL.matDB, 'global');
-      pushArr(out, window.EP_ULTIMATE_DB_CACHE && window.EP_ULTIMATE_DB_CACHE.matDB, 'global');
-      pushArr(out, window.EP_GLOBAL_DB_VISIBLE_CACHE && window.EP_GLOBAL_DB_VISIBLE_CACHE.matDB, 'global');
-      pushArr(out, readArr('user_db_mat_v31'), 'my');
-      pushArr(out, readObj('ep_global_cache_force_v1').matDB, 'global');
-    }
-    var seen={},res=[];
-    out.forEach(function(it){
-      var k=norm([it.__src,it.c,groupOf(it),it.n,it.u,it.p].join('|'));
-      if(seen[k]) return; seen[k]=1; res.push(it);
-    });
-    return res;
-  }
-
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: epV16GenerateCascadePanel
+ * AI FUNCTIONS FUNCTION: epV16GenerateCascadePanel
  * ========================================================= */
 function epV16GenerateCascadePanel() {
     const bBox = epGetVal('cfg-brand-box', 'Tekfor');
@@ -3665,63 +3890,58 @@ function epV16GenerateCascadePanel() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: isShieldDeviceV16
+ * AI FUNCTIONS FUNCTION: getAssignV16
  * ========================================================= */
-function isShieldDeviceV16(it){
-    if(!it || it.type!=='mat') return false;
-    var n=String(it.n||''), k=String(it.dbMeta&&it.dbMeta.kind||'');
-    return /[ABCDАВСД]\s*\d{1,3}|автомат|узо|диф|реле|контактор|вводной/i.test(n) || /automatic|breaker|uzo|dif|relay|contactor/i.test(k);
+function getAssignV16(it){
+    if(window.epV15GetAssignments) return window.epV15GetAssignments(it);
+    var out=[]; function add(v){v=String(v||'').trim(); if(v && !/позиция щита|общая \/ вводная|назначение не указано/i.test(v) && out.indexOf(v)<0) out.push(v);}
+    if(it){ if(Array.isArray(it.epAssignments)) it.epAssignments.forEach(add); if(Array.isArray(it.epMergedDetails)) it.epMergedDetails.forEach(add); add(it.epAssignment); if(it.dbMeta) add(it.dbMeta.assignment); }
+    return out;
   }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: bindButtons
+ * AI FUNCTIONS FUNCTION: showDetailsV16
  * ========================================================= */
-function bindButtons(){
-    try{ Array.prototype.forEach.call(document.querySelectorAll('button'),function(btn){ if((btn.textContent||'').indexOf('Сгенерировать щит')>=0) btn.onclick=epV16GenerateCascadePanel; }); }catch(e){}
+function showDetailsV16(customTitle){
+    normalizeV16();
+    try{ currentPreviewMode='details'; }catch(e){}
+    var html = (typeof getPDFHeader==='function') ? getPDFHeader(customTitle || 'ДЕТАЛИЗАЦИЯ ЩИТА') : '<h2>ДЕТАЛИЗАЦИЯ ЩИТА</h2>';
+    var f=$('pdf-filters'); if(f) f.style.display='none';
+    var items=(window.currentEstimate||[]).filter(isShieldDeviceV16);
+    html += '<table class="pdf-table"><tr><th>Что отвечает / линия</th><th>Аппарат</th><th>Назначение</th></tr>';
+    if(!items.length) html += '<tr><td colspan="3" style="text-align:center;color:var(--gray);font-weight:900;">Щит ещё не сгенерирован</td></tr>';
+    else items.forEach(function(it){
+      var lines=getAssignV16(it); if(!lines.length) lines=['назначение не указано — нажми «Сгенерировать щит» ещё раз'];
+      html += '<tr><td style="font-weight:bold;color:var(--primary);">'+lines.map(esc).join('<br>')+'</td><td>'+esc(it.n)+(Number(it.q)>1?' × '+Number(it.q):'')+'</td><td>'+esc(purposeV16(it))+'</td></tr>';
+    });
+    html += '</table>';
+    var p=$('p-cont'); if(p) p.innerHTML=html;
+    if(typeof openModal==='function') openModal('previewModal');
   }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: addBadge
+ * AI FUNCTIONS FUNCTION: assignmentsOf
  * ========================================================= */
-function addBadge(){
-    if($('ep-v17-badge')) return;
-    var d=document.createElement('div'); d.id='ep-v17-badge';
-    d.style.cssText='position:fixed;left:8px;bottom:8px;z-index:2147483647;background:#111827;color:#fff;border:2px solid #22c55e;border-radius:999px;padding:6px 10px;font:900 11px system-ui;box-shadow:0 8px 24px rgba(0,0,0,.35);opacity:.92;';
-    /* V81 disabled legacy status V17/V18/V21 */
-    document.body.appendChild(d);
+function assignmentsOf(it){
+    var out=[]; function add(v){ v=clean(v); if(v && !/^(позиция щита|общая|общая \/ вводная|назначение не указано)/i.test(v) && out.indexOf(v)<0) out.push(v); }
+    if(it){ if(Array.isArray(it.epAssignments)) it.epAssignments.forEach(add); if(Array.isArray(it.epMergedDetails)) it.epMergedDetails.forEach(add); add(it.epAssignment); if(it.dbMeta) add(it.dbMeta.assignment); }
+    if(out.length) return out;
+    var n=txt(it&&it.n), raw=txt(it&&it.epRawLabel), k=txt(it&&it.dbMeta&&it.dbMeta.kind), q=Math.max(1,Number(it&&it.q)||1), lines=lineConfig();
+    if(/вводн|input_breaker/i.test(n+' '+raw+' '+k)) return ['Вводной аппарат щита'];
+    if(/10\s*мА/i.test(n+' '+raw) && /узо|диф/i.test(n+' '+raw)) return ['Влажные зоны / защита 10 мА: '+lines.filter(function(x){return x.group==='wet';}).map(function(x){return x.name;}).join(', ')].filter(function(x){return !/:\s*$/.test(x);});
+    if(/30\s*мА/i.test(n+' '+raw) && /узо|диф/i.test(n+' '+raw)) return ['Группа защиты 30 мА: силовые/освещение/климат/неотключаемые линии'];
+    var nom=nominalOf(it); if(nom){ var list=lines.filter(function(x){return x.nominal===nom;}).slice(0,q).map(function(x){return x.name;}); if(list.length) return list; }
+    return [];
   }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: isDevice
- * ========================================================= */
-function isDevice(it){
-    var n=txt(it&&it.n), k=txt(it&&it.dbMeta&&it.dbMeta.kind), raw=txt(it&&it.epRawLabel);
-    return !!(it&&it.type==='mat' && (/автомат|узо|диф|реле|контактор|вводной/i.test(n+' '+raw) || /automatic|breaker|uzo|dif|relay|contactor|input_breaker/i.test(k) || /\b[ABCDАВСД]\s*\d{1,3}\b/i.test(n+' '+raw)));
-  }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: patchDbBulk
- * ========================================================= */
-function patchDbBulk(){
-    var modal=$('settModal'); if(!modal || $('ep-v17-bulk-box')) return;
-    var host=$('editor-mat-list') || $('editor-work-list'); if(!host) return;
-    var box=document.createElement('div'); box.id='ep-v17-bulk-box'; box.style.cssText='margin:12px 0;padding:12px;border:2px dashed #8b5cf6;border-radius:16px;background:#faf5ff;';
-    return; /* V81 disabled legacy mass panel */
-    host.parentNode.insertBefore(box,host);
-  }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: syncActiveToMain
+ * AI FUNCTIONS FUNCTION: syncActiveToMain
  * ========================================================= */
 function syncActiveToMain(src){
     src=src||scope();
@@ -3735,7 +3955,7 @@ function syncActiveToMain(src){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: saveArr
+ * AI FUNCTIONS FUNCTION: saveArr
  * ========================================================= */
 async function saveArr(type,arr){
     var src=scope(); type=type==='work'?'work':'mat'; arr=unique(arr,type);
@@ -3751,7 +3971,7 @@ async function saveArr(type,arr){
       epV18SetStatus('upload','запись на сервер');
       try{ if(typeof db!=='undefined' && db){ await db.collection('settings').doc('global_db').set({matDB:c.matDB,workDB:c.workDB,updatedAt:new Date().toISOString()},{merge:true}); } }
       catch(e){ epV18SetStatus('error','ошибка сервера'); toast('Ошибка записи сервера: '+(e.message||e)); return false; }
-      /* V81 disabled legacy status V17/V18/V21 */
+      epV18SetStatus('ok','V18 активна'); return true;
     } else {
       if(type==='mat'){ window.EP_MY_MAT=arr; setLS(LS_MY_MAT,arr); }
       else { window.EP_MY_WORK=arr; setLS(LS_MY_WORK,arr); }
@@ -3760,7 +3980,7 @@ async function saveArr(type,arr){
       epV18SetStatus('upload','запись на сервер');
       try{ if(typeof db!=='undefined' && db && uid()){ await db.collection('user_db').doc(uid()).set({uid:uid(),masterName:(window.appUser&&(appUser.name||appUser.email))||'',matDB:getArr('mat','my'),workDB:getArr('work','my'),created:true,updatedAt:new Date().toISOString()},{merge:true}); } }
       catch(e){ toast('Локально сохранено, сервер личной базы отказал: '+(e.message||e)); }
-      /* V81 disabled legacy status V17/V18/V21 */
+      epV18SetStatus('ok','V18 активна'); return true;
     }
   }
 
@@ -3768,22 +3988,52 @@ async function saveArr(type,arr){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: ensureBadge
+ * AI FUNCTIONS FUNCTION: autoName
  * ========================================================= */
-function ensureBadge(){
-    var b=$('ep-v18-status-badge');
-    if(!b){
-      b=document.createElement('div'); b.id='ep-v18-status-badge';
-      b.style.cssText='position:fixed;left:10px;bottom:12px;z-index:2147483647;border-radius:999px;padding:8px 13px;color:#fff;font-size:12px;font-weight:1000;box-shadow:0 10px 30px rgba(0,0,0,.25);border:2px solid rgba(255,255,255,.55);letter-spacing:.2px;';
-      document.body.appendChild(b);
-    }
-    return b;
+function autoName(nominal,brand){
+    var hit=dbFindAuto(nominal,brand), br=brandRu(brand); var amp=String(nominal||'C16').replace(/[^0-9]/g,''); var curve=String(nominal||'C16').replace(/[^A-Za-zА-Яа-я]/g,'').toUpperCase().charAt(0)||'C';
+    if(hit && /\(([^)]+)\)/.test(hit.n||'')){ var model=(hit.n.match(/\(([^)]+)\)/)||[])[1]; return curve+amp+' 1P '+model.replace(/^IEK/i,'ИЭК'); }
+    if(String(brand||'').toUpperCase()==='ABB') return curve+amp+' 1P ABB SH201';
+    return curve+amp+' 1P '+br+' ВА47-29';
   }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: renderMainDirect
+ * AI FUNCTIONS FUNCTION: rcdName
+ * ========================================================= */
+function rcdName(leak,brand,kind,rcdType){ var hit=dbFindRcd(leak,brand,kind); var br=brandRu(brand); if(hit && /\(([^)]+)\)/.test(hit.n||'')){ var model=(hit.n.match(/\(([^)]+)\)/)||[])[1].replace(/^IEK/i,'ИЭК'); return kind+' 2P 40A '+leak+'мА тип '+(rcdType||'A')+' '+model; } return kind+' 2P 40A '+leak+'мА тип '+(rcdType||'A')+' '+br+(br==='ИЭК'?' ВД1-63':''); }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: makeItem
+ * ========================================================= */
+function makeItem(n,q,p,type,meta,assign){ var it=Object.assign({n:n,q:Number(q)||1,p:money(p),u:(meta&&meta.unit)||'шт',type:type||'mat',tag:'shield'},meta||{}); if(assign){ it.epAssignment=assign; it.epAssignments=[assign]; it.epMergedDetails=[assign]; if(!it.dbMeta) it.dbMeta={}; it.dbMeta.assignment=assign; } return it; }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: mergeAssignments
+ * ========================================================= */
+function mergeAssignments(rec,it){ var arr=rec.epAssignments||[]; function add(v){ v=clean(v); if(v && arr.indexOf(v)<0) arr.push(v); } if(Array.isArray(it.epAssignments)) it.epAssignments.forEach(add); if(Array.isArray(it.epMergedDetails)) it.epMergedDetails.forEach(add); add(it.epAssignment); if(it.dbMeta) add(it.dbMeta.assignment); rec.epAssignments=arr; rec.epMergedDetails=arr.slice(); rec.epAssignment=arr[0]||rec.epAssignment||''; if(!rec.dbMeta) rec.dbMeta={}; rec.dbMeta.assignment=rec.epAssignment; }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: directAddShield
+ * ========================================================= */
+function directAddShield(items){
+    var map={},out=[];
+    (items||[]).forEach(function(src){ if(!src || !src.n) return; var it=clone(src); it.tag='shield'; var key=[it.tag,it.type||'',it.n||'',Number(it.p)||0,it.u||'шт'].join('|'); var rec=map[key]; if(!rec){ rec=Object.assign({},it,{q:0,epAssignments:[],epMergedDetails:[]}); map[key]=rec; out.push(rec); } rec.q += Number(it.q)||0; mergeAssignments(rec,it); });
+    try{ currentEstimate=(Array.isArray(currentEstimate)?currentEstimate:[]).filter(function(it){ return it.tag!=='shield' && it.tag!=='shield_info'; }).concat(out); window.currentEstimate=currentEstimate; }catch(e){ window.currentEstimate=out; }
+    try{ localStorage.setItem('est_v31',JSON.stringify(currentEstimate)); }catch(e){}
+  }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: renderMainDirect
  * ========================================================= */
 function renderMainDirect(){
     var tb=document.querySelector('#mainTable tbody'); if(!tb) return;
@@ -3797,168 +4047,90 @@ function renderMainDirect(){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: isShieldDevice
+ * AI FUNCTIONS FUNCTION: assigns
  * ========================================================= */
-function isShieldDevice(it){ var n=String((it&&it.n)||''); return it && it.type==='mat' && (/\b[ABCDАВСД]\s*\d{1,3}\b|автомат|узо|диф|реле|контактор|вводной/i.test(n) || /automatic|breaker|uzo|dif|relay|contactor/.test(String(it.kind||it.dbMeta&&it.dbMeta.kind||''))); }
+function assigns(it){ var out=[]; function add(v){ v=clean(v); if(v && !/позиция щита|назначение не указано/i.test(v) && out.indexOf(v)<0) out.push(v); } if(it){ if(Array.isArray(it.epAssignments)) it.epAssignments.forEach(add); if(Array.isArray(it.epMergedDetails)) it.epMergedDetails.forEach(add); add(it.epAssignment); if(it.dbMeta) add(it.dbMeta.assignment); } return out; }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: selectedChecks
+ * AI FUNCTIONS FUNCTION: addShieldToEstimate
  * ========================================================= */
-function selectedChecks(type){ return Array.prototype.slice.call(document.querySelectorAll('#settModal .ep-v18-check:checked')).filter(function(ch){ return !type || ch.dataset.type===type; }); }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: activeTypeFromUi
- * ========================================================= */
-function activeTypeFromUi(){ var m=$('editor-mat-list'), w=$('editor-work-list'); if(m && m.offsetParent!==null) return 'mat'; if(w && w.offsetParent!==null) return 'work'; return lastOpenedType||'mat'; }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: buildBulkPanel
- * ========================================================= */
-function buildBulkPanel(){
-    var arr=getArr('mat').concat(getArr('work'));
-    var cats=arr.map(function(x){return x.c||'Разное';}); var subs=arr.map(function(x){return groupOf(x)||'Без группы';});
-    return '<div id="ep-v18-bulk-box" style="margin:12px 0;padding:12px;border:2px dashed #16a34a;border-radius:16px;background:#f0fdf4;">'+
-      /* V81 disabled legacy mass panel line */
-      '<div style="font-size:12px;color:#64748b;font-weight:800;margin-bottom:8px;">Ставь галочки слева от позиций. Перемещение идёт в выбранную существующую категорию/подкатегорию активной базы.</div>'+ 
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;"><select id="ep-v18-move-cat">'+optionsHtml(cats,'Категория')+'</select><select id="ep-v18-move-sub">'+optionsHtml(subs,'Подкатегория')+'</select></div>'+ 
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><button class="btn-info" style="margin:0;padding:10px;" onclick="epV18SelectVisible(true)">✅ Выделить видимые</button><button class="btn-vendor" style="margin:0;padding:10px;" onclick="epV18SelectVisible(false)">⬜ Снять галочки</button><button class="btn-success" style="margin:0;padding:10px;" onclick="epV18MoveSelected()">📦 Переместить выбранные</button><button class="btn-danger" style="margin:0;padding:10px;" onclick="epV18DeleteSelected()">🗑 Удалить выбранные</button></div>'+ 
-    '</div>';
+function addShieldToEstimate(items){
+    // Use original addAuto if possible, because it also syncs totals and storage. Items are already aggregated by V19.
+    try{ if(typeof addAuto==='function'){ addAuto(items,'shield'); return; } }catch(e){}
+    try{ window.currentEstimate=(Array.isArray(window.currentEstimate)?window.currentEstimate:[]).filter(function(it){return it.tag!=='shield'&&it.tag!=='shield_info';}).concat(items); currentEstimate=window.currentEstimate; if(typeof renderMainTable==='function') renderMainTable(); }catch(e){}
   }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: injectChecks
+ * AI FUNCTIONS FUNCTION: getAssigns
  * ========================================================= */
-function injectChecks(){
-    ['editor-mat-list','editor-work-list'].forEach(function(id){ var box=$(id); if(!box) return; var type=id.indexOf('work')>=0?'work':'mat'; Array.prototype.forEach.call(box.querySelectorAll('.emp-row,.mat-item'),function(row,idx){ if(row.querySelector('.ep-v18-check')) return; var price=row.querySelector('input[type="number"][data-id]'); var itemBtn=row.querySelector('[data-item]'); var did=price?price.getAttribute('data-id'):''; var dtype=price?price.getAttribute('data-type'):type; if(!did && itemBtn){ try{ var raw=decodeURIComponent(escape(atob(itemBtn.getAttribute('data-item')))); var obj=JSON.parse(raw); did=obj.id||''; dtype=itemBtn.getAttribute('data-type')||type; }catch(e){} } if(!did){ did='v18row_'+type+'_'+idx+'_'+clean(row.textContent).slice(0,40); }
-      var ch=document.createElement('input'); ch.type='checkbox'; ch.className='ep-v18-check'; ch.dataset.type=dtype||type; ch.dataset.id=did; ch.style.cssText='width:22px;height:22px;min-width:22px;accent-color:#16a34a;margin:7px 10px 0 0;'; row.insertBefore(ch,row.firstChild); }); });
-  }
+function getAssigns(it){ var out=[]; function add(v){ v=String(v||'').trim(); if(v && !/позиция щита|назначение не указано/i.test(v) && out.indexOf(v)<0) out.push(v); } if(!it) return out; if(Array.isArray(it.epAssignments)) it.epAssignments.forEach(add); if(Array.isArray(it.epMergedDetails)) it.epMergedDetails.forEach(add); add(it.epAssignment); if(it.dbMeta) add(it.dbMeta.assignment); return out; }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: boot
- * ========================================================= */
-/* V81 disabled legacy status V17/V18/V21 */
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: patchButtons
+ * AI FUNCTIONS FUNCTION: patchButtons
  * ========================================================= */
 function patchButtons(){ try{ Array.prototype.forEach.call(document.querySelectorAll('button'),function(b){ var t=b.textContent||''; if(t.indexOf('Сгенерировать щит')>=0) b.onclick=window.epV19GenerateShield; if(t.indexOf('Детализация')>=0) b.onclick=window.epV19ShowDetails; }); }catch(e){} }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: activeMatDb
+ * AI FUNCTIONS FUNCTION: modelFromDbName
  * ========================================================= */
-function activeMatDb(){
-    var out=[];
-    try{ if(Array.isArray(window.matDB)) out=out.concat(window.matDB); }catch(e){}
-    try{ if(Array.isArray(window.EP_MY_MAT)) out=out.concat(window.EP_MY_MAT); }catch(e){}
-    try{ if(Array.isArray(window.EP_GLOBAL_MAT)) out=out.concat(window.EP_GLOBAL_MAT); }catch(e){}
-    try{ var c=JSON.parse(localStorage.getItem('ep_global_cache_force_v1')||'{}'); if(Array.isArray(c.matDB)) out=out.concat(c.matDB); }catch(e){}
-    return out;
+function modelFromDbName(n){ var m=text(n).match(/\(([^)]+)\)/); return m ? clean(m[1]).replace(/^IEK\s*/i,'ИЭК ') : ''; }
+  
+
+
+/* =========================================================
+ * AI FUNCTIONS FUNCTION: item
+ * ========================================================= */
+function item(n,q,p,type,meta,assigns){
+    var a=[]; if(Array.isArray(assigns)) a=assigns.map(clean).filter(Boolean); else if(assigns) a=[clean(assigns)].filter(Boolean);
+    var it=Object.assign({n:n,q:Number(q)||1,p:money(p),u:(meta&&meta.unit)||'шт',type:type||'mat',tag:'shield'},meta||{});
+    if(a.length){ it.epAssignment=a[0]; it.epAssignments=a.slice(); it.epMergedDetails=a.slice(); it.assignment=a[0]; it.dbMeta=Object.assign({},it.dbMeta||{}, {assignment:a[0]}); }
+    return it;
   }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: setStatus
+ * AI FUNCTIONS FUNCTION: addUniqueAssign
  * ========================================================= */
-function setStatus(state,msg){
-    try{ if(typeof window.epV18SetStatus==='function'){ window.epV18SetStatus(state,msg); return; } }catch(e){}
-    var b=$('ep-v18-status-badge')||document.createElement('div');
-    b.id='ep-v18-status-badge';
-    b.style.cssText='position:fixed;left:10px;bottom:12px;z-index:2147483647;border-radius:999px;padding:8px 13px;color:#fff;font-size:12px;font-weight:1000;box-shadow:0 10px 30px rgba(0,0,0,.25);border:2px solid rgba(255,255,255,.55);letter-spacing:.2px;background:'+(state==='upload'?'#dc2626':state==='download'?'#2563eb':state==='error'?'#991b1b':'#16a34a')+';';
-    /* V81 disabled legacy status V17/V18/V21 */
-    if(!b.parentNode) document.body.appendChild(b);
+function addUniqueAssign(rec,arr){
+    rec.epAssignments=rec.epAssignments||[]; rec.epMergedDetails=rec.epMergedDetails||[];
+    (arr||[]).forEach(function(v){ v=clean(v); if(v && !/позиция щита|назначение не указано/i.test(v) && rec.epAssignments.indexOf(v)<0){ rec.epAssignments.push(v); rec.epMergedDetails.push(v); } });
+    rec.epAssignment=rec.epAssignments[0]||rec.epAssignment||''; rec.dbMeta=Object.assign({},rec.dbMeta||{}, {assignment:rec.epAssignment});
   }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: activeType
+ * AI FUNCTIONS FUNCTION: directAdd
  * ========================================================= */
-function activeType(){
-    var m=$('editor-mat-list'), w=$('editor-work-list');
-    if(m && m.offsetParent!==null) return 'mat';
-    if(w && w.offsetParent!==null) return 'work';
-    try{ var activeBtn=Array.prototype.find.call(document.querySelectorAll('#settModal button'),function(b){ return /Материалы/.test(b.textContent||'') && /active|white|#fff/.test(b.className+' '+b.style.background); }); if(activeBtn) return 'mat'; }catch(e){}
-    return 'mat';
+function directAdd(items){
+    var map={}, out=[];
+    (items||[]).forEach(function(src){ if(!src||!src.n) return; var it=Object.assign({},src,{tag:src.tag||'shield'}); var k=[it.tag,it.type,it.n,it.p,it.u].join('|'); var rec=map[k]; if(!rec){ rec=Object.assign({},it,{q:0,epAssignments:[],epMergedDetails:[]}); map[k]=rec; out.push(rec); } rec.q += Number(it.q)||1; addUniqueAssign(rec,[].concat(it.epAssignments||[],it.epMergedDetails||[],it.epAssignment||[])); });
+    try{ currentEstimate=(Array.isArray(currentEstimate)?currentEstimate:[]).filter(function(x){ return x && x.tag!=='shield' && x.tag!=='shield_info'; }).concat(out); window.currentEstimate=currentEstimate; }catch(e){ window.currentEstimate=(window.currentEstimate||[]).filter(function(x){ return x && x.tag!=='shield' && x.tag!=='shield_info'; }).concat(out); }
+    try{ if(typeof renderMainTable==='function') renderMainTable(); else if(typeof renderMainDirect==='function') renderMainDirect(); }catch(e){}
+    try{ if(typeof syncDraft==='function') syncDraft(); }catch(e){}
   }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: fillSelectors
+ * AI FUNCTIONS FUNCTION: ensurePanel
  * ========================================================= */
-function fillSelectors(force){
-    var cat=$('ep-v21-move-cat'), sub=$('ep-v21-move-sub'); if(!cat||!sub) return;
-    var active=document.activeElement;
-    if(!force && (active===cat || active===sub)) return;
-    var oldCat=cat.value, oldSub=sub.value;
-    var type=activeType(), arr=getArr(type);
-    var cats=arr.map(function(x){ return x.c||'Разное'; });
-    var subs=arr.filter(function(x){ return !oldCat || clean(x.c||'Разное')===oldCat; }).map(function(x){ return groupOf(x)||'Без группы'; });
-    cat.innerHTML=options(cats,'Категория',oldCat);
-    sub.innerHTML=options(subs,'Подкатегория',oldSub);
+function ensurePanel(){
+    hideOldBulk();
+    var host=visibleHost(); if(!host) return;
+    var box=$('ep-v21-bulk-box');
+    if(!box){ host.insertAdjacentHTML('beforebegin',panelHtml()); fillSelectors(true); }
+    else if(!box.parentNode || !document.body.contains(box)){ host.insertAdjacentHTML('beforebegin',panelHtml()); fillSelectors(true); }
+    ensureChecks(); hideOldBulk();
   }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: panelHtml
- * ========================================================= */
-function panelHtml(){
-    return '<div id="ep-v21-bulk-box" style="margin:12px 0;padding:12px;border:2px dashed #16a34a;border-radius:16px;background:#f0fdf4;">'+
-      /* V81 disabled legacy mass panel line */
-      '<div style="font-size:12px;color:#64748b;font-weight:800;margin-bottom:8px;">Галочки ставятся слева от позиций. Категория/подкатегория выбираются из существующих и больше не закрываются сами.</div>'+ 
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">'+
-        '<select id="ep-v21-move-cat" onchange="epV21UpdateSubs()"><option value="">Категория</option></select>'+ 
-        '<select id="ep-v21-move-sub"><option value="">Подкатегория</option></select>'+ 
-      '</div>'+ 
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'+
-        '<button class="btn-info" style="margin:0;padding:10px;" onclick="epV21SelectVisible(true)">✅ Выделить видимые</button>'+ 
-        '<button class="btn-vendor" style="margin:0;padding:10px;" onclick="epV21SelectVisible(false)">⬜ Снять галочки</button>'+ 
-        '<button class="btn-success" style="margin:0;padding:10px;" onclick="epV21MoveSelected()">📦 Переместить выбранные</button>'+ 
-        '<button class="btn-danger" style="margin:0;padding:10px;" onclick="epV21DeleteSelected()">🗑 Удалить выбранные</button>'+ 
-      '</div>'+ 
-    '</div>';
-  }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: ensureChecks
- * ========================================================= */
-function ensureChecks(){
-    ['editor-mat-list','editor-work-list'].forEach(function(id){
-      var box=$(id); if(!box) return; var type=id.indexOf('work')>=0?'work':'mat';
-      Array.prototype.forEach.call(box.querySelectorAll('.emp-row,.mat-item'),function(row,idx){
-        var old=row.querySelector('.ep-v18-check,.ep-v21-check');
-        if(old){ old.classList.add('ep-v21-check'); return; }
-        var info=rowId(row,type,idx);
-        var ch=document.createElement('input'); ch.type='checkbox'; ch.className='ep-v21-check'; ch.dataset.type=info.type||type; ch.dataset.id=info.id;
-        ch.style.cssText='width:22px;height:22px;min-width:22px;accent-color:#16a34a;margin:7px 10px 0 0;';
-        row.insertBefore(ch,row.firstChild);
-      });
-    });
-  }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: selected
- * ========================================================= */
-function selected(){ return Array.prototype.slice.call(document.querySelectorAll('#settModal .ep-v21-check:checked, #settModal .ep-v18-check:checked')); }
   
 

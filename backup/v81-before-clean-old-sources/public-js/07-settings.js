@@ -1,7 +1,7 @@
 /*
  * Electric PRO Refactor
- * Module: 12-documents.js
- * V39 SAFE: Documents.
+ * Module: 07-settings.js
+ * V39 SAFE: Settings.
  *
  * Важно:
  * - модуль пересобран безопасно;
@@ -10,12 +10,31 @@
  * - 00-core.js временно остаётся стабильным runtime.
  */
 
-console.log("12-documents.js V39 SAFE loaded");
+console.log("07-settings.js V39 SAFE loaded");
 
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: checkLocalPinUser
+ * SETTINGS FUNCTION: handleGoogleAuth
+ * ========================================================= */
+async function handleGoogleAuth() {
+    if(!auth) return alert("Ошибка: Firebase не загружен. Проверьте интернет-соединение.");
+    showLoader("Подключение к Google...", "🔄");
+    try { 
+        const provider = new firebase.auth.GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: 'select_account' });
+        await auth.signInWithPopup(provider); 
+    } catch(e) { 
+        hideLoader();
+        if(e.code !== 'auth/popup-closed-by-user') alert("Сбой Google Auth: " + e.message); 
+    }
+}
+
+
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: checkLocalPinUser
  * ========================================================= */
 function checkLocalPinUser() {
     let pinUser = safeGet('authUser_v31_pin', null);
@@ -28,29 +47,7 @@ function checkLocalPinUser() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: showLoader
- * ========================================================= */
-function showLoader(text, icon = '☁️') { document.getElementById('loader-icon').innerText = icon; document.getElementById('loader-text').innerText = text; document.getElementById('global-loader').classList.add('show'); }
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: hideLoader
- * ========================================================= */
-function hideLoader() { document.getElementById('global-loader').classList.remove('show'); }
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: showToast
- * ========================================================= */
-function showToast(msg) { let t = document.getElementById('toast'); t.innerText = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); }
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: loginWithPin
+ * SETTINGS FUNCTION: loginWithPin
  * ========================================================= */
 async function loginWithPin() {
     let phone = document.getElementById('auth-phone').value.trim();
@@ -84,7 +81,19 @@ async function loginWithPin() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: finishLoginSetup
+ * SETTINGS FUNCTION: confirmLogout
+ * ========================================================= */
+function confirmLogout() { 
+    if(auth) auth.signOut(); 
+    safeSet('authUser_v31_pin', ''); 
+    window.location.reload(); 
+}
+
+
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: finishLoginSetup
  * ========================================================= */
 async function finishLoginSetup() {
     document.getElementById('authModal').style.display = 'none';
@@ -135,7 +144,7 @@ async function finishLoginSetup() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: openModal
+ * SETTINGS FUNCTION: openModal
  * ========================================================= */
 function openModal(id) { 
     if(id === 'custModal') loadCustHistoryOptions(); 
@@ -149,28 +158,14 @@ function openModal(id) {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: closeModal
- * ========================================================= */
-function closeModal(id) { document.getElementById(id).style.display='none'; }
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: toggleMenu
- * ========================================================= */
-function toggleMenu() { document.getElementById('burger-menu').classList.toggle('open'); document.getElementById('burger-overlay').classList.toggle('open'); }
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: changeTheme
+ * SETTINGS FUNCTION: changeTheme
  * ========================================================= */
 function changeTheme(theme) { document.documentElement.setAttribute('data-theme', theme); safeSet('theme_v31', theme); }
 
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: updateMasterBadge
+ * SETTINGS FUNCTION: updateMasterBadge
  * ========================================================= */
 function updateMasterBadge() { document.getElementById('master-badge').innerHTML = `${appUser?.name || "Мастер"}<br>Объект: ${cust.name || 'Не выбран'}`; }
 
@@ -178,20 +173,18 @@ function updateMasterBadge() { document.getElementById('master-badge').innerHTML
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: updateCoeffs
+ * SETTINGS FUNCTION: saveApiKey
  * ========================================================= */
-function updateCoeffs() {
-    coeffs.mat = Number(document.getElementById('m-coeff').value);
-    coeffs.work = Number(document.getElementById('w-coeff').value);
-    safeSet('coeffs_v31', JSON.stringify(coeffs));
-    renderMainTable();
+async function saveApiKey(val) { 
+    GEMINI_API_KEY = val.trim(); safeSet('gemini_key_v31', GEMINI_API_KEY);
+    if(db && appUser && appUser.uid) { try { await db.collection('users').doc(appUser.uid).update({geminiKey: GEMINI_API_KEY}); }catch(e){} }
+    showToast("🔑 Ключ сохранен!"); 
 }
 
 
 
-
 /* =========================================================
- * DOCUMENTS FUNCTION: saveQRs
+ * SETTINGS FUNCTION: saveQRs
  * ========================================================= */
 function saveQRs() { 
     safeSet('qr_tg_v31', document.getElementById('qr-tg').value); 
@@ -205,7 +198,7 @@ function saveQRs() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: openSwapModal
+ * SETTINGS FUNCTION: openSwapModal
  * ========================================================= */
 function openSwapModal(idx) {
     swapTargetIdx = idx;
@@ -223,67 +216,14 @@ function openSwapModal(idx) {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: applySwap
+ * SETTINGS FUNCTION: syncDraft
  * ========================================================= */
-function applySwap() {
-    if(swapTargetIdx < 0) return;
-    let selId = document.getElementById('swap-select').value;
-    let current = currentEstimate[swapTargetIdx];
-    let isMat = current.type === 'mat';
-    let dbToUse = isMat ? matDB : workDB;
-    let newItem = dbToUse.find(x => x.id === selId);
-    
-    if(newItem) {
-        currentEstimate[swapTargetIdx].n = newItem.n;
-        currentEstimate[swapTargetIdx].p = newItem.p;
-        renderMainTable();
-        closeModal('swapModal');
-        showToast("Заменено!");
-    }
-}
-
+async function syncDraft() { try { safeSet('est_v31', JSON.stringify(currentEstimate)); if(db && appUser && appUser.uid) await db.collection('drafts').doc(appUser.uid).set({ estimate: currentEstimate, cust: cust, timestamp: new Date().toISOString() }); } catch(e){} }
 
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: renderMainTable
- * ========================================================= */
-function renderMainTable() {
-    const tb = document.querySelector("#mainTable tbody"); tb.innerHTML = ""; let total = 0;
-    currentEstimate.forEach((it, idx) => {
-        let sum = fPrice(it) * it.q; total += sum;
-        tb.innerHTML += `<tr>
-            <td class="col-name editable-name" onclick="openSwapModal(${idx})" title="Нажмите для замены">${it.n}</td>
-            <td class="col-qty"><input type="number" value="${it.q}" onchange="currentEstimate[${idx}].q=Number(this.value); renderMainTable();" style="width:50px; padding:6px; margin:0; text-align:center;"></td>
-            <td class="col-sum">${sum} P</td>
-            <td style="text-align:right;"><button onclick="currentEstimate.splice(${idx},1);renderMainTable();" class="btn-danger" style="padding:6px; border-radius:8px; width:auto; margin:0;">✕</button></td>
-        </tr>`;
-    });
-    document.getElementById('tot-all').innerText = total.toLocaleString() + ' P'; syncDraft();
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: openMatCatalog
- * ========================================================= */
-function openMatCatalog() { 
-    let cats = {}; matDB.forEach(m => { let c = m.c || "ОБЩЕЕ"; if(!cats[c]) cats[c] = []; cats[c].push(m); }); 
-    let html = ""; let idx = 0;
-    for(let c in cats) { 
-        let sid = 'mcat_' + (idx++);
-        html += `<div class="cat-header" onclick="toggleCat('${sid}')">${c}</div><div class="cat-body" id="${sid}">`;
-        cats[c].forEach(m => { html += `<div class="mat-item"><div style="flex:1; font-size:12px; font-weight:600;">${m.n}<br><span style="color:var(--gray); font-size:11px; font-weight:normal;">${m.p} P / ${m.u}</span></div><button class="mat-add-btn" onclick="promptAdd('${m.id}', 'mat')">+ Добавить</button></div>`; });
-        html += `</div>`;
-    } document.getElementById('mat-cat-list').innerHTML = html; openModal('matCatModal'); 
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: openWorkCatalog
+ * SETTINGS FUNCTION: openWorkCatalog
  * ========================================================= */
 function openWorkCatalog() { 
     let cats = {}; workDB.forEach(w => { let c = w.c || "ОБЩЕЕ"; if(!cats[c]) cats[c] = []; cats[c].push(w); });
@@ -300,253 +240,7 @@ function openWorkCatalog() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: toggleCat
- * ========================================================= */
-function toggleCat(id) { let el = document.getElementById(id); el.classList.toggle('active'); }
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: promptAdd
- * ========================================================= */
-function promptAdd(id, type) { 
-    let dbArr = (type==='mat'?matDB:workDB); let item = dbArr.find(x => String(x.id) === String(id)); 
-    if(!item) return; pendingAdd = { item, type }; 
-    document.getElementById('qty-prompt-name').innerText = item.n; 
-    document.getElementById('qty-input').value = 1; 
-    openModal('qtyPromptModal'); 
-}
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: confirmQtyAdd
- * ========================================================= */
-function confirmQtyAdd() { 
-    let q = Number(document.getElementById('qty-input').value); 
-    if(q > 0) { addAuto([{...pendingAdd.item, q: q, type: pendingAdd.type}], 'man_'+Date.now()); } 
-    closeModal('qtyPromptModal'); showToast("Добавлено!");
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: setPodr
- * ========================================================= */
-function setPodr(v, el) { st_podr = v; document.querySelectorAll('#podr-tiles .tile').forEach(t=>t.classList.remove('active')); el.classList.add('active'); }
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: setH
- * ========================================================= */
-function setH(v, el) { st_h = v; if(el){ document.querySelectorAll('#h-tiles .tile').forEach(t=>t.classList.remove('active')); el.classList.add('active'); } }
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: setP
- * ========================================================= */
-function setP(v) { st_p = v; document.querySelectorAll('#p-tiles .tile').forEach((t,i) => { if(i===v-1) t.classList.add('active'); else t.classList.remove('active'); }); }
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: upUI
- * ========================================================= */
-function upUI() { 
-    ['soc', 'sw', 'pass', 'cross', 'tv', 'tpol'].forEach(k => {
-        let el = document.getElementById('v-'+k);
-        if(el) el.innerText = window['st_'+k];
-    });
-    
-    st_p = st_soc + st_sw + st_pass + st_cross + st_tv + st_tpol;
-    let autoEl = document.getElementById('auto-posts');
-    if(autoEl) autoEl.innerText = st_p || 1; 
-    if(st_p === 0) st_p = 1; 
-    
-    let qEl = document.getElementById('v-q');
-    if(qEl) qEl.innerText = st_q; 
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: addGrp
- * ========================================================= */
-function addGrp() { 
-    let totalMechs = st_soc + st_sw + st_pass + st_cross + st_tv + st_tpol;
-    if(totalMechs === 0) return showToast("Сначала добавьте механизмы!");
-    
-    pool.push({ p:st_p, h:st_h, q:st_q, soc:st_soc, sw:st_sw, pass:st_pass, cross:st_cross, tv:st_tv, tpol:st_tpol, route: document.getElementById('g-routing').value, podr: st_podr }); 
-    rfPool(); 
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: rfPool
- * ========================================================= */
-function rfPool() { 
-    document.getElementById('pool-disp').innerHTML = pool.map((g,i) => `<div style="display:flex; justify-content:space-between; padding:8px; border-bottom:1px solid var(--border);"><b>${g.p}п на ${g.h}см (x${g.q}) [${g.podr}]</b> <button onclick="pool.splice(${i},1);rfPool();" style="width:auto; margin:0; background:none; color:red; font-size:16px;">✕</button></div>`).join(""); 
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: applyPoolToEstimate
- * ========================================================= */
-function applyPoolToEstimate() {
-    if(!pool.length) return showToast("❌ Пул пуст!");
-    let mode = document.getElementById('montage-mode').value;
-    let connMode = document.getElementById('conn-mode') ? document.getElementById('conn-mode').value : 'gml';
-    let wall = document.getElementById('g-wall').value;
-    let useKk = document.getElementById('pool-cable-channel').checked;
-    let useSurf = document.getElementById('pool-surface').checked;
-    let ceilH = Number(cust.ceil) || 270;
-
-    let res = { m_sh: 0, m_sh_50: 0, stdPodr: 0, deepPodr: 0, koposPodr: 0, mechs: { soc:0, sw:0, pass:0, cross:0, tv:0, tpol:0 }, frames: {1:0,2:0,3:0,4:0,5:0,6:0} };
-
-    let swJbs = 0; let passJbs = 0; let totalSocDrops = 0;
-
-    pool.forEach(g => {
-        let isSw = (g.sw > 0 || g.cross > 0);
-        let isPass = (g.pass > 0);
-        let isSoc = (g.soc > 0 || g.tv > 0);
-        
-        let drop = (isSw || isPass) ? (ceilH - g.h)/100 : (g.route === 'ceiling' ? (ceilH - g.h)/100 : g.h/100);
-
-        if(g.tpol > 0) { res.m_sh_50 += (g.h/100) * g.q; if(g.route === 'ceiling') res.m_sh += (drop - g.h/100) * g.q; } else { res.m_sh += drop * g.q; }
-        
-        // Логика распаек
-        if(mode === 'classic') {
-            if(isPass) passJbs += 1 * g.q;
-            else if(isSw) swJbs += 1 * g.q;
-            else if(isSoc && g.tpol === 0) totalSocDrops += 1 * g.q; 
-        } else {
-            if(isPass) passJbs += 1 * g.q;
-            else if(isSw) swJbs += 1 * g.q;
-            if(isSoc && !isPass && !isSw && g.tpol===0) totalSocDrops += 1 * g.q; 
-        }
-
-        let deepCount = 0;
-        let stdCount = 0;
-        
-        if (mode === 'gyn') {
-            deepCount = g.p * g.q; 
-        } else {
-            deepCount = (g.sw + g.pass + g.cross + g.tpol) * g.q; 
-            stdCount = Math.max(0, (g.p * g.q) - deepCount);
-        }
-        
-        if(g.podr === 'kopos') { res.koposPodr += g.p * g.q; } 
-        else if(g.podr === 'deep') { res.deepPodr += g.p * g.q; } 
-        else { res.deepPodr += deepCount; res.stdPodr += stdCount; } 
-        
-        res.mechs.soc += g.soc * g.q; res.mechs.sw += g.sw * g.q; res.mechs.pass += g.pass * g.q; res.mechs.cross += g.cross * g.q; res.mechs.tv += g.tv * g.q; res.mechs.tpol += g.tpol * g.q;
-        if(g.p >= 1 && g.p <= 6) res.frames[g.p] += g.q;
-    });
-
-    let socJbs = 0;
-    if(mode === 'classic') {
-        let socsPerBox = appLogic.socketsPerJb || 3;
-        socJbs = Math.ceil(totalSocDrops / socsPerBox);
-    } else {
-        socJbs = totalSocDrops;
-    }
-
-    let totalBoxes = swJbs + passJbs + socJbs;
-    
-    // Считаем коннекторы
-    let mConnSoc = appLogic.connPerSocJb || 3;
-    let mConnSw = appLogic.connPerSwJb || 3;
-    let mConnPass = appLogic.connPerPassJb || 4;
-    let totalConn = (socJbs * mConnSoc) + (swJbs * mConnSw) + (passJbs * mConnPass);
-
-    let m = [], w = [];
-    let prSoc = appLogic.priceSoc || 500; let prDrill = appLogic.priceDrill || 600; let prShtr = appLogic.priceShtroba || 550;
-
-    if(!useSurf) {
-        if(res.stdPodr > 0) m.push({ n: "Подрозетник стандарт (ГКЛ/Бетон)", q: res.stdPodr, p: 20, type: 'mat' });
-        if(res.deepPodr > 0) m.push({ n: "Подрозетник глубокий 68х64", q: res.deepPodr, p: 12, type: 'mat' });
-        if(res.koposPodr > 0) m.push({ n: "Подрозетник Короѕ 75мм", q: res.koposPodr, p: 95, type: 'mat' });
-    }
-    
-    if(mode === 'classic' && totalBoxes > 0) {
-        m.push({ n: "Коробка распределительная 100х100х40", q: totalBoxes, p: 120, type: 'mat' });
-    }
-    
-    if(totalConn > 0) {
-        if(connMode === 'gml') {
-            m.push({ n: "Гильза ГМЛ 4/6", q: totalConn, p: 15, type: 'mat' });
-            m.push({ n: "Термоусадка 12/4 (м)", q: Math.ceil(totalBoxes * 0.2), p: 80, type: 'mat' });
-        } else if(connMode === 'wago') {
-            m.push({ n: "Клемма WAGO", q: totalConn, p: 25, type: 'mat' });
-        } else {
-            m.push({ n: "Изолента / ТУТ (Пайка/СИЗ)", q: Math.ceil(totalBoxes * 0.2), p: 100, type: 'mat' });
-        }
-    }
-    
-    if(res.mechs.soc > 0) m.push({ n: "Розетка 220В (механизм)", q: res.mechs.soc, p: 250, type: 'mat' });
-    if((res.mechs.sw+res.mechs.pass+res.mechs.cross) > 0) m.push({ n: "Выключатель (механизм)", q: res.mechs.sw+res.mechs.pass+res.mechs.cross, p: 280, type: 'mat' });
-    if(res.mechs.tv > 0) m.push({ n: "Слаботочная розетка (механизм)", q: res.mechs.tv, p: 350, type: 'mat' });
-    for(let i=1; i<=6; i++) { if(res.frames[i] > 0) m.push({ n: `Рамка ${i} пост(а)`, q: res.frames[i], p: i*50, type: 'mat' }); }
-
-    if(totalBoxes > 0) {
-        if(mode === 'classic') {
-            let connPrice = connMode === 'gml' ? 800 : (connMode === 'solder' ? 900 : 600);
-            w.push({ n: `Сборка распред. коробки (${connMode === 'gml' ? 'ГМЛ' : (connMode === 'solder' ? 'Пайка' : 'WAGO')})`, q: totalBoxes, p: connPrice, type: 'work' });
-        } else {
-            let connPrice = connMode === 'gml' ? 600 : (connMode === 'solder' ? 700 : 450);
-            w.push({ n: `Коммутация в подрозетнике (${connMode === 'gml' ? 'ГМЛ' : (connMode === 'solder' ? 'Пайка' : 'WAGO')})`, q: totalBoxes, p: connPrice, type: 'work' });
-        }
-    }
-    
-    if(useKk) {
-        if(res.m_sh > 0) w.push({ n: `Монтаж кабель-канала`, q: Math.ceil(res.m_sh), p: 150, type: 'work' });
-        if(res.m_sh_50 > 0) w.push({ n: `Монтаж кабель-канала (широкий)`, q: Math.ceil(res.m_sh_50), p: 200, type: 'work' });
-    } else {
-        if(res.m_sh > 0) w.push({ n: `Штроба 25х30 (${wall})`, q: Math.ceil(res.m_sh), p: prShtr, type: 'work' });
-        if(res.m_sh_50 > 0) w.push({ n: `Штроба 50х50 (${wall})`, q: Math.ceil(res.m_sh_50), p: prShtr*1.8, type: 'work' });
-    }
-
-    if(useSurf) {
-        let sumMechs = res.mechs.soc + res.mechs.sw + res.mechs.pass + res.mechs.cross + res.mechs.tv + res.mechs.tpol;
-        if(sumMechs > 0) w.push({ n: `Установка накладного механизма`, q: sumMechs, p: prSoc, type: 'work' });
-    } else {
-        if(res.stdPodr > 0) w.push({ n: `Высверливание подрозетников (45мм)`, q: res.stdPodr, p: prDrill, type: 'work' });
-        if(res.deepPodr > 0) w.push({ n: `Высверливание подрозетников (64мм)`, q: res.deepPodr, p: prDrill+100, type: 'work' });
-        let totalPodr = res.stdPodr + res.deepPodr + res.koposPodr;
-        if(totalPodr > 0) w.push({ n: `Вклейка подрозетников`, q: totalPodr, p: 100, type: 'work' });
-        
-        if(res.mechs.soc>0) w.push({n: `Установка розетки 220B`, q:res.mechs.soc, p:prSoc, type:'work'});
-        if(res.mechs.sw>0 || res.mechs.pass>0 || res.mechs.cross>0) w.push({n: `Установка выключателя`, q:res.mechs.sw+res.mechs.pass+res.mechs.cross, p:prSoc, type:'work'});
-        if(res.mechs.tv>0) w.push({n: `Установка слаботочной розетки`, q:res.mechs.tv, p:prSoc, type:'work'});
-        if(res.mechs.tpol>0) w.push({n: `Установка терморегулятора`, q:res.mechs.tpol, p:prSoc+400, type:'work'});
-    }
-
-    addAuto(m.concat(w), 'rough'); pool=[]; rfPool(); closeModal('roughModal'); showToast("✅ Пул добавлен!");
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: modV
- * ========================================================= */
-function modV(id, val) { cfg[id] = Math.max(0, (cfg[id] || 0) + val); const el = document.getElementById('v-'+id); if(el) el.innerText = cfg[id]; }
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: populateShieldExtras
+ * SETTINGS FUNCTION: populateShieldExtras
  * ========================================================= */
 function populateShieldExtras() {
     let sel = document.getElementById('cfg-extra-db');
@@ -564,7 +258,7 @@ function populateShieldExtras() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: addExtraToShieldConfig
+ * SETTINGS FUNCTION: addExtraToShieldConfig
  * ========================================================= */
 function addExtraToShieldConfig() {
     let sel = document.getElementById('cfg-extra-db');
@@ -581,7 +275,7 @@ function addExtraToShieldConfig() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: renderShieldExtras
+ * SETTINGS FUNCTION: renderShieldExtras
  * ========================================================= */
 function renderShieldExtras() {
     document.getElementById('shield-extras-list').innerHTML = currentShieldExtras.map((ex, i) =>
@@ -592,72 +286,19 @@ function renderShieldExtras() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epV15FormatAutoName
+ * SETTINGS FUNCTION: epAllDbItems
  * ========================================================= */
-function epV15FormatAutoName(found, label, meta) {
-    meta = meta || {};
-    const src = [label, found && found.n, meta.rawLabel].join(' ');
-    const brand = epV15BrandRu(meta.brand || epV15BrandCode(src));
-    let nominal = epV15DetectNominal(src, meta);
-    if (!nominal && /A472|А472/i.test(src)) nominal = 'C40';
-    let poles = epV15DetectPoles(src, meta) || '1P';
-    const model = epV15DetectModel(src, 'automatic') || (epV15BrandCode(brand).toUpperCase()==='IEK' ? 'ВА47-29' : '');
-    if (/вводн/i.test(src) && !nominal) return epV15CleanForName(['Вводной автомат', poles === '1P' ? '2P' : poles, brand, model].filter(Boolean).join(' '));
-    return epV15CleanForName([nominal || 'Автомат', poles, brand, model].filter(Boolean).join(' '));
+function epAllDbItems(type) {
+    const local = type === 'work' ? (workDB || []) : (matDB || []);
+    const user = type === 'work' ? (userWorkDB || []) : (userMatDB || []);
+    return local.concat(user).filter(Boolean);
 }
 
 
 
-/* =========================================================
- * DOCUMENTS FUNCTION: epV15FormatRcdName
- * ========================================================= */
-function epV15FormatRcdName(found, label, meta) {
-    meta = meta || {};
-    const src = [label, found && found.n, meta.rawLabel].join(' ');
-    const kraw = String(meta.kind || label || '').toLowerCase();
-    const kind = kraw.includes('dif') || /диф/i.test(src) ? 'ДИФ' : 'УЗО';
-    const brand = epV15BrandRu(meta.brand || epV15BrandCode(src));
-    const poles = epV15DetectPoles(src, meta) || (kind === 'ДИФ' ? '1P+N' : '2P');
-    const amp = Number(meta.amp || meta.current || 40) || 40;
-    const leakage = epV15DetectLeakage(src, meta) || 30;
-    const typ = meta.rcdType || (String(src).match(/тип\s*([AАBВCС]+)/iu)||[])[1] || 'A';
-    const model = epV15DetectModel(src, kind) || (epV15BrandCode(brand).toUpperCase()==='IEK' ? (kind==='ДИФ'?'АВДТ32':'ВД1-63') : '');
-    return epV15CleanForName([kind, poles, amp + 'A', leakage + 'мА', 'тип ' + String(typ).toUpperCase().replace('А','A').replace('В','B').replace('С','C'), brand, model].filter(Boolean).join(' '));
-}
-
-
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epV15DisplayMaterialName
- * ========================================================= */
-function epV15DisplayMaterialName(found, label, meta) {
-    meta = meta || {};
-    const k = String(meta.kind || '').toLowerCase();
-    const src = [label, found && found.n].join(' ');
-    if (k.includes('automatic') || k.includes('breaker') || /\bавтомат\b|A472|А472/i.test(src)) return epV15FormatAutoName(found, label, meta);
-    if (k.includes('узо') || k.includes('uzo') || k.includes('dif') || /узо|диф/i.test(src)) return epV15FormatRcdName(found, label, meta);
-    if (found && found.n) return epV15CleanForName(found.n);
-    return epV15CleanForName(label || 'Позиция');
-}
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: epGetCheck
- * ========================================================= */
-function epGetCheck(id) { const el = document.getElementById(id); return !!(el && el.checked); }
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: epGetVal
- * ========================================================= */
-function epGetVal(id, def) { const el = document.getElementById(id); return el ? el.value : def; }
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: generateCascadePanel
+ * SETTINGS FUNCTION: generateCascadePanel
  * ========================================================= */
 function generateCascadePanel() {
     const bBox = epGetVal('cfg-brand-box', 'Tekfor');
@@ -803,7 +444,7 @@ function generateCascadePanel() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: runAiCheck
+ * SETTINGS FUNCTION: runAiCheck
  * ========================================================= */
 async function runAiCheck() { 
     if(!GEMINI_API_KEY) return showToast("❌ Нужен ключ ИИ в настройках");
@@ -829,7 +470,7 @@ async function runAiCheck() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: aiSupply
+ * SETTINGS FUNCTION: aiSupply
  * ========================================================= */
 async function aiSupply() {
     if(!GEMINI_API_KEY) return showToast("❌ Нужен ключ ИИ");
@@ -852,7 +493,7 @@ async function aiSupply() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: aiPueHelper
+ * SETTINGS FUNCTION: aiPueHelper
  * ========================================================= */
 async function aiPueHelper() { 
     if(!GEMINI_API_KEY) return showToast("❌ Нужен ключ ИИ");
@@ -874,7 +515,7 @@ async function aiPueHelper() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: compareShopsAI
+ * SETTINGS FUNCTION: compareShopsAI
  * ========================================================= */
 async function compareShopsAI() {
     if(!GEMINI_API_KEY) return showToast("❌ Нужен ключ ИИ");
@@ -897,7 +538,7 @@ async function compareShopsAI() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: showPreview
+ * SETTINGS FUNCTION: showPreview
  * ========================================================= */
 function showPreview(mode, isActOverride = false, customTitle = null) { 
     currentPreviewMode = mode;
@@ -1013,7 +654,7 @@ function showPreview(mode, isActOverride = false, customTitle = null) {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: printAct
+ * SETTINGS FUNCTION: printAct
  * ========================================================= */
 function printAct() {
     if(!currentCardId) return;
@@ -1036,44 +677,7 @@ function printAct() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: deleteAct
- * ========================================================= */
-async function deleteAct() {
-    if(!currentCardId) return;
-    let conf = await window.customConfirm("Удаление", "Удалить этот акт навсегда?");
-    if(conf) {
-        hDB = hDB.filter(x => x.id !== currentCardId);
-        safeSet('h_v31', JSON.stringify(hDB));
-        updateHistList();
-        renderChart();
-        closeModal('objCardModal');
-        showToast("Акт удален");
-        if(db) {
-            try { await db.collection('history').doc(String(currentCardId)).delete(); } catch(e){}
-        }
-    }
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: togglePay
- * ========================================================= */
-function togglePay(field) {
-    let obj = hDB.find(x => x.id === currentCardId);
-    if(obj) {
-        if(!obj.payments) obj.payments = {};
-        obj.payments[field] = document.getElementById('pay-' + field).checked;
-        safeSet('h_v31', JSON.stringify(hDB));
-        if(db) db.collection('history').doc(String(obj.id)).update({ payments: obj.payments }).catch(()=>{});
-    }
-}
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: saveCust
+ * SETTINGS FUNCTION: saveCust
  * ========================================================= */
 function saveCust() { 
     cust.name = document.getElementById('c-name').value; 
@@ -1087,114 +691,7 @@ function saveCust() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: saveLogic
- * ========================================================= */
-function saveLogic() { 
-    appLogic.priceSoc = Number(document.getElementById('logic-price-soc').value) || 500;
-    appLogic.priceShield = Number(document.getElementById('logic-price-shield').value) || 500;
-    appLogic.priceDrill = Number(document.getElementById('logic-price-drill').value) || 600;
-    appLogic.priceShtroba = Number(document.getElementById('logic-price-shtroba').value) || 550;
-    appLogic.priceCabCeil = Number(document.getElementById('logic-price-cab-ceil').value) || 120;
-
-    appLogic.shieldInstallPrice = Number(document.getElementById('logic-shield-install').value) || 2500;
-    appLogic.shieldInputConnectPrice = Number(document.getElementById('logic-shield-input-connect').value) || 1500;
-    appLogic.shieldTestLinePrice = Number(document.getElementById('logic-shield-test-line').value) || 150;
-    appLogic.shieldMarkLinePrice = Number(document.getElementById('logic-shield-mark-line').value) || 100;
-    appLogic.shieldSchemePrice = Number(document.getElementById('logic-shield-scheme').value) || 4000;
-    appLogic.shieldNichePerModule = Number(document.getElementById('logic-shield-niche-module').value) || 400;
-    appLogic.shieldInputGroovePrice = Number(document.getElementById('logic-shield-input-groove').value) || 1500;
-    
-    appLogic.socketsPerJb = Number(document.getElementById('logic-soc-jb').value) || 3;
-    appLogic.connPerSocJb = Number(document.getElementById('logic-conn-soc').value) || 3;
-    appLogic.connPerSwJb = Number(document.getElementById('logic-conn-sw').value) || 3;
-    appLogic.connPerPassJb = Number(document.getElementById('logic-conn-pass').value) || 4;
-
-    safeSet('appLogic_v31', JSON.stringify(appLogic));
-    showToast('Логика сохранена!'); closeModal('logicModal'); 
-}
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: renderLogicUI
- * ========================================================= */
-function renderLogicUI() { 
-    document.getElementById('logic-price-soc').value = appLogic.priceSoc || 500; 
-    document.getElementById('logic-price-shield').value = appLogic.priceShield || 500; 
-    document.getElementById('logic-price-drill').value = appLogic.priceDrill || 600; 
-    document.getElementById('logic-price-shtroba').value = appLogic.priceShtroba || 550; 
-    document.getElementById('logic-price-cab-ceil').value = appLogic.priceCabCeil || 120; 
-
-    document.getElementById('logic-shield-install').value = appLogic.shieldInstallPrice || 2500;
-    document.getElementById('logic-shield-input-connect').value = appLogic.shieldInputConnectPrice || 1500;
-    document.getElementById('logic-shield-test-line').value = appLogic.shieldTestLinePrice || 150;
-    document.getElementById('logic-shield-mark-line').value = appLogic.shieldMarkLinePrice || 100;
-    document.getElementById('logic-shield-scheme').value = appLogic.shieldSchemePrice || 4000;
-    document.getElementById('logic-shield-niche-module').value = appLogic.shieldNichePerModule || 400;
-    document.getElementById('logic-shield-input-groove').value = appLogic.shieldInputGroovePrice || 1500;
-
-    document.getElementById('logic-soc-jb').value = appLogic.socketsPerJb || 3; 
-    document.getElementById('logic-conn-soc').value = appLogic.connPerSocJb || 3; 
-    document.getElementById('logic-conn-sw').value = appLogic.connPerSwJb || 3; 
-    document.getElementById('logic-conn-pass').value = appLogic.connPerPassJb || 4; 
-}
-
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: openRecalcModal
- * ========================================================= */
-function openRecalcModal() { 
-    globalRecalcCab = 0; globalRecalcSht = 0;
-    currentEstimate.forEach(it => { let nameLower = it.n.toLowerCase(); if (nameLower.includes('ввг') || nameLower.includes('bbг') || nameLower.includes('провод') || nameLower.includes('кабель')) globalRecalcCab += Number(it.q); if (nameLower.includes('штроб') && !nameLower.includes('вводная')) globalRecalcSht += Number(it.q); }); 
-    document.getElementById('r-cab').innerText = globalRecalcCab + ' м'; document.getElementById('r-sht').innerText = globalRecalcSht + ' м'; document.getElementById('r-ceil-input').value = 0; updateRecalcUI(); openModal('recalcModal'); 
-}
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: updateRecalcUI
- * ========================================================= */
-function updateRecalcUI() { 
-    let ceilCab = Number(document.getElementById('r-ceil-input').value) || 0; let floorCab = Math.max(0, globalRecalcCab - ceilCab - globalRecalcSht);
-    document.getElementById('r-res-sht').innerText = globalRecalcSht + ' м'; document.getElementById('r-res-ceil').innerText = ceilCab + ' м'; document.getElementById('r-res-floor').innerText = floorCab + ' м'; 
-}
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: doRecalculate
- * ========================================================= */
-function doRecalculate() {
-    let ceilCab = Number(document.getElementById('r-ceil-input').value) || 0; let floorCab = Math.max(0, globalRecalcCab - ceilCab - globalRecalcSht);
-    const rmList = ["Гофра ПВХ", "Лента монтажная", "Площадка под стяжку", "Стяжки нейлоновые", "Стяжка нейлоновая", "Прокладка кабеля", "Клипса в штробу", "Газовый баллон", "Гвозди для прямого", "Смесь штукатурная", "Амортизация: Коронка алмазная"];
-    currentEstimate = currentEstimate.filter(it => !rmList.some(rm => it.n.includes(rm))); let m=[], w=[];
-    let calcFloorCab = Math.ceil(floorCab * 1.1); let calcCeilCab = Math.ceil(ceilCab * 1.1); let calcGofra = Math.ceil(calcFloorCab * 1.05);
-    let boxesCount = 0; currentEstimate.forEach(it => { if(it.n.toLowerCase().includes('подрозетн') && it.type === 'work') boxesCount += Number(it.q); });
-    let mixKg = Math.ceil(boxesCount * 0.3); if(mixKg > 0) m.push({ n: "Смесь штукатурная/алебастр (кг)", q: mixKg, p: 40, type: 'mat' });
-    let crowns = Math.ceil(boxesCount / 80); if(crowns > 0) m.push({ n: "Амортизация: Коронка алмазная", q: crowns, p: 3500, type: 'mat' });
-
-    if (calcFloorCab > 0) { 
-        m.push({ n: "Гофра ПВХ/ПНД с протяжкой", q: calcGofra, p: 25, type: 'mat' }); m.push({ n: "Лента монтажная (перфолента)", q: Math.ceil(calcFloorCab * 0.0033), p: 580, type: 'mat' }); w.push({ n: "Прокладка кабеля в гофре (пол)", q: calcFloorCab, p: appLogic.priceCabCeil || 150, type: 'work' }); 
-    }
-    if (calcCeilCab > 0) {
-        let totalBases = Math.ceil(calcCeilCab * 3); let basePacks = Math.ceil(totalBases / 100);
-        if(basePacks > 0) { m.push({ n: `Площадка под стяжку (уп. 100шт)`, q: basePacks, p: 500, type: 'mat' }); m.push({ n: `Стяжка нейлоновая 400х5 (уп. 100шт)`, q: basePacks, p: 350, type: 'mat' }); }
-        let nailPacks = Math.floor((totalBases + 700) / 1000); if(totalBases > 0 && nailPacks < 1) nailPacks = 1; m.push({ n: "Гвозди для прямого монтажа 3х19 мм (1000 шт)", q: nailPacks, p: 1905, type: 'mat' });
-        let gas = Math.ceil(totalBases / 1100); if(totalBases > 0 && gas < 1) gas = 1; m.push({ n: "Газовый баллон 80 мл 165 мм", q: gas, p: 550, type: 'mat' }); w.push({ n: "Прокладка кабеля (без гофры)", q: calcCeilCab, p: appLogic.priceCabCeil || 120, type: 'work' });
-    }
-    if (globalRecalcSht > 0) { let clipsPacks = Math.ceil((globalRecalcSht * 3) / 100); if(clipsPacks > 0) m.push({ n: `Клипса в штробу (уп. 100шт)`, q: clipsPacks, p: 250, type: 'mat' }); }
-    
-    addAuto(m, 'recalc_m'); addAuto(w, 'recalc_w'); closeModal('recalcModal'); showToast("✅ Трассы пересчитаны!");
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: renderChart
+ * SETTINGS FUNCTION: renderChart
  * ========================================================= */
 function renderChart() {
     let ctxEl = document.getElementById('buhChart');
@@ -1237,22 +734,7 @@ function renderChart() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: updateBuhUI
- * ========================================================= */
-function updateBuhUI() {
-    let sumW = 0, sumM = 0, matBase = 0, workBase = 0;
-    currentEstimate.forEach(it => { let price = fPrice(it); if(it.type==='work') { sumW += price * it.q; workBase += (it.p||0) * it.q; } else { sumM += price * it.q; matBase += (it.p||0) * it.q; } });
-    let disc = Number(document.getElementById('b-discount').value) || 0, prep = Number(document.getElementById('b-prepay').value) || 0;
-    document.getElementById('b-work').innerText = sumW + ' P'; document.getElementById('b-mat').innerText = sumM + ' P'; 
-    document.getElementById('p-total').innerText = (workBase + (sumM - matBase)) + ' P'; 
-    document.getElementById('b-final').innerText = (sumW + sumM - disc - prep) + ' P';
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: saveHist
+ * SETTINGS FUNCTION: saveHist
  * ========================================================= */
 async function saveHist() {
     const finalTotal = parseInt(document.getElementById('b-final').innerText) || 0;
@@ -1266,7 +748,7 @@ async function saveHist() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: updateHistList
+ * SETTINGS FUNCTION: updateHistList
  * ========================================================= */
 function updateHistList() {
     let viewHDB = appUser.role === 'admin' ? hDB : hDB.filter(h => h.masterUid === appUser.uid);
@@ -1277,7 +759,7 @@ function updateHistList() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: openObjCard
+ * SETTINGS FUNCTION: openObjCard
  * ========================================================= */
 function openObjCard(id) {
     closeModal('buhModal'); currentCardId = id; const obj = hDB.find(x => x.id === id); if(!obj) return; 
@@ -1327,23 +809,7 @@ function openObjCard(id) {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: addExtraWork
- * ========================================================= */
-async function addExtraWork() { 
-    const n = document.getElementById('extra-work-name').value.trim(); const p = Number(document.getElementById('extra-work-price').value); 
-    if(!n || !p) return showToast("❌ Введите название и стоимость"); const obj = hDB.find(x => x.id === currentCardId); 
-    if(obj) { 
-        if(!obj.estimate) obj.estimate = []; obj.estimate.push({ n: n, p: p, q: 1, type: 'work', tag: 'extra' }); obj.total += p; 
-        safeSet('h_v31', JSON.stringify(hDB)); updateHistList(); renderChart(); openObjCard(currentCardId); document.getElementById('extra-work-name').value = ""; document.getElementById('extra-work-price').value = ""; showToast("✅ Доп. работа добавлена!"); 
-        try { if(db) await db.collection('history').doc(String(obj.id)).update({ estimate: obj.estimate, total: obj.total }); } catch(e){} 
-    } 
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: loadCustHistoryOptions
+ * SETTINGS FUNCTION: loadCustHistoryOptions
  * ========================================================= */
 function loadCustHistoryOptions() {
     let sel = document.getElementById('c-history-select'); 
@@ -1358,20 +824,7 @@ function loadCustHistoryOptions() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: switchDbTab
- * ========================================================= */
-function switchDbTab(tab) { 
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active')); 
-    document.getElementById(tab === 'mat' ? 'btnTabMat' : 'btnTabWork').classList.add('active'); 
-    document.getElementById('editor-mat-list').style.display = tab === 'mat' ? 'block' : 'none'; 
-    document.getElementById('editor-work-list').style.display = tab === 'work' ? 'block' : 'none'; 
-}
-
-
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: renderDbEditors
+ * SETTINGS FUNCTION: renderDbEditors
  * ========================================================= */
 function renderDbEditors() {
     let catsM = [...new Set(matDB.map(m=>m.c || 'Разное'))];
@@ -1407,7 +860,7 @@ function renderDbEditors() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: addDbItem
+ * SETTINGS FUNCTION: addDbItem
  * ========================================================= */
 async function addDbItem() {
     if(appUser.role !== 'admin') return showToast("Только админ может добавлять");
@@ -1433,7 +886,7 @@ async function addDbItem() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: requestPriceChange
+ * SETTINGS FUNCTION: requestPriceChange
  * ========================================================= */
 async function requestPriceChange(type, id, newPrice) { 
     newPrice = Number(newPrice); 
@@ -1449,7 +902,7 @@ async function requestPriceChange(type, id, newPrice) {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: listenForApprovals
+ * SETTINGS FUNCTION: listenForApprovals
  * ========================================================= */
 function listenForApprovals() {
     if(!db) return;
@@ -1469,7 +922,15 @@ function listenForApprovals() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: loadMasterDrafts
+ * SETTINGS FUNCTION: approveUser
+ * ========================================================= */
+async function approveUser(uid) { try { await db.collection('users').doc(uid).update({ isApproved: true }); showToast("Одобрено!"); } catch(e){} }
+
+
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: loadMasterDrafts
  * ========================================================= */
 async function loadMasterDrafts() {
     if(!db || appUser.role !== 'admin') return;
@@ -1494,7 +955,7 @@ async function loadMasterDrafts() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: openAdminDraftView
+ * SETTINGS FUNCTION: openAdminDraftView
  * ========================================================= */
 function openAdminDraftView(uid) {
     let draft = adminDraftsCache.find(d => d.uid === uid);
@@ -1514,7 +975,7 @@ function openAdminDraftView(uid) {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: renderAdminUsers
+ * SETTINGS FUNCTION: renderAdminUsers
  * ========================================================= */
 async function renderAdminUsers() {
     if(appUser.role !== 'admin') return;
@@ -1534,7 +995,7 @@ async function renderAdminUsers() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: adminAddUser
+ * SETTINGS FUNCTION: adminAddUser
  * ========================================================= */
 async function adminAddUser() {
     let p = document.getElementById('add-user-phone').value.trim();
@@ -1551,7 +1012,50 @@ async function adminAddUser() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epRefreshProviderUI
+ * SETTINGS FUNCTION: deleteUser
+ * ========================================================= */
+async function deleteUser(uid) {
+    let conf = await window.customConfirm("Удаление", "Удалить мастера из базы?");
+    if(conf && db) { try { await db.collection('users').doc(uid).delete(); renderAdminUsers(); showToast("Удален"); } catch(e){} }
+}
+
+
+
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: epCurrentKey
+ * ========================================================= */
+function epCurrentKey() {
+        const p = epCurrentProvider();
+        if (p === 'openai') return window.EP_AI_CONFIG.openaiKey || safeGet('ep_openai_key_v1', '');
+        return window.EP_AI_CONFIG.geminiKey || (typeof GEMINI_API_KEY !== 'undefined' ? GEMINI_API_KEY : '') || safeGet('gemini_key_v31', '');
+    }
+
+    
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: epSetAiProvider
+ * ========================================================= */
+function epSetAiProvider(provider, saveRemote) {
+        provider = epNormProvider(provider);
+        window.EP_AI_CONFIG.provider = provider;
+        safeSet('ep_ai_provider_v1', provider);
+        epRefreshProviderUI();
+
+        if (saveRemote && db && appUser && appUser.role === 'admin') {
+            epSaveAiConfig(false);
+        } else if (saveRemote && appUser && appUser.role !== 'admin') {
+            showToast('ИИ-провайдер: ' + (provider === 'openai' ? 'OpenAI' : 'Gemini'));
+        }
+    }
+
+    
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: epRefreshProviderUI
  * ========================================================= */
 function epRefreshProviderUI() {
         const p = epCurrentProvider();
@@ -1577,92 +1081,7 @@ function epRefreshProviderUI() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epInsertMainProviderSwitch
- * ========================================================= */
-function epInsertMainProviderSwitch() {
-        if (document.getElementById('ep-main-ai-switch')) return;
-
-        const header = document.querySelector('#main-app .header');
-        if (!header) return;
-
-        const box = document.createElement('div');
-        box.id = 'ep-main-ai-switch';
-        box.innerHTML = `
-            <label class="ep-ai-choice">
-                <input type="radio" name="ep-ai-provider-main" value="gemini" onchange="epSetAiProvider('gemini', true)">
-                Gemini
-            </label>
-            <label class="ep-ai-choice">
-                <input type="radio" name="ep-ai-provider-main" value="openai" onchange="epSetAiProvider('openai', true)">
-                OpenAI
-            </label>
-            <div id="ep-main-ai-state">Активный ИИ</div>
-        `;
-
-        header.parentNode.insertBefore(box, header.nextSibling);
-    }
-
-    
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: epMakeAiMenuGroup
- * ========================================================= */
-function epMakeAiMenuGroup() {
-        const menu = document.getElementById('burger-menu');
-        if (!menu || document.getElementById('ep-ai-functions-group')) return;
-
-        const aiButtons = Array.from(menu.querySelectorAll('button')).filter(function (b) {
-            const t = epCleanText(b.textContent);
-            return t.includes('ИИ-Анализ') || t.includes('ИИ-Снабженец') || t.includes('ИИ-Помощник') || t.includes('ИИ-Сравнение');
-        });
-
-        if (!aiButtons.length) return;
-
-        const wrap = document.createElement('div');
-        wrap.id = 'ep-ai-functions-group';
-        wrap.innerHTML = `
-            <button id="ep-ai-functions-btn" type="button">✨ ИИ Функции <span class="ep-beta-label">(бета)</span></button>
-            <div id="ep-ai-functions-panel"></div>
-        `;
-
-        aiButtons[0].parentNode.insertBefore(wrap, aiButtons[0]);
-        const panel = wrap.querySelector('#ep-ai-functions-panel');
-
-        aiButtons.forEach(function (b) {
-            panel.appendChild(b);
-        });
-
-        wrap.querySelector('#ep-ai-functions-btn').addEventListener('click', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            wrap.classList.toggle('open');
-        });
-    }
-
-    
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: epAddBetaLabels
- * ========================================================= */
-function epAddBetaLabels() {
-        Array.from(document.querySelectorAll('button')).forEach(function (b) {
-            const t = epCleanText(b.textContent);
-            if (t.includes('Конфигуратор щита') && !t.includes('бета')) {
-                b.innerHTML = b.innerHTML.replace('Конфигуратор щита', 'Конфигуратор щита <span class="ep-beta-label">(бета)</span>');
-            }
-            if (t.includes('Пул розеток') && !t.includes('бета')) {
-                b.innerHTML = b.innerHTML.replace(/Пул розеток и\s*В?\S?M|Пул розеток и BIM|Пул розеток и ВІM/iu, 'Пул розеток и BIM <span class="ep-beta-label">(бета)</span>');
-            }
-        });
-    }
-
-    
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: epPatchSettingsUI
+ * SETTINGS FUNCTION: epPatchSettingsUI
  * ========================================================= */
 function epPatchSettingsUI() {
         if (document.getElementById('ep-ai-admin-box')) return;
@@ -1711,7 +1130,43 @@ function epPatchSettingsUI() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epLoadAiConfigFromServer
+ * SETTINGS FUNCTION: epTestProviderKey
+ * ========================================================= */
+async function epTestProviderKey(provider, key, model) {
+        provider = epNormProvider(provider);
+        if (!key) throw new Error('Введите API-ключ');
+
+        if (provider === 'openai') {
+            const r = await fetch('https://api.openai.com/v1/responses', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+                body: JSON.stringify({
+                    model: model || 'gpt-4o-mini',
+                    input: [{ role: 'user', content: [{ type: 'input_text', text: 'Ответь одним словом: ok' }] }],
+                    max_output_tokens: 20
+                })
+            });
+            const data = await r.json();
+            if (!r.ok || data.error) throw new Error(data.error ? data.error.message : 'OpenAI API error');
+            return true;
+        }
+
+        const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(key);
+        const r = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: [{ parts: [{ text: 'Ответь одним словом: ok' }] }] })
+        });
+        const data = await r.json();
+        if (!r.ok || data.error) throw new Error(data.error ? data.error.message : 'Gemini API error');
+        return true;
+    }
+
+    
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: epLoadAiConfigFromServer
  * ========================================================= */
 async function epLoadAiConfigFromServer() {
         try {
@@ -1783,25 +1238,104 @@ async function epLoadAiConfigFromServer() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epExtractOpenAiText
+ * SETTINGS FUNCTION: epCallGemini
  * ========================================================= */
-function epExtractOpenAiText(data) {
-        if (data.output_text) return data.output_text;
-        let out = '';
-        (data.output || []).forEach(function (item) {
-            (item.content || []).forEach(function (c) {
-                if (c.text) out += c.text;
-                if (c.type === 'output_text' && c.text) out += c.text;
-            });
+async function epCallGemini(promptText, opts) {
+        const key = window.EP_AI_CONFIG.geminiKey || (typeof GEMINI_API_KEY !== 'undefined' ? GEMINI_API_KEY : '') || safeGet('gemini_key_v31', '');
+        if (!key) throw new Error('Нужен Gemini API ключ');
+
+        const parts = [{ text: promptText }];
+        if (opts && opts.imageDataUrl) {
+            const match = opts.imageDataUrl.match(/^data:(.*?);base64,(.*)$/);
+            if (match) parts.push({ inline_data: { mime_type: match[1], data: match[2] } });
+        }
+
+        const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(key);
+        const r = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: [{ parts: parts }] })
         });
-        return out;
+        const data = await r.json();
+        if (!r.ok || data.error) throw new Error(data.error ? data.error.message : 'Gemini API error');
+        return (((data.candidates || [])[0] || {}).content || {}).parts?.map(p => p.text || '').join('') || '';
     }
 
     
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epLoadUserDbAfterLogin
+ * SETTINGS FUNCTION: epCallOpenAI
+ * ========================================================= */
+async function epCallOpenAI(promptText, opts) {
+        const key = window.EP_AI_CONFIG.openaiKey || safeGet('ep_openai_key_v1', '');
+        if (!key) throw new Error('Нужен OpenAI API ключ');
+
+        const content = [{ type: 'input_text', text: promptText }];
+        if (opts && opts.imageDataUrl) {
+            content.push({
+                type: 'input_image',
+                image_url: opts.imageDataUrl,
+                detail: (opts && opts.imageDetail) ? opts.imageDetail : 'high'
+            });
+        }
+
+        const body = {
+            model: window.EP_AI_CONFIG.openaiModel || 'gpt-4o-mini',
+            input: [{ role: 'user', content: content }],
+            max_output_tokens: opts && opts.maxTokens ? opts.maxTokens : 5000
+        };
+
+        const r = await fetch('https://api.openai.com/v1/responses', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+            body: JSON.stringify(body)
+        });
+        const data = await r.json();
+        if (!r.ok || data.error) throw new Error(data.error ? data.error.message : 'OpenAI API error');
+        return epExtractOpenAiText(data);
+    }
+
+    
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: epSaveUserDb
+ * ========================================================= */
+async function epSaveUserDb() {
+        try {
+            safeSet('user_db_mat_v31', JSON.stringify(matDB));
+            safeSet('user_db_work_v31', JSON.stringify(workDB));
+            if (db && appUser && appUser.uid) {
+                await db.collection('user_db').doc(appUser.uid).set({
+                    uid: appUser.uid,
+                    name: appUser.name || appUser.email || '',
+                    matDB: matDB,
+                    workDB: workDB,
+                    updatedAt: new Date().toISOString()
+                }, { merge: true });
+            }
+        } catch (e) {
+            console.warn('save user db error', e);
+        }
+    }
+
+    
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: epSaveGlobalDb
+ * ========================================================= */
+async function epSaveGlobalDb() {
+        if (!db) return;
+        await db.collection('settings').doc('global_db').set({ matDB: matDB, workDB: workDB, updatedAt: new Date().toISOString() }, { merge: true });
+    }
+
+    
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: epLoadUserDbAfterLogin
  * ========================================================= */
 async function epLoadUserDbAfterLogin() {
         try {
@@ -1836,110 +1370,7 @@ async function epLoadUserDbAfterLogin() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epInsertDbTools
- * ========================================================= */
-function epInsertDbTools() {
-        if (document.getElementById('ep-db-ai-tools')) return;
-        const tabs = document.querySelector('#settModal .tabs-container');
-        if (!tabs) return;
-
-        const box = document.createElement('div');
-        box.id = 'ep-db-ai-tools';
-        box.innerHTML = `
-            <h3>🤖 Импорт / экспорт базы через ИИ</h3>
-            <div class="ep-db-ai-grid">
-                <button class="btn-info" onclick="epTriggerDbFileImport('mat')">📥 Материалы: Excel / JSON / фото / скрин</button>
-                <button class="btn-work" onclick="epTriggerDbFileImport('work')">📥 Работы: Excel / JSON / фото / скрин</button>
-                <button class="btn-vendor" onclick="epOpenTextImport('mat')">📝 Материалы из текста</button>
-                <button class="btn-vendor" onclick="epOpenTextImport('work')">📝 Работы из текста</button>
-                <button class="btn-success" onclick="epExportMyDb()">📤 Экспорт моей базы</button>
-                <button class="btn-shield" onclick="epExportGlobalDb()">🌍 Экспорт базы сервера</button>
-            </div>
-        `;
-        tabs.parentNode.insertBefore(box, tabs);
-    }
-
-    
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: epExtractItemsFromSheetRows
- * ========================================================= */
-function epExtractItemsFromSheetRows(rows, type) {
-        const out = [];
-        let currentCat = type === 'work' ? 'Работы' : 'Разное';
-        let currentSubcat = 'Разное';
-
-        (rows || []).forEach(function(row) {
-            const cells = (Array.isArray(row) ? row : Object.values(row || {})).map(epCleanCell);
-            const nonEmpty = cells.filter(x => x);
-            if (!nonEmpty.length) return;
-
-            const rowText = nonEmpty.join(' ');
-            if (/^(№|номер|код|артикул)$/i.test(rowText)) return;
-            if (/наименование/i.test(rowText) && /(ед|цена|стоимость)/i.test(rowText)) return;
-
-            const unitIdx = cells.findIndex(epIsUnitCell);
-            const numIdxs = cells.map((v, i) => epIsNumberLikeCell(v) ? i : -1).filter(i => i >= 0);
-            const priceIdxs = numIdxs.filter(i => unitIdx < 0 || i > unitIdx);
-            const priceIdx = priceIdxs.length ? priceIdxs[0] : (numIdxs.length ? numIdxs[numIdxs.length - 1] : -1);
-            const hasPrice = priceIdx >= 0 && epMoney(cells[priceIdx]) > 0;
-            const hasUnit = unitIdx >= 0;
-
-            // Строка-раздел без цены и единицы
-            if (!hasPrice && !hasUnit) {
-                let title = nonEmpty.find(x => !/^\d+(\.\d+)*\.?$/.test(x)) || rowText;
-                title = epTitleCaseRu(title);
-                if (!title || title.length < 3) return;
-
-                const first = nonEmpty[0] || '';
-                if (/^\d+\.$/.test(first) || /работ/i.test(title) || title === title.toUpperCase()) {
-                    currentCat = title;
-                    currentSubcat = 'Разное';
-                } else if (/^\d+\.\d+/.test(first) || /:$/.test(rowText) || nonEmpty.length <= 2) {
-                    currentSubcat = title;
-                } else if (type === 'work') {
-                    currentSubcat = title;
-                } else {
-                    currentCat = title;
-                }
-                return;
-            }
-
-            let nameCandidates = cells.map((v, i) => ({ v, i }))
-                .filter(x => x.v)
-                .filter(x => x.i !== unitIdx && x.i !== priceIdx)
-                .filter(x => !epIsNumberLikeCell(x.v))
-                .filter(x => !epLooksLikeCodeOrNumber(x.v))
-                .filter(x => !/^(ед|ед изм|цена|сумма|стоимость|кол-во|количество)$/i.test(x.v));
-
-            if (!nameCandidates.length) return;
-            nameCandidates.sort((a, b) => b.v.length - a.v.length);
-            const name = epCleanText(nameCandidates[0].v);
-            if (!name || name.length < 4) return;
-
-            const cat = currentCat && currentCat !== 'Разное' ? currentCat : epInferCategory(name, type);
-            const subcat = currentSubcat && currentSubcat !== 'Разное' ? currentSubcat : epInferSubcategory(name, cat, type);
-            const unit = hasUnit ? epNormalizeUnit(cells[unitIdx]) : 'шт';
-            const price = hasPrice ? epMoney(cells[priceIdx]) : 0;
-
-            out.push({
-                id: (type === 'work' ? 'w' : 'm') + '_sheet_' + Date.now() + '_' + out.length,
-                n: name,
-                c: cat || (type === 'work' ? 'Работы' : 'Разное'),
-                sc: subcat || 'Разное',
-                p: price,
-                u: unit
-            });
-        });
-
-        return out;
-    }
-    
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: epShowDbReview
+ * SETTINGS FUNCTION: epShowDbReview
  * ========================================================= */
 function epShowDbReview(items, type, source, rawAnswer) {
         window.EP_DB_REVIEW = { type: type, items: items, source: source || '' };
@@ -1974,29 +1405,7 @@ function epShowDbReview(items, type, source, rawAnswer) {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epGetReviewedSelected
- * ========================================================= */
-function epGetReviewedSelected() {
-        const items = window.EP_DB_REVIEW.items || [];
-        return items.map(function (it, idx) {
-            const checked = document.getElementById('ep-db-check-' + idx)?.checked;
-            if (!checked) return null;
-            return {
-                id: it.id || (window.EP_DB_REVIEW.type === 'work' ? 'w' : 'm') + '_ai_' + Date.now() + '_' + idx,
-                c: epCleanText(document.getElementById('ep-db-cat-' + idx)?.value) || 'Разное',
-                sc: epCleanText(document.getElementById('ep-db-subcat-' + idx)?.value) || 'Разное',
-                n: epCleanText(document.getElementById('ep-db-name-' + idx)?.value),
-                p: epMoney(document.getElementById('ep-db-price-' + idx)?.value),
-                u: epCleanText(document.getElementById('ep-db-unit-' + idx)?.value) || 'шт'
-            };
-        }).filter(Boolean).filter(function (x) { return x.n; });
-    }
-
-    
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: epSendDbProposal
+ * SETTINGS FUNCTION: epSendDbProposal
  * ========================================================= */
 async function epSendDbProposal(type, items, action) {
         if (!db || !appUser || appUser.role === 'admin' || !items.length) return;
@@ -2019,22 +1428,7 @@ async function epSendDbProposal(type, items, action) {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epDownloadJson
- * ========================================================= */
-function epDownloadJson(filename, data) {
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = filename;
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
-    }
-
-    
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: epInsertAdminProposalBox
+ * SETTINGS FUNCTION: epInsertAdminProposalBox
  * ========================================================= */
 function epInsertAdminProposalBox() {
         if (document.getElementById('admin-db-proposals')) return;
@@ -2052,7 +1446,7 @@ function epInsertAdminProposalBox() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epListenDbProposals
+ * SETTINGS FUNCTION: epListenDbProposals
  * ========================================================= */
 function epListenDbProposals() {
         if (!db || !appUser || appUser.role !== 'admin') return;
@@ -2090,7 +1484,64 @@ function epListenDbProposals() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epGetGlobalDb
+ * SETTINGS FUNCTION: epInitialApply
+ * ========================================================= */
+function epInitialApply() {
+        epPatchSettingsUI();
+        epInsertMainProviderSwitch();
+        epInsertDbTools();
+        epMakeAiMenuGroup();
+        epAddBetaLabels();
+        epRefreshProviderUI();
+        if (appUser) {
+            epLoadAiConfigFromServer();
+            epLoadUserDbAfterLogin();
+            epListenDbProposals();
+        }
+    }
+
+    
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: epRenderGroupedList
+ * ========================================================= */
+function epRenderGroupedList(arr, type, opts) {
+        opts = opts || {};
+        const cats = epGroupCatalog(arr, type);
+        let html = '';
+        let idx = 0;
+        Object.keys(cats).sort((a,b)=>a.localeCompare(b,'ru')).forEach(function(c) {
+            const cid = (opts.prefix || 'ep_cat') + '_' + epId(type + '_' + idx++);
+            const catStyle = type === 'work' ? 'style="color:var(--orange); border-color:rgba(245,158,11,.2); background:rgba(245,158,11,.08);"' : '';
+            html += `<div class="cat-header" ${catStyle} onclick="toggleCat('${cid}')">${epEsc(c)} <span>▼</span></div><div class="cat-body" id="${cid}">`;
+            Object.keys(cats[c]).sort((a,b)=>a.localeCompare(b,'ru')).forEach(function(g) {
+                const sid = (opts.prefix || 'ep_sub') + '_' + epId(type + '_' + idx++);
+                html += `<div class="ep-subcat-header" onclick="epToggleSubCat('${sid}', event)">${epEsc(g)} <span>открыть</span></div><div class="ep-subcat-body" id="${sid}">`;
+                cats[c][g].sort((a,b)=>String(a.n||'').localeCompare(String(b.n||''), 'ru')).forEach(function(it) {
+                    if (!it.id) it.id = 'ep_' + type + '_' + Math.abs((String(it.c)+String(it.g)+String(it.n)).split('').reduce((h,ch)=>((h<<5)-h+ch.charCodeAt(0))|0,0));
+                    const id = epEsc(it.id);
+                    const itemTitle = epEsc(it.n || 'Позиция');
+                    if (opts.mode === 'editor') {
+                        html += `<div class="emp-row"><div style="flex:1;"><div class="ep-db-item-title">${itemTitle}</div><div class="ep-db-item-meta">${epEsc(g)} • ${Number(it.p)||0} ₽ / ${epEsc(it.u || 'шт')}</div></div><div class="ep-row-actions"><input type="number" value="${Number(it.p)||0}" onchange="requestPriceChange('${type}','${id}',this.value)" style="width:74px;margin:0;padding:5px;text-align:center;"><button class="btn-danger" onclick="epDeleteDbItem('${type}','${id}')" title="Удалить">🗑</button></div></div>`;
+                    } else if (opts.mode === 'global') {
+                        html += `<label class="mat-item ep-select-row"><input type="checkbox" class="ep-global-check" data-type="${type}" data-id="${id}"><div style="flex:1;"><div class="ep-db-item-title">${itemTitle}</div><div class="ep-db-item-meta">${epEsc(c)} • ${epEsc(g)} • ${Number(it.p)||0} ₽ / ${epEsc(it.u || 'шт')}</div></div></label>`;
+                    } else {
+                        html += `<div class="mat-item"><div style="flex:1;"><div class="ep-db-item-title">${itemTitle}</div><div class="ep-db-item-meta">${epEsc(g)} • ${Number(it.p)||0} ₽ / ${epEsc(it.u || 'шт')}</div></div><button class="mat-add-btn" style="${type === 'work' ? 'background:var(--orange);' : ''} width:auto; margin:0;" onclick="epPromptGroupedAdd('${id}','${type}')">+ Добавить</button></div>`;
+                    }
+                });
+                html += '</div>';
+            });
+            html += '</div>';
+        });
+        return html || '<p style="color:var(--gray);font-size:12px;">Позиций нет</p>';
+    }
+
+    
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: epGetGlobalDb
  * ========================================================= */
 async function epGetGlobalDb() {
         try {
@@ -2108,33 +1559,7 @@ async function epGetGlobalDb() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epRenderGlobalDbModal
- * ========================================================= */
-function epRenderGlobalDbModal() {
-        const matBtn = document.getElementById('ep-global-tab-mat'); const workBtn = document.getElementById('ep-global-tab-work');
-        if (matBtn) matBtn.classList.toggle('active', epGlobalDbType === 'mat'); if (workBtn) workBtn.classList.toggle('active', epGlobalDbType === 'work');
-        const list = document.getElementById('ep-global-db-list'); if (!list) return;
-        const arr = epGlobalDbType === 'work' ? epGlobalDbCache.workDB : epGlobalDbCache.matDB;
-        list.innerHTML = epRenderGroupedList(arr || [], epGlobalDbType, { prefix:'global_full', mode:'global' });
-    }
-    
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: epInsertGlobalDbButton
- * ========================================================= */
-function epInsertGlobalDbButton() {
-        if (document.getElementById('ep-global-db-entry')) return;
-        const tools = document.getElementById('ep-db-ai-tools'); const tabs = document.querySelector('#settModal .tabs-container'); const anchor = tools || tabs;
-        if (!anchor || !anchor.parentNode) return;
-        const box = document.createElement('div'); box.id='ep-global-db-entry'; box.className='ep-global-db-entry'; box.innerHTML = `<button class="btn-shield" onclick="epOpenGlobalDbModal()">🌍 База сервера</button>`;
-        anchor.parentNode.insertBefore(box, anchor.nextSibling);
-    }
-    
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: epEnsureProposalBox
+ * SETTINGS FUNCTION: epEnsureProposalBox
  * ========================================================= */
 function epEnsureProposalBox() {
         let cont = document.getElementById('admin-db-proposals');
@@ -2150,7 +1575,25 @@ function epEnsureProposalBox() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epStartProposalV2
+ * SETTINGS FUNCTION: epRenderProposalList
+ * ========================================================= */
+function epRenderProposalList() {
+        const cont = epEnsureProposalBox(); if (!cont) return;
+        const entries = Object.entries(window.EP_DB_PROPOSALS_CACHE_V2 || {});
+        if (!entries.length) { cont.innerHTML = '<span style="color:var(--gray);">Новых заявок нет</span>'; return; }
+        cont.innerHTML = entries.map(function([id,d]) {
+            const items = Array.isArray(d.items) ? d.items : [];
+            const decisions = d.itemDecisions || {};
+            const done = Object.keys(decisions).length;
+            const preview = items.slice(0,3).map(x => epEsc(epProposalItemName(x))).join('<br>');
+            return `<div class="ep-proposal-open-card" onclick="epOpenProposalDetail('${id}')"><b>${epEsc(d.masterName || d.uid || 'Мастер')}</b><span class="ep-proposal-badge">${d.type === 'work' ? 'Работы' : 'Материалы'}</span><div style="font-size:11px;color:var(--gray);margin-top:4px;">${epEsc(d.action || '')} • ${items.length} поз. • обработано ${done}/${items.length}</div><div style="font-size:11px;margin-top:6px;">${preview}${items.length>3?'<br>...':''}</div><button class="btn-info" style="width:100%;margin-top:8px;padding:9px;" onclick="event.stopPropagation(); epOpenProposalDetail('${id}')">Открыть заявку</button></div>`;
+        }).join('');
+    }
+    
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: epStartProposalV2
  * ========================================================= */
 function epStartProposalV2() {
         if (!db || !appUser || appUser.role !== 'admin') return;
@@ -2166,14 +1609,7 @@ function epStartProposalV2() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: qs
- * ========================================================= */
-function qs(id){ return document.getElementById(id); }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: epMoveShieldSettingsIntoDetails
+ * SETTINGS FUNCTION: epMoveShieldSettingsIntoDetails
  * ========================================================= */
 function epMoveShieldSettingsIntoDetails(){
     var modal = qs('configModal');
@@ -2214,151 +1650,176 @@ function epMoveShieldSettingsIntoDetails(){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epMatGroupName
+ * SETTINGS FUNCTION: epNormalizeMaterialsDb
  * ========================================================= */
-function epMatGroupName(item){
-    var text = norm([item.c,item.g,item.sc,item.n,item.kind,item.brand,item.nominal].join(' '));
-    var name = norm(item.n);
-    var c = norm(item.c);
-
-    if (text.includes('уздп') || text.includes('дугов')) return {c:'Автоматика', g:'УЗДП'};
-    if (text.includes('узм') || text.includes('реле напряж')) return {c:'Автоматика', g:'УЗМ / реле напряжения'};
-    if (text.includes('диф') || text.includes('дифф')) return {c:'Автоматика', g:'ДИФы'};
-    if (text.includes('узо')) return {c:'Автоматика', g:'УЗО'};
-    if (text.includes('автомат') || text.match(/\bc\s*(6|10|16|25|32|40)\b/)) return {c:'Автоматика', g:'Автоматы'};
-    if (text.includes('реле времени')) return {c:'Автоматика', g:'Реле времени'};
-    if (text.includes('контактор') || text.includes('пускател')) return {c:'Автоматика', g:'Контакторы'};
-    if (text.includes('реле')) return {c:'Автоматика', g:'Прочие реле'};
-
-    if (text.includes('щит') || text.includes('шкаф') || text.includes('корпус')) {
-      if (text.includes('наклад')) return {c:'Щитовое', g:'Корпуса → Накладной'};
-      if (text.includes('встра') || text.includes('внутр')) return {c:'Щитовое', g:'Корпуса → Встраиваемый'};
-      return {c:'Щитовое', g:'Корпуса'};
+function epNormalizeMaterialsDb(){
+    function fixArr(arr){
+      if (!Array.isArray(arr)) return [];
+      arr.forEach(function(it){
+        if(!it || typeof it !== 'object') return;
+        if(!it.id) it.id = 'm_' + Math.abs(norm([it.c,it.g,it.n,it.p].join('_')).split('').reduce(function(h,ch){return ((h<<5)-h+ch.charCodeAt(0))|0;},0));
+        var grp = epMatGroupName(it);
+        // Меняем только автоматику/щитовое, остальное не трогаем.
+        if (grp.c === 'Автоматика' || grp.c === 'Щитовое') { it.c = grp.c; it.g = grp.g; it.sc = grp.g; }
+      });
+      return arr;
     }
-    if (text.includes('ншви') || text.includes('наконеч')) return {c:'Щитовое', g:'Расходка под сборку → Наконечники'};
-    if (text.includes('пугв') || (text.includes('провод') && c !== 'кабель')) return {c:'Щитовое', g:'Расходка под сборку → Провода'};
-    if (text.includes('шин') || text.includes('клемм')) return {c:'Щитовое', g:'Расходка под сборку → Шинки / клеммники'};
-    if (text.includes('греб') || text.includes('comb')) return {c:'Щитовое', g:'Расходка под сборку → Гребёнки'};
-    if (text.includes('din') || text.includes('рейк') || text.includes('огранич')) return {c:'Щитовое', g:'Расходка под сборку → DIN-рейки / ограничители'};
-    if (text.includes('маркиров') || text.includes('бирк')) return {c:'Щитовое', g:'Расходка под сборку → Маркировка'};
-    if (text.includes('сальник') || text.includes('кабельный ввод')) return {c:'Щитовое', g:'Расходка под сборку → Кабельные вводы'};
-
-    return {c:item.c || 'Разное', g:item.g || item.sc || 'Разное'};
+    try { window.matDB = fixArr(window.matDB || []); } catch(e){}
+    try { window.userMatDB = fixArr(window.userMatDB || []); } catch(e){}
   }
 
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epPatchGenerateButton
+ * SETTINGS FUNCTION: epRenderGrouped
  * ========================================================= */
-function epPatchGenerateButton(){
-    window.generateCascadePanel = window.epGenerateShieldFixed;
-    Array.from(document.querySelectorAll('button')).forEach(function(btn){ if((btn.textContent||'').includes('Сгенерировать щит')) btn.onclick = window.epGenerateShieldFixed; });
-  }
-
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: normalizeMaterialDb
- * ========================================================= */
-function normalizeMaterialDb(){
-    const arr = dbArr('mat') || [];
-    arr.forEach(function(it){
-      if(!it || !it.n) return;
-      const n = norm((it.c||'')+' '+(it.g||'')+' '+(it.sc||'')+' '+it.n);
-      const raw = String(it.n||'');
-      if(/(диф|дифавтомат|dif)/i.test(raw) || n.includes('диф')){ it.c='Автоматика'; setGroup(it,'ДИФы'); it.kind=it.kind||'dif'; }
-      else if(/\bузо\b/i.test(raw) || n.includes(' uzo ') || n.includes(' узо ')){ it.c='Автоматика'; setGroup(it,'УЗО'); it.kind=it.kind||'uzo'; }
-      else if(/уздп/i.test(raw) || n.includes('уздп') || n.includes('дугов')){ it.c='Автоматика'; setGroup(it,'УЗДП'); it.kind=it.kind||'uzdp'; }
-      else if(/узм|реле напряж/i.test(raw) || n.includes('реле напряж')){ it.c='Автоматика'; setGroup(it,'УЗМ / реле напряжения'); it.kind=it.kind||'voltage_relay'; }
-      else if(/реле времени/i.test(raw) || n.includes('реле времени')){ it.c='Автоматика'; setGroup(it,'Реле времени'); it.kind=it.kind||'time_relay'; }
-      else if(/контактор/i.test(raw) || n.includes('контактор')){ it.c='Автоматика'; setGroup(it,'Контакторы'); it.kind=it.kind||'contactor'; }
-      else if(/автомат|\b[abcdсавд]\s?\d{1,3}\b/i.test(raw) || /(^|\s)c\s?\d{1,3}(\s|$)/.test(n)){ it.c='Автоматика'; setGroup(it,'Автоматы'); it.kind=it.kind||'automatic'; }
-      else if(/щит|корпус|бокс/i.test(raw) || n.includes('корпус')){ it.c='Щитовое'; setGroup(it, (/наклад/i.test(raw)||n.includes('наклад')) ? 'Корпуса → Накладной' : 'Корпуса → Встраиваемый'); it.kind=it.kind||'shield_box'; }
-      else if(/ншви|наконеч/i.test(raw) || n.includes('наконеч')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Наконечники'); it.kind=it.kind||'lug_pack'; }
-      else if(/пугв|пугов|провод/i.test(raw) || n.includes('пугв')){ it.c=it.c||'Щитовое'; if(it.c==='Щитовое' || n.includes('пугв')) setGroup(it,'Расходка под сборку → Провода'); it.kind=it.kind||'pugv'; }
-      else if(/шин|клемм/i.test(raw) || n.includes('шина') || n.includes('клемм')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Шинки / клеммники'); it.kind=it.kind||'busbar'; }
-      else if(/греб/i.test(raw) || n.includes('греб')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Гребёнки'); it.kind=it.kind||'comb_bus'; }
-      else if(/din|дин|рейк|огранич/i.test(raw) || n.includes('din')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → DIN-рейки / ограничители'); it.kind=it.kind||'din'; }
-      else if(/маркир|бирк/i.test(raw) || n.includes('маркир')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Маркировка'); it.kind=it.kind||'marking'; }
-      else if(/сальник|кабельн.*ввод/i.test(raw) || n.includes('сальник')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Кабельные вводы'); it.kind=it.kind||'cable_gland'; }
-      if(!it.brand) it.brand = detectBrand(raw) || it.brand;
-      if(!it.nominal) it.nominal = detectNominal(raw) || it.nominal;
+function epRenderGrouped(arr, type, mode, prefix){
+    var data = epGroupedData(arr, type);
+    var html = '', i = 0;
+    Object.keys(data).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
+      var cid = prefix + '_c_' + (i++);
+      var catStyle = type === 'work' ? 'style="color:var(--orange); border-color:rgba(245,158,11,0.2); background:rgba(245,158,11,0.08);"' : '';
+      html += '<div class="cat-header" '+catStyle+' onclick="toggleCat(\''+cid+'\')">'+safeText(c)+' <span>▼</span></div><div class="cat-body" id="'+cid+'">';
+      Object.keys(data[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
+        var sid = prefix + '_s_' + (i++);
+        html += '<div class="ep-db-sub-header" onclick="epToggleShieldDbSub(\''+sid+'\', event)">'+safeText(g)+' <small>открыть</small></div><div class="ep-db-sub-body" id="'+sid+'">';
+        data[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it){
+          var id = safeText(it.id);
+          var meta = safeText(g)+' • '+(Number(it.p)||0)+' ₽ / '+safeText(it.u || 'шт');
+          if (mode === 'editor') {
+            html += '<div class="emp-row"><div style="flex:1;"><div class="ep-db-item-title">'+safeText(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div><div class="ep-row-actions"><input type="number" value="'+(Number(it.p)||0)+'" onchange="requestPriceChange(\''+type+'\',\''+id+'\',this.value)" style="width:74px;margin:0;padding:5px;text-align:center;"><button class="btn-danger" onclick="epDeleteDbItem && epDeleteDbItem(\''+type+'\',\''+id+'\')" title="Удалить">🗑</button></div></div>';
+          } else {
+            var color = type === 'work' ? 'background:var(--orange);' : '';
+            html += '<div class="mat-item"><div style="flex:1;"><div class="ep-db-item-title">'+safeText(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div><button class="mat-add-btn" style="'+color+' width:auto; margin:0;" onclick="epPromptShieldGroupedAdd(\''+id+'\',\''+type+'\')">+ Добавить</button></div>';
+          }
+        });
+        html += '</div>';
+      });
+      html += '</div>';
     });
-    setDbArr('mat', arr);
+    return html || '<div style="color:var(--gray);font-size:12px;padding:10px;">Позиции не найдены</div>';
   }
 
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: normalizeDbItem
+ * SETTINGS FUNCTION: boot
  * ========================================================= */
-function normalizeDbItem(it, type){
-    if(!it) return it;
-    if(!it.id) {
-      it.id = (type === 'work' ? 'w_' : 'm_') + Date.now() + '_' + Math.random().toString(36).slice(2,8);
-    }
-    if(type === 'mat') {
-      var raw = String([it.c,it.g,it.sc,it.subcategory,it.n].filter(Boolean).join(' '));
-      var n = norm(raw);
-      if(/диф|дифавтомат|dif/i.test(raw)){
-        it.c = 'Автоматика'; it.g = it.g || it.sc || 'ДИФы'; it.sc = it.sc || it.g; it.kind = it.kind || 'dif';
-      } else if(/узо/i.test(raw)) {
-        it.c = 'Автоматика'; it.g = it.g || it.sc || 'УЗО'; it.sc = it.sc || it.g; it.kind = it.kind || 'uzo';
-      } else if(/уздп|дугов/i.test(raw)) {
-        it.c = 'Автоматика'; it.g = it.g || it.sc || 'УЗДП'; it.sc = it.sc || it.g; it.kind = it.kind || 'uzdp';
-      } else if(/узм|реле напряж/i.test(raw)) {
-        it.c = 'Автоматика'; it.g = it.g || it.sc || 'УЗМ / реле напряжения'; it.sc = it.sc || it.g; it.kind = it.kind || 'voltage_relay';
-      } else if(/реле времени/i.test(raw)) {
-        it.c = 'Автоматика'; it.g = it.g || it.sc || 'Реле времени'; it.sc = it.sc || it.g; it.kind = it.kind || 'time_relay';
-      } else if(/контактор/i.test(raw)) {
-        it.c = 'Автоматика'; it.g = it.g || it.sc || 'Контакторы'; it.sc = it.sc || it.g; it.kind = it.kind || 'contactor';
-      } else if(/автомат|(^|\s)[abcdсавд]\s?\d{1,3}(\s|$)/i.test(raw)) {
-        it.c = 'Автоматика'; it.g = it.g || it.sc || 'Автоматы'; it.sc = it.sc || it.g; it.kind = it.kind || 'automatic';
-      } else if(/щит|корпус|бокс/i.test(raw)) {
-        it.c = 'Щитовое';
-        var g = /наклад/i.test(raw) ? 'Корпуса → Накладной' : 'Корпуса → Встраиваемый';
-        it.g = it.g || it.sc || g; it.sc = it.sc || it.g; it.kind = it.kind || 'shield_box';
-      } else if(/ншви|наконеч/i.test(raw)) {
-        it.c = 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → Наконечники'; it.sc = it.sc || it.g; it.kind = it.kind || 'lug_pack';
-      } else if(/пугв|провод/i.test(raw)) {
-        it.c = it.c || 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → Провода'; it.sc = it.sc || it.g; it.kind = it.kind || 'pugv';
-      } else if(/шин|клемм/i.test(raw)) {
-        it.c = 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → Шинки / клеммники'; it.sc = it.sc || it.g; it.kind = it.kind || 'busbar';
-      } else if(/греб/i.test(raw)) {
-        it.c = 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → Гребёнки'; it.sc = it.sc || it.g; it.kind = it.kind || 'comb_bus';
-      } else if(/din|дин|рейк|огранич/i.test(raw)) {
-        it.c = 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → DIN-рейки / ограничители'; it.sc = it.sc || it.g; it.kind = it.kind || 'din';
-      } else if(/маркир|бирк/i.test(raw)) {
-        it.c = 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → Маркировка'; it.sc = it.sc || it.g; it.kind = it.kind || 'marking';
-      }
-      it.brand = it.brand || detectBrand(raw);
-      it.nominal = it.nominal || detectNominal(raw);
-      it.leakage = it.leakage || detectLeakage(raw);
-      it.rcdType = it.rcdType || detectRcdType(raw);
-    }
-    if(type === 'work') {
-      var wr = String([it.c,it.g,it.sc,it.subcategory,it.n].filter(Boolean).join(' '));
-      if(/ниша.*щит|щит.*ниша|штроб|резк|алмаз|высверл|отверст/i.test(wr)) {
-        it.c = it.c || 'Штробление и резка';
-        if(/ниша.*щит|щит.*ниша/i.test(wr)) {
-          it.c = 'Штробление и резка';
-          it.g = it.g || it.sc || 'Ниши щита';
-          it.sc = it.sc || it.g;
-        }
-      }
-    }
-    return it;
+function boot(){ epMoveShieldSettingsIntoDetails(); epPatchDbRenderers(); epNormalizeMaterialsDb(); epPatchGenerateButton(); }
+  
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: renderGrouped
+ * ========================================================= */
+function renderGrouped(arr, type, prefix){
+    arr = arr || [];
+    const cats = {};
+    arr.forEach(it => { const c = it.c || 'Разное'; (cats[c]||(cats[c]={direct:[], groups:{}})); const g=getGroup(it); if(g){ (cats[c].groups[g]||(cats[c].groups[g]=[])).push(it); } else cats[c].direct.push(it); });
+    let html = ''; let ci = 0;
+    Object.keys(cats).sort().forEach(function(c){
+      const cid = prefix+'_cat_'+(ci++);
+      const color = type==='work' ? 'color:var(--orange);background:rgba(245,158,11,.08);' : '';
+      html += '<div class="cat-header" style="'+color+'" onclick="toggleCat(\''+cid+'\')">'+safe(c)+'</div><div class="cat-body" id="'+cid+'">';
+      const cat = cats[c]; let gi = 0;
+      Object.keys(cat.groups).sort().forEach(function(g){
+        const gid = cid+'_g_'+(gi++);
+        html += '<div class="ep-db-sub-header" onclick="epDbToggleSub(\''+gid+'\', event)"><span>'+safe(g)+'</span><small>открыть</small></div><div class="ep-db-sub-body" id="'+gid+'">';
+        cat.groups[g].forEach(it => { html += renderItem(it,type); });
+        html += '</div>';
+      });
+      cat.direct.forEach(it => { html += renderItem(it,type); });
+      html += '</div>';
+    });
+    return html || '<div style="padding:15px;color:var(--gray);font-weight:700;">База пустая или ещё загружается</div>';
+  }
+  
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: renderItem
+ * ========================================================= */
+function renderItem(it,type){
+    const id = String(it.id || '');
+    const meta = [getGroup(it), it.brand, it.nominal, it.curve, it.rcdType, it.leakage].filter(Boolean).join(' • ');
+    const btnColor = type==='work' ? 'background:var(--orange);' : '';
+    return '<div class="mat-item"><div style="flex:1;"><div class="ep-db-item-title">'+safe(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+safe(meta)+' '+safe(Number(it.p)||0)+' ₽ / '+safe(it.u || 'шт')+'</div></div><button class="mat-add-btn" style="'+btnColor+'width:auto;margin:0;" onclick="promptAdd(\''+safe(id)+'\', \''+type+'\')">+ Добавить</button></div>';
+  }
+  
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: renderGroupedFixed
+ * ========================================================= */
+function renderGroupedFixed(arr, type, prefix){
+    normalizeDbs();
+    arr = type === 'work' ? arrByType('work') : arrByType('mat');
+    var data = {};
+    arr.forEach(function(it){
+      if(!it) return;
+      var c = it.c || 'Разное';
+      var g = it.g || it.sc || it.subcategory || 'Разное';
+      if(!data[c]) data[c] = {};
+      if(!data[c][g]) data[c][g] = [];
+      data[c][g].push(it);
+    });
+    var html = '', i = 0;
+    Object.keys(data).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
+      var cid = prefix + '_cat_' + (i++);
+      var catStyle = type === 'work' ? 'style="color:var(--orange);background:rgba(245,158,11,.08);"' : '';
+      html += '<div class="cat-header" '+catStyle+' onclick="toggleCat(\''+cid+'\')">'+safeHtml(c)+'</div><div class="cat-body" id="'+cid+'">';
+      Object.keys(data[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
+        var gid = prefix + '_grp_' + (i++);
+        html += '<div class="ep-db-sub-header" onclick="epDbToggleSubFixed(\''+gid+'\', event)"><span>'+safeHtml(g)+'</span><small>открыть</small></div><div class="ep-db-sub-body" id="'+gid+'">';
+        data[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it){
+          var id = safeHtml(String(it.id||''));
+          var meta = [g, it.brand, it.nominal, it.leakage ? it.leakage+'мА' : '', it.rcdType].filter(Boolean).join(' • ');
+          var color = type === 'work' ? 'background:var(--orange);' : '';
+          html += '<div class="mat-item"><div style="flex:1;"><div class="ep-db-item-title">'+safeHtml(it.n||'Позиция')+'</div><div class="ep-db-item-meta">'+safeHtml(meta)+' '+(Number(it.p)||0)+' ₽ / '+safeHtml(it.u||'шт')+'</div></div><button class="mat-add-btn" style="'+color+' width:auto;margin:0;" onclick="promptAdd(\''+id+'\', \''+type+'\')">+ Добавить</button></div>';
+        });
+        html += '</div>';
+      });
+      html += '</div>';
+    });
+    return html || '<div style="padding:15px;color:var(--gray);font-weight:700;">База пустая или ещё загружается</div>';
   }
 
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: loadGlobalDb
+ * SETTINGS FUNCTION: saveLocalDb
+ * ========================================================= */
+function saveLocalDb(){
+    try{
+      if(typeof safeSet === 'function'){
+        safeSet('user_db_mat_v31', JSON.stringify(localArr('mat')));
+        safeSet('user_db_work_v31', JSON.stringify(localArr('work')));
+      } else {
+        localStorage.setItem('user_db_mat_v31', JSON.stringify(localArr('mat')));
+        localStorage.setItem('user_db_work_v31', JSON.stringify(localArr('work')));
+      }
+    }catch(e){}
+    try{
+      if(typeof db !== 'undefined' && db && typeof appUser !== 'undefined' && appUser && appUser.uid){
+        db.collection('user_db').doc(appUser.uid).set({
+          uid: appUser.uid,
+          name: appUser.name || appUser.email || '',
+          matDB: localArr('mat'),
+          workDB: localArr('work'),
+          updatedAt: new Date().toISOString()
+        }, { merge:true });
+      }
+    }catch(e){}
+  }
+
+  
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: loadGlobalDb
  * ========================================================= */
 async function loadGlobalDb(force){
     if(!force && window.EP_GLOBAL_DB_VISIBLE_CACHE.loadedAt && Date.now() - window.EP_GLOBAL_DB_VISIBLE_CACHE.loadedAt < 12000){
@@ -2385,25 +1846,50 @@ async function loadGlobalDb(force){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: renderGlobalModalFixed
+ * SETTINGS FUNCTION: groupHtml
  * ========================================================= */
-function renderGlobalModalFixed(){
-    var type = window.EP_GLOBAL_DB_TAB_FIXED || 'mat';
-    var matBtn = qs('ep-global-tab-mat'), workBtn = qs('ep-global-tab-work');
-    if(matBtn) matBtn.classList.toggle('active', type === 'mat');
-    if(workBtn) workBtn.classList.toggle('active', type === 'work');
-    var list = qs('ep-global-db-list');
-    if(!list) return;
-    var cache = window.EP_GLOBAL_DB_VISIBLE_CACHE || {};
-    var arr = (type === 'work' ? (cache.workDB || []) : (cache.matDB || [])).map(function(x){ return Object.assign({}, x, {__src:'global'}); });
-    list.innerHTML = groupHtml(arr, type, 'global_fixed_'+type, 'global');
+function groupHtml(arr, type, prefix, mode){
+    var data = {};
+    (arr || []).forEach(function(it){
+      var c = it.c || 'Разное';
+      var g = getGroup(it) || 'Разное';
+      if(!data[c]) data[c] = {};
+      if(!data[c][g]) data[c][g] = [];
+      data[c][g].push(it);
+    });
+    var html = '', idx = 0;
+    Object.keys(data).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
+      var cid = prefix + '_c_' + (idx++);
+      var catStyle = type === 'work' ? 'style="color:var(--orange);background:rgba(245,158,11,.08);"' : '';
+      html += '<div class="cat-header" '+catStyle+' onclick="toggleCat(\''+cid+'\')">'+safe(c)+'</div><div class="cat-body" id="'+cid+'">';
+      Object.keys(data[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
+        var gid = prefix + '_g_' + (idx++);
+        html += '<div class="ep-db-sub-header" onclick="epToggleSmartSub(\''+gid+'\', event)"><span>'+safe(g)+'</span><small>открыть</small></div><div class="ep-db-sub-body" id="'+gid+'">';
+        data[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it){
+          var k = sigKey(type,it);
+          var src = it.__src === 'global' ? '<span style="color:#8B5CF6;font-weight:900;">🌍 серверная</span>' : '<span style="color:#10B981;font-weight:900;">👤 моя</span>';
+          var meta = safe(g) + ' • ' + src + ' • ' + (Number(it.p)||0) + ' ₽ / ' + safe(it.u || 'шт');
+          if(mode === 'global'){
+            html += '<label class="mat-item ep-select-row">' +
+              '<input type="checkbox" class="ep-global-check" data-key="'+safe(k)+'" data-type="'+type+'" style="width:22px;height:22px;accent-color:var(--primary);">' +
+              '<div style="flex:1;"><div class="ep-db-item-title">'+safe(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div></label>';
+          } else {
+            var color = type === 'work' ? 'background:var(--orange);' : '';
+            html += '<div class="mat-item"><div style="flex:1;"><div class="ep-db-item-title">'+safe(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div>' +
+              '<button class="mat-add-btn" style="'+color+'width:auto;margin:0;" onclick="promptAdd(\''+safe(k)+'\', \''+type+'\')">+ Добавить</button></div>';
+          }
+        });
+        html += '</div>';
+      });
+      html += '</div>';
+    });
+    return html || '<div style="padding:15px;color:var(--gray);font-weight:700;">Позиции не найдены</div>';
   }
-
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: classify
+ * SETTINGS FUNCTION: classify
  * ========================================================= */
 function classify(it){
     var meta = (it && it.dbMeta) || {};
@@ -2439,7 +1925,36 @@ function classify(it){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: loadGlobal
+ * SETTINGS FUNCTION: saveMyDb
+ * ========================================================= */
+async function saveMyDb(){
+    try{
+      if(typeof safeSet === 'function'){
+        safeSet('user_db_mat_v31', JSON.stringify(localDb('mat')));
+        safeSet('user_db_work_v31', JSON.stringify(localDb('work')));
+      } else {
+        localStorage.setItem('user_db_mat_v31', JSON.stringify(localDb('mat')));
+        localStorage.setItem('user_db_work_v31', JSON.stringify(localDb('work')));
+      }
+    }catch(e){}
+    try{
+      if(typeof db !== 'undefined' && db && typeof appUser !== 'undefined' && appUser && appUser.uid){
+        await db.collection('user_db').doc(appUser.uid).set({
+          uid: appUser.uid,
+          name: appUser.name || appUser.email || '',
+          matDB: localDb('mat'),
+          workDB: localDb('work'),
+          updatedAt: new Date().toISOString()
+        }, { merge:true });
+      }
+    }catch(e){ console.warn('saveMyDb', e); }
+  }
+
+  
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: loadGlobal
  * ========================================================= */
 async function loadGlobal(force){
     if(!force && window.EP_HARD_GLOBAL_CACHE.loadedAt && Date.now() - window.EP_HARD_GLOBAL_CACHE.loadedAt < 8000) return window.EP_HARD_GLOBAL_CACHE;
@@ -2466,14 +1981,77 @@ async function loadGlobal(force){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: $
+ * SETTINGS FUNCTION: renderList
  * ========================================================= */
-function $(id){ return document.getElementById(id); }
+function renderList(arr,type,prefix,mode){
+    var data = {};
+    (arr || []).forEach(function(it){
+      var c = it.c || 'Разное';
+      var g = groupOf(it) || 'Разное';
+      if(!data[c]) data[c] = {};
+      if(!data[c][g]) data[c][g] = [];
+      data[c][g].push(it);
+    });
+    var html = '', i = 0;
+    Object.keys(data).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
+      var cid = prefix + '_c_' + (i++);
+      var catStyle = type === 'work' ? 'style="color:var(--orange);background:rgba(245,158,11,.08);"' : '';
+      html += '<div class="cat-header" '+catStyle+' onclick="toggleCat(\''+cid+'\')">'+esc(c)+'</div><div class="cat-body" id="'+cid+'">';
+      Object.keys(data[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
+        var gid = prefix + '_g_' + (i++);
+        html += '<div class="ep-db-sub-header" onclick="epHardToggleDbSub(\''+gid+'\', event)"><span>'+esc(g)+'</span><small>открыть</small></div><div class="ep-db-sub-body" id="'+gid+'">';
+        data[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it,idx){
+          var sk = sigKey(type,it);
+          var src = it.__src === 'global' ? '<span style="color:#8B5CF6;font-weight:900;">🌍 серверная</span>' : '<span style="color:#10B981;font-weight:900;">👤 моя</span>';
+          var meta = esc(g) + ' • ' + src + ' • ' + (Number(it.p)||0) + ' ₽ / ' + esc(it.u || 'шт');
+          if(mode === 'global'){
+            html += '<label class="mat-item ep-select-row">' +
+              '<input type="checkbox" class="ep-global-check" data-type="'+type+'" data-sig="'+esc(sk)+'" data-id="'+esc(String(it.id||''))+'" style="width:22px;height:22px;accent-color:var(--primary);">' +
+              '<div style="flex:1;"><div class="ep-db-item-title">'+esc(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div></label>';
+          } else if(mode === 'editor'){
+            html += '<div class="emp-row" style="align-items:flex-start;">' +
+              '<label style="display:flex;gap:8px;align-items:flex-start;flex:1;">' +
+              '<input type="checkbox" class="ep-db-delete-check" data-type="'+type+'" data-sig="'+esc(sk)+'" data-id="'+esc(String(it.id||''))+'" style="width:22px;height:22px;accent-color:#EF4444;margin-top:4px;">' +
+              '<div style="flex:1;"><b>'+esc(it.n || 'Позиция')+'</b><br><span style="color:var(--gray);font-size:10px;">'+meta+'</span></div></label>' +
+              '<div class="ep-row-actions">' +
+              '<input type="number" value="'+(Number(it.p)||0)+'" onchange="requestPriceChange(\''+type+'\', \''+esc(String(it.id||''))+'\', this.value)" style="width:72px;margin:0;padding:4px;text-align:center;">' +
+              '<button class="btn-danger" onclick="epHardDeleteLocalPosition(\''+type+'\', \''+esc(sk)+'\', \''+esc(String(it.id||''))+'\')" style="white-space:nowrap;">Удалить позицию</button>' +
+              '</div></div>';
+          } else {
+            var color = type === 'work' ? 'background:var(--orange);' : '';
+            html += '<div class="mat-item"><div style="flex:1;"><div class="ep-db-item-title">'+esc(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div>' +
+              '<button class="mat-add-btn" style="'+color+'width:auto;margin:0;" onclick="promptAdd(\''+esc(sk)+'\', \''+type+'\')">+ Добавить</button></div>';
+          }
+        });
+        html += '</div>';
+      });
+      html += '</div>';
+    });
+    return html || '<div style="padding:15px;color:var(--gray);font-weight:700;">Позиции не найдены</div>';
+  }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: readGlobal
+ * SETTINGS FUNCTION: toolbar
+ * ========================================================= */
+function toolbar(type){
+    var title = type === 'mat' ? 'Материалы' : 'Работы';
+    return '<div style="border:1px solid var(--border);border-radius:14px;padding:10px;margin:10px 0;background:rgba(239,68,68,.05);">' +
+      '<div style="font-weight:900;color:var(--danger);margin-bottom:6px;">🗑 Удаление позиций: '+title+'</div>' +
+      '<div style="font-size:11px;color:var(--gray);margin-bottom:8px;">Удаляет/скрывает только у мастера. База сервера не трогается.</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">' +
+      '<button class="btn-info" style="margin:0;padding:10px;" onclick="epHardSelectDelete(\''+type+'\', true)">✅ Выделить все</button>' +
+      '<button class="btn-vendor" style="margin:0;padding:10px;" onclick="epHardSelectDelete(\''+type+'\', false)">⬜ Убрать галочки</button>' +
+      '</div>' +
+      '<button class="btn-danger" style="width:100%;margin:0;padding:12px;" onclick="epHardDeleteSelected(\''+type+'\')">Удалить выбранные у мастера</button>' +
+      '</div>';
+  }
+  
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: readGlobal
  * ========================================================= */
 async function readGlobal(force){
     if(!force && window.EP_ULTIMATE_DB_CACHE.ts && Date.now() - window.EP_ULTIMATE_DB_CACHE.ts < 6000) return window.EP_ULTIMATE_DB_CACHE;
@@ -2510,7 +2088,85 @@ async function readGlobal(force){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: esc
+ * SETTINGS FUNCTION: renderItems
+ * ========================================================= */
+function renderItems(arr,type,prefix,mode){
+    var data = {};
+    (arr || []).forEach(function(it){
+      var c = it.c || 'Разное';
+      var g = groupOf(it) || 'Разное';
+      if(!data[c]) data[c] = {};
+      if(!data[c][g]) data[c][g] = [];
+      data[c][g].push(it);
+    });
+
+    var html = '', n = 0;
+    Object.keys(data).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
+      var cid = prefix + '_c_' + (n++);
+      var catStyle = type === 'work' ? 'style="color:var(--orange);background:rgba(245,158,11,.08);"' : '';
+      html += '<div class="cat-header" '+catStyle+' onclick="toggleCat(\''+cid+'\')">'+esc(c)+'</div><div class="cat-body" id="'+cid+'">';
+      Object.keys(data[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
+        var gid = prefix + '_g_' + (n++);
+        html += '<div class="ep-db-sub-header" onclick="epUltimateToggleSub(\''+gid+'\', event)"><span>'+esc(g)+'</span><small>открыть</small></div><div class="ep-db-sub-body" id="'+gid+'">';
+        data[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it){
+          var encoded = encodeItem(it);
+          var sk = sig(type,it);
+          var src = it.__src === 'global'
+            ? '<span style="color:#8B5CF6;font-weight:900;">🌍 серверная</span>'
+            : '<span style="color:#10B981;font-weight:900;">👤 моя</span>';
+          var meta = esc(g) + ' • ' + src + ' • ' + (Number(it.p)||0) + ' ₽ / ' + esc(it.u || 'шт');
+
+          if(mode === 'global'){
+            html += '<label class="mat-item ep-select-row">' +
+              '<input type="checkbox" class="ep-global-check" data-type="'+type+'" data-item="'+esc(encoded)+'" data-sig="'+esc(sk)+'" style="width:22px;height:22px;accent-color:var(--primary);">' +
+              '<div style="flex:1;"><div class="ep-db-item-title">'+esc(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div></label>';
+          } else if(mode === 'editor'){
+            html += '<div class="emp-row" style="align-items:flex-start;">' +
+              '<label style="display:flex;gap:8px;align-items:flex-start;flex:1;">' +
+              '<input type="checkbox" class="ep-db-delete-check" data-type="'+type+'" data-item="'+esc(encoded)+'" data-sig="'+esc(sk)+'" style="width:22px;height:22px;accent-color:#EF4444;margin-top:4px;">' +
+              '<div style="flex:1;"><b>'+esc(it.n || 'Позиция')+'</b><br><span style="color:var(--gray);font-size:10px;">'+meta+'</span></div></label>' +
+              '<div class="ep-row-actions">' +
+              '<input type="number" value="'+(Number(it.p)||0)+'" onchange="epUltimateEditPrice(\''+type+'\', \''+esc(encoded)+'\', this.value)" style="width:74px;margin:0;padding:4px;text-align:center;">' +
+              '<button class="btn-danger" onclick="epUltimateDeleteOne(\''+type+'\', \''+esc(encoded)+'\')" style="white-space:nowrap;">Удалить позицию</button>' +
+              '</div></div>';
+          } else {
+            var color = type === 'work' ? 'background:var(--orange);' : '';
+            html += '<div class="mat-item"><div style="flex:1;"><div class="ep-db-item-title">'+esc(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div>' +
+              '<button class="mat-add-btn" style="'+color+'width:auto;margin:0;" onclick="promptAdd(\''+esc(encoded)+'\', \''+type+'\')">+ Добавить</button></div>';
+          }
+        });
+        html += '</div>';
+      });
+      html += '</div>';
+    });
+
+    return html || '<div style="padding:15px;color:var(--gray);font-weight:700;">Позиции не найдены</div>';
+  }
+
+  
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: deleteToolbar
+ * ========================================================= */
+function deleteToolbar(type){
+    var title = type === 'mat' ? 'Материалы' : 'Работы';
+    return '<div style="border:1px solid var(--border);border-radius:14px;padding:10px;margin:10px 0;background:rgba(239,68,68,.05);">' +
+      '<div style="font-weight:900;color:var(--danger);margin-bottom:6px;">🗑 Удаление позиций: '+title+'</div>' +
+      '<div style="font-size:11px;color:var(--gray);margin-bottom:8px;">Удаляет/скрывает только у мастера. База сервера не трогается.</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">' +
+      '<button class="btn-info" style="margin:0;padding:10px;" onclick="epUltimateSelectDelete(\''+type+'\', true)">✅ Выделить все</button>' +
+      '<button class="btn-vendor" style="margin:0;padding:10px;" onclick="epUltimateSelectDelete(\''+type+'\', false)">⬜ Убрать галочки</button>' +
+      '</div>' +
+      '<button class="btn-danger" style="width:100%;margin:0;padding:12px;" onclick="epUltimateDeleteSelected(\''+type+'\')">Удалить выбранные у мастера</button>' +
+      '</div>';
+  }
+
+  
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: esc
  * ========================================================= */
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g,function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
   function cleanText(s){ return String(s || '').toLowerCase().replace(/ё/g,'е').replace(/×/g,'x').replace(/х/g,'x').replace(/[^a-zа-я0-9]+/g,' ').trim(); }
@@ -2778,33 +2434,83 @@ function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g,function(m
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: activeLabel
+ * SETTINGS FUNCTION: uid
  * ========================================================= */
-function activeLabel(){ return scope()==='global' ? '🌍 База сервера' : '👤 Моя база'; }
+function uid(){ try{ return appUser && appUser.uid ? appUser.uid : ''; }catch(e){ return ''; } }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: activeArr
+ * SETTINGS FUNCTION: isAdmin
  * ========================================================= */
-function activeArr(type){ return scope()==='global' ? serverArr(type) : myArr(type); }
-
+function isAdmin(){ try{ return appUser && appUser.role === 'admin'; }catch(e){ return false; } }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: setActiveDb
+ * SETTINGS FUNCTION: syncWindowCaches
  * ========================================================= */
-function setActiveDb(type, arr){
-    if(scope()==='global') saveServerLocal(type, arr, isAdmin());
-    else saveMyLocal(type, arr);
+function syncWindowCaches(){
+    try{
+      window.EP_MY_MAT = EP_MY_MAT;
+      window.EP_MY_WORK = EP_MY_WORK;
+      window.EP_GLOBAL_MAT = EP_SERVER_MAT;
+      window.EP_GLOBAL_WORK = EP_SERVER_WORK;
+      window.EP_FORCE_GLOBAL = {matDB:EP_SERVER_MAT, workDB:EP_SERVER_WORK};
+      window.EP_ULTIMATE_DB_CACHE = {matDB:EP_SERVER_MAT, workDB:EP_SERVER_WORK, ts:Date.now()};
+      window.EP_GLOBAL_DB_VISIBLE_CACHE = {matDB:EP_SERVER_MAT, workDB:EP_SERVER_WORK, ts:Date.now()};
+      window.userMatDB = EP_MY_MAT;
+      window.userWorkDB = EP_MY_WORK;
+      if(scope()==='global'){ matDB = EP_SERVER_MAT.slice(); workDB = EP_SERVER_WORK.slice(); }
+      else { matDB = EP_MY_MAT.slice(); workDB = EP_MY_WORK.slice(); }
+    }catch(e){}
   }
 
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epSendServerProposal
+ * SETTINGS FUNCTION: epSaveMyDbToServer
+ * ========================================================= */
+async function epSaveMyDbToServer(){
+    try{
+      if(typeof db !== 'undefined' && db && uid()){
+        await db.collection('user_db').doc(uid()).set({
+          uid: uid(),
+          masterName: (appUser && (appUser.name || appUser.email)) || '',
+          matDB: EP_MY_MAT,
+          workDB: EP_MY_WORK,
+          created: true,
+          updatedAt: new Date().toISOString()
+        }, {merge:true});
+      }
+    }catch(e){ console.warn('save my db failed', e); }
+  }
+
+  
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: epSaveServerDbToServer
+ * ========================================================= */
+async function epSaveServerDbToServer(){
+    try{
+      if(typeof db !== 'undefined' && db && isAdmin()){
+        await db.collection('settings').doc('global_db').set({
+          matDB: EP_SERVER_MAT,
+          workDB: EP_SERVER_WORK,
+          cleanMode: cleanMode(),
+          updatedAt: new Date().toISOString()
+        }, {merge:true});
+      }
+    }catch(e){ console.warn('save server db failed', e); }
+  }
+
+  
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: epSendServerProposal
  * ========================================================= */
 async function epSendServerProposal(type,items,action){
     try{
@@ -2827,7 +2533,7 @@ async function epSendServerProposal(type,items,action){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epLoadDbFromServer
+ * SETTINGS FUNCTION: epLoadDbFromServer
  * ========================================================= */
 async function epLoadDbFromServer(){
     EP_MY_MAT = arrLS(LS_MY_MAT);
@@ -2885,35 +2591,24 @@ async function epLoadDbFromServer(){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: renderCatalog
+ * SETTINGS FUNCTION: sourceSwitcherHtml
  * ========================================================= */
-function renderCatalog(type){
-    var arr = activeArr(type);
-    var html = sourceSwitcherHtml(type);
-    if(!arr.length){
-      return html + '<div style="padding:16px;border:1px dashed var(--border);border-radius:14px;text-align:center;color:var(--gray);font-weight:800;">'+activeLabel()+' пустая.<br><br>'+(scope()==='my'?'Можно добавить вручную, импортом или взять позицию из базы сервера.':'После полного сброса база сервера пустая. Админ может заполнить её вручную или импортом.')+'</div>';
-    }
-    var cats={}, i=0;
-    arr.forEach(function(it){ var c=it.c||'Разное'; var g=groupOf(it)||'Без группы'; if(!cats[c]) cats[c]={}; if(!cats[c][g]) cats[c][g]=[]; cats[c][g].push(it); });
-    Object.keys(cats).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
-      var cid='ep_cat_'+type+'_'+(i++);
-      html += '<div class="cat-header" onclick="epDbToggle(&quot;'+cid+'&quot;, event)">'+esc(c)+'</div><div class="cat-body" id="'+cid+'">';
-      Object.keys(cats[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
-        var gid='ep_sub_'+type+'_'+(i++);
-        html += '<div class="sub-cat-header" onclick="epDbToggle(&quot;'+gid+'&quot;, event)">'+esc(g)+' ▾</div><div class="sub-cat-body" id="'+gid+'">';
-        cats[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it){ html += catalogRow(type,it); });
-        html += '</div>';
-      });
-      html += '</div>';
-    });
-    return html;
+function sourceSwitcherHtml(type){
+    return '<div style="border:1px solid var(--primary);border-radius:14px;padding:10px;margin:0 0 12px;background:rgba(79,70,229,.06);">'+
+      '<div style="font-weight:900;color:var(--primary);margin-bottom:6px;">Источник: '+(type==='work'?'Работы':'Материалы')+'</div>'+
+      '<div style="font-size:11px;color:var(--gray);margin-bottom:8px;">В смету и каталог попадает только выбранный источник. Вперемешку не считаем.</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'+
+        '<button class="'+(scope()==='my'?'btn-success':'btn-info')+'" style="margin:0;padding:10px;" onclick="epSetDbScope(&quot;my&quot;); '+(type==='work'?'openWorkCatalog()':'openMatCatalog()')+'">👤 Моя база</button>'+
+        '<button class="'+(scope()==='global'?'btn-success':'btn-info')+'" style="margin:0;padding:10px;" onclick="epSetDbScope(&quot;global&quot;); '+(type==='work'?'openWorkCatalog()':'openMatCatalog()')+'">🌍 База сервера</button>'+
+      '</div>'+
+    '</div>';
   }
 
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: editorTop
+ * SETTINGS FUNCTION: editorTop
  * ========================================================= */
 function editorTop(type){
     var title=type==='work'?'работ':'материалов';
@@ -2945,163 +2640,103 @@ function editorTop(type){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: renderDbRows
+ * SETTINGS FUNCTION: editorRow
  * ========================================================= */
-function renderDbRows(type){
-    var arr=activeArr(type);
-    var html=editorTop(type);
-    if(!arr.length){
-      html += '<div style="padding:15px;border:1px dashed var(--border);border-radius:12px;text-align:center;color:var(--gray);font-weight:800;">'+activeLabel()+' пустая.</div>';
-      return html;
-    }
-    var cats={}, i=0;
-    arr.forEach(function(it){ var c=it.c||'Разное'; var g=groupOf(it)||'Без группы'; if(!cats[c]) cats[c]={}; if(!cats[c][g]) cats[c][g]=[]; cats[c][g].push(it); });
-    Object.keys(cats).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
-      var cid='db_cat_'+type+'_'+(i++);
-      html += '<div class="cat-header" onclick="epDbToggle(&quot;'+cid+'&quot;, event)">'+esc(c)+'</div><div class="cat-body" id="'+cid+'">';
-      Object.keys(cats[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
-        var gid='db_sub_'+type+'_'+(i++);
-        html += '<div class="sub-cat-header" onclick="epDbToggle(&quot;'+gid+'&quot;, event)">'+esc(g)+' ▾</div><div class="sub-cat-body" id="'+gid+'">';
-        cats[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it){ html += editorRow(type,it); });
-        html += '</div>';
-      });
-      html += '</div>';
-    });
-    return html;
+function editorRow(type,it){
+    var item=enc(it);
+    var sub=(groupOf(it)?groupOf(it)+' • ':'')+(Number(it.p)||0)+' ₽ / '+(it.u||'шт');
+    var checked=scope()==='my' ? '<input type="checkbox" class="ep-my-del-check" data-type="'+type+'" data-item="'+esc(item)+'" style="width:20px;height:20px;accent-color:#EF4444;margin:4px 8px 0 0;">' : '';
+    var copy=scope()==='global' ? '<button class="btn-info" style="width:auto;margin:0;padding:7px;" data-type="'+type+'" data-item="'+esc(item)+'" onclick="epCopyOneServerToMy(this.dataset.type,this.dataset.item)">В мою</button>' : '';
+    return '<div class="emp-row" style="align-items:flex-start;">'+checked+'<div style="flex:1;"><b>'+esc(it.n||'Позиция')+'</b><br><span style="color:var(--gray);font-size:10px;">'+esc(sub)+'</span></div><input type="number" value="'+(Number(it.p)||0)+'" data-id="'+esc(String(it.id||''))+'" data-type="'+type+'" onchange="requestPriceChange(this.dataset.type,this.dataset.id,this.value)" style="width:70px;margin:0;padding:4px;text-align:center;">'+copy+'</div>';
   }
 
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: downloadJson
+ * SETTINGS FUNCTION: serverModalRow
  * ========================================================= */
-function downloadJson(filename,data){
-    var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json;charset=utf-8'});
-    var url=URL.createObjectURL(blob);
-    var a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(function(){URL.revokeObjectURL(url);},1000);
+function serverModalRow(type,it){
+    var item=enc(it);
+    var sub=(groupOf(it)?groupOf(it)+' • ':'')+(Number(it.p)||0)+' ₽ / '+(it.u||'шт');
+    return '<label class="mat-item ep-select-row"><input type="checkbox" class="ep-global-check" data-type="'+type+'" data-item="'+esc(item)+'" style="width:22px;height:22px;accent-color:var(--primary);"><div style="flex:1;"><b>'+esc(it.n||'Позиция')+'</b><br><span style="color:var(--gray);font-size:11px;">'+esc(sub)+'</span></div></label>';
   }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: commitCollection
+ * SETTINGS FUNCTION: setMy
  * ========================================================= */
-async function commitCollection(collection, mode){
-    if(typeof db === 'undefined' || !db) return 0;
-    var snap = await db.collection(collection).get();
-    var batch = db.batch(), ops = 0, count = 0, promises=[];
-    snap.forEach(function(doc){
-      if(mode === 'delete') batch.delete(doc.ref);
-      else batch.set(doc.ref, {matDB:[], workDB:[], cleanMode:true, resetAt:new Date().toISOString()}, {merge:true});
-      ops++; count++;
-      if(ops >= 450){ promises.push(batch.commit()); batch=db.batch(); ops=0; }
-    });
-    if(ops) promises.push(batch.commit());
-    if(promises.length) await Promise.all(promises);
-    return count;
-  }
-
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: autoGroupMaterial
- * ========================================================= */
-function autoGroupMaterial(item){
-    var it=clone(item); var n=cleanText([it.n,it.c,it.g,it.sc].join(' '));
-    if(/utp|ftp|cat5|cat6|витая|интернет|tv|sat|коаксиал|слаботоч/.test(n)){ it.c='Слаботочка'; it.g=/tv|sat|коаксиал/.test(n)?'ТВ / коаксиальный кабель':'Интернет / витая пара'; }
-    else if(/кабель|ввг|провод|пугв|пв 3|нг/.test(n)){ if(/пугв|пв 3/.test(n)){ it.c='Щитовое'; it.g='Расходка под сборку / Провода'; } else { it.c='Кабель'; if(/1\.5|1 5|3x1 5|3 1 5/.test(n)) it.g='Силовой кабель 3×1.5'; else if(/2\.5|2 5|3x2 5|3 2 5/.test(n)) it.g='Силовой кабель 3×2.5'; else if(/3x4|3 4|x4/.test(n)) it.g='Силовой кабель 3×4'; else if(/3x6|3 6|x6/.test(n)) it.g='Силовой кабель 3×6'; else it.g='Силовой кабель'; } }
-    else if(/гофр|труб|пнд|пвх/.test(n)){ it.c='Трубы'; it.g=/20/.test(n)?'Гофра / труба 20 мм':'Гофра / трубы'; }
-    else if(/диф|дифф/.test(n)){ it.c='Автоматика'; it.g='ДИФы'; }
-    else if(/узо|вд1/.test(n)){ it.c='Автоматика'; it.g='УЗО'; }
-    else if(/уздп|дугов/.test(n)){ it.c='Автоматика'; it.g='УЗДП'; }
-    else if(/узм|реле напряж/.test(n)){ it.c='Автоматика'; it.g='УЗМ / реле напряжения'; }
-    else if(/реле времени/.test(n)){ it.c='Автоматика'; it.g='Реле времени'; }
-    else if(/контактор|пускател/.test(n)){ it.c='Автоматика'; it.g='Контакторы'; }
-    else if(/автомат|ва47|sh201|1p|2p|3p|c10|c16|c25|c32|c40/.test(n)){ it.c='Автоматика'; it.g='Автоматы'; }
-    else if(/щит|шкаф|корпус|бокс|щрв|tekfor|uk6/.test(n)){ it.c='Щитовое'; if(/внутр|встра|скрыт/.test(n)) it.g='Корпуса / Встраиваемый'; else if(/наклад/.test(n)) it.g='Корпуса / Накладной'; else it.g='Корпуса'; }
-    else if(/ншви|наконеч/.test(n)){ it.c='Щитовое'; it.g='Расходка под сборку / Наконечники'; }
-    else if(/шин|клемм|n |pe |ноль|земл/.test(n)){ it.c='Щитовое'; it.g='Расходка под сборку / Шинки и клеммники'; }
-    else if(/греб/.test(n)){ it.c='Щитовое'; it.g='Расходка под сборку / Гребёнки'; }
-    else if(/din|дин|рейк|огранич/.test(n)){ it.c='Щитовое'; it.g='Расходка под сборку / DIN-рейки и ограничители'; }
-    else if(/маркир|бирк/.test(n)){ it.c='Щитовое'; it.g='Расходка под сборку / Маркировка'; }
-    else if(/подрозет|коробк|гмл|гильз|термоусад|стяжк|лента|гвозд|баллон|площадк/.test(n)){ it.c='Расходники'; if(/подрозет/.test(n)) it.g='Подрозетники'; else if(/коробк/.test(n)) it.g='Распределительные коробки'; else if(/гмл|гильз|термоусад/.test(n)) it.g='Соединения'; else it.g='Прочая расходка'; }
-    else { it.c=it.c&&it.c!=='Разное'?it.c:'Прочее'; it.g=it.g||it.sc||'Без группы'; }
-    it.sc=it.g; return it;
+function setMy(type,arr){
+    arr = unique(arr, type);
+    if(type === 'work') window.EP_MY_WORK = arr; else window.EP_MY_MAT = arr;
+    writeArr(LS_MY_MAT, type === 'mat' ? arr : getMy('mat'));
+    writeArr(LS_MY_WORK, type === 'work' ? arr : getMy('work'));
+    try{ window.userMatDB = getMy('mat'); window.userWorkDB = getMy('work'); }catch(e){}
+    syncMainArrays('my');
   }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epRefreshDbScopeUi
+ * SETTINGS FUNCTION: saveMyRemote
  * ========================================================= */
-function epRefreshDbScopeUi(){
-    var my=$('ep-scope-my-btn'), gl=$('ep-scope-global-btn'), st=$('ep-db-scope-status'), cleanSt=$('ep-clean-status-line');
-    if(my){ my.className=scope()==='my'?'btn-success':'btn-info'; my.textContent='👤 Моя база'; }
-    if(gl){ gl.className=scope()==='global'?'btn-success':'btn-info'; gl.textContent='🌍 База сервера'; }
-    if(st) st.innerHTML='Сейчас выбрано: <b>'+activeLabel()+'</b>. '+(scope()==='my'?'Считаем и показываем только мою базу.':'Считаем и показываем только базу сервера.');
-    if(cleanSt) cleanSt.textContent='Активная база: '+activeLabel()+'. Материалы: '+activeArr('mat').length+', работы: '+activeArr('work').length+'.';
-  }
-
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: activeTarget
- * ========================================================= */
-function activeTarget(){ return (isAdmin() && scope() === 'global') ? 'global' : 'my'; }
-
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: syncActiveArrays
- * ========================================================= */
-function syncActiveArrays(){
-    try{
-      if(getScope() === 'global'){
-        var sm = Array.isArray(window.EP_GLOBAL_MAT) ? window.EP_GLOBAL_MAT : getServerFromCache('mat');
-        var sw = Array.isArray(window.EP_GLOBAL_WORK) ? window.EP_GLOBAL_WORK : getServerFromCache('work');
-        window.matDB = sm.slice();
-        window.workDB = sw.slice();
-        try{ matDB = window.matDB; workDB = window.workDB; }catch(e){}
-      } else {
-        var mm = Array.isArray(window.EP_MY_MAT) ? window.EP_MY_MAT : readArr(LS_MY_MAT);
-        var mw = Array.isArray(window.EP_MY_WORK) ? window.EP_MY_WORK : readArr(LS_MY_WORK);
-        window.matDB = mm.slice();
-        window.workDB = mw.slice();
-        try{ matDB = window.matDB; workDB = window.workDB; }catch(e){}
-      }
-    }catch(e){ console.warn('EP V5 sync active arrays failed', e); }
-  }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: refreshMyFromServer
- * ========================================================= */
-async function refreshMyFromServer(){
-    var mat = Array.isArray(window.EP_MY_MAT) ? window.EP_MY_MAT : readArr(LS_MY_MAT);
-    var work = Array.isArray(window.EP_MY_WORK) ? window.EP_MY_WORK : readArr(LS_MY_WORK);
+async function saveMyRemote(){
     try{
       if(typeof db !== 'undefined' && db && uid()){
-        var doc = await db.collection('user_db').doc(uid()).get();
-        if(doc.exists){
-          var d = doc.data() || {};
-          if(Array.isArray(d.matDB)) mat = d.matDB;
-          if(Array.isArray(d.workDB)) work = d.workDB;
-        }
+        await db.collection('user_db').doc(uid()).set({
+          uid: uid(),
+          masterName: (window.appUser && (appUser.name || appUser.email)) || '',
+          matDB: getMy('mat'),
+          workDB: getMy('work'),
+          created: true,
+          updatedAt: new Date().toISOString()
+        }, {merge:true});
+        return true;
       }
-    }catch(e){ console.warn('EP V5 load my db failed', e); }
-    setMyArrays(mat, work);
+    }catch(e){ console.warn('EP V4 save my import failed', e); }
+    return false;
   }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: refreshServerFromServer
+ * SETTINGS FUNCTION: saveServerRemote
+ * ========================================================= */
+async function saveServerRemote(){
+    try{
+      if(typeof db !== 'undefined' && db && isAdmin()){
+        await db.collection('settings').doc('global_db').set({
+          matDB: getServer('mat'),
+          workDB: getServer('work'),
+          updatedAt: new Date().toISOString()
+        }, {merge:true});
+        return true;
+      }
+    }catch(e){ console.warn('EP V4 save server import failed', e); }
+    return false;
+  }
+  
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: setMyArrays
+ * ========================================================= */
+function setMyArrays(mat,work){
+    mat = unique(mat || [], 'mat');
+    work = unique(work || [], 'work');
+    window.EP_MY_MAT = mat;
+    window.EP_MY_WORK = work;
+    window.userMatDB = mat;
+    window.userWorkDB = work;
+    writeArr(LS_MY_MAT, mat);
+    writeArr(LS_MY_WORK, work);
+  }
+  
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: refreshServerFromServer
  * ========================================================= */
 async function refreshServerFromServer(){
     var mat = Array.isArray(window.EP_GLOBAL_MAT) ? window.EP_GLOBAL_MAT : getServerFromCache('mat');
@@ -3125,51 +2760,56 @@ async function refreshServerFromServer(){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: inferSub
+ * SETTINGS FUNCTION: renderReviewPage
  * ========================================================= */
-function inferSub(name,cat,type){
-    var s = norm(name);
-    if(type === 'work'){
-      if(/бетон/.test(s)) return 'Бетон';
-      if(/кирпич/.test(s)) return 'Кирпич';
-      if(/монолит|панел/.test(s)) return 'Панель / монолит';
-      return cat || 'Работы';
+function renderReviewPage(){
+    var st = window.EP_DB_REVIEW_V6;
+    window.EP_DB_REVIEW = { type: st.type, items: st.items, source: st.source };
+    var title = $('ep-db-ai-review-title');
+    if(title) title.innerText = 'Импорт ' + (st.type === 'work' ? 'работ' : 'материалов') + ': ' + (st.source || 'файл');
+    var list = $('ep-db-ai-review-list');
+    if(!list) return;
+    var total = st.items.length;
+    if(!total){
+      list.innerHTML = '<div style="padding:12px;color:var(--danger);font-weight:800;">Позиции не найдены. Проверьте файл или попробуйте импортировать другой формат.</div>';
+      return;
     }
-    if(/c\s*\d+|с\s*\d+|автомат/.test(s)) return 'Автоматы';
-    if(/диф/.test(s)) return 'ДИФы';
-    if(/узо/.test(s)) return 'УЗО';
-    if(/узм|реле напряж/.test(s)) return 'УЗМ / реле напряжения';
-    if(/контактор/.test(s)) return 'Контакторы';
-    if(/ввг/.test(s)) return 'ВВГ';
-    if(/пугв/.test(s)) return 'ПуГВ';
-    if(/utp|ftp/.test(s)) return 'UTP / FTP';
-    if(/подрозет/.test(s)) return 'Подрозетники';
-    if(/клемм|wago/.test(s)) return 'Клеммники';
-    if(/гребен/.test(s)) return 'Гребёнки';
-    if(/шин/.test(s)) return 'Шинки / клеммники';
-    if(/din|дин|рейк/.test(s)) return 'DIN-рейки / ограничители';
-    if(/щит|бокс|корпус/.test(s)) return 'Корпуса';
-    return 'Разное';
+    var pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    st.page = Math.max(0, Math.min(st.page || 0, pages - 1));
+    var start = st.page * PAGE_SIZE;
+    var end = Math.min(start + PAGE_SIZE, total);
+    var html = '<div style="position:sticky;top:0;z-index:2;background:var(--card-bg,rgba(255,255,255,.95));padding:8px;border-radius:12px;margin-bottom:8px;border:1px solid var(--border);">' +
+      '<b>Найдено: ' + total + '</b> • выбрано: <b id="ep-v6-selected-count">' + selectedCount() + '</b><br>' +
+      '<span style="font-size:11px;color:var(--gray);">Показаны строки ' + (start+1) + '–' + end + ' из ' + total + '. Большой файл не грузится весь на экран, поэтому телефон не зависает.</span>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">' +
+      '<button type="button" class="btn-info" onclick="epReviewPageV6(-1)" ' + (st.page<=0?'disabled':'') + '>← Назад</button>' +
+      '<button type="button" class="btn-info" onclick="epReviewPageV6(1)" ' + (st.page>=pages-1?'disabled':'') + '>Вперёд →</button>' +
+      '</div></div>';
+    for(var i=start;i<end;i++){
+      var it = st.items[i] || {};
+      var ed = st.editCache[i] || it;
+      html += '<div class="ep-db-review-row">' +
+        '<input type="checkbox" id="ep-db-check-' + i + '" ' + (st.selected[i] !== false ? 'checked' : '') + ' onchange="epReviewToggleV6(' + i + ', this.checked)">' +
+        '<div class="ep-db-review-fields">' +
+          '<div><label>Имя</label><input id="ep-db-name-' + i + '" value="' + esc(ed.n || '') + '" placeholder="Имя / наименование"></div>' +
+          '<div class="ep-db-review-2col">' +
+            '<div><label>Категория</label><input id="ep-db-cat-' + i + '" value="' + esc(ed.c || 'Разное') + '" placeholder="Категория"></div>' +
+            '<div><label class="ep-db-subcat-label">Подкатегория</label><input id="ep-db-subcat-' + i + '" value="' + esc(ed.sc || ed.g || 'Разное') + '" placeholder="Подкатегория"></div>' +
+          '</div>' +
+          '<div class="ep-db-review-2col">' +
+            '<div><label>Цена за единицу</label><input id="ep-db-price-' + i + '" type="number" step="0.01" value="' + (Number(ed.p)||0) + '" placeholder="Цена"></div>' +
+            '<div><label>Единица</label><input id="ep-db-unit-' + i + '" value="' + esc(ed.u || 'шт') + '" placeholder="шт / м / упак"></div>' +
+          '</div>' +
+        '</div></div>';
+    }
+    list.innerHTML = html;
+    setTimeout(hardHideLoader, 0);
   }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: canEditActive
- * ========================================================= */
-function canEditActive(){ return scope()==='my' || (scope()==='global' && isAdmin()); }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: active
- * ========================================================= */
-function active(type){ return scope()==='global'?getServer(type):getMy(type); }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: ensureProgress
+ * SETTINGS FUNCTION: ensureProgress
  * ========================================================= */
 function ensureProgress(){
     if($('ep-v7-progress')) return;
@@ -3188,32 +2828,21 @@ function ensureProgress(){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: reloadActiveDb
+ * SETTINGS FUNCTION: sendProposal
  * ========================================================= */
-async function reloadActiveDb(){
-    try{ syncMain(scope()); if(typeof window.epRefreshActiveDbNow==='function') await window.epRefreshActiveDbNow(true); }catch(e){ console.warn('EP V7 reload active db failed',e); }
-    try{ syncMain(scope()); renderDbEditors(); }catch(e){}
-    try{ if(typeof openMatCatalog==='function' && $('matCatModal') && $('matCatModal').style.display!=='none') openMatCatalog(); }catch(e){}
-    try{ if(typeof openWorkCatalog==='function' && $('workModal') && $('workModal').style.display!=='none') openWorkCatalog(); }catch(e){}
-  }
-
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: ensurePanel
- * ========================================================= */
-function ensurePanel(){
-    var toolbar=$('ep-db-scope-toolbar'); if(!toolbar) return null;
-    var p=$('ep-v7-db-panel');
-    if(!p){ p=document.createElement('div'); p.id='ep-v7-db-panel'; p.className='ep-v7-panel'; toolbar.parentNode.insertBefore(p, toolbar.nextSibling); }
-    return p;
+async function sendProposal(type,items,reason,onp){
+    try{
+      if(onp)onp(72,'Отправка заявки админу');
+      if(typeof window.epSendServerProposal==='function'){ await window.epSendServerProposal(type,items,reason||'server_import_request'); return true; }
+      if(typeof db!=='undefined'&&db){ await db.collection('db_proposals').add({type:type,items:items,reason:reason||'server_import_request',uid:uid(),userEmail:(window.appUser&&appUser.email)||'',createdAt:new Date().toISOString(),status:'new'}); return true; }
+    }catch(e){ console.warn('EP V7 proposal failed',e); }
+    return false;
   }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: renderPanel
+ * SETTINGS FUNCTION: renderPanel
  * ========================================================= */
 function renderPanel(){
     var p=ensurePanel(); if(!p) return;
@@ -3250,28 +2879,21 @@ function renderPanel(){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: tuneStaticBlocks
+ * SETTINGS FUNCTION: fbUser
  * ========================================================= */
-function tuneStaticBlocks(){
-    renderPanel();
-    var my=$('ep-scope-my-btn'), gl=$('ep-scope-global-btn'), st=$('ep-db-scope-status');
-    if(my){ my.className=scope()==='my'?'btn-success':'btn-info'; my.textContent='👤 Моя база данных'; }
-    if(gl){ gl.className=scope()==='global'?'btn-success':'btn-info'; gl.textContent='🌍 База сервера'; }
-    if(st) st.innerHTML='Главный переключатель: <b>'+label()+'</b>. Отображение и расчёт идут только из выбранного источника.';
-    var old=$('ep-db-ai-tools'); if(old) old.style.display='none';
-    var clean=$('ep-clean-status-line'); if(clean) clean.textContent='Активная база: '+label()+'. Материалы: '+active('mat').length+', работы: '+active('work').length+'.';
-    var addBtn=document.querySelector('#settModal button[onclick="addDbItem()"]');
-    var addBlock=null;
-    if(addBtn){ var x=addBtn.parentElement; while(x&&x.id!=='settModal'){ if((x.querySelector&&x.querySelector('#db-new-cat'))){ addBlock=x; break; } x=x.parentElement; } }
-    if(addBlock){ addBlock.style.display=canEditActive()?'block':'none'; }
-    if(addBtn){ addBtn.textContent=scope()==='global'?' + Добавить в базу сервера':' + Добавить в мою базу'; }
-  }
-
+function fbUser(){ try{ return (typeof firebase!=='undefined' && firebase.auth && firebase.auth().currentUser) ? firebase.auth().currentUser : null; }catch(e){ return null; } }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: reloadFromRemoteCurrent
+ * SETTINGS FUNCTION: currentEmail
+ * ========================================================= */
+function currentEmail(){ try{ return String((window.appUser&&appUser.email) || (fbUser()&&fbUser().email) || '').toLowerCase(); }catch(e){ return ''; } }
+  
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: reloadFromRemoteCurrent
  * ========================================================= */
 async function reloadFromRemoteCurrent(){
     try{
@@ -3290,18 +2912,14 @@ async function reloadFromRemoteCurrent(){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: injectDebugButton
+ * SETTINGS FUNCTION: currentUserLabel
  * ========================================================= */
-function injectDebugButton(){
-    var p=$('ep-v7-db-panel'); if(!p || $('ep-v8-fb-debug-btn')) return;
-    var b=document.createElement('button'); b.id='ep-v8-fb-debug-btn'; b.className='btn-info'; b.style.cssText='width:100%;margin-top:8px;padding:10px;'; b.textContent='🔎 Проверить Firebase-сохранение'; b.onclick=function(){ window.epFirebaseDbDebug(); };
-    p.appendChild(b);
-  }
+function currentUserLabel(){ try{ var u=(firebase.auth&&firebase.auth().currentUser)||null; return (u&&(u.email||u.uid)) || (window.appUser&&(appUser.email||appUser.phone||appUser.uid)) || ''; }catch(e){ return (window.appUser&&(appUser.email||appUser.phone||appUser.uid)) || ''; } }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: readGlobalDoc
+ * SETTINGS FUNCTION: readGlobalDoc
  * ========================================================= */
 async function readGlobalDoc(){
     if(!(typeof db!=='undefined'&&db)) throw new Error('Firebase db не подключён.');
@@ -3313,7 +2931,7 @@ async function readGlobalDoc(){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: saveGlobalImport
+ * SETTINGS FUNCTION: saveGlobalImport
  * ========================================================= */
 async function saveGlobalImport(type,items,replace){
     if(!isAdmin()) throw new Error('Импорт в базу сервера может делать только админ.');
@@ -3338,34 +2956,131 @@ async function saveGlobalImport(type,items,replace){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: extractTextFromOpenAI
+ * SETTINGS FUNCTION: saveMyImport
  * ========================================================= */
-function extractTextFromOpenAI(data){
-    if(data && data.output_text) return data.output_text;
-    var out='';
-    ((data&&data.output)||[]).forEach(function(item){ ((item&&item.content)||[]).forEach(function(c){ if(c&&c.text) out+=c.text; if(c&&c.type==='output_text'&&c.text) out+=c.text; }); });
-    return out;
+async function saveMyImport(type,items,replace){
+    var arr=getMy(type); items.forEach(function(it,idx){ arr=upsert(arr,type,it,!!replace); if(idx%25===0) progress('Запись в мою базу',20+Math.min(40,idx/Math.max(1,items.length)*40),'Добавляю строки'); });
+    setMy(type,arr); progress('Запись в мою базу',68,'Локально сохранено');
+    if(typeof db!=='undefined'&&db&&uid()){
+      await db.collection('user_db').doc(uid()).set({uid:uid(),masterName:(window.appUser&&(appUser.name||appUser.email||appUser.phone))||'',matDB:getMy('mat'),workDB:getMy('work'),created:true,updatedAt:new Date().toISOString()}, {merge:true});
+      progress('Запись в мою базу',90,'Сервер подтвердил');
+    }
+    return getMy(type).length;
   }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: patchLabels
+ * SETTINGS FUNCTION: sendServerProposal
  * ========================================================= */
-function patchLabels(){
-    var input=$('ep-db-file-input'); if(input) input.setAttribute('accept','.xlsx,.xls,.csv,.json,.txt,.pdf,image/*');
-    Array.prototype.forEach.call(document.querySelectorAll('button'),function(b){
-      var t=clean(b.textContent);
-      if(t.indexOf('Excel')>=0 && t.indexOf('PDF')<0 && (t.indexOf('Материалы')>=0 || t.indexOf('Работы')>=0)){
-        b.innerHTML=b.innerHTML.replace('фото / скрин','фото / PDF / скрин').replace('Excel / JSON','Excel / JSON / PDF');
-      }
+async function sendServerProposal(type,items){
+    if(!(typeof db!=='undefined'&&db)) throw new Error('Firebase db не подключён.');
+    progress('Отправляю заявку админу',60,'db_proposals');
+    await db.collection('db_proposals').add({type:type,items:items.map(clone),reason:'import_to_server',target:'server_db',uid:uid(),masterName:(window.appUser&&(appUser.name||appUser.email||appUser.phone))||'',userEmail:currentUserLabel(),status:'pending',createdAt:new Date().toISOString()});
+    return true;
+  }
+  
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: provider
+ * ========================================================= */
+function provider(){
+    try{ var p=(window.EP_AI_CONFIG&&window.EP_AI_CONFIG.provider)||safeGet('ep_ai_provider_v1','gemini'); return p==='openai'?'openai':'gemini'; }catch(e){ return 'gemini'; }
+  }
+  
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: keyForProvider
+ * ========================================================= */
+function keyForProvider(p){
+    try{
+      if(p==='openai') return (window.EP_AI_CONFIG&&window.EP_AI_CONFIG.openaiKey)||safeGet('ep_openai_key_v1','');
+      return (window.EP_AI_CONFIG&&window.EP_AI_CONFIG.geminiKey)||(typeof GEMINI_API_KEY!=='undefined'?GEMINI_API_KEY:'')||safeGet('gemini_key_v31','');
+    }catch(e){ return ''; }
+  }
+  
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: openAiModel
+ * ========================================================= */
+function openAiModel(){ try{ return (window.EP_AI_CONFIG&&window.EP_AI_CONFIG.openaiModel)||safeGet('ep_openai_model_v1','gpt-4o-mini')||'gpt-4o-mini'; }catch(e){ return 'gpt-4o-mini'; } }
+  
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: askOpenAI
+ * ========================================================= */
+async function askOpenAI(promptText, opts){
+    var key=keyForProvider('openai'); if(!key) throw new Error('Нужен OpenAI API ключ');
+    var content=[{type:'input_text', text:promptText}];
+    if(opts && opts.fileDataUrl){
+      content.push({ type:'input_file', filename: opts.fileName || 'import.pdf', file_data: opts.fileDataUrl });
+    } else if(opts && opts.imageDataUrl){
+      content.push({ type:'input_image', image_url: opts.imageDataUrl, detail: opts.imageDetail || 'high' });
+    }
+    var r=await fetch('https://api.openai.com/v1/responses',{
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body:JSON.stringify({ model:openAiModel(), input:[{role:'user', content:content}], max_output_tokens:(opts&&opts.maxTokens)||9000 })
     });
+    var data=await r.json().catch(function(){return {};});
+    if(!r.ok || data.error) throw new Error((data.error&&data.error.message)||'OpenAI API error');
+    return extractTextFromOpenAI(data);
   }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: installAdminSettingsButton
+ * SETTINGS FUNCTION: askGemini
+ * ========================================================= */
+async function askGemini(promptText, opts){
+    var key=keyForProvider('gemini'); if(!key) throw new Error('Нужен Gemini API ключ');
+    var parts=[{text:promptText}];
+    var dataUrl=(opts&&opts.fileDataUrl)||(opts&&opts.imageDataUrl)||'';
+    if(dataUrl){
+      var m=dataUrl.match(/^data:([^;]+);base64,(.*)$/i);
+      if(m) parts.push({ inline_data:{ mime_type:m[1], data:m[2] } });
+    }
+    var url='https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key='+encodeURIComponent(key);
+    var r=await fetch(url,{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({contents:[{parts:parts}]}) });
+    var data=await r.json().catch(function(){return {};});
+    if(!r.ok || data.error) throw new Error((data.error&&data.error.message)||'Gemini API error');
+    return ((((data.candidates||[])[0]||{}).content||{}).parts||[]).map(function(p){return p.text||'';}).join('');
+  }
+
+  
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: showReview
+ * ========================================================= */
+function showReview(items,type,source,target,raw){
+    items=unique(items,type);
+    var selected={}; items.forEach(function(_,i){selected[i]=true;});
+    window.EP_DB_REVIEW_V6={type:type,items:items,source:source||'',page:0,selected:selected,editCache:{}};
+    window.EP_DB_REVIEW={type:type,items:items,source:source||''};
+    window.EP_V9_IMPORT_TARGET=target; window.EP_V7_IMPORT_TARGET=target;
+    var title=$('ep-db-ai-review-title'); if(title) title.innerText='Импорт '+(type==='work'?'работ':'материалов')+': '+(source||'файл')+' → '+(target==='global'?'База сервера':target==='server_proposal'?'Заявка админу':'Моя база');
+    if(!items.length){ var list=$('ep-db-ai-review-list'); if(list) list.innerHTML='<div style="padding:12px;color:var(--danger);font-weight:900;">ИИ не нашёл позиции. Попробуй фото крупнее/ровнее или PDF с таблицей.</div><details style="font-size:11px;color:var(--gray);"><summary>Ответ ИИ</summary><pre style="white-space:pre-wrap;max-height:240px;overflow:auto;">'+esc(raw||'')+'</pre></details>'; }
+    else if(typeof window.epReviewPageV6==='function') window.epReviewPageV6(0);
+    else { var list2=$('ep-db-ai-review-list'); if(list2) list2.innerHTML=items.map(function(it,i){return '<div class="ep-db-review-row"><input type="checkbox" id="ep-db-check-'+i+'" checked><div class="ep-db-review-fields"><div><label>Имя</label><input id="ep-db-name-'+i+'" value="'+esc(it.n)+'"></div><div class="ep-db-review-2col"><div><label>Категория</label><input id="ep-db-cat-'+i+'" value="'+esc(it.c)+'"></div><div><label>Подкатегория</label><input id="ep-db-subcat-'+i+'" value="'+esc(it.sc||'Разное')+'"></div></div><div class="ep-db-review-2col"><div><label>Цена</label><input id="ep-db-price-'+i+'" type="number" value="'+(Number(it.p)||0)+'"></div><div><label>Единица</label><input id="ep-db-unit-'+i+'" value="'+esc(it.u||'шт')+'"></div></div></div></div>';}).join(''); }
+    try{ if(typeof openModal==='function') openModal('ep-db-ai-review-modal'); }catch(e){ var m=$('ep-db-ai-review-modal'); if(m)m.style.display='flex'; }
+    setTimeout(hideProgress,200);
+  }
+  
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: adminServerMode
+ * ========================================================= */
+function adminServerMode(){ return !!(window.EP_ADMIN_SERVER_DB_EDIT === true && isAdmin()); }
+  
+
+
+/* =========================================================
+ * SETTINGS FUNCTION: installAdminSettingsButton
  * ========================================================= */
 function installAdminSettingsButton(){
     var panel = $('admin-panel');
@@ -3384,7 +3099,7 @@ function installAdminSettingsButton(){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: patchDbUi
+ * SETTINGS FUNCTION: patchDbUi
  * ========================================================= */
 function patchDbUi(){
     installAdminSettingsButton();
@@ -3431,61 +3146,14 @@ function patchDbUi(){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: compressImageDataUrl
+ * SETTINGS FUNCTION: patchAll
  * ========================================================= */
-async function compressImageDataUrl(dataUrl){
-    dataUrl = String(dataUrl || '');
-    if(!/^data:image\//i.test(dataUrl)) return dataUrl;
-    if(dataUrl.length < 1200000) return dataUrl;
-    return new Promise(function(resolve){
-      var img = new Image();
-      img.onload = function(){
-        try{
-          var maxSide = 1700;
-          var w = img.naturalWidth || img.width || 0, h = img.naturalHeight || img.height || 0;
-          if(!w || !h) return resolve(dataUrl);
-          var k = Math.min(1, maxSide / Math.max(w,h));
-          var canvas = document.createElement('canvas');
-          canvas.width = Math.max(1, Math.round(w*k));
-          canvas.height = Math.max(1, Math.round(h*k));
-          var ctx = canvas.getContext('2d');
-          ctx.drawImage(img,0,0,canvas.width,canvas.height);
-          resolve(canvas.toDataURL('image/jpeg',0.82));
-        }catch(e){ resolve(dataUrl); }
-      };
-      img.onerror = function(){ resolve(dataUrl); };
-      img.src = dataUrl;
-    });
-  }
+function patchAll(){ installAdminSettingsButton(); patchDbUi(); }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: patchShieldButton
- * ========================================================= */
-function patchShieldButton(){
-    var base = window.epGenerateShieldFixed || window.generateCascadePanel;
-    if(typeof base==='function' && !base.__ep_v12_wrapped){
-      var wrapped=function(){
-        var r=base.apply(this, arguments);
-        setTimeout(function(){ normalizeCurrentEstimate(); try{ if(typeof renderMainTable==='function') renderMainTable(); }catch(e){} },60);
-        return r;
-      };
-      wrapped.__ep_v12_wrapped=true;
-      window.epGenerateShieldFixed=wrapped;
-      window.generateCascadePanel=wrapped;
-      try{ generateCascadePanel=wrapped; }catch(e){}
-    }
-    Array.prototype.forEach.call(document.querySelectorAll('button'), function(btn){
-      if((btn.textContent||'').indexOf('Сгенерировать щит')>=0) btn.onclick=window.generateCascadePanel;
-    });
-  }
-
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: collectDb
+ * SETTINGS FUNCTION: collectDb
  * ========================================================= */
 function collectDb(type){
     var out=[];
@@ -3521,7 +3189,7 @@ function collectDb(type){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: epV16GenerateCascadePanel
+ * SETTINGS FUNCTION: epV16GenerateCascadePanel
  * ========================================================= */
 function epV16GenerateCascadePanel() {
     const bBox = epGetVal('cfg-brand-box', 'Tekfor');
@@ -3665,77 +3333,60 @@ function epV16GenerateCascadePanel() {
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: isShieldDeviceV16
+ * SETTINGS FUNCTION: showDetailsV16
  * ========================================================= */
-function isShieldDeviceV16(it){
-    if(!it || it.type!=='mat') return false;
-    var n=String(it.n||''), k=String(it.dbMeta&&it.dbMeta.kind||'');
-    return /[ABCDАВСД]\s*\d{1,3}|автомат|узо|диф|реле|контактор|вводной/i.test(n) || /automatic|breaker|uzo|dif|relay|contactor/i.test(k);
+function showDetailsV16(customTitle){
+    normalizeV16();
+    try{ currentPreviewMode='details'; }catch(e){}
+    var html = (typeof getPDFHeader==='function') ? getPDFHeader(customTitle || 'ДЕТАЛИЗАЦИЯ ЩИТА') : '<h2>ДЕТАЛИЗАЦИЯ ЩИТА</h2>';
+    var f=$('pdf-filters'); if(f) f.style.display='none';
+    var items=(window.currentEstimate||[]).filter(isShieldDeviceV16);
+    html += '<table class="pdf-table"><tr><th>Что отвечает / линия</th><th>Аппарат</th><th>Назначение</th></tr>';
+    if(!items.length) html += '<tr><td colspan="3" style="text-align:center;color:var(--gray);font-weight:900;">Щит ещё не сгенерирован</td></tr>';
+    else items.forEach(function(it){
+      var lines=getAssignV16(it); if(!lines.length) lines=['назначение не указано — нажми «Сгенерировать щит» ещё раз'];
+      html += '<tr><td style="font-weight:bold;color:var(--primary);">'+lines.map(esc).join('<br>')+'</td><td>'+esc(it.n)+(Number(it.q)>1?' × '+Number(it.q):'')+'</td><td>'+esc(purposeV16(it))+'</td></tr>';
+    });
+    html += '</table>';
+    var p=$('p-cont'); if(p) p.innerHTML=html;
+    if(typeof openModal==='function') openModal('previewModal');
   }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: bindButtons
+ * SETTINGS FUNCTION: lineConfig
  * ========================================================= */
-function bindButtons(){
-    try{ Array.prototype.forEach.call(document.querySelectorAll('button'),function(btn){ if((btn.textContent||'').indexOf('Сгенерировать щит')>=0) btn.onclick=epV16GenerateCascadePanel; }); }catch(e){}
+function lineConfig(){
+    var out=[]; function e(id){ return $(id); } function ch(id){ var x=e(id); return !!(x&&x.checked); }
+    function add(n,nom,g){ out.push({name:n,nominal:nom,group:g}); }
+    function room(label,count,wet){ count=Number(count)||0; for(var i=1;i<=count;i++){ var p=count>1?label+' '+i:label; add(p+' розетки','C16',wet?'wet':'power'); add(p+' свет','C10','light'); } }
+    try{ room('Кухня',window.cfg&&cfg.kits,false); room('Ванная',window.cfg&&cfg.baths,true); room('Туалет',window.cfg&&cfg.toilets,true); room('Комната',window.cfg&&cfg.rms,false); room('Балкон',window.cfg&&cfg.bals,false); }catch(e){}
+    if(ch('c-apron')) add('Фартук кухни','C16','power'); if(ch('c-dish')) add('Посудомойка','C10','power'); if(ch('c-washer')) add('Стиралка/сушилка','C10','wet'); if(ch('c-towel')) add('Полотенцесушитель','C10','wet');
+    var acs=(window.cfg&&Number(cfg.acs))||0, fls=(window.cfg&&Number(cfg.fls))||0; for(var a=1;a<=acs;a++) add('Кондиционер '+a,'C10','climate'); for(var f=1;f<=fls;f++) add('Тёплый пол '+f,'C10','climate');
+    if(ch('c-fridge')) add('Холодильник, неотключаемая группа','C10','alwaysOn'); if(ch('c-neptun')) add('Нептун, неотключаемая группа','C10','alwaysOn'); if(ch('c-router')) add('Роутер, неотключаемая группа','C6','alwaysOn');
+    var hp=e('c-hob-power')?e('c-hob-power').value:'none'; if(hp==='6') add('Плита до 6 кВт','C25','heavy'); if(hp==='10') add('Плита до 10 кВт','C32','heavy');
+    var bp=e('c-boiler-power')?e('c-boiler-power').value:'none'; if(bp==='6') add('Бойлер до 6 кВт','C25','wet'); if(bp==='10') add('Бойлер до 10 кВт','C32','wet');
+    return out;
   }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: addBadge
- * ========================================================= */
-function addBadge(){
-    if($('ep-v17-badge')) return;
-    var d=document.createElement('div'); d.id='ep-v17-badge';
-    d.style.cssText='position:fixed;left:8px;bottom:8px;z-index:2147483647;background:#111827;color:#fff;border:2px solid #22c55e;border-radius:999px;padding:6px 10px;font:900 11px system-ui;box-shadow:0 8px 24px rgba(0,0,0,.35);opacity:.92;';
-    /* V81 disabled legacy status V17/V18/V21 */
-    document.body.appendChild(d);
-  }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: isDevice
- * ========================================================= */
-function isDevice(it){
-    var n=txt(it&&it.n), k=txt(it&&it.dbMeta&&it.dbMeta.kind), raw=txt(it&&it.epRawLabel);
-    return !!(it&&it.type==='mat' && (/автомат|узо|диф|реле|контактор|вводной/i.test(n+' '+raw) || /automatic|breaker|uzo|dif|relay|contactor|input_breaker/i.test(k) || /\b[ABCDАВСД]\s*\d{1,3}\b/i.test(n+' '+raw)));
-  }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: patchDbBulk
+ * SETTINGS FUNCTION: patchDbBulk
  * ========================================================= */
 function patchDbBulk(){
     var modal=$('settModal'); if(!modal || $('ep-v17-bulk-box')) return;
     var host=$('editor-mat-list') || $('editor-work-list'); if(!host) return;
     var box=document.createElement('div'); box.id='ep-v17-bulk-box'; box.style.cssText='margin:12px 0;padding:12px;border:2px dashed #8b5cf6;border-radius:16px;background:#faf5ff;';
-    return; /* V81 disabled legacy mass panel */
+    box.innerHTML='<b style="color:#5b21b6;display:block;margin-bottom:8px;">Массовое управление V17</b><div style="font-size:12px;color:#64748b;font-weight:800;margin-bottom:8px;">Выделение и перенос работают по галочкам в текущей открытой базе. Если галочек нет — значит открыт старый список, нажми Обновить / перезагрузить.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><input id="ep-v17-move-cat" placeholder="Категория"><input id="ep-v17-move-sub" placeholder="Подкатегория"></div><button onclick="epV17BulkMove()" style="margin-top:8px;background:#8b5cf6;color:white;">📦 Переместить выбранные</button><button onclick="epV17BulkDelete()" style="margin-top:8px;background:#ef4444;color:white;">🗑 Удалить выбранные</button>';
     host.parentNode.insertBefore(box,host);
   }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: syncActiveToMain
- * ========================================================= */
-function syncActiveToMain(src){
-    src=src||scope();
-    try{
-      window.matDB = getArr('mat',src);
-      window.workDB = getArr('work',src);
-      try{ matDB = window.matDB; workDB = window.workDB; }catch(e){}
-    }catch(e){}
-  }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: saveArr
+ * SETTINGS FUNCTION: saveArr
  * ========================================================= */
 async function saveArr(type,arr){
     var src=scope(); type=type==='work'?'work':'mat'; arr=unique(arr,type);
@@ -3751,7 +3402,7 @@ async function saveArr(type,arr){
       epV18SetStatus('upload','запись на сервер');
       try{ if(typeof db!=='undefined' && db){ await db.collection('settings').doc('global_db').set({matDB:c.matDB,workDB:c.workDB,updatedAt:new Date().toISOString()},{merge:true}); } }
       catch(e){ epV18SetStatus('error','ошибка сервера'); toast('Ошибка записи сервера: '+(e.message||e)); return false; }
-      /* V81 disabled legacy status V17/V18/V21 */
+      epV18SetStatus('ok','V18 активна'); return true;
     } else {
       if(type==='mat'){ window.EP_MY_MAT=arr; setLS(LS_MY_MAT,arr); }
       else { window.EP_MY_WORK=arr; setLS(LS_MY_WORK,arr); }
@@ -3760,7 +3411,7 @@ async function saveArr(type,arr){
       epV18SetStatus('upload','запись на сервер');
       try{ if(typeof db!=='undefined' && db && uid()){ await db.collection('user_db').doc(uid()).set({uid:uid(),masterName:(window.appUser&&(appUser.name||appUser.email))||'',matDB:getArr('mat','my'),workDB:getArr('work','my'),created:true,updatedAt:new Date().toISOString()},{merge:true}); } }
       catch(e){ toast('Локально сохранено, сервер личной базы отказал: '+(e.message||e)); }
-      /* V81 disabled legacy status V17/V18/V21 */
+      epV18SetStatus('ok','V18 активна'); return true;
     }
   }
 
@@ -3768,63 +3419,20 @@ async function saveArr(type,arr){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: ensureBadge
+ * SETTINGS FUNCTION: optionsHtml
  * ========================================================= */
-function ensureBadge(){
-    var b=$('ep-v18-status-badge');
-    if(!b){
-      b=document.createElement('div'); b.id='ep-v18-status-badge';
-      b.style.cssText='position:fixed;left:10px;bottom:12px;z-index:2147483647;border-radius:999px;padding:8px 13px;color:#fff;font-size:12px;font-weight:1000;box-shadow:0 10px 30px rgba(0,0,0,.25);border:2px solid rgba(255,255,255,.55);letter-spacing:.2px;';
-      document.body.appendChild(b);
-    }
-    return b;
-  }
+function optionsHtml(vals,placeholder){ vals=Array.from(new Set((vals||[]).map(clean).filter(Boolean))).sort(function(a,b){return a.localeCompare(b,'ru');}); return '<option value="">'+esc(placeholder||'Выбрать')+'</option>'+vals.map(function(v){return '<option value="'+esc(v)+'">'+esc(v)+'</option>';}).join(''); }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: renderMainDirect
- * ========================================================= */
-function renderMainDirect(){
-    var tb=document.querySelector('#mainTable tbody'); if(!tb) return;
-    var arr=[]; try{ arr=Array.isArray(currentEstimate)?currentEstimate:(Array.isArray(window.currentEstimate)?window.currentEstimate:[]); }catch(e){ arr=Array.isArray(window.currentEstimate)?window.currentEstimate:[]; }
-    tb.innerHTML=''; var total=0;
-    arr.forEach(function(it,idx){ var q=Number(it.q)||0, sum=(typeof fPrice==='function'?fPrice(it):(Number(it.p)||0))*q; total+=sum; tb.insertAdjacentHTML('beforeend','<tr><td class="col-name editable-name" onclick="openSwapModal('+idx+')" title="Нажмите для замены">'+esc(it.n)+'</td><td class="col-qty"><input type="number" value="'+esc(q)+'" onchange="currentEstimate['+idx+'].q=Number(this.value); window.currentEstimate=currentEstimate; renderMainTable();" style="width:50px;padding:6px;margin:0;text-align:center;"></td><td class="col-sum">'+Math.round(sum)+' P</td><td style="text-align:right;"><button onclick="currentEstimate.splice('+idx+',1); window.currentEstimate=currentEstimate; renderMainTable();" class="btn-danger" style="padding:6px;border-radius:8px;width:auto;margin:0;">✕</button></td></tr>'); });
-    var tot=$('tot-all'); if(tot) tot.innerText=total.toLocaleString('ru-RU')+' P';
-    try{ if(typeof syncDraft==='function') syncDraft(); }catch(e){}
-  }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: isShieldDevice
- * ========================================================= */
-function isShieldDevice(it){ var n=String((it&&it.n)||''); return it && it.type==='mat' && (/\b[ABCDАВСД]\s*\d{1,3}\b|автомат|узо|диф|реле|контактор|вводной/i.test(n) || /automatic|breaker|uzo|dif|relay|contactor/.test(String(it.kind||it.dbMeta&&it.dbMeta.kind||''))); }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: selectedChecks
- * ========================================================= */
-function selectedChecks(type){ return Array.prototype.slice.call(document.querySelectorAll('#settModal .ep-v18-check:checked')).filter(function(ch){ return !type || ch.dataset.type===type; }); }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: activeTypeFromUi
- * ========================================================= */
-function activeTypeFromUi(){ var m=$('editor-mat-list'), w=$('editor-work-list'); if(m && m.offsetParent!==null) return 'mat'; if(w && w.offsetParent!==null) return 'work'; return lastOpenedType||'mat'; }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: buildBulkPanel
+ * SETTINGS FUNCTION: buildBulkPanel
  * ========================================================= */
 function buildBulkPanel(){
     var arr=getArr('mat').concat(getArr('work'));
     var cats=arr.map(function(x){return x.c||'Разное';}); var subs=arr.map(function(x){return groupOf(x)||'Без группы';});
     return '<div id="ep-v18-bulk-box" style="margin:12px 0;padding:12px;border:2px dashed #16a34a;border-radius:16px;background:#f0fdf4;">'+
-      /* V81 disabled legacy mass panel line */
+      '<b style="color:#166534;display:block;margin-bottom:7px;">Массовое управление V18</b>'+ 
       '<div style="font-size:12px;color:#64748b;font-weight:800;margin-bottom:8px;">Ставь галочки слева от позиций. Перемещение идёт в выбранную существующую категорию/подкатегорию активной базы.</div>'+ 
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;"><select id="ep-v18-move-cat">'+optionsHtml(cats,'Категория')+'</select><select id="ep-v18-move-sub">'+optionsHtml(subs,'Подкатегория')+'</select></div>'+ 
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><button class="btn-info" style="margin:0;padding:10px;" onclick="epV18SelectVisible(true)">✅ Выделить видимые</button><button class="btn-vendor" style="margin:0;padding:10px;" onclick="epV18SelectVisible(false)">⬜ Снять галочки</button><button class="btn-success" style="margin:0;padding:10px;" onclick="epV18MoveSelected()">📦 Переместить выбранные</button><button class="btn-danger" style="margin:0;padding:10px;" onclick="epV18DeleteSelected()">🗑 Удалить выбранные</button></div>'+ 
@@ -3834,72 +3442,20 @@ function buildBulkPanel(){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: injectChecks
+ * SETTINGS FUNCTION: options
  * ========================================================= */
-function injectChecks(){
-    ['editor-mat-list','editor-work-list'].forEach(function(id){ var box=$(id); if(!box) return; var type=id.indexOf('work')>=0?'work':'mat'; Array.prototype.forEach.call(box.querySelectorAll('.emp-row,.mat-item'),function(row,idx){ if(row.querySelector('.ep-v18-check')) return; var price=row.querySelector('input[type="number"][data-id]'); var itemBtn=row.querySelector('[data-item]'); var did=price?price.getAttribute('data-id'):''; var dtype=price?price.getAttribute('data-type'):type; if(!did && itemBtn){ try{ var raw=decodeURIComponent(escape(atob(itemBtn.getAttribute('data-item')))); var obj=JSON.parse(raw); did=obj.id||''; dtype=itemBtn.getAttribute('data-type')||type; }catch(e){} } if(!did){ did='v18row_'+type+'_'+idx+'_'+clean(row.textContent).slice(0,40); }
-      var ch=document.createElement('input'); ch.type='checkbox'; ch.className='ep-v18-check'; ch.dataset.type=dtype||type; ch.dataset.id=did; ch.style.cssText='width:22px;height:22px;min-width:22px;accent-color:#16a34a;margin:7px 10px 0 0;'; row.insertBefore(ch,row.firstChild); }); });
+function options(vals,placeholder,current){
+    var seen={}, out=[]; (vals||[]).forEach(function(v){ v=clean(v); if(v&&!seen[v]){ seen[v]=1; out.push(v); } });
+    out.sort(function(a,b){ return a.localeCompare(b,'ru'); });
+    var h='<option value="">'+esc(placeholder)+'</option>';
+    out.forEach(function(v){ h+='<option value="'+esc(v)+'"'+(v===current?' selected':'')+'>'+esc(v)+'</option>'; });
+    return h;
   }
   
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: boot
- * ========================================================= */
-/* V81 disabled legacy status V17/V18/V21 */
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: patchButtons
- * ========================================================= */
-function patchButtons(){ try{ Array.prototype.forEach.call(document.querySelectorAll('button'),function(b){ var t=b.textContent||''; if(t.indexOf('Сгенерировать щит')>=0) b.onclick=window.epV19GenerateShield; if(t.indexOf('Детализация')>=0) b.onclick=window.epV19ShowDetails; }); }catch(e){} }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: activeMatDb
- * ========================================================= */
-function activeMatDb(){
-    var out=[];
-    try{ if(Array.isArray(window.matDB)) out=out.concat(window.matDB); }catch(e){}
-    try{ if(Array.isArray(window.EP_MY_MAT)) out=out.concat(window.EP_MY_MAT); }catch(e){}
-    try{ if(Array.isArray(window.EP_GLOBAL_MAT)) out=out.concat(window.EP_GLOBAL_MAT); }catch(e){}
-    try{ var c=JSON.parse(localStorage.getItem('ep_global_cache_force_v1')||'{}'); if(Array.isArray(c.matDB)) out=out.concat(c.matDB); }catch(e){}
-    return out;
-  }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: setStatus
- * ========================================================= */
-function setStatus(state,msg){
-    try{ if(typeof window.epV18SetStatus==='function'){ window.epV18SetStatus(state,msg); return; } }catch(e){}
-    var b=$('ep-v18-status-badge')||document.createElement('div');
-    b.id='ep-v18-status-badge';
-    b.style.cssText='position:fixed;left:10px;bottom:12px;z-index:2147483647;border-radius:999px;padding:8px 13px;color:#fff;font-size:12px;font-weight:1000;box-shadow:0 10px 30px rgba(0,0,0,.25);border:2px solid rgba(255,255,255,.55);letter-spacing:.2px;background:'+(state==='upload'?'#dc2626':state==='download'?'#2563eb':state==='error'?'#991b1b':'#16a34a')+';';
-    /* V81 disabled legacy status V17/V18/V21 */
-    if(!b.parentNode) document.body.appendChild(b);
-  }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: activeType
- * ========================================================= */
-function activeType(){
-    var m=$('editor-mat-list'), w=$('editor-work-list');
-    if(m && m.offsetParent!==null) return 'mat';
-    if(w && w.offsetParent!==null) return 'work';
-    try{ var activeBtn=Array.prototype.find.call(document.querySelectorAll('#settModal button'),function(b){ return /Материалы/.test(b.textContent||'') && /active|white|#fff/.test(b.className+' '+b.style.background); }); if(activeBtn) return 'mat'; }catch(e){}
-    return 'mat';
-  }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: fillSelectors
+ * SETTINGS FUNCTION: fillSelectors
  * ========================================================= */
 function fillSelectors(force){
     var cat=$('ep-v21-move-cat'), sub=$('ep-v21-move-sub'); if(!cat||!sub) return;
@@ -3916,11 +3472,11 @@ function fillSelectors(force){
 
 
 /* =========================================================
- * DOCUMENTS FUNCTION: panelHtml
+ * SETTINGS FUNCTION: panelHtml
  * ========================================================= */
 function panelHtml(){
     return '<div id="ep-v21-bulk-box" style="margin:12px 0;padding:12px;border:2px dashed #16a34a;border-radius:16px;background:#f0fdf4;">'+
-      /* V81 disabled legacy mass panel line */
+      '<b style="color:#166534;display:block;margin-bottom:7px;">Массовое управление V21</b>'+ 
       '<div style="font-size:12px;color:#64748b;font-weight:800;margin-bottom:8px;">Галочки ставятся слева от позиций. Категория/подкатегория выбираются из существующих и больше не закрываются сами.</div>'+ 
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">'+
         '<select id="ep-v21-move-cat" onchange="epV21UpdateSubs()"><option value="">Категория</option></select>'+ 
@@ -3934,31 +3490,5 @@ function panelHtml(){
       '</div>'+ 
     '</div>';
   }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: ensureChecks
- * ========================================================= */
-function ensureChecks(){
-    ['editor-mat-list','editor-work-list'].forEach(function(id){
-      var box=$(id); if(!box) return; var type=id.indexOf('work')>=0?'work':'mat';
-      Array.prototype.forEach.call(box.querySelectorAll('.emp-row,.mat-item'),function(row,idx){
-        var old=row.querySelector('.ep-v18-check,.ep-v21-check');
-        if(old){ old.classList.add('ep-v21-check'); return; }
-        var info=rowId(row,type,idx);
-        var ch=document.createElement('input'); ch.type='checkbox'; ch.className='ep-v21-check'; ch.dataset.type=info.type||type; ch.dataset.id=info.id;
-        ch.style.cssText='width:22px;height:22px;min-width:22px;accent-color:#16a34a;margin:7px 10px 0 0;';
-        row.insertBefore(ch,row.firstChild);
-      });
-    });
-  }
-  
-
-
-/* =========================================================
- * DOCUMENTS FUNCTION: selected
- * ========================================================= */
-function selected(){ return Array.prototype.slice.call(document.querySelectorAll('#settModal .ep-v21-check:checked, #settModal .ep-v18-check:checked')); }
   
 
