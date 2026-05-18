@@ -1,7 +1,7 @@
 /*
  * Electric PRO Refactor
- * Module: 01-visual.js
- * V39 SAFE: Visual.
+ * Module: 04-database.js
+ * V39 SAFE: Database.
  *
  * Важно:
  * - модуль пересобран безопасно;
@@ -10,12 +10,12 @@
  * - 00-core.js временно остаётся стабильным runtime.
  */
 
-console.log("01-visual.js V39 SAFE loaded");
+console.log("04-database.js V39 SAFE loaded");
 
 
 
 /* =========================================================
- * VISUAL FUNCTION: handleGoogleAuth
+ * DATABASE FUNCTION: handleGoogleAuth
  * ========================================================= */
 async function handleGoogleAuth() {
     if(!auth) return alert("Ошибка: Firebase не загружен. Проверьте интернет-соединение.");
@@ -34,42 +34,7 @@ async function handleGoogleAuth() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: checkLocalPinUser
- * ========================================================= */
-function checkLocalPinUser() {
-    let pinUser = safeGet('authUser_v31_pin', null);
-    if (pinUser) { 
-        try { appUser = JSON.parse(pinUser); finishLoginSetup(); } catch(e){ document.getElementById('authModal').style.display='flex'; } 
-    } else { document.getElementById('authModal').style.display='flex'; }
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: showLoader
- * ========================================================= */
-function showLoader(text, icon = '☁️') { document.getElementById('loader-icon').innerText = icon; document.getElementById('loader-text').innerText = text; document.getElementById('global-loader').classList.add('show'); }
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: hideLoader
- * ========================================================= */
-function hideLoader() { document.getElementById('global-loader').classList.remove('show'); }
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: showToast
- * ========================================================= */
-function showToast(msg) { let t = document.getElementById('toast'); t.innerText = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); }
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: loginWithPin
+ * DATABASE FUNCTION: loginWithPin
  * ========================================================= */
 async function loginWithPin() {
     let phone = document.getElementById('auth-phone').value.trim();
@@ -103,19 +68,7 @@ async function loginWithPin() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: confirmLogout
- * ========================================================= */
-function confirmLogout() { 
-    if(auth) auth.signOut(); 
-    safeSet('authUser_v31_pin', ''); 
-    window.location.reload(); 
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: finishLoginSetup
+ * DATABASE FUNCTION: finishLoginSetup
  * ========================================================= */
 async function finishLoginSetup() {
     document.getElementById('authModal').style.display = 'none';
@@ -166,7 +119,7 @@ async function finishLoginSetup() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: openModal
+ * DATABASE FUNCTION: openModal
  * ========================================================= */
 function openModal(id) { 
     if(id === 'custModal') loadCustHistoryOptions(); 
@@ -180,49 +133,7 @@ function openModal(id) {
 
 
 /* =========================================================
- * VISUAL FUNCTION: closeModal
- * ========================================================= */
-function closeModal(id) { document.getElementById(id).style.display='none'; }
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: toggleMenu
- * ========================================================= */
-function toggleMenu() { document.getElementById('burger-menu').classList.toggle('open'); document.getElementById('burger-overlay').classList.toggle('open'); }
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: changeTheme
- * ========================================================= */
-function changeTheme(theme) { document.documentElement.setAttribute('data-theme', theme); safeSet('theme_v31', theme); }
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: updateMasterBadge
- * ========================================================= */
-function updateMasterBadge() { document.getElementById('master-badge').innerHTML = `${appUser?.name || "Мастер"}<br>Объект: ${cust.name || 'Не выбран'}`; }
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: updateCoeffs
- * ========================================================= */
-function updateCoeffs() {
-    coeffs.mat = Number(document.getElementById('m-coeff').value);
-    coeffs.work = Number(document.getElementById('w-coeff').value);
-    safeSet('coeffs_v31', JSON.stringify(coeffs));
-    renderMainTable();
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: saveApiKey
+ * DATABASE FUNCTION: saveApiKey
  * ========================================================= */
 async function saveApiKey(val) { 
     GEMINI_API_KEY = val.trim(); safeSet('gemini_key_v31', GEMINI_API_KEY);
@@ -233,21 +144,7 @@ async function saveApiKey(val) {
 
 
 /* =========================================================
- * VISUAL FUNCTION: saveQRs
- * ========================================================= */
-function saveQRs() { 
-    safeSet('qr_tg_v31', document.getElementById('qr-tg').value); 
-    safeSet('qr_wa_v31', document.getElementById('qr-wa').value); 
-    safeSet('qr_vk_v31', document.getElementById('qr-vk').value);
-    safeSet('ai_shops_v31', document.getElementById('ai-shops').value); 
-    showToast("📱 Настройки сохранены"); 
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: openSwapModal
+ * DATABASE FUNCTION: openSwapModal
  * ========================================================= */
 function openSwapModal(idx) {
     swapTargetIdx = idx;
@@ -265,7 +162,7 @@ function openSwapModal(idx) {
 
 
 /* =========================================================
- * VISUAL FUNCTION: applySwap
+ * DATABASE FUNCTION: applySwap
  * ========================================================= */
 function applySwap() {
     if(swapTargetIdx < 0) return;
@@ -288,35 +185,14 @@ function applySwap() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderMainTable
+ * DATABASE FUNCTION: syncDraft
  * ========================================================= */
-function renderMainTable() {
-    const tb = document.querySelector("#mainTable tbody"); tb.innerHTML = ""; let total = 0;
-    currentEstimate.forEach((it, idx) => {
-        let sum = fPrice(it) * it.q; total += sum;
-        tb.innerHTML += `<tr>
-            <td class="col-name editable-name" onclick="openSwapModal(${idx})" title="Нажмите для замены">${it.n}</td>
-            <td class="col-qty"><input type="number" value="${it.q}" onchange="currentEstimate[${idx}].q=Number(this.value); renderMainTable();" style="width:50px; padding:6px; margin:0; text-align:center;"></td>
-            <td class="col-sum">${sum} P</td>
-            <td style="text-align:right;"><button onclick="currentEstimate.splice(${idx},1);renderMainTable();" class="btn-danger" style="padding:6px; border-radius:8px; width:auto; margin:0;">✕</button></td>
-        </tr>`;
-    });
-    document.getElementById('tot-all').innerText = total.toLocaleString() + ' P'; syncDraft();
-}
-
+async function syncDraft() { try { safeSet('est_v31', JSON.stringify(currentEstimate)); if(db && appUser && appUser.uid) await db.collection('drafts').doc(appUser.uid).set({ estimate: currentEstimate, cust: cust, timestamp: new Date().toISOString() }); } catch(e){} }
 
 
 
 /* =========================================================
- * VISUAL FUNCTION: clearCurrentEstimate
- * ========================================================= */
-async function clearCurrentEstimate() { let c = await window.customConfirm("Очистка", "Очистить смету?"); if(c){ currentEstimate=[]; renderMainTable(); } }
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: openMatCatalog
+ * DATABASE FUNCTION: openMatCatalog
  * ========================================================= */
 function openMatCatalog() { 
     let cats = {}; matDB.forEach(m => { let c = m.c || "ОБЩЕЕ"; if(!cats[c]) cats[c] = []; cats[c].push(m); }); 
@@ -333,7 +209,7 @@ function openMatCatalog() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: openWorkCatalog
+ * DATABASE FUNCTION: openWorkCatalog
  * ========================================================= */
 function openWorkCatalog() { 
     let cats = {}; workDB.forEach(w => { let c = w.c || "ОБЩЕЕ"; if(!cats[c]) cats[c] = []; cats[c].push(w); });
@@ -350,7 +226,7 @@ function openWorkCatalog() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: promptAdd
+ * DATABASE FUNCTION: promptAdd
  * ========================================================= */
 function promptAdd(id, type) { 
     let dbArr = (type==='mat'?matDB:workDB); let item = dbArr.find(x => String(x.id) === String(id)); 
@@ -363,76 +239,7 @@ function promptAdd(id, type) {
 
 
 /* =========================================================
- * VISUAL FUNCTION: confirmQtyAdd
- * ========================================================= */
-function confirmQtyAdd() { 
-    let q = Number(document.getElementById('qty-input').value); 
-    if(q > 0) { addAuto([{...pendingAdd.item, q: q, type: pendingAdd.type}], 'man_'+Date.now()); } 
-    closeModal('qtyPromptModal'); showToast("Добавлено!");
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: addAuto
- * ========================================================= */
-function addAuto(items, tag) {
-    currentEstimate = currentEstimate.filter(it => it.tag !== tag);
-    const map = {};
-    const out = [];
-    (items || []).forEach(src => {
-        if (!src) return;
-        const it = Object.assign({}, src);
-        it.tag = tag;
-        const key = [it.tag || '', it.type || '', it.n || '', Number(it.p) || 0, it.u || 'шт'].join('|');
-        let rec = map[key];
-        if (!rec) {
-            rec = Object.assign({}, it, { q: 0 });
-            map[key] = rec;
-            out.push(rec);
-        }
-        rec.q += Number(it.q) || 0;
-        epV15MergeAssignments(rec, it);
-    });
-    currentEstimate = currentEstimate.concat(out);
-    renderMainTable();
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: modM
- * ========================================================= */
-function modM(t, v) { 
-    let currentP = st_soc + st_sw + st_pass + st_cross + st_tv + st_tpol;
-    if (v > 0 && currentP >= 6) return showToast("Максимум 6 постов в одной рамке!");
-    if (v < 0 && window['st_'+t] <= 0) return;
-    
-    window['st_'+t] += v; 
-    upUI(); 
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: addGrp
- * ========================================================= */
-function addGrp() { 
-    let totalMechs = st_soc + st_sw + st_pass + st_cross + st_tv + st_tpol;
-    if(totalMechs === 0) return showToast("Сначала добавьте механизмы!");
-    
-    pool.push({ p:st_p, h:st_h, q:st_q, soc:st_soc, sw:st_sw, pass:st_pass, cross:st_cross, tv:st_tv, tpol:st_tpol, route: document.getElementById('g-routing').value, podr: st_podr }); 
-    rfPool(); 
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: applyPoolToEstimate
+ * DATABASE FUNCTION: applyPoolToEstimate
  * ========================================================= */
 function applyPoolToEstimate() {
     if(!pool.length) return showToast("❌ Пул пуст!");
@@ -570,7 +377,25 @@ function applyPoolToEstimate() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: addExtraToShieldConfig
+ * DATABASE FUNCTION: populateShieldExtras
+ * ========================================================= */
+function populateShieldExtras() {
+    let sel = document.getElementById('cfg-extra-db');
+    if(!sel) return;
+    let html = '<option value="">-- Выбрать из базы --</option>';
+    matDB.forEach(m => {
+        if(m.c === 'Автоматика' || m.c === 'Щитовое') {
+            html += `<option value="${m.id}">${m.n} (${m.p} ₽)</option>`;
+        }
+    });
+    sel.innerHTML = html;
+}
+
+
+
+
+/* =========================================================
+ * DATABASE FUNCTION: addExtraToShieldConfig
  * ========================================================= */
 function addExtraToShieldConfig() {
     let sel = document.getElementById('cfg-extra-db');
@@ -587,18 +412,118 @@ function addExtraToShieldConfig() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderShieldExtras
+ * DATABASE FUNCTION: epAllDbItems
  * ========================================================= */
-function renderShieldExtras() {
-    document.getElementById('shield-extras-list').innerHTML = currentShieldExtras.map((ex, i) =>
-        `<div style="display:flex; justify-content:space-between; font-size:11px; border-bottom:1px dashed rgba(0,0,0,0.1); padding:4px;"><span>${ex.n} <b style="color:var(--primary);">(x${ex.q})</b></span><span style="color:red; font-size:16px; font-weight:bold; cursor:pointer;" onclick="currentShieldExtras.splice(${i},1); renderShieldExtras();">✕</span></div>`
-    ).join('');
+function epAllDbItems(type) {
+    const local = type === 'work' ? (workDB || []) : (matDB || []);
+    const user = type === 'work' ? (userWorkDB || []) : (userMatDB || []);
+    return local.concat(user).filter(Boolean);
 }
 
 
 
+
 /* =========================================================
- * VISUAL FUNCTION: generateCascadePanel
+ * DATABASE FUNCTION: epFindDbItem
+ * ========================================================= */
+function epFindDbItem(type, words) {
+    const arr = epAllDbItems(type);
+    const searchWords = (words || []).map(epNormText).filter(Boolean);
+    if (!searchWords.length) return null;
+    let best = null;
+    let bestScore = -1;
+    arr.forEach(item => {
+        const blob = epNormText([item.c, item.g, item.sc, item.n, item.brand, item.kind, item.nominal, item.curve, item.wallType, item.modules].join(' '));
+        let score = 0;
+        searchWords.forEach(w => { if (blob.includes(w)) score++; });
+        if (score > bestScore) { best = item; bestScore = score; }
+    });
+    return bestScore >= Math.max(1, Math.ceil(searchWords.length * 0.55)) ? best : null;
+}
+
+
+
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epV15MergeAssignments
+ * ========================================================= */
+function epV15MergeAssignments(dst, src) {
+    const vals = [];
+    [src && src.epAssignment, src && src.dbMeta && src.dbMeta.assignment].forEach(v => { if(v) vals.push(v); });
+    if (Array.isArray(src && src.epAssignments)) vals.push(...src.epAssignments);
+    if (Array.isArray(src && src.epMergedDetails)) vals.push(...src.epMergedDetails);
+    if (!dst.epAssignments) dst.epAssignments = [];
+    if (!dst.epMergedDetails) dst.epMergedDetails = [];
+    vals.map(v => String(v || '').trim()).filter(Boolean).forEach(v => {
+        if (v && !/^(позиция щита|назначение не указано)$/i.test(v) && !dst.epAssignments.includes(v)) dst.epAssignments.push(v);
+        if (v && !/^(позиция щита|назначение не указано)$/i.test(v) && !dst.epMergedDetails.includes(v)) dst.epMergedDetails.push(v);
+    });
+}
+
+
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epMat
+ * ========================================================= */
+function epMat(label, q, fallbackPrice, words, meta) {
+    const m = meta || {};
+    const found = epFindDbItem('mat', words || [label]);
+    const name = epV15DisplayMaterialName(found, label, Object.assign({}, m, { rawLabel: label, brand: m.brand || epGetVal('cfg-brand-auto', 'IEK') }));
+    const out = {
+        n: found ? name : `⚠️ ${name} [${m.category || 'Материалы'}${m.subcategory ? ' → ' + m.subcategory : ''}] — добавить в БД`,
+        q: q,
+        p: found ? (Number(found.p) || Number(fallbackPrice) || 0) : (Number(fallbackPrice) || 0),
+        u: (found && found.u) || m.unit || 'шт',
+        type: 'mat',
+        sourceId: found && found.id ? found.id : null,
+        needDb: !found,
+        dbMeta: Object.assign({}, m, { rawLabel: label, brand: m.brand || epGetVal('cfg-brand-auto', 'IEK'), foundName: found && found.n ? found.n : '' }),
+        epRawLabel: label
+    };
+    if (m.assignment) { out.epAssignment = m.assignment; out.epAssignments = [m.assignment]; out.epMergedDetails = [m.assignment]; }
+    return out;
+}
+
+
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epWork
+ * ========================================================= */
+function epWork(label, q, price, words, meta) {
+    const m = meta || {};
+    const found = epFindDbItem('work', words || [label]);
+    let name = label;
+    if (found && found.n) {
+        const bad = (/установка\s+бп\s+в\s+щит/i.test(found.n) && /установка\s+щит/i.test(label)) ||
+                    (/^\s*(бетон|кирпич|панелька|мягкий)/i.test(found.n) && /штроб|ниша/i.test(label));
+        name = bad ? label : found.n;
+    }
+    if (/штроб/i.test(label) && /100\s*[×xх]\s*50/i.test(label)) name = label.replace(/ВВОДНАЯ\s*/i, '').replace(/\s+/g,' ').trim();
+    const out = {
+        n: name,
+        q: q,
+        p: found ? (Number(found.p) || Number(price) || 0) : (Number(price) || 0),
+        u: (found && found.u) || m.unit || 'шт',
+        type: 'work',
+        sourceId: found && found.id ? found.id : null,
+        logicPrice: !found,
+        dbMeta: Object.assign({}, m, { rawLabel: label, foundName: found && found.n ? found.n : '' }),
+        epRawLabel: label
+    };
+    if (m.category) out.c = m.category;
+    if (m.subcategory) { out.g = m.subcategory; out.sc = m.subcategory; out.subcategory = m.subcategory; }
+    if (m.assignment) { out.epAssignment = m.assignment; out.epAssignments = [m.assignment]; out.epMergedDetails = [m.assignment]; }
+    return out;
+}
+
+
+
+
+/* =========================================================
+ * DATABASE FUNCTION: generateCascadePanel
  * ========================================================= */
 function generateCascadePanel() {
     const bBox = epGetVal('cfg-brand-box', 'Tekfor');
@@ -744,101 +669,21 @@ function generateCascadePanel() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: runAiCheck
+ * DATABASE FUNCTION: work
  * ========================================================= */
-async function runAiCheck() { 
-    if(!GEMINI_API_KEY) return showToast("❌ Нужен ключ ИИ в настройках");
-    showLoader("ИИ анализирует...", "🤖");
-    try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-        const estNames = currentEstimate.map(i => i.n).join(", ");
-        const promptText = `Я электрик. Смета: ${estNames}. Найди логические ошибки (забыл крепеж, рамки, УЗО). Верни ТОЛЬКО JSON массив: [{"reason": "Объяснение", "suggestedName": "Название из стандартных материалов"}]. Если всё идеально, верни пустой массив [].`;
-        const payload = { contents: [{ parts: [{text: promptText }] }] };
-        const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-        const data = await response.json(); hideLoader();
-        if(data.error) throw new Error(data.error.message);
-        let aiText = data.candidates[0].content.parts[0].text.replace(/```[a-z]*\n?/g, '').replace(/```/g, '').trim();
-        const suggestions = JSON.parse(aiText);
-        if (suggestions.length === 0) return showToast("✨ Всё идеально! Смета полная.");
-        document.getElementById('ai-modal-title').innerText = "✨ ИИ-Аналитика";
-        document.getElementById('ai-suggestions').innerHTML = suggestions.map(s => `<div style="background:var(--bg); padding: 12px; border-radius: 10px; margin-bottom:10px; border-left:4px solid var(--ai);"><div style="font-size: 12px; font-weight:bold; margin-bottom:8px;">${s.reason}</div><div style="display:flex; justify-content:space-between; align-items:center;"><span style="font-size:13px; color:var(--primary); font-weight:bold;">${s.suggestedName}</span><button onclick="addAuto([{n:'${s.suggestedName}', q:1, p:0, type:'mat'}], 'ai_add'); closeModal('aiModal');" style="background:var(--ai); padding:6px 12px; font-size:11px; color:white; border:none; border-radius:6px; width:auto; margin:0;">+ Добавить</button></div></div>`).join("");
-        openModal('aiModal');
-    } catch(e) { hideLoader(); showToast("❌ Сбой ИИ: Проверьте ключ"); }
-}
+function work(label, q, price, words, meta, assignment) {
+        meta = Object.assign({}, meta || {});
+        if (assignment) meta.assignment = assignment;
+        const it = epWork(label, q, price, words, meta);
+        if (assignment) { it.epAssignment = assignment; it.epAssignments = [assignment]; it.epMergedDetails = [assignment]; }
+        return it;
+    }
 
-
+    
 
 
 /* =========================================================
- * VISUAL FUNCTION: aiSupply
- * ========================================================= */
-async function aiSupply() {
-    if(!GEMINI_API_KEY) return showToast("❌ Нужен ключ ИИ");
-    showLoader("ИИ формирует закупку...", "🤖");
-    try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-        const mats = currentEstimate.filter(i=>i.type==='mat').map(i=>`${i.n} - ${i.q}`).join(", ");
-        const promptText = `Смета материалов: ${mats}. Раздели их на логичные категории для удобной закупки в магазине (Кабели, Автоматика, Черновые и т.д.). Выведи в чистом HTML формате (используй <h3>, <ul>, <li>, <b>).`;
-        const payload = { contents: [{ parts: [{text: promptText }] }] };
-        const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-        const data = await response.json(); hideLoader();
-        let aiText = data.candidates[0].content.parts[0].text.replace(/```[a-z]*\n?/g, '').replace(/```/g, '').trim();
-        document.getElementById('ai-modal-title').innerText = "📦 ИИ-Снабженец";
-        document.getElementById('ai-suggestions').innerHTML = `<div style="font-size:13px; line-height:1.5;">${aiText}</div>`;
-        openModal('aiModal');
-    } catch(e) { hideLoader(); showToast("❌ Сбой ИИ"); }
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: aiPueHelper
- * ========================================================= */
-async function aiPueHelper() { 
-    if(!GEMINI_API_KEY) return showToast("❌ Нужен ключ ИИ");
-    showLoader("ИИ думает...", "🤖");
-    try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-        const promptText = `Смета: ${currentEstimate.map(i=>i.n).join(", ")}. Какие нормы ПУЭ нужны? Напиши кратко в HTML (без markdown, используй теги <p>, <ul>, <b>).`;
-        const payload = { contents: [{ parts: [{text: promptText }] }] };
-        const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-        const data = await response.json(); hideLoader();
-        let aiText = data.candidates[0].content.parts[0].text.replace(/```[a-z]*\n?/g, '').replace(/```/g, '').trim();
-        document.getElementById('ai-modal-title').innerText = "📚 ПУЭ Справка";
-        document.getElementById('ai-suggestions').innerHTML = `<div style="font-size:13px; line-height:1.5;">${aiText}</div>`;
-        openModal('aiModal');
-    } catch(e) { hideLoader(); showToast("❌ Сбой ИИ"); }
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: compareShopsAI
- * ========================================================= */
-async function compareShopsAI() {
-    if(!GEMINI_API_KEY) return showToast("❌ Нужен ключ ИИ");
-    showLoader("Сравнение цен...", "🤖");
-    try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-        let shops = document.getElementById('ai-shops').value || "Лемана ПРО, Петрович";
-        const promptText = `Материалы: ${currentEstimate.filter(i=>i.type==='mat').map(i=>i.n).join(", ")}. Создай HTML таблицу (class="pdf-table") с МАКСИМАЛЬНЫМИ (самыми высокими) розничными ценами ГОСТ в магазинах: ${shops}. Верни только HTML.`;
-        const payload = { contents: [{ parts: [{text: promptText }] }] };
-        const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-        const data = await response.json(); hideLoader();
-        let aiText = data.candidates[0].content.parts[0].text.replace(/```[a-z]*\n?/g, '').replace(/```/g, '').trim();
-        document.getElementById('ai-modal-title').innerText = "🛒 Макс. Цены ГОСТ";
-        document.getElementById('ai-suggestions').innerHTML = `<div style="overflow-x:auto;">${aiText}</div>`;
-        openModal('aiModal');
-    } catch(e) { hideLoader(); showToast("❌ Сбой ИИ"); }
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: showPreview
+ * DATABASE FUNCTION: showPreview
  * ========================================================= */
 function showPreview(mode, isActOverride = false, customTitle = null) { 
     currentPreviewMode = mode;
@@ -954,7 +799,30 @@ function showPreview(mode, isActOverride = false, customTitle = null) {
 
 
 /* =========================================================
- * VISUAL FUNCTION: deleteAct
+ * DATABASE FUNCTION: printAct
+ * ========================================================= */
+function printAct() {
+    if(!currentCardId) return;
+    let obj = hDB.find(x => x.id === currentCardId);
+    if(!obj) return;
+    
+    let tempEstimate = currentEstimate;
+    let tempCust = cust;
+    
+    currentEstimate = obj.estimate || [];
+    cust = { name: obj.name, addr: obj.addr, phone: obj.phone };
+    
+    showPreview('client', true, 'АКТ ВЫПОЛНЕННЫХ РАБОТ');
+    
+    currentEstimate = tempEstimate;
+    cust = tempCust;
+}
+
+
+
+
+/* =========================================================
+ * DATABASE FUNCTION: deleteAct
  * ========================================================= */
 async function deleteAct() {
     if(!currentCardId) return;
@@ -976,89 +844,38 @@ async function deleteAct() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: saveCust
+ * DATABASE FUNCTION: togglePay
  * ========================================================= */
-function saveCust() { 
-    cust.name = document.getElementById('c-name').value; 
-    cust.addr = document.getElementById('c-addr').value;
-    cust.ceil = document.getElementById('c-ceil').value;
-    cust.phone = document.getElementById('c-phone').value;
-    safeSet('cust_v31', JSON.stringify(cust)); 
-    closeModal('custModal'); updateMasterBadge(); 
+function togglePay(field) {
+    let obj = hDB.find(x => x.id === currentCardId);
+    if(obj) {
+        if(!obj.payments) obj.payments = {};
+        obj.payments[field] = document.getElementById('pay-' + field).checked;
+        safeSet('h_v31', JSON.stringify(hDB));
+        if(db) db.collection('history').doc(String(obj.id)).update({ payments: obj.payments }).catch(()=>{});
+    }
 }
 
 
 
 /* =========================================================
- * VISUAL FUNCTION: saveLogic
+ * DATABASE FUNCTION: updatePayPrepay
  * ========================================================= */
-function saveLogic() { 
-    appLogic.priceSoc = Number(document.getElementById('logic-price-soc').value) || 500;
-    appLogic.priceShield = Number(document.getElementById('logic-price-shield').value) || 500;
-    appLogic.priceDrill = Number(document.getElementById('logic-price-drill').value) || 600;
-    appLogic.priceShtroba = Number(document.getElementById('logic-price-shtroba').value) || 550;
-    appLogic.priceCabCeil = Number(document.getElementById('logic-price-cab-ceil').value) || 120;
-
-    appLogic.shieldInstallPrice = Number(document.getElementById('logic-shield-install').value) || 2500;
-    appLogic.shieldInputConnectPrice = Number(document.getElementById('logic-shield-input-connect').value) || 1500;
-    appLogic.shieldTestLinePrice = Number(document.getElementById('logic-shield-test-line').value) || 150;
-    appLogic.shieldMarkLinePrice = Number(document.getElementById('logic-shield-mark-line').value) || 100;
-    appLogic.shieldSchemePrice = Number(document.getElementById('logic-shield-scheme').value) || 4000;
-    appLogic.shieldNichePerModule = Number(document.getElementById('logic-shield-niche-module').value) || 400;
-    appLogic.shieldInputGroovePrice = Number(document.getElementById('logic-shield-input-groove').value) || 1500;
-    
-    appLogic.socketsPerJb = Number(document.getElementById('logic-soc-jb').value) || 3;
-    appLogic.connPerSocJb = Number(document.getElementById('logic-conn-soc').value) || 3;
-    appLogic.connPerSwJb = Number(document.getElementById('logic-conn-sw').value) || 3;
-    appLogic.connPerPassJb = Number(document.getElementById('logic-conn-pass').value) || 4;
-
-    safeSet('appLogic_v31', JSON.stringify(appLogic));
-    showToast('Логика сохранена!'); closeModal('logicModal'); 
-}
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: renderLogicUI
- * ========================================================= */
-function renderLogicUI() { 
-    document.getElementById('logic-price-soc').value = appLogic.priceSoc || 500; 
-    document.getElementById('logic-price-shield').value = appLogic.priceShield || 500; 
-    document.getElementById('logic-price-drill').value = appLogic.priceDrill || 600; 
-    document.getElementById('logic-price-shtroba').value = appLogic.priceShtroba || 550; 
-    document.getElementById('logic-price-cab-ceil').value = appLogic.priceCabCeil || 120; 
-
-    document.getElementById('logic-shield-install').value = appLogic.shieldInstallPrice || 2500;
-    document.getElementById('logic-shield-input-connect').value = appLogic.shieldInputConnectPrice || 1500;
-    document.getElementById('logic-shield-test-line').value = appLogic.shieldTestLinePrice || 150;
-    document.getElementById('logic-shield-mark-line').value = appLogic.shieldMarkLinePrice || 100;
-    document.getElementById('logic-shield-scheme').value = appLogic.shieldSchemePrice || 4000;
-    document.getElementById('logic-shield-niche-module').value = appLogic.shieldNichePerModule || 400;
-    document.getElementById('logic-shield-input-groove').value = appLogic.shieldInputGroovePrice || 1500;
-
-    document.getElementById('logic-soc-jb').value = appLogic.socketsPerJb || 3; 
-    document.getElementById('logic-conn-soc').value = appLogic.connPerSocJb || 3; 
-    document.getElementById('logic-conn-sw').value = appLogic.connPerSwJb || 3; 
-    document.getElementById('logic-conn-pass').value = appLogic.connPerPassJb || 4; 
+function updatePayPrepay(val) {
+    let obj = hDB.find(x => x.id === currentCardId);
+    if(obj) {
+        if(!obj.payments) obj.payments = {};
+        obj.payments.prepay = Number(val) || 0;
+        safeSet('h_v31', JSON.stringify(hDB));
+        if(db) db.collection('history').doc(String(obj.id)).update({ payments: obj.payments }).catch(()=>{});
+    }
 }
 
 
 
 
-
 /* =========================================================
- * VISUAL FUNCTION: openRecalcModal
- * ========================================================= */
-function openRecalcModal() { 
-    globalRecalcCab = 0; globalRecalcSht = 0;
-    currentEstimate.forEach(it => { let nameLower = it.n.toLowerCase(); if (nameLower.includes('ввг') || nameLower.includes('bbг') || nameLower.includes('провод') || nameLower.includes('кабель')) globalRecalcCab += Number(it.q); if (nameLower.includes('штроб') && !nameLower.includes('вводная')) globalRecalcSht += Number(it.q); }); 
-    document.getElementById('r-cab').innerText = globalRecalcCab + ' м'; document.getElementById('r-sht').innerText = globalRecalcSht + ' м'; document.getElementById('r-ceil-input').value = 0; updateRecalcUI(); openModal('recalcModal'); 
-}
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: doRecalculate
+ * DATABASE FUNCTION: doRecalculate
  * ========================================================= */
 function doRecalculate() {
     let ceilCab = Number(document.getElementById('r-ceil-input').value) || 0; let floorCab = Math.max(0, globalRecalcCab - ceilCab - globalRecalcSht);
@@ -1087,7 +904,7 @@ function doRecalculate() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderChart
+ * DATABASE FUNCTION: renderChart
  * ========================================================= */
 function renderChart() {
     let ctxEl = document.getElementById('buhChart');
@@ -1130,7 +947,22 @@ function renderChart() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: saveHist
+ * DATABASE FUNCTION: updateBuhUI
+ * ========================================================= */
+function updateBuhUI() {
+    let sumW = 0, sumM = 0, matBase = 0, workBase = 0;
+    currentEstimate.forEach(it => { let price = fPrice(it); if(it.type==='work') { sumW += price * it.q; workBase += (it.p||0) * it.q; } else { sumM += price * it.q; matBase += (it.p||0) * it.q; } });
+    let disc = Number(document.getElementById('b-discount').value) || 0, prep = Number(document.getElementById('b-prepay').value) || 0;
+    document.getElementById('b-work').innerText = sumW + ' P'; document.getElementById('b-mat').innerText = sumM + ' P'; 
+    document.getElementById('p-total').innerText = (workBase + (sumM - matBase)) + ' P'; 
+    document.getElementById('b-final').innerText = (sumW + sumM - disc - prep) + ' P';
+}
+
+
+
+
+/* =========================================================
+ * DATABASE FUNCTION: saveHist
  * ========================================================= */
 async function saveHist() {
     const finalTotal = parseInt(document.getElementById('b-final').innerText) || 0;
@@ -1144,7 +976,18 @@ async function saveHist() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: openObjCard
+ * DATABASE FUNCTION: updateHistList
+ * ========================================================= */
+function updateHistList() {
+    let viewHDB = appUser.role === 'admin' ? hDB : hDB.filter(h => h.masterUid === appUser.uid);
+    document.getElementById('h-stat').innerHTML = viewHDB.map((h, i) => `<div style="background:rgba(255,255,255,0.6); padding:10px; border-radius:10px; border:1px solid var(--border); margin-bottom:8px; cursor:pointer;" onclick="openObjCard(${h.id})"><div style="display:flex; justify-content:space-between; margin-bottom:6px;"><b style="color:var(--text); font-size:13px;">${h.name || 'Без имени'}</b><b style="color:var(--primary);">${h.total} P</b></div><div style="font-size:10px; color:var(--gray);">Дата: ${h.date} ${appUser.role === 'admin' ? `<br><span style="color:var(--orange);">Мастер: ${h.masterName}</span>` : ''}</div></div>`).join("");
+}
+
+
+
+
+/* =========================================================
+ * DATABASE FUNCTION: openObjCard
  * ========================================================= */
 function openObjCard(id) {
     closeModal('buhModal'); currentCardId = id; const obj = hDB.find(x => x.id === id); if(!obj) return; 
@@ -1194,15 +1037,7 @@ function openObjCard(id) {
 
 
 /* =========================================================
- * VISUAL FUNCTION: closeObjCardAndReturn
- * ========================================================= */
-function closeObjCardAndReturn() { closeModal('objCardModal'); openModal('buhModal'); }
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: addExtraWork
+ * DATABASE FUNCTION: addExtraWork
  * ========================================================= */
 async function addExtraWork() { 
     const n = document.getElementById('extra-work-name').value.trim(); const p = Number(document.getElementById('extra-work-price').value); 
@@ -1218,7 +1053,7 @@ async function addExtraWork() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: switchDbTab
+ * DATABASE FUNCTION: switchDbTab
  * ========================================================= */
 function switchDbTab(tab) { 
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active')); 
@@ -1231,7 +1066,7 @@ function switchDbTab(tab) {
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderDbEditors
+ * DATABASE FUNCTION: renderDbEditors
  * ========================================================= */
 function renderDbEditors() {
     let catsM = [...new Set(matDB.map(m=>m.c || 'Разное'))];
@@ -1267,7 +1102,7 @@ function renderDbEditors() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: addDbItem
+ * DATABASE FUNCTION: addDbItem
  * ========================================================= */
 async function addDbItem() {
     if(appUser.role !== 'admin') return showToast("Только админ может добавлять");
@@ -1293,7 +1128,7 @@ async function addDbItem() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: requestPriceChange
+ * DATABASE FUNCTION: requestPriceChange
  * ========================================================= */
 async function requestPriceChange(type, id, newPrice) { 
     newPrice = Number(newPrice); 
@@ -1309,35 +1144,52 @@ async function requestPriceChange(type, id, newPrice) {
 
 
 /* =========================================================
- * VISUAL FUNCTION: approveUser
+ * DATABASE FUNCTION: listenForApprovals
  * ========================================================= */
-async function approveUser(uid) { try { await db.collection('users').doc(uid).update({ isApproved: true }); showToast("Одобрено!"); } catch(e){} }
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: openAdminDraftView
- * ========================================================= */
-function openAdminDraftView(uid) {
-    let draft = adminDraftsCache.find(d => d.uid === uid);
-    if(!draft) return;
-    let html = `<h3 style="margin-top:0; color:var(--primary);">${draft.masterName}</h3>`;
-    html += `<p style="font-size:12px; color:var(--gray); margin-bottom:15px;">Объект: ${draft.cust?.name || 'Не указан'} (${draft.cust?.addr || 'Нет адреса'})</p>`;
-    html += `<table class="pdf-table" style="width:100%;">`;
-    (draft.estimate || []).forEach(it => {
-        html += `<tr><td>${it.n}</td><td style="text-align:center;">x${it.q}</td><td style="text-align:right; font-weight:bold;">${fPrice(it) * it.q} ₽</td></tr>`;
-    });
-    html += `</table><h3 style="text-align:right; color:var(--primary);">Итого: ${draft.total} ₽</h3>`;
-    document.getElementById('admin-draft-content').innerHTML = html;
-    openModal('adminDraftModal');
+function listenForApprovals() {
+    if(!db) return;
+    try {
+        db.collection('users').where('isApproved', '==', false).onSnapshot(snap => {
+            const container = document.getElementById('admin-approval-list'); container.innerHTML = '';
+            if(snap.empty) { container.innerHTML = "<span style='font-size:11px; color:gray;'>Новых заявок нет</span>"; return; }
+            snap.forEach(doc => { 
+                const u = doc.data(); 
+                container.innerHTML += `<div class="emp-row" style="flex-wrap: wrap; gap: 5px;"><span><b>${u.name}</b><br><span style="font-size:10px;">${u.phone || u.email}</span></span><button class="btn-success" onclick="approveUser('${doc.id}')" style="width:auto; margin:0; padding:6px 10px;">Одобрить</button></div>`; 
+            });
+        });
+    } catch(e) { console.error("Listen approvals error", e); }
 }
 
 
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderAdminUsers
+ * DATABASE FUNCTION: loadMasterDrafts
+ * ========================================================= */
+async function loadMasterDrafts() {
+    if(!db || appUser.role !== 'admin') return;
+    try {
+        const snap = await db.collection('drafts').get(); 
+        const usersSnap = await db.collection('users').get();
+        let users = usersSnap.docs.map(d => ({id: d.id, ...d.data()})); 
+        adminDraftsCache = [];
+        let draftsHtml = '';
+        snap.forEach(doc => {
+            let data = doc.data(); let master = users.find(u => u.id === doc.id); let mName = master ? master.name : 'Неизвестный мастер'; let total = 0;
+            if(data.estimate) { data.estimate.forEach(it => { total += fPrice(it) * it.q; }); }
+            data.masterName = mName; data.uid = doc.id; data.total = total;
+            adminDraftsCache.push(data);
+            draftsHtml += `<div class="emp-row" style="flex-direction:column; align-items:flex-start; cursor:pointer;" onclick="openAdminDraftView('${doc.id}')"><div style="width:100%; display:flex; justify-content:space-between;"><b>${mName}</b> <span style="color:var(--primary); font-weight:bold;">${total} Р</span></div><span style="font-size:10px; color:var(--gray);">Объект: ${data.cust ? data.cust.name : 'Не указан'} | Поз: ${data.estimate ? data.estimate.length : 0}</span></div>`;
+        }); 
+        document.getElementById('admin-drafts-list').innerHTML = draftsHtml || "<span style='font-size:11px; color:gray;'>Активных смет нет</span>";
+    } catch(e) { console.error("Load drafts error", e); }
+}
+
+
+
+
+/* =========================================================
+ * DATABASE FUNCTION: renderAdminUsers
  * ========================================================= */
 async function renderAdminUsers() {
     if(appUser.role !== 'admin') return;
@@ -1357,24 +1209,7 @@ async function renderAdminUsers() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: adminAddUser
- * ========================================================= */
-async function adminAddUser() {
-    let p = document.getElementById('add-user-phone').value.trim();
-    let pin = document.getElementById('add-user-pin').value.trim();
-    let n = document.getElementById('add-user-name').value.trim();
-    if(!p || !pin || !n) return showToast("Заполните все поля!");
-    try {
-        await db.collection('users').add({ phone: p, pin: pin, name: n, role: 'master', isApproved: true });
-        showToast("Мастер добавлен!"); renderAdminUsers();
-    } catch(e) { window.customAlert("Ошибка", e.message); }
-}
-
-
-
-
-/* =========================================================
- * VISUAL FUNCTION: deleteUser
+ * DATABASE FUNCTION: deleteUser
  * ========================================================= */
 async function deleteUser(uid) {
     let conf = await window.customConfirm("Удаление", "Удалить мастера из базы?");
@@ -1386,226 +1221,7 @@ async function deleteUser(uid) {
 
 
 /* =========================================================
- * VISUAL FUNCTION: epNormProvider
- * ========================================================= */
-function epNormProvider(p) {
-        return p === 'openai' ? 'openai' : 'gemini';
-    }
-
-    
-
-
-/* =========================================================
- * VISUAL FUNCTION: epCurrentKey
- * ========================================================= */
-function epCurrentKey() {
-        const p = epCurrentProvider();
-        if (p === 'openai') return window.EP_AI_CONFIG.openaiKey || safeGet('ep_openai_key_v1', '');
-        return window.EP_AI_CONFIG.geminiKey || (typeof GEMINI_API_KEY !== 'undefined' ? GEMINI_API_KEY : '') || safeGet('gemini_key_v31', '');
-    }
-
-    
-
-
-/* =========================================================
- * VISUAL FUNCTION: epSetAiProvider
- * ========================================================= */
-function epSetAiProvider(provider, saveRemote) {
-        provider = epNormProvider(provider);
-        window.EP_AI_CONFIG.provider = provider;
-        safeSet('ep_ai_provider_v1', provider);
-        epRefreshProviderUI();
-
-        if (saveRemote && db && appUser && appUser.role === 'admin') {
-            epSaveAiConfig(false);
-        } else if (saveRemote && appUser && appUser.role !== 'admin') {
-            showToast('ИИ-провайдер: ' + (provider === 'openai' ? 'OpenAI' : 'Gemini'));
-        }
-    }
-
-    
-
-
-/* =========================================================
- * VISUAL FUNCTION: epRefreshProviderUI
- * ========================================================= */
-function epRefreshProviderUI() {
-        const p = epCurrentProvider();
-
-        document.querySelectorAll('input[name="ep-ai-provider-main"], input[name="ep-ai-provider-admin"]').forEach(function (r) {
-            r.checked = (r.value === p);
-        });
-
-        document.querySelectorAll('.ep-ai-choice').forEach(function (el) {
-            const input = el.querySelector('input');
-            el.classList.toggle('active', input && input.value === p);
-        });
-
-        const label = p === 'openai' ? 'OpenAI' : 'Gemini';
-        const state = document.getElementById('ep-main-ai-state');
-        if (state) state.innerText = 'Активный ИИ: ' + label;
-
-        const masterInfo = document.getElementById('ep-ai-master-info');
-        if (masterInfo) masterInfo.innerText = 'ИИ подключён администратором: ' + label;
-    }
-
-    
-
-
-/* =========================================================
- * VISUAL FUNCTION: epInsertMainProviderSwitch
- * ========================================================= */
-function epInsertMainProviderSwitch() {
-        if (document.getElementById('ep-main-ai-switch')) return;
-
-        const header = document.querySelector('#main-app .header');
-        if (!header) return;
-
-        const box = document.createElement('div');
-        box.id = 'ep-main-ai-switch';
-        box.innerHTML = `
-            <label class="ep-ai-choice">
-                <input type="radio" name="ep-ai-provider-main" value="gemini" onchange="epSetAiProvider('gemini', true)">
-                Gemini
-            </label>
-            <label class="ep-ai-choice">
-                <input type="radio" name="ep-ai-provider-main" value="openai" onchange="epSetAiProvider('openai', true)">
-                OpenAI
-            </label>
-            <div id="ep-main-ai-state">Активный ИИ</div>
-        `;
-
-        header.parentNode.insertBefore(box, header.nextSibling);
-    }
-
-    
-
-
-/* =========================================================
- * VISUAL FUNCTION: epMakeAiMenuGroup
- * ========================================================= */
-function epMakeAiMenuGroup() {
-        const menu = document.getElementById('burger-menu');
-        if (!menu || document.getElementById('ep-ai-functions-group')) return;
-
-        const aiButtons = Array.from(menu.querySelectorAll('button')).filter(function (b) {
-            const t = epCleanText(b.textContent);
-            return t.includes('ИИ-Анализ') || t.includes('ИИ-Снабженец') || t.includes('ИИ-Помощник') || t.includes('ИИ-Сравнение');
-        });
-
-        if (!aiButtons.length) return;
-
-        const wrap = document.createElement('div');
-        wrap.id = 'ep-ai-functions-group';
-        wrap.innerHTML = `
-            <button id="ep-ai-functions-btn" type="button">✨ ИИ Функции <span class="ep-beta-label">(бета)</span></button>
-            <div id="ep-ai-functions-panel"></div>
-        `;
-
-        aiButtons[0].parentNode.insertBefore(wrap, aiButtons[0]);
-        const panel = wrap.querySelector('#ep-ai-functions-panel');
-
-        aiButtons.forEach(function (b) {
-            panel.appendChild(b);
-        });
-
-        wrap.querySelector('#ep-ai-functions-btn').addEventListener('click', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            wrap.classList.toggle('open');
-        });
-    }
-
-    
-
-
-/* =========================================================
- * VISUAL FUNCTION: epPatchSettingsUI
- * ========================================================= */
-function epPatchSettingsUI() {
-        if (document.getElementById('ep-ai-admin-box')) return;
-
-        const oldInput = document.getElementById('api-key-input');
-        if (!oldInput) return;
-
-        const h4 = oldInput.previousElementSibling;
-        if (h4) h4.style.display = 'none';
-        oldInput.style.display = 'none';
-
-        const box = document.createElement('div');
-        box.id = 'ep-ai-admin-box';
-        box.style.cssText = 'padding:12px; background:rgba(79,70,229,.06); border:1px solid rgba(79,70,229,.25); border-radius:14px; margin-bottom:14px;';
-        box.innerHTML = `
-            <h4 style="color:var(--primary); margin:0 0 8px;">🤖 ИИ-провайдер</h4>
-
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
-                <label class="ep-ai-choice"><input type="radio" name="ep-ai-provider-admin" value="gemini" onchange="epSetAiProvider('gemini', false)"> Gemini</label>
-                <label class="ep-ai-choice"><input type="radio" name="ep-ai-provider-admin" value="openai" onchange="epSetAiProvider('openai', false)"> OpenAI</label>
-            </div>
-
-            <div id="ep-ai-admin-keys">
-                <label style="font-size:11px; font-weight:800; color:var(--gray);">Gemini API</label>
-                <input type="password" id="ep-gemini-key-input" placeholder="AIza..." style="margin-bottom:8px;">
-
-                <label style="font-size:11px; font-weight:800; color:var(--gray);">OpenAI API</label>
-                <input type="password" id="ep-openai-key-input" placeholder="sk-..." style="margin-bottom:8px;">
-
-                <label style="font-size:11px; font-weight:800; color:var(--gray);">OpenAI модель</label>
-                <input type="text" id="ep-openai-model-input" value="gpt-4o-mini" style="margin-bottom:8px;">
-
-                <button class="btn-primary" style="width:100%; margin-bottom:8px;" onclick="epSaveAiConfig(true)">✅ Проверить и отправить мастерам</button>
-                <button class="btn-danger" style="width:100%; background:var(--gray);" onclick="epClearLocalAiKeys()">🧹 Очистить старые локальные ключи</button>
-            </div>
-
-            <div id="ep-ai-master-info" style="display:none; font-size:12px; font-weight:900; padding:10px; border-radius:10px; background:rgba(16,185,129,.1); color:var(--success);">
-                ИИ подключён администратором
-            </div>
-        `;
-
-        oldInput.parentNode.insertBefore(box, oldInput.nextSibling);
-    }
-
-    
-
-
-/* =========================================================
- * VISUAL FUNCTION: epTestProviderKey
- * ========================================================= */
-async function epTestProviderKey(provider, key, model) {
-        provider = epNormProvider(provider);
-        if (!key) throw new Error('Введите API-ключ');
-
-        if (provider === 'openai') {
-            const r = await fetch('https://api.openai.com/v1/responses', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-                body: JSON.stringify({
-                    model: model || 'gpt-4o-mini',
-                    input: [{ role: 'user', content: [{ type: 'input_text', text: 'Ответь одним словом: ok' }] }],
-                    max_output_tokens: 20
-                })
-            });
-            const data = await r.json();
-            if (!r.ok || data.error) throw new Error(data.error ? data.error.message : 'OpenAI API error');
-            return true;
-        }
-
-        const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(key);
-        const r = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: [{ parts: [{ text: 'Ответь одним словом: ok' }] }] })
-        });
-        const data = await r.json();
-        if (!r.ok || data.error) throw new Error(data.error ? data.error.message : 'Gemini API error');
-        return true;
-    }
-
-    
-
-
-/* =========================================================
- * VISUAL FUNCTION: epLoadAiConfigFromServer
+ * DATABASE FUNCTION: epLoadAiConfigFromServer
  * ========================================================= */
 async function epLoadAiConfigFromServer() {
         try {
@@ -1677,73 +1293,7 @@ async function epLoadAiConfigFromServer() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: epExtractOpenAiText
- * ========================================================= */
-function epExtractOpenAiText(data) {
-        if (data.output_text) return data.output_text;
-        let out = '';
-        (data.output || []).forEach(function (item) {
-            (item.content || []).forEach(function (c) {
-                if (c.text) out += c.text;
-                if (c.type === 'output_text' && c.text) out += c.text;
-            });
-        });
-        return out;
-    }
-
-    
-
-
-/* =========================================================
- * VISUAL FUNCTION: epCallOpenAI
- * ========================================================= */
-async function epCallOpenAI(promptText, opts) {
-        const key = window.EP_AI_CONFIG.openaiKey || safeGet('ep_openai_key_v1', '');
-        if (!key) throw new Error('Нужен OpenAI API ключ');
-
-        const content = [{ type: 'input_text', text: promptText }];
-        if (opts && opts.imageDataUrl) {
-            content.push({
-                type: 'input_image',
-                image_url: opts.imageDataUrl,
-                detail: (opts && opts.imageDetail) ? opts.imageDetail : 'high'
-            });
-        }
-
-        const body = {
-            model: window.EP_AI_CONFIG.openaiModel || 'gpt-4o-mini',
-            input: [{ role: 'user', content: content }],
-            max_output_tokens: opts && opts.maxTokens ? opts.maxTokens : 5000
-        };
-
-        const r = await fetch('https://api.openai.com/v1/responses', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-            body: JSON.stringify(body)
-        });
-        const data = await r.json();
-        if (!r.ok || data.error) throw new Error(data.error ? data.error.message : 'OpenAI API error');
-        return epExtractOpenAiText(data);
-    }
-
-    
-
-
-/* =========================================================
- * VISUAL FUNCTION: epAskAI
- * ========================================================= */
-async function epAskAI(promptText, opts) {
-        await epLoadAiConfigFromServer();
-        const provider = epCurrentProvider();
-        if (provider === 'openai') return epCallOpenAI(promptText, opts || {});
-        return epCallGemini(promptText, opts || {});
-    }
-
-    
-
-
-/* =========================================================
- * VISUAL FUNCTION: epParseLooseTableText
+ * DATABASE FUNCTION: epParseLooseTableText
  * ========================================================= */
 function epParseLooseTableText(t, type) {
         const lines = epStripCode(t).split(/\r?\n/).map(x => x.trim()).filter(Boolean);
@@ -1774,7 +1324,239 @@ function epParseLooseTableText(t, type) {
 
 
 /* =========================================================
- * VISUAL FUNCTION: epInsertDbTools
+ * DATABASE FUNCTION: epParseJsonArray
+ * ========================================================= */
+function epParseJsonArray(t) {
+        const parsed = epTryJsonParseLoose(t);
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed && typeof parsed === 'object') {
+            const keys = ['items', 'positions', 'rows', 'data', 'result', 'materials', 'works', 'материалы', 'работы', 'позиции'];
+            for (const k of keys) {
+                if (Array.isArray(parsed[k])) return parsed[k];
+            }
+        }
+
+        // Бывает, ИИ возвращает не массив, а цепочку объектов:
+        // {"n":"..."},{"n":"..."},{"n":"..."}
+        const objects = epExtractJsonObjectsLoose(t);
+        if (objects.length) return objects;
+
+        return epParseLooseTableText(t, 'mat');
+    }
+
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epDbTypeLabel
+ * ========================================================= */
+function epDbTypeLabel(type) { return type === 'work' ? 'работ' : 'материалов'; }
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epCurrentDb
+ * ========================================================= */
+function epCurrentDb(type) { return type === 'work' ? workDB : matDB; }
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epSetCurrentDb
+ * ========================================================= */
+function epSetCurrentDb(type, arr) { if (type === 'work') workDB = arr; else matDB = arr; }
+
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epInferCategory
+ * ========================================================= */
+function epInferCategory(name, type) {
+        const n = String(name || '').toLowerCase();
+        if (type === 'work') {
+            if (/штроб|борозд|резк|алмаз/.test(n)) return 'Штробление';
+            if (/подрозет|розет|выключ|механизм|рамк|светильник/.test(n)) return 'Чистовая';
+            if (/кабел|провод|гофр|труб|лоток|короб/.test(n)) return 'Черновая';
+            if (/щит|автомат|узо|диф|реле/.test(n)) return 'Щит';
+            return 'Работы';
+        }
+        if (/ввг|пуг|пвс|провод|кабел|cat|utp|ftp|sat|коаксиал/.test(n)) return 'Кабель';
+        if (/гофр|труб|кабель.?канал|лоток|клипс|стяжк/.test(n)) return 'Трубы';
+        if (/подрозет|короб|распред|клемм|wago|гмл|изол|саморез|дюбел|гвозд|площадк|баллон|наконечник/.test(n)) return 'Расходники';
+        if (/автомат|узо|диф|реле|выключател[ья] автомат|щит|бокс|din|дин|шина|кросс/.test(n)) return 'Автоматика';
+        if (/tv|тв|интернет|rj|utp|ftp|cat|слаботоч/.test(n)) return 'Слаботочка';
+        if (/розет|выключ|рамк|механизм|диммер|терморег/.test(n)) return 'Чистовое';
+        return 'Разное';
+    }
+
+
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epInferSubcategory
+ * ========================================================= */
+function epInferSubcategory(name, category, type) {
+        const n = String(name || '').toLowerCase();
+        const c = String(category || '').toLowerCase();
+        if (type === 'work') {
+            if (/штроб|борозд/.test(n)) return 'Штробление';
+            if (/сверл|подрозет/.test(n)) return 'Подрозетники';
+            if (/кабел|провод|проклад/.test(n)) return 'Прокладка кабеля';
+            if (/щит|автомат|узо|диф/.test(n)) return 'Щит';
+            if (/розет|выключ|механизм|рамк/.test(n)) return 'Чистовая установка';
+            return 'Работы';
+        }
+        if (/ввг/.test(n)) return 'ВВГ';
+        if (/пугв|пу ?гв|пв-?3/.test(n)) return 'ПУГВ';
+        if (/cat|utp|ftp|rj|интернет/.test(n)) return 'UTP/FTP';
+        if (/sat|tv|коаксиал|cavel|антенн/.test(n)) return 'TV/SAT';
+        if (/подрозет/.test(n)) return 'Подрозетники';
+        if (/короб|распред/.test(n)) return 'Коробки';
+        if (/клемм|wago|гмл|наконечник|шина/.test(n)) return 'Клеммы/соединители';
+        if (/стяжк|клипс|дюбел|саморез|гвозд|площадк|баллон/.test(n)) return 'Крепёж';
+        if (/гофр|труб/.test(n)) return 'Трубы/гофра';
+        if (/щит|бокс|шкаф|корпус/.test(n)) return 'Щиты/корпуса';
+        if (/диф/.test(n)) return 'Дифавтоматы';
+        if (/узо/.test(n)) return 'УЗО';
+        if (/автомат|выключател[ья] автомат/.test(n)) return 'Автоматы';
+        if (/розет/.test(n)) return 'Розетки';
+        if (/выключ/.test(n)) return 'Выключатели';
+        if (/рамк/.test(n)) return 'Рамки';
+        if (/механизм|диммер|терморег/.test(n)) return 'Механизмы';
+        if (c.includes('кабель')) return 'Кабель силовой';
+        if (c.includes('расход')) return 'Прочие расходники';
+        return 'Разное';
+    }
+
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epNormalizeItems
+ * ========================================================= */
+function epNormalizeItems(raw, type) {
+        let arr = [];
+        if (Array.isArray(raw)) arr = raw;
+        else if (raw && typeof raw === 'object') {
+            arr = raw.items || raw.positions || raw.rows || raw.data || raw.result || raw.materials || raw.works || raw['позиции'] || raw['материалы'] || raw['работы'] || [];
+        }
+        return arr.map(function (x, i) {
+            if (Array.isArray(x)) {
+                x = { n: x[1] || x[0], c: x[0], sc: x[2], p: x[3], u: x[4] };
+            }
+
+            const name = epCleanText(
+                x.n || x.name || x.title || x.item || x.position || x.material || x.work || x.itemName ||
+                x['Имя'] || x['Название'] || x['Наименование'] || x['Наименование позиции'] || x['Товар'] || x['Материал'] || x['Работа'] ||
+                x['номенклатура'] || x['наименование'] || x['позиция'] || ''
+            );
+
+            const cat = epCleanText(
+                x.c || x.cat || x.category || x.group ||
+                x['Категория'] || x['Группа'] || x['категория'] || ''
+            ) || epInferCategory(name, type);
+
+            const subcat = epCleanText(
+                x.sc || x.subcat || x.subcategory || x.subCategory || x.sub_group || x.section ||
+                x['Подкатегория'] || x['Подраздел'] || x['Раздел'] || x['подкатегория'] || x['подраздел'] || ''
+            ) || epInferSubcategory(name, cat, type);
+
+            const unit = epCleanText(
+                x.u || x.unit || x.measure || x.measurement ||
+                x['Ед'] || x['Ед.'] || x['Ед. изм'] || x['Ед.изм.'] || x['Единица'] || x['Единица измерения'] || x['единица'] || x['ед'] || 'шт'
+            ) || 'шт';
+
+            const priceRaw = x.p || x.price || x.cost || x.unitPrice || x.unit_price ||
+                x['Цена'] || x['Цена ₽'] || x['Цена руб'] || x['Цена за ед.'] || x['Цена за единицу'] || x['Стоимость'] || x['цена'] || 0;
+
+            return {
+                id: x.id || (type === 'work' ? 'w' : 'm') + '_ai_' + Date.now() + '_' + i,
+                n: name,
+                c: cat || 'Разное',
+                sc: subcat || 'Разное',
+                p: epMoney(priceRaw),
+                u: unit
+            };
+        }).filter(function (x) { return x.n && x.n.length > 2; });
+    }
+
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epSaveUserDb
+ * ========================================================= */
+async function epSaveUserDb() {
+        try {
+            safeSet('user_db_mat_v31', JSON.stringify(matDB));
+            safeSet('user_db_work_v31', JSON.stringify(workDB));
+            if (db && appUser && appUser.uid) {
+                await db.collection('user_db').doc(appUser.uid).set({
+                    uid: appUser.uid,
+                    name: appUser.name || appUser.email || '',
+                    matDB: matDB,
+                    workDB: workDB,
+                    updatedAt: new Date().toISOString()
+                }, { merge: true });
+            }
+        } catch (e) {
+            console.warn('save user db error', e);
+        }
+    }
+
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epSaveGlobalDb
+ * ========================================================= */
+async function epSaveGlobalDb() {
+        if (!db) return;
+        await db.collection('settings').doc('global_db').set({ matDB: matDB, workDB: workDB, updatedAt: new Date().toISOString() }, { merge: true });
+    }
+
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epLoadUserDbAfterLogin
+ * ========================================================= */
+async function epLoadUserDbAfterLogin() {
+        try {
+            if (!appUser || !appUser.uid) return;
+            let loaded = false;
+
+            if (db) {
+                const doc = await db.collection('user_db').doc(appUser.uid).get();
+                if (doc.exists) {
+                    const d = doc.data();
+                    if (Array.isArray(d.matDB)) { matDB = d.matDB; loaded = true; }
+                    if (Array.isArray(d.workDB)) { workDB = d.workDB; loaded = true; }
+                }
+            }
+
+            if (!loaded) {
+                try {
+                    const lm = JSON.parse(safeGet('user_db_mat_v31', '[]'));
+                    const lw = JSON.parse(safeGet('user_db_work_v31', '[]'));
+                    if (lm.length) matDB = lm;
+                    if (lw.length) workDB = lw;
+                } catch(e){}
+            }
+
+            renderDbEditors();
+        } catch(e) {
+            console.warn('load user db error', e);
+        }
+    }
+
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epInsertDbTools
  * ========================================================= */
 function epInsertDbTools() {
         if (document.getElementById('ep-db-ai-tools')) return;
@@ -1801,7 +1583,83 @@ function epInsertDbTools() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: epReadDbFile
+ * DATABASE FUNCTION: epExtractItemsFromSheetRows
+ * ========================================================= */
+function epExtractItemsFromSheetRows(rows, type) {
+        const out = [];
+        let currentCat = type === 'work' ? 'Работы' : 'Разное';
+        let currentSubcat = 'Разное';
+
+        (rows || []).forEach(function(row) {
+            const cells = (Array.isArray(row) ? row : Object.values(row || {})).map(epCleanCell);
+            const nonEmpty = cells.filter(x => x);
+            if (!nonEmpty.length) return;
+
+            const rowText = nonEmpty.join(' ');
+            if (/^(№|номер|код|артикул)$/i.test(rowText)) return;
+            if (/наименование/i.test(rowText) && /(ед|цена|стоимость)/i.test(rowText)) return;
+
+            const unitIdx = cells.findIndex(epIsUnitCell);
+            const numIdxs = cells.map((v, i) => epIsNumberLikeCell(v) ? i : -1).filter(i => i >= 0);
+            const priceIdxs = numIdxs.filter(i => unitIdx < 0 || i > unitIdx);
+            const priceIdx = priceIdxs.length ? priceIdxs[0] : (numIdxs.length ? numIdxs[numIdxs.length - 1] : -1);
+            const hasPrice = priceIdx >= 0 && epMoney(cells[priceIdx]) > 0;
+            const hasUnit = unitIdx >= 0;
+
+            // Строка-раздел без цены и единицы
+            if (!hasPrice && !hasUnit) {
+                let title = nonEmpty.find(x => !/^\d+(\.\d+)*\.?$/.test(x)) || rowText;
+                title = epTitleCaseRu(title);
+                if (!title || title.length < 3) return;
+
+                const first = nonEmpty[0] || '';
+                if (/^\d+\.$/.test(first) || /работ/i.test(title) || title === title.toUpperCase()) {
+                    currentCat = title;
+                    currentSubcat = 'Разное';
+                } else if (/^\d+\.\d+/.test(first) || /:$/.test(rowText) || nonEmpty.length <= 2) {
+                    currentSubcat = title;
+                } else if (type === 'work') {
+                    currentSubcat = title;
+                } else {
+                    currentCat = title;
+                }
+                return;
+            }
+
+            let nameCandidates = cells.map((v, i) => ({ v, i }))
+                .filter(x => x.v)
+                .filter(x => x.i !== unitIdx && x.i !== priceIdx)
+                .filter(x => !epIsNumberLikeCell(x.v))
+                .filter(x => !epLooksLikeCodeOrNumber(x.v))
+                .filter(x => !/^(ед|ед изм|цена|сумма|стоимость|кол-во|количество)$/i.test(x.v));
+
+            if (!nameCandidates.length) return;
+            nameCandidates.sort((a, b) => b.v.length - a.v.length);
+            const name = epCleanText(nameCandidates[0].v);
+            if (!name || name.length < 4) return;
+
+            const cat = currentCat && currentCat !== 'Разное' ? currentCat : epInferCategory(name, type);
+            const subcat = currentSubcat && currentSubcat !== 'Разное' ? currentSubcat : epInferSubcategory(name, cat, type);
+            const unit = hasUnit ? epNormalizeUnit(cells[unitIdx]) : 'шт';
+            const price = hasPrice ? epMoney(cells[priceIdx]) : 0;
+
+            out.push({
+                id: (type === 'work' ? 'w' : 'm') + '_sheet_' + Date.now() + '_' + out.length,
+                n: name,
+                c: cat || (type === 'work' ? 'Работы' : 'Разное'),
+                sc: subcat || 'Разное',
+                p: price,
+                u: unit
+            });
+        });
+
+        return out;
+    }
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epReadDbFile
  * ========================================================= */
 async function epReadDbFile(file, type) {
         showLoader('Читаю файл...', '📥');
@@ -1862,7 +1720,7 @@ async function epReadDbFile(file, type) {
 
 
 /* =========================================================
- * VISUAL FUNCTION: epAiNormalizeImage
+ * DATABASE FUNCTION: epAiNormalizeImage
  * ========================================================= */
 async function epAiNormalizeImage(imageDataUrl, type, source) {
         showLoader('ИИ читает таблицу с изображения...', '👁️');
@@ -1911,7 +1769,7 @@ async function epAiNormalizeImage(imageDataUrl, type, source) {
 
 
 /* =========================================================
- * VISUAL FUNCTION: epAiNormalizeDbText
+ * DATABASE FUNCTION: epAiNormalizeDbText
  * ========================================================= */
 async function epAiNormalizeDbText(rawText, type, source) {
         showLoader('ИИ структурирует базу...', '🤖');
@@ -1932,7 +1790,7 @@ async function epAiNormalizeDbText(rawText, type, source) {
 
 
 /* =========================================================
- * VISUAL FUNCTION: epShowDbReview
+ * DATABASE FUNCTION: epShowDbReview
  * ========================================================= */
 function epShowDbReview(items, type, source, rawAnswer) {
         window.EP_DB_REVIEW = { type: type, items: items, source: source || '' };
@@ -1967,7 +1825,224 @@ function epShowDbReview(items, type, source, rawAnswer) {
 
 
 /* =========================================================
- * VISUAL FUNCTION: epRenderGroupedList
+ * DATABASE FUNCTION: epGetReviewedSelected
+ * ========================================================= */
+function epGetReviewedSelected() {
+        const items = window.EP_DB_REVIEW.items || [];
+        return items.map(function (it, idx) {
+            const checked = document.getElementById('ep-db-check-' + idx)?.checked;
+            if (!checked) return null;
+            return {
+                id: it.id || (window.EP_DB_REVIEW.type === 'work' ? 'w' : 'm') + '_ai_' + Date.now() + '_' + idx,
+                c: epCleanText(document.getElementById('ep-db-cat-' + idx)?.value) || 'Разное',
+                sc: epCleanText(document.getElementById('ep-db-subcat-' + idx)?.value) || 'Разное',
+                n: epCleanText(document.getElementById('ep-db-name-' + idx)?.value),
+                p: epMoney(document.getElementById('ep-db-price-' + idx)?.value),
+                u: epCleanText(document.getElementById('ep-db-unit-' + idx)?.value) || 'шт'
+            };
+        }).filter(Boolean).filter(function (x) { return x.n; });
+    }
+
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epSendDbProposal
+ * ========================================================= */
+async function epSendDbProposal(type, items, action) {
+        if (!db || !appUser || appUser.role === 'admin' || !items.length) return;
+        try {
+            await db.collection('db_proposals').add({
+                uid: appUser.uid || '',
+                masterName: appUser.name || appUser.email || '',
+                type: type,
+                action: action,
+                items: items,
+                status: 'pending',
+                createdAt: new Date().toISOString()
+            });
+        } catch(e) {
+            console.warn('proposal error', e);
+        }
+    }
+
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epInsertAdminProposalBox
+ * ========================================================= */
+function epInsertAdminProposalBox() {
+        if (document.getElementById('admin-db-proposals')) return;
+        const panel = document.getElementById('admin-panel');
+        if (!panel) return;
+        const box = document.createElement('div');
+        box.innerHTML = `
+            <h4 style="color:var(--primary); margin: 10px 0 5px;">🌍 Заявки в базу сервера:</h4>
+            <div id="admin-db-proposals" style="margin-bottom:10px; border:1px solid var(--primary); background:rgba(79,70,229,.05); border-radius:8px; padding:8px; max-height:240px; overflow-y:auto; font-size:12px;"></div>
+        `;
+        panel.insertBefore(box, panel.firstChild.nextSibling);
+    }
+
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epListenDbProposals
+ * ========================================================= */
+function epListenDbProposals() {
+        if (!db || !appUser || appUser.role !== 'admin') return;
+        epInsertAdminProposalBox();
+        const cont = document.getElementById('admin-db-proposals');
+        if (!cont || cont.dataset.listen === '1') return;
+        cont.dataset.listen = '1';
+
+        db.collection('db_proposals').where('status', '==', 'pending').onSnapshot(function (snap) {
+            if (snap.empty) {
+                cont.innerHTML = `<span style="color:var(--gray);">Новых заявок нет</span>`;
+                return;
+            }
+            cont.innerHTML = '';
+            snap.forEach(function (doc) {
+                const d = doc.data();
+                const items = d.items || [];
+                cont.innerHTML += `<div class="ep-db-admin-proposal">
+                    <b>${epEscape(d.masterName || d.uid || 'Мастер')}</b>
+                    <div style="color:var(--gray); font-size:11px;">${d.type === 'work' ? 'Работы' : 'Материалы'} • ${epEscape(d.action || '')} • ${items.length} поз.</div>
+                    <div style="font-size:11px; margin-top:5px;">${items.slice(0,3).map(x => epEscape(x.n) + (x.sc ? ' <span style="color:var(--gray);">[' + epEscape(x.sc) + ']</span>' : '')).join('<br>')}${items.length > 3 ? '<br>...' : ''}</div>
+                    <div class="ep-mini-actions">
+                        <button class="btn-success" onclick="epAdminResolveDbProposal('${doc.id}','full')">✅ Добавить полностью</button>
+                        <button class="btn-primary" onclick="epAdminResolveDbProposal('${doc.id}','names')">🏷 Только название без суммы</button>
+                        <button class="btn-danger" onclick="epAdminResolveDbProposal('${doc.id}','reject')">❌ Отклонить</button>
+                    </div>
+                </div>`;
+            });
+        }, function (e) {
+            cont.innerHTML = `<span style="color:var(--danger);">Ошибка заявок: ${epEscape(e.message)}</span>`;
+        });
+    }
+
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epInitialApply
+ * ========================================================= */
+function epInitialApply() {
+        epPatchSettingsUI();
+        epInsertMainProviderSwitch();
+        epInsertDbTools();
+        epMakeAiMenuGroup();
+        epAddBetaLabels();
+        epRefreshProviderUI();
+        if (appUser) {
+            epLoadAiConfigFromServer();
+            epLoadUserDbAfterLogin();
+            epListenDbProposals();
+        }
+    }
+
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epArr
+ * ========================================================= */
+function epArr(type) { return type === 'work' ? workDB : matDB; }
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epSetArr
+ * ========================================================= */
+function epSetArr(type, arr) { if (type === 'work') workDB = arr; else matDB = arr; }
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epMaterialFromName
+ * ========================================================= */
+function epMaterialFromName(name) {
+        const s = String(name || '');
+        const m = s.match(/\((Бетон|Кирпич|Панелька|Мягкий\s*мат\.?|Мягкий материал|ГКЛ|Все типы)\)/i);
+        return m ? m[1].replace(/Мягкий\s*материал/i, 'Мягкий мат.').replace(/ГКЛ/i, 'Мягкий мат.') : '';
+    }
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epNormalizeWorkItem
+ * ========================================================= */
+function epNormalizeWorkItem(x) {
+        const it = Object.assign({}, x || {});
+        const originalName = String(it.n || '');
+        if (it.sc && !it.g) it.g = it.sc;
+        const mat = epMaterialFromName(originalName);
+        if (!it.g && mat) it.g = epOpFromName(originalName);
+        if (mat && (!it.g || originalName.includes('('))) it.n = mat;
+        if (!it.g) {
+            const low = originalName.toLowerCase();
+            if (/штроб/.test(low)) it.g = epOpFromName(originalName) || 'Штроба';
+            else if (/высверл|подрозет/.test(low)) it.g = epOpFromName(originalName) || 'Подрозетники';
+            else if (/ниш/.test(low)) it.g = epOpFromName(originalName) || 'Ниши';
+            else if (/отверст|алмаз/.test(low)) it.g = epOpFromName(originalName) || 'Алмазные отверстия';
+            else if (/демонтаж/.test(low)) it.g = it.g || 'Демонтаж';
+            else if (/розет|выключ|механизм|терморег/.test(low)) it.g = it.g || 'Механизмы';
+            else if (/кабел|гофр|лоток|труб|короб/.test(low)) it.g = it.g || 'Прокладка кабеля';
+            else it.g = it.g || 'Разное';
+        }
+        if (!it.c) it.c = 'Работы';
+        if (!it.u) it.u = 'шт';
+        it.p = Number(it.p) || 0;
+        return it;
+    }
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epMergeFullWorksInto
+ * ========================================================= */
+function epMergeFullWorksInto(arr) {
+        let out = (arr || []).map(epNormalizeWorkItem);
+        EP_FULL_WORKS.forEach(function(w) {
+            const nw = epNormalizeWorkItem(w);
+            if (!out.some(x => epSame(x, nw))) out.push(Object.assign({}, nw));
+        });
+        return out;
+    }
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epNormalizeAllWorkDb
+ * ========================================================= */
+function epNormalizeAllWorkDb() {
+        workDB = epMergeFullWorksInto(workDB || []);
+        try { if (typeof safeSet === 'function') safeSet('user_db_work_v31', JSON.stringify(workDB)); } catch(e){}
+    }
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epGroupCatalog
+ * ========================================================= */
+function epGroupCatalog(arr, type) {
+        const cats = {};
+        (arr || []).forEach(function(raw) {
+            const it = type === 'work' ? epNormalizeWorkItem(raw) : Object.assign({}, raw);
+            const c = it.c || 'Разное';
+            const g = type === 'work' ? (it.g || it.sc || 'Разное') : (it.sc || it.g || 'Разное');
+            if (!cats[c]) cats[c] = {};
+            if (!cats[c][g]) cats[c][g] = [];
+            cats[c][g].push(it);
+        });
+        return cats;
+    }
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epRenderGroupedList
  * ========================================================= */
 function epRenderGroupedList(arr, type, opts) {
         opts = opts || {};
@@ -2004,7 +2079,25 @@ function epRenderGroupedList(arr, type, opts) {
 
 
 /* =========================================================
- * VISUAL FUNCTION: epRenderGlobalDbModal
+ * DATABASE FUNCTION: epGetGlobalDb
+ * ========================================================= */
+async function epGetGlobalDb() {
+        try {
+            if (db) {
+                const doc = await db.collection('settings').doc('global_db').get();
+                if (doc.exists) {
+                    const d = doc.data() || {};
+                    epGlobalDbCache.matDB = Array.isArray(d.matDB) ? d.matDB : (matDB || []);
+                    epGlobalDbCache.workDB = Array.isArray(d.workDB) ? epMergeFullWorksInto(d.workDB) : epMergeFullWorksInto(workDB || []);
+                } else { epGlobalDbCache.matDB = matDB || []; epGlobalDbCache.workDB = epMergeFullWorksInto(workDB || []); }
+            } else { epGlobalDbCache.matDB = matDB || []; epGlobalDbCache.workDB = epMergeFullWorksInto(workDB || []); }
+        } catch(e) { epGlobalDbCache.matDB = matDB || []; epGlobalDbCache.workDB = epMergeFullWorksInto(workDB || []); }
+    }
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epRenderGlobalDbModal
  * ========================================================= */
 function epRenderGlobalDbModal() {
         const matBtn = document.getElementById('ep-global-tab-mat'); const workBtn = document.getElementById('ep-global-tab-work');
@@ -2017,7 +2110,7 @@ function epRenderGlobalDbModal() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: epInsertGlobalDbButton
+ * DATABASE FUNCTION: epInsertGlobalDbButton
  * ========================================================= */
 function epInsertGlobalDbButton() {
         if (document.getElementById('ep-global-db-entry')) return;
@@ -2030,7 +2123,23 @@ function epInsertGlobalDbButton() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: epRenderProposalList
+ * DATABASE FUNCTION: epEnsureProposalBox
+ * ========================================================= */
+function epEnsureProposalBox() {
+        let cont = document.getElementById('admin-db-proposals');
+        if (cont) return cont;
+        const panel = document.getElementById('admin-panel');
+        if (!panel) return null;
+        const box = document.createElement('div');
+        box.innerHTML = `<h4 style="color:var(--primary); margin:10px 0 5px;">🌍 Заявки в базу сервера:</h4><div id="admin-db-proposals" style="margin-bottom:10px; border:1px solid var(--primary); background:rgba(79,70,229,.05); border-radius:8px; padding:8px; max-height:260px; overflow-y:auto; font-size:12px;"></div>`;
+        panel.insertBefore(box, panel.firstChild ? panel.firstChild.nextSibling : null);
+        return document.getElementById('admin-db-proposals');
+    }
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epRenderProposalList
  * ========================================================= */
 function epRenderProposalList() {
         const cont = epEnsureProposalBox(); if (!cont) return;
@@ -2048,7 +2157,7 @@ function epRenderProposalList() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: epStartProposalV2
+ * DATABASE FUNCTION: epStartProposalV2
  * ========================================================= */
 function epStartProposalV2() {
         if (!db || !appUser || appUser.role !== 'admin') return;
@@ -2064,7 +2173,7 @@ function epStartProposalV2() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: epInitFullWorksPatch
+ * DATABASE FUNCTION: epInitFullWorksPatch
  * ========================================================= */
 function epInitFullWorksPatch() {
         epInsertGlobalDbButton(); epNormalizeAllWorkDb(); if (typeof renderDbEditors === 'function') renderDbEditors(); epStartProposalV2();
@@ -2073,48 +2182,29 @@ function epInitFullWorksPatch() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: epMoveShieldSettingsIntoDetails
+ * DATABASE FUNCTION: epNormalizeMaterialsDb
  * ========================================================= */
-function epMoveShieldSettingsIntoDetails(){
-    var modal = qs('configModal');
-    if (!modal || qs('ep-shield-settings-box')) return;
-    var content = modal.querySelector('.modal-content');
-    if (!content) return;
-    var anchor = qs('cfg-brand-box');
-    if (!anchor) return;
-
-    var details = document.createElement('details');
-    details.id = 'ep-shield-settings-box';
-    details.className = 'ep-shield-settings-box';
-    details.innerHTML = '<summary>⚙️ Настройки автоматики и щита</summary><div id="ep-shield-settings-inner"></div>';
-    var firstRow = anchor.closest('div[style*="grid-template-columns"]') || anchor.parentElement;
-    content.insertBefore(details, firstRow);
-    var inner = qs('ep-shield-settings-inner');
-
-    var ids = ['cfg-brand-box','cfg-brand-auto','cfg-phase','cfg-auto-curve','cfg-rcd-type','cfg-protection-type'];
-    var moved = [];
-    ids.forEach(function(id){
-      var el = qs(id); if(!el) return;
-      var row = el.closest('div[style*="grid-template-columns"]') || el.parentElement;
-      if(row && moved.indexOf(row) === -1){ moved.push(row); inner.appendChild(row); }
-    });
-
-    var wall = qs('cfg-shield-wall');
-    if (wall) {
-      var wrap = document.createElement('div');
-      wrap.style.marginBottom = '8px';
-      var label = wall.previousElementSibling;
-      if (label && String(label.tagName).toLowerCase() === 'label') wrap.appendChild(label);
-      wrap.appendChild(wall);
-      inner.appendChild(wrap);
+function epNormalizeMaterialsDb(){
+    function fixArr(arr){
+      if (!Array.isArray(arr)) return [];
+      arr.forEach(function(it){
+        if(!it || typeof it !== 'object') return;
+        if(!it.id) it.id = 'm_' + Math.abs(norm([it.c,it.g,it.n,it.p].join('_')).split('').reduce(function(h,ch){return ((h<<5)-h+ch.charCodeAt(0))|0;},0));
+        var grp = epMatGroupName(it);
+        // Меняем только автоматику/щитовое, остальное не трогаем.
+        if (grp.c === 'Автоматика' || grp.c === 'Щитовое') { it.c = grp.c; it.g = grp.g; it.sc = grp.g; }
+      });
+      return arr;
     }
+    try { window.matDB = fixArr(window.matDB || []); } catch(e){}
+    try { window.userMatDB = fixArr(window.userMatDB || []); } catch(e){}
   }
 
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: epRenderGrouped
+ * DATABASE FUNCTION: epRenderGrouped
  * ========================================================= */
 function epRenderGrouped(arr, type, mode, prefix){
     var data = epGroupedData(arr, type);
@@ -2147,7 +2237,7 @@ function epRenderGrouped(arr, type, mode, prefix){
 
 
 /* =========================================================
- * VISUAL FUNCTION: epPatchDbRenderers
+ * DATABASE FUNCTION: epPatchDbRenderers
  * ========================================================= */
 function epPatchDbRenderers(){
     var oldMat = window.openMatCatalog;
@@ -2168,14 +2258,72 @@ function epPatchDbRenderers(){
 
 
 /* =========================================================
- * VISUAL FUNCTION: toast
+ * DATABASE FUNCTION: boot
  * ========================================================= */
-function toast(t){ if(typeof showToast==='function') showToast(t); else console.log(t); }
+function boot(){ epMoveShieldSettingsIntoDetails(); epPatchDbRenderers(); epNormalizeMaterialsDb(); epPatchGenerateButton(); }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderGrouped
+ * DATABASE FUNCTION: dbArr
+ * ========================================================= */
+function dbArr(type){
+    try { return type === 'mat' ? matDB : workDB; } catch(e) { return type === 'mat' ? (window.matDB || []) : (window.workDB || []); }
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: setDbArr
+ * ========================================================= */
+function setDbArr(type, arr){
+    try { if(type === 'mat') matDB = arr; else workDB = arr; } catch(e) { if(type === 'mat') window.matDB = arr; else window.workDB = arr; }
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: getGroup
+ * ========================================================= */
+function getGroup(it){ return it.g || it.sc || it.subcategory || it.group || ''; }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: normalizeMaterialDb
+ * ========================================================= */
+function normalizeMaterialDb(){
+    const arr = dbArr('mat') || [];
+    arr.forEach(function(it){
+      if(!it || !it.n) return;
+      const n = norm((it.c||'')+' '+(it.g||'')+' '+(it.sc||'')+' '+it.n);
+      const raw = String(it.n||'');
+      if(/(диф|дифавтомат|dif)/i.test(raw) || n.includes('диф')){ it.c='Автоматика'; setGroup(it,'ДИФы'); it.kind=it.kind||'dif'; }
+      else if(/\bузо\b/i.test(raw) || n.includes(' uzo ') || n.includes(' узо ')){ it.c='Автоматика'; setGroup(it,'УЗО'); it.kind=it.kind||'uzo'; }
+      else if(/уздп/i.test(raw) || n.includes('уздп') || n.includes('дугов')){ it.c='Автоматика'; setGroup(it,'УЗДП'); it.kind=it.kind||'uzdp'; }
+      else if(/узм|реле напряж/i.test(raw) || n.includes('реле напряж')){ it.c='Автоматика'; setGroup(it,'УЗМ / реле напряжения'); it.kind=it.kind||'voltage_relay'; }
+      else if(/реле времени/i.test(raw) || n.includes('реле времени')){ it.c='Автоматика'; setGroup(it,'Реле времени'); it.kind=it.kind||'time_relay'; }
+      else if(/контактор/i.test(raw) || n.includes('контактор')){ it.c='Автоматика'; setGroup(it,'Контакторы'); it.kind=it.kind||'contactor'; }
+      else if(/автомат|\b[abcdсавд]\s?\d{1,3}\b/i.test(raw) || /(^|\s)c\s?\d{1,3}(\s|$)/.test(n)){ it.c='Автоматика'; setGroup(it,'Автоматы'); it.kind=it.kind||'automatic'; }
+      else if(/щит|корпус|бокс/i.test(raw) || n.includes('корпус')){ it.c='Щитовое'; setGroup(it, (/наклад/i.test(raw)||n.includes('наклад')) ? 'Корпуса → Накладной' : 'Корпуса → Встраиваемый'); it.kind=it.kind||'shield_box'; }
+      else if(/ншви|наконеч/i.test(raw) || n.includes('наконеч')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Наконечники'); it.kind=it.kind||'lug_pack'; }
+      else if(/пугв|пугов|провод/i.test(raw) || n.includes('пугв')){ it.c=it.c||'Щитовое'; if(it.c==='Щитовое' || n.includes('пугв')) setGroup(it,'Расходка под сборку → Провода'); it.kind=it.kind||'pugv'; }
+      else if(/шин|клемм/i.test(raw) || n.includes('шина') || n.includes('клемм')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Шинки / клеммники'); it.kind=it.kind||'busbar'; }
+      else if(/греб/i.test(raw) || n.includes('греб')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Гребёнки'); it.kind=it.kind||'comb_bus'; }
+      else if(/din|дин|рейк|огранич/i.test(raw) || n.includes('din')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → DIN-рейки / ограничители'); it.kind=it.kind||'din'; }
+      else if(/маркир|бирк/i.test(raw) || n.includes('маркир')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Маркировка'); it.kind=it.kind||'marking'; }
+      else if(/сальник|кабельн.*ввод/i.test(raw) || n.includes('сальник')){ it.c='Щитовое'; setGroup(it,'Расходка под сборку → Кабельные вводы'); it.kind=it.kind||'cable_gland'; }
+      if(!it.brand) it.brand = detectBrand(raw) || it.brand;
+      if(!it.nominal) it.nominal = detectNominal(raw) || it.nominal;
+    });
+    setDbArr('mat', arr);
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: renderGrouped
  * ========================================================= */
 function renderGrouped(arr, type, prefix){
     arr = arr || [];
@@ -2202,7 +2350,7 @@ function renderGrouped(arr, type, prefix){
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderItem
+ * DATABASE FUNCTION: renderItem
  * ========================================================= */
 function renderItem(it,type){
     const id = String(it.id || '');
@@ -2214,7 +2362,156 @@ function renderItem(it,type){
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderGroupedFixed
+ * DATABASE FUNCTION: smartFindMat
+ * ========================================================= */
+function smartFindMat(label, words, meta){
+    normalizeMaterialDb();
+    const arr = dbArr('mat') || [];
+    meta = meta || {};
+    const key = lookupKey('mat', meta, label);
+    const saved = savedChoices()[key];
+    if(saved){ const found = arr.find(x => String(x.id)===String(saved)); if(found) return {item: found, key}; }
+    const brand = meta.brand || detectBrand(label) || '';
+    const nominal = meta.nominal || detectNominal(label) || '';
+    const kind = String(meta.kind||'').toLowerCase();
+    const searchWords = (words || []).concat([label, brand, nominal, kind]).filter(Boolean).map(norm).filter(Boolean);
+    let best=null, bestScore=-999;
+    arr.forEach(function(it){
+      const blob = norm([it.c,it.g,it.sc,it.subcategory,it.kind,it.brand,it.nominal,it.curve,it.rcdType,it.leakage,it.n].filter(Boolean).join(' '));
+      let score = 0;
+      if(kind && blob.includes(norm(kind))) score += 4;
+      if(kind.includes('automatic') && (blob.includes('автомат') || blob.includes('automatic'))) score += 5;
+      if(kind.includes('dif') && blob.includes('диф')) score += 5;
+      if(kind.includes('uzo') && blob.includes('узо')) score += 5;
+      if(brand){ if(blob.includes(norm(brand))) score += 8; else score -= 20; }
+      if(nominal){ if(blob.replace(/\s+/g,'').includes(norm(nominal).replace(/\s+/g,''))) score += 10; else if(kind.includes('automatic') || kind.includes('breaker')) score -= 30; }
+      if(meta.curve && blob.includes(norm(meta.curve))) score += 2;
+      if(meta.leakage && blob.includes(norm(meta.leakage+'ма'))) score += 4;
+      searchWords.forEach(w => { if(w && blob.includes(w)) score += 1; });
+      if(score > bestScore){ bestScore=score; best=it; }
+    });
+    if(best && bestScore >= 6) return {item:best, key};
+    return {item:null, key};
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: arrByType
+ * ========================================================= */
+function arrByType(type){
+    try{
+      var arr = type === 'work' ? workDB : matDB;
+      if(type === 'mat' && (!Array.isArray(arr) || !arr.length) && typeof FULL_MAT_INIT !== 'undefined') {
+        matDB = (FULL_MAT_INIT || []).slice();
+        arr = matDB;
+      }
+      if(type === 'work' && (!Array.isArray(arr) || !arr.length) && typeof FULL_WORK_INIT !== 'undefined') {
+        workDB = (FULL_WORK_INIT || []).slice();
+        arr = workDB;
+      }
+      return Array.isArray(arr) ? arr : [];
+    }catch(e){
+      return [];
+    }
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: setArrByType
+ * ========================================================= */
+function setArrByType(type, arr){
+    try{
+      if(type === 'work') workDB = arr || [];
+      else matDB = arr || [];
+    }catch(e){}
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: normalizeDbItem
+ * ========================================================= */
+function normalizeDbItem(it, type){
+    if(!it) return it;
+    if(!it.id) {
+      it.id = (type === 'work' ? 'w_' : 'm_') + Date.now() + '_' + Math.random().toString(36).slice(2,8);
+    }
+    if(type === 'mat') {
+      var raw = String([it.c,it.g,it.sc,it.subcategory,it.n].filter(Boolean).join(' '));
+      var n = norm(raw);
+      if(/диф|дифавтомат|dif/i.test(raw)){
+        it.c = 'Автоматика'; it.g = it.g || it.sc || 'ДИФы'; it.sc = it.sc || it.g; it.kind = it.kind || 'dif';
+      } else if(/узо/i.test(raw)) {
+        it.c = 'Автоматика'; it.g = it.g || it.sc || 'УЗО'; it.sc = it.sc || it.g; it.kind = it.kind || 'uzo';
+      } else if(/уздп|дугов/i.test(raw)) {
+        it.c = 'Автоматика'; it.g = it.g || it.sc || 'УЗДП'; it.sc = it.sc || it.g; it.kind = it.kind || 'uzdp';
+      } else if(/узм|реле напряж/i.test(raw)) {
+        it.c = 'Автоматика'; it.g = it.g || it.sc || 'УЗМ / реле напряжения'; it.sc = it.sc || it.g; it.kind = it.kind || 'voltage_relay';
+      } else if(/реле времени/i.test(raw)) {
+        it.c = 'Автоматика'; it.g = it.g || it.sc || 'Реле времени'; it.sc = it.sc || it.g; it.kind = it.kind || 'time_relay';
+      } else if(/контактор/i.test(raw)) {
+        it.c = 'Автоматика'; it.g = it.g || it.sc || 'Контакторы'; it.sc = it.sc || it.g; it.kind = it.kind || 'contactor';
+      } else if(/автомат|(^|\s)[abcdсавд]\s?\d{1,3}(\s|$)/i.test(raw)) {
+        it.c = 'Автоматика'; it.g = it.g || it.sc || 'Автоматы'; it.sc = it.sc || it.g; it.kind = it.kind || 'automatic';
+      } else if(/щит|корпус|бокс/i.test(raw)) {
+        it.c = 'Щитовое';
+        var g = /наклад/i.test(raw) ? 'Корпуса → Накладной' : 'Корпуса → Встраиваемый';
+        it.g = it.g || it.sc || g; it.sc = it.sc || it.g; it.kind = it.kind || 'shield_box';
+      } else if(/ншви|наконеч/i.test(raw)) {
+        it.c = 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → Наконечники'; it.sc = it.sc || it.g; it.kind = it.kind || 'lug_pack';
+      } else if(/пугв|провод/i.test(raw)) {
+        it.c = it.c || 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → Провода'; it.sc = it.sc || it.g; it.kind = it.kind || 'pugv';
+      } else if(/шин|клемм/i.test(raw)) {
+        it.c = 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → Шинки / клеммники'; it.sc = it.sc || it.g; it.kind = it.kind || 'busbar';
+      } else if(/греб/i.test(raw)) {
+        it.c = 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → Гребёнки'; it.sc = it.sc || it.g; it.kind = it.kind || 'comb_bus';
+      } else if(/din|дин|рейк|огранич/i.test(raw)) {
+        it.c = 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → DIN-рейки / ограничители'; it.sc = it.sc || it.g; it.kind = it.kind || 'din';
+      } else if(/маркир|бирк/i.test(raw)) {
+        it.c = 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → Маркировка'; it.sc = it.sc || it.g; it.kind = it.kind || 'marking';
+      }
+      it.brand = it.brand || detectBrand(raw);
+      it.nominal = it.nominal || detectNominal(raw);
+      it.leakage = it.leakage || detectLeakage(raw);
+      it.rcdType = it.rcdType || detectRcdType(raw);
+    }
+    if(type === 'work') {
+      var wr = String([it.c,it.g,it.sc,it.subcategory,it.n].filter(Boolean).join(' '));
+      if(/ниша.*щит|щит.*ниша|штроб|резк|алмаз|высверл|отверст/i.test(wr)) {
+        it.c = it.c || 'Штробление и резка';
+        if(/ниша.*щит|щит.*ниша/i.test(wr)) {
+          it.c = 'Штробление и резка';
+          it.g = it.g || it.sc || 'Ниши щита';
+          it.sc = it.sc || it.g;
+        }
+      }
+    }
+    return it;
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: normalizeDbs
+ * ========================================================= */
+function normalizeDbs(){
+    var mats = arrByType('mat').map(function(x){ return normalizeDbItem(x,'mat'); });
+    var works = arrByType('work').map(function(x){ return normalizeDbItem(x,'work'); });
+    setArrByType('mat', mats);
+    setArrByType('work', works);
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: renderGroupedFixed
  * ========================================================= */
 function renderGroupedFixed(arr, type, prefix){
     normalizeDbs();
@@ -2253,7 +2550,221 @@ function renderGroupedFixed(arr, type, prefix){
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderGlobalModalFixed
+ * DATABASE FUNCTION: strictFindMaterial
+ * ========================================================= */
+function strictFindMaterial(label, meta){
+    normalizeDbs();
+    meta = meta || {};
+    var arr = arrByType('mat');
+    var brand = meta.brand || detectBrand(label) || '';
+    var nominal = meta.nominal || detectNominal(label) || '';
+    var kind = String(meta.kind || '').toLowerCase();
+    var leakage = meta.leakage || detectLeakage(label);
+    var rcdType = meta.rcdType || detectRcdType(label);
+    var isBreaker = kind.indexOf('automatic') >= 0 || kind.indexOf('breaker') >= 0 || !!nominal;
+    var isDif = kind.indexOf('dif') >= 0 || /диф/i.test(label);
+    var isUzo = kind.indexOf('uzo') >= 0 || /узо/i.test(label);
+
+    var best = null, bestScore = -999;
+    arr.forEach(function(it){
+      var blob = norm([it.c,it.g,it.sc,it.subcategory,it.kind,it.brand,it.nominal,it.leakage,it.rcdType,it.n].filter(Boolean).join(' '));
+      var raw = String(it.n || '');
+      var score = 0;
+
+      if(isBreaker) {
+        if(!(blob.indexOf('автомат') >= 0 || String(it.kind||'').toLowerCase().indexOf('automatic') >= 0 || String(it.kind||'').toLowerCase().indexOf('breaker') >= 0)) return;
+        if(nominal && blob.replace(/\s+/g,'').indexOf(norm(nominal).replace(/\s+/g,'')) < 0) return;
+        score += 20;
+      }
+
+      if(isDif) {
+        if(blob.indexOf('диф') < 0 && String(it.kind||'').toLowerCase().indexOf('dif') < 0) return;
+        if(leakage && blob.indexOf(norm(leakage + 'ма')) < 0 && String(it.leakage||'') !== String(leakage)) return;
+        if(rcdType && blob.indexOf(norm(rcdType)) < 0 && String(it.rcdType||'').toUpperCase() !== String(rcdType).toUpperCase()) score -= 3;
+        if(norm(raw) === 'диф' || norm(raw) === 'дифы') score -= 100;
+        score += 20;
+      }
+
+      if(isUzo) {
+        if(blob.indexOf('узо') < 0 && String(it.kind||'').toLowerCase().indexOf('uzo') < 0) return;
+        if(leakage && blob.indexOf(norm(leakage + 'ма')) < 0 && String(it.leakage||'') !== String(leakage)) return;
+        if(rcdType && blob.indexOf(norm(rcdType)) < 0 && String(it.rcdType||'').toUpperCase() !== String(rcdType).toUpperCase()) score -= 3;
+        if(norm(raw) === 'узо') score -= 100;
+        score += 20;
+      }
+
+      if(brand) {
+        if(blob.indexOf(norm(brand)) >= 0) score += 15;
+        else score -= 30;
+      }
+
+      if(!isBreaker && !isDif && !isUzo) {
+        var words = norm(label).split(/\s+/).filter(Boolean);
+        words.forEach(function(w){ if(blob.indexOf(w) >= 0) score += 1; });
+      }
+
+      if(score > bestScore) { bestScore = score; best = it; }
+    });
+
+    if(best && bestScore >= 10) return best;
+    return null;
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: localArr
+ * ========================================================= */
+function localArr(type){
+    try{
+      var arr = type === 'work' ? workDB : matDB;
+      if(!Array.isArray(arr)) arr = [];
+      if(type === 'mat' && !arr.length && typeof FULL_MAT_INIT !== 'undefined') { matDB = (FULL_MAT_INIT || []).slice(); arr = matDB; }
+      if(type === 'work' && !arr.length && typeof FULL_WORK_INIT !== 'undefined') { workDB = (FULL_WORK_INIT || []).slice(); arr = workDB; }
+      return arr;
+    }catch(e){ return []; }
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: setLocalArr
+ * ========================================================= */
+function setLocalArr(type, arr){
+    try{ if(type === 'work') workDB = arr || []; else matDB = arr || []; }catch(e){}
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: saveLocalDb
+ * ========================================================= */
+function saveLocalDb(){
+    try{
+      if(typeof safeSet === 'function'){
+        safeSet('user_db_mat_v31', JSON.stringify(localArr('mat')));
+        safeSet('user_db_work_v31', JSON.stringify(localArr('work')));
+      } else {
+        localStorage.setItem('user_db_mat_v31', JSON.stringify(localArr('mat')));
+        localStorage.setItem('user_db_work_v31', JSON.stringify(localArr('work')));
+      }
+    }catch(e){}
+    try{
+      if(typeof db !== 'undefined' && db && typeof appUser !== 'undefined' && appUser && appUser.uid){
+        db.collection('user_db').doc(appUser.uid).set({
+          uid: appUser.uid,
+          name: appUser.name || appUser.email || '',
+          matDB: localArr('mat'),
+          workDB: localArr('work'),
+          updatedAt: new Date().toISOString()
+        }, { merge:true });
+      }
+    }catch(e){}
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: loadGlobalDb
+ * ========================================================= */
+async function loadGlobalDb(force){
+    if(!force && window.EP_GLOBAL_DB_VISIBLE_CACHE.loadedAt && Date.now() - window.EP_GLOBAL_DB_VISIBLE_CACHE.loadedAt < 12000){
+      return window.EP_GLOBAL_DB_VISIBLE_CACHE;
+    }
+    var cache = { matDB: [], workDB: [], loadedAt: Date.now() };
+    try{
+      if(typeof db !== 'undefined' && db){
+        var doc = await db.collection('settings').doc('global_db').get();
+        if(doc.exists){
+          var d = doc.data() || {};
+          cache.matDB = Array.isArray(d.matDB) ? d.matDB : [];
+          cache.workDB = Array.isArray(d.workDB) ? d.workDB : [];
+        }
+      }
+    }catch(e){ console.warn('global_db read error', e); }
+    if(!cache.matDB.length) cache.matDB = localArr('mat').slice();
+    if(!cache.workDB.length) cache.workDB = localArr('work').slice();
+    window.EP_GLOBAL_DB_VISIBLE_CACHE = cache;
+    return cache;
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: mergedArr
+ * ========================================================= */
+function mergedArr(type){
+    var local = localArr(type).map(function(x){ return Object.assign({}, x, {__src:'local'}); });
+    var cache = window.EP_GLOBAL_DB_VISIBLE_CACHE || {};
+    var global = (type === 'work' ? (cache.workDB || []) : (cache.matDB || [])).map(function(x){ return Object.assign({}, x, {__src:'global'}); });
+    var del = deletedSet(type);
+    var map = new Map();
+
+    local.forEach(function(it){
+      var k1 = itemKey(type,it), k2 = sigKey(type,it);
+      if(del.has(k1) || del.has(k2)) return;
+      map.set(k2, it);
+    });
+    global.forEach(function(it){
+      var k1 = itemKey(type,it), k2 = sigKey(type,it);
+      if(del.has(k1) || del.has(k2)) return;
+      if(!map.has(k2)) map.set(k2, it);
+    });
+    return Array.from(map.values());
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: groupHtml
+ * ========================================================= */
+function groupHtml(arr, type, prefix, mode){
+    var data = {};
+    (arr || []).forEach(function(it){
+      var c = it.c || 'Разное';
+      var g = getGroup(it) || 'Разное';
+      if(!data[c]) data[c] = {};
+      if(!data[c][g]) data[c][g] = [];
+      data[c][g].push(it);
+    });
+    var html = '', idx = 0;
+    Object.keys(data).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
+      var cid = prefix + '_c_' + (idx++);
+      var catStyle = type === 'work' ? 'style="color:var(--orange);background:rgba(245,158,11,.08);"' : '';
+      html += '<div class="cat-header" '+catStyle+' onclick="toggleCat(\''+cid+'\')">'+safe(c)+'</div><div class="cat-body" id="'+cid+'">';
+      Object.keys(data[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
+        var gid = prefix + '_g_' + (idx++);
+        html += '<div class="ep-db-sub-header" onclick="epToggleSmartSub(\''+gid+'\', event)"><span>'+safe(g)+'</span><small>открыть</small></div><div class="ep-db-sub-body" id="'+gid+'">';
+        data[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it){
+          var k = sigKey(type,it);
+          var src = it.__src === 'global' ? '<span style="color:#8B5CF6;font-weight:900;">🌍 серверная</span>' : '<span style="color:#10B981;font-weight:900;">👤 моя</span>';
+          var meta = safe(g) + ' • ' + src + ' • ' + (Number(it.p)||0) + ' ₽ / ' + safe(it.u || 'шт');
+          if(mode === 'global'){
+            html += '<label class="mat-item ep-select-row">' +
+              '<input type="checkbox" class="ep-global-check" data-key="'+safe(k)+'" data-type="'+type+'" style="width:22px;height:22px;accent-color:var(--primary);">' +
+              '<div style="flex:1;"><div class="ep-db-item-title">'+safe(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div></label>';
+          } else {
+            var color = type === 'work' ? 'background:var(--orange);' : '';
+            html += '<div class="mat-item"><div style="flex:1;"><div class="ep-db-item-title">'+safe(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+meta+'</div></div>' +
+              '<button class="mat-add-btn" style="'+color+'width:auto;margin:0;" onclick="promptAdd(\''+safe(k)+'\', \''+type+'\')">+ Добавить</button></div>';
+          }
+        });
+        html += '</div>';
+      });
+      html += '</div>';
+    });
+    return html || '<div style="padding:15px;color:var(--gray);font-weight:700;">Позиции не найдены</div>';
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: renderGlobalModalFixed
  * ========================================================= */
 function renderGlobalModalFixed(){
     var type = window.EP_GLOBAL_DB_TAB_FIXED || 'mat';
@@ -2271,14 +2782,155 @@ function renderGlobalModalFixed(){
 
 
 /* =========================================================
- * VISUAL FUNCTION: msg
+ * DATABASE FUNCTION: classify
  * ========================================================= */
-function msg(t){ if(typeof showToast === 'function') showToast(t); else alert(t); }
+function classify(it){
+    var meta = (it && it.dbMeta) || {};
+    var n = norm([it && it.n, it && it.c, getGroup(it), meta.kind, meta.category, meta.subcategory].filter(Boolean).join(' '));
+    var raw = String((it && it.n) || '');
+    if(meta.kind) {
+      var k = String(meta.kind).toLowerCase();
+      if(k.indexOf('dif') >= 0) return 'dif';
+      if(k.indexOf('uzo') >= 0) return 'uzo';
+      if(k.indexOf('automatic') >= 0 || k.indexOf('breaker') >= 0) return 'auto';
+      if(k.indexOf('voltage') >= 0) return 'voltage_relay';
+      if(k.indexOf('contactor') >= 0) return 'contactor';
+    }
+    if(/диф/i.test(raw) || n.indexOf('диф') >= 0) return 'dif';
+    if(/узо/i.test(raw) || n.indexOf('узо') >= 0) return 'uzo';
+    if(/уздп|дугов/i.test(raw) || n.indexOf('уздп') >= 0) return 'uzdp';
+    if(/узм|реле напряж/i.test(raw) || n.indexOf('реле напряж') >= 0) return 'voltage_relay';
+    if(/реле времени/i.test(raw) || n.indexOf('реле времени') >= 0) return 'time_relay';
+    if(/контактор/i.test(raw) || n.indexOf('контактор') >= 0) return 'contactor';
+    if(/автомат|(^|\s)[abcdсавд]\s?\d{1,3}(\s|$)/i.test(raw) || /\bc\s?\d{1,3}\b/.test(n)) return 'auto';
+    if(/кабель|ввг|провод|пугв|utp|ftp|нг/i.test(raw) || n.indexOf('кабель') >= 0 || n.indexOf('ввг') >= 0) return 'cable';
+    if(/щит|корпус|бокс/i.test(raw) || n.indexOf('корпус') >= 0) return 'shield_box';
+    if(/греб/i.test(raw)) return 'comb';
+    if(/ншви|наконеч/i.test(raw)) return 'lug';
+    if(/шин|клемм/i.test(raw)) return 'bus';
+    if(/din|дин|рейк|огранич/i.test(raw)) return 'din';
+    if(/маркир|бирк/i.test(raw)) return 'marking';
+    if((it && it.type) === 'work') return 'work:' + norm([(it.c||''), getGroup(it)].join('|'));
+    return 'other:' + norm([(it && it.c) || '', getGroup(it)].join('|'));
+  }
+
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderList
+ * DATABASE FUNCTION: groupOf
+ * ========================================================= */
+function groupOf(it){ return (it && (it.g || it.sc || it.subcategory || it.group)) || ''; }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: localDb
+ * ========================================================= */
+function localDb(type){
+    try{
+      var arr = type === 'work' ? workDB : matDB;
+      if(!Array.isArray(arr)) arr = [];
+      if(type === 'mat' && !arr.length && typeof FULL_MAT_INIT !== 'undefined') { matDB = (FULL_MAT_INIT || []).slice(); arr = matDB; }
+      if(type === 'work' && !arr.length && typeof FULL_WORK_INIT !== 'undefined') { workDB = (FULL_WORK_INIT || []).slice(); arr = workDB; }
+      return arr;
+    }catch(e){ return []; }
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: setLocalDb
+ * ========================================================= */
+function setLocalDb(type, arr){
+    try{ if(type === 'work') workDB = arr || []; else matDB = arr || []; }catch(e){}
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: saveMyDb
+ * ========================================================= */
+async function saveMyDb(){
+    try{
+      if(typeof safeSet === 'function'){
+        safeSet('user_db_mat_v31', JSON.stringify(localDb('mat')));
+        safeSet('user_db_work_v31', JSON.stringify(localDb('work')));
+      } else {
+        localStorage.setItem('user_db_mat_v31', JSON.stringify(localDb('mat')));
+        localStorage.setItem('user_db_work_v31', JSON.stringify(localDb('work')));
+      }
+    }catch(e){}
+    try{
+      if(typeof db !== 'undefined' && db && typeof appUser !== 'undefined' && appUser && appUser.uid){
+        await db.collection('user_db').doc(appUser.uid).set({
+          uid: appUser.uid,
+          name: appUser.name || appUser.email || '',
+          matDB: localDb('mat'),
+          workDB: localDb('work'),
+          updatedAt: new Date().toISOString()
+        }, { merge:true });
+      }
+    }catch(e){ console.warn('saveMyDb', e); }
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: loadGlobal
+ * ========================================================= */
+async function loadGlobal(force){
+    if(!force && window.EP_HARD_GLOBAL_CACHE.loadedAt && Date.now() - window.EP_HARD_GLOBAL_CACHE.loadedAt < 8000) return window.EP_HARD_GLOBAL_CACHE;
+    var out = { matDB: [], workDB: [], loadedAt: Date.now() };
+    try{
+      if(typeof db !== 'undefined' && db){
+        var doc = await db.collection('settings').doc('global_db').get();
+        if(doc.exists){
+          var d = doc.data() || {};
+          out.matDB = Array.isArray(d.matDB) ? d.matDB : [];
+          out.workDB = Array.isArray(d.workDB) ? d.workDB : [];
+        }
+      }
+    }catch(e){ console.warn('load global_db', e); }
+    if(!out.matDB.length) out.matDB = localDb('mat').slice();
+    if(!out.workDB.length) out.workDB = localDb('work').slice();
+    window.EP_HARD_GLOBAL_CACHE = out;
+    window.EP_GLOBAL_DB_VISIBLE_CACHE = out;
+    try { if(typeof epGlobalDbCache !== 'undefined') { epGlobalDbCache.matDB = out.matDB; epGlobalDbCache.workDB = out.workDB; } } catch(e){}
+    return out;
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: merged
+ * ========================================================= */
+function merged(type){
+    var del = deletedSet(type);
+    var local = localDb(type).map(function(x){ return Object.assign({}, x, {__src:'local'}); });
+    var global = (type === 'work' ? window.EP_HARD_GLOBAL_CACHE.workDB : window.EP_HARD_GLOBAL_CACHE.matDB)
+      .map(function(x){ return Object.assign({}, x, {__src:'global'}); });
+    var map = new Map();
+
+    local.forEach(function(it){
+      if(del.has(idKey(it)) || del.has(sigKey(type,it))) return;
+      map.set(sigKey(type,it), it);
+    });
+    global.forEach(function(it){
+      if(del.has(idKey(it)) || del.has(sigKey(type,it))) return;
+      var k = sigKey(type,it);
+      if(!map.has(k)) map.set(k, it);
+    });
+    return Array.from(map.values());
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: renderList
  * ========================================================= */
 function renderList(arr,type,prefix,mode){
     var data = {};
@@ -2330,7 +2982,82 @@ function renderList(arr,type,prefix,mode){
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderItems
+ * DATABASE FUNCTION: toolbar
+ * ========================================================= */
+function toolbar(type){
+    var title = type === 'mat' ? 'Материалы' : 'Работы';
+    return '<div style="border:1px solid var(--border);border-radius:14px;padding:10px;margin:10px 0;background:rgba(239,68,68,.05);">' +
+      '<div style="font-weight:900;color:var(--danger);margin-bottom:6px;">🗑 Удаление позиций: '+title+'</div>' +
+      '<div style="font-size:11px;color:var(--gray);margin-bottom:8px;">Удаляет/скрывает только у мастера. База сервера не трогается.</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">' +
+      '<button class="btn-info" style="margin:0;padding:10px;" onclick="epHardSelectDelete(\''+type+'\', true)">✅ Выделить все</button>' +
+      '<button class="btn-vendor" style="margin:0;padding:10px;" onclick="epHardSelectDelete(\''+type+'\', false)">⬜ Убрать галочки</button>' +
+      '</div>' +
+      '<button class="btn-danger" style="width:100%;margin:0;padding:12px;" onclick="epHardDeleteSelected(\''+type+'\')">Удалить выбранные у мастера</button>' +
+      '</div>';
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: loadCachedGlobalFromStorage
+ * ========================================================= */
+function loadCachedGlobalFromStorage(){
+    try{
+      var raw = localStorage.getItem('ep_global_cache_ultimate_v1');
+      if(!raw) return null;
+      var d = JSON.parse(raw);
+      if(d && (Array.isArray(d.matDB) || Array.isArray(d.workDB))) return {
+        matDB: Array.isArray(d.matDB) ? d.matDB : [],
+        workDB: Array.isArray(d.workDB) ? d.workDB : [],
+        ts: d.ts || Date.now()
+      };
+    }catch(e){}
+    return null;
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: readGlobal
+ * ========================================================= */
+async function readGlobal(force){
+    if(!force && window.EP_ULTIMATE_DB_CACHE.ts && Date.now() - window.EP_ULTIMATE_DB_CACHE.ts < 6000) return window.EP_ULTIMATE_DB_CACHE;
+
+    var out = { matDB: [], workDB: [], ts: Date.now() };
+    var fromStorage = loadCachedGlobalFromStorage();
+    if(fromStorage) out = fromStorage;
+
+    try{
+      if(typeof db !== 'undefined' && db){
+        var doc = await db.collection('settings').doc('global_db').get();
+        if(doc.exists){
+          var d = doc.data() || {};
+          out = {
+            matDB: Array.isArray(d.matDB) ? d.matDB : [],
+            workDB: Array.isArray(d.workDB) ? d.workDB : [],
+            ts: Date.now()
+          };
+        }
+      }
+    }catch(e){ console.warn('read global_db failed', e); }
+
+    if(!out.matDB.length) out.matDB = localDb('mat').slice();
+    if(!out.workDB.length) out.workDB = localDb('work').slice();
+
+    window.EP_ULTIMATE_DB_CACHE = out;
+    window.EP_HARD_GLOBAL_CACHE = out;
+    window.EP_GLOBAL_DB_VISIBLE_CACHE = out;
+    try { localStorage.setItem('ep_global_cache_ultimate_v1', JSON.stringify(out)); } catch(e){}
+    return out;
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: renderItems
  * ========================================================= */
 function renderItems(arr,type,prefix,mode){
     var data = {};
@@ -2389,21 +3116,51 @@ function renderItems(arr,type,prefix,mode){
 
 
 /* =========================================================
- * VISUAL FUNCTION: unhide
+ * DATABASE FUNCTION: upsertLocal
  * ========================================================= */
-function unhide(type,it){
-    var del = delSet(type);
-    del.delete(idkey(it));
-    del.delete(sig(type,it));
-    if(it && it.originGlobalId) del.delete('id:' + String(it.originGlobalId));
-    saveDel(type,del);
+function upsertLocal(type,it){
+    var copy = makeLocalCopy(type,it);
+    var arr = localDb(type).slice();
+    var s = sig(type,copy);
+    var original = copy.originGlobalId || '';
+    var idx = arr.findIndex(function(x){
+      return sig(type,x) === s || (original && String(x.originGlobalId || '') === String(original));
+    });
+    if(idx >= 0) {
+      var keepId = arr[idx].id || copy.id;
+      arr[idx] = Object.assign({}, arr[idx], copy, { id: keepId });
+      setLocalDb(type, arr);
+      return 'updated';
+    }
+    arr.push(copy);
+    setLocalDb(type, arr);
+    return 'added';
   }
 
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: esc
+ * DATABASE FUNCTION: deleteToolbar
+ * ========================================================= */
+function deleteToolbar(type){
+    var title = type === 'mat' ? 'Материалы' : 'Работы';
+    return '<div style="border:1px solid var(--border);border-radius:14px;padding:10px;margin:10px 0;background:rgba(239,68,68,.05);">' +
+      '<div style="font-weight:900;color:var(--danger);margin-bottom:6px;">🗑 Удаление позиций: '+title+'</div>' +
+      '<div style="font-size:11px;color:var(--gray);margin-bottom:8px;">Удаляет/скрывает только у мастера. База сервера не трогается.</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">' +
+      '<button class="btn-info" style="margin:0;padding:10px;" onclick="epUltimateSelectDelete(\''+type+'\', true)">✅ Выделить все</button>' +
+      '<button class="btn-vendor" style="margin:0;padding:10px;" onclick="epUltimateSelectDelete(\''+type+'\', false)">⬜ Убрать галочки</button>' +
+      '</div>' +
+      '<button class="btn-danger" style="width:100%;margin:0;padding:12px;" onclick="epUltimateDeleteSelected(\''+type+'\')">Удалить выбранные у мастера</button>' +
+      '</div>';
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: esc
  * ========================================================= */
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g,function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
   function cleanText(s){ return String(s || '').toLowerCase().replace(/ё/g,'е').replace(/×/g,'x').replace(/х/g,'x').replace(/[^a-zа-я0-9]+/g,' ').trim(); }
@@ -2671,7 +3428,180 @@ function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g,function(m
 
 
 /* =========================================================
- * VISUAL FUNCTION: sourceSwitcherHtml
+ * DATABASE FUNCTION: syncWindowCaches
+ * ========================================================= */
+function syncWindowCaches(){
+    try{
+      window.EP_MY_MAT = EP_MY_MAT;
+      window.EP_MY_WORK = EP_MY_WORK;
+      window.EP_GLOBAL_MAT = EP_SERVER_MAT;
+      window.EP_GLOBAL_WORK = EP_SERVER_WORK;
+      window.EP_FORCE_GLOBAL = {matDB:EP_SERVER_MAT, workDB:EP_SERVER_WORK};
+      window.EP_ULTIMATE_DB_CACHE = {matDB:EP_SERVER_MAT, workDB:EP_SERVER_WORK, ts:Date.now()};
+      window.EP_GLOBAL_DB_VISIBLE_CACHE = {matDB:EP_SERVER_MAT, workDB:EP_SERVER_WORK, ts:Date.now()};
+      window.userMatDB = EP_MY_MAT;
+      window.userWorkDB = EP_MY_WORK;
+      if(scope()==='global'){ matDB = EP_SERVER_MAT.slice(); workDB = EP_SERVER_WORK.slice(); }
+      else { matDB = EP_MY_MAT.slice(); workDB = EP_MY_WORK.slice(); }
+    }catch(e){}
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: saveMyLocal
+ * ========================================================= */
+function saveMyLocal(type, arr){
+    arr = unique(arr||[], type);
+    if(type==='work') EP_MY_WORK = arr; else EP_MY_MAT = arr;
+    setLS(LS_MY_MAT, EP_MY_MAT);
+    setLS(LS_MY_WORK, EP_MY_WORK);
+    try{ localStorage.setItem(LS_MASTER_CREATED,'1'); }catch(e){}
+    syncWindowCaches();
+    epSaveMyDbToServer();
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: saveServerLocal
+ * ========================================================= */
+function saveServerLocal(type, arr, saveDirect){
+    arr = unique(arr||[], type);
+    if(type==='work') EP_SERVER_WORK = arr; else EP_SERVER_MAT = arr;
+    setObjLS(LS_SERVER_CACHE, {matDB:EP_SERVER_MAT, workDB:EP_SERVER_WORK, cleanMode:cleanMode(), ts:Date.now()});
+    syncWindowCaches();
+    if(saveDirect) epSaveServerDbToServer();
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epSaveMyDbToServer
+ * ========================================================= */
+async function epSaveMyDbToServer(){
+    try{
+      if(typeof db !== 'undefined' && db && uid()){
+        await db.collection('user_db').doc(uid()).set({
+          uid: uid(),
+          masterName: (appUser && (appUser.name || appUser.email)) || '',
+          matDB: EP_MY_MAT,
+          workDB: EP_MY_WORK,
+          created: true,
+          updatedAt: new Date().toISOString()
+        }, {merge:true});
+      }
+    }catch(e){ console.warn('save my db failed', e); }
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epSaveServerDbToServer
+ * ========================================================= */
+async function epSaveServerDbToServer(){
+    try{
+      if(typeof db !== 'undefined' && db && isAdmin()){
+        await db.collection('settings').doc('global_db').set({
+          matDB: EP_SERVER_MAT,
+          workDB: EP_SERVER_WORK,
+          cleanMode: cleanMode(),
+          updatedAt: new Date().toISOString()
+        }, {merge:true});
+      }
+    }catch(e){ console.warn('save server db failed', e); }
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epSendServerProposal
+ * ========================================================= */
+async function epSendServerProposal(type,items,action){
+    try{
+      if(typeof db !== 'undefined' && db){
+        await db.collection('db_proposals').add({
+          uid: uid() || '',
+          masterName: (appUser && (appUser.name || appUser.email)) || '',
+          type: type,
+          action: action,
+          items: Array.isArray(items) ? items.map(clone) : items,
+          target: 'server_db',
+          status: 'pending',
+          createdAt: new Date().toISOString()
+        });
+      }
+    }catch(e){ console.warn('server proposal failed', e); }
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epLoadDbFromServer
+ * ========================================================= */
+async function epLoadDbFromServer(){
+    EP_MY_MAT = arrLS(LS_MY_MAT);
+    EP_MY_WORK = arrLS(LS_MY_WORK);
+    var cache = objLS(LS_SERVER_CACHE);
+    if(!Array.isArray(cache.matDB) && !Array.isArray(cache.workDB)) cache = objLS(LS_OLD_SERVER_CACHE);
+    if(Array.isArray(cache.matDB)) EP_SERVER_MAT = cache.matDB;
+    if(Array.isArray(cache.workDB)) EP_SERVER_WORK = cache.workDB;
+    if(cache.cleanMode) try{ localStorage.setItem(LS_CLEAN,'1'); }catch(e){}
+
+    try{
+      if(typeof db !== 'undefined' && db){
+        var gdoc = await db.collection('settings').doc('global_db').get();
+        if(gdoc.exists){
+          EP_SERVER_DOC_SEEN = true;
+          var gd = gdoc.data() || {};
+          EP_SERVER_MAT = Array.isArray(gd.matDB) ? gd.matDB : [];
+          EP_SERVER_WORK = Array.isArray(gd.workDB) ? gd.workDB : [];
+          if(gd.cleanMode || gd.resetAt) try{ localStorage.setItem(LS_CLEAN,'1'); }catch(e){}
+          setObjLS(LS_SERVER_CACHE, {matDB:EP_SERVER_MAT, workDB:EP_SERVER_WORK, cleanMode:cleanMode(), ts:Date.now()});
+        } else if(isAdmin() && !cleanMode()) {
+          EP_SERVER_DOC_SEEN = false;
+          await db.collection('settings').doc('global_db').set({matDB:EP_SERVER_MAT, workDB:EP_SERVER_WORK, createdAt:new Date().toISOString()}, {merge:true});
+        }
+
+        if(uid()){
+          var udoc = await db.collection('user_db').doc(uid()).get();
+          if(udoc.exists){
+            var ud = udoc.data() || {};
+            EP_MY_MAT = Array.isArray(ud.matDB) ? ud.matDB : EP_MY_MAT;
+            EP_MY_WORK = Array.isArray(ud.workDB) ? ud.workDB : EP_MY_WORK;
+            setLS(LS_MY_MAT, EP_MY_MAT);
+            setLS(LS_MY_WORK, EP_MY_WORK);
+            try{ localStorage.setItem(LS_MASTER_CREATED,'1'); }catch(e){}
+          }
+        }
+      }
+    }catch(e){ console.warn('load db failed', e); }
+
+    var hasCache = Array.isArray(cache.matDB) || Array.isArray(cache.workDB);
+    if(!cleanMode() && !EP_SERVER_DOC_SEEN && !hasCache){
+      EP_SERVER_MAT = TOP_MAT_DB.slice();
+      EP_SERVER_WORK = TOP_WORK_DB.slice();
+    }
+
+    EP_MY_MAT = unique(EP_MY_MAT, 'mat');
+    EP_MY_WORK = unique(EP_MY_WORK, 'work');
+    EP_SERVER_MAT = unique(EP_SERVER_MAT, 'mat');
+    EP_SERVER_WORK = unique(EP_SERVER_WORK, 'work');
+    syncWindowCaches();
+    epRefreshDbScopeUi();
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: sourceSwitcherHtml
  * ========================================================= */
 function sourceSwitcherHtml(type){
     return '<div style="border:1px solid var(--primary);border-radius:14px;padding:10px;margin:0 0 12px;background:rgba(79,70,229,.06);">'+
@@ -2688,7 +3618,7 @@ function sourceSwitcherHtml(type){
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderCatalog
+ * DATABASE FUNCTION: renderCatalog
  * ========================================================= */
 function renderCatalog(type){
     var arr = activeArr(type);
@@ -2716,7 +3646,7 @@ function renderCatalog(type){
 
 
 /* =========================================================
- * VISUAL FUNCTION: editorTop
+ * DATABASE FUNCTION: editorTop
  * ========================================================= */
 function editorTop(type){
     var title=type==='work'?'работ':'материалов';
@@ -2748,7 +3678,7 @@ function editorTop(type){
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderDbRows
+ * DATABASE FUNCTION: renderDbRows
  * ========================================================= */
 function renderDbRows(type){
     var arr=activeArr(type);
@@ -2777,18 +3707,104 @@ function renderDbRows(type){
 
 
 /* =========================================================
- * VISUAL FUNCTION: serverModalRow
+ * DATABASE FUNCTION: editorRow
  * ========================================================= */
-function serverModalRow(type,it){
+function editorRow(type,it){
     var item=enc(it);
     var sub=(groupOf(it)?groupOf(it)+' • ':'')+(Number(it.p)||0)+' ₽ / '+(it.u||'шт');
-    return '<label class="mat-item ep-select-row"><input type="checkbox" class="ep-global-check" data-type="'+type+'" data-item="'+esc(item)+'" style="width:22px;height:22px;accent-color:var(--primary);"><div style="flex:1;"><b>'+esc(it.n||'Позиция')+'</b><br><span style="color:var(--gray);font-size:11px;">'+esc(sub)+'</span></div></label>';
+    var checked=scope()==='my' ? '<input type="checkbox" class="ep-my-del-check" data-type="'+type+'" data-item="'+esc(item)+'" style="width:20px;height:20px;accent-color:#EF4444;margin:4px 8px 0 0;">' : '';
+    var copy=scope()==='global' ? '<button class="btn-info" style="width:auto;margin:0;padding:7px;" data-type="'+type+'" data-item="'+esc(item)+'" onclick="epCopyOneServerToMy(this.dataset.type,this.dataset.item)">В мою</button>' : '';
+    return '<div class="emp-row" style="align-items:flex-start;">'+checked+'<div style="flex:1;"><b>'+esc(it.n||'Позиция')+'</b><br><span style="color:var(--gray);font-size:10px;">'+esc(sub)+'</span></div><input type="number" value="'+(Number(it.p)||0)+'" data-id="'+esc(String(it.id||''))+'" data-type="'+type+'" onchange="requestPriceChange(this.dataset.type,this.dataset.id,this.value)" style="width:70px;margin:0;padding:4px;text-align:center;">'+copy+'</div>';
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: reviewedItems
+ * ========================================================= */
+function reviewedItems(){
+    var src=(window.EP_DB_REVIEW && window.EP_DB_REVIEW.items) || [];
+    var type=(window.EP_DB_REVIEW && window.EP_DB_REVIEW.type) || 'mat';
+    var out=[];
+    for(var i=0;i<src.length;i++){
+      var ch=$('ep-db-check-'+i); if(ch && !ch.checked) continue;
+      var name=$('ep-db-name-'+i), cat=$('ep-db-cat-'+i), sub=$('ep-db-subcat-'+i), price=$('ep-db-price-'+i), unit=$('ep-db-unit-'+i);
+      var it={
+        id: src[i].id || ((type==='work'?'w':'m')+'_imp_'+Date.now()+'_'+i),
+        c: cat ? cat.value.trim() : (src[i].c || 'Разное'),
+        g: sub ? sub.value.trim() : (src[i].g || src[i].sc || ''),
+        sc: sub ? sub.value.trim() : (src[i].sc || src[i].g || ''),
+        n: name ? name.value.trim() : src[i].n,
+        p: price ? Number(String(price.value).replace(',','.').replace(/[^\d.]/g,''))||0 : Number(src[i].p)||0,
+        u: unit ? unit.value.trim() || 'шт' : (src[i].u || 'шт')
+      };
+      if(it.n) out.push(epAutoGroupItem(type,it));
+    }
+    return out;
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: localFullCleanOnly
+ * ========================================================= */
+function localFullCleanOnly(){
+    CLEAN_KEYS.forEach(function(k){ try{ localStorage.removeItem(k); }catch(e){} });
+    try{ localStorage.setItem(LS_CLEAN,'1'); localStorage.setItem(LS_SCOPE,'my'); }catch(e){}
+    EP_MY_MAT=[]; EP_MY_WORK=[]; EP_SERVER_MAT=[]; EP_SERVER_WORK=[]; EP_SERVER_DOC_SEEN=true;
+    setLS(LS_MY_MAT, []); setLS(LS_MY_WORK, []);
+    setObjLS(LS_SERVER_CACHE, {matDB:[], workDB:[], cleanMode:true, ts:Date.now()});
+    syncWindowCaches();
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: commitCollection
+ * ========================================================= */
+async function commitCollection(collection, mode){
+    if(typeof db === 'undefined' || !db) return 0;
+    var snap = await db.collection(collection).get();
+    var batch = db.batch(), ops = 0, count = 0, promises=[];
+    snap.forEach(function(doc){
+      if(mode === 'delete') batch.delete(doc.ref);
+      else batch.set(doc.ref, {matDB:[], workDB:[], cleanMode:true, resetAt:new Date().toISOString()}, {merge:true});
+      ops++; count++;
+      if(ops >= 450){ promises.push(batch.commit()); batch=db.batch(); ops=0; }
+    });
+    if(ops) promises.push(batch.commit());
+    if(promises.length) await Promise.all(promises);
+    return count;
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: autoGroupWork
+ * ========================================================= */
+function autoGroupWork(item){
+    var it=clone(item); var n=cleanText([it.n,it.c,it.g,it.sc].join(' '));
+    if(/демонтаж/.test(n)){ it.c='Демонтаж'; if(/щит|автомат|узо|диф|рубильник|реле/.test(n)) it.g='Щитовое'; else if(/розет|выключ|короб|звон/.test(n)) it.g='Электроточки'; else if(/люстр|свет/.test(n)) it.g='Освещение'; else it.g='Демонтаж'; }
+    else if(/ниша|вырубка.*щит|щит.*ниша/.test(n)){ it.c='Ниши щита'; if(/бетон/.test(n)) it.g='Бетон'; else if(/кирпич/.test(n)) it.g='Кирпич'; else if(/панель/.test(n)) it.g='Панелька'; else if(/мягк|гипс|гкл/.test(n)) it.g='Мягкий материал'; else it.g='Материал стены'; }
+    else if(/штроб|резк|отверстие|алмаз/.test(n)){ it.c='Штробление и резка'; if(/100x50|100 50|ввод/.test(n)) it.g='Штроба 100×50 вводная'; else if(/50x50|50 50/.test(n)) it.g='Штроба 50×50'; else if(/25x30|25 30/.test(n)) it.g='Штроба 25×30'; else if(/132/.test(n)) it.g='Отверстие 132 мм'; else if(/52/.test(n)) it.g='Отверстие 52 мм'; else it.g='Алмазная резка'; }
+    else if(/высверл|подрозет/.test(n) && /бетон|кирпич|панель|мягк|копос|глубок|стандарт/.test(n)){ it.c='Высверливание подрозетников'; if(/копос|75|74/.test(n)) it.g='Копос 74×75'; else if(/глубок|64/.test(n)) it.g='Глубокий'; else it.g='Стандарт'; }
+    else if(/вклейк|установка подрозет|распаечн|электроточк/.test(n)){ it.c='Черновая электрика'; if(/подрозет/.test(n)) it.g='Подрозетники'; else if(/короб/.test(n)) it.g='Распределительные коробки'; else it.g='Электроточки'; }
+    else if(/проклад|кабел|гофр|трасс/.test(n)){ it.c='Монтаж'; if(/гофр|пол/.test(n)) it.g='Прокладка кабеля в гофре / пол'; else if(/потол|без гоф/.test(n)) it.g='Прокладка кабеля без гофры / потолок'; else it.g='Прокладка кабеля'; }
+    else if(/розет|выключ|механизм|терморег|датчик|звонк|краб/.test(n)){ it.c='Чистовая установка'; if(/наклад/.test(n)) it.g='Накладные механизмы'; else it.g='Механизмы'; }
+    else if(/свет|люстр|бра|трек|спот|лента|профил/.test(n)){ it.c='Освещение'; if(/лента|профил/.test(n)) it.g='LED / профиль'; else it.g='Светильники'; }
+    else if(/щит|автомат|узо|диф|реле|счетчик|сборка щита|однолин/.test(n)){ it.c='Щитовое'; if(/сборка/.test(n)) it.g='Сборка щита'; else if(/счетчик/.test(n)) it.g='Счетчики'; else if(/реле/.test(n)) it.g='Автоматика и реле'; else it.g='Монтаж'; }
+    else { it.c=it.c&&it.c!=='Разное'?it.c:'Прочие работы'; it.g=it.g||it.sc||'Без группы'; }
+    it.sc=it.g; return it;
   }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderServerModalList
+ * DATABASE FUNCTION: renderServerModalList
  * ========================================================= */
 function renderServerModalList(type){
     var arr=serverArr(type), html='';
@@ -2812,7 +3828,7 @@ function renderServerModalList(type){
 
 
 /* =========================================================
- * VISUAL FUNCTION: epRefreshDbScopeUi
+ * DATABASE FUNCTION: epRefreshDbScopeUi
  * ========================================================= */
 function epRefreshDbScopeUi(){
     var my=$('ep-scope-my-btn'), gl=$('ep-scope-global-btn'), st=$('ep-db-scope-status'), cleanSt=$('ep-clean-status-line');
@@ -2826,7 +3842,7 @@ function epRefreshDbScopeUi(){
 
 
 /* =========================================================
- * VISUAL FUNCTION: install
+ * DATABASE FUNCTION: install
  * ========================================================= */
 function install(){
     syncWindowCaches();
@@ -2845,7 +3861,125 @@ function install(){
 
 
 /* =========================================================
- * VISUAL FUNCTION: rerender
+ * DATABASE FUNCTION: getMy
+ * ========================================================= */
+function getMy(type){
+    var key = type === 'work' ? LS_MY_WORK : LS_MY_MAT;
+    var fromWin = type === 'work' ? window.EP_MY_WORK : window.EP_MY_MAT;
+    return Array.isArray(fromWin) ? fromWin.slice() : readArr(key);
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: getServer
+ * ========================================================= */
+function getServer(type){
+    var fromWin = type === 'work' ? window.EP_GLOBAL_WORK : window.EP_GLOBAL_MAT;
+    if(Array.isArray(fromWin)) return fromWin.slice();
+    var c = readObj(LS_SERVER_CACHE);
+    var a = type === 'work' ? c.workDB : c.matDB;
+    return Array.isArray(a) ? a : [];
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: setMy
+ * ========================================================= */
+function setMy(type,arr){
+    arr = unique(arr, type);
+    if(type === 'work') window.EP_MY_WORK = arr; else window.EP_MY_MAT = arr;
+    writeArr(LS_MY_MAT, type === 'mat' ? arr : getMy('mat'));
+    writeArr(LS_MY_WORK, type === 'work' ? arr : getMy('work'));
+    try{ window.userMatDB = getMy('mat'); window.userWorkDB = getMy('work'); }catch(e){}
+    syncMainArrays('my');
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: setServer
+ * ========================================================= */
+function setServer(type,arr){
+    arr = unique(arr, type);
+    if(type === 'work') window.EP_GLOBAL_WORK = arr; else window.EP_GLOBAL_MAT = arr;
+    var mat = type === 'mat' ? arr : getServer('mat');
+    var work = type === 'work' ? arr : getServer('work');
+    try{
+      window.EP_FORCE_GLOBAL = {matDB:mat, workDB:work};
+      window.EP_ULTIMATE_DB_CACHE = {matDB:mat, workDB:work, ts:Date.now()};
+      window.EP_GLOBAL_DB_VISIBLE_CACHE = {matDB:mat, workDB:work, ts:Date.now()};
+    }catch(e){}
+    writeObj(LS_SERVER_CACHE, {matDB:mat, workDB:work, ts:Date.now()});
+    syncMainArrays('global');
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: syncMainArrays
+ * ========================================================= */
+function syncMainArrays(target){
+    try{
+      var use = target || activeTarget();
+      if(use === 'global'){
+        window.matDB = getServer('mat');
+        window.workDB = getServer('work');
+        try{ matDB = window.matDB; workDB = window.workDB; }catch(e){}
+      } else {
+        window.matDB = getMy('mat');
+        window.workDB = getMy('work');
+        try{ matDB = window.matDB; workDB = window.workDB; }catch(e){}
+      }
+    }catch(e){}
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: saveMyRemote
+ * ========================================================= */
+async function saveMyRemote(){
+    try{
+      if(typeof db !== 'undefined' && db && uid()){
+        await db.collection('user_db').doc(uid()).set({
+          uid: uid(),
+          masterName: (window.appUser && (appUser.name || appUser.email)) || '',
+          matDB: getMy('mat'),
+          workDB: getMy('work'),
+          created: true,
+          updatedAt: new Date().toISOString()
+        }, {merge:true});
+        return true;
+      }
+    }catch(e){ console.warn('EP V4 save my import failed', e); }
+    return false;
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: saveServerRemote
+ * ========================================================= */
+async function saveServerRemote(){
+    try{
+      if(typeof db !== 'undefined' && db && isAdmin()){
+        await db.collection('settings').doc('global_db').set({
+          matDB: getServer('mat'),
+          workDB: getServer('work'),
+          updatedAt: new Date().toISOString()
+        }, {merge:true});
+        return true;
+      }
+    }catch(e){ console.warn('EP V4 save server import failed', e); }
+    return false;
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: rerender
  * ========================================================= */
 function rerender(){
     try{ if(typeof renderDbEditors === 'function') renderDbEditors(); }catch(e){}
@@ -2859,7 +3993,118 @@ function rerender(){
 
 
 /* =========================================================
- * VISUAL FUNCTION: updateButtons
+ * DATABASE FUNCTION: getServerFromCache
+ * ========================================================= */
+function getServerFromCache(type){
+    var c = readObj(LS_SERVER_CACHE);
+    var a = type === 'work' ? c.workDB : c.matDB;
+    return Array.isArray(a) ? a : [];
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: setMyArrays
+ * ========================================================= */
+function setMyArrays(mat,work){
+    mat = unique(mat || [], 'mat');
+    work = unique(work || [], 'work');
+    window.EP_MY_MAT = mat;
+    window.EP_MY_WORK = work;
+    window.userMatDB = mat;
+    window.userWorkDB = work;
+    writeArr(LS_MY_MAT, mat);
+    writeArr(LS_MY_WORK, work);
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: setServerArrays
+ * ========================================================= */
+function setServerArrays(mat,work){
+    mat = unique(mat || [], 'mat');
+    work = unique(work || [], 'work');
+    window.EP_GLOBAL_MAT = mat;
+    window.EP_GLOBAL_WORK = work;
+    window.EP_FORCE_GLOBAL = {matDB:mat, workDB:work};
+    window.EP_ULTIMATE_DB_CACHE = {matDB:mat, workDB:work, ts:Date.now()};
+    window.EP_GLOBAL_DB_VISIBLE_CACHE = {matDB:mat, workDB:work, ts:Date.now()};
+    writeObj(LS_SERVER_CACHE, {matDB:mat, workDB:work, ts:Date.now()});
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: syncActiveArrays
+ * ========================================================= */
+function syncActiveArrays(){
+    try{
+      if(getScope() === 'global'){
+        var sm = Array.isArray(window.EP_GLOBAL_MAT) ? window.EP_GLOBAL_MAT : getServerFromCache('mat');
+        var sw = Array.isArray(window.EP_GLOBAL_WORK) ? window.EP_GLOBAL_WORK : getServerFromCache('work');
+        window.matDB = sm.slice();
+        window.workDB = sw.slice();
+        try{ matDB = window.matDB; workDB = window.workDB; }catch(e){}
+      } else {
+        var mm = Array.isArray(window.EP_MY_MAT) ? window.EP_MY_MAT : readArr(LS_MY_MAT);
+        var mw = Array.isArray(window.EP_MY_WORK) ? window.EP_MY_WORK : readArr(LS_MY_WORK);
+        window.matDB = mm.slice();
+        window.workDB = mw.slice();
+        try{ matDB = window.matDB; workDB = window.workDB; }catch(e){}
+      }
+    }catch(e){ console.warn('EP V5 sync active arrays failed', e); }
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: refreshMyFromServer
+ * ========================================================= */
+async function refreshMyFromServer(){
+    var mat = Array.isArray(window.EP_MY_MAT) ? window.EP_MY_MAT : readArr(LS_MY_MAT);
+    var work = Array.isArray(window.EP_MY_WORK) ? window.EP_MY_WORK : readArr(LS_MY_WORK);
+    try{
+      if(typeof db !== 'undefined' && db && uid()){
+        var doc = await db.collection('user_db').doc(uid()).get();
+        if(doc.exists){
+          var d = doc.data() || {};
+          if(Array.isArray(d.matDB)) mat = d.matDB;
+          if(Array.isArray(d.workDB)) work = d.workDB;
+        }
+      }
+    }catch(e){ console.warn('EP V5 load my db failed', e); }
+    setMyArrays(mat, work);
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: refreshServerFromServer
+ * ========================================================= */
+async function refreshServerFromServer(){
+    var mat = Array.isArray(window.EP_GLOBAL_MAT) ? window.EP_GLOBAL_MAT : getServerFromCache('mat');
+    var work = Array.isArray(window.EP_GLOBAL_WORK) ? window.EP_GLOBAL_WORK : getServerFromCache('work');
+    try{
+      if(typeof db !== 'undefined' && db){
+        var doc = await db.collection('settings').doc('global_db').get();
+        if(doc.exists){
+          var d = doc.data() || {};
+          mat = Array.isArray(d.matDB) ? d.matDB : [];
+          work = Array.isArray(d.workDB) ? d.workDB : [];
+          if(d.cleanMode || d.resetAt) try{ localStorage.setItem('ep_db_clean_mode_v1','1'); }catch(_e){}
+        } else if(isAdmin()){
+          await db.collection('settings').doc('global_db').set({matDB:mat || [], workDB:work || [], createdAt:new Date().toISOString()}, {merge:true});
+        }
+      }
+    }catch(e){ console.warn('EP V5 load server db failed', e); }
+    setServerArrays(mat, work);
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: updateButtons
  * ========================================================= */
 function updateButtons(){
     var my = $('ep-scope-my-btn'), gl = $('ep-scope-global-btn'), st = $('ep-db-scope-status'), clean = $('ep-clean-status-line');
@@ -2876,7 +4121,7 @@ function updateButtons(){
 
 
 /* =========================================================
- * VISUAL FUNCTION: rerenderOpenScreens
+ * DATABASE FUNCTION: rerenderOpenScreens
  * ========================================================= */
 function rerenderOpenScreens(){
     syncActiveArrays();
@@ -2897,24 +4142,162 @@ function rerenderOpenScreens(){
 
 
 /* =========================================================
- * VISUAL FUNCTION: hardHideLoader
+ * DATABASE FUNCTION: inferCat
  * ========================================================= */
-function hardHideLoader(){
-    try{ if(typeof hideLoader === 'function') hideLoader(); }catch(e){}
-    try{ var l = $('global-loader'); if(l) l.classList.remove('show'); }catch(e){}
+function inferCat(name,type){
+    var s = norm(name);
+    if(type === 'work'){
+      if(/штроб|резк|алмаз/.test(s)) return 'Алмазная резка';
+      if(/подрозет|коронк|сверл|бурен/.test(s)) return 'Высверливание подрозетников';
+      if(/щит|автомат|узо|диф|сборк/.test(s)) return 'Щитовое';
+      if(/демонтаж/.test(s)) return 'Демонтаж';
+      if(/свет|люстр|бра|светильн|лента/.test(s)) return 'Освещение';
+      return 'Работы';
+    }
+    if(/ввг|кабел|провод|пугв|utp|ftp|тв|tv|sat/.test(s)) return 'Кабель';
+    if(/гофр|труб|пнд|пвх/.test(s)) return 'Трубы';
+    if(/автомат|узо|диф|узм|уздп|реле|контактор|выключатель нагрузки/.test(s)) return 'Автоматика';
+    if(/щит|бокс|корпус|din|дин|рейк|шина|гребен|клемм|ншви|маркиров/.test(s)) return 'Щитовое';
+    if(/розет|выключател|рамк|механизм|терморег/.test(s)) return 'Чистовое';
+    if(/подрозет|короб|клемм|скоб|хомут|дюбел|саморез|смес|алебастр|изолент/.test(s)) return 'Расходники';
+    return 'Разное';
   }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: showReadLoader
+ * DATABASE FUNCTION: inferSub
  * ========================================================= */
-function showReadLoader(text, icon){ try{ if(typeof showLoader === 'function') showLoader(text || 'Читаю файл...', icon || '📥'); }catch(e){} }
+function inferSub(name,cat,type){
+    var s = norm(name);
+    if(type === 'work'){
+      if(/бетон/.test(s)) return 'Бетон';
+      if(/кирпич/.test(s)) return 'Кирпич';
+      if(/монолит|панел/.test(s)) return 'Панель / монолит';
+      return cat || 'Работы';
+    }
+    if(/c\s*\d+|с\s*\d+|автомат/.test(s)) return 'Автоматы';
+    if(/диф/.test(s)) return 'ДИФы';
+    if(/узо/.test(s)) return 'УЗО';
+    if(/узм|реле напряж/.test(s)) return 'УЗМ / реле напряжения';
+    if(/контактор/.test(s)) return 'Контакторы';
+    if(/ввг/.test(s)) return 'ВВГ';
+    if(/пугв/.test(s)) return 'ПуГВ';
+    if(/utp|ftp/.test(s)) return 'UTP / FTP';
+    if(/подрозет/.test(s)) return 'Подрозетники';
+    if(/клемм|wago/.test(s)) return 'Клеммники';
+    if(/гребен/.test(s)) return 'Гребёнки';
+    if(/шин/.test(s)) return 'Шинки / клеммники';
+    if(/din|дин|рейк/.test(s)) return 'DIN-рейки / ограничители';
+    if(/щит|бокс|корпус/.test(s)) return 'Корпуса';
+    return 'Разное';
+  }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderReviewPage
+ * DATABASE FUNCTION: normItem
+ * ========================================================= */
+function normItem(raw,type,idx){
+    raw = raw || {};
+    var n = cleanText(raw.n || raw.name || raw.title || raw.имя || raw.наименование || raw['Наименование'] || raw['Название'] || raw['Имя']);
+    if(!n) return null;
+    var c = cleanText(raw.c || raw.category || raw.cat || raw.категория || raw['Категория']) || inferCat(n,type);
+    var sc = cleanText(raw.sc || raw.g || raw.subcategory || raw.group || raw.подкатегория || raw['Подкатегория'] || raw['Группа']) || inferSub(n,c,type);
+    var p = money(raw.p != null ? raw.p : (raw.price != null ? raw.price : (raw.цена != null ? raw.цена : raw['Цена'])));
+    var u = cleanText(raw.u || raw.unit || raw.ед || raw['Ед.'] || raw['Единица'] || raw['Ед. изм.']) || 'шт';
+    return { id: raw.id || ((type === 'work' ? 'w' : 'm') + '_imp_' + Date.now() + '_' + idx), n:n, c:c, sc:sc, g:sc, p:p, u:u };
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: rowsToItems
+ * ========================================================= */
+function rowsToItems(rows,type){
+    rows = rows || [];
+    var header = null, currentCat = '', currentSub = '', out = [];
+    function cell(row,i){ return cleanText((row || [])[i]); }
+    rows.forEach(function(row,ri){
+      row = (row || []).map(function(v){ return cleanText(v); });
+      var non = row.filter(Boolean);
+      if(!non.length) return;
+      var joined = norm(non.join(' '));
+      if(/наимен|назван|имя|цена|стоим|ед/.test(joined) && !header){
+        header = {};
+        row.forEach(function(v,i){ var s = norm(v); if(/наимен|назван|имя|позиция|товар|работ/.test(s)) header.name=i; if(/категор/.test(s) && header.cat == null) header.cat=i; if(/подкат|группа/.test(s)) header.sub=i; if(/цена|стоим|прайс/.test(s)) header.price=i; if(/ед|изм/.test(s)) header.unit=i; });
+        return;
+      }
+      var priceIdx = -1, unitIdx = -1;
+      row.forEach(function(v,i){ if(priceIdx < 0 && money(v) > 0 && /^[-\d\s.,]+/.test(v)) priceIdx = i; if(unitIdx < 0 && /^(шт|м|м\.п\.?|пог\.м|уп|упак|компл|кг|л|рул|бухта)$/i.test(v)) unitIdx = i; });
+      if(header){
+        var n = cell(row, header.name);
+        if(n){
+          out.push(normItem({n:n, c:cell(row, header.cat), sc:cell(row, header.sub), p:cell(row, header.price), u:cell(row, header.unit)}, type, out.length));
+        }
+        return;
+      }
+      if(priceIdx < 0 && non.length <= 2){
+        var title = non.join(' ');
+        if(type === 'work' || /работ|монтаж|штроб|резк|сверл|демонтаж/i.test(title)) { currentCat = title; currentSub = ''; }
+        else if(!currentCat) currentCat = title; else currentSub = title;
+        return;
+      }
+      var candidates = row.map(function(v,i){ return {v:v,i:i}; }).filter(function(x){ return x.v && x.i !== priceIdx && x.i !== unitIdx && !/^[-\d\s.,]+$/.test(x.v); });
+      if(!candidates.length) return;
+      candidates.sort(function(a,b){ return b.v.length - a.v.length; });
+      var name = candidates[0].v;
+      if(name.length < 3) return;
+      out.push(normItem({n:name, c:currentCat || inferCat(name,type), sc:currentSub || inferSub(name,currentCat,type), p:priceIdx >= 0 ? row[priceIdx] : 0, u:unitIdx >= 0 ? row[unitIdx] : 'шт'}, type, out.length));
+    });
+    return out.filter(Boolean);
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: jsonToItems
+ * ========================================================= */
+function jsonToItems(raw,type){
+    if(raw && raw.matDB && type === 'mat') raw = raw.matDB;
+    else if(raw && raw.workDB && type === 'work') raw = raw.workDB;
+    else if(raw && Array.isArray(raw.items)) raw = raw.items;
+    else if(raw && raw.data && Array.isArray(raw.data)) raw = raw.data;
+    else if(raw && typeof raw === 'object' && !Array.isArray(raw)) raw = Object.keys(raw).map(function(k){ return raw[k]; });
+    if(!Array.isArray(raw)) raw = [];
+    return raw.map(function(x,i){ return normItem(x,type,i); }).filter(Boolean);
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: saveVisibleEdits
+ * ========================================================= */
+function saveVisibleEdits(){
+    var st = window.EP_DB_REVIEW_V6;
+    var start = (st.page || 0) * PAGE_SIZE;
+    var end = Math.min(start + PAGE_SIZE, st.items.length);
+    for(var i=start;i<end;i++){
+      var item = st.items[i] || {};
+      var ch = $('ep-db-check-' + i);
+      if(ch) st.selected[i] = !!ch.checked;
+      var n = $('ep-db-name-' + i), c = $('ep-db-cat-' + i), sc = $('ep-db-subcat-' + i), p = $('ep-db-price-' + i), u = $('ep-db-unit-' + i);
+      if(n || c || sc || p || u){
+        st.editCache[i] = {
+          n: n ? n.value : item.n,
+          c: c ? c.value : item.c,
+          sc: sc ? sc.value : (item.sc || item.g || 'Разное'),
+          p: p ? p.value : item.p,
+          u: u ? u.value : item.u
+        };
+      }
+    }
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: renderReviewPage
  * ========================================================= */
 function renderReviewPage(){
     var st = window.EP_DB_REVIEW_V6;
@@ -2963,7 +4346,7 @@ function renderReviewPage(){
 
 
 /* =========================================================
- * VISUAL FUNCTION: showReview
+ * DATABASE FUNCTION: showReview
  * ========================================================= */
 function showReview(items,type,source){
     hardHideLoader();
@@ -2980,38 +4363,7 @@ function showReview(items,type,source){
 
 
 /* =========================================================
- * VISUAL FUNCTION: aiFromImage
- * ========================================================= */
-async function aiFromImage(file,type){
-    if(typeof window.epAskAI !== 'function') throw new Error('ИИ не подключён');
-    var dataUrl = await new Promise(function(resolve,reject){ var r = new FileReader(); r.onload=function(){resolve(r.result);}; r.onerror=reject; r.readAsDataURL(file); });
-    showReadLoader('ИИ читает изображение...', '👁️');
-    var prompt = 'Распознай таблицу для базы электрика. Верни строго JSON массив объектов [{"n":"Имя позиции","c":"Категория","sc":"Подкатегория","p":123,"u":"шт"}]. Если цены нет p=0. Без текста вокруг.';
-    var ans = await window.epAskAI(prompt, { imageDataUrl:dataUrl, imageDetail:'high', maxTokens:9000 });
-    var arr = [];
-    try{ var m = String(ans || '').match(/\[[\s\S]*\]/); arr = JSON.parse(m ? m[0] : ans); }catch(e){ arr = []; }
-    return jsonToItems(arr,type);
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: aiFromText
- * ========================================================= */
-async function aiFromText(txt,type){
-    if(typeof window.epAskAI !== 'function') throw new Error('ИИ не подключён');
-    showReadLoader('ИИ структурирует базу...', '🤖');
-    var prompt = 'Приведи данные к базе электрика. Верни строго JSON массив объектов [{"n":"Имя позиции","c":"Категория","sc":"Подкатегория","p":123,"u":"шт"}]. Данные: ' + String(txt || '').slice(0,90000);
-    var ans = await window.epAskAI(prompt, { maxTokens:8000 });
-    var arr = [];
-    try{ var m = String(ans || '').match(/\[[\s\S]*\]/); arr = JSON.parse(m ? m[0] : ans); }catch(e){ arr = []; }
-    return jsonToItems(arr,type);
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: readDbFileV6
+ * DATABASE FUNCTION: readDbFileV6
  * ========================================================= */
 async function readDbFileV6(file,type){
     var safety = setTimeout(hardHideLoader, 25000);
@@ -3056,22 +4408,54 @@ async function readDbFileV6(file,type){
 
 
 /* =========================================================
- * VISUAL FUNCTION: showProgress
+ * DATABASE FUNCTION: collectReviewed
  * ========================================================= */
-function showProgress(title,pct,txt){ ensureProgress(); var p=$('ep-v7-progress'), f=$('ep-v7-progress-fill'), t=$('ep-v7-progress-title'), x=$('ep-v7-progress-txt'); if(p)p.style.display='flex'; if(t)t.textContent=title||'Выполняю...'; if(f)f.style.width=Math.max(0,Math.min(100,Math.round(pct||0)))+'%'; if(x)x.textContent=(txt||'')+' '+Math.max(0,Math.min(100,Math.round(pct||0)))+'%'; try{ if(typeof hideLoader==='function') hideLoader(); }catch(e){} }
+function collectReviewed(){
+    saveVisibleEdits();
+    var st = window.EP_DB_REVIEW_V6;
+    var type = st.type === 'work' ? 'work' : 'mat';
+    var out = [];
+    (st.items || []).forEach(function(base,i){
+      if(st.selected[i] === false) return;
+      var ed = st.editCache[i] || base || {};
+      var it = normItem({
+        id: base.id,
+        n: ed.n || base.n,
+        c: ed.c || base.c,
+        sc: ed.sc || ed.g || base.sc || base.g,
+        p: ed.p != null ? ed.p : base.p,
+        u: ed.u || base.u
+      }, type, i);
+      if(it){ try{ if(typeof window.epAutoGroupItem === 'function') it = window.epAutoGroupItem(type,it); }catch(e){} out.push(it); }
+    });
+    return {type:type, items:out};
+  }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: hideProgress
+ * DATABASE FUNCTION: syncMain
  * ========================================================= */
-function hideProgress(){ var p=$('ep-v7-progress'); if(p)p.style.display='none'; }
-
+function syncMain(target){ try{ var use=target||scope(); window.matDB=(use==='global'?getServer('mat'):getMy('mat')); window.workDB=(use==='global'?getServer('work'):getMy('work')); try{matDB=window.matDB;workDB=window.workDB;}catch(e){} }catch(e){} }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: reloadActiveDb
+ * DATABASE FUNCTION: sendProposal
+ * ========================================================= */
+async function sendProposal(type,items,reason,onp){
+    try{
+      if(onp)onp(72,'Отправка заявки админу');
+      if(typeof window.epSendServerProposal==='function'){ await window.epSendServerProposal(type,items,reason||'server_import_request'); return true; }
+      if(typeof db!=='undefined'&&db){ await db.collection('db_proposals').add({type:type,items:items,reason:reason||'server_import_request',uid:uid(),userEmail:(window.appUser&&appUser.email)||'',createdAt:new Date().toISOString(),status:'new'}); return true; }
+    }catch(e){ console.warn('EP V7 proposal failed',e); }
+    return false;
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: reloadActiveDb
  * ========================================================= */
 async function reloadActiveDb(){
     try{ syncMain(scope()); if(typeof window.epRefreshActiveDbNow==='function') await window.epRefreshActiveDbNow(true); }catch(e){ console.warn('EP V7 reload active db failed',e); }
@@ -3084,7 +4468,19 @@ async function reloadActiveDb(){
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderPanel
+ * DATABASE FUNCTION: ensurePanel
+ * ========================================================= */
+function ensurePanel(){
+    var toolbar=$('ep-db-scope-toolbar'); if(!toolbar) return null;
+    var p=$('ep-v7-db-panel');
+    if(!p){ p=document.createElement('div'); p.id='ep-v7-db-panel'; p.className='ep-v7-panel'; toolbar.parentNode.insertBefore(p, toolbar.nextSibling); }
+    return p;
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: renderPanel
  * ========================================================= */
 function renderPanel(){
     var p=ensurePanel(); if(!p) return;
@@ -3121,7 +4517,7 @@ function renderPanel(){
 
 
 /* =========================================================
- * VISUAL FUNCTION: tuneStaticBlocks
+ * DATABASE FUNCTION: tuneStaticBlocks
  * ========================================================= */
 function tuneStaticBlocks(){
     renderPanel();
@@ -3142,22 +4538,7 @@ function tuneStaticBlocks(){
 
 
 /* =========================================================
- * VISUAL FUNCTION: editorRow
- * ========================================================= */
-function editorRow(type,it){
-    var s=scope(), editable=canEditActive(), admin=isAdmin();
-    var item=encodeURIComponent(JSON.stringify(it||{}));
-    var sub=(groupOf(it)?groupOf(it)+' • ':'')+(Number(it.p)||0)+' ₽ / '+(it.u||'шт');
-    var check=editable?'<input type="checkbox" class="ep-v7-select" data-type="'+type+'" data-id="'+esc(String(it.id||''))+'" style="width:20px;height:20px;accent-color:#EF4444;margin:4px 3px 0 0;">':'';
-    var price='<input type="number" '+(editable?'':'disabled')+' value="'+(Number(it.p)||0)+'" data-id="'+esc(String(it.id||''))+'" data-type="'+type+'" onchange="epChangePriceV7(this.dataset.type,this.dataset.id,this.value)" style="width:76px;margin:0;padding:4px;text-align:center;">';
-    var copy=(s==='global'&&!admin)?'<button class="btn-info" style="width:auto;margin:0;padding:7px;" data-type="'+type+'" data-item="'+esc(item)+'" onclick="epCopyOneServerToMy(this.dataset.type,this.dataset.item)">В мою</button>':'';
-    return '<div class="emp-row ep-v7-row '+(!editable?'ep-v7-locked':'')+'">'+check+'<div style="flex:1;"><b>'+esc(it.n||'Позиция')+'</b><br><span style="color:var(--gray);font-size:10px;">'+esc(sub)+'</span></div>'+price+copy+'</div>';
-  }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: renderRows
+ * DATABASE FUNCTION: renderRows
  * ========================================================= */
 function renderRows(type){
     var arr=active(type), html=editorTop(type);
@@ -3170,36 +4551,162 @@ function renderRows(type){
 
 
 /* =========================================================
- * VISUAL FUNCTION: downloadJson
+ * DATABASE FUNCTION: fbUser
  * ========================================================= */
-function downloadJson(filename,data){
-    showProgress('Экспорт базы',25,'Подготовка файла');
-    var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json;charset=utf-8'});
-    showProgress('Экспорт базы',70,'Скачивание');
-    var url=URL.createObjectURL(blob), a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(function(){URL.revokeObjectURL(url);},1000);
-    showProgress('Экспорт базы',100,'Готово'); setTimeout(function(){hideProgress(); reloadActiveDb();},500);
+function fbUser(){ try{ return (typeof firebase!=='undefined' && firebase.auth && firebase.auth().currentUser) ? firebase.auth().currentUser : null; }catch(e){ return null; } }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: firebaseHint
+ * ========================================================= */
+function firebaseHint(){
+    var fbu=fbUser();
+    if(!fbu) return 'Нет Firebase-входа. Серверная запись может быть запрещена правилами Firebase. Для админа лучше войти через Google-аккаунт администратора.';
+    return 'Firebase: '+(fbu.email||fbu.uid)+'.';
   }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: readDbFile
+ * DATABASE FUNCTION: reloadFromRemoteCurrent
  * ========================================================= */
-async function readDbFile(file,type,target){ showProgress('Импорт базы',5,'Старт'); var name=file.name||'', lower=name.toLowerCase(), items=[]; if(file.type&&file.type.indexOf('image/')===0){ hideProgress(); if(typeof window.epAskAI==='function' && typeof oldTrigger==='function'){ return oldTrigger(type); } return toast('Для фото нужен ИИ.'); } if(/\.json$/i.test(lower)){ var txt=await fileTextProgress(file,showProgress); showProgress('Импорт базы',55,'Разбор JSON'); items=jsonToItems(JSON.parse(txt),type); } else if(/\.(xlsx|xls)$/i.test(lower)){ if(!window.XLSX) throw new Error('Библиотека XLSX не загрузилась. Сохраните файл как CSV или JSON.'); var ab=await fileBufferProgress(file,showProgress); showProgress('Импорт базы',55,'Разбор Excel'); var wb=XLSX.read(ab,{type:'array'}), rows=[]; wb.SheetNames.forEach(function(sh){ rows=rows.concat(XLSX.utils.sheet_to_json(wb.Sheets[sh],{header:1,defval:''})); }); showProgress('Импорт базы',78,'Подготовка строк'); items=rowsToItems(rows,type); } else { var raw=await fileTextProgress(file,showProgress); showProgress('Импорт базы',60,'Разбор текста/CSV'); items=rowsToItems(csvRows(raw),type); }
-    showProgress('Импорт базы',100,'Открываю проверку'); setTimeout(hideProgress,250); showReview(items,type,name,target); }
+async function reloadFromRemoteCurrent(){
+    try{
+      if(!(typeof db!=='undefined'&&db)) return false;
+      if(scope()==='global'){
+        var gd=await db.collection('settings').doc('global_db').get();
+        if(gd.exists){ var g=gd.data()||{}; setServer('mat',Array.isArray(g.matDB)?g.matDB:[]); setServer('work',Array.isArray(g.workDB)?g.workDB:[]); return true; }
+      } else if(uid()){
+        var ud=await db.collection('user_db').doc(uid()).get();
+        if(ud.exists){ var u=ud.data()||{}; setMy('mat',Array.isArray(u.matDB)?u.matDB:getMy('mat')); setMy('work',Array.isArray(u.workDB)?u.workDB:getMy('work')); return true; }
+      }
+    }catch(e){ console.warn('EP V8 reload remote failed',e); }
+    return false;
+  }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: progress
+ * DATABASE FUNCTION: currentEditType
  * ========================================================= */
-function progress(title,pct,txt){ ensureProgress(); var p=$('ep-v9-progress'),f=$('ep-v9-fill'),t=$('ep-v9-title'),x=$('ep-v9-txt'); if(p)p.style.display='flex'; if(t)t.textContent=title||'Выполняю...'; if(f)f.style.width=Math.max(0,Math.min(100,Math.round(pct||0)))+'%'; if(x)x.textContent=(txt||'')+' '+Math.max(0,Math.min(100,Math.round(pct||0)))+'%'; try{ if(typeof hideLoader==='function') hideLoader(); }catch(e){} }
+function currentEditType(){
+    var wb=$('editor-work-list'), mb=$('editor-mat-list');
+    if(wb && wb.offsetParent!==null && wb.style.display!=='none') return 'work';
+    if(mb && mb.offsetParent!==null && mb.style.display!=='none') return 'mat';
+    return 'mat';
+  }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: showReviewV9
+ * DATABASE FUNCTION: makeManualItem
+ * ========================================================= */
+function makeManualItem(type){
+    var cat=$('db-new-cat')?clean($('db-new-cat').value):'';
+    var name=$('db-new-name')?clean($('db-new-name').value):'';
+    var price=$('db-new-price')?money($('db-new-price').value):0;
+    var unit=$('db-new-unit')?clean($('db-new-unit').value)||'шт':'шт';
+    if(!name) throw new Error('Введите название позиции');
+    var it={id:(type==='work'?'w':'m')+'_manual_v8_'+Date.now(),c:cat||'Разное',n:name,p:price,u:unit};
+    try{ if(typeof window.epAutoGroupItem==='function') it=window.epAutoGroupItem(type,it); }catch(e){}
+    return it;
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: injectDebugButton
+ * ========================================================= */
+function injectDebugButton(){
+    var p=$('ep-v7-db-panel'); if(!p || $('ep-v8-fb-debug-btn')) return;
+    var b=document.createElement('button'); b.id='ep-v8-fb-debug-btn'; b.className='btn-info'; b.style.cssText='width:100%;margin-top:8px;padding:10px;'; b.textContent='🔎 Проверить Firebase-сохранение'; b.onclick=function(){ window.epFirebaseDbDebug(); };
+    p.appendChild(b);
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: uid
+ * ========================================================= */
+function uid(){ try{ return (window.appUser && window.appUser.uid) || (firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.uid) || ''; }catch(e){ return (window.appUser&&window.appUser.uid)||''; } }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: currentUserLabel
+ * ========================================================= */
+function currentUserLabel(){ try{ var u=(firebase.auth&&firebase.auth().currentUser)||null; return (u&&(u.email||u.uid)) || (window.appUser&&(appUser.email||appUser.phone||appUser.uid)) || ''; }catch(e){ return (window.appUser&&(appUser.email||appUser.phone||appUser.uid)) || ''; } }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: readGlobalDoc
+ * ========================================================= */
+async function readGlobalDoc(){
+    if(!(typeof db!=='undefined'&&db)) throw new Error('Firebase db не подключён.');
+    var snap=await db.collection('settings').doc('global_db').get();
+    var data=snap.exists?(snap.data()||{}):{};
+    return {matDB:Array.isArray(data.matDB)?data.matDB:[], workDB:Array.isArray(data.workDB)?data.workDB:[], raw:data};
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: saveGlobalImport
+ * ========================================================= */
+async function saveGlobalImport(type,items,replace){
+    if(!isAdmin()) throw new Error('Импорт в базу сервера может делать только админ.');
+    if(!(typeof db!=='undefined'&&db)) throw new Error('Firebase db не подключён.');
+    progress('Запись в базу сервера',20,'Читаю текущую базу сервера');
+    var current=await readGlobalDoc().catch(function(){ return {matDB:getServer('mat'),workDB:getServer('work'),raw:{}}; });
+    var targetArr=(type==='work'?current.workDB:current.matDB).slice();
+    items.forEach(function(it,idx){ targetArr=upsert(targetArr,type,it,!!replace); if(idx%25===0) progress('Запись в базу сервера',25+Math.min(40,idx/Math.max(1,items.length)*40),'Добавляю строки'); });
+    var finalMat=type==='mat'?unique(targetArr,'mat'):unique(current.matDB,'mat');
+    var finalWork=type==='work'?unique(targetArr,'work'):unique(current.workDB,'work');
+    setServer('mat',finalMat); setServer('work',finalWork);
+    progress('Запись в базу сервера',72,'Отправляю в Firebase settings/global_db');
+    await db.collection('settings').doc('global_db').set({matDB:finalMat,workDB:finalWork,cleanMode:true,updatedAt:new Date().toISOString(),updatedBy:currentUserLabel()}, {merge:true});
+    progress('Запись в базу сервера',88,'Проверяю запись');
+    var verify=await readGlobalDoc();
+    setServer('mat',verify.matDB); setServer('work',verify.workDB); syncMain('global');
+    var savedCount=(type==='work'?verify.workDB:verify.matDB).length;
+    if(savedCount < items.length) throw new Error('Firebase вернул слишком мало позиций после записи. Проверь правила или структуру settings/global_db.');
+    return savedCount;
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: saveMyImport
+ * ========================================================= */
+async function saveMyImport(type,items,replace){
+    var arr=getMy(type); items.forEach(function(it,idx){ arr=upsert(arr,type,it,!!replace); if(idx%25===0) progress('Запись в мою базу',20+Math.min(40,idx/Math.max(1,items.length)*40),'Добавляю строки'); });
+    setMy(type,arr); progress('Запись в мою базу',68,'Локально сохранено');
+    if(typeof db!=='undefined'&&db&&uid()){
+      await db.collection('user_db').doc(uid()).set({uid:uid(),masterName:(window.appUser&&(appUser.name||appUser.email||appUser.phone))||'',matDB:getMy('mat'),workDB:getMy('work'),created:true,updatedAt:new Date().toISOString()}, {merge:true});
+      progress('Запись в мою базу',90,'Сервер подтвердил');
+    }
+    return getMy(type).length;
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: sendServerProposal
+ * ========================================================= */
+async function sendServerProposal(type,items){
+    if(!(typeof db!=='undefined'&&db)) throw new Error('Firebase db не подключён.');
+    progress('Отправляю заявку админу',60,'db_proposals');
+    await db.collection('db_proposals').add({type:type,items:items.map(clone),reason:'import_to_server',target:'server_db',uid:uid(),masterName:(window.appUser&&(appUser.name||appUser.email||appUser.phone))||'',userEmail:currentUserLabel(),status:'pending',createdAt:new Date().toISOString()});
+    return true;
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: showReviewV9
  * ========================================================= */
 function showReviewV9(items,type,source,target){
     items=unique((items||[]).filter(Boolean),type); var selected={}; items.forEach(function(_,i){selected[i]=true;});
@@ -3216,69 +4723,106 @@ function showReviewV9(items,type,source,target){
 
 
 /* =========================================================
- * VISUAL FUNCTION: provider
+ * DATABASE FUNCTION: progress
  * ========================================================= */
-function provider(){
-    try{ var p=(window.EP_AI_CONFIG&&window.EP_AI_CONFIG.provider)||safeGet('ep_ai_provider_v1','gemini'); return p==='openai'?'openai':'gemini'; }catch(e){ return 'gemini'; }
+function progress(title,pct,text){
+    try{ if(typeof window.epDbProgress==='function') return window.epDbProgress(title,pct,text); }catch(e){}
+    try{ if(typeof showLoader==='function') showLoader((text||title||'Загрузка') + (pct!=null?' '+pct+'%':''),'🤖'); }catch(e){}
   }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: keyForProvider
+ * DATABASE FUNCTION: hideProgress
  * ========================================================= */
-function keyForProvider(p){
-    try{
-      if(p==='openai') return (window.EP_AI_CONFIG&&window.EP_AI_CONFIG.openaiKey)||safeGet('ep_openai_key_v1','');
-      return (window.EP_AI_CONFIG&&window.EP_AI_CONFIG.geminiKey)||(typeof GEMINI_API_KEY!=='undefined'?GEMINI_API_KEY:'')||safeGet('gemini_key_v31','');
-    }catch(e){ return ''; }
+function hideProgress(){ try{ if(typeof window.epDbHideProgress==='function') return window.epDbHideProgress(); }catch(e){} try{ if(typeof hideLoader==='function') hideLoader(); }catch(e){} }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: normalize
+ * ========================================================= */
+function normalize(raw,type){ var arr=Array.isArray(raw)?raw:(raw&&typeof raw==='object'?(raw.items||raw.positions||raw.data||raw.materials||raw.works||raw['позиции']||[]):[]); return (arr||[]).map(function(x,i){return normItem(x,type,i);}).filter(Boolean); }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: importPrompt
+ * ========================================================= */
+function importPrompt(type, kind){
+    return 'Ты профессионально распознаёшь русские прайсы, счета, сметы и таблицы электромонтажных '+(type==='work'?'работ':'материалов')+'. '+
+      'Источник: '+kind+'. Извлеки ВСЕ строки с позициями. Верни ТОЛЬКО JSON массив объектов без текста вокруг. '+
+      'Формат строго: [{"n":"Имя позиции","c":"Категория","sc":"Подкатегория","p":123,"u":"шт"}]. '+
+      'n — полное наименование, не артикул и не номер строки. p — цена за единицу, не итоговая сумма; если цены нет p=0. '+
+      'u — единица: шт, м, м.п., упак, компл, кг, л. c/sc определи сам по электрике. Не возвращай пустой массив, если видны позиции.';
   }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: openAiModel
+ * DATABASE FUNCTION: aiFromPdfFile
  * ========================================================= */
-function openAiModel(){ try{ return (window.EP_AI_CONFIG&&window.EP_AI_CONFIG.openaiModel)||safeGet('ep_openai_model_v1','gpt-4o-mini')||'gpt-4o-mini'; }catch(e){ return 'gpt-4o-mini'; } }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: extractTextFromOpenAI
- * ========================================================= */
-function extractTextFromOpenAI(data){
-    if(data && data.output_text) return data.output_text;
-    var out='';
-    ((data&&data.output)||[]).forEach(function(item){ ((item&&item.content)||[]).forEach(function(c){ if(c&&c.text) out+=c.text; if(c&&c.type==='output_text'&&c.text) out+=c.text; }); });
-    return out;
+async function aiFromPdfFile(file,type,target){
+    var maxMb=18;
+    if(file.size && file.size > maxMb*1024*1024) throw new Error('PDF слишком большой. Сделай файл до '+maxMb+' МБ или загрузи несколько страниц отдельно.');
+    progress('ИИ-импорт PDF',15,'Читаю PDF');
+    var dataUrl=await fileToDataURL(file);
+    progress('ИИ-импорт PDF',35,'Отправляю PDF в ИИ');
+    var ans=await window.epAskAI(importPrompt(type,'PDF прайс/счёт/смета'),{fileDataUrl:dataUrl,fileName:file.name||'import.pdf',mimeType:dataMime(dataUrl)||'application/pdf',maxTokens:12000});
+    progress('ИИ-импорт PDF',85,'Разбираю ответ');
+    var items=normalize(parseJsonLoose(ans),type);
+    showReview(items,type,file.name||'PDF',target,ans);
   }
+
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: askOpenAI
+ * DATABASE FUNCTION: patchLabels
  * ========================================================= */
-async function askOpenAI(promptText, opts){
-    var key=keyForProvider('openai'); if(!key) throw new Error('Нужен OpenAI API ключ');
-    var content=[{type:'input_text', text:promptText}];
-    if(opts && opts.fileDataUrl){
-      content.push({ type:'input_file', filename: opts.fileName || 'import.pdf', file_data: opts.fileDataUrl });
-    } else if(opts && opts.imageDataUrl){
-      content.push({ type:'input_image', image_url: opts.imageDataUrl, detail: opts.imageDetail || 'high' });
-    }
-    var r=await fetch('https://api.openai.com/v1/responses',{
-      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
-      body:JSON.stringify({ model:openAiModel(), input:[{role:'user', content:content}], max_output_tokens:(opts&&opts.maxTokens)||9000 })
+function patchLabels(){
+    var input=$('ep-db-file-input'); if(input) input.setAttribute('accept','.xlsx,.xls,.csv,.json,.txt,.pdf,image/*');
+    Array.prototype.forEach.call(document.querySelectorAll('button'),function(b){
+      var t=clean(b.textContent);
+      if(t.indexOf('Excel')>=0 && t.indexOf('PDF')<0 && (t.indexOf('Материалы')>=0 || t.indexOf('Работы')>=0)){
+        b.innerHTML=b.innerHTML.replace('фото / скрин','фото / PDF / скрин').replace('Excel / JSON','Excel / JSON / PDF');
+      }
     });
-    var data=await r.json().catch(function(){return {};});
-    if(!r.ok || data.error) throw new Error((data.error&&data.error.message)||'OpenAI API error');
-    return extractTextFromOpenAI(data);
   }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: normalDbButtonWasClicked
+ * DATABASE FUNCTION: setScope
+ * ========================================================= */
+function setScope(s){
+    try{ localStorage.setItem('ep_db_scope_v2', s === 'global' ? 'global' : 'my'); }catch(e){}
+    try{ if(typeof window.epSetDbScope === 'function') window.epSetDbScope(s === 'global' ? 'global' : 'my'); }catch(e){}
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: installAdminSettingsButton
+ * ========================================================= */
+function installAdminSettingsButton(){
+    var panel = $('admin-panel');
+    if(!panel || $('ep-v11-admin-server-db-btn')) return;
+    var box = document.createElement('div');
+    box.id = 'ep-v11-admin-server-db-btn';
+    box.style.cssText = 'margin:12px 0;padding:10px;border:1px solid var(--primary);border-radius:12px;background:rgba(79,70,229,.07);';
+    box.innerHTML = '<div style="font-weight:900;color:var(--primary);margin-bottom:6px;">🌍 База сервера</div>'
+      + '<div style="font-size:11px;color:var(--gray);line-height:1.35;margin-bottom:8px;">Импорт, замена, цены и сохранение глобальной базы выполняются только отсюда, чтобы личный импорт админа случайно не улетел на сервер.</div>'
+      + '<button type="button" class="btn-primary" style="width:100%;padding:12px;margin:0;" onclick="epOpenAdminServerDbFromSettings()">👑 Открыть редактирование базы сервера</button>';
+    var firstH = panel.querySelector('h4');
+    if(firstH) panel.insertBefore(box, firstH); else panel.appendChild(box);
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: normalDbButtonWasClicked
  * ========================================================= */
 function normalDbButtonWasClicked(e){
     var b = e && e.target && e.target.closest ? e.target.closest('button') : null;
@@ -3290,7 +4834,119 @@ function normalDbButtonWasClicked(e){
 
 
 /* =========================================================
- * VISUAL FUNCTION: patchShieldButton
+ * DATABASE FUNCTION: patchDbUi
+ * ========================================================= */
+function patchDbUi(){
+    installAdminSettingsButton();
+    var isGlobal = scope() === 'global';
+    var serverEdit = adminServerMode();
+    var panel = $('ep-v7-db-panel');
+    if(panel){
+      var oldNote = $('ep-v11-server-mode-note'); if(oldNote) oldNote.remove();
+      var note = document.createElement('div');
+      note.id = 'ep-v11-server-mode-note';
+      note.style.cssText = 'font-size:11px;font-weight:900;line-height:1.35;margin:8px 0;padding:9px;border-radius:12px;';
+      if(isGlobal && serverEdit){
+        note.style.border = '1px solid var(--danger)'; note.style.color = 'var(--danger)'; note.style.background='rgba(239,68,68,.08)';
+        note.textContent = '👑 Режим админа: разрешены импорт, замена, цены и сохранение базы сервера.';
+        panel.insertBefore(note, panel.firstChild);
+      } else if(isGlobal){
+        note.style.border = '1px solid var(--border)'; note.style.color = 'var(--gray)'; note.style.background='rgba(100,116,139,.08)';
+        note.textContent = explainServerEdit();
+        panel.insertBefore(note, panel.firstChild);
+      }
+      Array.prototype.forEach.call(panel.querySelectorAll('button'), function(btn){
+        var s=txt(btn);
+        if(isGlobal && !serverEdit && /Импорт|текстом|заявк|Сохранить базу|Очистка сервера|Очистка \/ сброс/.test(s)){
+          btn.style.display='none';
+        }
+      });
+    }
+    var addBtn = document.querySelector('#settModal button[onclick="addDbItem()"]');
+    if(addBtn){
+      var block=addBtn.parentElement;
+      if(block) block.style.display = (!isGlobal || serverEdit) ? 'block' : 'none';
+      addBtn.textContent = isGlobal ? '+ Добавить в базу сервера' : '+ Добавить в мою базу';
+    }
+    if(isGlobal && !serverEdit){
+      Array.prototype.forEach.call(document.querySelectorAll('#editor-mat-list input,#editor-work-list input,#editor-mat-list select,#editor-work-list select,#editor-mat-list textarea,#editor-work-list textarea'), function(el){ el.disabled = true; });
+      Array.prototype.forEach.call(document.querySelectorAll('#editor-mat-list button,#editor-work-list button'), function(btn){
+        var s=txt(btn);
+        if(/Сохранить|Удалить|Замени|✕|🗑/.test(s)) btn.style.display='none';
+      });
+    }
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: importTarget
+ * ========================================================= */
+function importTarget(){
+    if(scope() === 'global'){
+      if(adminServerMode()) return 'global';
+      return 'blocked_server_edit';
+    }
+    return 'my';
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: fixShieldWorkItem
+ * ========================================================= */
+function fixShieldWorkItem(it, originalLabel){
+    if(!it) return it;
+    var x=it;
+    var n=String(x.n||'').trim();
+    var label=String(originalLabel||n||'');
+    var nl=norm(n), ll=norm(label);
+
+    // Wrong fuzzy match: "Установка щита" was matched to "Установка БП в щит".
+    if(/установка\s+бп\s+в\s+щит/i.test(n) || /установка\s+щита/.test(ll)){
+      x.n='Установка щита';
+      x.p=appPrice('shieldInstallPrice', 2500);
+      x.u='шт';
+      x.type='work';
+      x.c='Щитовое';
+      x.g='Монтаж щита';
+      x.sc='Монтаж щита';
+      x.dbMeta=Object.assign({}, x.dbMeta||{}, {category:'Щитовое', subcategory:'Монтаж щита'});
+      delete x.sourceId;
+      return x;
+    }
+
+    // Wrong fuzzy match: DB row name is only "Бетон", but estimate must show the actual work.
+    if((/^(бетон|кирпич|панелька|мягкий мат|мягкий материал)$/.test(nl) && x.type==='work') || /штроба.*100.*50/.test(ll)){
+      var wall = wallFromName(label+' '+n);
+      x.n='Штроба 100×50, под трассу кабелей ('+wall+')';
+      x.p=money(x.p) || appPrice('shieldInputGroovePrice',1500);
+      x.u='м.п.';
+      x.type='work';
+      x.c='Штробление и резка';
+      x.g='Штроба 100×50 под трассу кабелей';
+      x.sc='Штроба 100×50 под трассу кабелей';
+      x.dbMeta=Object.assign({}, x.dbMeta||{}, {category:'Штробление и резка', subcategory:'Штроба 100×50 под трассу кабелей', wall:wall});
+      if(/^бетон|кирпич|панелька|мягкий/.test(nl)) delete x.sourceId;
+      return x;
+    }
+
+    if(/^ниша\s+щита/i.test(n)){
+      x.c='Штробление и резка';
+      x.g='Ниши щита';
+      x.sc='Ниши щита';
+      x.u=x.u||'мод.';
+      x.dbMeta=Object.assign({}, x.dbMeta||{}, {category:'Штробление и резка', subcategory:'Ниши щита'});
+    }
+    return x;
+  }
+
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: patchShieldButton
  * ========================================================= */
 function patchShieldButton(){
     var base = window.epGenerateShieldFixed || window.generateCascadePanel;
@@ -3314,14 +4970,58 @@ function patchShieldButton(){
 
 
 /* =========================================================
- * VISUAL FUNCTION: boot
+ * DATABASE FUNCTION: collectDb
  * ========================================================= */
-function boot(){ patchShieldButton(); normalizeCurrentEstimate(); try{ if(typeof renderMainTable==='function') renderMainTable(); }catch(e){} }
+function collectDb(type){
+    var out=[];
+    var activeScope='my'; try{ activeScope=localStorage.getItem('ep_db_scope_v2')==='global'?'global':'my'; }catch(e){}
+    if(type==='work'){
+      pushArr(out, activeScope==='global'?(window.workDB||[]):(window.workDB||[]), activeScope==='global'?'global':'my');
+      pushArr(out, window.EP_MY_WORK, 'my'); pushArr(out, window.userWorkDB, 'my');
+      pushArr(out, window.EP_GLOBAL_WORK, 'global');
+      pushArr(out, window.EP_FORCE_GLOBAL && window.EP_FORCE_GLOBAL.workDB, 'global');
+      pushArr(out, window.EP_ULTIMATE_DB_CACHE && window.EP_ULTIMATE_DB_CACHE.workDB, 'global');
+      pushArr(out, window.EP_GLOBAL_DB_VISIBLE_CACHE && window.EP_GLOBAL_DB_VISIBLE_CACHE.workDB, 'global');
+      pushArr(out, readArr('user_db_work_v31'), 'my');
+      pushArr(out, readObj('ep_global_cache_force_v1').workDB, 'global');
+    } else {
+      pushArr(out, activeScope==='global'?(window.matDB||[]):(window.matDB||[]), activeScope==='global'?'global':'my');
+      pushArr(out, window.EP_MY_MAT, 'my'); pushArr(out, window.userMatDB, 'my');
+      pushArr(out, window.EP_GLOBAL_MAT, 'global');
+      pushArr(out, window.EP_FORCE_GLOBAL && window.EP_FORCE_GLOBAL.matDB, 'global');
+      pushArr(out, window.EP_ULTIMATE_DB_CACHE && window.EP_ULTIMATE_DB_CACHE.matDB, 'global');
+      pushArr(out, window.EP_GLOBAL_DB_VISIBLE_CACHE && window.EP_GLOBAL_DB_VISIBLE_CACHE.matDB, 'global');
+      pushArr(out, readArr('user_db_mat_v31'), 'my');
+      pushArr(out, readObj('ep_global_cache_force_v1').matDB, 'global');
+    }
+    var seen={},res=[];
+    out.forEach(function(it){
+      var k=norm([it.__src,it.c,groupOf(it),it.n,it.u,it.p].join('|'));
+      if(seen[k]) return; seen[k]=1; res.push(it);
+    });
+    return res;
+  }
+
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: epV16GenerateCascadePanel
+ * DATABASE FUNCTION: sameClass
+ * ========================================================= */
+function sameClass(a,b){
+    var ca=classify(a), cb=classify(b);
+    if(ca===cb) return true;
+    if((a&&a.type)==='work' && (b&&b.type)==='work'){
+      if(ca==='work:cut' && cb==='work:cut') return true;
+      if(ca.indexOf('work:shield')===0 && cb.indexOf('work:shield')===0) return true;
+    }
+    return false;
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: epV16GenerateCascadePanel
  * ========================================================= */
 function epV16GenerateCascadePanel() {
     const bBox = epGetVal('cfg-brand-box', 'Tekfor');
@@ -3465,55 +5165,130 @@ function epV16GenerateCascadePanel() {
 
 
 /* =========================================================
- * VISUAL FUNCTION: showDetailsV16
+ * DATABASE FUNCTION: isShieldDeviceV16
  * ========================================================= */
-function showDetailsV16(customTitle){
-    normalizeV16();
-    try{ currentPreviewMode='details'; }catch(e){}
-    var html = (typeof getPDFHeader==='function') ? getPDFHeader(customTitle || 'ДЕТАЛИЗАЦИЯ ЩИТА') : '<h2>ДЕТАЛИЗАЦИЯ ЩИТА</h2>';
-    var f=$('pdf-filters'); if(f) f.style.display='none';
-    var items=(window.currentEstimate||[]).filter(isShieldDeviceV16);
-    html += '<table class="pdf-table"><tr><th>Что отвечает / линия</th><th>Аппарат</th><th>Назначение</th></tr>';
-    if(!items.length) html += '<tr><td colspan="3" style="text-align:center;color:var(--gray);font-weight:900;">Щит ещё не сгенерирован</td></tr>';
-    else items.forEach(function(it){
-      var lines=getAssignV16(it); if(!lines.length) lines=['назначение не указано — нажми «Сгенерировать щит» ещё раз'];
-      html += '<tr><td style="font-weight:bold;color:var(--primary);">'+lines.map(esc).join('<br>')+'</td><td>'+esc(it.n)+(Number(it.q)>1?' × '+Number(it.q):'')+'</td><td>'+esc(purposeV16(it))+'</td></tr>';
-    });
-    html += '</table>';
-    var p=$('p-cont'); if(p) p.innerHTML=html;
-    if(typeof openModal==='function') openModal('previewModal');
+function isShieldDeviceV16(it){
+    if(!it || it.type!=='mat') return false;
+    var n=String(it.n||''), k=String(it.dbMeta&&it.dbMeta.kind||'');
+    return /[ABCDАВСД]\s*\d{1,3}|автомат|узо|диф|реле|контактор|вводной/i.test(n) || /automatic|breaker|uzo|dif|relay|contactor/i.test(k);
   }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: addBadge
+ * DATABASE FUNCTION: getAssignV16
  * ========================================================= */
-function addBadge(){
-    if($('ep-v17-badge')) return;
-    var d=document.createElement('div'); d.id='ep-v17-badge';
-    d.style.cssText='position:fixed;left:8px;bottom:8px;z-index:2147483647;background:#111827;color:#fff;border:2px solid #22c55e;border-radius:999px;padding:6px 10px;font:900 11px system-ui;box-shadow:0 8px 24px rgba(0,0,0,.35);opacity:.92;';
-    d.textContent='✅ V17 активна';
-    document.body.appendChild(d);
+function getAssignV16(it){
+    if(window.epV15GetAssignments) return window.epV15GetAssignments(it);
+    var out=[]; function add(v){v=String(v||'').trim(); if(v && !/позиция щита|общая \/ вводная|назначение не указано/i.test(v) && out.indexOf(v)<0) out.push(v);}
+    if(it){ if(Array.isArray(it.epAssignments)) it.epAssignments.forEach(add); if(Array.isArray(it.epMergedDetails)) it.epMergedDetails.forEach(add); add(it.epAssignment); if(it.dbMeta) add(it.dbMeta.assignment); }
+    return out;
   }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: patchDbBulk
+ * DATABASE FUNCTION: isDevice
+ * ========================================================= */
+function isDevice(it){
+    var n=txt(it&&it.n), k=txt(it&&it.dbMeta&&it.dbMeta.kind), raw=txt(it&&it.epRawLabel);
+    return !!(it&&it.type==='mat' && (/автомат|узо|диф|реле|контактор|вводной/i.test(n+' '+raw) || /automatic|breaker|uzo|dif|relay|contactor|input_breaker/i.test(k) || /\b[ABCDАВСД]\s*\d{1,3}\b/i.test(n+' '+raw)));
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: assignmentsOf
+ * ========================================================= */
+function assignmentsOf(it){
+    var out=[]; function add(v){ v=clean(v); if(v && !/^(позиция щита|общая|общая \/ вводная|назначение не указано)/i.test(v) && out.indexOf(v)<0) out.push(v); }
+    if(it){ if(Array.isArray(it.epAssignments)) it.epAssignments.forEach(add); if(Array.isArray(it.epMergedDetails)) it.epMergedDetails.forEach(add); add(it.epAssignment); if(it.dbMeta) add(it.dbMeta.assignment); }
+    if(out.length) return out;
+    var n=txt(it&&it.n), raw=txt(it&&it.epRawLabel), k=txt(it&&it.dbMeta&&it.dbMeta.kind), q=Math.max(1,Number(it&&it.q)||1), lines=lineConfig();
+    if(/вводн|input_breaker/i.test(n+' '+raw+' '+k)) return ['Вводной аппарат щита'];
+    if(/10\s*мА/i.test(n+' '+raw) && /узо|диф/i.test(n+' '+raw)) return ['Влажные зоны / защита 10 мА: '+lines.filter(function(x){return x.group==='wet';}).map(function(x){return x.name;}).join(', ')].filter(function(x){return !/:\s*$/.test(x);});
+    if(/30\s*мА/i.test(n+' '+raw) && /узо|диф/i.test(n+' '+raw)) return ['Группа защиты 30 мА: силовые/освещение/климат/неотключаемые линии'];
+    var nom=nominalOf(it); if(nom){ var list=lines.filter(function(x){return x.nominal===nom;}).slice(0,q).map(function(x){return x.name;}); if(list.length) return list; }
+    return [];
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: purposeOf
+ * ========================================================= */
+function purposeOf(it){
+    var s=txt(it&&it.n)+' '+txt(it&&it.epRawLabel)+' '+txt(it&&it.dbMeta&&it.dbMeta.kind);
+    if(/вводн|input_breaker/i.test(s)) return 'вводной аппарат щита';
+    if(/10\s*мА/i.test(s)) return 'защита влажных зон 10 мА';
+    if(/узо|диф/i.test(s)) return 'групповая защита';
+    if(/контактор/i.test(s)) return 'мастер-кнопка только на свет';
+    if(/реле|узм/i.test(s)) return 'защитный аппарат';
+    return 'отдельный автомат линии';
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: patchDbBulk
  * ========================================================= */
 function patchDbBulk(){
     var modal=$('settModal'); if(!modal || $('ep-v17-bulk-box')) return;
     var host=$('editor-mat-list') || $('editor-work-list'); if(!host) return;
     var box=document.createElement('div'); box.id='ep-v17-bulk-box'; box.style.cssText='margin:12px 0;padding:12px;border:2px dashed #8b5cf6;border-radius:16px;background:#faf5ff;';
-    box.innerHTML='<b style="color:#5b21b6;display:block;margin-bottom:8px;">Массовое управление V17</b><div style="font-size:12px;color:#64748b;font-weight:800;margin-bottom:8px;">Выделение и перенос работают по галочкам в текущей открытой базе. Если галочек нет — значит открыт старый список, нажми Обновить / перезагрузить.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><input id="ep-v17-move-cat" placeholder="Категория"><input id="ep-v17-move-sub" placeholder="Подкатегория"></div><button onclick="epV17BulkMove()" style="margin-top:8px;background:#8b5cf6;color:white;">📦 Переместить выбранные</button><button onclick="epV17BulkDelete()" style="margin-top:8px;background:#ef4444;color:white;">🗑 Удалить выбранные</button>';
+    return; /* V81 disabled legacy mass panel */
     host.parentNode.insertBefore(box,host);
   }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: saveArr
+ * DATABASE FUNCTION: move
+ * ========================================================= */
+function move(arr){ return (arr||[]).map(function(it){ if(ids[String(it.id||'')]){ var x=Object.assign({},it); if(c)x.c=c; if(g){x.g=g;x.sc=g;x.subcategory=g;} return x;} return it;}); }
+    
+
+
+/* =========================================================
+ * DATABASE FUNCTION: getServerCache
+ * ========================================================= */
+function getServerCache(){ var c=objLS(LS_SERVER_CACHE); return {matDB:Array.isArray(c.matDB)?c.matDB:[], workDB:Array.isArray(c.workDB)?c.workDB:[]}; }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: getArr
+ * ========================================================= */
+function getArr(type,src){
+    src=src||scope(); type=type==='work'?'work':'mat';
+    if(src==='global'){
+      var w = type==='work' ? window.EP_GLOBAL_WORK : window.EP_GLOBAL_MAT;
+      if(Array.isArray(w)) return w.slice();
+      var c=getServerCache(); return (type==='work'?c.workDB:c.matDB).slice();
+    }
+    var mw = type==='work' ? window.EP_MY_WORK : window.EP_MY_MAT;
+    if(Array.isArray(mw)) return mw.slice();
+    return arrLS(type==='work'?LS_MY_WORK:LS_MY_MAT);
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: syncActiveToMain
+ * ========================================================= */
+function syncActiveToMain(src){
+    src=src||scope();
+    try{
+      window.matDB = getArr('mat',src);
+      window.workDB = getArr('work',src);
+      try{ matDB = window.matDB; workDB = window.workDB; }catch(e){}
+    }catch(e){}
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: saveArr
  * ========================================================= */
 async function saveArr(type,arr){
     var src=scope(); type=type==='work'?'work':'mat'; arr=unique(arr,type);
@@ -3529,7 +5304,7 @@ async function saveArr(type,arr){
       epV18SetStatus('upload','запись на сервер');
       try{ if(typeof db!=='undefined' && db){ await db.collection('settings').doc('global_db').set({matDB:c.matDB,workDB:c.workDB,updatedAt:new Date().toISOString()},{merge:true}); } }
       catch(e){ epV18SetStatus('error','ошибка сервера'); toast('Ошибка записи сервера: '+(e.message||e)); return false; }
-      epV18SetStatus('ok','V18 активна'); return true;
+      /* V81 disabled legacy status V17/V18/V21 */
     } else {
       if(type==='mat'){ window.EP_MY_MAT=arr; setLS(LS_MY_MAT,arr); }
       else { window.EP_MY_WORK=arr; setLS(LS_MY_WORK,arr); }
@@ -3538,7 +5313,7 @@ async function saveArr(type,arr){
       epV18SetStatus('upload','запись на сервер');
       try{ if(typeof db!=='undefined' && db && uid()){ await db.collection('user_db').doc(uid()).set({uid:uid(),masterName:(window.appUser&&(appUser.name||appUser.email))||'',matDB:getArr('mat','my'),workDB:getArr('work','my'),created:true,updatedAt:new Date().toISOString()},{merge:true}); } }
       catch(e){ toast('Локально сохранено, сервер личной базы отказал: '+(e.message||e)); }
-      epV18SetStatus('ok','V18 активна'); return true;
+      /* V81 disabled legacy status V17/V18/V21 */
     }
   }
 
@@ -3546,74 +5321,218 @@ async function saveArr(type,arr){
 
 
 /* =========================================================
- * VISUAL FUNCTION: ensureBadge
+ * DATABASE FUNCTION: dbFindAuto
  * ========================================================= */
-function ensureBadge(){
-    var b=$('ep-v18-status-badge');
-    if(!b){
-      b=document.createElement('div'); b.id='ep-v18-status-badge';
-      b.style.cssText='position:fixed;left:10px;bottom:12px;z-index:2147483647;border-radius:999px;padding:8px 13px;color:#fff;font-size:12px;font-weight:1000;box-shadow:0 10px 30px rgba(0,0,0,.25);border:2px solid rgba(255,255,255,.55);letter-spacing:.2px;';
-      document.body.appendChild(b);
-    }
-    return b;
+function dbFindAuto(nominal,brand){
+    var amp=String(nominal||'').replace(/[^0-9]/g,''); var br=norm(brand||''); var arr=getArr('mat',scope()).concat(getArr('mat','global'),getArr('mat','my'));
+    var hit=arr.find(function(it){ var nn=norm(it.n); return /автомат/.test(nn) && nn.indexOf(amp+'a')>=0 && (!br || nn.indexOf(br)>=0 || (br==='iek'&&nn.indexOf('иэк')>=0) || (br==='иэк'&&nn.indexOf('iek')>=0)); });
+    return hit||null;
   }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: renderMainDirect
+ * DATABASE FUNCTION: dbFindRcd
  * ========================================================= */
-function renderMainDirect(){
-    var tb=document.querySelector('#mainTable tbody'); if(!tb) return;
-    var arr=[]; try{ arr=Array.isArray(currentEstimate)?currentEstimate:(Array.isArray(window.currentEstimate)?window.currentEstimate:[]); }catch(e){ arr=Array.isArray(window.currentEstimate)?window.currentEstimate:[]; }
-    tb.innerHTML=''; var total=0;
-    arr.forEach(function(it,idx){ var q=Number(it.q)||0, sum=(typeof fPrice==='function'?fPrice(it):(Number(it.p)||0))*q; total+=sum; tb.insertAdjacentHTML('beforeend','<tr><td class="col-name editable-name" onclick="openSwapModal('+idx+')" title="Нажмите для замены">'+esc(it.n)+'</td><td class="col-qty"><input type="number" value="'+esc(q)+'" onchange="currentEstimate['+idx+'].q=Number(this.value); window.currentEstimate=currentEstimate; renderMainTable();" style="width:50px;padding:6px;margin:0;text-align:center;"></td><td class="col-sum">'+Math.round(sum)+' P</td><td style="text-align:right;"><button onclick="currentEstimate.splice('+idx+',1); window.currentEstimate=currentEstimate; renderMainTable();" class="btn-danger" style="padding:6px;border-radius:8px;width:auto;margin:0;">✕</button></td></tr>'); });
-    var tot=$('tot-all'); if(tot) tot.innerText=total.toLocaleString('ru-RU')+' P';
-    try{ if(typeof syncDraft==='function') syncDraft(); }catch(e){}
+function dbFindRcd(leak,brand,kind){
+    var br=norm(brand||''), k=kind||'УЗО'; var arr=getArr('mat',scope()).concat(getArr('mat','global'),getArr('mat','my'));
+    return arr.find(function(it){ var nn=norm(it.n); return nn.indexOf(norm(k))>=0 && nn.indexOf(String(leak))>=0 && (!br || nn.indexOf(br)>=0 || (br==='iek'&&nn.indexOf('иэк')>=0) || (br==='иэк'&&nn.indexOf('iek')>=0)); })||null;
   }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: addShieldToEstimate
+ * DATABASE FUNCTION: makeItem
  * ========================================================= */
-function addShieldToEstimate(items){
-    // Use original addAuto if possible, because it also syncs totals and storage. Items are already aggregated by V19.
-    try{ if(typeof addAuto==='function'){ addAuto(items,'shield'); return; } }catch(e){}
-    try{ window.currentEstimate=(Array.isArray(window.currentEstimate)?window.currentEstimate:[]).filter(function(it){return it.tag!=='shield'&&it.tag!=='shield_info';}).concat(items); currentEstimate=window.currentEstimate; if(typeof renderMainTable==='function') renderMainTable(); }catch(e){}
+function makeItem(n,q,p,type,meta,assign){ var it=Object.assign({n:n,q:Number(q)||1,p:money(p),u:(meta&&meta.unit)||'шт',type:type||'mat',tag:'shield'},meta||{}); if(assign){ it.epAssignment=assign; it.epAssignments=[assign]; it.epMergedDetails=[assign]; if(!it.dbMeta) it.dbMeta={}; it.dbMeta.assignment=assign; } return it; }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: mergeAssignments
+ * ========================================================= */
+function mergeAssignments(rec,it){ var arr=rec.epAssignments||[]; function add(v){ v=clean(v); if(v && arr.indexOf(v)<0) arr.push(v); } if(Array.isArray(it.epAssignments)) it.epAssignments.forEach(add); if(Array.isArray(it.epMergedDetails)) it.epMergedDetails.forEach(add); add(it.epAssignment); if(it.dbMeta) add(it.dbMeta.assignment); rec.epAssignments=arr; rec.epMergedDetails=arr.slice(); rec.epAssignment=arr[0]||rec.epAssignment||''; if(!rec.dbMeta) rec.dbMeta={}; rec.dbMeta.assignment=rec.epAssignment; }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: isShieldDevice
+ * ========================================================= */
+function isShieldDevice(it){ var n=String((it&&it.n)||''); return it && it.type==='mat' && (/\b[ABCDАВСД]\s*\d{1,3}\b|автомат|узо|диф|реле|контактор|вводной/i.test(n) || /automatic|breaker|uzo|dif|relay|contactor/.test(String(it.kind||it.dbMeta&&it.dbMeta.kind||''))); }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: assigns
+ * ========================================================= */
+function assigns(it){ var out=[]; function add(v){ v=clean(v); if(v && !/позиция щита|назначение не указано/i.test(v) && out.indexOf(v)<0) out.push(v); } if(it){ if(Array.isArray(it.epAssignments)) it.epAssignments.forEach(add); if(Array.isArray(it.epMergedDetails)) it.epMergedDetails.forEach(add); add(it.epAssignment); if(it.dbMeta) add(it.dbMeta.assignment); } return out; }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: activeTypeFromUi
+ * ========================================================= */
+function activeTypeFromUi(){ var m=$('editor-mat-list'), w=$('editor-work-list'); if(m && m.offsetParent!==null) return 'mat'; if(w && w.offsetParent!==null) return 'work'; return lastOpenedType||'mat'; }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: buildBulkPanel
+ * ========================================================= */
+function buildBulkPanel(){
+    var arr=getArr('mat').concat(getArr('work'));
+    var cats=arr.map(function(x){return x.c||'Разное';}); var subs=arr.map(function(x){return groupOf(x)||'Без группы';});
+    return '<div id="ep-v18-bulk-box" style="margin:12px 0;padding:12px;border:2px dashed #16a34a;border-radius:16px;background:#f0fdf4;">'+
+      /* V81 disabled legacy mass panel line */
+      '<div style="font-size:12px;color:#64748b;font-weight:800;margin-bottom:8px;">Ставь галочки слева от позиций. Перемещение идёт в выбранную существующую категорию/подкатегорию активной базы.</div>'+ 
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;"><select id="ep-v18-move-cat">'+optionsHtml(cats,'Категория')+'</select><select id="ep-v18-move-sub">'+optionsHtml(subs,'Подкатегория')+'</select></div>'+ 
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><button class="btn-info" style="margin:0;padding:10px;" onclick="epV18SelectVisible(true)">✅ Выделить видимые</button><button class="btn-vendor" style="margin:0;padding:10px;" onclick="epV18SelectVisible(false)">⬜ Снять галочки</button><button class="btn-success" style="margin:0;padding:10px;" onclick="epV18MoveSelected()">📦 Переместить выбранные</button><button class="btn-danger" style="margin:0;padding:10px;" onclick="epV18DeleteSelected()">🗑 Удалить выбранные</button></div>'+ 
+    '</div>';
   }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: directAdd
+ * DATABASE FUNCTION: injectBulkPanel
  * ========================================================= */
-function directAdd(items){
-    var map={}, out=[];
-    (items||[]).forEach(function(src){ if(!src||!src.n) return; var it=Object.assign({},src,{tag:src.tag||'shield'}); var k=[it.tag,it.type,it.n,it.p,it.u].join('|'); var rec=map[k]; if(!rec){ rec=Object.assign({},it,{q:0,epAssignments:[],epMergedDetails:[]}); map[k]=rec; out.push(rec); } rec.q += Number(it.q)||1; addUniqueAssign(rec,[].concat(it.epAssignments||[],it.epMergedDetails||[],it.epAssignment||[])); });
-    try{ currentEstimate=(Array.isArray(currentEstimate)?currentEstimate:[]).filter(function(x){ return x && x.tag!=='shield' && x.tag!=='shield_info'; }).concat(out); window.currentEstimate=currentEstimate; }catch(e){ window.currentEstimate=(window.currentEstimate||[]).filter(function(x){ return x && x.tag!=='shield' && x.tag!=='shield_info'; }).concat(out); }
-    try{ if(typeof renderMainTable==='function') renderMainTable(); else if(typeof renderMainDirect==='function') renderMainDirect(); }catch(e){}
-    try{ if(typeof syncDraft==='function') syncDraft(); }catch(e){}
+function injectBulkPanel(){
+    var old=$('ep-v17-bulk-box'); if(old) old.style.display='none';
+    var host=$('editor-mat-list') || $('editor-work-list'); if(!host) return;
+    var existing=$('ep-v18-bulk-box'); if(existing){ existing.outerHTML=buildBulkPanel(); return; }
+    host.insertAdjacentHTML('beforebegin',buildBulkPanel());
   }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: setStatus
+ * DATABASE FUNCTION: injectChecks
  * ========================================================= */
-function setStatus(state,msg){
-    try{ if(typeof window.epV18SetStatus==='function'){ window.epV18SetStatus(state,msg); return; } }catch(e){}
-    var b=$('ep-v18-status-badge')||document.createElement('div');
-    b.id='ep-v18-status-badge';
-    b.style.cssText='position:fixed;left:10px;bottom:12px;z-index:2147483647;border-radius:999px;padding:8px 13px;color:#fff;font-size:12px;font-weight:1000;box-shadow:0 10px 30px rgba(0,0,0,.25);border:2px solid rgba(255,255,255,.55);letter-spacing:.2px;background:'+(state==='upload'?'#dc2626':state==='download'?'#2563eb':state==='error'?'#991b1b':'#16a34a')+';';
-    b.textContent=(state==='upload'?'🔴 ':state==='download'?'🔵 ':state==='error'?'⚠️ ':'✅ ')+(msg||'V21 активна');
-    if(!b.parentNode) document.body.appendChild(b);
+function injectChecks(){
+    ['editor-mat-list','editor-work-list'].forEach(function(id){ var box=$(id); if(!box) return; var type=id.indexOf('work')>=0?'work':'mat'; Array.prototype.forEach.call(box.querySelectorAll('.emp-row,.mat-item'),function(row,idx){ if(row.querySelector('.ep-v18-check')) return; var price=row.querySelector('input[type="number"][data-id]'); var itemBtn=row.querySelector('[data-item]'); var did=price?price.getAttribute('data-id'):''; var dtype=price?price.getAttribute('data-type'):type; if(!did && itemBtn){ try{ var raw=decodeURIComponent(escape(atob(itemBtn.getAttribute('data-item')))); var obj=JSON.parse(raw); did=obj.id||''; dtype=itemBtn.getAttribute('data-type')||type; }catch(e){} } if(!did){ did='v18row_'+type+'_'+idx+'_'+clean(row.textContent).slice(0,40); }
+      var ch=document.createElement('input'); ch.type='checkbox'; ch.className='ep-v18-check'; ch.dataset.type=dtype||type; ch.dataset.id=did; ch.style.cssText='width:22px;height:22px;min-width:22px;accent-color:#16a34a;margin:7px 10px 0 0;'; row.insertBefore(ch,row.firstChild); }); });
   }
   
 
 
 /* =========================================================
- * VISUAL FUNCTION: hideOldBulk
+ * DATABASE FUNCTION: refreshDbEnhancements
+ * ========================================================= */
+function refreshDbEnhancements(){ injectBulkPanel(); injectChecks(); }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: autoPrice
+ * ========================================================= */
+function autoPrice(nom,brand){
+    var amp=Number(String(nom||'').replace(/[^0-9]/g,''))||16;
+    try{
+      var db=(window.matDB||[]).concat(window.userMatDB||[]);
+      var br=brandRu(brand).toLowerCase(); var cn=curveNom(nom).toLowerCase();
+      var hit=db.find(function(x){ var n=String((x&&x.n)||'').toLowerCase().replace(/ё/g,'е'); return /автомат|выключатель автоматический|ва47|sh201/.test(n) && n.indexOf(String(amp))>=0 && (br==='иэк' ? /иэк|iek/.test(n) : n.indexOf(br)>=0); });
+      if(hit && Number(hit.p)>0) return Number(hit.p);
+    }catch(e){}
+    if(String(brand||'').toUpperCase()==='ABB') return amp>=25?600:265;
+    return amp>=40?380:(amp<=10?172:150);
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: rcdPrice
+ * ========================================================= */
+function rcdPrice(kind, leak, brand){
+    try{
+      var db=(window.matDB||[]).concat(window.userMatDB||[]); var k=(kind==='ДИФ'||kind==='Главный ДИФ')?'диф':'узо'; var br=brandRu(brand).toLowerCase();
+      var hit=db.find(function(x){ var n=String((x&&x.n)||'').toLowerCase().replace(/ё/g,'е'); return n.indexOf(k)>=0 && n.indexOf(String(leak))>=0 && (br==='иэк' ? /иэк|iek/.test(n) : n.indexOf(br)>=0); });
+      if(hit && Number(hit.p)>0) return Number(hit.p);
+    }catch(e){}
+    if(kind==='ДИФ'||kind==='Главный ДИФ') return leak===10?3600:3600;
+    return leak===10?3600:1195;
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: getAssigns
+ * ========================================================= */
+function getAssigns(it){ var out=[]; function add(v){ v=String(v||'').trim(); if(v && !/позиция щита|назначение не указано/i.test(v) && out.indexOf(v)<0) out.push(v); } if(!it) return out; if(Array.isArray(it.epAssignments)) it.epAssignments.forEach(add); if(Array.isArray(it.epMergedDetails)) it.epMergedDetails.forEach(add); add(it.epAssignment); if(it.dbMeta) add(it.dbMeta.assignment); return out; }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: activeMatDb
+ * ========================================================= */
+function activeMatDb(){
+    var out=[];
+    try{ if(Array.isArray(window.matDB)) out=out.concat(window.matDB); }catch(e){}
+    try{ if(Array.isArray(window.EP_MY_MAT)) out=out.concat(window.EP_MY_MAT); }catch(e){}
+    try{ if(Array.isArray(window.EP_GLOBAL_MAT)) out=out.concat(window.EP_GLOBAL_MAT); }catch(e){}
+    try{ var c=JSON.parse(localStorage.getItem('ep_global_cache_force_v1')||'{}'); if(Array.isArray(c.matDB)) out=out.concat(c.matDB); }catch(e){}
+    return out;
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: autoName
+ * ========================================================= */
+function autoName(nom,brand,curve){ var cn=curveNom(nom,curve), br=brandRu(brand); var hit=dbFindAuto(cn,brand); var model=hit?modelFromDbName(hit.n):''; if(model) return cn+' 1P '+model; if(br==='ABB') return cn+' 1P ABB SH201'; if(br==='Schneider') return cn+' 1P Schneider'; if(br==='Legrand') return cn+' 1P Legrand'; if(br==='EKF') return cn+' 1P EKF'; return cn+' 1P ИЭК ВА47-29'; }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: rcdName
+ * ========================================================= */
+function rcdName(kind,leak,brand,rcdType){ var k=(kind==='ДИФ'||kind==='Главный ДИФ')?kind:'УЗО'; var hit=dbFindRcd(k,leak,brand); var br=brandRu(brand); var model=hit?modelFromDbName(hit.n):''; if(model) return k+' 2P 40A '+leak+'мА тип '+(rcdType||'A')+' '+model; if(br==='ABB') return k+' 2P 40A '+leak+'мА тип '+(rcdType||'A')+' ABB'; return k+' 2P 40A '+leak+'мА тип '+(rcdType||'A')+' '+br+(br==='ИЭК'?' ВД1-63':''); }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: item
+ * ========================================================= */
+function item(n,q,p,type,meta,assigns){
+    var a=[]; if(Array.isArray(assigns)) a=assigns.map(clean).filter(Boolean); else if(assigns) a=[clean(assigns)].filter(Boolean);
+    var it=Object.assign({n:n,q:Number(q)||1,p:money(p),u:(meta&&meta.unit)||'шт',type:type||'mat',tag:'shield'},meta||{});
+    if(a.length){ it.epAssignment=a[0]; it.epAssignments=a.slice(); it.epMergedDetails=a.slice(); it.assignment=a[0]; it.dbMeta=Object.assign({},it.dbMeta||{}, {assignment:a[0]}); }
+    return it;
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: addUniqueAssign
+ * ========================================================= */
+function addUniqueAssign(rec,arr){
+    rec.epAssignments=rec.epAssignments||[]; rec.epMergedDetails=rec.epMergedDetails||[];
+    (arr||[]).forEach(function(v){ v=clean(v); if(v && !/позиция щита|назначение не указано/i.test(v) && rec.epAssignments.indexOf(v)<0){ rec.epAssignments.push(v); rec.epMergedDetails.push(v); } });
+    rec.epAssignment=rec.epAssignments[0]||rec.epAssignment||''; rec.dbMeta=Object.assign({},rec.dbMeta||{}, {assignment:rec.epAssignment});
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: activeType
+ * ========================================================= */
+function activeType(){
+    var m=$('editor-mat-list'), w=$('editor-work-list');
+    if(m && m.offsetParent!==null) return 'mat';
+    if(w && w.offsetParent!==null) return 'work';
+    try{ var activeBtn=Array.prototype.find.call(document.querySelectorAll('#settModal button'),function(b){ return /Материалы/.test(b.textContent||'') && /active|white|#fff/.test(b.className+' '+b.style.background); }); if(activeBtn) return 'mat'; }catch(e){}
+    return 'mat';
+  }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: visibleHost
+ * ========================================================= */
+function visibleHost(){ return $('editor-mat-list') || $('editor-work-list'); }
+  
+
+
+/* =========================================================
+ * DATABASE FUNCTION: hideOldBulk
  * ========================================================= */
 function hideOldBulk(){
     ['ep-v17-bulk-box','ep-v18-bulk-box'].forEach(function(id){ var el=$(id); if(el){ el.style.display='none'; el.setAttribute('aria-hidden','true'); } });
@@ -3622,22 +5541,20 @@ function hideOldBulk(){
 
 
 /* =========================================================
- * VISUAL FUNCTION: ensurePanel
+ * DATABASE FUNCTION: ensureChecks
  * ========================================================= */
-function ensurePanel(){
-    hideOldBulk();
-    var host=visibleHost(); if(!host) return;
-    var box=$('ep-v21-bulk-box');
-    if(!box){ host.insertAdjacentHTML('beforebegin',panelHtml()); fillSelectors(true); }
-    else if(!box.parentNode || !document.body.contains(box)){ host.insertAdjacentHTML('beforebegin',panelHtml()); fillSelectors(true); }
-    ensureChecks(); hideOldBulk();
+function ensureChecks(){
+    ['editor-mat-list','editor-work-list'].forEach(function(id){
+      var box=$(id); if(!box) return; var type=id.indexOf('work')>=0?'work':'mat';
+      Array.prototype.forEach.call(box.querySelectorAll('.emp-row,.mat-item'),function(row,idx){
+        var old=row.querySelector('.ep-v18-check,.ep-v21-check');
+        if(old){ old.classList.add('ep-v21-check'); return; }
+        var info=rowId(row,type,idx);
+        var ch=document.createElement('input'); ch.type='checkbox'; ch.className='ep-v21-check'; ch.dataset.type=info.type||type; ch.dataset.id=info.id;
+        ch.style.cssText='width:22px;height:22px;min-width:22px;accent-color:#16a34a;margin:7px 10px 0 0;';
+        row.insertBefore(ch,row.firstChild);
+      });
+    });
   }
-  
-
-
-/* =========================================================
- * VISUAL FUNCTION: selected
- * ========================================================= */
-function selected(){ return Array.prototype.slice.call(document.querySelectorAll('#settModal .ep-v21-check:checked, #settModal .ep-v18-check:checked')); }
   
 

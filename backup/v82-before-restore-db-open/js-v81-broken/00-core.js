@@ -8019,7 +8019,7 @@ window.EP_ULTIMATE_SWAP = [];
     if($('ep-v17-badge')) return;
     var d=document.createElement('div'); d.id='ep-v17-badge';
     d.style.cssText='position:fixed;left:8px;bottom:8px;z-index:2147483647;background:#111827;color:#fff;border:2px solid #22c55e;border-radius:999px;padding:6px 10px;font:900 11px system-ui;box-shadow:0 8px 24px rgba(0,0,0,.35);opacity:.92;';
-    d.textContent='✅ V17 активна';
+    /* V81 disabled legacy status V17/V18/V21 */
     document.body.appendChild(d);
   }
   function brandRu(v){ v=txt(v||'IEK').trim(); if(/^iek$/i.test(v)) return 'ИЭК'; return v; }
@@ -8111,7 +8111,7 @@ window.EP_ULTIMATE_SWAP = [];
     var modal=$('settModal'); if(!modal || $('ep-v17-bulk-box')) return;
     var host=$('editor-mat-list') || $('editor-work-list'); if(!host) return;
     var box=document.createElement('div'); box.id='ep-v17-bulk-box'; box.style.cssText='margin:12px 0;padding:12px;border:2px dashed #8b5cf6;border-radius:16px;background:#faf5ff;';
-    box.innerHTML='<b style="color:#5b21b6;display:block;margin-bottom:8px;">Массовое управление V17</b><div style="font-size:12px;color:#64748b;font-weight:800;margin-bottom:8px;">Выделение и перенос работают по галочкам в текущей открытой базе. Если галочек нет — значит открыт старый список, нажми Обновить / перезагрузить.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><input id="ep-v17-move-cat" placeholder="Категория"><input id="ep-v17-move-sub" placeholder="Подкатегория"></div><button onclick="epV17BulkMove()" style="margin-top:8px;background:#8b5cf6;color:white;">📦 Переместить выбранные</button><button onclick="epV17BulkDelete()" style="margin-top:8px;background:#ef4444;color:white;">🗑 Удалить выбранные</button>';
+    return; /* V81 disabled legacy mass panel */
     host.parentNode.insertBefore(box,host);
   }
   window.epV17BulkMove=async function(){
@@ -8204,7 +8204,7 @@ window.EP_ULTIMATE_SWAP = [];
       epV18SetStatus('upload','запись на сервер');
       try{ if(typeof db!=='undefined' && db){ await db.collection('settings').doc('global_db').set({matDB:c.matDB,workDB:c.workDB,updatedAt:new Date().toISOString()},{merge:true}); } }
       catch(e){ epV18SetStatus('error','ошибка сервера'); toast('Ошибка записи сервера: '+(e.message||e)); return false; }
-      epV18SetStatus('ok','V18 активна'); return true;
+      /* V81 disabled legacy status V17/V18/V21 */
     } else {
       if(type==='mat'){ window.EP_MY_MAT=arr; setLS(LS_MY_MAT,arr); }
       else { window.EP_MY_WORK=arr; setLS(LS_MY_WORK,arr); }
@@ -8213,7 +8213,7 @@ window.EP_ULTIMATE_SWAP = [];
       epV18SetStatus('upload','запись на сервер');
       try{ if(typeof db!=='undefined' && db && uid()){ await db.collection('user_db').doc(uid()).set({uid:uid(),masterName:(window.appUser&&(appUser.name||appUser.email))||'',matDB:getArr('mat','my'),workDB:getArr('work','my'),created:true,updatedAt:new Date().toISOString()},{merge:true}); } }
       catch(e){ toast('Локально сохранено, сервер личной базы отказал: '+(e.message||e)); }
-      epV18SetStatus('ok','V18 активна'); return true;
+      /* V81 disabled legacy status V17/V18/V21 */
     }
   }
 
@@ -8230,7 +8230,7 @@ window.EP_ULTIMATE_SWAP = [];
     var b=ensureBadge();
     var colors={ok:'#16a34a', upload:'#dc2626', download:'#2563eb', error:'#991b1b'};
     b.style.background=colors[state]||colors.ok;
-    b.textContent=(state==='upload'?'🔴 ':state==='download'?'🔵 ':state==='error'?'⚠️ ':'✅ ')+(msg||'V18 активна');
+    /* V81 disabled legacy status V17/V18/V21 */
   };
 
   function money(v){ var n=Number(String(v==null?'':v).replace(',','.').replace(/[^\d.\-]/g,'')); return Number.isFinite(n)?n:0; }
@@ -8316,7 +8316,7 @@ window.EP_ULTIMATE_SWAP = [];
     items.push(makeItem('Маркировка линий',lines.length,appPrice('shieldMarkLinePrice',100),'work',{c:'Щитовое',g:'Маркировка линий',sc:'Маркировка линий',unit:'линия'},'Маркировка каждой линии'));
     if(chk('cfg-scheme')) items.push(makeItem('Составление однолинейной схемы щита',1,appPrice('shieldSchemePrice',4000),'work',{c:'Щитовое',g:'Документация',sc:'Документация'},'Однолинейная схема'));
     items.push(makeItem('ℹ️ Щит: занято '+totalModules+' мод.; корпус '+boxSize+'М; свободно '+Math.max(0,boxSize-totalModules)+' мод.',1,0,'work',{tag:'shield_info'},'Информация по щиту'));
-    directAddShield(items); try{ closeModal('configModal'); }catch(e){} renderMainDirect(); epV18SetStatus('ok','V18 активна'); toast('✅ Щит перенесён на главный экран V18');
+    /* V81 disabled legacy status V17/V18/V21 */
   };
 
   function isShieldDevice(it){ var n=String((it&&it.n)||''); return it && it.type==='mat' && (/\b[ABCDАВСД]\s*\d{1,3}\b|автомат|узо|диф|реле|контактор|вводной/i.test(n) || /automatic|breaker|uzo|dif|relay|contactor/.test(String(it.kind||it.dbMeta&&it.dbMeta.kind||''))); }
@@ -8341,7 +8341,7 @@ window.EP_ULTIMATE_SWAP = [];
     var arr=getArr('mat').concat(getArr('work'));
     var cats=arr.map(function(x){return x.c||'Разное';}); var subs=arr.map(function(x){return groupOf(x)||'Без группы';});
     return '<div id="ep-v18-bulk-box" style="margin:12px 0;padding:12px;border:2px dashed #16a34a;border-radius:16px;background:#f0fdf4;">'+
-      '<b style="color:#166534;display:block;margin-bottom:7px;">Массовое управление V18</b>'+ 
+      /* V81 disabled legacy mass panel line */
       '<div style="font-size:12px;color:#64748b;font-weight:800;margin-bottom:8px;">Ставь галочки слева от позиций. Перемещение идёт в выбранную существующую категорию/подкатегорию активной базы.</div>'+ 
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;"><select id="ep-v18-move-cat">'+optionsHtml(cats,'Категория')+'</select><select id="ep-v18-move-sub">'+optionsHtml(subs,'Подкатегория')+'</select></div>'+ 
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><button class="btn-info" style="margin:0;padding:10px;" onclick="epV18SelectVisible(true)">✅ Выделить видимые</button><button class="btn-vendor" style="margin:0;padding:10px;" onclick="epV18SelectVisible(false)">⬜ Снять галочки</button><button class="btn-success" style="margin:0;padding:10px;" onclick="epV18MoveSelected()">📦 Переместить выбранные</button><button class="btn-danger" style="margin:0;padding:10px;" onclick="epV18DeleteSelected()">🗑 Удалить выбранные</button></div>'+ 
@@ -8377,9 +8377,9 @@ window.EP_ULTIMATE_SWAP = [];
 
   var oldOpenMat=window.openMatCatalog; window.openMatCatalog=function(){ lastOpenedType='mat'; var r=oldOpenMat?oldOpenMat.apply(this,arguments):undefined; setTimeout(refreshDbEnhancements,120); return r; };
   var oldOpenWork=window.openWorkCatalog; window.openWorkCatalog=function(){ lastOpenedType='work'; var r=oldOpenWork?oldOpenWork.apply(this,arguments):undefined; setTimeout(refreshDbEnhancements,120); return r; };
-  var oldSetScope=window.epSetDbScope; window.epSetDbScope=function(s){ epV18SetStatus('download','загрузка с сервера'); var r=oldSetScope?oldSetScope.apply(this,arguments):undefined; Promise.resolve(r).finally(function(){ setTimeout(function(){ epV18SetStatus('ok','V18 активна'); refreshDbEnhancements(); },350); }); return r; };
-  var oldReload=window.epReloadActiveDbV7; window.epReloadActiveDbV7=function(){ epV18SetStatus('download','загрузка с сервера'); var r=oldReload?oldReload.apply(this,arguments):undefined; Promise.resolve(r).finally(function(){ setTimeout(function(){ epV18SetStatus('ok','V18 активна'); refreshDbEnhancements(); },350); }); return r; };
-  var oldSave=window.epSaveActiveDbV7; window.epSaveActiveDbV7=function(){ epV18SetStatus('upload','запись на сервер'); var r=oldSave?oldSave.apply(this,arguments):undefined; Promise.resolve(r).finally(function(){ setTimeout(function(){ epV18SetStatus('ok','V18 активна'); },350); }); return r; };
+  /* V81 disabled legacy status V17/V18/V21 */
+  /* V81 disabled legacy status V17/V18/V21 */
+  /* V81 disabled legacy status V17/V18/V21 */
 
   window.addEventListener('click',function(ev){
     var b=ev.target&&ev.target.closest?ev.target.closest('button'):null; if(!b) return; var t=clean(b.textContent);
@@ -8387,7 +8387,7 @@ window.EP_ULTIMATE_SWAP = [];
     if(t.indexOf('Детализация')>=0){ ev.preventDefault(); ev.stopImmediatePropagation(); window.epV18ShowDetails(); return false; }
   },true);
 
-  function boot(){ ensureBadge(); epV18SetStatus('ok','V18 активна'); syncActiveToMain(scope()); refreshDbEnhancements(); try{ window.currentEstimate=currentEstimate; renderMainDirect(); }catch(e){} toast(BUILD+' загружена'); }
+  /* V81 disabled legacy status V17/V18/V21 */
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',function(){ setTimeout(boot,180); }); else setTimeout(boot,180);
   setInterval(function(){ ensureBadge(); refreshDbEnhancements(); },2500);
 })();
@@ -8778,7 +8778,7 @@ window.EP_ULTIMATE_SWAP = [];
     var b=$('ep-v18-status-badge')||document.createElement('div');
     b.id='ep-v18-status-badge';
     b.style.cssText='position:fixed;left:10px;bottom:12px;z-index:2147483647;border-radius:999px;padding:8px 13px;color:#fff;font-size:12px;font-weight:1000;box-shadow:0 10px 30px rgba(0,0,0,.25);border:2px solid rgba(255,255,255,.55);letter-spacing:.2px;background:'+(state==='upload'?'#dc2626':state==='download'?'#2563eb':state==='error'?'#991b1b':'#16a34a')+';';
-    b.textContent=(state==='upload'?'🔴 ':state==='download'?'🔵 ':state==='error'?'⚠️ ':'✅ ')+(msg||'V21 активна');
+    /* V81 disabled legacy status V17/V18/V21 */
     if(!b.parentNode) document.body.appendChild(b);
   }
   async function saveArr(type,arr){
@@ -8794,7 +8794,7 @@ window.EP_ULTIMATE_SWAP = [];
       syncMain('global'); setStatus('upload','запись на сервер');
       try{ if(typeof db!=='undefined' && db){ await db.collection('settings').doc('global_db').set({matDB:c.matDB,workDB:c.workDB,updatedAt:new Date().toISOString()},{merge:true}); } }
       catch(e){ setStatus('error','ошибка сервера'); toast('Ошибка записи сервера: '+(e.message||e)); return false; }
-      setStatus('ok','V21 активна'); return true;
+      /* V81 disabled legacy status V17/V18/V21 */
     }
     if(type==='mat'){ window.EP_MY_MAT=arr; setArrLS(LS_MY_MAT,arr); }
     else { window.EP_MY_WORK=arr; setArrLS(LS_MY_WORK,arr); }
@@ -8802,7 +8802,7 @@ window.EP_ULTIMATE_SWAP = [];
     syncMain('my'); setStatus('upload','запись на сервер');
     try{ if(typeof db!=='undefined' && db && uid()){ await db.collection('user_db').doc(uid()).set({uid:uid(),masterName:(window.appUser&&(appUser.name||appUser.email))||'',matDB:getArr('mat','my'),workDB:getArr('work','my'),created:true,updatedAt:new Date().toISOString()},{merge:true}); } }
     catch(e){ toast('Локально сохранено, сервер личной базы отказал: '+(e.message||e)); }
-    setStatus('ok','V21 активна'); return true;
+    /* V81 disabled legacy status V17/V18/V21 */
   }
   function activeType(){
     var m=$('editor-mat-list'), w=$('editor-work-list');
@@ -8832,7 +8832,7 @@ window.EP_ULTIMATE_SWAP = [];
   }
   function panelHtml(){
     return '<div id="ep-v21-bulk-box" style="margin:12px 0;padding:12px;border:2px dashed #16a34a;border-radius:16px;background:#f0fdf4;">'+
-      '<b style="color:#166534;display:block;margin-bottom:7px;">Массовое управление V21</b>'+ 
+      /* V81 disabled legacy mass panel line */
       '<div style="font-size:12px;color:#64748b;font-weight:800;margin-bottom:8px;">Галочки ставятся слева от позиций. Категория/подкатегория выбираются из существующих и больше не закрываются сами.</div>'+ 
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">'+
         '<select id="ep-v21-move-cat" onchange="epV21UpdateSubs()"><option value="">Категория</option></select>'+ 
@@ -8918,7 +8918,7 @@ window.EP_ULTIMATE_SWAP = [];
   var oldOpenMat=window.openMatCatalog; window.openMatCatalog=function(){ var r=oldOpenMat?oldOpenMat.apply(this,arguments):undefined; setTimeout(ensurePanel,150); return r; };
   var oldOpenWork=window.openWorkCatalog; window.openWorkCatalog=function(){ var r=oldOpenWork?oldOpenWork.apply(this,arguments):undefined; setTimeout(ensurePanel,150); return r; };
 
-  function boot(){ setStatus('ok','V21 активна'); ensurePanel(); fillSelectors(true); toast(BUILD+' загружена'); }
+  /* V81 disabled legacy status V17/V18/V21 */
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',function(){ setTimeout(boot,250); }); else setTimeout(boot,250);
-  setInterval(function(){ setStatus('ok','V21 активна'); hideOldBulk(); ensureChecks(); var active=document.activeElement; if(active && (active.id==='ep-v21-move-cat'||active.id==='ep-v21-move-sub')) return; ensurePanel(); },2500);
+  /* V81 disabled legacy status V17/V18/V21 */
 })();

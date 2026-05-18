@@ -3493,7 +3493,7 @@ function addBadge(){
     if($('ep-v17-badge')) return;
     var d=document.createElement('div'); d.id='ep-v17-badge';
     d.style.cssText='position:fixed;left:8px;bottom:8px;z-index:2147483647;background:#111827;color:#fff;border:2px solid #22c55e;border-radius:999px;padding:6px 10px;font:900 11px system-ui;box-shadow:0 8px 24px rgba(0,0,0,.35);opacity:.92;';
-    d.textContent='✅ V17 активна';
+    /* V81 disabled legacy status V17/V18/V21 */
     document.body.appendChild(d);
   }
   
@@ -3506,7 +3506,7 @@ function patchDbBulk(){
     var modal=$('settModal'); if(!modal || $('ep-v17-bulk-box')) return;
     var host=$('editor-mat-list') || $('editor-work-list'); if(!host) return;
     var box=document.createElement('div'); box.id='ep-v17-bulk-box'; box.style.cssText='margin:12px 0;padding:12px;border:2px dashed #8b5cf6;border-radius:16px;background:#faf5ff;';
-    box.innerHTML='<b style="color:#5b21b6;display:block;margin-bottom:8px;">Массовое управление V17</b><div style="font-size:12px;color:#64748b;font-weight:800;margin-bottom:8px;">Выделение и перенос работают по галочкам в текущей открытой базе. Если галочек нет — значит открыт старый список, нажми Обновить / перезагрузить.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><input id="ep-v17-move-cat" placeholder="Категория"><input id="ep-v17-move-sub" placeholder="Подкатегория"></div><button onclick="epV17BulkMove()" style="margin-top:8px;background:#8b5cf6;color:white;">📦 Переместить выбранные</button><button onclick="epV17BulkDelete()" style="margin-top:8px;background:#ef4444;color:white;">🗑 Удалить выбранные</button>';
+    return; /* V81 disabled legacy mass panel */
     host.parentNode.insertBefore(box,host);
   }
   
@@ -3529,7 +3529,7 @@ async function saveArr(type,arr){
       epV18SetStatus('upload','запись на сервер');
       try{ if(typeof db!=='undefined' && db){ await db.collection('settings').doc('global_db').set({matDB:c.matDB,workDB:c.workDB,updatedAt:new Date().toISOString()},{merge:true}); } }
       catch(e){ epV18SetStatus('error','ошибка сервера'); toast('Ошибка записи сервера: '+(e.message||e)); return false; }
-      epV18SetStatus('ok','V18 активна'); return true;
+      /* V81 disabled legacy status V17/V18/V21 */
     } else {
       if(type==='mat'){ window.EP_MY_MAT=arr; setLS(LS_MY_MAT,arr); }
       else { window.EP_MY_WORK=arr; setLS(LS_MY_WORK,arr); }
@@ -3538,7 +3538,7 @@ async function saveArr(type,arr){
       epV18SetStatus('upload','запись на сервер');
       try{ if(typeof db!=='undefined' && db && uid()){ await db.collection('user_db').doc(uid()).set({uid:uid(),masterName:(window.appUser&&(appUser.name||appUser.email))||'',matDB:getArr('mat','my'),workDB:getArr('work','my'),created:true,updatedAt:new Date().toISOString()},{merge:true}); } }
       catch(e){ toast('Локально сохранено, сервер личной базы отказал: '+(e.message||e)); }
-      epV18SetStatus('ok','V18 активна'); return true;
+      /* V81 disabled legacy status V17/V18/V21 */
     }
   }
 
@@ -3606,7 +3606,7 @@ function setStatus(state,msg){
     var b=$('ep-v18-status-badge')||document.createElement('div');
     b.id='ep-v18-status-badge';
     b.style.cssText='position:fixed;left:10px;bottom:12px;z-index:2147483647;border-radius:999px;padding:8px 13px;color:#fff;font-size:12px;font-weight:1000;box-shadow:0 10px 30px rgba(0,0,0,.25);border:2px solid rgba(255,255,255,.55);letter-spacing:.2px;background:'+(state==='upload'?'#dc2626':state==='download'?'#2563eb':state==='error'?'#991b1b':'#16a34a')+';';
-    b.textContent=(state==='upload'?'🔴 ':state==='download'?'🔵 ':state==='error'?'⚠️ ':'✅ ')+(msg||'V21 активна');
+    /* V81 disabled legacy status V17/V18/V21 */
     if(!b.parentNode) document.body.appendChild(b);
   }
   

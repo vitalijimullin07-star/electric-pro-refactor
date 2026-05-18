@@ -1,7 +1,7 @@
 /*
  * Electric PRO Refactor
- * Module: 02-shield-configurator.js
- * V39 SAFE: Shield Configurator.
+ * Module: 03-socket-pool.js
+ * V39 SAFE: Socket Pool.
  *
  * Важно:
  * - модуль пересобран безопасно;
@@ -10,93 +10,70 @@
  * - 00-core.js временно остаётся стабильным runtime.
  */
 
-console.log("02-shield-configurator.js V39 SAFE loaded");
+console.log("03-socket-pool.js V39 SAFE loaded");
 
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: renderMainTable
+ * SOCKET POOL FUNCTION: setPodr
  * ========================================================= */
-function renderMainTable() {
-    const tb = document.querySelector("#mainTable tbody"); tb.innerHTML = ""; let total = 0;
-    currentEstimate.forEach((it, idx) => {
-        let sum = fPrice(it) * it.q; total += sum;
-        tb.innerHTML += `<tr>
-            <td class="col-name editable-name" onclick="openSwapModal(${idx})" title="Нажмите для замены">${it.n}</td>
-            <td class="col-qty"><input type="number" value="${it.q}" onchange="currentEstimate[${idx}].q=Number(this.value); renderMainTable();" style="width:50px; padding:6px; margin:0; text-align:center;"></td>
-            <td class="col-sum">${sum} P</td>
-            <td style="text-align:right;"><button onclick="currentEstimate.splice(${idx},1);renderMainTable();" class="btn-danger" style="padding:6px; border-radius:8px; width:auto; margin:0;">✕</button></td>
-        </tr>`;
-    });
-    document.getElementById('tot-all').innerText = total.toLocaleString() + ' P'; syncDraft();
-}
-
+function setPodr(v, el) { st_podr = v; document.querySelectorAll('#podr-tiles .tile').forEach(t=>t.classList.remove('active')); el.classList.add('active'); }
 
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: confirmQtyAdd
+ * SOCKET POOL FUNCTION: setH
  * ========================================================= */
-function confirmQtyAdd() { 
-    let q = Number(document.getElementById('qty-input').value); 
-    if(q > 0) { addAuto([{...pendingAdd.item, q: q, type: pendingAdd.type}], 'man_'+Date.now()); } 
-    closeModal('qtyPromptModal'); showToast("Добавлено!");
-}
+function setH(v, el) { st_h = v; if(el){ document.querySelectorAll('#h-tiles .tile').forEach(t=>t.classList.remove('active')); el.classList.add('active'); } }
+
+
+
+/* =========================================================
+ * SOCKET POOL FUNCTION: setP
+ * ========================================================= */
+function setP(v) { st_p = v; document.querySelectorAll('#p-tiles .tile').forEach((t,i) => { if(i===v-1) t.classList.add('active'); else t.classList.remove('active'); }); }
 
 
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: addAuto
+ * SOCKET POOL FUNCTION: modM
  * ========================================================= */
-function addAuto(items, tag) {
-    currentEstimate = currentEstimate.filter(it => it.tag !== tag);
-    const map = {};
-    const out = [];
-    (items || []).forEach(src => {
-        if (!src) return;
-        const it = Object.assign({}, src);
-        it.tag = tag;
-        const key = [it.tag || '', it.type || '', it.n || '', Number(it.p) || 0, it.u || 'шт'].join('|');
-        let rec = map[key];
-        if (!rec) {
-            rec = Object.assign({}, it, { q: 0 });
-            map[key] = rec;
-            out.push(rec);
-        }
-        rec.q += Number(it.q) || 0;
-        epV15MergeAssignments(rec, it);
-    });
-    currentEstimate = currentEstimate.concat(out);
-    renderMainTable();
-}
-
-
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: upUI
- * ========================================================= */
-function upUI() { 
-    ['soc', 'sw', 'pass', 'cross', 'tv', 'tpol'].forEach(k => {
-        let el = document.getElementById('v-'+k);
-        if(el) el.innerText = window['st_'+k];
-    });
+function modM(t, v) { 
+    let currentP = st_soc + st_sw + st_pass + st_cross + st_tv + st_tpol;
+    if (v > 0 && currentP >= 6) return showToast("Максимум 6 постов в одной рамке!");
+    if (v < 0 && window['st_'+t] <= 0) return;
     
-    st_p = st_soc + st_sw + st_pass + st_cross + st_tv + st_tpol;
-    let autoEl = document.getElementById('auto-posts');
-    if(autoEl) autoEl.innerText = st_p || 1; 
-    if(st_p === 0) st_p = 1; 
-    
-    let qEl = document.getElementById('v-q');
-    if(qEl) qEl.innerText = st_q; 
+    window['st_'+t] += v; 
+    upUI(); 
 }
 
 
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: rfPool
+ * SOCKET POOL FUNCTION: addGrp
+ * ========================================================= */
+function addGrp() { 
+    let totalMechs = st_soc + st_sw + st_pass + st_cross + st_tv + st_tpol;
+    if(totalMechs === 0) return showToast("Сначала добавьте механизмы!");
+    
+    pool.push({ p:st_p, h:st_h, q:st_q, soc:st_soc, sw:st_sw, pass:st_pass, cross:st_cross, tv:st_tv, tpol:st_tpol, route: document.getElementById('g-routing').value, podr: st_podr }); 
+    rfPool(); 
+}
+
+
+
+
+/* =========================================================
+ * SOCKET POOL FUNCTION: popPool
+ * ========================================================= */
+function popPool() { pool.pop(); rfPool(); }
+
+
+
+/* =========================================================
+ * SOCKET POOL FUNCTION: rfPool
  * ========================================================= */
 function rfPool() { 
     document.getElementById('pool-disp').innerHTML = pool.map((g,i) => `<div style="display:flex; justify-content:space-between; padding:8px; border-bottom:1px solid var(--border);"><b>${g.p}п на ${g.h}см (x${g.q}) [${g.podr}]</b> <button onclick="pool.splice(${i},1);rfPool();" style="width:auto; margin:0; background:none; color:red; font-size:16px;">✕</button></div>`).join(""); 
@@ -106,317 +83,145 @@ function rfPool() {
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: modV
+ * SOCKET POOL FUNCTION: applyPoolToEstimate
  * ========================================================= */
-function modV(id, val) { cfg[id] = Math.max(0, (cfg[id] || 0) + val); const el = document.getElementById('v-'+id); if(el) el.innerText = cfg[id]; }
+function applyPoolToEstimate() {
+    if(!pool.length) return showToast("❌ Пул пуст!");
+    let mode = document.getElementById('montage-mode').value;
+    let connMode = document.getElementById('conn-mode') ? document.getElementById('conn-mode').value : 'gml';
+    let wall = document.getElementById('g-wall').value;
+    let useKk = document.getElementById('pool-cable-channel').checked;
+    let useSurf = document.getElementById('pool-surface').checked;
+    let ceilH = Number(cust.ceil) || 270;
 
+    let res = { m_sh: 0, m_sh_50: 0, stdPodr: 0, deepPodr: 0, koposPodr: 0, mechs: { soc:0, sw:0, pass:0, cross:0, tv:0, tpol:0 }, frames: {1:0,2:0,3:0,4:0,5:0,6:0} };
 
+    let swJbs = 0; let passJbs = 0; let totalSocDrops = 0;
 
+    pool.forEach(g => {
+        let isSw = (g.sw > 0 || g.cross > 0);
+        let isPass = (g.pass > 0);
+        let isSoc = (g.soc > 0 || g.tv > 0);
+        
+        let drop = (isSw || isPass) ? (ceilH - g.h)/100 : (g.route === 'ceiling' ? (ceilH - g.h)/100 : g.h/100);
 
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: populateShieldExtras
- * ========================================================= */
-function populateShieldExtras() {
-    let sel = document.getElementById('cfg-extra-db');
-    if(!sel) return;
-    let html = '<option value="">-- Выбрать из базы --</option>';
-    matDB.forEach(m => {
-        if(m.c === 'Автоматика' || m.c === 'Щитовое') {
-            html += `<option value="${m.id}">${m.n} (${m.p} ₽)</option>`;
+        if(g.tpol > 0) { res.m_sh_50 += (g.h/100) * g.q; if(g.route === 'ceiling') res.m_sh += (drop - g.h/100) * g.q; } else { res.m_sh += drop * g.q; }
+        
+        // Логика распаек
+        if(mode === 'classic') {
+            if(isPass) passJbs += 1 * g.q;
+            else if(isSw) swJbs += 1 * g.q;
+            else if(isSoc && g.tpol === 0) totalSocDrops += 1 * g.q; 
+        } else {
+            if(isPass) passJbs += 1 * g.q;
+            else if(isSw) swJbs += 1 * g.q;
+            if(isSoc && !isPass && !isSw && g.tpol===0) totalSocDrops += 1 * g.q; 
         }
+
+        let deepCount = 0;
+        let stdCount = 0;
+        
+        if (mode === 'gyn') {
+            deepCount = g.p * g.q; 
+        } else {
+            deepCount = (g.sw + g.pass + g.cross + g.tpol) * g.q; 
+            stdCount = Math.max(0, (g.p * g.q) - deepCount);
+        }
+        
+        if(g.podr === 'kopos') { res.koposPodr += g.p * g.q; } 
+        else if(g.podr === 'deep') { res.deepPodr += g.p * g.q; } 
+        else { res.deepPodr += deepCount; res.stdPodr += stdCount; } 
+        
+        res.mechs.soc += g.soc * g.q; res.mechs.sw += g.sw * g.q; res.mechs.pass += g.pass * g.q; res.mechs.cross += g.cross * g.q; res.mechs.tv += g.tv * g.q; res.mechs.tpol += g.tpol * g.q;
+        if(g.p >= 1 && g.p <= 6) res.frames[g.p] += g.q;
     });
-    sel.innerHTML = html;
-}
 
-
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: addExtraToShieldConfig
- * ========================================================= */
-function addExtraToShieldConfig() {
-    let sel = document.getElementById('cfg-extra-db');
-    let q = Number(document.getElementById('cfg-extra-q').value) || 1;
-    if(!sel.value) return showToast("Выберите аппарат!");
-    let item = matDB.find(m => m.id === sel.value);
-    if(item) {
-        currentShieldExtras.push({...item, q: q});
-        renderShieldExtras();
+    let socJbs = 0;
+    if(mode === 'classic') {
+        let socsPerBox = appLogic.socketsPerJb || 3;
+        socJbs = Math.ceil(totalSocDrops / socsPerBox);
+    } else {
+        socJbs = totalSocDrops;
     }
-}
 
+    let totalBoxes = swJbs + passJbs + socJbs;
+    
+    // Считаем коннекторы
+    let mConnSoc = appLogic.connPerSocJb || 3;
+    let mConnSw = appLogic.connPerSwJb || 3;
+    let mConnPass = appLogic.connPerPassJb || 4;
+    let totalConn = (socJbs * mConnSoc) + (swJbs * mConnSw) + (passJbs * mConnPass);
 
+    let m = [], w = [];
+    let prSoc = appLogic.priceSoc || 500; let prDrill = appLogic.priceDrill || 600; let prShtr = appLogic.priceShtroba || 550;
 
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: renderShieldExtras
- * ========================================================= */
-function renderShieldExtras() {
-    document.getElementById('shield-extras-list').innerHTML = currentShieldExtras.map((ex, i) =>
-        `<div style="display:flex; justify-content:space-between; font-size:11px; border-bottom:1px dashed rgba(0,0,0,0.1); padding:4px;"><span>${ex.n} <b style="color:var(--primary);">(x${ex.q})</b></span><span style="color:red; font-size:16px; font-weight:bold; cursor:pointer;" onclick="currentShieldExtras.splice(${i},1); renderShieldExtras();">✕</span></div>`
-    ).join('');
-}
-
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epV15BrandRu
- * ========================================================= */
-function epV15BrandRu(v) {
-    const s = String(v || '').toUpperCase();
-    if (s.includes('IEK') || s.includes('ИЭК')) return 'ИЭК';
-    if (s.includes('ABB')) return 'ABB';
-    if (s.includes('SCHNEIDER') || s.includes('ШНАЙДЕР')) return 'Schneider';
-    if (s.includes('LEGRAND') || s.includes('ЛЕГРАН')) return 'Legrand';
-    if (s.includes('EKF')) return 'EKF';
-    if (s.includes('DEKRAFT')) return 'DEKraft';
-    return String(v || '').trim() || 'ИЭК';
-}
-
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epV15BrandCode
- * ========================================================= */
-function epV15BrandCode(v) {
-    const s = String(v || '').toUpperCase();
-    if (s.includes('ИЭК')) return 'IEK';
-    if (s.includes('IEK')) return 'IEK';
-    if (s.includes('ABB')) return 'ABB';
-    if (s.includes('SCHNEIDER')) return 'Schneider';
-    if (s.includes('LEGRAND')) return 'Legrand';
-    if (s.includes('EKF')) return 'EKF';
-    return String(v || '').trim();
-}
-
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epV15CleanForName
- * ========================================================= */
-function epV15CleanForName(s) { return String(s || '').replace(/\s+/g,' ').trim(); }
-
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epV15DetectModel
- * ========================================================= */
-function epV15DetectModel(s, kind) {
-    s = String(s || '');
-    const patterns = [
-        /ВА\s*47\s*[-–—]?\s*29/iu,
-        /ВД\s*1\s*[-–—]?\s*63/iu,
-        /АВДТ\s*32/iu,
-        /АД\s*12/iu,
-        /Easy\s*9/iu,
-        /Acti\s*9/iu,
-        /SH\s*20\d/iu,
-        /S\s*20\d/iu,
-        /DX\s*3/iu,
-        /TX\s*3/iu
-    ];
-    for (const p of patterns) { const m = s.match(p); if (m) return epV15CleanForName(m[0]).replace(/\s*[-–—]\s*/g,'-'); }
-    const k = String(kind || '').toLowerCase();
-    if (k.includes('dif') || /диф/i.test(s)) return epV15BrandCode(s).toUpperCase()==='IEK' ? 'АВДТ32' : '';
-    if (k.includes('uzo') || k.includes('узо') || /узо|диф/i.test(s)) return epV15BrandCode(s).toUpperCase()==='IEK' ? 'ВД1-63' : '';
-    if (/автомат|breaker|ВА47|IEK|ИЭК/i.test(s)) return epV15BrandCode(s).toUpperCase()==='IEK' ? 'ВА47-29' : '';
-    return '';
-}
-
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epV15DetectNominal
- * ========================================================= */
-function epV15DetectNominal(src, meta) {
-    const raw = [meta && meta.nominal, meta && meta.rawLabel, src].join(' ');
-    let m = String(raw || '').match(/\b([ABCDАВСД])\s*([0-9]{1,3})\b/iu);
-    if (m) {
-        const c = String(m[1]).toUpperCase().replace('А','A').replace('В','B').replace('С','C').replace('Д','D');
-        return c + m[2];
+    if(!useSurf) {
+        if(res.stdPodr > 0) m.push({ n: "Подрозетник стандарт (ГКЛ/Бетон)", q: res.stdPodr, p: 20, type: 'mat' });
+        if(res.deepPodr > 0) m.push({ n: "Подрозетник глубокий 68х64", q: res.deepPodr, p: 12, type: 'mat' });
+        if(res.koposPodr > 0) m.push({ n: "Подрозетник Короѕ 75мм", q: res.koposPodr, p: 95, type: 'mat' });
     }
-    // Не путать модель ВА47-29 с номиналом A47.
-    return '';
-}
-
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epV15DetectPoles
- * ========================================================= */
-function epV15DetectPoles(src, meta) {
-    if (meta && meta.poles) return meta.poles;
-    const s = String(src || '');
-    let m = s.match(/\b(1P\+N|1P|2P|3P|4P|1Р\+N|1Р|2Р|3Р|4Р)\b/iu);
-    if (m) return String(m[1]).replace(/Р/g,'P').toUpperCase();
-    return '';
-}
-
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epV15AmpFromNominal
- * ========================================================= */
-function epV15AmpFromNominal(n) { const m=String(n||'').match(/(\d{1,3})/); return m?Number(m[1]):0; }
-
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epV15FormatAutoName
- * ========================================================= */
-function epV15FormatAutoName(found, label, meta) {
-    meta = meta || {};
-    const src = [label, found && found.n, meta.rawLabel].join(' ');
-    const brand = epV15BrandRu(meta.brand || epV15BrandCode(src));
-    let nominal = epV15DetectNominal(src, meta);
-    if (!nominal && /A472|А472/i.test(src)) nominal = 'C40';
-    let poles = epV15DetectPoles(src, meta) || '1P';
-    const model = epV15DetectModel(src, 'automatic') || (epV15BrandCode(brand).toUpperCase()==='IEK' ? 'ВА47-29' : '');
-    if (/вводн/i.test(src) && !nominal) return epV15CleanForName(['Вводной автомат', poles === '1P' ? '2P' : poles, brand, model].filter(Boolean).join(' '));
-    return epV15CleanForName([nominal || 'Автомат', poles, brand, model].filter(Boolean).join(' '));
-}
-
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epV15DetectLeakage
- * ========================================================= */
-function epV15DetectLeakage(src, meta) {
-    if (meta && meta.leakage) return Number(meta.leakage);
-    const m = String(src || '').match(/(10|30|100|300)\s*м\s*а/iu);
-    return m ? Number(m[1]) : 0;
-}
-
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epV15FormatRcdName
- * ========================================================= */
-function epV15FormatRcdName(found, label, meta) {
-    meta = meta || {};
-    const src = [label, found && found.n, meta.rawLabel].join(' ');
-    const kraw = String(meta.kind || label || '').toLowerCase();
-    const kind = kraw.includes('dif') || /диф/i.test(src) ? 'ДИФ' : 'УЗО';
-    const brand = epV15BrandRu(meta.brand || epV15BrandCode(src));
-    const poles = epV15DetectPoles(src, meta) || (kind === 'ДИФ' ? '1P+N' : '2P');
-    const amp = Number(meta.amp || meta.current || 40) || 40;
-    const leakage = epV15DetectLeakage(src, meta) || 30;
-    const typ = meta.rcdType || (String(src).match(/тип\s*([AАBВCС]+)/iu)||[])[1] || 'A';
-    const model = epV15DetectModel(src, kind) || (epV15BrandCode(brand).toUpperCase()==='IEK' ? (kind==='ДИФ'?'АВДТ32':'ВД1-63') : '');
-    return epV15CleanForName([kind, poles, amp + 'A', leakage + 'мА', 'тип ' + String(typ).toUpperCase().replace('А','A').replace('В','B').replace('С','C'), brand, model].filter(Boolean).join(' '));
-}
-
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epV15DisplayMaterialName
- * ========================================================= */
-function epV15DisplayMaterialName(found, label, meta) {
-    meta = meta || {};
-    const k = String(meta.kind || '').toLowerCase();
-    const src = [label, found && found.n].join(' ');
-    if (k.includes('automatic') || k.includes('breaker') || /\bавтомат\b|A472|А472/i.test(src)) return epV15FormatAutoName(found, label, meta);
-    if (k.includes('узо') || k.includes('uzo') || k.includes('dif') || /узо|диф/i.test(src)) return epV15FormatRcdName(found, label, meta);
-    if (found && found.n) return epV15CleanForName(found.n);
-    return epV15CleanForName(label || 'Позиция');
-}
-
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epV15MergeAssignments
- * ========================================================= */
-function epV15MergeAssignments(dst, src) {
-    const vals = [];
-    [src && src.epAssignment, src && src.dbMeta && src.dbMeta.assignment].forEach(v => { if(v) vals.push(v); });
-    if (Array.isArray(src && src.epAssignments)) vals.push(...src.epAssignments);
-    if (Array.isArray(src && src.epMergedDetails)) vals.push(...src.epMergedDetails);
-    if (!dst.epAssignments) dst.epAssignments = [];
-    if (!dst.epMergedDetails) dst.epMergedDetails = [];
-    vals.map(v => String(v || '').trim()).filter(Boolean).forEach(v => {
-        if (v && !/^(позиция щита|назначение не указано)$/i.test(v) && !dst.epAssignments.includes(v)) dst.epAssignments.push(v);
-        if (v && !/^(позиция щита|назначение не указано)$/i.test(v) && !dst.epMergedDetails.includes(v)) dst.epMergedDetails.push(v);
-    });
-}
-
-
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epMat
- * ========================================================= */
-function epMat(label, q, fallbackPrice, words, meta) {
-    const m = meta || {};
-    const found = epFindDbItem('mat', words || [label]);
-    const name = epV15DisplayMaterialName(found, label, Object.assign({}, m, { rawLabel: label, brand: m.brand || epGetVal('cfg-brand-auto', 'IEK') }));
-    const out = {
-        n: found ? name : `⚠️ ${name} [${m.category || 'Материалы'}${m.subcategory ? ' → ' + m.subcategory : ''}] — добавить в БД`,
-        q: q,
-        p: found ? (Number(found.p) || Number(fallbackPrice) || 0) : (Number(fallbackPrice) || 0),
-        u: (found && found.u) || m.unit || 'шт',
-        type: 'mat',
-        sourceId: found && found.id ? found.id : null,
-        needDb: !found,
-        dbMeta: Object.assign({}, m, { rawLabel: label, brand: m.brand || epGetVal('cfg-brand-auto', 'IEK'), foundName: found && found.n ? found.n : '' }),
-        epRawLabel: label
-    };
-    if (m.assignment) { out.epAssignment = m.assignment; out.epAssignments = [m.assignment]; out.epMergedDetails = [m.assignment]; }
-    return out;
-}
-
-
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epWork
- * ========================================================= */
-function epWork(label, q, price, words, meta) {
-    const m = meta || {};
-    const found = epFindDbItem('work', words || [label]);
-    let name = label;
-    if (found && found.n) {
-        const bad = (/установка\s+бп\s+в\s+щит/i.test(found.n) && /установка\s+щит/i.test(label)) ||
-                    (/^\s*(бетон|кирпич|панелька|мягкий)/i.test(found.n) && /штроб|ниша/i.test(label));
-        name = bad ? label : found.n;
+    
+    if(mode === 'classic' && totalBoxes > 0) {
+        m.push({ n: "Коробка распределительная 100х100х40", q: totalBoxes, p: 120, type: 'mat' });
     }
-    if (/штроб/i.test(label) && /100\s*[×xх]\s*50/i.test(label)) name = label.replace(/ВВОДНАЯ\s*/i, '').replace(/\s+/g,' ').trim();
-    const out = {
-        n: name,
-        q: q,
-        p: found ? (Number(found.p) || Number(price) || 0) : (Number(price) || 0),
-        u: (found && found.u) || m.unit || 'шт',
-        type: 'work',
-        sourceId: found && found.id ? found.id : null,
-        logicPrice: !found,
-        dbMeta: Object.assign({}, m, { rawLabel: label, foundName: found && found.n ? found.n : '' }),
-        epRawLabel: label
-    };
-    if (m.category) out.c = m.category;
-    if (m.subcategory) { out.g = m.subcategory; out.sc = m.subcategory; out.subcategory = m.subcategory; }
-    if (m.assignment) { out.epAssignment = m.assignment; out.epAssignments = [m.assignment]; out.epMergedDetails = [m.assignment]; }
-    return out;
+    
+    if(totalConn > 0) {
+        if(connMode === 'gml') {
+            m.push({ n: "Гильза ГМЛ 4/6", q: totalConn, p: 15, type: 'mat' });
+            m.push({ n: "Термоусадка 12/4 (м)", q: Math.ceil(totalBoxes * 0.2), p: 80, type: 'mat' });
+        } else if(connMode === 'wago') {
+            m.push({ n: "Клемма WAGO", q: totalConn, p: 25, type: 'mat' });
+        } else {
+            m.push({ n: "Изолента / ТУТ (Пайка/СИЗ)", q: Math.ceil(totalBoxes * 0.2), p: 100, type: 'mat' });
+        }
+    }
+    
+    if(res.mechs.soc > 0) m.push({ n: "Розетка 220В (механизм)", q: res.mechs.soc, p: 250, type: 'mat' });
+    if((res.mechs.sw+res.mechs.pass+res.mechs.cross) > 0) m.push({ n: "Выключатель (механизм)", q: res.mechs.sw+res.mechs.pass+res.mechs.cross, p: 280, type: 'mat' });
+    if(res.mechs.tv > 0) m.push({ n: "Слаботочная розетка (механизм)", q: res.mechs.tv, p: 350, type: 'mat' });
+    for(let i=1; i<=6; i++) { if(res.frames[i] > 0) m.push({ n: `Рамка ${i} пост(а)`, q: res.frames[i], p: i*50, type: 'mat' }); }
+
+    if(totalBoxes > 0) {
+        if(mode === 'classic') {
+            let connPrice = connMode === 'gml' ? 800 : (connMode === 'solder' ? 900 : 600);
+            w.push({ n: `Сборка распред. коробки (${connMode === 'gml' ? 'ГМЛ' : (connMode === 'solder' ? 'Пайка' : 'WAGO')})`, q: totalBoxes, p: connPrice, type: 'work' });
+        } else {
+            let connPrice = connMode === 'gml' ? 600 : (connMode === 'solder' ? 700 : 450);
+            w.push({ n: `Коммутация в подрозетнике (${connMode === 'gml' ? 'ГМЛ' : (connMode === 'solder' ? 'Пайка' : 'WAGO')})`, q: totalBoxes, p: connPrice, type: 'work' });
+        }
+    }
+    
+    if(useKk) {
+        if(res.m_sh > 0) w.push({ n: `Монтаж кабель-канала`, q: Math.ceil(res.m_sh), p: 150, type: 'work' });
+        if(res.m_sh_50 > 0) w.push({ n: `Монтаж кабель-канала (широкий)`, q: Math.ceil(res.m_sh_50), p: 200, type: 'work' });
+    } else {
+        if(res.m_sh > 0) w.push({ n: `Штроба 25х30 (${wall})`, q: Math.ceil(res.m_sh), p: prShtr, type: 'work' });
+        if(res.m_sh_50 > 0) w.push({ n: `Штроба 50х50 (${wall})`, q: Math.ceil(res.m_sh_50), p: prShtr*1.8, type: 'work' });
+    }
+
+    if(useSurf) {
+        let sumMechs = res.mechs.soc + res.mechs.sw + res.mechs.pass + res.mechs.cross + res.mechs.tv + res.mechs.tpol;
+        if(sumMechs > 0) w.push({ n: `Установка накладного механизма`, q: sumMechs, p: prSoc, type: 'work' });
+    } else {
+        if(res.stdPodr > 0) w.push({ n: `Высверливание подрозетников (45мм)`, q: res.stdPodr, p: prDrill, type: 'work' });
+        if(res.deepPodr > 0) w.push({ n: `Высверливание подрозетников (64мм)`, q: res.deepPodr, p: prDrill+100, type: 'work' });
+        let totalPodr = res.stdPodr + res.deepPodr + res.koposPodr;
+        if(totalPodr > 0) w.push({ n: `Вклейка подрозетников`, q: totalPodr, p: 100, type: 'work' });
+        
+        if(res.mechs.soc>0) w.push({n: `Установка розетки 220B`, q:res.mechs.soc, p:prSoc, type:'work'});
+        if(res.mechs.sw>0 || res.mechs.pass>0 || res.mechs.cross>0) w.push({n: `Установка выключателя`, q:res.mechs.sw+res.mechs.pass+res.mechs.cross, p:prSoc, type:'work'});
+        if(res.mechs.tv>0) w.push({n: `Установка слаботочной розетки`, q:res.mechs.tv, p:prSoc, type:'work'});
+        if(res.mechs.tpol>0) w.push({n: `Установка терморегулятора`, q:res.mechs.tpol, p:prSoc+400, type:'work'});
+    }
+
+    addAuto(m.concat(w), 'rough'); pool=[]; rfPool(); closeModal('roughModal'); showToast("✅ Пул добавлен!");
 }
 
 
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epAutoPrice
- * ========================================================= */
-function epAutoPrice(brand) { return brand === 'ABB' ? 350 : 155; }
-
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epDifPrice
- * ========================================================= */
-function epDifPrice(brand) { return brand === 'ABB' ? 4500 : 3600; }
-
-
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: generateCascadePanel
+ * SOCKET POOL FUNCTION: generateCascadePanel
  * ========================================================= */
 function generateCascadePanel() {
     const bBox = epGetVal('cfg-brand-box', 'Tekfor');
@@ -562,7 +367,17 @@ function generateCascadePanel() {
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: groupAssignment
+ * SOCKET POOL FUNCTION: addLine
+ * ========================================================= */
+function addLine(name, nominal, group, opts) {
+        const o = opts || {};
+        lines.push({ name, nominal, group, curve: o.curve || curve, nonSwitchable: !!o.nonSwitchable, wet: group === 'wet' || !!o.wet });
+    }
+    
+
+
+/* =========================================================
+ * SOCKET POOL FUNCTION: groupAssignment
  * ========================================================= */
 function groupAssignment(group, leakage) {
         const ls = lines.filter(l => l.group === group).map(l => l.name);
@@ -573,7 +388,7 @@ function groupAssignment(group, leakage) {
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: addProtection
+ * SOCKET POOL FUNCTION: addProtection
  * ========================================================= */
 function addProtection(group, mode) {
         const leakage = group === 'wet' ? 10 : 30;
@@ -585,33 +400,23 @@ function addProtection(group, mode) {
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: runAiCheck
+ * SOCKET POOL FUNCTION: categorizeEstimateItem
  * ========================================================= */
-async function runAiCheck() { 
-    if(!GEMINI_API_KEY) return showToast("❌ Нужен ключ ИИ в настройках");
-    showLoader("ИИ анализирует...", "🤖");
-    try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-        const estNames = currentEstimate.map(i => i.n).join(", ");
-        const promptText = `Я электрик. Смета: ${estNames}. Найди логические ошибки (забыл крепеж, рамки, УЗО). Верни ТОЛЬКО JSON массив: [{"reason": "Объяснение", "suggestedName": "Название из стандартных материалов"}]. Если всё идеально, верни пустой массив [].`;
-        const payload = { contents: [{ parts: [{text: promptText }] }] };
-        const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-        const data = await response.json(); hideLoader();
-        if(data.error) throw new Error(data.error.message);
-        let aiText = data.candidates[0].content.parts[0].text.replace(/```[a-z]*\n?/g, '').replace(/```/g, '').trim();
-        const suggestions = JSON.parse(aiText);
-        if (suggestions.length === 0) return showToast("✨ Всё идеально! Смета полная.");
-        document.getElementById('ai-modal-title').innerText = "✨ ИИ-Аналитика";
-        document.getElementById('ai-suggestions').innerHTML = suggestions.map(s => `<div style="background:var(--bg); padding: 12px; border-radius: 10px; margin-bottom:10px; border-left:4px solid var(--ai);"><div style="font-size: 12px; font-weight:bold; margin-bottom:8px;">${s.reason}</div><div style="display:flex; justify-content:space-between; align-items:center;"><span style="font-size:13px; color:var(--primary); font-weight:bold;">${s.suggestedName}</span><button onclick="addAuto([{n:'${s.suggestedName}', q:1, p:0, type:'mat'}], 'ai_add'); closeModal('aiModal');" style="background:var(--ai); padding:6px 12px; font-size:11px; color:white; border:none; border-radius:6px; width:auto; margin:0;">+ Добавить</button></div></div>`).join("");
-        openModal('aiModal');
-    } catch(e) { hideLoader(); showToast("❌ Сбой ИИ: Проверьте ключ"); }
+function categorizeEstimateItem(it) {
+    if (it.type === 'mat') return 1;
+    let n = it.n.toLowerCase();
+    if (n.includes('штроб') || n.includes('высверл') || n.includes('алмаз') || n.includes('резк') || n.includes('отверст') || n.includes('ниши')) return 2;
+    if (n.includes('установк') || n.includes('розетк') || n.includes('выключат') || n.includes('рамк') || n.includes('свет') || n.includes('люстр')) {
+        if (!n.includes('подрозетн') && !n.includes('щит')) return 4;
+    }
+    return 3; 
 }
 
 
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: showPreview
+ * SOCKET POOL FUNCTION: showPreview
  * ========================================================= */
 function showPreview(mode, isActOverride = false, customTitle = null) { 
     currentPreviewMode = mode;
@@ -727,64 +532,7 @@ function showPreview(mode, isActOverride = false, customTitle = null) {
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: saveLogic
- * ========================================================= */
-function saveLogic() { 
-    appLogic.priceSoc = Number(document.getElementById('logic-price-soc').value) || 500;
-    appLogic.priceShield = Number(document.getElementById('logic-price-shield').value) || 500;
-    appLogic.priceDrill = Number(document.getElementById('logic-price-drill').value) || 600;
-    appLogic.priceShtroba = Number(document.getElementById('logic-price-shtroba').value) || 550;
-    appLogic.priceCabCeil = Number(document.getElementById('logic-price-cab-ceil').value) || 120;
-
-    appLogic.shieldInstallPrice = Number(document.getElementById('logic-shield-install').value) || 2500;
-    appLogic.shieldInputConnectPrice = Number(document.getElementById('logic-shield-input-connect').value) || 1500;
-    appLogic.shieldTestLinePrice = Number(document.getElementById('logic-shield-test-line').value) || 150;
-    appLogic.shieldMarkLinePrice = Number(document.getElementById('logic-shield-mark-line').value) || 100;
-    appLogic.shieldSchemePrice = Number(document.getElementById('logic-shield-scheme').value) || 4000;
-    appLogic.shieldNichePerModule = Number(document.getElementById('logic-shield-niche-module').value) || 400;
-    appLogic.shieldInputGroovePrice = Number(document.getElementById('logic-shield-input-groove').value) || 1500;
-    
-    appLogic.socketsPerJb = Number(document.getElementById('logic-soc-jb').value) || 3;
-    appLogic.connPerSocJb = Number(document.getElementById('logic-conn-soc').value) || 3;
-    appLogic.connPerSwJb = Number(document.getElementById('logic-conn-sw').value) || 3;
-    appLogic.connPerPassJb = Number(document.getElementById('logic-conn-pass').value) || 4;
-
-    safeSet('appLogic_v31', JSON.stringify(appLogic));
-    showToast('Логика сохранена!'); closeModal('logicModal'); 
-}
-
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: renderLogicUI
- * ========================================================= */
-function renderLogicUI() { 
-    document.getElementById('logic-price-soc').value = appLogic.priceSoc || 500; 
-    document.getElementById('logic-price-shield').value = appLogic.priceShield || 500; 
-    document.getElementById('logic-price-drill').value = appLogic.priceDrill || 600; 
-    document.getElementById('logic-price-shtroba').value = appLogic.priceShtroba || 550; 
-    document.getElementById('logic-price-cab-ceil').value = appLogic.priceCabCeil || 120; 
-
-    document.getElementById('logic-shield-install').value = appLogic.shieldInstallPrice || 2500;
-    document.getElementById('logic-shield-input-connect').value = appLogic.shieldInputConnectPrice || 1500;
-    document.getElementById('logic-shield-test-line').value = appLogic.shieldTestLinePrice || 150;
-    document.getElementById('logic-shield-mark-line').value = appLogic.shieldMarkLinePrice || 100;
-    document.getElementById('logic-shield-scheme').value = appLogic.shieldSchemePrice || 4000;
-    document.getElementById('logic-shield-niche-module').value = appLogic.shieldNichePerModule || 400;
-    document.getElementById('logic-shield-input-groove').value = appLogic.shieldInputGroovePrice || 1500;
-
-    document.getElementById('logic-soc-jb').value = appLogic.socketsPerJb || 3; 
-    document.getElementById('logic-conn-soc').value = appLogic.connPerSocJb || 3; 
-    document.getElementById('logic-conn-sw').value = appLogic.connPerSwJb || 3; 
-    document.getElementById('logic-conn-pass').value = appLogic.connPerPassJb || 4; 
-}
-
-
-
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: doRecalculate
+ * SOCKET POOL FUNCTION: doRecalculate
  * ========================================================= */
 function doRecalculate() {
     let ceilCab = Number(document.getElementById('r-ceil-input').value) || 0; let floorCab = Math.max(0, globalRecalcCab - ceilCab - globalRecalcSht);
@@ -813,47 +561,216 @@ function doRecalculate() {
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: listenForApprovals
+ * SOCKET POOL FUNCTION: renderChart
  * ========================================================= */
-function listenForApprovals() {
-    if(!db) return;
-    try {
-        db.collection('users').where('isApproved', '==', false).onSnapshot(snap => {
-            const container = document.getElementById('admin-approval-list'); container.innerHTML = '';
-            if(snap.empty) { container.innerHTML = "<span style='font-size:11px; color:gray;'>Новых заявок нет</span>"; return; }
-            snap.forEach(doc => { 
-                const u = doc.data(); 
-                container.innerHTML += `<div class="emp-row" style="flex-wrap: wrap; gap: 5px;"><span><b>${u.name}</b><br><span style="font-size:10px;">${u.phone || u.email}</span></span><button class="btn-success" onclick="approveUser('${doc.id}')" style="width:auto; margin:0; padding:6px 10px;">Одобрить</button></div>`; 
-            });
+function renderChart() {
+    let ctxEl = document.getElementById('buhChart');
+    if(!ctxEl) return;
+    const ctx = ctxEl.getContext('2d');
+    if(buhChartInstance) buhChartInstance.destroy();
+
+    let period = document.getElementById('chart-period').value;
+    let type = document.getElementById('chart-type').value;
+
+    let viewHDB = appUser.role === 'admin' ? hDB : hDB.filter(h => h.masterUid === appUser.uid);
+    let grouped = {};
+
+    viewHDB.forEach(h => {
+        let dParts = h.date.split('.'); 
+        if(dParts.length !== 3) return;
+        let key = '';
+        if(period === 'year') key = `${dParts[1]}.${dParts[2]}`; 
+        else if(period === 'all') key = dParts[2]; 
+        else key = `${dParts[0]}.${dParts[1]}`; 
+
+        if(!grouped[key]) grouped[key] = 0;
+        grouped[key] += h.total;
+    });
+
+    let sortedKeys = Object.keys(grouped).sort();
+    let data = sortedKeys.map(k => grouped[k]);
+
+    buhChartInstance = new Chart(ctx, {
+        type: type,
+        data: {
+            labels: sortedKeys,
+            datasets: [{ label: 'Доход (₽)', data: data, backgroundColor: '#4F46E5', borderColor: '#4F46E5', tension: 0.2 }]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+    });
+}
+
+
+
+
+/* =========================================================
+ * SOCKET POOL FUNCTION: openObjCard
+ * ========================================================= */
+function openObjCard(id) {
+    closeModal('buhModal'); currentCardId = id; const obj = hDB.find(x => x.id === id); if(!obj) return; 
+    
+    document.getElementById('card-obj-name').innerHTML = `${obj.name || 'Без имени'}<br><span style="font-size:12px; color:var(--gray); font-weight:normal;">📞 ${obj.phone || 'Нет тел.'} | 📍 ${obj.addr || 'Нет адреса'}</span>`; 
+    
+    let sumMat = 0, sumCut = 0, sumRough = 0, sumFine = 0, sumExtra = 0;
+    let htmlMat='', htmlCut='', htmlRough='', htmlFine='', htmlExtra='';
+    
+    if(obj.estimate) {
+        obj.estimate.forEach(it => {
+            let sum = fPrice(it) * it.q;
+            let row = `<div class="act-item-row"><span>${it.n} <b style="color:var(--primary);">(x${it.q})</b></span><b>${sum} ₽</b></div>`;
+            let cat = categorizeEstimateItem(it);
+
+            if(it.tag === 'extra') { sumExtra += sum; htmlExtra += row; }
+            else if(cat === 1) { sumMat += sum; htmlMat += row; }
+            else if(cat === 2) { sumCut += sum; htmlCut += row; }
+            else if(cat === 4) { sumFine += sum; htmlFine += row; }
+            else { sumRough += sum; htmlRough += row; }
         });
-    } catch(e) { console.error("Listen approvals error", e); }
+    }
+
+    let finalHtml = '';
+    if(htmlMat) finalHtml += `<div class="act-group-title" style="background:#10B981;"><span>1. Материалы</span><span>${sumMat} ₽</span></div>${htmlMat}`;
+    if(htmlCut) finalHtml += `<div class="act-group-title" style="background:#F59E0B;"><span>2. Штробление и резка</span><span>${sumCut} ₽</span></div>${htmlCut}`;
+    if(htmlRough) finalHtml += `<div class="act-group-title" style="background:#64748B;"><span>3. Черновая электрика</span><span>${sumRough} ₽</span></div>${htmlRough}`;
+    if(htmlFine) finalHtml += `<div class="act-group-title" style="background:#3B82F6;"><span>4. Чистовая электрика</span><span>${sumFine} ₽</span></div>${htmlFine}`;
+    if(htmlExtra) finalHtml += `<div class="act-group-title" style="background:#EF4444;"><span>Дополнительные работы</span><span>${sumExtra} ₽</span></div>${htmlExtra}`;
+
+    if(!finalHtml) finalHtml = "<p style='font-size:12px; color:gray;'>Нет данных по смете</p>";
+
+    document.getElementById('card-acts-container').innerHTML = finalHtml;
+    
+    let pay = obj.payments || {};
+    document.getElementById('pay-mat').checked = !!pay.mat;
+    document.getElementById('pay-cut').checked = !!pay.cut;
+    document.getElementById('pay-rough').checked = !!pay.rough;
+    document.getElementById('pay-fine').checked = !!pay.fine;
+    document.getElementById('pay-extra').checked = !!pay.extra;
+    document.getElementById('pay-prepay').value = pay.prepay || 0;
+
+    openModal('objCardModal'); 
 }
 
 
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: renderAdminUsers
+ * SOCKET POOL FUNCTION: switchDbTab
  * ========================================================= */
-async function renderAdminUsers() {
-    if(appUser.role !== 'admin') return;
-    try {
-        if(db) {
-            const snap = await db.collection('users').get();
-            let html = snap.docs.map(doc => {
-                let u = doc.data();
-                return `<div class="emp-row" style="flex-wrap: wrap; gap: 5px;"><div><b>${u.name}</b><br><span style="font-size:10px; color:var(--gray);">${u.phone || u.email} (${u.role})</span></div> <button class="btn-danger" style="padding:6px 10px; width:auto; margin:0;" onclick="deleteUser('${doc.id}')">✕</button></div>`;
-            }).join('');
-            document.getElementById('admin-users-list').innerHTML = html || "<span style='font-size:11px; color:gray;'>Нет сотрудников</span>";
-        }
-    } catch(e) { console.error("Render users error", e); }
+function switchDbTab(tab) { 
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active')); 
+    document.getElementById(tab === 'mat' ? 'btnTabMat' : 'btnTabWork').classList.add('active'); 
+    document.getElementById('editor-mat-list').style.display = tab === 'mat' ? 'block' : 'none'; 
+    document.getElementById('editor-work-list').style.display = tab === 'work' ? 'block' : 'none'; 
 }
 
 
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epAddBetaLabels
+ * SOCKET POOL FUNCTION: renderDbEditors
+ * ========================================================= */
+function renderDbEditors() {
+    let catsM = [...new Set(matDB.map(m=>m.c || 'Разное'))];
+    let catsW = [...new Set(workDB.map(w=>w.c || 'Разное'))];
+    document.getElementById('db-cats').innerHTML = [...new Set([...catsM, ...catsW])].map(c=>`<option value="${c}">`).join('');
+
+    let htmlMat = '';
+    let mGroups = {}; matDB.forEach(m => { mGroups[m.c||'Разное'] = mGroups[m.c||'Разное'] || []; mGroups[m.c||'Разное'].push(m); });
+    Object.keys(mGroups).forEach((c, idx) => {
+        let sid = 'db_m_'+idx;
+        htmlMat += `<div class="cat-header" onclick="toggleCat('${sid}')">${c}</div><div class="cat-body" id="${sid}">`;
+        mGroups[c].forEach(m => {
+            htmlMat += `<div class="emp-row"><div><b>${m.n}</b><br><span style="color:var(--gray);font-size:10px;">${m.p} ₽ / ${m.u}</span></div> <input type="number" value="${m.p}" onchange="requestPriceChange('mat', '${m.id}', this.value)" style="width:60px;margin:0;padding:4px;text-align:center;"></div>`;
+        });
+        htmlMat += `</div>`;
+    });
+    document.getElementById('editor-mat-list').innerHTML = htmlMat;
+
+    let htmlWork = '';
+    let wGroups = {}; workDB.forEach(w => { wGroups[w.c||'Разное'] = wGroups[w.c||'Разное'] || []; wGroups[w.c||'Разное'].push(w); });
+    Object.keys(wGroups).forEach((c, idx) => {
+        let sid = 'db_w_'+idx;
+        htmlWork += `<div class="cat-header" style="color:var(--orange); border-color:rgba(245,158,11,0.2); background:rgba(245,158,11,0.08);" onclick="toggleCat('${sid}')">${c}</div><div class="cat-body" id="${sid}">`;
+        wGroups[c].forEach(w => {
+            htmlWork += `<div class="emp-row"><div><b>${w.n}</b><br><span style="color:var(--gray);font-size:10px;">${w.p} ₽ / ${w.u}</span></div> <input type="number" value="${w.p}" onchange="requestPriceChange('work', '${w.id}', this.value)" style="width:60px;margin:0;padding:4px;text-align:center;"></div>`;
+        });
+        htmlWork += `</div>`;
+    });
+    document.getElementById('editor-work-list').innerHTML = htmlWork;
+}
+
+
+
+
+/* =========================================================
+ * SOCKET POOL FUNCTION: epInsertMainProviderSwitch
+ * ========================================================= */
+function epInsertMainProviderSwitch() {
+        if (document.getElementById('ep-main-ai-switch')) return;
+
+        const header = document.querySelector('#main-app .header');
+        if (!header) return;
+
+        const box = document.createElement('div');
+        box.id = 'ep-main-ai-switch';
+        box.innerHTML = `
+            <label class="ep-ai-choice">
+                <input type="radio" name="ep-ai-provider-main" value="gemini" onchange="epSetAiProvider('gemini', true)">
+                Gemini
+            </label>
+            <label class="ep-ai-choice">
+                <input type="radio" name="ep-ai-provider-main" value="openai" onchange="epSetAiProvider('openai', true)">
+                OpenAI
+            </label>
+            <div id="ep-main-ai-state">Активный ИИ</div>
+        `;
+
+        header.parentNode.insertBefore(box, header.nextSibling);
+    }
+
+    
+
+
+/* =========================================================
+ * SOCKET POOL FUNCTION: epMakeAiMenuGroup
+ * ========================================================= */
+function epMakeAiMenuGroup() {
+        const menu = document.getElementById('burger-menu');
+        if (!menu || document.getElementById('ep-ai-functions-group')) return;
+
+        const aiButtons = Array.from(menu.querySelectorAll('button')).filter(function (b) {
+            const t = epCleanText(b.textContent);
+            return t.includes('ИИ-Анализ') || t.includes('ИИ-Снабженец') || t.includes('ИИ-Помощник') || t.includes('ИИ-Сравнение');
+        });
+
+        if (!aiButtons.length) return;
+
+        const wrap = document.createElement('div');
+        wrap.id = 'ep-ai-functions-group';
+        wrap.innerHTML = `
+            <button id="ep-ai-functions-btn" type="button">✨ ИИ Функции <span class="ep-beta-label">(бета)</span></button>
+            <div id="ep-ai-functions-panel"></div>
+        `;
+
+        aiButtons[0].parentNode.insertBefore(wrap, aiButtons[0]);
+        const panel = wrap.querySelector('#ep-ai-functions-panel');
+
+        aiButtons.forEach(function (b) {
+            panel.appendChild(b);
+        });
+
+        wrap.querySelector('#ep-ai-functions-btn').addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            wrap.classList.toggle('open');
+        });
+    }
+
+    
+
+
+/* =========================================================
+ * SOCKET POOL FUNCTION: epAddBetaLabels
  * ========================================================= */
 function epAddBetaLabels() {
         Array.from(document.querySelectorAll('button')).forEach(function (b) {
@@ -871,128 +788,7 @@ function epAddBetaLabels() {
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epPatchSettingsUI
- * ========================================================= */
-function epPatchSettingsUI() {
-        if (document.getElementById('ep-ai-admin-box')) return;
-
-        const oldInput = document.getElementById('api-key-input');
-        if (!oldInput) return;
-
-        const h4 = oldInput.previousElementSibling;
-        if (h4) h4.style.display = 'none';
-        oldInput.style.display = 'none';
-
-        const box = document.createElement('div');
-        box.id = 'ep-ai-admin-box';
-        box.style.cssText = 'padding:12px; background:rgba(79,70,229,.06); border:1px solid rgba(79,70,229,.25); border-radius:14px; margin-bottom:14px;';
-        box.innerHTML = `
-            <h4 style="color:var(--primary); margin:0 0 8px;">🤖 ИИ-провайдер</h4>
-
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
-                <label class="ep-ai-choice"><input type="radio" name="ep-ai-provider-admin" value="gemini" onchange="epSetAiProvider('gemini', false)"> Gemini</label>
-                <label class="ep-ai-choice"><input type="radio" name="ep-ai-provider-admin" value="openai" onchange="epSetAiProvider('openai', false)"> OpenAI</label>
-            </div>
-
-            <div id="ep-ai-admin-keys">
-                <label style="font-size:11px; font-weight:800; color:var(--gray);">Gemini API</label>
-                <input type="password" id="ep-gemini-key-input" placeholder="AIza..." style="margin-bottom:8px;">
-
-                <label style="font-size:11px; font-weight:800; color:var(--gray);">OpenAI API</label>
-                <input type="password" id="ep-openai-key-input" placeholder="sk-..." style="margin-bottom:8px;">
-
-                <label style="font-size:11px; font-weight:800; color:var(--gray);">OpenAI модель</label>
-                <input type="text" id="ep-openai-model-input" value="gpt-4o-mini" style="margin-bottom:8px;">
-
-                <button class="btn-primary" style="width:100%; margin-bottom:8px;" onclick="epSaveAiConfig(true)">✅ Проверить и отправить мастерам</button>
-                <button class="btn-danger" style="width:100%; background:var(--gray);" onclick="epClearLocalAiKeys()">🧹 Очистить старые локальные ключи</button>
-            </div>
-
-            <div id="ep-ai-master-info" style="display:none; font-size:12px; font-weight:900; padding:10px; border-radius:10px; background:rgba(16,185,129,.1); color:var(--success);">
-                ИИ подключён администратором
-            </div>
-        `;
-
-        oldInput.parentNode.insertBefore(box, oldInput.nextSibling);
-    }
-
-    
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epLoadAiConfigFromServer
- * ========================================================= */
-async function epLoadAiConfigFromServer() {
-        try {
-            let data = null;
-
-            if (db) {
-                const cfgDoc = await db.collection('settings').doc('ai_config').get();
-                if (cfgDoc.exists) data = cfgDoc.data();
-
-                if (!data) {
-                    const oldDoc = await db.collection('settings').doc('global_api').get();
-                    if (oldDoc.exists) data = oldDoc.data();
-                }
-
-                if (appUser && appUser.uid) {
-                    const userDoc = await db.collection('users').doc(appUser.uid).get();
-                    if (userDoc.exists) {
-                        const u = userDoc.data();
-                        data = Object.assign({}, data || {}, {
-                            provider: u.aiProvider || (data && data.provider),
-                            geminiKey: u.geminiKey || (data && data.geminiKey),
-                            openaiKey: u.openaiKey || (data && data.openaiKey),
-                            openaiModel: u.openaiModel || (data && data.openaiModel)
-                        });
-                    }
-                }
-            }
-
-            if (data) {
-                window.EP_AI_CONFIG.provider = epNormProvider(data.provider || window.EP_AI_CONFIG.provider);
-                window.EP_AI_CONFIG.geminiKey = data.geminiKey || data.key || window.EP_AI_CONFIG.geminiKey || '';
-                window.EP_AI_CONFIG.openaiKey = data.openaiKey || window.EP_AI_CONFIG.openaiKey || '';
-                window.EP_AI_CONFIG.openaiModel = data.openaiModel || window.EP_AI_CONFIG.openaiModel || 'gpt-4o-mini';
-            } else {
-                window.EP_AI_CONFIG.geminiKey = safeGet('ep_gemini_key_v1', '') || safeGet('gemini_key_v31', '');
-                window.EP_AI_CONFIG.openaiKey = safeGet('ep_openai_key_v1', '');
-                window.EP_AI_CONFIG.openaiModel = safeGet('ep_openai_model_v1', 'gpt-4o-mini');
-            }
-
-            safeSet('ep_ai_provider_v1', window.EP_AI_CONFIG.provider);
-            if (window.EP_AI_CONFIG.geminiKey && typeof GEMINI_API_KEY !== 'undefined') GEMINI_API_KEY = window.EP_AI_CONFIG.geminiKey;
-
-            const g = document.getElementById('ep-gemini-key-input');
-            const o = document.getElementById('ep-openai-key-input');
-            const m = document.getElementById('ep-openai-model-input');
-            if (g) g.value = window.EP_AI_CONFIG.geminiKey || '';
-            if (o) o.value = window.EP_AI_CONFIG.openaiKey || '';
-            if (m) m.value = window.EP_AI_CONFIG.openaiModel || 'gpt-4o-mini';
-
-            const keysBox = document.getElementById('ep-ai-admin-keys');
-            const masterInfo = document.getElementById('ep-ai-master-info');
-            if (keysBox && masterInfo && appUser) {
-                if (appUser.role === 'admin') {
-                    keysBox.style.display = 'block';
-                    masterInfo.style.display = 'none';
-                } else {
-                    keysBox.style.display = 'none';
-                    masterInfo.style.display = 'block';
-                }
-            }
-
-            epRefreshProviderUI();
-        } catch (e) {
-            console.warn('AI config load error:', e);
-        }
-    }
-
-    
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epInferCategory
+ * SOCKET POOL FUNCTION: epInferCategory
  * ========================================================= */
 function epInferCategory(name, type) {
         const n = String(name || '').toLowerCase();
@@ -1017,7 +813,7 @@ function epInferCategory(name, type) {
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epInferSubcategory
+ * SOCKET POOL FUNCTION: epInferSubcategory
  * ========================================================= */
 function epInferSubcategory(name, category, type) {
         const n = String(name || '').toLowerCase();
@@ -1056,7 +852,7 @@ function epInferSubcategory(name, category, type) {
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epAiNormalizeImage
+ * SOCKET POOL FUNCTION: epAiNormalizeImage
  * ========================================================= */
 async function epAiNormalizeImage(imageDataUrl, type, source) {
         showLoader('ИИ читает таблицу с изображения...', '👁️');
@@ -1105,60 +901,47 @@ async function epAiNormalizeImage(imageDataUrl, type, source) {
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epShowDbReview
+ * SOCKET POOL FUNCTION: epOpFromName
  * ========================================================= */
-function epShowDbReview(items, type, source, rawAnswer) {
-        window.EP_DB_REVIEW = { type: type, items: items, source: source || '' };
-        document.getElementById('ep-db-ai-review-title').innerText = 'Импорт ' + epDbTypeLabel(type) + ': ' + (source || '');
-        const list = document.getElementById('ep-db-ai-review-list');
+function epOpFromName(name) {
+        let s = String(name || '').replace(/\s*\((Бетон|Кирпич|Панелька|Мягкий\s*мат\.?|Мягкий материал|ГКЛ|Все типы)\)\s*/ig, '').trim();
+        s = s.replace(/подрозетников\s*\((45|64|75)мм\)/i, 'подрозетников $1мм');
+        return s;
+    }
+    
 
-        if (!items.length) {
-            list.innerHTML = `<div style="padding:12px; color:var(--danger); font-weight:800;">ИИ не нашёл позиции. Попробуйте другой файл, текст или сделайте скрин крупнее.</div><details style="margin-top:10px; font-size:11px; color:var(--gray);"><summary>Показать ответ ИИ</summary><pre style="white-space:pre-wrap; max-height:220px; overflow:auto;">${epEscape(rawAnswer || '')}</pre></details>`;
-        } else {
-            list.innerHTML = items.map(function (it, idx) {
-                return `<div class="ep-db-review-row">
-                    <input type="checkbox" id="ep-db-check-${idx}" checked>
-                    <div class="ep-db-review-fields">
-                        <div><label>Имя</label><input id="ep-db-name-${idx}" value="${epEscape(it.n)}" placeholder="Имя / наименование"></div>
-                        <div class="ep-db-review-2col">
-                            <div><label>Категория</label><input id="ep-db-cat-${idx}" value="${epEscape(it.c)}" placeholder="Категория"></div>
-                            <div><label class="ep-db-subcat-label">Подкатегория</label><input id="ep-db-subcat-${idx}" value="${epEscape(it.sc || 'Разное')}" placeholder="Подкатегория"></div>
-                        </div>
-                        <div class="ep-db-review-2col">
-                            <div><label>Цена за единицу</label><input id="ep-db-price-${idx}" type="number" step="0.01" value="${Number(it.p)||0}" placeholder="Цена"></div>
-                            <div><label>Единица</label><input id="ep-db-unit-${idx}" value="${epEscape(it.u || 'шт')}" placeholder="шт / м / упак"></div>
-                        </div>
-                    </div>
-                </div>`;
-            }).join('');
+
+/* =========================================================
+ * SOCKET POOL FUNCTION: epNormalizeWorkItem
+ * ========================================================= */
+function epNormalizeWorkItem(x) {
+        const it = Object.assign({}, x || {});
+        const originalName = String(it.n || '');
+        if (it.sc && !it.g) it.g = it.sc;
+        const mat = epMaterialFromName(originalName);
+        if (!it.g && mat) it.g = epOpFromName(originalName);
+        if (mat && (!it.g || originalName.includes('('))) it.n = mat;
+        if (!it.g) {
+            const low = originalName.toLowerCase();
+            if (/штроб/.test(low)) it.g = epOpFromName(originalName) || 'Штроба';
+            else if (/высверл|подрозет/.test(low)) it.g = epOpFromName(originalName) || 'Подрозетники';
+            else if (/ниш/.test(low)) it.g = epOpFromName(originalName) || 'Ниши';
+            else if (/отверст|алмаз/.test(low)) it.g = epOpFromName(originalName) || 'Алмазные отверстия';
+            else if (/демонтаж/.test(low)) it.g = it.g || 'Демонтаж';
+            else if (/розет|выключ|механизм|терморег/.test(low)) it.g = it.g || 'Механизмы';
+            else if (/кабел|гофр|лоток|труб|короб/.test(low)) it.g = it.g || 'Прокладка кабеля';
+            else it.g = it.g || 'Разное';
         }
-
-        openModal('ep-db-ai-review-modal');
+        if (!it.c) it.c = 'Работы';
+        if (!it.u) it.u = 'шт';
+        it.p = Number(it.p) || 0;
+        return it;
     }
-
     
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epInsertAdminProposalBox
- * ========================================================= */
-function epInsertAdminProposalBox() {
-        if (document.getElementById('admin-db-proposals')) return;
-        const panel = document.getElementById('admin-panel');
-        if (!panel) return;
-        const box = document.createElement('div');
-        box.innerHTML = `
-            <h4 style="color:var(--primary); margin: 10px 0 5px;">🌍 Заявки в базу сервера:</h4>
-            <div id="admin-db-proposals" style="margin-bottom:10px; border:1px solid var(--primary); background:rgba(79,70,229,.05); border-radius:8px; padding:8px; max-height:240px; overflow-y:auto; font-size:12px;"></div>
-        `;
-        panel.insertBefore(box, panel.firstChild.nextSibling);
-    }
-
-    
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epRenderGroupedList
+ * SOCKET POOL FUNCTION: epRenderGroupedList
  * ========================================================= */
 function epRenderGroupedList(arr, type, opts) {
         opts = opts || {};
@@ -1195,113 +978,7 @@ function epRenderGroupedList(arr, type, opts) {
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epEnsureProposalBox
- * ========================================================= */
-function epEnsureProposalBox() {
-        let cont = document.getElementById('admin-db-proposals');
-        if (cont) return cont;
-        const panel = document.getElementById('admin-panel');
-        if (!panel) return null;
-        const box = document.createElement('div');
-        box.innerHTML = `<h4 style="color:var(--primary); margin:10px 0 5px;">🌍 Заявки в базу сервера:</h4><div id="admin-db-proposals" style="margin-bottom:10px; border:1px solid var(--primary); background:rgba(79,70,229,.05); border-radius:8px; padding:8px; max-height:260px; overflow-y:auto; font-size:12px;"></div>`;
-        panel.insertBefore(box, panel.firstChild ? panel.firstChild.nextSibling : null);
-        return document.getElementById('admin-db-proposals');
-    }
-    
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: getCfgCount
- * ========================================================= */
-function getCfgCount(key, id, def){
-    try { if (window.cfg && Number.isFinite(Number(window.cfg[key]))) return Number(window.cfg[key]); } catch(e){}
-    var el = qs(id || ('v-'+key));
-    if (el) return toNum(el.textContent || el.value, def || 0);
-    return def || 0;
-  }
-
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epMoveShieldSettingsIntoDetails
- * ========================================================= */
-function epMoveShieldSettingsIntoDetails(){
-    var modal = qs('configModal');
-    if (!modal || qs('ep-shield-settings-box')) return;
-    var content = modal.querySelector('.modal-content');
-    if (!content) return;
-    var anchor = qs('cfg-brand-box');
-    if (!anchor) return;
-
-    var details = document.createElement('details');
-    details.id = 'ep-shield-settings-box';
-    details.className = 'ep-shield-settings-box';
-    details.innerHTML = '<summary>⚙️ Настройки автоматики и щита</summary><div id="ep-shield-settings-inner"></div>';
-    var firstRow = anchor.closest('div[style*="grid-template-columns"]') || anchor.parentElement;
-    content.insertBefore(details, firstRow);
-    var inner = qs('ep-shield-settings-inner');
-
-    var ids = ['cfg-brand-box','cfg-brand-auto','cfg-phase','cfg-auto-curve','cfg-rcd-type','cfg-protection-type'];
-    var moved = [];
-    ids.forEach(function(id){
-      var el = qs(id); if(!el) return;
-      var row = el.closest('div[style*="grid-template-columns"]') || el.parentElement;
-      if(row && moved.indexOf(row) === -1){ moved.push(row); inner.appendChild(row); }
-    });
-
-    var wall = qs('cfg-shield-wall');
-    if (wall) {
-      var wrap = document.createElement('div');
-      wrap.style.marginBottom = '8px';
-      var label = wall.previousElementSibling;
-      if (label && String(label.tagName).toLowerCase() === 'label') wrap.appendChild(label);
-      wrap.appendChild(wall);
-      inner.appendChild(wrap);
-    }
-  }
-
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epMatGroupName
- * ========================================================= */
-function epMatGroupName(item){
-    var text = norm([item.c,item.g,item.sc,item.n,item.kind,item.brand,item.nominal].join(' '));
-    var name = norm(item.n);
-    var c = norm(item.c);
-
-    if (text.includes('уздп') || text.includes('дугов')) return {c:'Автоматика', g:'УЗДП'};
-    if (text.includes('узм') || text.includes('реле напряж')) return {c:'Автоматика', g:'УЗМ / реле напряжения'};
-    if (text.includes('диф') || text.includes('дифф')) return {c:'Автоматика', g:'ДИФы'};
-    if (text.includes('узо')) return {c:'Автоматика', g:'УЗО'};
-    if (text.includes('автомат') || text.match(/\bc\s*(6|10|16|25|32|40)\b/)) return {c:'Автоматика', g:'Автоматы'};
-    if (text.includes('реле времени')) return {c:'Автоматика', g:'Реле времени'};
-    if (text.includes('контактор') || text.includes('пускател')) return {c:'Автоматика', g:'Контакторы'};
-    if (text.includes('реле')) return {c:'Автоматика', g:'Прочие реле'};
-
-    if (text.includes('щит') || text.includes('шкаф') || text.includes('корпус')) {
-      if (text.includes('наклад')) return {c:'Щитовое', g:'Корпуса → Накладной'};
-      if (text.includes('встра') || text.includes('внутр')) return {c:'Щитовое', g:'Корпуса → Встраиваемый'};
-      return {c:'Щитовое', g:'Корпуса'};
-    }
-    if (text.includes('ншви') || text.includes('наконеч')) return {c:'Щитовое', g:'Расходка под сборку → Наконечники'};
-    if (text.includes('пугв') || (text.includes('провод') && c !== 'кабель')) return {c:'Щитовое', g:'Расходка под сборку → Провода'};
-    if (text.includes('шин') || text.includes('клемм')) return {c:'Щитовое', g:'Расходка под сборку → Шинки / клеммники'};
-    if (text.includes('греб') || text.includes('comb')) return {c:'Щитовое', g:'Расходка под сборку → Гребёнки'};
-    if (text.includes('din') || text.includes('рейк') || text.includes('огранич')) return {c:'Щитовое', g:'Расходка под сборку → DIN-рейки / ограничители'};
-    if (text.includes('маркиров') || text.includes('бирк')) return {c:'Щитовое', g:'Расходка под сборку → Маркировка'};
-    if (text.includes('сальник') || text.includes('кабельный ввод')) return {c:'Щитовое', g:'Расходка под сборку → Кабельные вводы'};
-
-    return {c:item.c || 'Разное', g:item.g || item.sc || 'Разное'};
-  }
-
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epNormalizeMaterialsDb
+ * SOCKET POOL FUNCTION: epNormalizeMaterialsDb
  * ========================================================= */
 function epNormalizeMaterialsDb(){
     function fixArr(arr){
@@ -1323,7 +1000,7 @@ function epNormalizeMaterialsDb(){
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: fixArr
+ * SOCKET POOL FUNCTION: fixArr
  * ========================================================= */
 function fixArr(arr){
       if (!Array.isArray(arr)) return [];
@@ -1340,7 +1017,7 @@ function fixArr(arr){
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epRenderGrouped
+ * SOCKET POOL FUNCTION: epRenderGrouped
  * ========================================================= */
 function epRenderGrouped(arr, type, mode, prefix){
     var data = epGroupedData(arr, type);
@@ -1373,7 +1050,7 @@ function epRenderGrouped(arr, type, mode, prefix){
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epPatchDbRenderers
+ * SOCKET POOL FUNCTION: epPatchDbRenderers
  * ========================================================= */
 function epPatchDbRenderers(){
     var oldMat = window.openMatCatalog;
@@ -1394,32 +1071,7 @@ function epPatchDbRenderers(){
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: autoPrice
- * ========================================================= */
-function autoPrice(){ return bAuto === 'ABB' ? 350 : 155; }
-      
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: difPrice
- * ========================================================= */
-function difPrice(){ return bAuto === 'ABB' ? 4500 : 3600; }
-      
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epPatchGenerateButton
- * ========================================================= */
-function epPatchGenerateButton(){
-    window.generateCascadePanel = window.epGenerateShieldFixed;
-    Array.from(document.querySelectorAll('button')).forEach(function(btn){ if((btn.textContent||'').includes('Сгенерировать щит')) btn.onclick = window.epGenerateShieldFixed; });
-  }
-
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: normalizeMaterialDb
+ * SOCKET POOL FUNCTION: normalizeMaterialDb
  * ========================================================= */
 function normalizeMaterialDb(){
     const arr = dbArr('mat') || [];
@@ -1452,401 +1104,34 @@ function normalizeMaterialDb(){
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: renderItem
+ * SOCKET POOL FUNCTION: renderGrouped
  * ========================================================= */
-function renderItem(it,type){
-    const id = String(it.id || '');
-    const meta = [getGroup(it), it.brand, it.nominal, it.curve, it.rcdType, it.leakage].filter(Boolean).join(' • ');
-    const btnColor = type==='work' ? 'background:var(--orange);' : '';
-    return '<div class="mat-item"><div style="flex:1;"><div class="ep-db-item-title">'+safe(it.n || 'Позиция')+'</div><div class="ep-db-item-meta">'+safe(meta)+' '+safe(Number(it.p)||0)+' ₽ / '+safe(it.u || 'шт')+'</div></div><button class="mat-add-btn" style="'+btnColor+'width:auto;margin:0;" onclick="promptAdd(\''+safe(id)+'\', \''+type+'\')">+ Добавить</button></div>';
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: lookupKey
- * ========================================================= */
-function lookupKey(type, meta, label){
-    meta = meta || {};
-    const parts = [type, meta.kind||'', meta.brand||detectBrand(label)||'', meta.nominal||detectNominal(label)||'', meta.curve||'', meta.poles||'', meta.leakage||'', meta.rcdType||'', meta.modules||''];
-    return parts.map(x=>String(x||'').trim()).join('|');
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: reqName
- * ========================================================= */
-function reqName(label, meta){
-    meta = meta || {};
-    const brand = meta.brand || detectBrand(label);
-    const nominal = meta.nominal || detectNominal(label);
-    const kind = String(meta.kind || '').toLowerCase();
-    if(kind.includes('automatic') || kind.includes('breaker') || /^c\d+/i.test(nominal)) return 'Автомат '+(nominal||'')+(brand?' '+brand:'');
-    if(kind.includes('dif') || /диф/i.test(label)) return 'ДИФ '+(meta.leakage?meta.leakage+'мА ':'')+(meta.rcdType||'')+(brand?' '+brand:'').trim();
-    if(kind.includes('uzo') || /узо/i.test(label)) return 'УЗО '+(meta.leakage?meta.leakage+'мА ':'')+(meta.rcdType||'')+(brand?' '+brand:'').trim();
-    return String(label||'Позиция').replace(/\s+—\s+.*$/,'').replace(/\s*\[[^\]]+\]\s*—\s*добавить в БД/i,'').trim();
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: smartFindMat
- * ========================================================= */
-function smartFindMat(label, words, meta){
-    normalizeMaterialDb();
-    const arr = dbArr('mat') || [];
-    meta = meta || {};
-    const key = lookupKey('mat', meta, label);
-    const saved = savedChoices()[key];
-    if(saved){ const found = arr.find(x => String(x.id)===String(saved)); if(found) return {item: found, key}; }
-    const brand = meta.brand || detectBrand(label) || '';
-    const nominal = meta.nominal || detectNominal(label) || '';
-    const kind = String(meta.kind||'').toLowerCase();
-    const searchWords = (words || []).concat([label, brand, nominal, kind]).filter(Boolean).map(norm).filter(Boolean);
-    let best=null, bestScore=-999;
-    arr.forEach(function(it){
-      const blob = norm([it.c,it.g,it.sc,it.subcategory,it.kind,it.brand,it.nominal,it.curve,it.rcdType,it.leakage,it.n].filter(Boolean).join(' '));
-      let score = 0;
-      if(kind && blob.includes(norm(kind))) score += 4;
-      if(kind.includes('automatic') && (blob.includes('автомат') || blob.includes('automatic'))) score += 5;
-      if(kind.includes('dif') && blob.includes('диф')) score += 5;
-      if(kind.includes('uzo') && blob.includes('узо')) score += 5;
-      if(brand){ if(blob.includes(norm(brand))) score += 8; else score -= 20; }
-      if(nominal){ if(blob.replace(/\s+/g,'').includes(norm(nominal).replace(/\s+/g,''))) score += 10; else if(kind.includes('automatic') || kind.includes('breaker')) score -= 30; }
-      if(meta.curve && blob.includes(norm(meta.curve))) score += 2;
-      if(meta.leakage && blob.includes(norm(meta.leakage+'ма'))) score += 4;
-      searchWords.forEach(w => { if(w && blob.includes(w)) score += 1; });
-      if(score > bestScore){ bestScore=score; best=it; }
-    });
-    if(best && bestScore >= 6) return {item:best, key};
-    return {item:null, key};
-  }
-
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: canonicalName
- * ========================================================= */
-function canonicalName(it){
-    let n = String(it.n || '').replace(/^⚠️\s*/,'').replace(/\s*\[[^\]]+\]\s*—\s*добавить в БД/i,'').trim();
-    const brand = detectBrand(n);
-    const nominal = detectNominal(n);
-    if(/автомат/i.test(n) && nominal) return 'Автомат '+nominal+(brand?' '+brand:'');
-    if(/диф/i.test(n)){ const leak=(n.match(/(10|30|100|300)\s*мА/i)||[])[1]; const typ=(n.match(/тип\s*([A-Za-zА-Яа-я]+)/i)||[])[1]; return ('ДИФ '+(leak?leak+'мА ':'')+(typ?typ+' ':'')+(brand||'')).trim(); }
-    if(/узо/i.test(n)){ const leak=(n.match(/(10|30|100|300)\s*мА/i)||[])[1]; const typ=(n.match(/тип\s*([A-Za-zА-Яа-я]+)/i)||[])[1]; return ('УЗО '+(leak?leak+'мА ':'')+(typ?typ+' ':'')+(brand||'')).trim(); }
-    return n.replace(/\s+—\s+.*$/,'').trim();
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: detectRcdType
- * ========================================================= */
-function detectRcdType(s){
-    var raw = String(s || '');
-    var m = raw.match(/тип\s*(AC|A|B|АС|А|В)\b/i);
-    if(m) {
-      var t = m[1].toUpperCase();
-      if(t === 'АС') return 'AC';
-      if(t === 'А') return 'A';
-      if(t === 'В') return 'B';
-      return t;
-    }
-    return '';
-  }
-
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: normalizeDbItem
- * ========================================================= */
-function normalizeDbItem(it, type){
-    if(!it) return it;
-    if(!it.id) {
-      it.id = (type === 'work' ? 'w_' : 'm_') + Date.now() + '_' + Math.random().toString(36).slice(2,8);
-    }
-    if(type === 'mat') {
-      var raw = String([it.c,it.g,it.sc,it.subcategory,it.n].filter(Boolean).join(' '));
-      var n = norm(raw);
-      if(/диф|дифавтомат|dif/i.test(raw)){
-        it.c = 'Автоматика'; it.g = it.g || it.sc || 'ДИФы'; it.sc = it.sc || it.g; it.kind = it.kind || 'dif';
-      } else if(/узо/i.test(raw)) {
-        it.c = 'Автоматика'; it.g = it.g || it.sc || 'УЗО'; it.sc = it.sc || it.g; it.kind = it.kind || 'uzo';
-      } else if(/уздп|дугов/i.test(raw)) {
-        it.c = 'Автоматика'; it.g = it.g || it.sc || 'УЗДП'; it.sc = it.sc || it.g; it.kind = it.kind || 'uzdp';
-      } else if(/узм|реле напряж/i.test(raw)) {
-        it.c = 'Автоматика'; it.g = it.g || it.sc || 'УЗМ / реле напряжения'; it.sc = it.sc || it.g; it.kind = it.kind || 'voltage_relay';
-      } else if(/реле времени/i.test(raw)) {
-        it.c = 'Автоматика'; it.g = it.g || it.sc || 'Реле времени'; it.sc = it.sc || it.g; it.kind = it.kind || 'time_relay';
-      } else if(/контактор/i.test(raw)) {
-        it.c = 'Автоматика'; it.g = it.g || it.sc || 'Контакторы'; it.sc = it.sc || it.g; it.kind = it.kind || 'contactor';
-      } else if(/автомат|(^|\s)[abcdсавд]\s?\d{1,3}(\s|$)/i.test(raw)) {
-        it.c = 'Автоматика'; it.g = it.g || it.sc || 'Автоматы'; it.sc = it.sc || it.g; it.kind = it.kind || 'automatic';
-      } else if(/щит|корпус|бокс/i.test(raw)) {
-        it.c = 'Щитовое';
-        var g = /наклад/i.test(raw) ? 'Корпуса → Накладной' : 'Корпуса → Встраиваемый';
-        it.g = it.g || it.sc || g; it.sc = it.sc || it.g; it.kind = it.kind || 'shield_box';
-      } else if(/ншви|наконеч/i.test(raw)) {
-        it.c = 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → Наконечники'; it.sc = it.sc || it.g; it.kind = it.kind || 'lug_pack';
-      } else if(/пугв|провод/i.test(raw)) {
-        it.c = it.c || 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → Провода'; it.sc = it.sc || it.g; it.kind = it.kind || 'pugv';
-      } else if(/шин|клемм/i.test(raw)) {
-        it.c = 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → Шинки / клеммники'; it.sc = it.sc || it.g; it.kind = it.kind || 'busbar';
-      } else if(/греб/i.test(raw)) {
-        it.c = 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → Гребёнки'; it.sc = it.sc || it.g; it.kind = it.kind || 'comb_bus';
-      } else if(/din|дин|рейк|огранич/i.test(raw)) {
-        it.c = 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → DIN-рейки / ограничители'; it.sc = it.sc || it.g; it.kind = it.kind || 'din';
-      } else if(/маркир|бирк/i.test(raw)) {
-        it.c = 'Щитовое'; it.g = it.g || it.sc || 'Расходка под сборку → Маркировка'; it.sc = it.sc || it.g; it.kind = it.kind || 'marking';
-      }
-      it.brand = it.brand || detectBrand(raw);
-      it.nominal = it.nominal || detectNominal(raw);
-      it.leakage = it.leakage || detectLeakage(raw);
-      it.rcdType = it.rcdType || detectRcdType(raw);
-    }
-    if(type === 'work') {
-      var wr = String([it.c,it.g,it.sc,it.subcategory,it.n].filter(Boolean).join(' '));
-      if(/ниша.*щит|щит.*ниша|штроб|резк|алмаз|высверл|отверст/i.test(wr)) {
-        it.c = it.c || 'Штробление и резка';
-        if(/ниша.*щит|щит.*ниша/i.test(wr)) {
-          it.c = 'Штробление и резка';
-          it.g = it.g || it.sc || 'Ниши щита';
-          it.sc = it.sc || it.g;
-        }
-      }
-    }
-    return it;
-  }
-
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: renderGroupedFixed
- * ========================================================= */
-function renderGroupedFixed(arr, type, prefix){
-    normalizeDbs();
-    arr = type === 'work' ? arrByType('work') : arrByType('mat');
-    var data = {};
-    arr.forEach(function(it){
-      if(!it) return;
-      var c = it.c || 'Разное';
-      var g = it.g || it.sc || it.subcategory || 'Разное';
-      if(!data[c]) data[c] = {};
-      if(!data[c][g]) data[c][g] = [];
-      data[c][g].push(it);
-    });
-    var html = '', i = 0;
-    Object.keys(data).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(c){
-      var cid = prefix + '_cat_' + (i++);
-      var catStyle = type === 'work' ? 'style="color:var(--orange);background:rgba(245,158,11,.08);"' : '';
-      html += '<div class="cat-header" '+catStyle+' onclick="toggleCat(\''+cid+'\')">'+safeHtml(c)+'</div><div class="cat-body" id="'+cid+'">';
-      Object.keys(data[c]).sort(function(a,b){return a.localeCompare(b,'ru');}).forEach(function(g){
-        var gid = prefix + '_grp_' + (i++);
-        html += '<div class="ep-db-sub-header" onclick="epDbToggleSubFixed(\''+gid+'\', event)"><span>'+safeHtml(g)+'</span><small>открыть</small></div><div class="ep-db-sub-body" id="'+gid+'">';
-        data[c][g].sort(function(a,b){return String(a.n||'').localeCompare(String(b.n||''),'ru');}).forEach(function(it){
-          var id = safeHtml(String(it.id||''));
-          var meta = [g, it.brand, it.nominal, it.leakage ? it.leakage+'мА' : '', it.rcdType].filter(Boolean).join(' • ');
-          var color = type === 'work' ? 'background:var(--orange);' : '';
-          html += '<div class="mat-item"><div style="flex:1;"><div class="ep-db-item-title">'+safeHtml(it.n||'Позиция')+'</div><div class="ep-db-item-meta">'+safeHtml(meta)+' '+(Number(it.p)||0)+' ₽ / '+safeHtml(it.u||'шт')+'</div></div><button class="mat-add-btn" style="'+color+' width:auto;margin:0;" onclick="promptAdd(\''+id+'\', \''+type+'\')">+ Добавить</button></div>';
-        });
+function renderGrouped(arr, type, prefix){
+    arr = arr || [];
+    const cats = {};
+    arr.forEach(it => { const c = it.c || 'Разное'; (cats[c]||(cats[c]={direct:[], groups:{}})); const g=getGroup(it); if(g){ (cats[c].groups[g]||(cats[c].groups[g]=[])).push(it); } else cats[c].direct.push(it); });
+    let html = ''; let ci = 0;
+    Object.keys(cats).sort().forEach(function(c){
+      const cid = prefix+'_cat_'+(ci++);
+      const color = type==='work' ? 'color:var(--orange);background:rgba(245,158,11,.08);' : '';
+      html += '<div class="cat-header" style="'+color+'" onclick="toggleCat(\''+cid+'\')">'+safe(c)+'</div><div class="cat-body" id="'+cid+'">';
+      const cat = cats[c]; let gi = 0;
+      Object.keys(cat.groups).sort().forEach(function(g){
+        const gid = cid+'_g_'+(gi++);
+        html += '<div class="ep-db-sub-header" onclick="epDbToggleSub(\''+gid+'\', event)"><span>'+safe(g)+'</span><small>открыть</small></div><div class="ep-db-sub-body" id="'+gid+'">';
+        cat.groups[g].forEach(it => { html += renderItem(it,type); });
         html += '</div>';
       });
+      cat.direct.forEach(it => { html += renderItem(it,type); });
       html += '</div>';
     });
     return html || '<div style="padding:15px;color:var(--gray);font-weight:700;">База пустая или ещё загружается</div>';
   }
-
   
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: reqDisplayName
- * ========================================================= */
-function reqDisplayName(label, meta){
-    meta = meta || {};
-    var brand = meta.brand || detectBrand(label);
-    var nominal = meta.nominal || detectNominal(label);
-    var kind = String(meta.kind || '').toLowerCase();
-    var leakage = meta.leakage || detectLeakage(label);
-    var rcdType = meta.rcdType || detectRcdType(label);
-
-    if(kind.indexOf('automatic') >= 0 || kind.indexOf('breaker') >= 0 || /^C\d+/i.test(nominal)) {
-      return ('Автомат ' + (nominal || '') + (brand ? ' ' + brand : '')).trim();
-    }
-    if(kind.indexOf('dif') >= 0 || /диф/i.test(label)) {
-      return ('ДИФ ' + (leakage ? leakage + 'мА ' : '') + (rcdType ? rcdType + ' ' : '') + (brand || '')).trim();
-    }
-    if(kind.indexOf('uzo') >= 0 || /узо/i.test(label)) {
-      return ('УЗО ' + (leakage ? leakage + 'мА ' : '') + (rcdType ? rcdType + ' ' : '') + (brand || '')).trim();
-    }
-    return String(label || 'Позиция').replace(/\s+—\s+.*$/,'').trim();
-  }
-
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: strictFindMaterial
- * ========================================================= */
-function strictFindMaterial(label, meta){
-    normalizeDbs();
-    meta = meta || {};
-    var arr = arrByType('mat');
-    var brand = meta.brand || detectBrand(label) || '';
-    var nominal = meta.nominal || detectNominal(label) || '';
-    var kind = String(meta.kind || '').toLowerCase();
-    var leakage = meta.leakage || detectLeakage(label);
-    var rcdType = meta.rcdType || detectRcdType(label);
-    var isBreaker = kind.indexOf('automatic') >= 0 || kind.indexOf('breaker') >= 0 || !!nominal;
-    var isDif = kind.indexOf('dif') >= 0 || /диф/i.test(label);
-    var isUzo = kind.indexOf('uzo') >= 0 || /узо/i.test(label);
-
-    var best = null, bestScore = -999;
-    arr.forEach(function(it){
-      var blob = norm([it.c,it.g,it.sc,it.subcategory,it.kind,it.brand,it.nominal,it.leakage,it.rcdType,it.n].filter(Boolean).join(' '));
-      var raw = String(it.n || '');
-      var score = 0;
-
-      if(isBreaker) {
-        if(!(blob.indexOf('автомат') >= 0 || String(it.kind||'').toLowerCase().indexOf('automatic') >= 0 || String(it.kind||'').toLowerCase().indexOf('breaker') >= 0)) return;
-        if(nominal && blob.replace(/\s+/g,'').indexOf(norm(nominal).replace(/\s+/g,'')) < 0) return;
-        score += 20;
-      }
-
-      if(isDif) {
-        if(blob.indexOf('диф') < 0 && String(it.kind||'').toLowerCase().indexOf('dif') < 0) return;
-        if(leakage && blob.indexOf(norm(leakage + 'ма')) < 0 && String(it.leakage||'') !== String(leakage)) return;
-        if(rcdType && blob.indexOf(norm(rcdType)) < 0 && String(it.rcdType||'').toUpperCase() !== String(rcdType).toUpperCase()) score -= 3;
-        if(norm(raw) === 'диф' || norm(raw) === 'дифы') score -= 100;
-        score += 20;
-      }
-
-      if(isUzo) {
-        if(blob.indexOf('узо') < 0 && String(it.kind||'').toLowerCase().indexOf('uzo') < 0) return;
-        if(leakage && blob.indexOf(norm(leakage + 'ма')) < 0 && String(it.leakage||'') !== String(leakage)) return;
-        if(rcdType && blob.indexOf(norm(rcdType)) < 0 && String(it.rcdType||'').toUpperCase() !== String(rcdType).toUpperCase()) score -= 3;
-        if(norm(raw) === 'узо') score -= 100;
-        score += 20;
-      }
-
-      if(brand) {
-        if(blob.indexOf(norm(brand)) >= 0) score += 15;
-        else score -= 30;
-      }
-
-      if(!isBreaker && !isDif && !isUzo) {
-        var words = norm(label).split(/\s+/).filter(Boolean);
-        words.forEach(function(w){ if(blob.indexOf(w) >= 0) score += 1; });
-      }
-
-      if(score > bestScore) { bestScore = score; best = it; }
-    });
-
-    if(best && bestScore >= 10) return best;
-    return null;
-  }
-
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: cleanCanonicalName
- * ========================================================= */
-function cleanCanonicalName(it){
-    var n = String((it && it.n) || '').replace(/^⚠️\s*/,'').replace(/\s*\[[^\]]+\]\s*—\s*добавить в БД/i,'').trim();
-    var meta = (it && it.dbMeta) || {};
-    if(meta && (meta.kind || meta.nominal || meta.leakage)) return reqDisplayName(n, meta);
-    var brand = detectBrand(n);
-    var nominal = detectNominal(n);
-    if(/автомат/i.test(n) && nominal) return ('Автомат '+nominal+(brand?' '+brand:'')).trim();
-    if(/диф/i.test(n)) return reqDisplayName(n, {kind:'dif', brand:brand, leakage:detectLeakage(n), rcdType:detectRcdType(n)});
-    if(/узо/i.test(n)) return reqDisplayName(n, {kind:'uzo', brand:brand, leakage:detectLeakage(n), rcdType:detectRcdType(n)});
-    return n.replace(/\s+—\s+.*$/,'').trim();
-  }
-
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: lineFromRaw
- * ========================================================= */
-function lineFromRaw(raw, fallbackName){
-    raw = String(raw || '');
-    var after = raw.split('—').slice(1).join('—').trim();
-    if(after) return after;
-    var n = String(fallbackName || raw || '');
-    if(/вводн/i.test(n)) return 'Вводная линия';
-    if(/реле напряж/i.test(n)) return 'Защита от перенапряжения';
-    if(/контактор/i.test(n)) return 'Мастер-кнопка света';
-    if(/байпас/i.test(n)) return 'Байпас мастер-кнопки света';
-    if(/греб/i.test(n)) return 'Питание модульной автоматики';
-    if(/нулев/i.test(n) || /N на группу/i.test(n)) return 'Нулевые шинки по группам защиты';
-    if(/PE-шина/i.test(n)) return 'Защитное заземление PE';
-    return 'Позиция щита';
-  }
-
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: shieldRowsForDetails
- * ========================================================= */
-function shieldRowsForDetails(){
-    var rows = [];
-    (currentEstimate || []).forEach(function(it){
-      var n = String((it && it.n) || '');
-      if(!/(Автомат|ДИФ|УЗО|Реле|Контактор|Вводной)/i.test(n)) return;
-
-      var details = Array.isArray(it.epMergedDetails) && it.epMergedDetails.length ? it.epMergedDetails.slice() : [lineFromRaw(it.epRawLabel || n, n)];
-
-      if(/ДИФ|УЗО/i.test(n)) {
-        if(/10\s*мА/i.test(n)) details = ['Влажные зоны / защита 10 мА'];
-        else if(/30\s*мА/i.test(n) && /ДИФ|УЗО/i.test(n)) {
-          if(/Климат/i.test(n)) details = ['Климат / кондиционеры / тёплые полы'];
-          else if(/Освещ/i.test(n)) details = ['Освещение / группы мастер-кнопки'];
-          else if(/Неотключ/i.test(n)) details = ['Неотключаемые группы / холодильник / Нептун / роутер'];
-          else if(/Больш/i.test(n)) details = ['Большая техника / плита / бойлер'];
-          else if(/Силов/i.test(n)) details = ['Силовые линии / розеточные группы'];
-          else details = ['Группа защиты'];
-        }
-      }
-
-      details.forEach(function(line){
-        rows.push({
-          line: line,
-          app: n,
-          note: detailNote(n, line)
-        });
-      });
-    });
-    return rows;
-  }
-
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: detailNote
- * ========================================================= */
-function detailNote(app, line){
-    var n = String(app || '');
-    if(/Вводной/i.test(n)) return 'ввод питания щита';
-    if(/ДИФ|УЗО/i.test(n)) return /10\s*мА/i.test(n) ? 'защита влажных зон 10 мА' : 'групповая защита 30 мА';
-    if(/Автомат/i.test(n)) return 'отдельный автомат линии';
-    if(/Реле напряж/i.test(n)) return 'защита от перенапряжения';
-    if(/Контактор/i.test(n)) return 'мастер-кнопка только на свет';
-    return '';
-  }
-
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: groupHtml
+ * SOCKET POOL FUNCTION: groupHtml
  * ========================================================= */
 function groupHtml(arr, type, prefix, mode){
     var data = {};
@@ -1889,7 +1174,7 @@ function groupHtml(arr, type, prefix, mode){
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: classify
+ * SOCKET POOL FUNCTION: classify
  * ========================================================= */
 function classify(it){
     var meta = (it && it.dbMeta) || {};
@@ -1925,30 +1210,14 @@ function classify(it){
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: sameSwapClass
+ * SOCKET POOL FUNCTION: groupOf
  * ========================================================= */
-function sameSwapClass(current, cand){
-    var c1 = classify(current);
-    var c2 = classify(cand);
-    if(c1 === c2) return true;
-
-    if(c1 === 'cable') return c2 === 'cable';
-    if(c1 === 'auto') return c2 === 'auto';
-    if(c1 === 'dif') return c2 === 'dif';
-    if(c1 === 'uzo') return c2 === 'uzo';
-    if(['uzdp','voltage_relay','time_relay','contactor'].indexOf(c1) >= 0) return c2 === c1;
-
-    if(String(c1).indexOf('work:') === 0 && String(c2).indexOf('work:') === 0) {
-      return c1 === c2 || c1.split('|')[0] === c2.split('|')[0];
-    }
-    return false;
-  }
-
+function groupOf(it){ return (it && (it.g || it.sc || it.subcategory || it.group)) || ''; }
   
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: renderList
+ * SOCKET POOL FUNCTION: renderList
  * ========================================================= */
 function renderList(arr,type,prefix,mode){
     var data = {};
@@ -2000,39 +1269,7 @@ function renderList(arr,type,prefix,mode){
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: toolbar
- * ========================================================= */
-function toolbar(type){
-    var title = type === 'mat' ? 'Материалы' : 'Работы';
-    return '<div style="border:1px solid var(--border);border-radius:14px;padding:10px;margin:10px 0;background:rgba(239,68,68,.05);">' +
-      '<div style="font-weight:900;color:var(--danger);margin-bottom:6px;">🗑 Удаление позиций: '+title+'</div>' +
-      '<div style="font-size:11px;color:var(--gray);margin-bottom:8px;">Удаляет/скрывает только у мастера. База сервера не трогается.</div>' +
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">' +
-      '<button class="btn-info" style="margin:0;padding:10px;" onclick="epHardSelectDelete(\''+type+'\', true)">✅ Выделить все</button>' +
-      '<button class="btn-vendor" style="margin:0;padding:10px;" onclick="epHardSelectDelete(\''+type+'\', false)">⬜ Убрать галочки</button>' +
-      '</div>' +
-      '<button class="btn-danger" style="width:100%;margin:0;padding:12px;" onclick="epHardDeleteSelected(\''+type+'\')">Удалить выбранные у мастера</button>' +
-      '</div>';
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: sameClass
- * ========================================================= */
-function sameClass(a,b){
-    var ca = classify(a), cb = classify(b);
-    if(ca === cb) return true;
-    if(['cable','auto','dif','uzo','uzdp','voltage','time','contactor'].indexOf(ca) >= 0) return ca === cb;
-    if(ca.indexOf('work:') === 0 && cb.indexOf('work:') === 0) return ca === cb || ca.split('|')[0] === cb.split('|')[0];
-    return false;
-  }
-
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: renderItems
+ * SOCKET POOL FUNCTION: renderItems
  * ========================================================= */
 function renderItems(arr,type,prefix,mode){
     var data = {};
@@ -2091,26 +1328,7 @@ function renderItems(arr,type,prefix,mode){
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: deleteToolbar
- * ========================================================= */
-function deleteToolbar(type){
-    var title = type === 'mat' ? 'Материалы' : 'Работы';
-    return '<div style="border:1px solid var(--border);border-radius:14px;padding:10px;margin:10px 0;background:rgba(239,68,68,.05);">' +
-      '<div style="font-weight:900;color:var(--danger);margin-bottom:6px;">🗑 Удаление позиций: '+title+'</div>' +
-      '<div style="font-size:11px;color:var(--gray);margin-bottom:8px;">Удаляет/скрывает только у мастера. База сервера не трогается.</div>' +
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">' +
-      '<button class="btn-info" style="margin:0;padding:10px;" onclick="epUltimateSelectDelete(\''+type+'\', true)">✅ Выделить все</button>' +
-      '<button class="btn-vendor" style="margin:0;padding:10px;" onclick="epUltimateSelectDelete(\''+type+'\', false)">⬜ Убрать галочки</button>' +
-      '</div>' +
-      '<button class="btn-danger" style="width:100%;margin:0;padding:12px;" onclick="epUltimateDeleteSelected(\''+type+'\')">Удалить выбранные у мастера</button>' +
-      '</div>';
-  }
-
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: esc
+ * SOCKET POOL FUNCTION: esc
  * ========================================================= */
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g,function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
   function cleanText(s){ return String(s || '').toLowerCase().replace(/ё/g,'е').replace(/×/g,'x').replace(/х/g,'x').replace(/[^a-zа-я0-9]+/g,' ').trim(); }
@@ -2378,69 +1596,7 @@ function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g,function(m
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: sourceSwitcherHtml
- * ========================================================= */
-function sourceSwitcherHtml(type){
-    return '<div style="border:1px solid var(--primary);border-radius:14px;padding:10px;margin:0 0 12px;background:rgba(79,70,229,.06);">'+
-      '<div style="font-weight:900;color:var(--primary);margin-bottom:6px;">Источник: '+(type==='work'?'Работы':'Материалы')+'</div>'+
-      '<div style="font-size:11px;color:var(--gray);margin-bottom:8px;">В смету и каталог попадает только выбранный источник. Вперемешку не считаем.</div>'+
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'+
-        '<button class="'+(scope()==='my'?'btn-success':'btn-info')+'" style="margin:0;padding:10px;" onclick="epSetDbScope(&quot;my&quot;); '+(type==='work'?'openWorkCatalog()':'openMatCatalog()')+'">👤 Моя база</button>'+
-        '<button class="'+(scope()==='global'?'btn-success':'btn-info')+'" style="margin:0;padding:10px;" onclick="epSetDbScope(&quot;global&quot;); '+(type==='work'?'openWorkCatalog()':'openMatCatalog()')+'">🌍 База сервера</button>'+
-      '</div>'+
-    '</div>';
-  }
-
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: catalogRow
- * ========================================================= */
-function catalogRow(type,it){
-    var item=enc(it);
-    var sub=(groupOf(it)?groupOf(it)+' • ':'')+(Number(it.p)||0)+' ₽ / '+(it.u||'шт');
-    var copyBtn = scope()==='global' ? '<button class="btn-info" style="width:auto;margin:0 0 0 6px;padding:8px;" data-type="'+type+'" data-item="'+esc(item)+'" onclick="epCopyOneServerToMy(this.dataset.type,this.dataset.item)">В мою</button>' : '';
-    return '<div class="mat-item"><div style="flex:1;font-size:12px;font-weight:600;"><b>'+esc(it.n||'Позиция')+'</b><br><span style="color:var(--gray);font-size:11px;font-weight:normal;">'+esc(sub)+'</span></div><button class="mat-add-btn" style="'+(type==='work'?'background:var(--orange);':'')+'" data-item="'+esc(item)+'" data-type="'+type+'" onclick="promptAdd(this.dataset.item,this.dataset.type)">+ Добавить</button>'+copyBtn+'</div>';
-  }
-
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: editorTop
- * ========================================================= */
-function editorTop(type){
-    var title=type==='work'?'работ':'материалов';
-    var s=scope(), admin=isAdmin(), editable=canEditActive();
-    var hint=s==='my'?'Редактируется личная база мастера.':(admin?'Редактируется база сервера.':'Сервер открыт только для просмотра и копирования в мою базу.');
-    var html='<div style="border:1px solid var(--primary);border-radius:14px;padding:10px;margin:0 0 12px;background:rgba(79,70,229,.05);">'+
-      '<div style="font-weight:900;color:var(--primary);">'+label()+' — '+title+'</div>'+
-      '<div style="font-size:11px;color:var(--gray);font-weight:800;margin-top:4px;">'+hint+' Позиций: '+active(type).length+'.</div>'+
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">'+
-      '<button class="'+(s==='my'?'btn-success':'btn-info')+'" style="margin:0;padding:10px;" onclick="epSetDbScope(\'my\')">👤 Моя база</button>'+
-      '<button class="'+(s==='global'?'btn-success':'btn-info')+'" style="margin:0;padding:10px;" onclick="epSetDbScope(\'global\')">🌍 База сервера</button></div>';
-    if(editable){
-      html+='<div style="border:1px dashed var(--border);border-radius:12px;padding:8px;margin-top:8px;background:rgba(255,255,255,.35);">'+
-        '<div style="font-weight:900;color:var(--primary);font-size:12px;margin-bottom:6px;">Массовые действия: выделить → перенести / удалить</div>'+
-        '<input id="ep-v15-move-cat-'+type+'" placeholder="Категория, куда перенести" style="margin-bottom:6px;">'+
-        '<input id="ep-v15-move-sub-'+type+'" placeholder="Группа / подкатегория" style="margin-bottom:8px;">'+
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'+
-        '<button class="btn-info" style="margin:0;padding:9px;" onclick="epV15SelectVisible(\''+type+'\',true)">✅ Выделить</button>'+
-        '<button class="btn-vendor" style="margin:0;padding:9px;" onclick="epV15SelectVisible(\''+type+'\',false)">⬜ Снять</button>'+
-        '<button class="btn-success" style="margin:0;padding:9px;" onclick="epV15MoveSelectedActive(\''+type+'\')">📦 Перенести</button>'+
-        '<button class="btn-danger" style="margin:0;padding:9px;" onclick="epDeleteSelectedActiveV7()">🗑 Удалить выбранные</button></div></div>'+
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;"><button class="btn-success" style="margin:0;padding:9px;" onclick="epSaveActiveDbV7()">💾 Сохранить</button><button class="btn-info" style="margin:0;padding:9px;" onclick="epReloadActiveDbV7()">🔄 Обновить</button></div>';
-    }
-    if(s==='global'&&!admin){ html+='<div class="ep-v7-note">Серверные цены и позиции мастер не меняет. Для своей сметы нажми «В мою».</div>'; }
-    return html+'</div>';
-  }
-
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: editorRow
+ * SOCKET POOL FUNCTION: editorRow
  * ========================================================= */
 function editorRow(type,it){
     var item=enc(it);
@@ -2454,7 +1610,7 @@ function editorRow(type,it){
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: autoGroupMaterial
+ * SOCKET POOL FUNCTION: autoGroupMaterial
  * ========================================================= */
 function autoGroupMaterial(item){
     var it=clone(item); var n=cleanText([it.n,it.c,it.g,it.sc].join(' '));
@@ -2482,7 +1638,7 @@ function autoGroupMaterial(item){
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: autoGroupWork
+ * SOCKET POOL FUNCTION: autoGroupWork
  * ========================================================= */
 function autoGroupWork(item){
     var it=clone(item); var n=cleanText([it.n,it.c,it.g,it.sc].join(' '));
@@ -2502,37 +1658,18 @@ function autoGroupWork(item){
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: reviewedItems
+ * SOCKET POOL FUNCTION: serverModalRow
  * ========================================================= */
-function reviewedItems(){
-    var review = window.EP_DB_REVIEW || {};
-    var src = Array.isArray(review.items) ? review.items : [];
-    var type = review.type === 'work' ? 'work' : 'mat';
-    var out = [];
-    src.forEach(function(base, i){
-      var ch = $('ep-db-check-' + i);
-      if(ch && !ch.checked) return;
-      var it = {
-        id: base.id || ((type === 'work' ? 'w' : 'm') + '_imp_' + Date.now() + '_' + i),
-        n: (($('ep-db-name-' + i) || {}).value || base.n || '').trim(),
-        c: (($('ep-db-cat-' + i) || {}).value || base.c || 'Разное').trim(),
-        g: (($('ep-db-subcat-' + i) || {}).value || base.g || base.sc || 'Без группы').trim(),
-        sc: (($('ep-db-subcat-' + i) || {}).value || base.sc || base.g || 'Без группы').trim(),
-        p: Number(String((($('ep-db-price-' + i) || {}).value) || base.p || 0).replace(',','.').replace(/[^\d.]/g,'')) || 0,
-        u: (($('ep-db-unit-' + i) || {}).value || base.u || 'шт').trim()
-      };
-      if(it.n){
-        try{ if(typeof window.epAutoGroupItem === 'function') it = window.epAutoGroupItem(type,it); }catch(e){}
-        out.push(it);
-      }
-    });
-    return {type:type, items:out};
+function serverModalRow(type,it){
+    var item=enc(it);
+    var sub=(groupOf(it)?groupOf(it)+' • ':'')+(Number(it.p)||0)+' ₽ / '+(it.u||'шт');
+    return '<label class="mat-item ep-select-row"><input type="checkbox" class="ep-global-check" data-type="'+type+'" data-item="'+esc(item)+'" style="width:22px;height:22px;accent-color:var(--primary);"><div style="flex:1;"><b>'+esc(it.n||'Позиция')+'</b><br><span style="color:var(--gray);font-size:11px;">'+esc(sub)+'</span></div></label>';
   }
   
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: inferCat
+ * SOCKET POOL FUNCTION: inferCat
  * ========================================================= */
 function inferCat(name,type){
     var s = norm(name);
@@ -2556,7 +1693,7 @@ function inferCat(name,type){
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: inferSub
+ * SOCKET POOL FUNCTION: inferSub
  * ========================================================= */
 function inferSub(name,cat,type){
     var s = norm(name);
@@ -2586,171 +1723,87 @@ function inferSub(name,cat,type){
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: collectReviewed
- * ========================================================= */
-function collectReviewed(){
-    saveVisibleEdits();
-    var st = window.EP_DB_REVIEW_V6;
-    var type = st.type === 'work' ? 'work' : 'mat';
-    var out = [];
-    (st.items || []).forEach(function(base,i){
-      if(st.selected[i] === false) return;
-      var ed = st.editCache[i] || base || {};
-      var it = normItem({
-        id: base.id,
-        n: ed.n || base.n,
-        c: ed.c || base.c,
-        sc: ed.sc || ed.g || base.sc || base.g,
-        p: ed.p != null ? ed.p : base.p,
-        u: ed.u || base.u
-      }, type, i);
-      if(it){ try{ if(typeof window.epAutoGroupItem === 'function') it = window.epAutoGroupItem(type,it); }catch(e){} out.push(it); }
-    });
-    return {type:type, items:out};
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: ensureProgress
- * ========================================================= */
-function ensureProgress(){
-    if($('ep-v7-progress')) return;
-    var css=document.createElement('style'); css.id='ep-v7-style'; css.textContent='\
-#ep-v7-progress{position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.62);display:none;align-items:center;justify-content:center;padding:18px;}\
-#ep-v7-progress .box{width:min(460px,94vw);border-radius:20px;background:var(--card-bg,#fff);box-shadow:0 24px 70px rgba(0,0,0,.35);padding:18px;border:1px solid var(--border,#e5e7eb);}\
-#ep-v7-progress .title{font-weight:900;color:var(--primary,#4f46e5);font-size:17px;margin-bottom:8px;}\
-#ep-v7-progress .bar{height:16px;background:rgba(148,163,184,.25);border-radius:999px;overflow:hidden;border:1px solid rgba(148,163,184,.35);}\
-#ep-v7-progress .fill{height:100%;width:0%;background:linear-gradient(90deg,#2563eb,#10b981);transition:width .18s ease;}\
-#ep-v7-progress .txt{font-size:12px;color:var(--gray,#64748b);font-weight:800;margin-top:8px;}\
-.ep-v7-panel{border:2px solid var(--primary);border-radius:16px;padding:12px;margin:10px 0 15px;background:rgba(79,70,229,.06)}\
-.ep-v7-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.ep-v7-actions button{margin:0;padding:10px}.ep-v7-note{font-size:11px;color:var(--gray);font-weight:800;margin-top:8px}.ep-v7-locked{opacity:.55}.ep-v7-row{display:flex;gap:8px;align-items:flex-start}.ep-v7-row input[type=number]:disabled{opacity:.55;background:rgba(148,163,184,.15)}'; document.head.appendChild(css);
-    var d=document.createElement('div'); d.id='ep-v7-progress'; d.innerHTML='<div class="box"><div class="title" id="ep-v7-progress-title">Выполняю...</div><div class="bar"><div class="fill" id="ep-v7-progress-fill"></div></div><div class="txt" id="ep-v7-progress-txt">0%</div></div>'; document.body.appendChild(d);
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: makeManualItem
- * ========================================================= */
-function makeManualItem(type){
-    var cat=$('db-new-cat')?clean($('db-new-cat').value):'';
-    var name=$('db-new-name')?clean($('db-new-name').value):'';
-    var price=$('db-new-price')?money($('db-new-price').value):0;
-    var unit=$('db-new-unit')?clean($('db-new-unit').value)||'шт':'шт';
-    if(!name) throw new Error('Введите название позиции');
-    var it={id:(type==='work'?'w':'m')+'_manual_v8_'+Date.now(),c:cat||'Разное',n:name,p:price,u:unit};
-    try{ if(typeof window.epAutoGroupItem==='function') it=window.epAutoGroupItem(type,it); }catch(e){}
-    return it;
-  }
-
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: normItem
+ * SOCKET POOL FUNCTION: normItem
  * ========================================================= */
 function normItem(raw,type,idx){ raw=raw||{}; var n=clean(raw.n||raw.name||raw.title||raw.item||raw.position||raw['Наименование']||raw['Название']||raw['Имя']||raw['Позиция']); if(!n)return null; var c=clean(raw.c||raw.category||raw.cat||raw.group||raw['Категория'])||inferCat(n,type); var sc=clean(raw.sc||raw.g||raw.subcategory||raw.subcat||raw['Подкатегория']||raw['Группа'])||inferSub(n,c,type); var p=money(raw.p!=null?raw.p:(raw.price!=null?raw.price:(raw.cost!=null?raw.cost:(raw['Цена']||raw['Стоимость'])))); var u=clean(raw.u||raw.unit||raw.measure||raw['Ед']||raw['Ед.']||raw['Единица']||raw['Ед. изм.'])||'шт'; var it={id:raw.id||((type==='work'?'w':'m')+'_imp_v9_'+Date.now()+'_'+idx),n:n,c:c,sc:sc,g:sc,p:p,u:u}; try{ if(typeof window.epAutoGroupItem==='function') it=window.epAutoGroupItem(type,it); }catch(e){} return it; }
   
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: showReview
+ * SOCKET POOL FUNCTION: ensureProgress
  * ========================================================= */
-function showReview(items,type,source,target,raw){
-    items=unique(items,type);
-    var selected={}; items.forEach(function(_,i){selected[i]=true;});
-    window.EP_DB_REVIEW_V6={type:type,items:items,source:source||'',page:0,selected:selected,editCache:{}};
-    window.EP_DB_REVIEW={type:type,items:items,source:source||''};
-    window.EP_V9_IMPORT_TARGET=target; window.EP_V7_IMPORT_TARGET=target;
-    var title=$('ep-db-ai-review-title'); if(title) title.innerText='Импорт '+(type==='work'?'работ':'материалов')+': '+(source||'файл')+' → '+(target==='global'?'База сервера':target==='server_proposal'?'Заявка админу':'Моя база');
-    if(!items.length){ var list=$('ep-db-ai-review-list'); if(list) list.innerHTML='<div style="padding:12px;color:var(--danger);font-weight:900;">ИИ не нашёл позиции. Попробуй фото крупнее/ровнее или PDF с таблицей.</div><details style="font-size:11px;color:var(--gray);"><summary>Ответ ИИ</summary><pre style="white-space:pre-wrap;max-height:240px;overflow:auto;">'+esc(raw||'')+'</pre></details>'; }
-    else if(typeof window.epReviewPageV6==='function') window.epReviewPageV6(0);
-    else { var list2=$('ep-db-ai-review-list'); if(list2) list2.innerHTML=items.map(function(it,i){return '<div class="ep-db-review-row"><input type="checkbox" id="ep-db-check-'+i+'" checked><div class="ep-db-review-fields"><div><label>Имя</label><input id="ep-db-name-'+i+'" value="'+esc(it.n)+'"></div><div class="ep-db-review-2col"><div><label>Категория</label><input id="ep-db-cat-'+i+'" value="'+esc(it.c)+'"></div><div><label>Подкатегория</label><input id="ep-db-subcat-'+i+'" value="'+esc(it.sc||'Разное')+'"></div></div><div class="ep-db-review-2col"><div><label>Цена</label><input id="ep-db-price-'+i+'" type="number" value="'+(Number(it.p)||0)+'"></div><div><label>Единица</label><input id="ep-db-unit-'+i+'" value="'+esc(it.u||'шт')+'"></div></div></div></div>';}).join(''); }
-    try{ if(typeof openModal==='function') openModal('ep-db-ai-review-modal'); }catch(e){ var m=$('ep-db-ai-review-modal'); if(m)m.style.display='flex'; }
-    setTimeout(hideProgress,200);
+function ensureProgress(){
+    if($('ep-v11-progress')) return;
+    var d = document.createElement('div');
+    d.id = 'ep-v11-progress';
+    d.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.64);display:none;align-items:center;justify-content:center;padding:18px;';
+    d.innerHTML = '<div style="width:min(460px,94vw);border-radius:22px;background:var(--card-bg,#fff);box-shadow:0 24px 70px rgba(0,0,0,.35);padding:18px;border:1px solid var(--border,#e5e7eb);">'
+      + '<div id="ep-v11-progress-title" style="font-weight:900;color:var(--primary,#4f46e5);font-size:17px;margin-bottom:8px;">Выполняю...</div>'
+      + '<div style="height:16px;background:rgba(148,163,184,.25);border-radius:999px;overflow:hidden;border:1px solid rgba(148,163,184,.35);"><div id="ep-v11-progress-fill" style="height:100%;width:0%;background:linear-gradient(90deg,#2563eb,#10b981);transition:width .18s ease;"></div></div>'
+      + '<div id="ep-v11-progress-txt" style="font-size:12px;color:var(--gray,#64748b);font-weight:800;margin-top:8px;">0%</div>'
+      + '<div id="ep-v11-progress-hint" style="font-size:11px;color:var(--gray,#64748b);margin-top:8px;line-height:1.35;">Не закрывай экран до завершения.</div>'
+      + '</div>';
+    document.body.appendChild(d);
   }
   
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: fixShieldWorkItem
+ * SOCKET POOL FUNCTION: compressImageDataUrl
  * ========================================================= */
-function fixShieldWorkItem(it, originalLabel){
-    if(!it) return it;
-    var x=it;
-    var n=String(x.n||'').trim();
-    var label=String(originalLabel||n||'');
-    var nl=norm(n), ll=norm(label);
-
-    // Wrong fuzzy match: "Установка щита" was matched to "Установка БП в щит".
-    if(/установка\s+бп\s+в\s+щит/i.test(n) || /установка\s+щита/.test(ll)){
-      x.n='Установка щита';
-      x.p=appPrice('shieldInstallPrice', 2500);
-      x.u='шт';
-      x.type='work';
-      x.c='Щитовое';
-      x.g='Монтаж щита';
-      x.sc='Монтаж щита';
-      x.dbMeta=Object.assign({}, x.dbMeta||{}, {category:'Щитовое', subcategory:'Монтаж щита'});
-      delete x.sourceId;
-      return x;
-    }
-
-    // Wrong fuzzy match: DB row name is only "Бетон", but estimate must show the actual work.
-    if((/^(бетон|кирпич|панелька|мягкий мат|мягкий материал)$/.test(nl) && x.type==='work') || /штроба.*100.*50/.test(ll)){
-      var wall = wallFromName(label+' '+n);
-      x.n='Штроба 100×50, под трассу кабелей ('+wall+')';
-      x.p=money(x.p) || appPrice('shieldInputGroovePrice',1500);
-      x.u='м.п.';
-      x.type='work';
-      x.c='Штробление и резка';
-      x.g='Штроба 100×50 под трассу кабелей';
-      x.sc='Штроба 100×50 под трассу кабелей';
-      x.dbMeta=Object.assign({}, x.dbMeta||{}, {category:'Штробление и резка', subcategory:'Штроба 100×50 под трассу кабелей', wall:wall});
-      if(/^бетон|кирпич|панелька|мягкий/.test(nl)) delete x.sourceId;
-      return x;
-    }
-
-    if(/^ниша\s+щита/i.test(n)){
-      x.c='Штробление и резка';
-      x.g='Ниши щита';
-      x.sc='Ниши щита';
-      x.u=x.u||'мод.';
-      x.dbMeta=Object.assign({}, x.dbMeta||{}, {category:'Штробление и резка', subcategory:'Ниши щита'});
-    }
-    return x;
-  }
-
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: patchShieldButton
- * ========================================================= */
-function patchShieldButton(){
-    var base = window.epGenerateShieldFixed || window.generateCascadePanel;
-    if(typeof base==='function' && !base.__ep_v12_wrapped){
-      var wrapped=function(){
-        var r=base.apply(this, arguments);
-        setTimeout(function(){ normalizeCurrentEstimate(); try{ if(typeof renderMainTable==='function') renderMainTable(); }catch(e){} },60);
-        return r;
+async function compressImageDataUrl(dataUrl){
+    dataUrl = String(dataUrl || '');
+    if(!/^data:image\//i.test(dataUrl)) return dataUrl;
+    if(dataUrl.length < 1200000) return dataUrl;
+    return new Promise(function(resolve){
+      var img = new Image();
+      img.onload = function(){
+        try{
+          var maxSide = 1700;
+          var w = img.naturalWidth || img.width || 0, h = img.naturalHeight || img.height || 0;
+          if(!w || !h) return resolve(dataUrl);
+          var k = Math.min(1, maxSide / Math.max(w,h));
+          var canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(w*k));
+          canvas.height = Math.max(1, Math.round(h*k));
+          var ctx = canvas.getContext('2d');
+          ctx.drawImage(img,0,0,canvas.width,canvas.height);
+          resolve(canvas.toDataURL('image/jpeg',0.82));
+        }catch(e){ resolve(dataUrl); }
       };
-      wrapped.__ep_v12_wrapped=true;
-      window.epGenerateShieldFixed=wrapped;
-      window.generateCascadePanel=wrapped;
-      try{ generateCascadePanel=wrapped; }catch(e){}
-    }
-    Array.prototype.forEach.call(document.querySelectorAll('button'), function(btn){
-      if((btn.textContent||'').indexOf('Сгенерировать щит')>=0) btn.onclick=window.generateCascadePanel;
+      img.onerror = function(){ resolve(dataUrl); };
+      img.src = dataUrl;
     });
   }
-
   
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: epV16GenerateCascadePanel
+ * SOCKET POOL FUNCTION: score
+ * ========================================================= */
+function score(current, cand){
+    var cn=norm([current&&current.n,current&&current.c,groupOf(current)].join(' '));
+    var bn=norm([cand&&cand.n,cand&&cand.c,groupOf(cand)].join(' '));
+    var s=0;
+    if(sameClass(current,cand)) s+=100;
+    cn.split(' ').forEach(function(w){ if(w.length>2 && bn.indexOf(w)>=0) s+=2; });
+    if((current&&current.c) && norm(current.c)===norm(cand&&cand.c)) s+=10;
+    if(groupOf(current) && norm(groupOf(current))===norm(groupOf(cand))) s+=8;
+    if(cand.__src==='my') s+=1;
+    return s;
+  }
+  
+
+
+/* =========================================================
+ * SOCKET POOL FUNCTION: add
+ * ========================================================= */
+function add(name,nom,group){ lines.push({name:name,nominal:nom,group:group}); }
+    
+
+
+/* =========================================================
+ * SOCKET POOL FUNCTION: epV16GenerateCascadePanel
  * ========================================================= */
 function epV16GenerateCascadePanel() {
     const bBox = epGetVal('cfg-brand-box', 'Tekfor');
@@ -2894,68 +1947,7 @@ function epV16GenerateCascadePanel() {
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: isShieldDeviceV16
- * ========================================================= */
-function isShieldDeviceV16(it){
-    if(!it || it.type!=='mat') return false;
-    var n=String(it.n||''), k=String(it.dbMeta&&it.dbMeta.kind||'');
-    return /[ABCDАВСД]\s*\d{1,3}|автомат|узо|диф|реле|контактор|вводной/i.test(n) || /automatic|breaker|uzo|dif|relay|contactor/i.test(k);
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: getAssignV16
- * ========================================================= */
-function getAssignV16(it){
-    if(window.epV15GetAssignments) return window.epV15GetAssignments(it);
-    var out=[]; function add(v){v=String(v||'').trim(); if(v && !/позиция щита|общая \/ вводная|назначение не указано/i.test(v) && out.indexOf(v)<0) out.push(v);}
-    if(it){ if(Array.isArray(it.epAssignments)) it.epAssignments.forEach(add); if(Array.isArray(it.epMergedDetails)) it.epMergedDetails.forEach(add); add(it.epAssignment); if(it.dbMeta) add(it.dbMeta.assignment); }
-    return out;
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: purposeV16
- * ========================================================= */
-function purposeV16(it){ return window.epV15Purpose ? window.epV15Purpose(it) : 'аппарат щита'; }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: showDetailsV16
- * ========================================================= */
-function showDetailsV16(customTitle){
-    normalizeV16();
-    try{ currentPreviewMode='details'; }catch(e){}
-    var html = (typeof getPDFHeader==='function') ? getPDFHeader(customTitle || 'ДЕТАЛИЗАЦИЯ ЩИТА') : '<h2>ДЕТАЛИЗАЦИЯ ЩИТА</h2>';
-    var f=$('pdf-filters'); if(f) f.style.display='none';
-    var items=(window.currentEstimate||[]).filter(isShieldDeviceV16);
-    html += '<table class="pdf-table"><tr><th>Что отвечает / линия</th><th>Аппарат</th><th>Назначение</th></tr>';
-    if(!items.length) html += '<tr><td colspan="3" style="text-align:center;color:var(--gray);font-weight:900;">Щит ещё не сгенерирован</td></tr>';
-    else items.forEach(function(it){
-      var lines=getAssignV16(it); if(!lines.length) lines=['назначение не указано — нажми «Сгенерировать щит» ещё раз'];
-      html += '<tr><td style="font-weight:bold;color:var(--primary);">'+lines.map(esc).join('<br>')+'</td><td>'+esc(it.n)+(Number(it.q)>1?' × '+Number(it.q):'')+'</td><td>'+esc(purposeV16(it))+'</td></tr>';
-    });
-    html += '</table>';
-    var p=$('p-cont'); if(p) p.innerHTML=html;
-    if(typeof openModal==='function') openModal('previewModal');
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: bindButtons
- * ========================================================= */
-function bindButtons(){
-    try{ Array.prototype.forEach.call(document.querySelectorAll('button'),function(btn){ if((btn.textContent||'').indexOf('Сгенерировать щит')>=0) btn.onclick=epV16GenerateCascadePanel; }); }catch(e){}
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: lineConfig
+ * SOCKET POOL FUNCTION: lineConfig
  * ========================================================= */
 function lineConfig(){
     var out=[]; function e(id){ return $(id); } function ch(id){ var x=e(id); return !!(x&&x.checked); }
@@ -2973,220 +1965,25 @@ function lineConfig(){
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: isDevice
+ * SOCKET POOL FUNCTION: groupAssign
  * ========================================================= */
-function isDevice(it){
-    var n=txt(it&&it.n), k=txt(it&&it.dbMeta&&it.dbMeta.kind), raw=txt(it&&it.epRawLabel);
-    return !!(it&&it.type==='mat' && (/автомат|узо|диф|реле|контактор|вводной/i.test(n+' '+raw) || /automatic|breaker|uzo|dif|relay|contactor|input_breaker/i.test(k) || /\b[ABCDАВСД]\s*\d{1,3}\b/i.test(n+' '+raw)));
+function groupAssign(g){ var names=lines.filter(function(l){return l.group===g;}).map(function(l){return l.name;}); var head=g==='wet'?'Влажные зоны / защита 10 мА':(groupNames[g]||g); return head+(names.length?': '+names.join(', '):''); }
+    
+
+
+/* =========================================================
+ * SOCKET POOL FUNCTION: groupLines
+ * ========================================================= */
+function groupLines(lines){
+    var m={};
+    lines.forEach(function(l){ var key=curveNom(l.nominal,l.curve); if(!m[key]) m[key]={nominal:key, lines:[], groups:{}}; m[key].lines.push(l.name); m[key].groups[l.group]=true; });
+    return Object.keys(m).map(function(k){ return m[k]; });
   }
   
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: assignmentsOf
- * ========================================================= */
-function assignmentsOf(it){
-    var out=[]; function add(v){ v=clean(v); if(v && !/^(позиция щита|общая|общая \/ вводная|назначение не указано)/i.test(v) && out.indexOf(v)<0) out.push(v); }
-    if(it){ if(Array.isArray(it.epAssignments)) it.epAssignments.forEach(add); if(Array.isArray(it.epMergedDetails)) it.epMergedDetails.forEach(add); add(it.epAssignment); if(it.dbMeta) add(it.dbMeta.assignment); }
-    if(out.length) return out;
-    var n=txt(it&&it.n), raw=txt(it&&it.epRawLabel), k=txt(it&&it.dbMeta&&it.dbMeta.kind), q=Math.max(1,Number(it&&it.q)||1), lines=lineConfig();
-    if(/вводн|input_breaker/i.test(n+' '+raw+' '+k)) return ['Вводной аппарат щита'];
-    if(/10\s*мА/i.test(n+' '+raw) && /узо|диф/i.test(n+' '+raw)) return ['Влажные зоны / защита 10 мА: '+lines.filter(function(x){return x.group==='wet';}).map(function(x){return x.name;}).join(', ')].filter(function(x){return !/:\s*$/.test(x);});
-    if(/30\s*мА/i.test(n+' '+raw) && /узо|диф/i.test(n+' '+raw)) return ['Группа защиты 30 мА: силовые/освещение/климат/неотключаемые линии'];
-    var nom=nominalOf(it); if(nom){ var list=lines.filter(function(x){return x.nominal===nom;}).slice(0,q).map(function(x){return x.name;}); if(list.length) return list; }
-    return [];
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: deviceName
- * ========================================================= */
-function deviceName(it){
-    var n=clean(it&&it.n), m=(it&&it.dbMeta)||{}, raw=clean(m.rawLabel||it.epRawLabel||n), b=brandRu(m.brand||(/IEK|ИЭК/i.test(n+' '+raw)?'IEK':''));
-    var src=n+' '+raw+' '+txt(m.kind);
-    if(/input_breaker|вводн/i.test(src)) return 'Вводной автомат '+(m.poles||'2P')+' '+(b||'ИЭК')+' ВА47-29';
-    var nom=nominalOf(it); if(/automatic|автомат|\b[ABCDАВСД]\s*\d/i.test(src) && nom) return nom+' '+(m.poles||'1P')+' '+(b||'ИЭК')+' ВА47-29';
-    if(/диф/i.test(src)) return 'ДИФ '+(m.poles||'1P+N')+' '+(m.amp||40)+'A '+(m.leakage||(/10\s*мА/i.test(src)?10:30))+'мА тип '+(m.rcdType||'A')+' '+(b||'ИЭК');
-    if(/узо/i.test(src)) return 'УЗО '+(m.poles||'2P')+' '+(m.amp||40)+'A '+(m.leakage||(/10\s*мА/i.test(src)?10:30))+'мА тип '+(m.rcdType||'A')+' '+(b||'ИЭК')+' ВД1-63';
-    return n;
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: purposeOf
- * ========================================================= */
-function purposeOf(it){
-    var s=txt(it&&it.n)+' '+txt(it&&it.epRawLabel)+' '+txt(it&&it.dbMeta&&it.dbMeta.kind);
-    if(/вводн|input_breaker/i.test(s)) return 'вводной аппарат щита';
-    if(/10\s*мА/i.test(s)) return 'защита влажных зон 10 мА';
-    if(/узо|диф/i.test(s)) return 'групповая защита';
-    if(/контактор/i.test(s)) return 'мастер-кнопка только на свет';
-    if(/реле|узм/i.test(s)) return 'защитный аппарат';
-    return 'отдельный автомат линии';
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: patchDbBulk
- * ========================================================= */
-function patchDbBulk(){
-    var modal=$('settModal'); if(!modal || $('ep-v17-bulk-box')) return;
-    var host=$('editor-mat-list') || $('editor-work-list'); if(!host) return;
-    var box=document.createElement('div'); box.id='ep-v17-bulk-box'; box.style.cssText='margin:12px 0;padding:12px;border:2px dashed #8b5cf6;border-radius:16px;background:#faf5ff;';
-    box.innerHTML='<b style="color:#5b21b6;display:block;margin-bottom:8px;">Массовое управление V17</b><div style="font-size:12px;color:#64748b;font-weight:800;margin-bottom:8px;">Выделение и перенос работают по галочкам в текущей открытой базе. Если галочек нет — значит открыт старый список, нажми Обновить / перезагрузить.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><input id="ep-v17-move-cat" placeholder="Категория"><input id="ep-v17-move-sub" placeholder="Подкатегория"></div><button onclick="epV17BulkMove()" style="margin-top:8px;background:#8b5cf6;color:white;">📦 Переместить выбранные</button><button onclick="epV17BulkDelete()" style="margin-top:8px;background:#ef4444;color:white;">🗑 Удалить выбранные</button>';
-    host.parentNode.insertBefore(box,host);
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: saveArr
- * ========================================================= */
-async function saveArr(type,arr){
-    var src=scope(); type=type==='work'?'work':'mat'; arr=unique(arr,type);
-    if(src==='global'){
-      if(!isAdmin()) { toast('Сервер редактирует только админ'); return false; }
-      var c=getServerCache(); if(type==='mat') c.matDB=arr; else c.workDB=arr;
-      window.EP_GLOBAL_MAT=c.matDB; window.EP_GLOBAL_WORK=c.workDB;
-      window.EP_FORCE_GLOBAL={matDB:c.matDB,workDB:c.workDB};
-      window.EP_ULTIMATE_DB_CACHE={matDB:c.matDB,workDB:c.workDB,ts:Date.now()};
-      window.EP_GLOBAL_DB_VISIBLE_CACHE={matDB:c.matDB,workDB:c.workDB,ts:Date.now()};
-      setObjLS(LS_SERVER_CACHE,{matDB:c.matDB,workDB:c.workDB,ts:Date.now()});
-      syncActiveToMain('global');
-      epV18SetStatus('upload','запись на сервер');
-      try{ if(typeof db!=='undefined' && db){ await db.collection('settings').doc('global_db').set({matDB:c.matDB,workDB:c.workDB,updatedAt:new Date().toISOString()},{merge:true}); } }
-      catch(e){ epV18SetStatus('error','ошибка сервера'); toast('Ошибка записи сервера: '+(e.message||e)); return false; }
-      epV18SetStatus('ok','V18 активна'); return true;
-    } else {
-      if(type==='mat'){ window.EP_MY_MAT=arr; setLS(LS_MY_MAT,arr); }
-      else { window.EP_MY_WORK=arr; setLS(LS_MY_WORK,arr); }
-      try{ window.userMatDB=getArr('mat','my'); window.userWorkDB=getArr('work','my'); localStorage.setItem('ep_master_db_created_v1','1'); }catch(e){}
-      syncActiveToMain('my');
-      epV18SetStatus('upload','запись на сервер');
-      try{ if(typeof db!=='undefined' && db && uid()){ await db.collection('user_db').doc(uid()).set({uid:uid(),masterName:(window.appUser&&(appUser.name||appUser.email))||'',matDB:getArr('mat','my'),workDB:getArr('work','my'),created:true,updatedAt:new Date().toISOString()},{merge:true}); } }
-      catch(e){ toast('Локально сохранено, сервер личной базы отказал: '+(e.message||e)); }
-      epV18SetStatus('ok','V18 активна'); return true;
-    }
-  }
-
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: dbFindAuto
- * ========================================================= */
-function dbFindAuto(nominal,brand){
-    var amp=String(nominal||'').replace(/[^0-9]/g,''); var br=norm(brand||''); var arr=getArr('mat',scope()).concat(getArr('mat','global'),getArr('mat','my'));
-    var hit=arr.find(function(it){ var nn=norm(it.n); return /автомат/.test(nn) && nn.indexOf(amp+'a')>=0 && (!br || nn.indexOf(br)>=0 || (br==='iek'&&nn.indexOf('иэк')>=0) || (br==='иэк'&&nn.indexOf('iek')>=0)); });
-    return hit||null;
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: dbFindRcd
- * ========================================================= */
-function dbFindRcd(leak,brand,kind){
-    var br=norm(brand||''), k=kind||'УЗО'; var arr=getArr('mat',scope()).concat(getArr('mat','global'),getArr('mat','my'));
-    return arr.find(function(it){ var nn=norm(it.n); return nn.indexOf(norm(k))>=0 && nn.indexOf(String(leak))>=0 && (!br || nn.indexOf(br)>=0 || (br==='iek'&&nn.indexOf('иэк')>=0) || (br==='иэк'&&nn.indexOf('iek')>=0)); })||null;
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: autoName
- * ========================================================= */
-function autoName(nominal,brand){
-    var hit=dbFindAuto(nominal,brand), br=brandRu(brand); var amp=String(nominal||'C16').replace(/[^0-9]/g,''); var curve=String(nominal||'C16').replace(/[^A-Za-zА-Яа-я]/g,'').toUpperCase().charAt(0)||'C';
-    if(hit && /\(([^)]+)\)/.test(hit.n||'')){ var model=(hit.n.match(/\(([^)]+)\)/)||[])[1]; return curve+amp+' 1P '+model.replace(/^IEK/i,'ИЭК'); }
-    if(String(brand||'').toUpperCase()==='ABB') return curve+amp+' 1P ABB SH201';
-    return curve+amp+' 1P '+br+' ВА47-29';
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: rcdName
- * ========================================================= */
-function rcdName(leak,brand,kind,rcdType){ var hit=dbFindRcd(leak,brand,kind); var br=brandRu(brand); if(hit && /\(([^)]+)\)/.test(hit.n||'')){ var model=(hit.n.match(/\(([^)]+)\)/)||[])[1].replace(/^IEK/i,'ИЭК'); return kind+' 2P 40A '+leak+'мА тип '+(rcdType||'A')+' '+model; } return kind+' 2P 40A '+leak+'мА тип '+(rcdType||'A')+' '+br+(br==='ИЭК'?' ВД1-63':''); }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: rcdPrice
- * ========================================================= */
-function rcdPrice(leak,brand,kind){ var hit=dbFindRcd(leak,brand,kind); if(hit) return money(hit.p); return leak===10?3600:1195; }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: cfgNum
- * ========================================================= */
-function cfgNum(k){ try{ return Number(window.cfg && cfg[k])||0; }catch(e){ return 0; } }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: directAddShield
- * ========================================================= */
-function directAddShield(items){
-    var map={},out=[];
-    (items||[]).forEach(function(src){ if(!src || !src.n) return; var it=clone(src); it.tag='shield'; var key=[it.tag,it.type||'',it.n||'',Number(it.p)||0,it.u||'шт'].join('|'); var rec=map[key]; if(!rec){ rec=Object.assign({},it,{q:0,epAssignments:[],epMergedDetails:[]}); map[key]=rec; out.push(rec); } rec.q += Number(it.q)||0; mergeAssignments(rec,it); });
-    try{ currentEstimate=(Array.isArray(currentEstimate)?currentEstimate:[]).filter(function(it){ return it.tag!=='shield' && it.tag!=='shield_info'; }).concat(out); window.currentEstimate=currentEstimate; }catch(e){ window.currentEstimate=out; }
-    try{ localStorage.setItem('est_v31',JSON.stringify(currentEstimate)); }catch(e){}
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: renderMainDirect
- * ========================================================= */
-function renderMainDirect(){
-    var tb=document.querySelector('#mainTable tbody'); if(!tb) return;
-    var arr=[]; try{ arr=Array.isArray(currentEstimate)?currentEstimate:(Array.isArray(window.currentEstimate)?window.currentEstimate:[]); }catch(e){ arr=Array.isArray(window.currentEstimate)?window.currentEstimate:[]; }
-    tb.innerHTML=''; var total=0;
-    arr.forEach(function(it,idx){ var q=Number(it.q)||0, sum=(typeof fPrice==='function'?fPrice(it):(Number(it.p)||0))*q; total+=sum; tb.insertAdjacentHTML('beforeend','<tr><td class="col-name editable-name" onclick="openSwapModal('+idx+')" title="Нажмите для замены">'+esc(it.n)+'</td><td class="col-qty"><input type="number" value="'+esc(q)+'" onchange="currentEstimate['+idx+'].q=Number(this.value); window.currentEstimate=currentEstimate; renderMainTable();" style="width:50px;padding:6px;margin:0;text-align:center;"></td><td class="col-sum">'+Math.round(sum)+' P</td><td style="text-align:right;"><button onclick="currentEstimate.splice('+idx+',1); window.currentEstimate=currentEstimate; renderMainTable();" class="btn-danger" style="padding:6px;border-radius:8px;width:auto;margin:0;">✕</button></td></tr>'); });
-    var tot=$('tot-all'); if(tot) tot.innerText=total.toLocaleString('ru-RU')+' P';
-    try{ if(typeof syncDraft==='function') syncDraft(); }catch(e){}
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: isShieldDevice
- * ========================================================= */
-function isShieldDevice(it){ var n=String((it&&it.n)||''); return it && it.type==='mat' && (/\b[ABCDАВСД]\s*\d{1,3}\b|автомат|узо|диф|реле|контактор|вводной/i.test(n) || /automatic|breaker|uzo|dif|relay|contactor/.test(String(it.kind||it.dbMeta&&it.dbMeta.kind||''))); }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: buildBulkPanel
- * ========================================================= */
-function buildBulkPanel(){
-    var arr=getArr('mat').concat(getArr('work'));
-    var cats=arr.map(function(x){return x.c||'Разное';}); var subs=arr.map(function(x){return groupOf(x)||'Без группы';});
-    return '<div id="ep-v18-bulk-box" style="margin:12px 0;padding:12px;border:2px dashed #16a34a;border-radius:16px;background:#f0fdf4;">'+
-      '<b style="color:#166534;display:block;margin-bottom:7px;">Массовое управление V18</b>'+ 
-      '<div style="font-size:12px;color:#64748b;font-weight:800;margin-bottom:8px;">Ставь галочки слева от позиций. Перемещение идёт в выбранную существующую категорию/подкатегорию активной базы.</div>'+ 
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;"><select id="ep-v18-move-cat">'+optionsHtml(cats,'Категория')+'</select><select id="ep-v18-move-sub">'+optionsHtml(subs,'Подкатегория')+'</select></div>'+ 
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><button class="btn-info" style="margin:0;padding:10px;" onclick="epV18SelectVisible(true)">✅ Выделить видимые</button><button class="btn-vendor" style="margin:0;padding:10px;" onclick="epV18SelectVisible(false)">⬜ Снять галочки</button><button class="btn-success" style="margin:0;padding:10px;" onclick="epV18MoveSelected()">📦 Переместить выбранные</button><button class="btn-danger" style="margin:0;padding:10px;" onclick="epV18DeleteSelected()">🗑 Удалить выбранные</button></div>'+ 
-    '</div>';
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: cfgN
- * ========================================================= */
-function cfgN(k){ try{ return Math.max(0, Number((window.cfg&&window.cfg[k])||0)); }catch(e){ return 0; } }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: buildLines
+ * SOCKET POOL FUNCTION: buildLines
  * ========================================================= */
 function buildLines(curve){
     var lines=[];
@@ -3210,81 +2007,15 @@ function buildLines(curve){
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: addShieldToEstimate
+ * SOCKET POOL FUNCTION: groupNominals
  * ========================================================= */
-function addShieldToEstimate(items){
-    // Use original addAuto if possible, because it also syncs totals and storage. Items are already aggregated by V19.
-    try{ if(typeof addAuto==='function'){ addAuto(items,'shield'); return; } }catch(e){}
-    try{ window.currentEstimate=(Array.isArray(window.currentEstimate)?window.currentEstimate:[]).filter(function(it){return it.tag!=='shield'&&it.tag!=='shield_info';}).concat(items); currentEstimate=window.currentEstimate; if(typeof renderMainTable==='function') renderMainTable(); }catch(e){}
-  }
+function groupNominals(lines){ var m={}; lines.forEach(function(l){ var k=l.nominal; if(!m[k]) m[k]={nominal:k,assign:[]}; m[k].assign.push(l.name); }); return Object.keys(m).sort(function(a,b){ var na=Number(a.replace(/\D/g,'')), nb=Number(b.replace(/\D/g,'')); return nb-na; }).map(function(k){return m[k];}); }
   
 
 
 /* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: patchButtons
+ * SOCKET POOL FUNCTION: presentGroups
  * ========================================================= */
-function patchButtons(){ try{ Array.prototype.forEach.call(document.querySelectorAll('button'),function(b){ var t=b.textContent||''; if(t.indexOf('Сгенерировать щит')>=0) b.onclick=window.epV19GenerateShield; if(t.indexOf('Детализация')>=0) b.onclick=window.epV19ShowDetails; }); }catch(e){} }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: count
- * ========================================================= */
-function count(k,def){
-    var e=$('v-'+k); var n=NaN;
-    if(e) n=Number(clean(e.textContent));
-    if(!isFinite(n)) { try{ n=Number(cfg && cfg[k]); }catch(_e){} }
-    if(!isFinite(n)) n=Number(def)||0;
-    return Math.max(0,n||0);
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: directAdd
- * ========================================================= */
-function directAdd(items){
-    var map={}, out=[];
-    (items||[]).forEach(function(src){ if(!src||!src.n) return; var it=Object.assign({},src,{tag:src.tag||'shield'}); var k=[it.tag,it.type,it.n,it.p,it.u].join('|'); var rec=map[k]; if(!rec){ rec=Object.assign({},it,{q:0,epAssignments:[],epMergedDetails:[]}); map[k]=rec; out.push(rec); } rec.q += Number(it.q)||1; addUniqueAssign(rec,[].concat(it.epAssignments||[],it.epMergedDetails||[],it.epAssignment||[])); });
-    try{ currentEstimate=(Array.isArray(currentEstimate)?currentEstimate:[]).filter(function(x){ return x && x.tag!=='shield' && x.tag!=='shield_info'; }).concat(out); window.currentEstimate=currentEstimate; }catch(e){ window.currentEstimate=(window.currentEstimate||[]).filter(function(x){ return x && x.tag!=='shield' && x.tag!=='shield_info'; }).concat(out); }
-    try{ if(typeof renderMainTable==='function') renderMainTable(); else if(typeof renderMainDirect==='function') renderMainDirect(); }catch(e){}
-    try{ if(typeof syncDraft==='function') syncDraft(); }catch(e){}
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: setStatus
- * ========================================================= */
-function setStatus(state,msg){
-    try{ if(typeof window.epV18SetStatus==='function'){ window.epV18SetStatus(state,msg); return; } }catch(e){}
-    var b=$('ep-v18-status-badge')||document.createElement('div');
-    b.id='ep-v18-status-badge';
-    b.style.cssText='position:fixed;left:10px;bottom:12px;z-index:2147483647;border-radius:999px;padding:8px 13px;color:#fff;font-size:12px;font-weight:1000;box-shadow:0 10px 30px rgba(0,0,0,.25);border:2px solid rgba(255,255,255,.55);letter-spacing:.2px;background:'+(state==='upload'?'#dc2626':state==='download'?'#2563eb':state==='error'?'#991b1b':'#16a34a')+';';
-    b.textContent=(state==='upload'?'🔴 ':state==='download'?'🔵 ':state==='error'?'⚠️ ':'✅ ')+(msg||'V21 активна');
-    if(!b.parentNode) document.body.appendChild(b);
-  }
-  
-
-
-/* =========================================================
- * SHIELD CONFIGURATOR FUNCTION: panelHtml
- * ========================================================= */
-function panelHtml(){
-    return '<div id="ep-v21-bulk-box" style="margin:12px 0;padding:12px;border:2px dashed #16a34a;border-radius:16px;background:#f0fdf4;">'+
-      '<b style="color:#166534;display:block;margin-bottom:7px;">Массовое управление V21</b>'+ 
-      '<div style="font-size:12px;color:#64748b;font-weight:800;margin-bottom:8px;">Галочки ставятся слева от позиций. Категория/подкатегория выбираются из существующих и больше не закрываются сами.</div>'+ 
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">'+
-        '<select id="ep-v21-move-cat" onchange="epV21UpdateSubs()"><option value="">Категория</option></select>'+ 
-        '<select id="ep-v21-move-sub"><option value="">Подкатегория</option></select>'+ 
-      '</div>'+ 
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'+
-        '<button class="btn-info" style="margin:0;padding:10px;" onclick="epV21SelectVisible(true)">✅ Выделить видимые</button>'+ 
-        '<button class="btn-vendor" style="margin:0;padding:10px;" onclick="epV21SelectVisible(false)">⬜ Снять галочки</button>'+ 
-        '<button class="btn-success" style="margin:0;padding:10px;" onclick="epV21MoveSelected()">📦 Переместить выбранные</button>'+ 
-        '<button class="btn-danger" style="margin:0;padding:10px;" onclick="epV21DeleteSelected()">🗑 Удалить выбранные</button>'+ 
-      '</div>'+ 
-    '</div>';
-  }
+function presentGroups(lines){ var seen={},out=[]; lines.forEach(function(l){ if(!seen[l.group]){ seen[l.group]=1; out.push(l.group); } }); return out; }
   
 
