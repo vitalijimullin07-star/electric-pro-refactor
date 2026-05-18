@@ -13,7 +13,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-auth-compat.js"></script>
 
-    <link rel="stylesheet" href="css/visual.css?v=v92-main-restored">
+    <link rel="stylesheet" href="css/visual.css?v=v93-home-restored-db-detached">
 <!-- CSS moved to public/css/visual.css -->
 
 <!-- CSS block moved to public/css/visual.css -->
@@ -59,8 +59,8 @@
         <div class="controls">
             <button onclick="openModal('configModal')" class="btn-shield btn-full">1. Конфигуратор щита</button>
             <button onclick="openModal('roughModal')" class="btn-rough btn-full">2. Пул розеток и ВІM</button>
-            <button onclick="location.href=\'database-v92.html?v=v92-main-restored\'" class="btn-mat">+ Материалы</button>
-            <button onclick="location.href=\'database-v92.html?v=v92-main-restored\'" class="btn-work">+ Работы</button>
+            <button onclick="openMatCatalog()" class="btn-mat">+ Материалы</button>
+            <button onclick="openWorkCatalog()" class="btn-work">+ Работы</button>
         </div>
         <div class="controls-3">
             <button onclick="showPreview('vendor')" class="btn-vendor">Поставщику</button>
@@ -287,7 +287,7 @@
 <div class="modal" id="settModal">
     <div class="modal-content glass" style="max-width: 600px;">
         <div class="close-x" onclick="closeModal('settModal')">×</div>
-        <h2 style="margin-top:0; color: var(--primary); font-size:18px;"> Новая база</h2>
+        <h2 style="margin-top:0; color: var(--primary); font-size:18px;"> База данных (Редактор)</h2>
 
         <div id="ep-db-scope-toolbar" style="border:2px solid var(--primary); border-radius:16px; padding:12px; margin:10px 0 15px; background:rgba(79,70,229,.06);">
             <div style="font-weight:900; color:var(--primary); margin-bottom:6px;">📚 Источник базы данных</div>
@@ -383,7 +383,7 @@
         <div class="close-x" onclick="closeModal('configModal')">×</div>
         <h2 style="color:var(--primary); margin: 0 0 10px 0; font-size:18px;"> Сборка щита (Авто)</h2>
         
-        <button class="btn-info" style="width:100%; margin-bottom:15px; padding:12px;" onclick="location.href=\'database-v92.html?v=v92-main-restored\'">🛠 Ручная сборка (Из базы данных)</button>
+        <button class="btn-info" style="width:100%; margin-bottom:15px; padding:12px;" onclick="closeModal('configModal'); openMatCatalog();">🛠 Ручная сборка (Из базы данных)</button>
         
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
             <div><label style="font-size: 10px; font-weight:bold; color:var(--gray);">Марка щита:</label><select id="cfg-brand-box"><option>Tekfor</option><option>ABB</option><option>Schneider</option><option>IEK</option><option>EKF</option><option>Legrand</option></select></div>
@@ -669,24 +669,21 @@
 <!-- Electric PRO Refactor modules END V23 BODY END -->
 
 <!-- Electric PRO Refactor modules START V40 SAFE TOPLEVEL -->
-<script src="js/01-visual.js?v=v92-main-restored"></script>
-<script src="js/02-shield-configurator.js?v=v92-main-restored"></script>
-<script src="js/03-socket-pool.js?v=v92-main-restored"></script>
-<script src="js/05-ai-functions.js?v=v92-main-restored"></script>
-<script src="js/06-single-line-scheme.js?v=v92-main-restored"></script>
-<script src="js/07-settings.js?v=v92-main-restored"></script>
-<script src="js/08-accounting.js?v=v92-main-restored"></script>
-<script src="js/09-accounting.js?v=v92-main-restored"></script>
-<script src="js/10-estimate-views.js?v=v92-main-restored"></script>
-<script src="js/11-pdf-files.js?v=v92-main-restored"></script>
-<script src="js/12-documents.js?v=v92-main-restored"></script>
-<script src="js/00-core.js?v=v92-main-restored"></script>
-<script src="js/app.js?v=v92-main-restored"></script>
+<script src="js/01-visual.js?v=v93-home-restored-db-detached"></script>
+<script src="js/02-shield-configurator.js?v=v93-home-restored-db-detached"></script>
+<script src="js/03-socket-pool.js?v=v93-home-restored-db-detached"></script>
+<script src="js/05-ai-functions.js?v=v93-home-restored-db-detached"></script>
+<script src="js/06-single-line-scheme.js?v=v93-home-restored-db-detached"></script>
+<script src="js/07-settings.js?v=v93-home-restored-db-detached"></script>
+<script src="js/08-accounting.js?v=v93-home-restored-db-detached"></script>
+<script src="js/09-accounting.js?v=v93-home-restored-db-detached"></script>
+<script src="js/10-estimate-views.js?v=v93-home-restored-db-detached"></script>
+<script src="js/11-pdf-files.js?v=v93-home-restored-db-detached"></script>
+<script src="js/12-documents.js?v=v93-home-restored-db-detached"></script>
+<script src="js/00-core.js?v=v93-home-restored-db-detached"></script>
+<script src="js/app.js?v=v93-home-restored-db-detached"></script>
 <!-- Electric PRO Refactor modules END V40 SAFE TOPLEVEL -->
-
-<script src="js/04-db-core-v92.js?v=v92-main-restored"></script>
-<script src="js/04-db-router-v92.js?v=v92-main-restored"></script>
-
+<script src="js/99-db-clean-core-v93.js?v=v93-home-restored-db-detached"></script>
 </body>
 </html>
 

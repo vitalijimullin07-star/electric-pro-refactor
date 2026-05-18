@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Electric PRO — Новая база</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Arial,sans-serif;background:#f3f4f6;color:#111827}
+    .top{position:sticky;top:0;background:#111827;color:#fff;padding:12px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+    .title{font-size:17px;font-weight:900}
+    .sub{font-size:11px;opacity:.72;margin-top:2px}
+    button{border:0;border-radius:14px;padding:12px;font-weight:900}
+    .back{background:#374151;color:#fff}
+    .wrap{padding:12px;max-width:760px;margin:0 auto}
+    .card{background:#fff;border-radius:20px;padding:14px;margin-bottom:12px;box-shadow:0 4px 18px rgba(0,0,0,.06)}
+    .pill{background:#ecfdf5;color:#065f46;border-radius:14px;padding:12px;font-weight:900;margin:8px 0}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .green{background:#059669;color:#fff}
+    .blue{background:#2563eb;color:#fff}
+    .red{background:#dc2626;color:#fff}
+    pre{background:#111827;color:#d1d5db;border-radius:16px;padding:12px;overflow:auto;font-size:12px;max-height:360px}
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div>
+      <div class="title">Новая база V93</div>
+      <div class="sub">старая база отключена · чистый старт</div>
+    </div>
+    <button class="back" id="backBtn">Назад</button>
+  </div>
+
+  <div class="wrap">
+    <div class="card">
+      <div class="pill">Главный экран восстановлен. Старая база отключена. Новую базу строим с нуля.</div>
+      <div class="grid">
+        <button class="green" id="myBtn">Моя база</button>
+        <button class="blue" id="serverBtn">База сервера</button>
+      </div>
+      <p>Следующий шаг — создать новую «Мою базу» как файловый менеджер.</p>
+    </div>
+
+    <div class="card">
+      <b>Состояние новой базы:</b>
+      <pre id="out"></pre>
+      <button class="red" id="resetBtn">Очистить новое ядро</button>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const KEY = "EP_DB_STATE_V93";
+
+  function emptyState(){
+    return {
+      version: "V93_CLEAN_DB_STATE",
+      activeScope: "my",
+      role: "master",
+      server: { materials: [], works: [] },
+      my: { materials: [], works: [] },
+      proposals: [],
+      updatedAt: Date.now()
+    };
+  }
+
+  function read(){
+    try { return JSON.parse(localStorage.getItem(KEY)) || emptyState(); }
+    catch(e){ return emptyState(); }
+  }
+
+  function save(s){
+    s.updatedAt = Date.now();
+    localStorage.setItem(KEY, JSON.stringify(s));
+  }
+
+  function render(){
+    document.getElementById("out").textContent = JSON.stringify(read(), null, 2);
+  }
+
+  document.getElementById("backBtn").onclick = () => {
+    location.href = "index.html?v=v93-home-restored-db-detached";
+  };
+
+  document.getElementById("myBtn").onclick = () => {
+    const s = read();
+    s.activeScope = "my";
+    save(s);
+    render();
+  };
+
+  document.getElementById("serverBtn").onclick = () => {
+    const s = read();
+    s.activeScope = "server";
+    save(s);
+    render();
+  };
+
+  document.getElementById("resetBtn").onclick = () => {
+    if (!confirm("Очистить новое ядро базы?")) return;
+    save(emptyState());
+    render();
+  };
+
+  if (!localStorage.getItem(KEY)) save(emptyState());
+  render();
+})();
+</script>
+</body>
+</html>
