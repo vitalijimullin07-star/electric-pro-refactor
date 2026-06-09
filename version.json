@@ -1,12 +1,11 @@
 {
-  "version": "V29.5 Main Visual Parity Core",
+  "version": "V29.6 Compact Layout Core",
   "stage": "clean-rebuild",
   "modules": [
     "clean-router",
     "clean-app-shell",
     "visual-settings",
-    "auth-core",
-    "main-visual-parity"
+    "compact-main-dashboard"
   ],
   "protected": [
     "database",

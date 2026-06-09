@@ -1,146 +1,202 @@
-/* V29.5 Main Visual Parity Core */
-.main-ai-strip {
-  display: grid;
-  grid-template-columns: 1fr auto;
+/* V29.6 Compact Layout Core */
+
+.main-dashboard {
+  padding: 10px 14px 20px;
+}
+
+.main-status-row {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  align-items: center;
-  margin: 2px 8px 18px;
+  margin: 6px 0 12px;
 }
 
-.main-ai-strip span {
+.main-status-pill {
   min-height: 28px;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 16px;
+  padding: 5px 12px;
   border-radius: 999px;
-  background: linear-gradient(135deg, rgba(187,247,208,.95), rgba(134,239,172,.84));
-  color: #064e3b;
-  font-weight: 950;
-  letter-spacing: .01em;
-  box-shadow: 0 8px 24px rgba(34,197,94,.14);
+  border: 1px solid rgba(180, 255, 210, 0.36);
+  background: rgba(139, 236, 183, 0.86);
+  color: #073b25;
+  font-weight: 900;
+  font-size: 13px;
+  line-height: 1;
+  box-shadow: 0 10px 26px rgba(30, 215, 107, 0.16);
 }
 
-.main-head {
-  margin: 0 2px 16px;
+.main-status-pill.grow {
+  flex: 1;
+  min-width: 0;
 }
 
-.main-head h1 {
-  margin: 0 0 6px;
-  font-size: clamp(30px, 8vw, 44px);
-  line-height: .98;
-  letter-spacing: -.05em;
-  color: var(--text);
+.main-title-block {
+  margin: 8px 2px 14px;
 }
 
-.main-head p {
+.main-title-block h1 {
   margin: 0;
-  max-width: 620px;
-  color: var(--muted);
-  font-size: clamp(18px, 4.7vw, 24px);
-  line-height: 1.15;
-  font-weight: 650;
+  font-size: clamp(26px, 8vw, 36px);
+  line-height: 1.02;
+  letter-spacing: -0.04em;
 }
 
-.main-dashboard-grid {
+.main-title-block p {
+  margin: 6px 0 0;
+  color: rgba(248, 250, 252, 0.66);
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.main-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin: 18px 0 24px;
+  gap: 10px;
 }
 
-.main-dashboard-grid .tile {
-  min-height: 184px;
-  padding: 18px 18px 16px;
-  text-align: left;
-  display: grid;
-  align-content: start;
-  border-radius: 24px;
-}
-
-.main-dashboard-grid .tile-icon {
-  font-size: 34px;
-  margin-bottom: 22px;
-  filter: drop-shadow(0 0 12px rgba(255,255,255,.16));
-}
-
-.main-dashboard-grid .tile h3 {
-  margin: 0 0 8px;
-  color: var(--text);
-  font-size: clamp(24px, 5.8vw, 32px);
-  line-height: 1.02;
-  letter-spacing: -.035em;
-  font-weight: 950;
-}
-
-.main-dashboard-grid .tile p {
-  margin: 0;
-  color: var(--muted);
-  font-size: clamp(16px, 4.2vw, 22px);
-  line-height: 1.14;
-  font-weight: 650;
-}
-
-.estimate-preview {
+.main-card {
   position: relative;
-  margin: 2px 0 32px;
-  padding: 24px 18px 20px;
-  border-radius: 28px;
+  min-height: 118px;
+  padding: 14px 14px 12px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.09), rgba(255,255,255,0.035)),
+    rgba(6, 18, 38, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.10),
+    0 12px 30px rgba(0,0,0,0.20);
+  color: #f8fafc;
+  text-align: left;
   overflow: hidden;
 }
 
-.estimate-preview h2 {
-  margin: 0 0 22px;
-  font-size: clamp(32px, 8vw, 44px);
-  line-height: 1;
-  letter-spacing: -.05em;
-  color: var(--text);
+.main-card:active {
+  transform: translateY(1px) scale(0.992);
 }
 
-.status-pill {
+.main-card-icon {
+  display: block;
+  font-size: 28px;
+  line-height: 1;
+  margin-bottom: 10px;
+  filter: drop-shadow(0 8px 14px rgba(0,0,0,0.25));
+}
+
+.main-card-title {
+  margin: 0;
+  font-size: 19px;
+  line-height: 1.05;
+  font-weight: 950;
+  letter-spacing: -0.03em;
+  color: #ffffff;
+}
+
+.main-card-note {
+  margin: 7px 0 0;
+  font-size: 13px;
+  line-height: 1.18;
+  color: rgba(248, 250, 252, 0.66);
+}
+
+.main-card-tag {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  min-width: 50px;
+  height: 28px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(180, 255, 210, 0.18);
+  background: rgba(65, 181, 116, 0.24);
+  color: rgba(197, 255, 221, 0.94);
+  font-size: 13px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.estimate-preview {
+  margin-top: 14px;
+  padding: 18px;
+  border-radius: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background:
+    radial-gradient(circle at 86% 12%, rgba(34, 197, 94, 0.18), transparent 26%),
+    linear-gradient(145deg, rgba(255,255,255,0.08), rgba(255,255,255,0.035)),
+    rgba(6, 18, 38, 0.62);
+  box-shadow: 0 16px 38px rgba(0,0,0,0.24);
+}
+
+.estimate-preview h2 {
+  margin: 0 0 12px;
+  font-size: clamp(28px, 8vw, 38px);
+  line-height: 1.02;
+  letter-spacing: -0.05em;
+  color: #fff;
+}
+
+.estimate-empty-pill {
   display: inline-flex;
   align-items: center;
-  min-height: 40px;
-  padding: 0 18px;
+  min-height: 34px;
+  padding: 8px 14px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 34%, transparent);
-  border: 1px solid rgba(255,255,255,.12);
-  color: var(--text);
-  font-weight: 900;
-  margin-bottom: 54px;
+  background: rgba(34, 197, 94, 0.24);
+  border: 1px solid rgba(98, 255, 170, 0.22);
+  color: rgba(207,255,225,0.96);
+  font-weight: 850;
 }
 
 .estimate-preview p {
-  margin: 0 0 28px;
-  color: var(--muted);
-  font-size: clamp(20px, 5vw, 28px);
-  line-height: 1.18;
-  font-weight: 650;
+  margin: 30px 0 18px;
+  color: rgba(248, 250, 252, 0.62);
+  font-size: 20px;
+  line-height: 1.28;
 }
 
 .estimate-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  gap: 12px;
 }
 
-.estimate-actions .btn {
-  min-height: 72px;
-  font-size: clamp(18px, 4.8vw, 24px);
+.estimate-action {
+  min-height: 54px;
+  border-radius: 22px;
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #fff;
   font-weight: 950;
-  border-radius: 24px;
+  font-size: 17px;
 }
 
-body[data-visual-mode="day"] .main-ai-strip span {
-  color: #065f46;
+.estimate-action.primary {
+  background: linear-gradient(135deg, #24d465, #18bd56);
+  box-shadow: 0 12px 30px rgba(34,197,94,0.30);
 }
 
-@media (max-width: 420px) {
-  .main-dashboard-grid {
-    gap: 10px;
+.estimate-action.secondary {
+  background: rgba(3, 13, 28, 0.62);
+}
+
+@media (max-width: 380px) {
+  .main-dashboard {
+    padding: 8px 10px 16px;
   }
 
-  .main-dashboard-grid .tile {
-    min-height: 178px;
-    padding: 16px;
+  .main-grid {
+    gap: 8px;
+  }
+
+  .main-card {
+    min-height: 108px;
+    padding: 12px;
+    border-radius: 20px;
+  }
+
+  .main-card-title {
+    font-size: 17px;
+  }
+
+  .main-card-note {
+    font-size: 12px;
   }
 }
