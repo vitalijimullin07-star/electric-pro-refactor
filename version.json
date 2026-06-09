@@ -1,11 +1,12 @@
 {
-  "version": "V29.8 Main Dimensions Core",
+  "version": "V29.9 Visual Control Core",
   "stage": "clean-rebuild",
   "modules": [
     "clean-router",
     "clean-app-shell",
-    "visual-settings",
-    "main-dimensions-core"
+    "auth-core",
+    "visual-control-core",
+    "main-dashboard-core"
   ],
   "protected": [
     "database",
