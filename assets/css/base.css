@@ -13,3 +13,7 @@ html, body {
 button, input, select, textarea {
   font: inherit;
 }
+
+button {
+  cursor: pointer;
+}

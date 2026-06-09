@@ -22,13 +22,15 @@ EP.Router = {
     }
 
     EP.state.currentRoute = route;
-    location.hash = "#/" + route;
+    if (location.hash !== "#/" + route) {
+      location.hash = "#/" + route;
+    }
 
     const target = document.querySelector("#page-content");
     if (!target) return;
 
     try {
-      const res = await fetch(EP.routes[route] + "?v=29", { cache: "no-store" });
+      const res = await fetch(EP.routes[route] + "?v=291", { cache: "no-store" });
       target.innerHTML = await res.text();
       window.dispatchEvent(new CustomEvent("ep:route-loaded", { detail: { route } }));
     } catch (err) {
@@ -53,8 +55,6 @@ EP.Router = {
       this.go("main", { replace: true });
       return;
     }
-
-    // На главной не выкидываем пользователя из сайта.
   },
 
   init() {

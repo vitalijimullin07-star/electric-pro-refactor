@@ -1,6 +1,11 @@
 {
-  "version": "V29.0 Clean Core",
+  "version": "V29.1 Visual Settings Core",
   "stage": "clean-rebuild",
+  "modules": [
+    "clean-router",
+    "clean-app-shell",
+    "visual-settings"
+  ],
   "protected": [
     "database",
     "shield",

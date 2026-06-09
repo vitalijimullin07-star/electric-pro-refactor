@@ -1,14 +1,15 @@
-# Electric Pro Refactor — V29 Clean Core
+# Electric Pro Refactor — V29.1 Visual Settings Core
 
-Чистая сборка Electric Pro.
+Чистая сборка Electric Pro в репозитории `electric-pro-refactor`.
 
 Цель:
-- без старых patch/fix/restore файлов;
+- без старых `patch/fix/restore` файлов;
 - один нормальный router;
 - одна оболочка app-shell;
 - один auth;
 - один обработчик кнопки Назад;
 - один бургер;
+- настройки визуала как чистый модуль;
 - защищённые модули Claude подключаются позже как отдельные блоки.
 
 Защищённые зоны, которые переносим аккуратно:

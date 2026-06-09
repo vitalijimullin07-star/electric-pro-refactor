@@ -9,7 +9,7 @@ EP.AppShell = {
           <button class="back-button" id="app-back" type="button">←</button>
           <button class="menu-button" id="app-menu" type="button">☰</button>
           <strong>Electric Pro</strong>
-          <span style="margin-left:auto;font-size:12px;opacity:.7">V29</span>
+          <span style="margin-left:auto;font-size:12px;opacity:.7">V29.1</span>
         </header>
 
         <div class="drawer-backdrop" id="drawer-backdrop"></div>
