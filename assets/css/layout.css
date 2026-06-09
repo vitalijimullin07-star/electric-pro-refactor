@@ -1,0 +1,71 @@
+.app {
+  min-height: 100vh;
+}
+
+.topbar {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  background: rgba(15, 23, 42, 0.95);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.menu-button,
+.back-button {
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+}
+
+.page {
+  padding: 16px;
+}
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  z-index: 30;
+  display: none;
+}
+
+.drawer-backdrop.open {
+  display: block;
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: min(320px, 86vw);
+  height: 100vh;
+  background: #111827;
+  z-index: 31;
+  transform: translateX(-105%);
+  transition: transform 260ms ease;
+  padding: 18px;
+}
+
+.drawer.open {
+  transform: translateX(0);
+}
+
+.nav-link {
+  display: block;
+  width: 100%;
+  margin: 8px 0;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 14px;
+  text-align: left;
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+}

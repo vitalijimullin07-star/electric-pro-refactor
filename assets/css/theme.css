@@ -1,0 +1,21 @@
+.card {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 20px;
+  padding: 16px;
+  margin: 12px 0;
+}
+
+.grid {
+  display: grid;
+  gap: 12px;
+}
+
+.tile {
+  border: 0;
+  border-radius: 18px;
+  padding: 18px;
+  background: rgba(34,197,94,0.16);
+  color: #fff;
+  text-align: left;
+}
