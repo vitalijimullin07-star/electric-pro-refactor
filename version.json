@@ -1,11 +1,18 @@
 {
-  "version": "V29.17 Secure Access Policy Core",
-  "stage": "secure-access",
+  "version": "V29.18 Existing Firebase Access Core",
+  "stage": "clean-rebuild",
+  "firebase": {
+    "mode": "existing-project-read-only",
+    "projectId": "electric-489f7",
+    "writesProtectedFields": false,
+    "deploysRulesOrFunctions": false
+  },
   "modules": [
-    "access-policy",
-    "admin-subscription",
-    "cloud-functions",
-    "firestore-rules"
+    "clean-router",
+    "clean-app-shell",
+    "visual-settings",
+    "device-feedback",
+    "existing-firebase-access"
   ],
   "protected": [
     "database",
