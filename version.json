@@ -1,5 +1,5 @@
 {
-  "version": "V29.11 Device Feedback Core",
+  "version": "V29.12 Device Feedback Core",
   "stage": "clean-rebuild",
   "modules": [
     "clean-router",
