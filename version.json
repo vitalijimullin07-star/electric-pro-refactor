@@ -1,8 +1,8 @@
 {
-  "version": "V29.19 Admin Visual Core",
+  "version": "V29.20 Admin Workspace Core",
   "stage": "clean-rebuild",
   "firebase": {
-    "mode": "existing-project-read-only",
+    "mode": "existing-project-read-only-with-admin-workspace",
     "projectId": "electric-489f7",
     "writesProtectedFields": false,
     "deploysRulesOrFunctions": false
@@ -13,7 +13,16 @@
     "visual-settings",
     "device-feedback",
     "existing-firebase-access",
-    "admin-visual-console"
+    "admin-workspace"
+  ],
+  "adminSections": [
+    "users-subscription-ai-balance",
+    "database",
+    "error-logs-only",
+    "accounting",
+    "documents",
+    "drafts",
+    "estimates"
   ],
   "protected": [
     "database",
