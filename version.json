@@ -1,34 +1,13 @@
 {
-  "version": "V29.20 Admin Workspace Core",
-  "stage": "clean-rebuild",
-  "firebase": {
-    "mode": "existing-project-read-only-with-admin-workspace",
-    "projectId": "electric-489f7",
-    "writesProtectedFields": false,
-    "deploysRulesOrFunctions": false
-  },
-  "modules": [
-    "clean-router",
-    "clean-app-shell",
-    "visual-settings",
-    "device-feedback",
-    "existing-firebase-access",
-    "admin-workspace"
-  ],
-  "adminSections": [
-    "users-subscription-ai-balance",
-    "database",
-    "error-logs-only",
-    "accounting",
-    "documents",
-    "drafts",
-    "estimates"
-  ],
-  "protected": [
-    "database",
-    "shield",
-    "materials",
-    "work",
-    "manual-scheme"
+  "version": "V29.21 Visual Settings Core",
+  "date": "2026-06-10",
+  "project": "electric-pro-refactor",
+  "firebaseMode": "existing-firebase-read-only",
+  "serverDeploy": false,
+  "changes": [
+    "Возвращает страницу и кнопку Настройки визуала",
+    "Гарантирует подключение visual-settings.css и visual-settings.js",
+    "Сохраняет библиотеку звуков и визуальные настройки V29",
+    "Не трогает Firestore Rules, Cloud Functions и основной electric-pro"
   ]
 }
