@@ -1,0 +1,5 @@
+{
+  "version": "V28.38-safe-perf-cleanup",
+  "updatedAt": "2026-06-09T20:00:00.000+02:00",
+  "note": "V28.38 Safe Perf Cleanup: no database/shield logic changes. Added production/debug boot flags, delegated data-route navigation for dynamically loaded pages, router ep:route-loaded events, disabled module version badges unless EP_DEBUG is true, and replaced always-on UI observers in diagnostics/ui-fixes with short event-driven watches. Main page inline Router.load handlers replaced by data-route so AccessGate can intercept consistently. Admin V15/V26.7 observers are now scoped to the admin route with short observation windows."
+}
