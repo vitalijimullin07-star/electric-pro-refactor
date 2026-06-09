@@ -1,13 +1,11 @@
 {
-  "version": "V29.15 Auth Navigation Admin Core",
-  "stage": "clean-rebuild",
+  "version": "V29.17 Secure Access Policy Core",
+  "stage": "secure-access",
   "modules": [
-    "clean-router",
-    "clean-app-shell",
-    "auth-core",
-    "visual-control",
-    "sound-library",
-    "admin-subscription"
+    "access-policy",
+    "admin-subscription",
+    "cloud-functions",
+    "firestore-rules"
   ],
   "protected": [
     "database",
