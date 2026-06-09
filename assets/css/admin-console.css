@@ -1,7 +1,8 @@
-/* V29.18 Firebase Console Admin Core
-   Чистый модуль страницы администрирования через Firebase Console. */
+/* V29.19 Admin Visual Core
+   Чистый визуал админки. Без записи в защищённые поля, без deploy rules/functions. */
 
-.admin-console-page {
+.admin-console-page,
+.admin-visual-page {
   display: grid;
   gap: 12px;
   padding: 4px 0 22px;
@@ -12,31 +13,163 @@
   gap: 10px;
 }
 
-.admin-console-card {
+.admin-console-grid.three,
+.admin-template-grid {
+  grid-template-columns: 1fr;
+}
+
+.admin-console-card,
+.admin-hero-card,
+.admin-stat-card {
   border: 1px solid rgba(255,255,255,0.12);
   border-radius: 20px;
-  padding: 16px;
+  color: #f8fafc;
   background:
     radial-gradient(circle at 92% 10%, rgba(56,189,248,0.10), transparent 28%),
     linear-gradient(145deg, rgba(255,255,255,0.075), rgba(255,255,255,0.025)),
     rgba(7, 20, 43, 0.58);
-  color: #f8fafc;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 14px 34px rgba(0,0,0,0.18);
+  backdrop-filter: blur(var(--ep-blur, 16px));
+  -webkit-backdrop-filter: blur(var(--ep-blur, 16px));
+}
+
+.admin-console-card {
+  padding: 15px;
+}
+
+.admin-panel-card {
+  min-height: 100%;
 }
 
 .admin-console-card h2,
-.admin-console-card h3 {
-  margin: 0 0 10px;
-  line-height: 1.12;
+.admin-console-card h3,
+.admin-hero-card h2 {
+  margin: 0 0 8px;
+  line-height: 1.08;
   font-weight: 950;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.04em;
 }
 
 .admin-console-card p,
-.admin-console-card li {
+.admin-console-card li,
+.admin-hero-card p {
+  margin: 0;
   color: rgba(248,250,252,0.72);
   font-weight: 650;
   line-height: 1.35;
+}
+
+.admin-hero-card {
+  display: grid;
+  gap: 13px;
+  padding: 17px;
+  background:
+    radial-gradient(circle at 15% 0%, rgba(34,197,94,0.18), transparent 32%),
+    radial-gradient(circle at 95% 5%, rgba(56,189,248,0.20), transparent 34%),
+    linear-gradient(145deg, rgba(255,255,255,0.10), rgba(255,255,255,0.035)),
+    rgba(7, 20, 43, 0.68);
+}
+
+.admin-eyebrow {
+  display: inline-flex;
+  width: fit-content;
+  margin-bottom: 8px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: #bbf7d0;
+  background: rgba(34,197,94,0.11);
+  border: 1px solid rgba(187,247,208,0.18);
+}
+
+.admin-hero-badges,
+.admin-console-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.admin-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  color: rgba(248,250,252,0.86);
+  background: rgba(255,255,255,0.075);
+  border: 1px solid rgba(255,255,255,0.10);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.admin-pill.good,
+.admin-stat-card.good small {
+  color: #bbf7d0;
+}
+
+.admin-pill.safe,
+.admin-stat-card.safe small {
+  color: #bae6fd;
+}
+
+.admin-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.admin-stat-card {
+  display: grid;
+  gap: 4px;
+  min-height: 82px;
+  padding: 12px;
+}
+
+.admin-stat-card span {
+  color: rgba(248,250,252,0.62);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.admin-stat-card b {
+  color: #fff;
+  font-size: 15px;
+  line-height: 1.1;
+  font-weight: 950;
+}
+
+.admin-stat-card small {
+  color: rgba(248,250,252,0.58);
+  font-size: 10px;
+  line-height: 1.15;
+  font-weight: 750;
+}
+
+.admin-stat-card.warn small {
+  color: #fed7aa;
+}
+
+.admin-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 11px;
+}
+
+.admin-icon-btn {
+  min-width: 38px;
+  height: 38px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 15px;
+  background: rgba(255,255,255,0.075);
+  color: #f8fafc;
+  font-weight: 950;
+  font-size: 17px;
 }
 
 .admin-console-kv {
@@ -47,9 +180,9 @@
 
 .admin-console-row {
   display: grid;
-  grid-template-columns: 118px 1fr;
+  grid-template-columns: 108px 1fr;
   gap: 8px;
-  padding: 9px 10px;
+  padding: 8px 9px;
   border-radius: 14px;
   background: rgba(255,255,255,0.055);
   border: 1px solid rgba(255,255,255,0.08);
@@ -59,34 +192,45 @@
   color: #f8fafc;
 }
 
+.admin-console-row span,
 .admin-console-row code,
 .admin-console-code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-console-row code,
+.admin-console-code,
+.admin-path-row code,
+.admin-template-card code,
+.admin-target-title code {
   color: #bbf7d0;
-  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-.admin-console-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.admin-console-btn {
+.admin-console-btn,
+.admin-mini-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 16px;
-  padding: 11px 14px;
+  border-radius: 15px;
+  padding: 10px 12px;
   color: #f8fafc;
   background: rgba(255,255,255,0.075);
   font-weight: 850;
+  text-decoration: none;
+  min-height: 39px;
 }
 
-.admin-console-btn.primary {
+.admin-console-btn.primary,
+.admin-mini-btn.primary {
   background: linear-gradient(135deg, rgba(34,197,94,0.95), rgba(16,185,129,0.82));
   color: #052e16;
   border-color: rgba(187,247,208,0.22);
 }
 
+.admin-note,
 .admin-console-note {
   border-left: 4px solid rgba(56,189,248,0.85);
   padding: 10px 12px;
@@ -94,8 +238,224 @@
   background: rgba(56,189,248,0.09);
 }
 
+.admin-path-list {
+  display: grid;
+  gap: 9px;
+}
+
+.admin-path-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.055);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.admin-path-row div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.admin-path-row b {
+  font-weight: 950;
+}
+
+.admin-path-row span {
+  color: rgba(248,250,252,0.62);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.admin-mini-btn {
+  min-height: 34px;
+  padding: 8px 10px;
+  border-radius: 13px;
+  font-size: 11px;
+}
+
+.admin-uid-checker {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.admin-input {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border-radius: 15px;
+  border: 1px solid rgba(255,255,255,0.13);
+  background: rgba(2,6,23,0.38);
+  color: #f8fafc;
+  outline: none;
+  font-weight: 800;
+}
+
+.admin-input::placeholder {
+  color: rgba(248,250,252,0.42);
+}
+
+.admin-target-result {
+  margin-top: 10px;
+}
+
+.admin-empty-state,
+.admin-target-card {
+  border-radius: 16px;
+  padding: 12px;
+  background: rgba(255,255,255,0.055);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.admin-empty-state {
+  display: grid;
+  gap: 5px;
+  color: rgba(248,250,252,0.76);
+}
+
+.admin-empty-state span {
+  color: rgba(248,250,252,0.58);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.admin-target-title {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.admin-target-docs {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-target-doc {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border-radius: 15px;
+  background: rgba(2,6,23,0.30);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.admin-target-doc > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.admin-target-doc span {
+  color: rgba(248,250,252,0.58);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.admin-target-doc.exists span {
+  color: #bbf7d0;
+}
+
+.admin-target-doc.missing span {
+  color: #fed7aa;
+}
+
+.admin-template-card {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-template-card pre,
+.admin-target-doc pre {
+  max-height: 210px;
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+  border-radius: 14px;
+  background: rgba(2,6,23,0.38);
+  color: rgba(248,250,252,0.82);
+  border: 1px solid rgba(255,255,255,0.08);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.admin-timeline {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.admin-timeline div {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border-radius: 15px;
+  background: rgba(255,255,255,0.055);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.admin-timeline span {
+  color: rgba(248,250,252,0.66);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+@media (min-width: 680px) {
+  .admin-uid-checker {
+    grid-template-columns: 1fr auto;
+  }
+}
+
 @media (min-width: 840px) {
-  .admin-console-grid.two {
+  .admin-hero-card {
+    grid-template-columns: 1fr auto;
+    align-items: start;
+  }
+
+  .admin-console-grid.two,
+  .admin-main-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-console-grid.three,
+  .admin-template-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .admin-stat-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 430px) {
+  .admin-console-card,
+  .admin-hero-card {
+    border-radius: 18px;
+    padding: 12px;
+  }
+
+  .admin-stat-card {
+    min-height: 74px;
+    padding: 10px;
+  }
+
+  .admin-stat-card b {
+    font-size: 13px;
+  }
+
+  .admin-console-row {
+    grid-template-columns: 86px 1fr;
+    font-size: 12px;
+  }
+
+  .admin-path-row {
+    grid-template-columns: 1fr;
   }
 }

@@ -1,5 +1,5 @@
 {
-  "version": "V29.18 Existing Firebase Access Core",
+  "version": "V29.19 Admin Visual Core",
   "stage": "clean-rebuild",
   "firebase": {
     "mode": "existing-project-read-only",
@@ -12,7 +12,8 @@
     "clean-app-shell",
     "visual-settings",
     "device-feedback",
-    "existing-firebase-access"
+    "existing-firebase-access",
+    "admin-visual-console"
   ],
   "protected": [
     "database",
