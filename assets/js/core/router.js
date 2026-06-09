@@ -18,15 +18,27 @@ EP.routes = {
 EP.Router = {
   publicRoutes: new Set(["login"]),
 
-  async go(route, options = {}) {
-    route = EP.routes[route] ? route : "main";
+  normalize(route) {
+    return EP.routes[route] ? route : "main";
+  },
 
-    if (
-      EP.Auth?.isReady?.() &&
-      !EP.Auth?.isAuthenticated?.() &&
-      !this.publicRoutes.has(route)
-    ) {
+  canOpen(route) {
+    if (this.publicRoutes.has(route)) return true;
+    if (!EP.Auth?.isReady?.()) return true;
+    return EP.Auth?.isAuthenticated?.() === true;
+  },
+
+  async go(route, options = {}) {
+    route = this.normalize(route);
+
+    if (!this.canOpen(route)) {
       route = "login";
+      options.replace = true;
+    }
+
+    if (route === "admin" && EP.Auth?.isReady?.() && !EP.Auth?.isAdmin?.()) {
+      route = "main";
+      options.replace = true;
     }
 
     if (!options.replace && EP.state.currentRoute && EP.state.currentRoute !== route) {
@@ -37,16 +49,18 @@ EP.Router = {
 
     const nextHash = "#/" + route;
     if (location.hash !== nextHash) {
-      history.pushState({ route }, "", nextHash);
+      if (options.replace) history.replaceState({ route }, "", nextHash);
+      else history.pushState({ route }, "", nextHash);
     }
 
     const target = document.querySelector("#pageContent");
     if (!target) return;
 
+    EP.AppShell?.closeDrawer?.();
     window.dispatchEvent(new CustomEvent("ep:route-loading", { detail: { route } }));
 
     try {
-      const res = await fetch(EP.routes[route] + "?v=293", { cache: "no-store" });
+      const res = await fetch(EP.routes[route] + "?v=2915", { cache: "no-store" });
       target.innerHTML = await res.text();
       window.dispatchEvent(new CustomEvent("ep:route-loaded", { detail: { route } }));
     } catch (err) {
@@ -57,7 +71,7 @@ EP.Router = {
   },
 
   back() {
-    if (EP.AppShell?.isDrawerOpen()) {
+    if (EP.AppShell?.isDrawerOpen?.()) {
       EP.AppShell.closeDrawer();
       return;
     }
@@ -68,9 +82,8 @@ EP.Router = {
       return;
     }
 
-    if (EP.state.currentRoute !== "main") {
+    if (EP.state.currentRoute !== "main" && EP.state.currentRoute !== "login") {
       this.go("main", { replace: true });
-      return;
     }
   },
 
@@ -86,7 +99,6 @@ EP.Router = {
       event.preventDefault();
       event.stopPropagation();
       EP.Router.go(btn.dataset.route);
-      EP.AppShell?.closeDrawer();
     });
 
     const route = (location.hash || "#/main").replace("#/", "") || "main";

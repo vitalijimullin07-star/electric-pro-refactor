@@ -22,6 +22,7 @@ EP.Auth = {
         EP.state.user = null;
         EP.state.profile = null;
         this.updateShell(null, null);
+        window.dispatchEvent(new CustomEvent("ep:auth-changed", { detail: { user: null, profile: null } }));
         if (EP.state.currentRoute !== "login") EP.Router.go("login", { replace: true });
         return;
       }
@@ -40,6 +41,12 @@ EP.Auth = {
 
   isReady() {
     return Boolean(EP.state.authReady);
+  },
+
+  isAdmin() {
+    const user = EP.state.user;
+    const profile = EP.state.profile;
+    return this.isAdminEmail(user) || profile?.role === "admin" || profile?.isAdmin === true || user?.role === "admin";
   },
 
   currentUser() {
@@ -73,6 +80,7 @@ EP.Auth = {
       EP.state.user = null;
       EP.state.profile = null;
       this.updateShell(null, null);
+      window.dispatchEvent(new CustomEvent("ep:auth-changed", { detail: { user: null, profile: null } }));
       EP.Router.go("login", { replace: true });
     }
   },
@@ -128,12 +136,13 @@ EP.Auth = {
       EP.state.user = {
         uid: firebaseUser.uid,
         email: firebaseUser.email || "",
-        displayName: profile.name || firebaseUser.displayName || firebaseUser.email || "Мастер",
+        displayName: profile.name || profile.displayName || firebaseUser.displayName || firebaseUser.email || "Мастер",
         role: profile.role || (adminByEmail ? "admin" : "master")
       };
       EP.state.profile = profile;
 
       this.updateShell(EP.state.user, profile);
+      window.dispatchEvent(new CustomEvent("ep:auth-changed", { detail: { user: EP.state.user, profile } }));
       this.setLoginStatus("Вход выполнен", "ok");
 
       if (EP.state.currentRoute === "login") {
@@ -148,10 +157,12 @@ EP.Auth = {
   makeAdminProfile(user) {
     return {
       uid: user.uid,
-      name: user.displayName || "Администратор",
+      name: user.displayName || "Виталий Имуллин",
+      displayName: user.displayName || "Виталий Имуллин",
       email: user.email || this.adminEmail,
       role: "admin",
       isAdmin: true,
+      approved: true,
       isApproved: true,
       status: "approved",
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -163,9 +174,11 @@ EP.Auth = {
     return {
       uid: user.uid,
       name: user.displayName || "Мастер",
+      displayName: user.displayName || "Мастер",
       email: user.email || "",
       role: "master",
       isAdmin: false,
+      approved: false,
       isApproved: false,
       status: "pending",
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -176,6 +189,7 @@ EP.Auth = {
   canEnter(profile, user) {
     if (this.isAdminEmail(user)) return true;
     if (profile?.isAdmin === true) return true;
+    if (profile?.approved === true) return true;
     if (profile?.isApproved === true) return true;
     return profile?.status === "approved";
   },
@@ -202,20 +216,26 @@ EP.Auth = {
   },
 
   updateShell(user, profile) {
-    const name = user?.displayName || user?.email || "Мастер";
+    const name = user?.displayName || user?.email || (EP.state.currentRoute === "login" ? "Вход" : "Мастер");
     const role = profile?.role || user?.role || "guest";
-    const isAdmin = role === "admin" || profile?.isAdmin === true;
+    const isAdmin = this.isAdminEmail(user) || role === "admin" || profile?.isAdmin === true;
 
     document.querySelector("#masterName") && (document.querySelector("#masterName").textContent = name);
     document.querySelector("#sideMasterName") && (document.querySelector("#sideMasterName").textContent = name);
     document.querySelector("#sideMasterRole") && (document.querySelector("#sideMasterRole").textContent = role);
-    document.querySelector("#adminMenuBtn")?.classList.toggle("hidden", !isAdmin);
-    document.querySelector("#logoutBtn")?.classList.toggle("hidden", !user);
+
+    const adminBtn = document.querySelector("#adminMenuBtn");
+    if (adminBtn) adminBtn.style.display = isAdmin ? "" : "none";
+
+    const logoutBtn = document.querySelector("#logoutBtn");
+    if (logoutBtn) logoutBtn.style.display = user ? "" : "none";
 
     const dot = document.querySelector("#firebaseStatusDot");
     if (dot) {
       dot.classList.remove("status-ok", "status-wait", "status-error");
       dot.classList.add(EP.Firebase?.ready ? "status-ok" : "status-error");
     }
+
+    EP.AppShell?.syncAccess?.();
   }
 };
