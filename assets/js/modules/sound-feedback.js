@@ -21,7 +21,7 @@
     }
   }
 
-  function readVisualSettings() {
+  function readStoredSettings() {
     let merged = {};
     STORAGE_KEYS.forEach((key) => {
       const value = parseStorage(key);
@@ -30,50 +30,67 @@
     return merged;
   }
 
-  function boolFromSettings(settings, names, defaultValue) {
-    for (const name of names) {
-      if (Object.prototype.hasOwnProperty.call(settings, name)) {
-        const value = settings[name];
-        if (value === true || value === "true" || value === "on" || value === "enabled" || value === 1 || value === "1") return true;
-        if (value === false || value === "false" || value === "off" || value === "disabled" || value === 0 || value === "0") return false;
-      }
-    }
-    return defaultValue;
+  function asBool(value, fallback) {
+    if (value === true || value === "true" || value === "on" || value === "enabled" || value === 1 || value === "1") return true;
+    if (value === false || value === "false" || value === "off" || value === "disabled" || value === 0 || value === "0") return false;
+    return fallback;
   }
 
-  function numberFromSettings(settings, names, defaultValue) {
-    for (const name of names) {
-      if (Object.prototype.hasOwnProperty.call(settings, name)) {
-        const value = Number(settings[name]);
-        if (Number.isFinite(value)) return value;
-      }
-    }
-    return defaultValue;
+  function clampNumber(value, min, max, fallback) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(min, Math.min(max, n));
   }
 
-  function textFromSettings(settings, names, defaultValue) {
+  function firstText(source, names, fallback) {
     for (const name of names) {
-      if (Object.prototype.hasOwnProperty.call(settings, name) && settings[name] !== undefined && settings[name] !== null) {
-        return String(settings[name]);
-      }
+      if (source[name] !== undefined && source[name] !== null && source[name] !== "") return String(source[name]);
     }
-    return defaultValue;
+    return fallback;
   }
 
   const SoundFeedback = {
     context: null,
     unlocked: false,
+    override: {},
     lastPlayAt: 0,
-    settingsOverride: null,
 
-    readSettings() {
-      const stored = Object.assign({}, readVisualSettings(), this.settingsOverride || {});
+    effects: {
+      glass: { type: "sine", notes: [720, 1080], times: [0, 0.032], duration: 0.105, gain: 0.30 },
+      soft: { type: "sine", notes: [520], times: [0], duration: 0.075, gain: 0.24 },
+      short: { type: "square", notes: [680], times: [0], duration: 0.038, gain: 0.18 },
+      tick: { type: "triangle", notes: [920], times: [0], duration: 0.026, gain: 0.14 },
+      switch: { type: "square", notes: [360, 540], times: [0, 0.035], duration: 0.11, gain: 0.22 },
+      relay: { type: "square", notes: [260, 420, 260], times: [0, 0.034, 0.074], duration: 0.13, gain: 0.20 },
+      breaker: { type: "sawtooth", notes: [180, 90], times: [0, 0.045], duration: 0.13, gain: 0.18 },
+      "electric-soft": { type: "triangle", notes: [440, 740, 620], times: [0, 0.036, 0.072], duration: 0.14, gain: 0.24 },
+      "electric-sharp": { type: "sawtooth", notes: [900, 1320, 760], times: [0, 0.025, 0.052], duration: 0.10, gain: 0.16 },
+      spark: { type: "square", notes: [1500, 900, 1300], times: [0, 0.018, 0.04], duration: 0.085, gain: 0.13 },
+      chime: { type: "sine", notes: [660, 990, 1320], times: [0, 0.06, 0.12], duration: 0.26, gain: 0.21 },
+      double: { type: "sine", notes: [560, 560], times: [0, 0.09], duration: 0.18, gain: 0.22 },
+      deep: { type: "triangle", notes: [220, 330], times: [0, 0.05], duration: 0.16, gain: 0.28 },
+      "sci-fi": { type: "sine", notes: [480, 960, 1440, 720], times: [0, 0.035, 0.07, 0.115], duration: 0.21, gain: 0.20 },
+      silent: { type: "sine", notes: [], times: [], duration: 0, gain: 0 }
+    },
+
+    haptics: {
+      light: 14,
+      medium: 32,
+      strong: 70,
+      double: [25, 45, 25],
+      pulse: [18, 25, 18, 25, 35]
+    },
+
+    getSettings() {
+      const stored = Object.assign({}, readStoredSettings(), this.override || {});
+      const style = firstText(stored, ["soundStyle", "style", "clickSound", "uiSoundStyle"], "glass");
+      const pattern = firstText(stored, ["hapticPattern", "vibrationPattern", "vibroPattern"], "medium");
       return {
-        soundEnabled: boolFromSettings(stored, ["soundEnabled", "soundsEnabled", "sound", "uiSound", "soundOn"], true),
-        hapticEnabled: boolFromSettings(stored, ["hapticEnabled", "vibrationEnabled", "vibrateEnabled", "haptic", "vibration", "vibro", "vibroEnabled"], true),
-        soundVolume: Math.max(0, Math.min(1, numberFromSettings(stored, ["soundVolume", "volume", "uiSoundVolume"], 0.38))),
-        soundStyle: textFromSettings(stored, ["soundStyle", "clickSound", "uiSoundStyle"], "soft"),
-        hapticMs: Math.max(1, Math.min(120, numberFromSettings(stored, ["hapticMs", "vibrationMs", "vibrateMs"], 18)))
+        soundEnabled: asBool(stored.soundEnabled ?? stored.soundsEnabled ?? stored.sound ?? stored.uiSound ?? stored.soundOn, true),
+        hapticEnabled: asBool(stored.hapticEnabled ?? stored.vibrationEnabled ?? stored.vibrateEnabled ?? stored.haptic ?? stored.vibration ?? stored.vibro ?? stored.vibroEnabled, true),
+        soundVolume: clampNumber(stored.soundVolume ?? stored.volume ?? stored.uiSoundVolume, 0, 1, 0.38),
+        soundStyle: this.effects[style] ? style : "glass",
+        hapticPattern: this.haptics[pattern] ? pattern : "medium"
       };
     },
 
@@ -84,121 +101,98 @@
       return this.context;
     },
 
-    unlock() {
+    async unlock() {
       const ctx = this.ensureContext();
-      if (!ctx) return Promise.resolve(false);
-      const done = () => {
-        this.unlocked = ctx.state === "running" || ctx.state === "suspended";
+      if (!ctx) return false;
+      try {
+        if (ctx.state === "suspended" && typeof ctx.resume === "function") await ctx.resume();
+        this.unlocked = true;
         return true;
-      };
-      if (ctx.state === "suspended" && typeof ctx.resume === "function") {
-        return ctx.resume().then(done).catch(() => false);
+      } catch (error) {
+        return false;
       }
-      return Promise.resolve(done());
     },
 
-    tone(kind) {
-      const settings = this.readSettings();
-      if (!settings.soundEnabled) return;
-
-      const now = performance.now();
-      if (now - this.lastPlayAt < 55 && kind !== "test") return;
-      this.lastPlayAt = now;
-
+    playTone(frequency, offset, duration, type, volume) {
       const ctx = this.ensureContext();
-      if (!ctx) return;
-
-      if (ctx.state === "suspended" && typeof ctx.resume === "function") {
-        ctx.resume().catch(() => null);
-      }
-
+      if (!ctx || !frequency || !duration) return;
       const oscillator = ctx.createOscillator();
       const gain = ctx.createGain();
+      const start = ctx.currentTime + offset;
+      const safeVolume = Math.max(0.0001, volume);
 
-      const style = settings.soundStyle;
-      const base = kind === "success" ? 760 : kind === "nav" ? 540 : kind === "test" ? 660 : 430;
-      const frequency = style === "bright" ? base + 220 : style === "deep" ? base - 130 : base;
-      const duration = kind === "test" ? 0.18 : 0.055;
-      const volume = settings.soundVolume;
-      const start = ctx.currentTime;
-
-      oscillator.type = style === "deep" ? "triangle" : "sine";
+      oscillator.type = type || "sine";
       oscillator.frequency.setValueAtTime(frequency, start);
-      if (kind === "test") oscillator.frequency.exponentialRampToValueAtTime(Math.max(80, frequency * 1.28), start + duration);
-
       gain.gain.setValueAtTime(0.0001, start);
-      gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, volume), start + 0.012);
+      gain.gain.exponentialRampToValueAtTime(safeVolume, start + 0.009);
       gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
 
       oscillator.connect(gain);
       gain.connect(ctx.destination);
       oscillator.start(start);
-      oscillator.stop(start + duration + 0.02);
+      oscillator.stop(start + duration + 0.03);
     },
 
-    vibrate(pattern) {
-      const settings = this.readSettings();
-      if (!settings.hapticEnabled) return false;
-      if (!navigator.vibrate) return false;
+    play(style, force) {
+      const settings = this.getSettings();
+      const soundStyle = style && this.effects[style] ? style : settings.soundStyle;
+      if (!force && !settings.soundEnabled) return;
+      if (soundStyle === "silent") return;
+
+      const now = performance.now();
+      if (!force && now - this.lastPlayAt < 50) return;
+      this.lastPlayAt = now;
+
+      const effect = this.effects[soundStyle] || this.effects.glass;
+      const noteDuration = Math.max(0.018, effect.duration / Math.max(1, effect.notes.length + 0.6));
+      const volume = Math.max(0.0001, settings.soundVolume * effect.gain);
+
+      this.unlock();
+      effect.notes.forEach((frequency, index) => {
+        this.playTone(frequency, effect.times[index] || 0, noteDuration, effect.type, volume);
+      });
+    },
+
+    vibrate(pattern, force) {
+      const settings = this.getSettings();
+      if (!force && !settings.hapticEnabled) return false;
+      if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function") return false;
+      const key = pattern && this.haptics[pattern] ? pattern : settings.hapticPattern;
+      const value = this.haptics[key] || this.haptics.medium;
       try {
-        const value = pattern || settings.hapticMs || 18;
-        return navigator.vibrate(value);
+        return Boolean(navigator.vibrate(value));
       } catch (error) {
         return false;
       }
     },
 
     click() {
-      this.unlock();
-      this.tone("click");
-      this.vibrate();
+      this.play(null, false);
+      this.vibrate(null, false);
     },
 
     nav() {
-      this.unlock();
-      this.tone("nav");
-      this.vibrate(24);
+      this.play("switch", false);
+      this.vibrate("medium", false);
     },
 
     success() {
-      this.unlock();
-      this.tone("success");
-      this.vibrate([14, 20, 14]);
+      this.play("chime", false);
+      this.vibrate("double", false);
     },
 
-    test() {
+    test(style, pattern) {
       this.unlock().then(() => {
-        this.tone("test");
-        this.vibrate([25, 35, 25]);
+        this.play(style, true);
+        this.vibrate(pattern, true);
       });
     },
 
     setSettings(next) {
-      this.settingsOverride = Object.assign({}, this.settingsOverride || {}, next || {});
-      return this.readSettings();
-    },
-
-    shouldHandleTarget(target) {
-      if (!target || !target.closest) return false;
-      return Boolean(target.closest([
-        "button",
-        "[role='button']",
-        "[data-route]",
-        "[data-visual-group]",
-        ".tile",
-        ".nav-link",
-        ".ep-choice",
-        ".menu-button",
-        ".back-button"
-      ].join(",")));
-    },
-
-    isTestTarget(target) {
-      const node = target && target.closest ? target.closest("button,[role='button'],[data-sound-test],[data-feedback-test]") : null;
-      if (!node) return false;
-      if (node.hasAttribute("data-sound-test") || node.hasAttribute("data-feedback-test")) return true;
-      const text = (node.textContent || "").toLowerCase();
-      return text.includes("проверить звук") || text.includes("тест звук") || text.includes("звук") && text.includes("провер");
+      this.override = Object.assign({}, this.override || {}, next || {});
+      if (next && next.style && !next.soundStyle) this.override.soundStyle = next.style;
+      if (next && next.volume !== undefined && next.soundVolume === undefined) this.override.soundVolume = next.volume;
+      return this.getSettings();
     },
 
     bind() {
@@ -212,43 +206,32 @@
       window.addEventListener("touchstart", unlockOnce, true);
 
       document.addEventListener("pointerdown", (event) => {
-        if (!this.shouldHandleTarget(event.target)) return;
-        if (this.isTestTarget(event.target)) {
-          this.test();
-          return;
-        }
+        const target = event.target && event.target.closest ? event.target.closest("button,[role='button'],[data-route],.tile,.nav-link,.ep-clickable") : null;
+        if (!target) return;
+        if (target.id === "testSoundBtn" || target.hasAttribute("data-sound-test")) return;
         this.click();
       }, true);
 
-      document.addEventListener("click", (event) => {
-        if (this.isTestTarget(event.target)) {
-          event.preventDefault();
-          this.test();
-        }
-      }, true);
-
       window.addEventListener("ep:route-loaded", () => {
-        this.success();
-      });
-
-      window.addEventListener("storage", () => {
-        this.readSettings();
+        // Route sound is intentionally quiet to avoid noise while pages render.
       });
     },
 
     init() {
-      this.bind();
       window.SoundAPI = {
         unlock: () => this.unlock(),
         setSettings: (next) => this.setSettings(next),
         click: () => this.click(),
         nav: () => this.nav(),
         success: () => this.success(),
-        test: () => this.test(),
-        vibrate: (pattern) => this.vibrate(pattern),
-        getSettings: () => this.readSettings()
+        test: (style, pattern) => this.test(style, pattern),
+        vibrate: (pattern, force) => this.vibrate(pattern, force),
+        getSettings: () => this.getSettings(),
+        getEffects: () => Object.keys(this.effects),
+        canVibrate: () => typeof navigator !== "undefined" && typeof navigator.vibrate === "function"
       };
       window.EP.SoundFeedback = this;
+      this.bind();
     }
   };
 

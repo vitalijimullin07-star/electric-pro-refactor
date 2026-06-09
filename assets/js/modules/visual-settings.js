@@ -42,8 +42,9 @@
     electricPulse: false,
     soundEnabled: false,
     hapticEnabled: true,
+    hapticPattern: "medium",
     soundVolume: 0.28,
-    soundStyle: "soft",
+    soundStyle: "glass",
     advancedOpen: true
   };
 
@@ -146,7 +147,10 @@
       soundEnabled: settings.soundEnabled,
       hapticEnabled: settings.hapticEnabled,
       volume: settings.soundVolume,
-      style: settings.soundStyle
+      soundVolume: settings.soundVolume,
+      style: settings.soundStyle,
+      soundStyle: settings.soundStyle,
+      hapticPattern: settings.hapticPattern
     });
   }
 
@@ -376,7 +380,24 @@
                 ${selectControl("backgroundStyleInput", "backgroundStyle", "Стиль фона", [["glass", "Стекло"], ["gradient", "Градиент"], ["blueprint", "Чертёж"], ["dark", "Тёмный"], ["light", "Светлый"], ["solid", "Сплошной"], ["minimal", "Минимальный"], ["neon", "Неон"]])}
                 ${selectControl("animationStyleInput", "animationStyle", "Анимация", [["soft", "Мягкая"], ["fast", "Быстрая"], ["spring", "Пружина"], ["premium", "Премиум"], ["minimal", "Минимальная"], ["off", "Без анимации"]])}
                 ${rangeControl("animationSpeedInput", "animationSpeed", "Скорость анимации", 0.4, 1.6, 0.05)}
-                ${selectControl("soundStyleInput", "soundStyle", "Звук", [["soft", "Мягкий"], ["short", "Короткий"], ["electric-soft", "Электро мягкий"], ["silent", "Тихий"]])}
+                ${selectControl("soundStyleInput", "soundStyle", "Звуковой эффект", [
+                  ["glass", "Стекло"],
+                  ["soft", "Мягкий"],
+                  ["short", "Короткий"],
+                  ["tick", "Тик"],
+                  ["switch", "Выключатель"],
+                  ["relay", "Реле"],
+                  ["breaker", "Автомат"],
+                  ["electric-soft", "Электро мягкий"],
+                  ["electric-sharp", "Электро резкий"],
+                  ["spark", "Искра"],
+                  ["chime", "Звонок"],
+                  ["double", "Двойной"],
+                  ["deep", "Глубокий"],
+                  ["sci-fi", "Техно"],
+                  ["silent", "Без звука"]
+                ])}
+                ${selectControl("hapticPatternInput", "hapticPattern", "Вибро-рисунок", [["light", "Лёгкий"], ["medium", "Средний"], ["strong", "Сильный"], ["double", "Двойной"], ["pulse", "Импульс"]])}
                 ${rangeControl("soundVolumeInput", "soundVolume", "Громкость", 0, 1, 0.01)}
               </div>
             </div>
@@ -392,7 +413,7 @@
             </div>
 
             <div class="modal-actions">
-              <button id="testSoundBtn" class="btn btn-ghost ep-clickable" type="button">Проверить звук</button>
+              <button id="testSoundBtn" class="btn btn-ghost ep-clickable" type="button">Проверить звук и вибро</button>
               <button id="resetVisualBtn" class="btn btn-ghost ep-clickable" type="button">Сбросить текущую тему</button>
               <button id="baseVisualBtn" class="btn btn-danger ep-clickable" type="button">Вернуть базовый визуал</button>
             </div>
@@ -455,8 +476,8 @@
       await window.SoundAPI?.unlock?.();
       const wasEnabled = settings.soundEnabled;
       settings.soundEnabled = true;
-      window.SoundAPI?.setSettings?.({ soundEnabled: true, hapticEnabled: settings.hapticEnabled, volume: settings.soundVolume, style: settings.soundStyle });
-      window.SoundAPI?.test?.();
+      window.SoundAPI?.setSettings?.({ soundEnabled: true, hapticEnabled: settings.hapticEnabled, volume: settings.soundVolume, soundVolume: settings.soundVolume, style: settings.soundStyle, soundStyle: settings.soundStyle, hapticPattern: settings.hapticPattern });
+      window.SoundAPI?.test?.(settings.soundStyle, settings.hapticPattern);
       setTimeout(() => {
         settings.soundEnabled = wasEnabled;
         apply();

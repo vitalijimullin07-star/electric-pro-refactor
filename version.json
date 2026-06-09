@@ -1,11 +1,11 @@
 {
-  "version": "V29.12 Device Feedback Core",
+  "version": "V29.13 Sound Library Core",
   "stage": "clean-rebuild",
   "modules": [
     "clean-router",
     "clean-app-shell",
     "visual-settings",
-    "device-feedback"
+    "sound-library"
   ],
   "protected": [
     "database",
