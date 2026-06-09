@@ -1,12 +1,12 @@
 {
-  "version": "V29.4 Visual Contrast Core",
+  "version": "V29.5 Main Visual Parity Core",
   "stage": "clean-rebuild",
   "modules": [
     "clean-router",
     "clean-app-shell",
     "visual-settings",
     "auth-core",
-    "visual-contrast"
+    "main-visual-parity"
   ],
   "protected": [
     "database",

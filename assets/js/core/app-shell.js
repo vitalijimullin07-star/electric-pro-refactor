@@ -13,8 +13,8 @@ EP.AppShell = {
             <span></span><span></span><span></span>
           </button>
           <div class="topbar-title">
-            <strong>Electric Pro</strong>
-            <span id="masterName">V29.3 Clean</span>
+            <strong>Электрик</strong>
+            <span id="masterName">Мастер</span>
           </div>
           <button class="status-btn ep-clickable" id="firebaseStatusBtn" type="button" aria-label="Статус Firebase">
             <span class="status-dot status-wait" id="firebaseStatusDot"></span>
@@ -26,16 +26,18 @@ EP.AppShell = {
           <div class="side-head">
             <div class="avatar">⚡</div>
             <div>
-              <strong id="sideMasterName">Electric Pro</strong>
+              <strong id="sideMasterName">Электрик</strong>
               <span id="sideMasterRole">guest</span>
             </div>
           </div>
           <nav class="side-nav">
             <button class="ep-clickable" type="button" data-route="main">🏠 Главная</button>
+            <button class="ep-clickable" type="button" data-route="shield">🛡️ Конфигуратор щита</button>
+            <button class="ep-clickable" type="button" data-route="pool">🔌 Пул розеток/штроб</button>
             <button class="ep-clickable" type="button" data-route="database">🗂️ База данных</button>
             <button class="ep-clickable" type="button" data-route="materials">📦 Материалы</button>
             <button class="ep-clickable" type="button" data-route="work">🧰 Работа</button>
-            <button class="ep-clickable" type="button" data-route="shield">🛡️ Конфигуратор щита</button>
+            <button class="ep-clickable" type="button" data-route="estimate">📋 Смета</button>
             <button class="ep-clickable" type="button" data-route="scheme">📐 Однолинейная схема</button>
             <button class="ep-clickable hidden" type="button" data-route="admin" id="adminMenuBtn">👑 Админка</button>
             <button class="ep-clickable" type="button" data-route="settings">🎨 Настройки визуала</button>
