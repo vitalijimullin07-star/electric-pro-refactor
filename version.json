@@ -1,12 +1,11 @@
 {
-  "version": "V29.9 Visual Control Core",
+  "version": "V29.10 Sound Feedback Core",
   "stage": "clean-rebuild",
   "modules": [
     "clean-router",
     "clean-app-shell",
-    "auth-core",
-    "visual-control-core",
-    "main-dashboard-core"
+    "visual-settings",
+    "sound-feedback"
   ],
   "protected": [
     "database",
