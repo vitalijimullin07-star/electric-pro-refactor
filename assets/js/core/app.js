@@ -1,6 +1,6 @@
 document.addEventListener("DOMContentLoaded", () => {
   EP.AppShell.render();
+  EP.VisualSettings?.init?.();
   EP.Auth.init();
-  EP.VisualSettings?.init();
   EP.Router.init();
 });

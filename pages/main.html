@@ -1,11 +1,26 @@
-<h1>Главная</h1>
+<section class="page">
+  <div class="page-head">
+    <h1>Главный экран</h1>
+    <p>Быстрый рабочий пульт мастера. Визуал повторяет основной Electric Pro.</p>
+  </div>
 
-<div class="grid">
-  <button class="tile" data-route="database">База данных</button>
-  <button class="tile" data-route="materials">Материалы</button>
-  <button class="tile" data-route="work">Работа</button>
-  <button class="tile" data-route="shield">Конфигуратор щита</button>
-  <button class="tile" data-route="scheme">Ручная однолинейная схема</button>
-  <button class="tile" data-route="admin">Админка</button>
-  <button class="tile" data-route="settings">Настройки визуала</button>
-</div>
+  <div class="grid grid-3">
+    <div class="card tile module-shield ep-clickable" data-route="shield"><div class="tile-icon">🛡️</div><h3>Конфигуратор щита</h3><p>Защищённый блок Claude. Подключим позже.</p></div>
+    <div class="card tile module-pool ep-clickable" data-route="pool"><div class="tile-icon">🔌</div><h3>Пул розеток/штроб</h3><p>Будущий перенос как отдельный модуль.</p></div>
+    <div class="card tile module-picker ep-clickable" data-route="materials"><div class="tile-icon">🗂️</div><h3>Материалы</h3><p>Защищённый блок Claude.</p></div>
+    <div class="card tile module-picker ep-clickable" data-route="work"><div class="tile-icon">🧰</div><h3>Работа</h3><p>Защищённый блок Claude.</p></div>
+    <div class="card tile module-estimate ep-clickable" data-route="estimate"><div class="tile-icon">📋</div><h3>Смета</h3><p>Суммирование, экспорт, черновики.</p></div>
+    <div class="card tile module-documents ep-clickable" data-route="settings"><div class="tile-icon">🎨</div><h3>Настройки визуала</h3><p>Тема, фон, кнопки и анимации.</p></div>
+  </div>
+
+  <div class="card" style="margin-top:14px;">
+    <h3>Предварительная смета</h3>
+    <p class="badge">Пока пусто</p>
+    <p style="color:var(--muted);">После подключения модулей здесь будет живой список позиций.</p>
+    <div class="grid grid-3">
+      <button class="btn btn-primary ep-clickable" type="button">Пересчёт трасс</button>
+      <button class="btn btn-ghost ep-clickable" type="button">Очистить</button>
+      <button class="btn btn-primary ep-clickable" type="button">Сохранить в черновик</button>
+    </div>
+  </div>
+</section>

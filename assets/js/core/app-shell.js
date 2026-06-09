@@ -4,47 +4,77 @@ EP.AppShell = {
   render() {
     const app = document.querySelector("#app");
     app.innerHTML = `
-      <div class="app">
-        <header class="topbar">
-          <button class="back-button" id="app-back" type="button">←</button>
-          <button class="menu-button" id="app-menu" type="button">☰</button>
-          <strong>Electric Pro</strong>
-          <span style="margin-left:auto;font-size:12px;opacity:.7">V29.1</span>
+      <div class="app-bg"></div>
+      <div class="live-lines"></div>
+
+      <div class="app-shell">
+        <header class="topbar glass">
+          <button class="icon-btn burger-btn ep-clickable" id="burgerBtn" type="button" aria-label="Открыть меню">
+            <span></span><span></span><span></span>
+          </button>
+          <div class="topbar-title">
+            <strong>Electric Pro</strong>
+            <span>V29.2 Clean</span>
+          </div>
+          <button class="status-btn ep-clickable" id="firebaseStatusBtn" type="button" aria-label="Статус">
+            <span class="status-dot status-ok"></span>
+          </button>
         </header>
 
-        <div class="drawer-backdrop" id="drawer-backdrop"></div>
-        <aside class="drawer" id="drawer">
-          <h2>Меню</h2>
-          <button class="nav-link" data-route="main">Главная</button>
-          <button class="nav-link" data-route="database">База данных</button>
-          <button class="nav-link" data-route="materials">Материалы</button>
-          <button class="nav-link" data-route="work">Работа</button>
-          <button class="nav-link" data-route="shield">Щит</button>
-          <button class="nav-link" data-route="scheme">Однолинейка</button>
-          <button class="nav-link" data-route="admin">Админка</button>
-          <button class="nav-link" data-route="settings">Настройки</button>
-          <button class="nav-link" data-route="subscription">Подписка</button>
+        <div class="menu-overlay" id="menuOverlay"></div>
+        <aside class="side-menu glass" id="sideMenu">
+          <div class="side-head">
+            <div class="avatar">⚡</div>
+            <div>
+              <strong>Electric Pro</strong>
+              <span>Чистая сборка V29</span>
+            </div>
+          </div>
+          <nav class="side-nav">
+            <button class="ep-clickable" type="button" data-route="main">🏠 Главная</button>
+            <button class="ep-clickable" type="button" data-route="database">🗂️ База данных</button>
+            <button class="ep-clickable" type="button" data-route="materials">📦 Материалы</button>
+            <button class="ep-clickable" type="button" data-route="work">🧰 Работа</button>
+            <button class="ep-clickable" type="button" data-route="shield">🛡️ Конфигуратор щита</button>
+            <button class="ep-clickable" type="button" data-route="scheme">📐 Однолинейная схема</button>
+            <button class="ep-clickable" type="button" data-route="admin">👑 Админка</button>
+            <button class="ep-clickable" type="button" data-route="settings">🎨 Настройки визуала</button>
+            <button class="ep-clickable" type="button" data-route="subscription">💳 Подписка</button>
+          </nav>
+          <button class="btn btn-ghost btn-wide ep-clickable" id="hardReloadBtn" type="button">Обновить без кэша</button>
         </aside>
 
-        <main class="page" id="page-content"></main>
+        <main class="page-container" id="pageContent"></main>
       </div>
     `;
 
-    document.querySelector("#app-menu").addEventListener("click", () => this.openDrawer());
-    document.querySelector("#app-back").addEventListener("click", () => EP.Router.back());
-    document.querySelector("#drawer-backdrop").addEventListener("click", () => this.closeDrawer());
+    document.querySelector("#burgerBtn")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.openDrawer();
+    });
+
+    document.querySelector("#menuOverlay")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      this.closeDrawer();
+    });
+
+    document.querySelector("#firebaseStatusBtn")?.addEventListener("click", () => EP.Router.go("admin"));
+    document.querySelector("#hardReloadBtn")?.addEventListener("click", () => {
+      location.href = location.pathname + "?fresh=" + Date.now() + location.hash;
+    });
   },
 
   openDrawer() {
     EP.state.drawerOpen = true;
-    document.querySelector("#drawer")?.classList.add("open");
-    document.querySelector("#drawer-backdrop")?.classList.add("open");
+    document.querySelector("#sideMenu")?.classList.add("open");
+    document.querySelector("#menuOverlay")?.classList.add("open");
   },
 
   closeDrawer() {
     EP.state.drawerOpen = false;
-    document.querySelector("#drawer")?.classList.remove("open");
-    document.querySelector("#drawer-backdrop")?.classList.remove("open");
+    document.querySelector("#sideMenu")?.classList.remove("open");
+    document.querySelector("#menuOverlay")?.classList.remove("open");
   },
 
   isDrawerOpen() {

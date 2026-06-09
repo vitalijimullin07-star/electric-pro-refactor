@@ -5,5 +5,5 @@ EP.state = {
   history: [],
   drawerOpen: false,
   user: null,
-  version: "V29.1 Visual Settings Core"
+  version: "V29.2 Visual Match"
 };

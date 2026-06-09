@@ -1,13 +1,23 @@
 window.EP = window.EP || {};
 
 EP.VisualSettings = {
-  key: "ep.visual.v29",
+  key: "ep.visual.v29.match",
 
   defaults: {
-    theme: "dark",
+    mode: "night",
     palette: "green",
-    radius: "soft",
-    motion: "normal"
+    background: "live",
+    buttons: "round",
+    animation: "premium",
+    density: "normal"
+  },
+
+  palettes: {
+    green: "Зелёный",
+    blue: "Синий",
+    purple: "Фиолетовый",
+    orange: "Оранжевый",
+    red: "Красный"
   },
 
   read() {
@@ -27,85 +37,89 @@ EP.VisualSettings = {
 
   apply(value) {
     const settings = value || this.read();
-    const root = document.documentElement;
+    const body = document.body;
+    if (!body) return;
 
-    root.dataset.epTheme = settings.theme;
-    root.dataset.epPalette = settings.palette;
-    root.dataset.epRadius = settings.radius;
-    root.dataset.epMotion = settings.motion;
+    body.dataset.visualMode = settings.mode === "day" ? "day" : "night";
+    body.dataset.palette = settings.palette;
+    body.dataset.bgStyle = settings.background;
+    body.dataset.buttonShape = settings.buttons;
+    body.dataset.animation = settings.animation;
+    body.dataset.density = settings.density;
   },
 
   init() {
     this.apply();
-
     window.addEventListener("ep:route-loaded", (event) => {
-      if (event.detail && event.detail.route === "settings") {
-        this.render();
-      }
+      if (event.detail?.route === "settings") this.render();
     });
   },
 
-  optionButton(group, value, label, current) {
+  button(group, value, label, current) {
     const active = current === value ? "active" : "";
-    return `<button class="ep-choice ${active}" type="button" data-visual-group="${group}" data-visual-value="${value}">${label}</button>`;
+    return `<button class="visual-choice ${active} ep-clickable" type="button" data-visual-group="${group}" data-visual-value="${value}">${label}</button>`;
   },
 
   render() {
-    const root = document.querySelector("#visual-settings-root");
+    const root = document.querySelector("#visualSettingsRoot");
     if (!root) return;
-
     const current = this.read();
 
     root.innerHTML = `
-      <div class="ep-settings-grid">
+      <div class="visual-settings-panel">
         <div class="card">
-          <h2>Настройки визуала</h2>
-          <p class="ep-setting-note">Чистый модуль V29.1. Настройки сохраняются в localStorage и применяются ко всей оболочке.</p>
+          <h3>Визуал как в основном Electric Pro</h3>
+          <p style="color:var(--muted);margin:6px 0 0">V29.2 повторяет старый стеклянный стиль: фон, карточки, бургер, кнопки, скругления и анимации.</p>
         </div>
 
         <div class="card">
-          <div class="ep-setting-row">
-            <div class="ep-setting-title">Тема</div>
-            <div class="ep-choice-row">
-              ${this.optionButton("theme", "dark", "Тёмная", current.theme)}
-              ${this.optionButton("theme", "light", "Светлая", current.theme)}
+          <div class="visual-group">
+            <h3>Режим</h3>
+            <div class="visual-choice-row">
+              ${this.button("mode", "night", "Тёмный", current.mode)}
+              ${this.button("mode", "day", "Светлый", current.mode)}
             </div>
           </div>
-
-          <div class="ep-setting-row">
-            <div class="ep-setting-title">Акцент</div>
-            <div class="ep-choice-row">
-              ${this.optionButton("palette", "green", "Зелёный", current.palette)}
-              ${this.optionButton("palette", "blue", "Синий", current.palette)}
-              ${this.optionButton("palette", "purple", "Фиолетовый", current.palette)}
-              ${this.optionButton("palette", "orange", "Оранжевый", current.palette)}
-              ${this.optionButton("palette", "red", "Красный", current.palette)}
+          <div class="visual-group">
+            <h3>Акцент</h3>
+            <div class="visual-choice-row">
+              ${Object.entries(this.palettes).map(([value,label]) => this.button("palette", value, label, current.palette)).join("")}
             </div>
           </div>
-
-          <div class="ep-setting-row">
-            <div class="ep-setting-title">Скругления</div>
-            <div class="ep-choice-row">
-              ${this.optionButton("radius", "compact", "Компактно", current.radius)}
-              ${this.optionButton("radius", "soft", "Мягко", current.radius)}
-              ${this.optionButton("radius", "round", "Круглее", current.radius)}
+          <div class="visual-group">
+            <h3>Фон</h3>
+            <div class="visual-choice-row">
+              ${this.button("background", "live", "Живой", current.background)}
+              ${this.button("background", "minimal", "Минимальный", current.background)}
+              ${this.button("background", "neon", "Неон", current.background)}
             </div>
           </div>
-
-          <div class="ep-setting-row">
-            <div class="ep-setting-title">Анимации</div>
-            <div class="ep-choice-row">
-              ${this.optionButton("motion", "normal", "Обычные", current.motion)}
-              ${this.optionButton("motion", "fast", "Быстрые", current.motion)}
-              ${this.optionButton("motion", "off", "Выключить", current.motion)}
+          <div class="visual-group">
+            <h3>Кнопки</h3>
+            <div class="visual-choice-row">
+              ${this.button("buttons", "round", "Скруглённые", current.buttons)}
+              ${this.button("buttons", "pill", "Капсулы", current.buttons)}
+              ${this.button("buttons", "square", "Строже", current.buttons)}
+              ${this.button("buttons", "minimal", "Минимал", current.buttons)}
+            </div>
+          </div>
+          <div class="visual-group">
+            <h3>Анимация</h3>
+            <div class="visual-choice-row">
+              ${this.button("animation", "premium", "Премиум", current.animation)}
+              ${this.button("animation", "soft", "Мягкая", current.animation)}
+              ${this.button("animation", "fast", "Быстрая", current.animation)}
+              ${this.button("animation", "minimal", "Минимум", current.animation)}
+              ${this.button("animation", "off", "Выкл", current.animation)}
             </div>
           </div>
         </div>
 
-        <div class="ep-preview-card">
+        <div class="card visual-preview">
           <h3>Предпросмотр</h3>
-          <p>Так будут выглядеть карточки, кнопки и основная оболочка.</p>
-          <button class="tile" type="button">Пример кнопки</button>
+          <div class="visual-preview-line"></div>
+          <div class="visual-preview-line short"></div>
+          <button class="btn btn-primary ep-clickable" type="button">Кнопка как в старом проекте</button>
         </div>
       </div>
     `;

@@ -10,7 +10,9 @@ EP.routes = {
   materials: "pages/materials.html",
   work: "pages/work.html",
   shield: "pages/shield.html",
-  scheme: "pages/scheme.html"
+  scheme: "pages/scheme.html",
+  pool: "pages/pool.html",
+  estimate: "pages/estimate.html"
 };
 
 EP.Router = {
@@ -22,20 +24,34 @@ EP.Router = {
     }
 
     EP.state.currentRoute = route;
-    if (location.hash !== "#/" + route) {
-      location.hash = "#/" + route;
+    const hash = "#/" + route;
+    if (location.hash !== hash) {
+      history.pushState({ route }, "", hash);
     }
 
-    const target = document.querySelector("#page-content");
+    document.querySelectorAll("#sideMenu [data-route]").forEach((button) => {
+      button.classList.toggle("active", button.dataset.route === route);
+    });
+
+    const target = document.querySelector("#pageContent");
     if (!target) return;
 
     try {
-      const res = await fetch(EP.routes[route] + "?v=291", { cache: "no-store" });
-      target.innerHTML = await res.text();
+      const response = await fetch(EP.routes[route] + "?v=292", { cache: "no-store" });
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      target.innerHTML = await response.text();
       window.dispatchEvent(new CustomEvent("ep:route-loaded", { detail: { route } }));
-    } catch (err) {
-      target.innerHTML = `<div class="card"><h2>Ошибка загрузки</h2><p>${route}</p></div>`;
-      console.error(err);
+    } catch (error) {
+      target.innerHTML = `
+        <section class="page">
+          <div class="card">
+            <h2>Ошибка загрузки</h2>
+            <p>Маршрут: ${route}</p>
+            <p style="color:var(--muted)">${error.message}</p>
+          </div>
+        </section>
+      `;
+      console.error(error);
     }
   },
 
@@ -45,15 +61,14 @@ EP.Router = {
       return;
     }
 
-    const prev = EP.state.history.pop();
-    if (prev) {
-      this.go(prev, { replace: true });
+    const previous = EP.state.history.pop();
+    if (previous) {
+      this.go(previous, { replace: true });
       return;
     }
 
     if (EP.state.currentRoute !== "main") {
       this.go("main", { replace: true });
-      return;
     }
   },
 
@@ -64,11 +79,13 @@ EP.Router = {
     });
 
     document.addEventListener("click", (event) => {
-      const btn = event.target.closest("[data-route]");
-      if (!btn) return;
+      const routeButton = event.target.closest?.("[data-route]");
+      if (!routeButton) return;
+      const route = routeButton.dataset.route;
+      if (!route) return;
       event.preventDefault();
-      EP.Router.go(btn.dataset.route);
-      EP.AppShell?.closeDrawer();
+      EP.Router.go(route);
+      if (routeButton.closest("#sideMenu")) EP.AppShell?.closeDrawer();
     });
 
     const route = (location.hash || "#/main").replace("#/", "") || "main";
