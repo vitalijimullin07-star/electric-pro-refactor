@@ -1,11 +1,11 @@
 {
-  "version": "V29.6 Compact Layout Core",
+  "version": "V29.7 Main Scale Core",
   "stage": "clean-rebuild",
   "modules": [
     "clean-router",
     "clean-app-shell",
     "visual-settings",
-    "compact-main-dashboard"
+    "main-scale-core"
   ],
   "protected": [
     "database",
