@@ -1,12 +1,11 @@
 {
-  "version": "V29.2 Visual Match",
+  "version": "V29.3 Auth Core",
   "stage": "clean-rebuild",
-  "visual_source": "electric-pro-main old glass UI",
   "modules": [
     "clean-router",
     "clean-app-shell",
     "visual-settings",
-    "old-visual-match"
+    "firebase-auth"
   ],
   "protected": [
     "database",

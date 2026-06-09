@@ -209,7 +209,6 @@ body[data-animation="off"] .app-bg {
   text-shadow: 0 1px 8px rgba(0,0,0,.75);
 }
 
-/* === Toggle Fix V5.1: настоящие кликабельные тумблеры === */
 
 .switch-row {
   grid-template-columns: 1fr 64px !important;
@@ -265,7 +264,6 @@ body[data-animation="off"] .app-bg {
 }
 
 
-/* === Final Fix V5.2: стабильные тумблеры и клики === */
 
 .switch-row {
   position: relative !important;

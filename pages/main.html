@@ -1,26 +1,16 @@
-<section class="page">
-  <div class="page-head">
-    <h1>Главный экран</h1>
-    <p>Быстрый рабочий пульт мастера. Визуал повторяет основной Electric Pro.</p>
+<section class="hero-card glass">
+  <div>
+    <span class="badge">V29.3 Clean Core</span>
+    <h1>Electric Pro</h1>
+    <p>Чистая оболочка, визуал и вход через Firebase/Auth. Защищённые блоки Claude подключаем следующими этапами.</p>
   </div>
+</section>
 
-  <div class="grid grid-3">
-    <div class="card tile module-shield ep-clickable" data-route="shield"><div class="tile-icon">🛡️</div><h3>Конфигуратор щита</h3><p>Защищённый блок Claude. Подключим позже.</p></div>
-    <div class="card tile module-pool ep-clickable" data-route="pool"><div class="tile-icon">🔌</div><h3>Пул розеток/штроб</h3><p>Будущий перенос как отдельный модуль.</p></div>
-    <div class="card tile module-picker ep-clickable" data-route="materials"><div class="tile-icon">🗂️</div><h3>Материалы</h3><p>Защищённый блок Claude.</p></div>
-    <div class="card tile module-picker ep-clickable" data-route="work"><div class="tile-icon">🧰</div><h3>Работа</h3><p>Защищённый блок Claude.</p></div>
-    <div class="card tile module-estimate ep-clickable" data-route="estimate"><div class="tile-icon">📋</div><h3>Смета</h3><p>Суммирование, экспорт, черновики.</p></div>
-    <div class="card tile module-documents ep-clickable" data-route="settings"><div class="tile-icon">🎨</div><h3>Настройки визуала</h3><p>Тема, фон, кнопки и анимации.</p></div>
-  </div>
-
-  <div class="card" style="margin-top:14px;">
-    <h3>Предварительная смета</h3>
-    <p class="badge">Пока пусто</p>
-    <p style="color:var(--muted);">После подключения модулей здесь будет живой список позиций.</p>
-    <div class="grid grid-3">
-      <button class="btn btn-primary ep-clickable" type="button">Пересчёт трасс</button>
-      <button class="btn btn-ghost ep-clickable" type="button">Очистить</button>
-      <button class="btn btn-primary ep-clickable" type="button">Сохранить в черновик</button>
-    </div>
-  </div>
+<section class="quick-grid">
+  <button class="tile glass ep-clickable" type="button" data-route="database"><div class="tile-icon">🗂️</div><h3>База данных</h3><p>Защищённый блок Claude</p></button>
+  <button class="tile glass ep-clickable" type="button" data-route="materials"><div class="tile-icon">📦</div><h3>Материалы</h3><p>Защищённый блок Claude</p></button>
+  <button class="tile glass ep-clickable" type="button" data-route="work"><div class="tile-icon">🧰</div><h3>Работа</h3><p>Защищённый блок Claude</p></button>
+  <button class="tile glass ep-clickable" type="button" data-route="shield"><div class="tile-icon">🛡️</div><h3>Щит</h3><p>Защищённый блок Claude</p></button>
+  <button class="tile glass ep-clickable" type="button" data-route="scheme"><div class="tile-icon">📐</div><h3>Однолинейка</h3><p>Защищённый блок Claude</p></button>
+  <button class="tile glass ep-clickable" type="button" data-route="settings"><div class="tile-icon">🎨</div><h3>Визуал</h3><p>Настройки оболочки</p></button>
 </section>

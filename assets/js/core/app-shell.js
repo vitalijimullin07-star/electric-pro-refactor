@@ -14,10 +14,10 @@ EP.AppShell = {
           </button>
           <div class="topbar-title">
             <strong>Electric Pro</strong>
-            <span>V29.2 Clean</span>
+            <span id="masterName">V29.3 Clean</span>
           </div>
-          <button class="status-btn ep-clickable" id="firebaseStatusBtn" type="button" aria-label="Статус">
-            <span class="status-dot status-ok"></span>
+          <button class="status-btn ep-clickable" id="firebaseStatusBtn" type="button" aria-label="Статус Firebase">
+            <span class="status-dot status-wait" id="firebaseStatusDot"></span>
           </button>
         </header>
 
@@ -26,8 +26,8 @@ EP.AppShell = {
           <div class="side-head">
             <div class="avatar">⚡</div>
             <div>
-              <strong>Electric Pro</strong>
-              <span>Чистая сборка V29</span>
+              <strong id="sideMasterName">Electric Pro</strong>
+              <span id="sideMasterRole">guest</span>
             </div>
           </div>
           <nav class="side-nav">
@@ -37,10 +37,11 @@ EP.AppShell = {
             <button class="ep-clickable" type="button" data-route="work">🧰 Работа</button>
             <button class="ep-clickable" type="button" data-route="shield">🛡️ Конфигуратор щита</button>
             <button class="ep-clickable" type="button" data-route="scheme">📐 Однолинейная схема</button>
-            <button class="ep-clickable" type="button" data-route="admin">👑 Админка</button>
+            <button class="ep-clickable hidden" type="button" data-route="admin" id="adminMenuBtn">👑 Админка</button>
             <button class="ep-clickable" type="button" data-route="settings">🎨 Настройки визуала</button>
             <button class="ep-clickable" type="button" data-route="subscription">💳 Подписка</button>
           </nav>
+          <button class="btn btn-ghost btn-wide ep-clickable" id="logoutBtn" type="button">Выйти</button>
           <button class="btn btn-ghost btn-wide ep-clickable" id="hardReloadBtn" type="button">Обновить без кэша</button>
         </aside>
 
@@ -60,9 +61,12 @@ EP.AppShell = {
     });
 
     document.querySelector("#firebaseStatusBtn")?.addEventListener("click", () => EP.Router.go("admin"));
+    document.querySelector("#logoutBtn")?.addEventListener("click", () => EP.Auth?.signOut?.());
     document.querySelector("#hardReloadBtn")?.addEventListener("click", () => {
       location.href = location.pathname + "?fresh=" + Date.now() + location.hash;
     });
+
+    this.closeDrawer();
   },
 
   openDrawer() {

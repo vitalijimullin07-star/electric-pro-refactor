@@ -5,5 +5,7 @@ EP.state = {
   history: [],
   drawerOpen: false,
   user: null,
-  version: "V29.2 Visual Match"
+  profile: null,
+  authReady: false,
+  version: "V29.3 Auth Core"
 };

@@ -16,42 +16,43 @@ EP.routes = {
 };
 
 EP.Router = {
+  publicRoutes: new Set(["login"]),
+
   async go(route, options = {}) {
     route = EP.routes[route] ? route : "main";
+
+    if (
+      EP.Auth?.isReady?.() &&
+      !EP.Auth?.isAuthenticated?.() &&
+      !this.publicRoutes.has(route)
+    ) {
+      route = "login";
+    }
 
     if (!options.replace && EP.state.currentRoute && EP.state.currentRoute !== route) {
       EP.state.history.push(EP.state.currentRoute);
     }
 
     EP.state.currentRoute = route;
-    const hash = "#/" + route;
-    if (location.hash !== hash) {
-      history.pushState({ route }, "", hash);
-    }
 
-    document.querySelectorAll("#sideMenu [data-route]").forEach((button) => {
-      button.classList.toggle("active", button.dataset.route === route);
-    });
+    const nextHash = "#/" + route;
+    if (location.hash !== nextHash) {
+      history.pushState({ route }, "", nextHash);
+    }
 
     const target = document.querySelector("#pageContent");
     if (!target) return;
 
+    window.dispatchEvent(new CustomEvent("ep:route-loading", { detail: { route } }));
+
     try {
-      const response = await fetch(EP.routes[route] + "?v=292", { cache: "no-store" });
-      if (!response.ok) throw new Error("HTTP " + response.status);
-      target.innerHTML = await response.text();
+      const res = await fetch(EP.routes[route] + "?v=293", { cache: "no-store" });
+      target.innerHTML = await res.text();
       window.dispatchEvent(new CustomEvent("ep:route-loaded", { detail: { route } }));
-    } catch (error) {
-      target.innerHTML = `
-        <section class="page">
-          <div class="card">
-            <h2>Ошибка загрузки</h2>
-            <p>Маршрут: ${route}</p>
-            <p style="color:var(--muted)">${error.message}</p>
-          </div>
-        </section>
-      `;
-      console.error(error);
+    } catch (err) {
+      target.innerHTML = `<div class="card"><h2>Ошибка загрузки</h2><p>${route}</p></div>`;
+      console.error(err);
+      window.dispatchEvent(new CustomEvent("ep:route-error", { detail: { route, error: err } }));
     }
   },
 
@@ -61,14 +62,15 @@ EP.Router = {
       return;
     }
 
-    const previous = EP.state.history.pop();
-    if (previous) {
-      this.go(previous, { replace: true });
+    const prev = EP.state.history.pop();
+    if (prev) {
+      this.go(prev, { replace: true });
       return;
     }
 
     if (EP.state.currentRoute !== "main") {
       this.go("main", { replace: true });
+      return;
     }
   },
 
@@ -79,13 +81,12 @@ EP.Router = {
     });
 
     document.addEventListener("click", (event) => {
-      const routeButton = event.target.closest?.("[data-route]");
-      if (!routeButton) return;
-      const route = routeButton.dataset.route;
-      if (!route) return;
+      const btn = event.target.closest("[data-route]");
+      if (!btn) return;
       event.preventDefault();
-      EP.Router.go(route);
-      if (routeButton.closest("#sideMenu")) EP.AppShell?.closeDrawer();
+      event.stopPropagation();
+      EP.Router.go(btn.dataset.route);
+      EP.AppShell?.closeDrawer();
     });
 
     const route = (location.hash || "#/main").replace("#/", "") || "main";
@@ -94,8 +95,8 @@ EP.Router = {
 };
 
 window.Router = {
-  load: (route) => EP.Router.go(route),
-  go: (route) => EP.Router.go(route),
-  navigate: (route) => EP.Router.go(route),
+  load: (route, options) => EP.Router.go(route, options || {}),
+  go: (route, options) => EP.Router.go(route, options || {}),
+  navigate: (route, options) => EP.Router.go(route, options || {}),
   back: () => EP.Router.back()
 };
