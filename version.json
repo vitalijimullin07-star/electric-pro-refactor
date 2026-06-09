@@ -1,11 +1,11 @@
 {
-  "version": "V29.7 Main Scale Core",
+  "version": "V29.8 Main Dimensions Core",
   "stage": "clean-rebuild",
   "modules": [
     "clean-router",
     "clean-app-shell",
     "visual-settings",
-    "main-scale-core"
+    "main-dimensions-core"
   ],
   "protected": [
     "database",
