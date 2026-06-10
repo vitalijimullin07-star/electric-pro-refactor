@@ -1,0 +1,139 @@
+/* ============================================================
+   Electric Pro V29.23 — Main Day Readability Core
+
+   Назначение:
+   - улучшает читаемость главного экрана в дневном режиме;
+   - не меняет ночной режим;
+   - не трогает JS/core/router/auth/Firebase;
+   - не является patch/fix/restore;
+   - работает поверх main-dashboard.css как чистый визуальный слой.
+
+   Подключать после assets/css/main-dashboard.css
+   ============================================================ */
+
+body[data-visual-mode="day"] {
+  --ep-main-day-text: #0f172a;
+  --ep-main-day-muted: #475569;
+  --ep-main-day-soft: rgba(255, 255, 255, 0.74);
+  --ep-main-day-card: rgba(255, 255, 255, 0.82);
+  --ep-main-day-card-strong: rgba(255, 255, 255, 0.94);
+  --ep-main-day-border: rgba(148, 163, 184, 0.30);
+  --ep-main-day-shadow: 0 14px 30px rgba(15, 23, 42, 0.10);
+}
+
+/* Заголовок главного экрана */
+body[data-visual-mode="day"] .main-dashboard .page-head h1 {
+  color: var(--ep-main-day-text) !important;
+  text-shadow: none !important;
+}
+
+body[data-visual-mode="day"] .main-dashboard .page-head p {
+  color: var(--ep-main-day-muted) !important;
+  text-shadow: none !important;
+}
+
+/* Информационная строка подписки */
+body[data-visual-mode="day"] .ep-top-status-line {
+  background: rgba(255, 255, 255, 0.70);
+  border-color: rgba(148, 163, 184, 0.22);
+  color: var(--ep-main-day-text);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+}
+
+body[data-visual-mode="day"] .ep-top-status-left,
+body[data-visual-mode="day"] .ep-top-status-right {
+  color: #064e3b;
+  text-shadow: none !important;
+}
+
+/* Главные плитки */
+body[data-visual-mode="day"] .main-dashboard .tile {
+  background:
+    radial-gradient(circle at 88% 12%, color-mix(in srgb, var(--module-accent, #38bdf8) 14%, transparent), transparent 34%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(241, 245, 249, 0.78)),
+    var(--ep-main-day-card-strong) !important;
+  border-color: color-mix(in srgb, var(--module-accent, #38bdf8) 28%, rgba(148, 163, 184, 0.38)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    var(--ep-main-day-shadow) !important;
+  color: var(--ep-main-day-text) !important;
+  text-shadow: none !important;
+}
+
+body[data-visual-mode="day"] .main-dashboard .tile:hover {
+  background:
+    radial-gradient(circle at 88% 12%, color-mix(in srgb, var(--module-accent, #38bdf8) 18%, transparent), transparent 34%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(226, 232, 240, 0.82)),
+    var(--ep-main-day-card-strong) !important;
+  border-color: color-mix(in srgb, var(--module-accent, #38bdf8) 42%, rgba(148, 163, 184, 0.44)) !important;
+}
+
+body[data-visual-mode="day"] .main-dashboard .tile h3 {
+  color: var(--ep-main-day-text) !important;
+  text-shadow: none !important;
+}
+
+body[data-visual-mode="day"] .main-dashboard .tile p {
+  color: var(--ep-main-day-muted) !important;
+  text-shadow: none !important;
+}
+
+body[data-visual-mode="day"] .main-dashboard .tile-icon {
+  filter: drop-shadow(0 4px 10px color-mix(in srgb, var(--module-accent, #38bdf8) 22%, transparent));
+}
+
+/* Предварительная смета */
+body[data-visual-mode="day"] .main-dashboard .estimate-card {
+  background:
+    radial-gradient(circle at 92% 12%, rgba(34, 197, 94, 0.12), transparent 30%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(241, 245, 249, 0.78)),
+    var(--ep-main-day-card-strong) !important;
+  border-color: rgba(148, 163, 184, 0.30) !important;
+  color: var(--ep-main-day-text) !important;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.10) !important;
+  text-shadow: none !important;
+}
+
+body[data-visual-mode="day"] .main-dashboard .estimate-card h3 {
+  color: var(--ep-main-day-text) !important;
+  text-shadow: none !important;
+}
+
+body[data-visual-mode="day"] .main-dashboard .estimate-card p:not(.badge) {
+  color: var(--ep-main-day-muted) !important;
+  text-shadow: none !important;
+}
+
+body[data-visual-mode="day"] .main-dashboard .badge {
+  background: rgba(34, 197, 94, 0.16) !important;
+  border-color: rgba(34, 197, 94, 0.28) !important;
+  color: #166534 !important;
+  text-shadow: none !important;
+}
+
+/* Кнопки в предварительной смете */
+body[data-visual-mode="day"] .main-dashboard .btn {
+  background: rgba(255, 255, 255, 0.82) !important;
+  border-color: rgba(148, 163, 184, 0.30) !important;
+  color: var(--ep-main-day-text) !important;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+  text-shadow: none !important;
+}
+
+body[data-visual-mode="day"] .main-dashboard .btn-primary {
+  background: linear-gradient(180deg, #22c55e, #16a34a) !important;
+  border-color: rgba(22, 163, 74, 0.34) !important;
+  color: #052e16 !important;
+}
+
+body[data-visual-mode="day"] .main-dashboard .btn-ghost {
+  background: rgba(241, 245, 249, 0.86) !important;
+  color: #1e293b !important;
+}
+
+/* При очень светлом фоне сохраняем читаемую глубину */
+body[data-visual-mode="day"] .main-dashboard .card,
+body[data-visual-mode="day"] .main-dashboard .tile,
+body[data-visual-mode="day"] .main-dashboard .estimate-card {
+  backdrop-filter: blur(14px);
+}
