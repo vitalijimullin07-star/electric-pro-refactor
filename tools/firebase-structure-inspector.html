@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta http-equiv="Cache-Control" content="no-store" />
+  <title>Electric Pro — Firebase Structure Inspector</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: rgba(15, 23, 42, 0.84);
+      --panel2: rgba(30, 41, 59, 0.84);
+      --line: rgba(148, 163, 184, 0.22);
+      --text: #f8fafc;
+      --muted: #cbd5e1;
+      --accent: #38bdf8;
+      --good: #86efac;
+      --warn: #fdba74;
+      --bad: #fca5a5;
+      --mono: #bbf7d0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 20% 10%, rgba(56, 189, 248, 0.22), transparent 28%),
+        radial-gradient(circle at 80% 0%, rgba(34, 197, 94, 0.16), transparent 30%),
+        linear-gradient(145deg, #0f172a, #1e293b 55%, #0f172a);
+      padding: 14px;
+    }
+    .wrap { max-width: 980px; margin: 0 auto; }
+    .top {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: rgba(248, 250, 252, 0.12);
+      backdrop-filter: blur(14px);
+      box-shadow: 0 18px 40px rgba(0,0,0,0.18);
+    }
+    h1 { margin: 0; font-size: 20px; line-height: 1.1; }
+    .sub { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+    .grid { display: grid; gap: 14px; margin-top: 14px; }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: var(--panel);
+      backdrop-filter: blur(14px);
+      padding: 16px;
+      box-shadow: 0 18px 40px rgba(0,0,0,0.18);
+    }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .btn {
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      color: var(--text);
+      background: rgba(255,255,255,0.11);
+      border-radius: 14px;
+      min-height: 42px;
+      padding: 10px 14px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .btn.primary { background: linear-gradient(135deg, #22c55e, #38bdf8); color: #07111f; }
+    .btn.warn { border-color: rgba(251, 146, 60, .5); color: #fed7aa; }
+    .btn:disabled { opacity: .55; cursor: not-allowed; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .mono { color: var(--mono); word-break: break-all; }
+    .muted { color: var(--muted); }
+    .status {
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: rgba(15, 23, 42, 0.46);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .ok { color: var(--good); }
+    .bad { color: var(--bad); }
+    .warnText { color: var(--warn); }
+    .collections { display: grid; gap: 10px; }
+    .collection {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--panel2);
+      padding: 12px;
+    }
+    .collection-head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+    .tag { border-radius: 999px; padding: 4px 8px; font-size: 12px; font-weight: 900; background: rgba(255,255,255,.1); }
+    .tag.ok { background: rgba(34,197,94,.16); }
+    .tag.bad { background: rgba(239,68,68,.16); }
+    .tag.warn { background: rgba(251,146,60,.16); }
+    pre {
+      overflow: auto;
+      max-height: 52vh;
+      padding: 12px;
+      background: rgba(2, 6, 23, 0.64);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      border-radius: 16px;
+      color: #e2e8f0;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .small { font-size: 12px; }
+    .note {
+      border-left: 4px solid var(--accent);
+      padding: 10px 12px;
+      background: rgba(56,189,248,.12);
+      border-radius: 14px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    textarea {
+      width: 100%; min-height: 110px; resize: vertical;
+      border-radius: 16px; border: 1px solid var(--line);
+      background: rgba(2, 6, 23, .45); color: var(--text);
+      padding: 12px; font: 13px ui-monospace, monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div>
+        <h1>Firebase Structure Inspector</h1>
+        <div class="sub">Только чтение. Ничего не пишет в Firestore, не деплоит rules/functions.</div>
+      </div>
+      <button class="btn" onclick="location.href='../?fresh=2926inspect'">← В приложение</button>
+    </div>
+
+    <div class="grid">
+      <section class="card">
+        <div class="row">
+          <button id="loginBtn" class="btn primary">Войти Google</button>
+          <button id="inspectBtn" class="btn" disabled>Снять структуру</button>
+          <button id="copyBtn" class="btn" disabled>Скопировать отчёт</button>
+          <button id="downloadBtn" class="btn" disabled>Скачать TXT</button>
+        </div>
+        <p class="status" id="status">Инициализация...</p>
+        <p class="note">Этот инструмент нужен только для карты Firebase. Он читает несколько известных коллекций и показывает, что доступно текущему пользователю по действующим Firestore Rules.</p>
+      </section>
+
+      <section class="card">
+        <h2>Что проверяем</h2>
+        <p class="muted">Можно добавить коллекции вручную, по одной на строку.</p>
+        <textarea id="collectionsInput">users
+user_subscriptions
+ai_accounts
+server_database
+user_databases
+error_logs
+admin_logs
+security_events
+documents
+drafts
+estimates
+accounting
+subscription_plans
+subscription_transactions
+payment_requests</textarea>
+      </section>
+
+      <section class="card">
+        <h2>Результат</h2>
+        <div id="collections" class="collections"></div>
+      </section>
+
+      <section class="card">
+        <h2>Полный отчёт</h2>
+        <pre id="report">Пока отчёта нет.</pre>
+      </section>
+    </div>
+  </div>
+
+  <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+  <script defer src="../config/firebase-config.js"></script>
+
+  <script>
+    const state = { app: null, auth: null, db: null, user: null, lastReport: null };
+    const $ = (id) => document.getElementById(id);
+
+    function safeValue(value) {
+      if (value == null) return value;
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+      if (value && typeof value.toDate === 'function') return { __type: 'Timestamp', iso: value.toDate().toISOString() };
+      if (Array.isArray(value)) return value.slice(0, 10).map(safeValue);
+      if (typeof value === 'object') {
+        const out = {};
+        Object.keys(value).slice(0, 60).forEach((key) => out[key] = safeValue(value[key]));
+        return out;
+      }
+      return String(value);
+    }
+
+    function fieldSummary(data) {
+      const out = {};
+      Object.entries(data || {}).forEach(([key, value]) => {
+        let type = typeof value;
+        if (value && typeof value.toDate === 'function') type = 'Timestamp';
+        else if (Array.isArray(value)) type = 'Array';
+        else if (value === null) type = 'null';
+        out[key] = type;
+      });
+      return out;
+    }
+
+    function status(text, cls='') {
+      $('status').innerHTML = text;
+      $('status').className = 'status ' + cls;
+    }
+
+    function initFirebase() {
+      if (!window.firebase) throw new Error('Firebase SDK не загружен');
+      if (!window.EP_FIREBASE_CONFIG) throw new Error('EP_FIREBASE_CONFIG не найден');
+      if (!firebase.apps.length) state.app = firebase.initializeApp(window.EP_FIREBASE_CONFIG);
+      else state.app = firebase.app();
+      state.auth = firebase.auth();
+      state.db = firebase.firestore();
+      state.auth.useDeviceLanguage?.();
+      status('Firebase готов: <span class="mono">' + window.EP_FIREBASE_CONFIG.projectId + '</span>');
+      $('loginBtn').disabled = false;
+    }
+
+    async function login() {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      try {
+        await state.auth.signInWithPopup(provider);
+      } catch (e) {
+        status('Popup не прошёл, пробую redirect...', 'warnText');
+        await state.auth.signInWithRedirect(provider);
+      }
+    }
+
+    async function inspectCollection(path, limitCount = 5) {
+      const startedAt = Date.now();
+      try {
+        const snap = await state.db.collection(path).limit(limitCount).get();
+        const docs = [];
+        const fields = {};
+        snap.forEach((doc) => {
+          const data = doc.data() || {};
+          const summary = fieldSummary(data);
+          Object.assign(fields, summary);
+          docs.push({ id: doc.id, fields: summary, sample: safeValue(data) });
+        });
+        return { path, status: 'ok', readable: true, sampleCount: snap.size, docs, fields, ms: Date.now() - startedAt };
+      } catch (error) {
+        return { path, status: 'error', readable: false, code: error.code || 'unknown', message: error.message || String(error), ms: Date.now() - startedAt };
+      }
+    }
+
+    function renderReport(report) {
+      const wrap = $('collections');
+      wrap.innerHTML = '';
+      report.collections.forEach((item) => {
+        const el = document.createElement('div');
+        el.className = 'collection';
+        const tagClass = item.status === 'ok' ? 'ok' : (item.code === 'permission-denied' ? 'bad' : 'warn');
+        const tagText = item.status === 'ok' ? ('OK · ' + item.sampleCount) : (item.code || 'ERROR');
+        el.innerHTML = `
+          <div class="collection-head">
+            <div><b class="mono">${item.path}</b><div class="small muted">${item.ms} ms</div></div>
+            <span class="tag ${tagClass}">${tagText}</span>
+          </div>
+          <pre>${JSON.stringify(item.status === 'ok' ? { fields: item.fields, docs: item.docs } : { code: item.code, message: item.message }, null, 2)}</pre>
+        `;
+        wrap.appendChild(el);
+      });
+      const text = JSON.stringify(report, null, 2);
+      $('report').textContent = text;
+      $('copyBtn').disabled = false;
+      $('downloadBtn').disabled = false;
+    }
+
+    async function runInspect() {
+      if (!state.user) return status('Сначала войди через Google.', 'bad');
+      status('Читаю структуру Firestore...', 'warnText');
+      $('inspectBtn').disabled = true;
+      const raw = $('collectionsInput').value.split('\n').map(x => x.trim()).filter(Boolean);
+      const paths = Array.from(new Set(raw));
+      const uid = state.user.uid;
+      const subPaths = [
+        `users/${uid}/my_database`,
+        `users/${uid}/documents`,
+        `users/${uid}/drafts`,
+        `users/${uid}/estimates`,
+        `users/${uid}/accounting`,
+        `users/${uid}/error_logs`,
+        `user_databases/${uid}/items`,
+        `user_documents/${uid}/items`,
+        `user_drafts/${uid}/items`,
+        `user_estimates/${uid}/items`,
+        `user_accounting/${uid}/items`
+      ];
+      const allPaths = Array.from(new Set([...paths, ...subPaths]));
+      const results = [];
+      for (const path of allPaths) {
+        status('Читаю: <span class="mono">' + path + '</span>', 'warnText');
+        results.push(await inspectCollection(path, 5));
+      }
+      const report = {
+        app: 'Electric Pro V29 Firebase Structure Inspector',
+        version: 'V29.26',
+        createdAt: new Date().toISOString(),
+        projectId: window.EP_FIREBASE_CONFIG?.projectId,
+        currentUser: {
+          uid: state.user.uid,
+          email: state.user.email,
+          displayName: state.user.displayName
+        },
+        note: 'Read-only report. No writes, no deploy, no rules/functions changes.',
+        collections: results
+      };
+      state.lastReport = report;
+      renderReport(report);
+      const ok = results.filter(x => x.status === 'ok').length;
+      const denied = results.filter(x => x.code === 'permission-denied').length;
+      status(`Готово. Доступно: <span class="ok">${ok}</span>, permission-denied: <span class="bad">${denied}</span>.`, 'ok');
+      $('inspectBtn').disabled = false;
+    }
+
+    function copyReport() {
+      if (!state.lastReport) return;
+      navigator.clipboard?.writeText?.(JSON.stringify(state.lastReport, null, 2));
+      status('Отчёт скопирован.', 'ok');
+    }
+
+    function downloadReport() {
+      if (!state.lastReport) return;
+      const blob = new Blob([JSON.stringify(state.lastReport, null, 2)], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'firestore_structure_report_' + Date.now() + '.txt';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        try { initFirebase(); }
+        catch (e) { status('Ошибка инициализации: ' + e.message, 'bad'); }
+        state.auth?.onAuthStateChanged?.((user) => {
+          state.user = user;
+          if (user) {
+            $('loginBtn').textContent = 'Вошёл: ' + (user.email || user.uid);
+            $('inspectBtn').disabled = false;
+            status('Вход выполнен: <span class="mono">' + user.uid + '</span>', 'ok');
+          } else {
+            $('loginBtn').textContent = 'Войти Google';
+            $('inspectBtn').disabled = true;
+          }
+        });
+      }, 800);
+    });
+    $('loginBtn').addEventListener('click', login);
+    $('inspectBtn').addEventListener('click', runInspect);
+    $('copyBtn').addEventListener('click', copyReport);
+    $('downloadBtn').addEventListener('click', downloadReport);
+  </script>
+</body>
+</html>
