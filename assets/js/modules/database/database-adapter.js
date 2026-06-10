@@ -1,14 +1,11 @@
 /* ============================================================
    Electric Pro V29 — Database / Adapter
-   Слой-источник данных. СЕЙЧАС: localStorage (старые ключи).
-   ПОЗЖЕ: здесь же можно заменить источник на Firestore, не трогая
-   core/ui — нужно лишь сохранить контракт loadBase/saveBase.
 
-   Контракт (синхронный на этом этапе, т.к. localStorage синхронный):
-     loadBase("my"|"server")            -> Array<item>
-     saveBase("my"|"server", items)     -> boolean
-   Для Firestore-версии этот слой получит внутренний кэш и фоновую
-   синхронизацию, чтобы публичный API EP.Database остался синхронным.
+   V29.24:
+   - localStorage epdb26_my / epdb26_server остаётся быстрым кэшем;
+   - Firestore-синхронизация подключается через EP.FirebaseDbSync;
+   - публичный контракт loadBase/saveBase остаётся синхронным,
+     чтобы не ломать database-core/database-ui.
    ============================================================ */
 (() => {
   "use strict";
@@ -26,11 +23,23 @@
   }
 
   function saveBase(base, items) {
-    return S.writeJson(keyOf(base), Array.isArray(items) ? items : []);
+    const safeItems = Array.isArray(items) ? items : [];
+    const ok = S.writeJson(keyOf(base), safeItems);
+
+    // Фоновая синхронизация. Ошибки не ломают UI: локальный кэш уже сохранён.
+    try {
+      if (ok && window.EP?.FirebaseDbSync?.afterLocalSave) {
+        window.EP.FirebaseDbSync.afterLocalSave(base === "server" ? "server" : "my", safeItems);
+      }
+    } catch (error) {
+      console.warn("[EP.Database.Adapter] Firebase sync enqueue failed", error);
+    }
+
+    return ok;
   }
 
-  // Источник на текущем этапе — всегда локальный.
-  function sourceOf(/* base */) {
+  function sourceOf(base) {
+    if (window.EP?.FirebaseDbSync) return "firebase-cache";
     return "local";
   }
 

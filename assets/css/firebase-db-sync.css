@@ -1,0 +1,129 @@
+/* ============================================================
+   Electric Pro V29.24 — Firebase Database Sync Core styles
+   Чистый визуальный слой для панели синхронизации БД.
+   ============================================================ */
+.ep-firebase-db-sync {
+  margin: 0 0 14px;
+  padding: 14px;
+  border-radius: calc(var(--radius, 26px) * 0.85);
+  background: rgba(15, 23, 42, 0.42);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(var(--blur, 18px));
+}
+
+.ep-sync-head,
+.ep-sync-actions,
+.ep-sync-counts,
+.ep-sync-paths {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ep-sync-head {
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.ep-sync-head b {
+  display: block;
+  font-size: 16px;
+  color: var(--text, #f8fafc);
+}
+
+.ep-sync-head span,
+.ep-sync-note,
+.ep-sync-status small {
+  display: block;
+  color: var(--muted, rgba(226, 232, 240, 0.72));
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.ep-sync-state {
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-style: normal;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(15, 23, 42, 0.32);
+  color: var(--text, #f8fafc);
+}
+
+.ep-sync-state.ok { background: rgba(34, 197, 94, 0.18); border-color: rgba(34, 197, 94, 0.34); }
+.ep-sync-state.warn { background: rgba(245, 158, 11, 0.18); border-color: rgba(245, 158, 11, 0.34); }
+.ep-sync-state.error { background: rgba(239, 68, 68, 0.18); border-color: rgba(239, 68, 68, 0.34); }
+.ep-sync-state.syncing { background: rgba(56, 189, 248, 0.18); border-color: rgba(56, 189, 248, 0.34); }
+
+.ep-sync-status {
+  margin: 8px 0;
+  padding: 9px 10px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text, #f8fafc);
+  font-weight: 700;
+}
+
+.ep-sync-paths code {
+  padding: 6px 8px;
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.26);
+  color: var(--text, #f8fafc);
+  font-size: 11px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.ep-sync-counts {
+  margin: 10px 0;
+}
+
+.ep-sync-counts span {
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted, rgba(226, 232, 240, 0.76));
+  font-size: 12px;
+}
+
+.ep-sync-counts b {
+  color: var(--text, #f8fafc);
+}
+
+.ep-sync-actions .btn {
+  min-height: 38px;
+  padding-inline: 12px;
+}
+
+.ep-sync-note {
+  margin: 10px 0 0;
+}
+
+body[data-visual-mode="day"] .ep-firebase-db-sync {
+  background: rgba(255, 255, 255, 0.88);
+  border-color: rgba(148, 163, 184, 0.26);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+body[data-visual-mode="day"] .ep-sync-head b,
+body[data-visual-mode="day"] .ep-sync-status,
+body[data-visual-mode="day"] .ep-sync-counts b,
+body[data-visual-mode="day"] .ep-sync-paths code,
+body[data-visual-mode="day"] .ep-sync-state {
+  color: #0f172a;
+}
+
+body[data-visual-mode="day"] .ep-sync-head span,
+body[data-visual-mode="day"] .ep-sync-note,
+body[data-visual-mode="day"] .ep-sync-status small,
+body[data-visual-mode="day"] .ep-sync-counts span {
+  color: #475569;
+}
+
+body[data-visual-mode="day"] .ep-sync-status,
+body[data-visual-mode="day"] .ep-sync-counts span,
+body[data-visual-mode="day"] .ep-sync-paths code {
+  background: rgba(241, 245, 249, 0.88);
+}
