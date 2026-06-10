@@ -1,12 +1,14 @@
 (() => {
   "use strict";
 
-  const ADMIN_VERSION = "V29.30";
+  const ADMIN_VERSION = "V29.31";
   const EP = window.EP = window.EP || {};
   const Admin = EP.Admin = EP.Admin || {};
 
   Admin.state = {
     version: ADMIN_VERSION,
+    booted: false,
+    initInProgress: false,
     firebaseReady: false,
     db: null,
     auth: null,
@@ -34,6 +36,15 @@
 
   Admin.$ = (selector, root = document) => root.querySelector(selector);
   Admin.$$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+
+  Admin.isAdminRoute = () => {
+    const hash = String(location.hash || "");
+    const path = String(location.pathname || "");
+    return !!document.querySelector("#ep-admin-root")
+      || hash === "#admin"
+      || hash.startsWith("#admin/")
+      || path.endsWith("/admin.html");
+  };
 
   Admin.setStatus = (message, tone = "") => {
     const el = Admin.$("#ep-admin-status");
@@ -69,8 +80,19 @@
 
   Admin.now = () => new Date().toISOString();
 
-  Admin.requireFirebase = () => {
-    if (!window.firebase || !firebase.auth || !firebase.firestore) {
+  Admin.waitForFirebase = () => new Promise((resolve) => {
+    const started = Date.now();
+    const tick = () => {
+      if (window.firebase && firebase.auth && firebase.firestore) return resolve(true);
+      if (Date.now() - started > 9000) return resolve(false);
+      setTimeout(tick, 120);
+    };
+    tick();
+  });
+
+  Admin.requireFirebase = async () => {
+    const ok = await Admin.waitForFirebase();
+    if (!ok) {
       Admin.setStatus("Firebase не найден", "ep-admin-warn");
       return false;
     }
@@ -80,19 +102,32 @@
     return true;
   };
 
-  Admin.waitForAuth = () => new Promise((resolve) => {
-    if (!Admin.requireFirebase()) return resolve(null);
+  Admin.waitForAuth = async () => new Promise(async (resolve) => {
+    const firebaseOk = await Admin.requireFirebase();
+    if (!firebaseOk) return resolve(null);
+
     const done = (user) => {
       Admin.state.currentUser = user || null;
       resolve(user || null);
     };
+
     const current = Admin.state.auth.currentUser;
     if (current) return done(current);
+
+    let finished = false;
     const unsub = Admin.state.auth.onAuthStateChanged((user) => {
+      if (finished) return;
+      finished = true;
       try { unsub(); } catch (_) {}
       done(user);
     });
-    setTimeout(() => done(Admin.state.auth.currentUser || null), 3500);
+
+    setTimeout(() => {
+      if (finished) return;
+      finished = true;
+      try { unsub(); } catch (_) {}
+      done(Admin.state.auth.currentUser || null);
+    }, 4500);
   });
 
   Admin.getDocData = async (collection, id) => {
@@ -163,6 +198,7 @@
           <h1>Админка</h1>
           <p>${Admin.escape(message)}</p>
         </div>
+        <div id="ep-admin-status" class="ep-admin-status ep-admin-warn">${Admin.escape(message)}</div>
       </div>
     `;
   };
@@ -177,7 +213,7 @@
       root.className = "ep-admin-page";
       document.body.innerHTML = "";
       document.body.appendChild(root);
-      root.innerHTML = "<div class='ep-admin-hero'><h1>Админка</h1><div id='ep-admin-status' class='ep-admin-status'>Загрузка...</div></div>";
+      root.innerHTML = "<div class='ep-admin-hero'><div><div class='ep-admin-kicker'>Electric Pro V29</div><h1>Админка</h1><p>Загрузка страницы админки...</p></div><div id='ep-admin-status' class='ep-admin-status'>Загрузка...</div></div>";
       return root;
     }
 
@@ -186,7 +222,9 @@
 
   Admin.injectAdminPageIfNeeded = async () => {
     const root = Admin.ensureRoot();
-    if (!root || root.dataset.epAdmin === "v29.30") return;
+    if (!root) return;
+
+    if (root.dataset.epAdmin === "v29.31") return;
 
     try {
       const res = await fetch("pages/admin.html?admin=" + encodeURIComponent(ADMIN_VERSION), { cache: "no-store" });
@@ -200,7 +238,7 @@
             <h1>Админка</h1>
             <p>Не удалось загрузить pages/admin.html</p>
           </div>
-          <div id="ep-admin-status" class="ep-admin-status">Ошибка</div>
+          <div id="ep-admin-status" class="ep-admin-status ep-admin-warn">Ошибка</div>
         </div>
       `;
     }
@@ -208,6 +246,8 @@
 
   Admin.bindTabs = () => {
     Admin.$$(".ep-admin-tab").forEach((btn) => {
+      if (btn.dataset.bound === "1") return;
+      btn.dataset.bound = "1";
       btn.addEventListener("click", () => {
         const tab = btn.dataset.adminTab;
         Admin.$$(".ep-admin-tab").forEach((b) => b.classList.remove("active"));
@@ -219,10 +259,16 @@
     });
 
     const refresh = Admin.$("#ep-admin-refresh");
-    if (refresh) refresh.addEventListener("click", () => Admin.reloadAll());
+    if (refresh && refresh.dataset.bound !== "1") {
+      refresh.dataset.bound = "1";
+      refresh.addEventListener("click", () => Admin.reloadAll());
+    }
 
     const search = Admin.$("#ep-admin-user-search");
-    if (search) search.addEventListener("input", () => Admin.Users?.renderList());
+    if (search && search.dataset.bound !== "1") {
+      search.dataset.bound = "1";
+      search.addEventListener("input", () => Admin.Users?.renderList());
+    }
   };
 
   Admin.reloadAll = async () => {
@@ -263,7 +309,7 @@
         actorUid: actor?.uid || "",
         actorEmail: actor?.email || "",
         createdAt: Admin.now(),
-        source: "ep-admin-v29.30"
+        source: "ep-admin-v29.31"
       });
     } catch (error) {
       console.warn("[EP Admin] log write failed", error);
@@ -280,27 +326,72 @@
   };
 
   Admin.init = async () => {
-    await Admin.injectAdminPageIfNeeded();
-    if (!Admin.ensureRoot()) return;
+    if (!Admin.isAdminRoute()) return;
+    if (Admin.state.initInProgress) return;
 
-    Admin.bindTabs();
+    Admin.state.initInProgress = true;
+    try {
+      await Admin.injectAdminPageIfNeeded();
+      if (!Admin.ensureRoot()) return;
 
-    const user = await Admin.waitForAuth();
-    const ok = await Admin.checkAdminAccess(user);
-    if (!ok) return;
+      Admin.bindTabs();
+      Admin.setStatus("Ожидание Firebase...");
 
-    await Admin.reloadAll();
+      const user = await Admin.waitForAuth();
+      Admin.setStatus("Проверка прав...");
+
+      const ok = await Admin.checkAdminAccess(user);
+      if (!ok) return;
+
+      await Admin.reloadAll();
+    } finally {
+      Admin.state.initInProgress = false;
+    }
   };
 
-  document.addEventListener("DOMContentLoaded", () => {
-    if (document.querySelector("#ep-admin-root") || location.hash === "#admin" || location.hash.startsWith("#admin/")) {
-      Admin.init();
-    }
-  });
+  Admin.boot = () => {
+    if (Admin.state.booted) return;
+    Admin.state.booted = true;
 
-  window.addEventListener("hashchange", () => {
-    if (location.hash === "#admin" || location.hash.startsWith("#admin/")) {
-      Admin.init();
+    const start = () => setTimeout(() => Admin.init(), 0);
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", start, { once: true });
+    } else {
+      start();
     }
-  });
+
+    window.addEventListener("load", start, { once: true });
+    window.addEventListener("hashchange", start);
+
+    document.addEventListener("ep:route:loaded", start);
+    document.addEventListener("ep:page:loaded", start);
+    document.addEventListener("ep:route:changed", start);
+
+    // Одноразовый безопасный bootstrap для SPA-роутера:
+    // следит только до появления #ep-admin-root и отключается максимум через 15 секунд.
+    const attachObserver = () => {
+      if (!document.body) return;
+      if (document.querySelector("#ep-admin-root")) {
+        start();
+        return;
+      }
+      const observer = new MutationObserver(() => {
+        if (document.querySelector("#ep-admin-root")) {
+          observer.disconnect();
+          start();
+        }
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+      setTimeout(() => observer.disconnect(), 15000);
+    };
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", attachObserver, { once: true });
+    } else {
+      attachObserver();
+    }
+  };
+
+  Admin.boot();
 })();
