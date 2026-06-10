@@ -1,0 +1,208 @@
+/* ============================================================
+   Electric Pro V29.22 — Database Day Readability Core
+
+   Назначение:
+   - улучшает читаемость карточек БД в дневном режиме;
+   - не меняет ночной режим;
+   - не трогает JS/core/router/auth/Firebase;
+   - не является patch/fix/restore;
+   - работает поверх database.css как чистый визуальный слой.
+
+   Подключать после assets/css/database.css
+   ============================================================ */
+
+body[data-visual-mode="day"] {
+  --ep-db-day-text: #0f172a;
+  --ep-db-day-text-strong: #020617;
+  --ep-db-day-muted: #475569;
+  --ep-db-day-muted-soft: #64748b;
+  --ep-db-day-card: rgba(255, 255, 255, 0.90);
+  --ep-db-day-card-strong: rgba(255, 255, 255, 0.98);
+  --ep-db-day-border: rgba(148, 163, 184, 0.36);
+  --ep-db-day-border-soft: rgba(148, 163, 184, 0.22);
+  --ep-db-day-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+/* Базовая светлая читаемость внутри БД */
+body[data-visual-mode="day"] .ep-db,
+body[data-visual-mode="day"] .ep-db * {
+  color-scheme: light;
+}
+
+body[data-visual-mode="day"] .ep-db .card,
+body[data-visual-mode="day"] .ep-db-modal {
+  background: var(--ep-db-day-card);
+  border-color: var(--ep-db-day-border-soft);
+  color: var(--ep-db-day-text);
+}
+
+/* Переключатель баз */
+body[data-visual-mode="day"] .ep-db-pill {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: var(--ep-db-day-border);
+  color: var(--ep-db-day-text);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.05);
+}
+
+body[data-visual-mode="day"] .ep-db-pill.is-active {
+  background: color-mix(in srgb, var(--accent) 18%, white);
+  border-color: color-mix(in srgb, var(--accent) 70%, #94a3b8);
+  color: var(--ep-db-day-text-strong);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 44%, transparent) inset,
+    0 8px 18px rgba(15, 23, 42, 0.08);
+}
+
+/* Вкладки Материалы / Работа */
+body[data-visual-mode="day"] .ep-db-tab {
+  background: rgba(255, 255, 255, 0.74);
+  border-color: var(--ep-db-day-border-soft);
+  color: var(--ep-db-day-muted);
+}
+
+body[data-visual-mode="day"] .ep-db-tab.is-active {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: color-mix(in srgb, var(--accent) 58%, #94a3b8);
+  color: var(--ep-db-day-text-strong);
+}
+
+/* Поиск и поля ввода */
+body[data-visual-mode="day"] .ep-db-search,
+body[data-visual-mode="day"] .ep-db-input,
+body[data-visual-mode="day"] .ep-db-textarea {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: var(--ep-db-day-border);
+  color: var(--ep-db-day-text);
+}
+
+body[data-visual-mode="day"] .ep-db-search::placeholder,
+body[data-visual-mode="day"] .ep-db-input::placeholder,
+body[data-visual-mode="day"] .ep-db-textarea::placeholder {
+  color: var(--ep-db-day-muted-soft);
+}
+
+/* Чипы категорий */
+body[data-visual-mode="day"] .ep-db-chip {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: var(--ep-db-day-border-soft);
+  color: var(--ep-db-day-muted);
+}
+
+body[data-visual-mode="day"] .ep-db-chip.is-active {
+  background: color-mix(in srgb, var(--accent) 16%, white);
+  border-color: color-mix(in srgb, var(--accent) 56%, #94a3b8);
+  color: var(--ep-db-day-text-strong);
+}
+
+/* Служебный текст */
+body[data-visual-mode="day"] .ep-db-selall,
+body[data-visual-mode="day"] .ep-db-listinfo,
+body[data-visual-mode="day"] .ep-db-count,
+body[data-visual-mode="day"] .ep-db-row-meta,
+body[data-visual-mode="day"] .ep-db-empty,
+body[data-visual-mode="day"] .ep-db-modal-body p,
+body[data-visual-mode="day"] .ep-db-imp-modes {
+  color: var(--ep-db-day-muted);
+}
+
+/* Папки */
+body[data-visual-mode="day"] .ep-db-folder-head {
+  background: rgba(219, 234, 254, 0.82);
+  border-color: rgba(96, 165, 250, 0.30);
+  color: var(--ep-db-day-text-strong);
+}
+
+body[data-visual-mode="day"] .ep-db-folder.is-open > .ep-db-folder-head {
+  background: rgba(191, 219, 254, 0.88);
+  border-color: rgba(59, 130, 246, 0.38);
+}
+
+/* Подпапки */
+body[data-visual-mode="day"] .ep-db-subfolder-head {
+  background: rgba(204, 251, 241, 0.76);
+  border-color: rgba(45, 212, 191, 0.30);
+  color: var(--ep-db-day-text-strong);
+}
+
+body[data-visual-mode="day"] .ep-db-subfolder.is-open > .ep-db-subfolder-head {
+  background: rgba(153, 246, 228, 0.82);
+  border-color: rgba(20, 184, 166, 0.36);
+}
+
+body[data-visual-mode="day"] .ep-db-fold-count {
+  background: rgba(15, 23, 42, 0.08);
+  color: #334155;
+}
+
+/* Главная правка: карточки позиций не тёмные в дневном режиме */
+body[data-visual-mode="day"] .ep-db-row {
+  background: var(--ep-db-day-card-strong);
+  border-color: var(--ep-db-day-border-soft);
+  box-shadow: var(--ep-db-day-shadow);
+}
+
+body[data-visual-mode="day"] .ep-db-row-name {
+  color: var(--ep-db-day-text-strong);
+  text-shadow: none;
+}
+
+body[data-visual-mode="day"] .ep-db-row-price {
+  color: var(--ep-db-day-text-strong);
+  text-shadow: none;
+}
+
+body[data-visual-mode="day"] .ep-db-row:has(.ep-db-check:checked) {
+  background: color-mix(in srgb, var(--accent) 12%, white);
+  border-color: color-mix(in srgb, var(--accent) 46%, #94a3b8);
+}
+
+body[data-visual-mode="day"] .ep-db-check {
+  accent-color: var(--accent);
+}
+
+/* Кнопки внутри строки */
+body[data-visual-mode="day"] .ep-db-iconbtn {
+  background: rgba(241, 245, 249, 0.96);
+  border-color: rgba(148, 163, 184, 0.32);
+  color: var(--ep-db-day-text-strong);
+  box-shadow: 0 5px 12px rgba(15, 23, 42, 0.07);
+}
+
+body[data-visual-mode="day"] .ep-db-iconbtn:active {
+  background: rgba(226, 232, 240, 0.98);
+}
+
+body[data-visual-mode="day"] .ep-db-danger {
+  color: #dc2626 !important;
+  border-color: rgba(220, 38, 38, 0.34) !important;
+}
+
+/* Модальные окна */
+body[data-visual-mode="day"] .ep-db-modal-ov {
+  background: rgba(15, 23, 42, 0.32);
+  backdrop-filter: blur(5px);
+}
+
+body[data-visual-mode="day"] .ep-db-flash {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: color-mix(in srgb, var(--accent) 60%, #94a3b8);
+  color: var(--ep-db-day-text-strong);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
+}
+
+/* Аккуратный горизонтальный скролл категорий */
+body[data-visual-mode="day"] .ep-db-chips::-webkit-scrollbar {
+  height: 4px;
+}
+
+body[data-visual-mode="day"] .ep-db-chips::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.32);
+  border-radius: 999px;
+}
+
+/* Fallback для браузеров без :has(): строка всё равно остаётся светлой */
+@supports not selector(:has(*)) {
+  body[data-visual-mode="day"] .ep-db-row {
+    background: var(--ep-db-day-card-strong);
+  }
+}
