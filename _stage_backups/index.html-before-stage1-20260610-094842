@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="assets/css/visual-settings.css?v=2921" />
   <link rel="stylesheet" href="assets/css/main-dashboard.css?v=2918" />
   <link rel="stylesheet" href="assets/css/admin-console.css?v=2920" />
-  <link rel="stylesheet" href="assets/css/database.css?v=2923" />
+  <link rel="stylesheet" href="assets/css/database.css?v=2922" />
 </head>
 <body data-visual-mode="night" data-animation="glass" data-button-shape="soft" data-bg-style="live">
   <div id="app"></div>
@@ -35,11 +35,11 @@
 
   <script defer src="assets/js/modules/existing-firebase-access.js?v=2920"></script>
   <!-- Модуль База данных (V29) -->
-  <script defer src="assets/js/modules/estimate/estimate-draft.js?v=2923"></script>
-  <script defer src="assets/js/modules/database/database-storage.js?v=2923"></script>
-  <script defer src="assets/js/modules/database/database-adapter.js?v=2923"></script>
-  <script defer src="assets/js/modules/database/database-core.js?v=2923"></script>
-  <script defer src="assets/js/modules/database/database-ui.js?v=2923"></script>
+  <script defer src="assets/js/modules/estimate/estimate-draft.js?v=2922"></script>
+  <script defer src="assets/js/modules/database/database-storage.js?v=2922"></script>
+  <script defer src="assets/js/modules/database/database-adapter.js?v=2922"></script>
+  <script defer src="assets/js/modules/database/database-core.js?v=2922"></script>
+  <script defer src="assets/js/modules/database/database-ui.js?v=2922"></script>
 
   <script defer src="assets/js/core/app.js?v=2918"></script>
   <script src="assets/js/modules/sound-feedback.js?v=2921"></script>

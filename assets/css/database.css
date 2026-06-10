@@ -99,9 +99,9 @@
   background: rgba(0,0,0,.25); color: var(--text); font-family: monospace; font-size: 13px;
 }
 
-/* нижняя панель действий */
-.ep-db-actions { display: flex; gap: 8px; flex-wrap: wrap; padding-top: 4px; }
-.ep-db-actions .btn { flex: 1 1 auto; }
+/* нижняя панель действий (теперь сверху, компактная) */
+.ep-db-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.ep-db-actions .btn { flex: 1 1 auto; min-width: 92px; padding: 8px 10px; font-size: 13px; }
 .ep-db-danger { color: var(--danger) !important; border-color: rgba(239,68,68,.4) !important; }
 
 /* модалка */
@@ -130,3 +130,58 @@
   .ep-db-edit-grid { grid-template-columns: 2fr 1fr 1fr .6fr .8fr; }
   .ep-db-edit-grid .ep-db-input:first-child { grid-column: auto; }
 }
+
+/* ============================================================
+   Папки / подпапки / карточки — разные шрифты и мягкие фоны
+   (не броско: низкая насыщенность, тонкие различия)
+   ============================================================ */
+
+/* список превращается в дерево — убираем общий gap, отступы дают папки */
+.ep-db-list { gap: 7px; }
+
+/* ПАПКА (категория) — холодный мягкий фон, "заголовочный" шрифт */
+.ep-db-folder { display: flex; flex-direction: column; }
+.ep-db-folder-head {
+  width: 100%; display: flex; align-items: center; gap: 9px; text-align: left;
+  padding: 11px 12px; border-radius: 13px; cursor: pointer;
+  background: rgba(120, 150, 205, .14);
+  border: 1px solid rgba(150, 175, 220, .18);
+  color: var(--text);
+  font-weight: 700; font-size: 12.5px; letter-spacing: .5px; text-transform: uppercase;
+}
+.ep-db-folder.is-open > .ep-db-folder-head { border-color: rgba(150,175,220,.30); background: rgba(120,150,205,.18); }
+.ep-db-folder-head:active { transform: scale(.99); }
+
+/* ПОДПАПКА (подкатегория) — тёплый бирюзовый мягкий фон, чуть мягче */
+.ep-db-subfolder { display: flex; flex-direction: column; }
+.ep-db-subfolder-head {
+  width: 100%; display: flex; align-items: center; gap: 8px; text-align: left;
+  padding: 9px 11px; border-radius: 11px; cursor: pointer;
+  background: rgba(110, 195, 180, .11);
+  border: 1px solid rgba(130, 205, 190, .16);
+  color: var(--text);
+  font-weight: 600; font-size: 13px; letter-spacing: .2px;
+}
+.ep-db-subfolder.is-open > .ep-db-subfolder-head { background: rgba(110,195,180,.15); }
+.ep-db-subfolder-head:active { transform: scale(.99); }
+
+.ep-db-fold-ico { font-size: 15px; flex: 0 0 auto; }
+.ep-db-fold-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ep-db-subfold-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; }
+.ep-db-fold-count {
+  flex: 0 0 auto; color: var(--muted); font-size: 11px; font-weight: 600;
+  background: rgba(0,0,0,.22); padding: 1px 9px; border-radius: 999px; letter-spacing: 0;
+}
+
+/* тело папки/подпапки — отступ слева как в файловом менеджере */
+.ep-db-folder-body { display: flex; flex-direction: column; gap: 6px; padding: 7px 0 5px 12px; }
+.ep-db-subfolder-body { display: flex; flex-direction: column; gap: 6px; padding: 6px 0 4px 12px; }
+
+/* КАРТОЧКА позиции — отдельный (тёмный, нейтральный) фон и обычный шрифт,
+   визуально отличается от папок */
+.ep-db-row {
+  background: rgba(18, 27, 48, .82);
+  border: 1px solid rgba(255,255,255,.07);
+}
+.ep-db-row-name { font-weight: 600; letter-spacing: 0; text-transform: none; }
+.ep-db-row-meta { font-weight: 400; }

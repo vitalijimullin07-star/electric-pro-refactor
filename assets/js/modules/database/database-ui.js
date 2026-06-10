@@ -19,6 +19,7 @@
     subcategory: "",       // "" = все
     search: "",
     selected: new Set(),
+    expanded: new Set(),   // раскрытые папки/подпапки: "c:Категория", "c:Категория|s:Подкат"
     addOpen: false,
     editId: null
   };
@@ -56,7 +57,6 @@
     if (!rootEl) return;
     const c = DB.counts(state.base);
     const cats = DB.categories(state.type, state.base);
-    const subs = state.category ? DB.subcategories(state.type, state.category, state.base) : [];
     const items = visibleItems();
     const selCount = state.selected.size;
 
@@ -66,36 +66,6 @@
           <button class="ep-db-pill ${state.base === "server" ? "is-active" : ""}" data-db-base="server" type="button">🗄️ БД сервера</button>
           <button class="ep-db-pill ${state.base === "my" ? "is-active" : ""}" data-db-base="my" type="button">⭐ Моя БД</button>
           <span class="badge ep-db-count">${c.material} мат · ${c.work} раб</span>
-        </div>
-
-        <div class="ep-db-toolbar">
-          <div class="ep-db-types">
-            <button class="ep-db-tab ${state.type === "material" ? "is-active" : ""}" data-db-type="material" type="button">📦 Материалы</button>
-            <button class="ep-db-tab ${state.type === "work" ? "is-active" : ""}" data-db-type="work" type="button">🧰 Работа</button>
-          </div>
-          <input class="ep-db-search" type="search" placeholder="Поиск по названию…" value="${esc(state.search)}" data-db-search />
-        </div>
-
-        <div class="ep-db-chips" data-db-cats>
-          <button class="ep-db-chip ${!state.category ? "is-active" : ""}" data-db-cat="" type="button">Все категории</button>
-          ${cats.map((cat) => `<button class="ep-db-chip ${state.category === cat ? "is-active" : ""}" data-db-cat="${esc(cat)}" type="button">${esc(cat)}</button>`).join("")}
-        </div>
-
-        ${state.category ? `
-        <div class="ep-db-chips ep-db-chips-sub" data-db-subs>
-          <button class="ep-db-chip ${!state.subcategory ? "is-active" : ""}" data-db-sub="" type="button">Все подкатегории</button>
-          ${subs.map((sub) => `<button class="ep-db-chip ${state.subcategory === sub ? "is-active" : ""}" data-db-sub="${esc(sub)}" type="button">${esc(sub)}</button>`).join("")}
-        </div>` : ""}
-
-        ${isMy() && state.addOpen ? renderAddForm() : ""}
-
-        <div class="ep-db-listhead">
-          <label class="ep-db-selall"><input type="checkbox" data-db-selall ${selCount && selCount === items.length ? "checked" : ""}/> Выбрать все</label>
-          <span class="ep-db-listinfo">${items.length} позиц.${selCount ? " · выбрано " + selCount : ""}</span>
-        </div>
-
-        <div class="ep-db-list">
-          ${items.length ? items.map(renderRow).join("") : `<div class="ep-db-empty">Пусто. ${isMy() ? "Добавь позицию или импортируй." : "В серверной базе нет позиций этого типа."}</div>`}
         </div>
 
         <div class="ep-db-actions">
@@ -110,8 +80,93 @@
             <button class="btn btn-ghost ep-clickable" data-db-export type="button">⬆️ Экспорт</button>
           `}
         </div>
+
+        <div class="ep-db-toolbar">
+          <div class="ep-db-types">
+            <button class="ep-db-tab ${state.type === "material" ? "is-active" : ""}" data-db-type="material" type="button">📦 Материалы</button>
+            <button class="ep-db-tab ${state.type === "work" ? "is-active" : ""}" data-db-type="work" type="button">🧰 Работа</button>
+          </div>
+          <input class="ep-db-search" type="search" placeholder="Поиск по названию…" value="${esc(state.search)}" data-db-search />
+        </div>
+
+        <div class="ep-db-chips" data-db-cats>
+          <button class="ep-db-chip ${!state.category ? "is-active" : ""}" data-db-cat="" type="button">📂 Все категории</button>
+          ${cats.map((cat) => `<button class="ep-db-chip ${state.category === cat ? "is-active" : ""}" data-db-cat="${esc(cat)}" type="button">${esc(cat)}</button>`).join("")}
+        </div>
+
+        ${isMy() && state.addOpen ? renderAddForm() : ""}
+
+        <div class="ep-db-listhead">
+          <label class="ep-db-selall"><input type="checkbox" data-db-selall ${selCount && selCount === items.length ? "checked" : ""}/> Выбрать все</label>
+          <span class="ep-db-listinfo">${items.length} позиц.${selCount ? " · выбрано " + selCount : ""}</span>
+        </div>
+
+        <div class="ep-db-list">
+          ${renderContent()}
+        </div>
       </div>
     `;
+  }
+
+  // контент: при поиске — плоский список; иначе — дерево папок
+  function renderContent() {
+    if (state.search) {
+      const items = visibleItems();
+      return items.length ? items.map(renderRow).join("") : `<div class="ep-db-empty">Ничего не найдено.</div>`;
+    }
+    return renderTree();
+  }
+
+  function renderFolderCount(n) {
+    return `<span class="ep-db-fold-count">${n}</span>`;
+  }
+
+  // дерево: Категория(папка) → Подкатегория(подпапка) → карточки
+  function renderTree() {
+    const type = state.type, base = state.base;
+    const all = DB.getItemsByType(type, base);
+    if (!all.length) return `<div class="ep-db-empty">Пусто. ${isMy() ? "Добавь позицию или импортируй." : "В серверной базе нет позиций этого типа."}</div>`;
+    const cats = state.category ? [state.category] : DB.categories(type, base);
+    // позиции без категории — отдельной псевдо-папкой, если есть
+    const noCat = all.filter((x) => !x.category);
+    let html = "";
+    cats.forEach((cat) => { html += renderCatFolder(cat, all.filter((x) => x.category === cat)); });
+    if (!state.category && noCat.length) html += renderCatFolder("", noCat);
+    return html || `<div class="ep-db-empty">Нет позиций.</div>`;
+  }
+
+  function renderCatFolder(cat, catItems) {
+    const ckey = "c:" + cat;
+    const open = state.category ? true : state.expanded.has(ckey);
+    const subs = Array.from(new Set(catItems.map((x) => x.subcategory).filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b, "ru"));
+    const noSub = catItems.filter((x) => !x.subcategory);
+    return `
+      <div class="ep-db-folder ${open ? "is-open" : ""}">
+        <button class="ep-db-folder-head" data-db-folder="${esc(ckey)}" type="button">
+          <span class="ep-db-fold-ico">${open ? "📂" : "📁"}</span>
+          <span class="ep-db-fold-name">${esc(cat) || "Без категории"}</span>
+          ${renderFolderCount(catItems.length)}
+        </button>
+        ${open ? `
+          <div class="ep-db-folder-body">
+            ${noSub.map(renderRow).join("")}
+            ${subs.map((sub) => {
+              const skey = ckey + "|s:" + sub;
+              const sopen = state.expanded.has(skey);
+              const subItems = catItems.filter((x) => x.subcategory === sub);
+              return `
+                <div class="ep-db-subfolder ${sopen ? "is-open" : ""}">
+                  <button class="ep-db-subfolder-head" data-db-folder="${esc(skey)}" type="button">
+                    <span class="ep-db-fold-ico">${sopen ? "📂" : "📁"}</span>
+                    <span class="ep-db-subfold-name">${esc(sub)}</span>
+                    ${renderFolderCount(subItems.length)}
+                  </button>
+                  ${sopen ? `<div class="ep-db-subfolder-body">${subItems.map(renderRow).join("")}</div>` : ""}
+                </div>`;
+            }).join("")}
+          </div>` : ""}
+      </div>`;
   }
 
   function renderRow(it) {
@@ -280,6 +335,7 @@
     if (hit("[data-db-type]")) { state.type = hit("[data-db-type]").dataset.dbType; state.category = ""; state.subcategory = ""; state.selected.clear(); state.editId = null; render(); return; }
     if (hit("[data-db-cat]")) { state.category = hit("[data-db-cat]").dataset.dbCat; state.subcategory = ""; render(); return; }
     if (hit("[data-db-sub]")) { state.subcategory = hit("[data-db-sub]").dataset.dbSub; render(); return; }
+    if (hit("[data-db-folder]")) { const k = hit("[data-db-folder]").dataset.dbFolder; if (state.expanded.has(k)) state.expanded.delete(k); else state.expanded.add(k); render(); return; }
 
     if (hit("[data-db-pick]")) { const id = hit("[data-db-pick]").dataset.dbPick; if (state.selected.has(id)) state.selected.delete(id); else state.selected.add(id); render(); return; }
     if (hit("[data-db-edit]")) { state.editId = hit("[data-db-edit]").dataset.dbEdit; render(); return; }
@@ -310,9 +366,11 @@
     const list = rootEl.querySelector(".ep-db-list");
     const info = rootEl.querySelector(".ep-db-listinfo");
     if (!list) return render();
-    const items = visibleItems();
-    list.innerHTML = items.length ? items.map(renderRow).join("") : `<div class="ep-db-empty">Ничего не найдено.</div>`;
-    if (info) info.textContent = items.length + " позиц." + (state.selected.size ? " · выбрано " + state.selected.size : "");
+    list.innerHTML = renderContent();
+    if (info) {
+      const n = visibleItems().length;
+      info.textContent = n + " позиц." + (state.selected.size ? " · выбрано " + state.selected.size : "");
+    }
   }
 
   function readForm(prefix) {

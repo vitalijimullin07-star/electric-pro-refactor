@@ -1,0 +1,9 @@
+<section class="page">
+  <div class="page-head">
+    <h1>База данных</h1>
+    <p>Позиции для сметы. Переключай «БД сервера / Моя БД» — расчёт идёт из активной базы.</p>
+  </div>
+  <div id="ep-db-root" class="ep-db-root">
+    <div class="card"><p class="badge">Загрузка базы…</p></div>
+  </div>
+</section>
