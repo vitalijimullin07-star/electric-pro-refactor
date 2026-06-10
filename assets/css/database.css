@@ -185,3 +185,23 @@
 }
 .ep-db-row-name { font-weight: 600; letter-spacing: 0; text-transform: none; }
 .ep-db-row-meta { font-weight: 400; }
+
+/* ============================================================
+   Блок статуса Firebase + выбор валюты
+   ============================================================ */
+.ep-db-sync { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
+.ep-db-sync-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.ep-db-sync-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; box-shadow: 0 0 6px rgba(0,0,0,.4); }
+.ep-db-sync-state { color: var(--text); font-weight: 600; }
+.ep-db-sync-time { color: var(--muted); font-size: 12px; }
+.ep-db-sync-counts { color: var(--muted); font-size: 12px; margin-left: auto; white-space: nowrap; }
+.ep-db-sync-msg { color: var(--muted); font-size: 12px; }
+.ep-db-sync-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.ep-db-sync-btns .btn { flex: 1 1 auto; min-width: 120px; padding: 7px 9px; font-size: 12.5px; }
+
+/* селект валюты в тулбаре */
+.ep-db-cur {
+  flex: 0 0 auto; padding: 8px 9px; border-radius: var(--button-radius);
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(0,0,0,.22); color: var(--text); font-size: 14px; font-weight: 600;
+}

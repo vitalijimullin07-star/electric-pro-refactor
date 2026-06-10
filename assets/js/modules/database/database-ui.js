@@ -31,9 +31,10 @@
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
-  function priceText(n) {
+  function priceText(n, cur) {
+    if (window.EP.Currency && EP.Currency.format) return EP.Currency.format(n, cur);
     const v = typeof n === "number" ? n : parseFloat(String(n).replace(",", ".")) || 0;
-    return v.toLocaleString("ru-RU", { maximumFractionDigits: 2 });
+    return v.toLocaleString("ru-RU", { maximumFractionDigits: 2 }) + " ₽";
   }
   function isMy() { return state.base === "my"; }
 
@@ -68,6 +69,8 @@
           <span class="badge ep-db-count">${c.material} мат · ${c.work} раб</span>
         </div>
 
+        ${renderSyncBlock()}
+
         <div class="ep-db-actions">
           ${isMy() ? `
             <button class="btn btn-primary ep-clickable" data-db-add type="button">＋ Добавить</button>
@@ -87,6 +90,7 @@
             <button class="ep-db-tab ${state.type === "work" ? "is-active" : ""}" data-db-type="work" type="button">🧰 Работа</button>
           </div>
           <input class="ep-db-search" type="search" placeholder="Поиск по названию…" value="${esc(state.search)}" data-db-search />
+          ${renderCurrencyPicker()}
         </div>
 
         <div class="ep-db-chips" data-db-cats>
@@ -106,6 +110,51 @@
         </div>
       </div>
     `;
+  }
+
+  // выбор валюты
+  function renderCurrencyPicker() {
+    if (!(window.EP.Currency && EP.Currency.list)) return "";
+    const cur = EP.Currency.code();
+    return `<select class="ep-db-cur" data-db-cur title="Валюта">
+      ${EP.Currency.list().map((c) => `<option value="${c.code}" ${c.code === cur ? "selected" : ""}>${c.symbol} ${c.code}</option>`).join("")}
+    </select>`;
+  }
+
+  // блок статуса синхронизации с Firebase
+  const SYNC_STATE_RU = { init: "проверка…", connected: "подключено", "signed-out": "нет входа", error: "ошибка", "permission-denied": "нет прав", cache: "локальный кэш", offline: "недоступно" };
+  const SYNC_DOT = { connected: "#22c55e", "permission-denied": "#f59e0b", cache: "#f59e0b", error: "#ef4444", "signed-out": "#a7b0c0" };
+
+  function renderSyncBlock() {
+    const s = (EP.Database.getFirestoreStatus && EP.Database.getFirestoreStatus()) || { state: "offline" };
+    const admin = !!(EP.DatabaseSync && EP.DatabaseSync.isAdmin && EP.DatabaseSync.isAdmin());
+    const dot = SYNC_DOT[s.state] || "#a7b0c0";
+    const time = s.lastSync ? new Date(s.lastSync).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "";
+    return `
+      <div class="card ep-db-sync" data-db-syncblock>
+        <div class="ep-db-sync-row">
+          <span class="ep-db-sync-dot" style="background:${dot}"></span>
+          <span class="ep-db-sync-state">Firebase: ${SYNC_STATE_RU[s.state] || s.state}</span>
+          ${time ? `<span class="ep-db-sync-time">${time}</span>` : ""}
+          <span class="ep-db-sync-counts">облако · Моя ${s.myCount == null ? "–" : s.myCount} · Сервер ${s.serverCount == null ? "–" : s.serverCount}</span>
+        </div>
+        ${s.message ? `<div class="ep-db-sync-msg">${esc(s.message)}</div>` : ""}
+        <div class="ep-db-sync-btns">
+          <button class="btn btn-ghost ep-clickable" data-db-pull type="button">⬇️ Firebase → локально</button>
+          <button class="btn btn-ghost ep-clickable" data-db-push-my type="button">⬆️ Моя → Firebase</button>
+          ${admin ? `<button class="btn btn-ghost ep-clickable" data-db-push-server type="button">⬆️ Сервер → Firebase</button>` : ""}
+        </div>
+      </div>`;
+  }
+
+  function updateSyncBlock() {
+    if (!rootEl || !document.body.contains(rootEl)) return;
+    const el = rootEl.querySelector("[data-db-syncblock]");
+    if (!el) return;
+    const tmp = document.createElement("div");
+    tmp.innerHTML = renderSyncBlock();
+    const fresh = tmp.firstElementChild;
+    if (fresh) el.replaceWith(fresh);
   }
 
   // контент: при поиске — плоский список; иначе — дерево папок
@@ -179,7 +228,7 @@
           <div class="ep-db-row-name">${esc(it.name) || "<без названия>"}</div>
           <div class="ep-db-row-meta">${esc(it.category)}${it.subcategory ? " · " + esc(it.subcategory) : ""} · ${esc(it.unit)}</div>
         </div>
-        <div class="ep-db-row-price">${priceText(it.price)} ₽</div>
+        <div class="ep-db-row-price">${priceText(it.price, it.currency)}</div>
         ${isMy() ? `<button class="ep-db-iconbtn" data-db-edit="${esc(it.id)}" type="button" aria-label="Изменить">✏️</button>` : ""}
         <button class="ep-db-iconbtn" data-db-toest="${esc(it.id)}" type="button" aria-label="В смету">＋</button>
       </div>`;
@@ -352,10 +401,15 @@
     if (hit("[data-db-import]")) { doImport(); return; }
     if (hit("[data-db-export]")) { doExport(); return; }
     if (hit("[data-db-copy]")) { copySelectedToMy(); return; }
+
+    if (hit("[data-db-pull]")) { syncPull(); return; }
+    if (hit("[data-db-push-my]")) { syncPushMy(); return; }
+    if (hit("[data-db-push-server]")) { syncPushServer(); return; }
   }
 
   function onChange(e) {
     if (e.target.matches("[data-db-selall]")) toggleAll(e.target.checked);
+    if (e.target.matches("[data-db-cur]") && window.EP.Currency) { EP.Currency.set(e.target.value); render(); }
   }
   function onInput(e) {
     if (e.target.matches("[data-db-search]")) { state.search = e.target.value; renderListOnly(); }
@@ -406,6 +460,36 @@
     render();
   }
 
+  // --- синхронизация с Firebase ---
+  async function syncPull() {
+    const localHas = DB.getLocalItems("my").length || DB.getLocalItems("server").length;
+    if (localHas && !confirm("Загрузить из Firebase в локальный кэш? Пустые базы в Firebase локальные данные НЕ затрут.")) return;
+    flash("Загрузка из Firebase…");
+    const r = await (EP.DatabaseSync ? EP.DatabaseSync.pullToLocal() : Promise.resolve({ ok: false, error: "no-sync" }));
+    if (r && r.ok) { state.base = DB.getActiveDb(); state.selected.clear(); render(); flash("Готово · Моя " + (r.my == null ? "–" : r.my) + " · Сервер " + (r.server == null ? "–" : r.server)); }
+    else flash("Не удалось: " + ((r && r.error) || ""));
+  }
+  async function syncPushMy() {
+    const n = DB.getLocalItems("my").length;
+    if (!n) { flash("Моя БД пуста — нечего выгружать"); return; }
+    if (!confirm("Выгрузить «Мою БД» (" + n + " поз.) в Firebase? Позиции с теми же id обновятся.")) return;
+    flash("Выгрузка Моей БД…");
+    const r = await DB.uploadMyDbToFirestore();
+    flash(r && r.ok ? ("Моя БД выгружена: " + r.count) : ("Ошибка: " + ((r && r.error) || "")));
+    updateSyncBlock();
+  }
+  async function syncPushServer() {
+    if (!(EP.DatabaseSync && EP.DatabaseSync.isAdmin && EP.DatabaseSync.isAdmin())) { flash("Только для администратора"); return; }
+    const n = DB.getLocalItems("server").length;
+    if (!n) { flash("БД сервера пуста — нечего выгружать"); return; }
+    if (!confirm("Выгрузить «БД сервера» (" + n + " поз.) в общий Firebase? Её видят все мастера. Только админ.")) return;
+    flash("Выгрузка БД сервера…");
+    const r = await DB.uploadServerDbToFirestore();
+    if (r && r.error === "permission-denied") flash("Нет прав записи (permission-denied)");
+    else flash(r && r.ok ? ("БД сервера выгружена: " + r.count) : ("Ошибка: " + ((r && r.error) || "")));
+    updateSyncBlock();
+  }
+
   // действия из модалок
   function onBodyClick(e) {
     const t = e.target;
@@ -452,6 +536,8 @@
   window.addEventListener("ep:route-loaded", (e) => {
     if (e.detail && e.detail.route === "database") mount();
   });
+  // обновление блока статуса синхронизации (без перерисовки всего экрана)
+  window.addEventListener("ep:db-sync-status", updateSyncBlock);
   // действия модалок — модалки висят на body
   document.addEventListener("click", onBodyClick);
 

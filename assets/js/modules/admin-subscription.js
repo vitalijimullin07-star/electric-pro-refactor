@@ -1,221 +1,298 @@
-/* Electric Pro V29.17 Admin Subscription Core */
-(function () {
-  "use strict";
+window.EP = window.EP || {};
 
-  window.EP = window.EP || {};
+EP.AdminSubscription = {
+  users: [],
+  adminEmails: ["vits0007@gmail.com"],
 
-  function getFirebase() {
-    return window.firebase || null;
-  }
+  getAuth() {
+    return window.firebase && firebase.auth ? firebase.auth() : null;
+  },
 
-  function currentUser() {
-    try {
-      const fb = getFirebase();
-      return fb && fb.auth ? fb.auth().currentUser : null;
-    } catch (error) {
-      return null;
-    }
-  }
+  getDb() {
+    return window.firebase && firebase.firestore ? firebase.firestore() : null;
+  },
 
-  async function callFunction(name, payload) {
-    const fb = getFirebase();
-    if (!fb || !fb.functions) throw new Error("Firebase Functions unavailable");
-    return fb.functions().httpsCallable(name)(payload || {});
-  }
+  isAdmin(user, profile) {
+    if (!user) return false;
+    if (this.adminEmails.includes(String(user.email || "").toLowerCase())) return true;
+    return profile?.role === "admin" || profile?.isAdmin === true;
+  },
 
-  function money(value) {
-    const n = Number(value || 0);
-    return `${n.toFixed(0)} ₽`;
-  }
+  async getMyProfile(user) {
+    const db = this.getDb();
+    if (!db || !user) return null;
+    const snap = await db.collection("users").doc(user.uid).get();
+    return snap.exists ? snap.data() : null;
+  },
 
-  function escapeHtml(value) {
-    return String(value ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
-  }
+  formatDate(value) {
+    if (!value) return "—";
+    const d = typeof value.toDate === "function" ? value.toDate() : new Date(value);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("ru-RU");
+  },
 
-  function planTitle(plan) {
-    return ({ none: "Нет", basic: "Базовая", ai: "С ИИ", trial: "Тест 2 дня" })[plan] || "Нет";
-  }
+  addDays(days) {
+    const d = new Date();
+    d.setDate(d.getDate() + Number(days || 0));
+    return d;
+  },
 
-  const AdminSubscription = {
-    users: [],
-    selected: null,
+  planLabel(plan) {
+    if (plan === "ai") return "С ИИ";
+    if (plan === "basic") return "Базовая";
+    if (plan === "test") return "Тест 2 дня";
+    return "Нет";
+  },
 
-    async loadUsers() {
-      const root = document.querySelector("#admin-subscription-root");
-      if (root) root.innerHTML = `<div class="card"><h2>Админка</h2><p>Загружаю пользователей...</p></div>`;
+  async loadUsers() {
+    const db = this.getDb();
+    if (!db) return [];
+    const snap = await db.collection("users").limit(100).get();
+    return snap.docs.map((doc) => Object.assign({ uid: doc.id }, doc.data()));
+  },
 
-      try {
-        const result = await callFunction("adminListUsers", {});
-        this.users = Array.isArray(result.data && result.data.users) ? result.data.users : [];
-      } catch (error) {
-        console.warn("AdminSubscription: function unavailable", error);
-        this.users = [];
-      }
+  async saveUser(uid, form) {
+    const db = this.getDb();
+    if (!db) throw new Error("Firestore не подключён");
 
-      this.render();
-    },
+    const plan = form.querySelector("[data-admin-plan]").value;
+    const days = Number(form.querySelector("[data-admin-days]").value || 0);
+    const aiMode = form.querySelector("[data-admin-ai-mode]").value;
+    const balance = Number(form.querySelector("[data-admin-ai-balance]").value || 0);
+    const approved = form.querySelector("[data-admin-approved]").value === "true";
+    const expiresAt = this.addDays(days);
+    const aiEnabled = plan === "ai" && (aiMode === "client_api" || balance > 0);
 
-    select(uid) {
-      this.selected = this.users.find((user) => user.uid === uid) || null;
-      this.render();
-    },
+    const payload = {
+      approved,
+      role: form.querySelector("[data-admin-role]").value,
+      subscriptionPlan: plan,
+      subscriptionStatus: plan === "none" ? "inactive" : "active",
+      subscriptionExpiresAt: expiresAt,
+      subscription: {
+        plan,
+        title: this.planLabel(plan),
+        status: plan === "none" ? "inactive" : "active",
+        expiresAt
+      },
+      aiMode,
+      aiEnabled,
+      aiBalanceRub: balance,
+      ai: {
+        mode: aiMode,
+        enabled: aiEnabled,
+        balanceRub: balance
+      },
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
 
-    async save() {
-      if (!this.selected) return;
-      const form = document.querySelector("#admin-access-form");
-      if (!form) return;
+    await db.collection("users").doc(uid).set(payload, { merge: true });
+    return payload;
+  },
 
-      const data = new FormData(form);
-      const payload = {
-        targetUid: this.selected.uid,
-        role: data.get("role"),
-        accessStatus: data.get("accessStatus"),
-        plan: data.get("plan"),
-        days: Number(data.get("days") || 0),
-        aiMode: data.get("aiMode"),
-        aiEnabled: data.get("aiEnabled") === "on",
-        aiBalanceRub: Number(data.get("aiBalanceRub") || 0),
-        note: String(data.get("note") || "")
-      };
+  userCard(user) {
+    const plan = user.subscriptionPlan || user.subscription?.plan || "none";
+    const role = user.role || (String(user.email || "").toLowerCase() === "vits0007@gmail.com" ? "admin" : "master");
+    const approved = user.approved === true;
+    const aiMode = user.aiMode || user.ai?.mode || "server_balance";
+    const balance = user.aiBalanceRub ?? user.ai?.balanceRub ?? 0;
+    const expires = user.subscriptionExpiresAt || user.subscription?.expiresAt;
+    const title = user.displayName || user.name || "Без имени";
+    const email = user.email || "Без email";
 
-      const status = document.querySelector("#admin-save-status");
-      if (status) status.textContent = "Сохраняю через серверную прокладку...";
-
-      try {
-        await callFunction("adminSetUserAccess", payload);
-        if (status) status.textContent = "Сохранено серверной функцией.";
-        await this.loadUsers();
-        this.selected = this.users.find((user) => user.uid === payload.targetUid) || this.selected;
-        this.render();
-      } catch (error) {
-        console.error(error);
-        if (status) status.textContent = "Не сохранено: Cloud Functions не задеплоены или нет прав админа.";
-      }
-    },
-
-    userCard(user) {
-      const sub = user.subscription || {};
-      const ai = user.ai || {};
-      return `
-        <button class="admin-user-row" type="button" data-admin-user="${escapeHtml(user.uid)}">
-          <span><b>${escapeHtml(user.displayName || user.email || user.uid)}</b><small>${escapeHtml(user.email || "без email")}</small></span>
-          <span>${escapeHtml(planTitle(sub.plan))}</span>
-          <span>${escapeHtml(user.role || "master")}</span>
-          <span>${money(ai.balanceRub)}</span>
-        </button>
-      `;
-    },
-
-    selectedCard() {
-      const user = this.selected;
-      if (!user) {
-        return `<div class="card"><h2>Карточка мастера</h2><p>Выбери пользователя слева.</p></div>`;
-      }
-      const sub = user.subscription || {};
-      const ai = user.ai || {};
-      return `
-        <div class="card admin-card">
-          <h2>Карточка мастера</h2>
-          <p class="muted">${escapeHtml(user.email || user.uid)}</p>
-          <form id="admin-access-form">
-            <label>Роль
-              <select name="role">
-                <option value="master" ${user.role === "master" ? "selected" : ""}>Мастер</option>
-                <option value="admin" ${user.role === "admin" ? "selected" : ""}>Админ</option>
-              </select>
-            </label>
-            <label>Доступ
-              <select name="accessStatus">
-                <option value="approved" ${user.accessStatus === "approved" ? "selected" : ""}>Разрешён</option>
-                <option value="pending" ${user.accessStatus === "pending" ? "selected" : ""}>Ожидает</option>
-                <option value="blocked" ${user.accessStatus === "blocked" ? "selected" : ""}>Закрыт</option>
-              </select>
-            </label>
-            <label>Тариф
-              <select name="plan">
-                <option value="none" ${sub.plan === "none" ? "selected" : ""}>Нет</option>
-                <option value="basic" ${sub.plan === "basic" ? "selected" : ""}>Базовая</option>
-                <option value="ai" ${sub.plan === "ai" ? "selected" : ""}>С ИИ</option>
-                <option value="trial" ${sub.plan === "trial" ? "selected" : ""}>Тест 2 дня</option>
-              </select>
-            </label>
-            <label>Срок
-              <select name="days">
-                <option value="2">2 дня</option>
-                <option value="30" selected>30 дней</option>
-                <option value="90">90 дней</option>
-                <option value="180">180 дней</option>
-                <option value="360">360 дней</option>
-              </select>
-            </label>
-            <label>ИИ-режим
-              <select name="aiMode">
-                <option value="server" ${ai.mode === "server" ? "selected" : ""}>API сервера / баланс</option>
-                <option value="client" ${ai.mode === "client" ? "selected" : ""}>API клиента</option>
-                <option value="off" ${ai.mode === "off" ? "selected" : ""}>Выключен</option>
-              </select>
-            </label>
-            <label class="admin-check"><input type="checkbox" name="aiEnabled" ${ai.enabled ? "checked" : ""}> ИИ включён</label>
-            <label>Баланс ИИ, ₽
-              <input name="aiBalanceRub" type="number" step="1" min="0" value="${Number(ai.balanceRub || 0)}">
-            </label>
-            <label>Комментарий
-              <textarea name="note" rows="3">${escapeHtml(user.adminNote || "")}</textarea>
-            </label>
-            <button class="tile admin-save" type="button" id="admin-save-access">Сохранить параметры</button>
-            <p id="admin-save-status" class="muted"></p>
-          </form>
+    return `
+      <form class="ep-master-card" data-admin-user-form data-uid="${user.uid}">
+        <div class="ep-master-head">
+          <div>
+            <div class="ep-master-name">${title}</div>
+            <div class="ep-master-mail">${email}</div>
+            <div class="ep-master-meta">UID: ${user.uid}</div>
+            <div class="ep-master-meta">Подписка до: ${this.formatDate(expires)}</div>
+          </div>
+          <div class="ep-master-badge">${this.planLabel(plan)}</div>
         </div>
-      `;
-    },
 
-    render() {
-      const root = document.querySelector("#admin-subscription-root");
-      if (!root) return;
+        <div class="ep-admin-grid">
+          <label class="ep-admin-field">
+            <span class="ep-admin-label">Роль</span>
+            <select class="ep-admin-select" data-admin-role>
+              <option value="master" ${role === "master" ? "selected" : ""}>Мастер</option>
+              <option value="admin" ${role === "admin" ? "selected" : ""}>Админ</option>
+            </select>
+          </label>
 
-      const policy = window.EP && window.EP.AccessPolicy ? window.EP.AccessPolicy.current : null;
-      const user = currentUser();
-      const isAdmin = Boolean(policy && policy.role === "admin") || (user && user.email === "vits0007@gmail.com");
+          <label class="ep-admin-field">
+            <span class="ep-admin-label">Доступ</span>
+            <select class="ep-admin-select" data-admin-approved>
+              <option value="true" ${approved ? "selected" : ""}>Разрешён</option>
+              <option value="false" ${!approved ? "selected" : ""}>Ожидает</option>
+            </select>
+          </label>
 
-      if (!isAdmin) {
-        root.innerHTML = `<div class="card"><h2>Админка</h2><p>Доступ только администратору.</p></div>`;
-        return;
-      }
+          <label class="ep-admin-field">
+            <span class="ep-admin-label">Тариф</span>
+            <select class="ep-admin-select" data-admin-plan>
+              <option value="none" ${plan === "none" ? "selected" : ""}>Нет</option>
+              <option value="basic" ${plan === "basic" ? "selected" : ""}>Базовая</option>
+              <option value="ai" ${plan === "ai" ? "selected" : ""}>С ИИ</option>
+              <option value="test" ${plan === "test" ? "selected" : ""}>Тест 2 дня</option>
+            </select>
+          </label>
 
-      root.innerHTML = `
-        <div class="admin-layout">
-          <section class="card admin-list">
-            <h2>Пользователи</h2>
-            <p class="muted">Подписка и ИИ-баланс сохраняются только через Cloud Functions.</p>
-            <button class="tile" type="button" id="admin-refresh-users">Обновить список</button>
-            <div class="admin-user-list">
-              ${this.users.length ? this.users.map((user) => this.userCard(user)).join("") : `<p class="muted">Пользователи не загружены. Проверь Cloud Functions.</p>`}
-            </div>
-          </section>
-          ${this.selectedCard()}
+          <label class="ep-admin-field">
+            <span class="ep-admin-label">Срок</span>
+            <select class="ep-admin-select" data-admin-days>
+              <option value="2">2 дня</option>
+              <option value="30" selected>30 дней</option>
+              <option value="90">90 дней</option>
+              <option value="180">180 дней</option>
+              <option value="360">360 дней</option>
+            </select>
+          </label>
+
+          <label class="ep-admin-field">
+            <span class="ep-admin-label">ИИ режим</span>
+            <select class="ep-admin-select" data-admin-ai-mode>
+              <option value="server_balance" ${aiMode === "server_balance" ? "selected" : ""}>API сервера / баланс</option>
+              <option value="client_api" ${aiMode === "client_api" ? "selected" : ""}>API клиента</option>
+              <option value="disabled" ${aiMode === "disabled" ? "selected" : ""}>Выключен</option>
+            </select>
+          </label>
+
+          <label class="ep-admin-field">
+            <span class="ep-admin-label">Баланс ИИ, ₽</span>
+            <input class="ep-admin-input" type="number" step="0.01" min="0" value="${balance}" data-admin-ai-balance />
+          </label>
+
+          <div class="ep-admin-field ep-wide">
+            <button class="ep-admin-button" type="submit">Сохранить пользователю</button>
+            <div class="ep-admin-status" data-admin-status></div>
+          </div>
         </div>
-      `;
+      </form>
+    `;
+  },
 
-      root.querySelectorAll("[data-admin-user]").forEach((button) => {
-        button.addEventListener("click", () => this.select(button.dataset.adminUser));
-      });
-      root.querySelector("#admin-refresh-users")?.addEventListener("click", () => this.loadUsers());
-      root.querySelector("#admin-save-access")?.addEventListener("click", () => this.save());
-    },
+  filterUsers(query) {
+    const q = String(query || "").trim().toLowerCase();
+    if (!q) return this.users;
+    return this.users.filter((user) => {
+      return [user.displayName, user.name, user.email, user.uid].some((value) => String(value || "").toLowerCase().includes(q));
+    });
+  },
 
-    init() {
-      window.addEventListener("ep:route-loaded", (event) => {
-        if (event.detail && event.detail.route === "admin") this.loadUsers();
+  renderUsers(list) {
+    const root = document.querySelector("#admin-users-root");
+    if (!root) return;
+    root.innerHTML = list.length ? list.map((user) => this.userCard(user)).join("") : `<div class="card">Пользователи не найдены.</div>`;
+
+    root.querySelectorAll("[data-admin-user-form]").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const status = form.querySelector("[data-admin-status]");
+        status.textContent = "Сохраняю...";
+        try {
+          await this.saveUser(form.dataset.uid, form);
+          status.textContent = "Сохранено.";
+        } catch (error) {
+          console.error(error);
+          status.textContent = "Ошибка: " + (error.message || error);
+        }
       });
-      window.addEventListener("ep:access-policy", () => this.render());
+    });
+  },
+
+  async createMyTest() {
+    const auth = this.getAuth();
+    const db = this.getDb();
+    const user = auth?.currentUser;
+    if (!db || !user) throw new Error("Нужно войти в аккаунт");
+    const expiresAt = this.addDays(30);
+    await db.collection("users").doc(user.uid).set({
+      email: user.email,
+      displayName: user.displayName || "Виталий Имуллин",
+      role: "admin",
+      approved: true,
+      subscriptionPlan: "ai",
+      subscriptionStatus: "active",
+      subscriptionExpiresAt: expiresAt,
+      subscription: { plan: "ai", title: "С ИИ", status: "active", expiresAt },
+      aiMode: "server_balance",
+      aiEnabled: true,
+      aiBalanceRub: 1000,
+      ai: { mode: "server_balance", enabled: true, balanceRub: 1000 },
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  },
+
+  async render() {
+    const root = document.querySelector("#admin-subscription-root");
+    if (!root) return;
+
+    const auth = this.getAuth();
+    const db = this.getDb();
+
+    if (!auth || !db) {
+      root.innerHTML = `<div class="card"><h2>Админка</h2><p>Firebase ещё не подключён.</p></div>`;
+      return;
     }
-  };
 
-  window.EP.AdminSubscription = AdminSubscription;
-  AdminSubscription.init();
-})();
+    const user = auth.currentUser;
+    if (!user) {
+      root.innerHTML = `<div class="card"><h2>Админка</h2><p>Нужно войти в аккаунт.</p><button class="ep-admin-button" data-route="login">Перейти ко входу</button></div>`;
+      return;
+    }
+
+    const profile = await this.getMyProfile(user);
+    if (!this.isAdmin(user, profile)) {
+      root.innerHTML = `<div class="card"><h2>Админка</h2><p>Доступ только для администратора.</p></div>`;
+      return;
+    }
+
+    root.innerHTML = `
+      <div class="ep-admin-page">
+        <section class="card ep-admin-hero">
+          <h1>Админ-панель</h1>
+          <p class="ep-admin-note">Управление подпиской, ИИ-режимом и балансом мастеров. Данные пишутся в Firestore: users/{uid}.</p>
+          <div class="ep-admin-toolbar">
+            <button class="ep-admin-button" type="button" id="admin-refresh-users">Обновить</button>
+            <button class="ep-admin-button-secondary" type="button" id="admin-create-my-test">Создать/обновить мой тест</button>
+          </div>
+        </section>
+        <section class="card">
+          <input class="ep-admin-search" id="admin-user-search" placeholder="Поиск по имени, email или UID" />
+        </section>
+        <section id="admin-users-root" class="ep-admin-list">
+          <div class="card">Загружаю мастеров...</div>
+        </section>
+      </div>
+    `;
+
+    const reload = async () => {
+      const listRoot = document.querySelector("#admin-users-root");
+      if (listRoot) listRoot.innerHTML = `<div class="card">Загружаю мастеров...</div>`;
+      this.users = await this.loadUsers();
+      this.renderUsers(this.users);
+    };
+
+    document.querySelector("#admin-refresh-users")?.addEventListener("click", reload);
+    document.querySelector("#admin-create-my-test")?.addEventListener("click", async () => {
+      await this.createMyTest();
+      await reload();
+    });
+    document.querySelector("#admin-user-search")?.addEventListener("input", (event) => {
+      this.renderUsers(this.filterUsers(event.target.value));
+    });
+
+    await reload();
+  },
+
+  init() {
+    window.addEventListener("ep:route-loaded", (event) => {
+      if (event.detail?.route === "admin") this.render();
+    });
+  }
+};
+
+EP.AdminSubscription.init();

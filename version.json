@@ -1,13 +1,18 @@
 {
-  "version": "V29.21 Visual Settings Core",
-  "date": "2026-06-10",
-  "project": "electric-pro-refactor",
-  "firebaseMode": "existing-firebase-read-only",
-  "serverDeploy": false,
-  "changes": [
-    "Возвращает страницу и кнопку Настройки визуала",
-    "Гарантирует подключение visual-settings.css и visual-settings.js",
-    "Сохраняет библиотеку звуков и визуальные настройки V29",
-    "Не трогает Firestore Rules, Cloud Functions и основной electric-pro"
+  "version": "V29.14 Admin Subscription Core",
+  "stage": "clean-rebuild",
+  "modules": [
+    "clean-router",
+    "clean-app-shell",
+    "visual-control",
+    "sound-library",
+    "admin-subscription"
+  ],
+  "protected": [
+    "database",
+    "shield",
+    "materials",
+    "work",
+    "manual-scheme"
   ]
 }

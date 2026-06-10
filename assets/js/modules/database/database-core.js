@@ -38,23 +38,26 @@
 
   function normalizeType(t, hint) {
     const v = str(t).toLowerCase();
-    if (v === "work" || v === "работа" || v === "услуга") return "work";
-    if (v === "material" || v === "материал") return "material";
+    if (v === "work" || v === "работа" || v === "услуга" || v === "раб") return "work";
+    if (v === "material" || v === "материал" || v === "mat" || v === "мат") return "material";
     if (hint === "work" || hint === "material") return hint;
     return "material";
   }
 
   function normalizeItem(raw, typeHint) {
     raw = raw || {};
+    const cur = (window.EP.Currency && EP.Currency.code) ? EP.Currency.code() : "RUB";
     return {
       id: str(raw.id) || uid(),
-      type: normalizeType(raw.type, typeHint),
-      name: str(raw.name || raw.title),
-      category: str(raw.category || raw.cat),
-      subcategory: str(raw.subcategory || raw.subcat || raw.sub),
-      unit: str(raw.unit || raw.ed || raw.measure) || "шт",
-      price: num(raw.price),
-      active: raw.active === false ? false : true
+      type: normalizeType(raw.type != null ? raw.type : (raw.t || raw.kind), typeHint),
+      name: str(raw.name || raw.title || raw.n),
+      category: str(raw.category || raw.cat || raw.c),
+      subcategory: str(raw.subcategory || raw.subcat || raw.sub || raw.sc || raw.g),
+      unit: str(raw.unit || raw.ed || raw.measure || raw.u) || "шт",
+      price: num(raw.price != null ? raw.price : raw.p),
+      currency: str(raw.currency) || cur,
+      active: raw.active === false ? false : true,
+      deleted: raw.deleted === true ? true : false
     };
   }
 
@@ -92,7 +95,7 @@
   // ---- чтение --------------------------------------------------------
   function getItems(base) {
     base = base || getActiveDb();
-    return sortItems(A.loadBase(base));
+    return sortItems(A.loadBase(base)).filter((x) => !x.deleted);
   }
 
   function getItemsByType(type, base) {
@@ -284,9 +287,31 @@
     return { ok: true, added: norm.length, total: result.length };
   }
 
+  // ---- алиасы и делегаты синхронизации (Firestore) -------------------
+  function getLocalItems(base) { return getItems(base); }
+  function saveLocalItems(base, items) {
+    const b = base === "server" ? "server" : "my";
+    const norm = (Array.isArray(items) ? items : []).map((x) => normalizeItem(x, x && x.type));
+    A.saveBase(b, norm);
+    emitChanged(b);
+    return norm.length;
+  }
+  function syncFromFirestore() {
+    return window.EP.DatabaseSync ? EP.DatabaseSync.syncAll() : Promise.resolve({ ok: false, error: "sync-module-missing" });
+  }
+  function uploadMyDbToFirestore() {
+    return window.EP.DatabaseSync ? EP.DatabaseSync.uploadMyDbCurrent() : Promise.resolve({ ok: false, error: "sync-module-missing" });
+  }
+  function uploadServerDbToFirestore() {
+    return window.EP.DatabaseSync ? EP.DatabaseSync.uploadServerDbCurrent() : Promise.resolve({ ok: false, error: "sync-module-missing" });
+  }
+  function getFirestoreStatus() {
+    return window.EP.DatabaseSync ? EP.DatabaseSync.getStatus() : { state: "offline", reason: "no-sync-module" };
+  }
+
   // ---- публичный контракт -------------------------------------------
   Object.assign(EP.Database, {
-    version: "V29.db.1",
+    version: "V29.db.2",
     TYPES,
     normalizeItem,
     sortItems,
@@ -305,6 +330,12 @@
     copyServerItemsToMyDb,
     exportJson,
     importJson,
-    importCsv
+    importCsv,
+    getLocalItems,
+    saveLocalItems,
+    syncFromFirestore,
+    uploadMyDbToFirestore,
+    uploadServerDbToFirestore,
+    getFirestoreStatus
   });
 })();
