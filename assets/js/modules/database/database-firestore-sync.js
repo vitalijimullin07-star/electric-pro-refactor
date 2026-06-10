@@ -51,9 +51,28 @@
 
   function handleErr(tag, e) {
     logErr(tag, e);
-    if (e && e.code === "permission-denied") { setState("permission-denied", "Нет прав (permission-denied)"); return { ok: false, error: "permission-denied" }; }
-    setState("error", "Ошибка: " + ((e && (e.code || e.message)) || e));
+    if (e && e.code === "permission-denied") { setState("permission-denied", "Нет прав Firestore (permission-denied)"); return { ok: false, error: "permission-denied" }; }
+    setState("error", "Ошибка синхронизации: " + ((e && (e.code || e.message)) || e));
     return { ok: false, error: String((e && (e.code || e.message)) || e) };
+  }
+
+  // слияние по id: remote перекрывает local при совпадении id; локальные-только сохраняются
+  function mergeById(local, remote) {
+    const map = new Map();
+    (local || []).forEach((x) => map.set(String(x.id), x));
+    (remote || []).forEach((x) => map.set(String(x.id), x));
+    return Array.from(map.values());
+  }
+
+  let busy = false;            // идёт download/seed — подавляем авто-выгрузку, чтобы не зациклить
+  let upTimer = null;
+  function scheduleMyUpload() {
+    if (busy || !db() || !uid()) return;
+    clearTimeout(upTimer);
+    upTimer = setTimeout(async () => {
+      const r = await uploadMyDbCurrent();
+      if (r && r.ok) setState("connected", "Сохранено в Firebase");
+    }, 800);
   }
 
   // позиция -> документ Firestore (нормализованный формат, без потери старого)
@@ -128,53 +147,78 @@
   }
 
   // ПУЛЛ Firestore -> локальный кэш. Пустой remote НЕ затирает локальное.
+  // Кнопка «Firebase → локально»: сливаем по id (remote перекрывает), пустое облако не трёт.
   async function pullToLocal(which) {
     if (!db()) { setState("cache", "Firebase недоступен — кэш"); return { ok: false, error: "no-db" }; }
     if (!uid()) { setState("signed-out", "Нет входа"); return { ok: false, error: "no-uid" }; }
+    busy = true;
     const res = {};
     try {
       if (which !== "my") {
         const remote = await downloadServerDb();
-        if (remote && remote.length) { EP.Database.saveLocalItems("server", remote); res.server = remote.length; } else res.server = 0;
+        if (remote && remote.length) { EP.Database.saveLocalItems("server", mergeById(EP.Database.getLocalItems("server"), remote)); res.server = remote.length; } else res.server = 0;
       }
       if (which !== "server") {
         const remote = await downloadMyDb();
-        if (remote && remote.length) { EP.Database.saveLocalItems("my", remote); res.my = remote.length; } else res.my = 0;
+        if (remote && remote.length) { EP.Database.saveLocalItems("my", mergeById(EP.Database.getLocalItems("my"), remote)); res.my = remote.length; } else res.my = 0;
       }
       status.lastSync = now();
       status.serverCount = EP.Database.getLocalItems("server").length;
       status.myCount = EP.Database.getLocalItems("my").length;
-      setState("connected", "Загружено из Firebase");
+      setState("connected", "БД загружена с сервера");
       window.dispatchEvent(new CustomEvent("ep:db-changed", { detail: { base: "my" } }));
       return Object.assign({ ok: true }, res);
     } catch (e) { return handleErr("db-load-error", e); }
+    finally { busy = false; }
   }
 
   // АВТО при входе — безопасно: локальное заполняем ТОЛЬКО если оно пустое.
+  // АВТО при входе: сливаем по id (без потери), при пустом облаке — засеваем локальной.
   async function syncAll() {
     if (!db()) { setState("cache", "Работаем из локального кэша"); return getStatus(); }
     const u = uid();
     if (!u) { setState("signed-out", "Нет входа — кэш"); return getStatus(); }
+    busy = true;
     try {
       const remoteServer = await downloadServerDb();
       const remoteMy = await downloadMyDb(u);
       const localServer = EP.Database.getLocalItems("server");
       const localMy = EP.Database.getLocalItems("my");
-      if (!localServer.length && remoteServer && remoteServer.length) EP.Database.saveLocalItems("server", remoteServer);
-      if (!localMy.length && remoteMy && remoteMy.length) EP.Database.saveLocalItems("my", remoteMy);
+
+      // СЕРВЕР: для мастера только чтение — сливаем в локальный кэш (remote перекрывает)
+      if ((remoteServer && remoteServer.length) || localServer.length) {
+        EP.Database.saveLocalItems("server", mergeById(localServer, remoteServer));
+      }
+      // МОЯ: сливаем по id (remote перекрывает, локальные-только сохраняются)
+      const myEmptyRemote = !(remoteMy && remoteMy.length);
+      const myMerged = mergeById(localMy, remoteMy);
+      if (myMerged.length) EP.Database.saveLocalItems("my", myMerged);
+      // выгружаем локальные-только позиции (которых нет в облаке), чтобы они появились на сервере
+      const remoteMyIds = new Set((remoteMy || []).map((x) => String(x.id)));
+      const localOnlyCount = myMerged.filter((x) => !remoteMyIds.has(String(x.id))).length;
+      if (localOnlyCount) {
+        try { await uploadMyDb(u, myMerged); } catch (e) { handleErr("db-save-error", e); }
+      }
+
       status.lastSync = now();
       status.serverCount = EP.Database.getLocalItems("server").length;
       status.myCount = EP.Database.getLocalItems("my").length;
       status.serverEmptyRemote = !(remoteServer && remoteServer.length);
-      status.myEmptyRemote = !(remoteMy && remoteMy.length);
-      setState("connected", "Подключено");
+      status.myEmptyRemote = myEmptyRemote;
+      setState("connected", localOnlyCount ? "Локальная БД сохранена в Firebase" : "БД загружена с сервера");
       window.dispatchEvent(new CustomEvent("ep:db-changed", { detail: { base: "my" } }));
       return getStatus();
     } catch (e) { handleErr("db-sync-error", e); return getStatus(); }
+    finally { busy = false; }
+  }
+
+  function init() {
+    if (uid() && db()) { setTimeout(() => { try { syncAll(); } catch (_) {} }, 200); }
+    return getStatus();
   }
 
   EP.DatabaseSync = {
-    PATHS, getStatus,
+    PATHS, init, getStatus,
     downloadServerDb, downloadMyDb, uploadMyDb, uploadServerDb,
     uploadMyDbCurrent, uploadServerDbCurrent,
     pullToLocal, syncAll, isAdmin, uid
@@ -184,5 +228,9 @@
   window.addEventListener("ep:auth-changed", (e) => {
     if (e && e.detail && e.detail.user) { setTimeout(() => { try { syncAll(); } catch (_) {} }, 300); }
     else { setState("signed-out", "Нет входа"); }
+  });
+  // авто-выгрузка «Моей БД» в Firestore после ЛЮБОГО изменения (add/edit/move/import/delete) — debounce
+  window.addEventListener("ep:db-changed", (e) => {
+    if (e && e.detail && e.detail.base === "my") scheduleMyUpload();
   });
 })();
