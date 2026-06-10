@@ -74,6 +74,14 @@ EP.ExistingFirebaseAccess = {
         return;
       }
 
+      const copyDbContractBtn = event.target.closest("[data-admin-copy-db-contract]");
+      if (copyDbContractBtn) {
+        event.preventDefault();
+        this.copyDatabaseClaudeContract(copyDbContractBtn);
+        window.SoundAPI?.click?.();
+        return;
+      }
+
       const copyBtn = event.target.closest("[data-copy-text]");
       if (copyBtn) {
         event.preventDefault();
@@ -370,7 +378,7 @@ EP.ExistingFirebaseAccess = {
         </section>
 
         ${this.sectionShell({ id: "admin-section-users", title: "Пользователи, подписка и ИИ-баланс", icon: "👤", subtitle: "Открываешь пользователя, задаёшь тариф, срок, ИИ-режим и баланс. Сейчас безопасный режим: готовим данные для Firebase Console/старой админки.", open: true, body: this.usersSection(uid, email, policy) })}
-        ${this.sectionShell({ id: "admin-section-database", title: "База данных", icon: "🗄️", subtitle: "Выбрать мастера, посмотреть личную базу, добавить позиции с ценой или без цены. Логику БД оставляем Claude.", body: this.placeholderSection("База данных", "Здесь будет выбор пользователя → просмотр личной БД → добавить в серверную БД с ценой/без цены.", ["users/{uid}/my_database", "user_databases/{uid}", "server_database"]) })}
+        ${this.sectionShell({ id: "admin-section-database", title: "База данных — зона Claude", icon: "🗄️", subtitle: "Логику БД, материалы и работы здесь не трогаем. Только место подключения и правила передачи.", body: this.databaseClaudeSection() })}
         ${this.sectionShell({ id: "admin-section-logs", title: "Логи ошибок", icon: "⚠️", subtitle: "Только ошибки. Не засоряем событиями кликов, навигацией и обычной диагностикой.", body: this.logsSection() })}
         ${this.sectionShell({ id: "admin-section-accounting", title: "Бухгалтерия", icon: "💰", subtitle: "Просмотр бухгалтерии выбранного мастера без смешивания с чужими данными.", body: this.placeholderSection("Бухгалтерия", "Выбор пользователя → документы/платежи/расходы/доходы. Полноценную логику подключим позже.", ["users/{uid}/accounting", "accounting/{uid}"]) })}
         ${this.sectionShell({ id: "admin-section-documents", title: "Документы", icon: "📄", subtitle: "Договоры, акты, PDF, печати и реквизиты мастера.", body: this.placeholderSection("Документы", "Выбор пользователя → документы → просмотр/проверка/экспорт. Локальные копии позже шифруем.", ["users/{uid}/documents", "documents/{uid}"]) })}
@@ -454,7 +462,7 @@ EP.ExistingFirebaseAccess = {
       </div>
 
       <div class="admin-console-card admin-panel-card">
-        <div class="admin-card-head"><div><h3>Предпросмотр документов</h3><p>Эти данные можно внести в Firebase Console по путям ниже.</p></div></div>
+        <div class="admin-card-head"><div><h3>Данные для Firebase Console</h3><p>Пока V29 не пишет защищённые поля напрямую. Эти блоки можно скопировать и внести вручную.</p></div></div>
         <div id="admin-workspace-preview" class="admin-preview-grid">${this.previewEmpty()}</div>
       </div>
 
@@ -692,6 +700,20 @@ EP.ExistingFirebaseAccess = {
         <pre>${this.escape(text)}</pre>
       </div>
     `;
+  },
+
+  copyDatabaseClaudeContract(button) {
+    const text = [
+      "Electric Pro V29 — зона БД для Claude",
+      "",
+      "Задача: подключить в админке раздел База данных без изменения V29 core.",
+      "Нужно: выбор пользователя → просмотр личной БД → добавление позиции в серверную БД с ценой или без цены.",
+      "Нельзя: трогать router/auth/firebase-init/visual-settings/sound-feedback, делать fix/patch/restore, смешивать БД со сметами и документами.",
+      "Наша сторона уже подготовила: визуальную секцию админки, авторизацию, доступ, статус, логи ошибок и точку входа.",
+      "Источник/синхронизацию БД подключать отдельным модулем БД, не через existing-firebase-access.js."
+    ].join("\n");
+    navigator.clipboard?.writeText?.(text);
+    if (button) this.flashButton(button, "Скопировано");
   },
 
   copyWorkspacePayload(kind, button) {

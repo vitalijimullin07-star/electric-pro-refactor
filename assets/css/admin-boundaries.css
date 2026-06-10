@@ -1,0 +1,100 @@
+/* ============================================================
+   Electric Pro V29.25 — Admin Boundaries Core
+
+   Назначение:
+   - делает админку понятнее по зонам ответственности;
+   - БД / Материалы / Работа помечены как зона Claude;
+   - наша сторона: пользователи, подписка, ИИ-баланс, доступ, логи ошибок;
+   - не меняет логику БД, router, auth, Firebase, visual-settings.
+   ============================================================ */
+
+.admin-owner-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.admin-owner-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: rgba(56,189,248,0.9);
+  opacity: .95;
+}
+
+.admin-owner-card--claude::before {
+  background: linear-gradient(180deg, #f59e0b, #22c55e);
+}
+
+.admin-owner-card--inna::before {
+  background: linear-gradient(180deg, #38bdf8, #22c55e);
+}
+
+.admin-owner-label {
+  display: inline-flex;
+  width: fit-content;
+  margin: 0 0 10px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 950;
+  letter-spacing: .06em;
+  color: #fef3c7;
+  background: rgba(245,158,11,.13);
+  border: 1px solid rgba(245,158,11,.24);
+}
+
+.admin-owner-card--inna .admin-owner-label {
+  color: #bbf7d0;
+  background: rgba(34,197,94,.12);
+  border-color: rgba(34,197,94,.22);
+}
+
+.admin-contract-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 4px;
+}
+
+.admin-contract-list > div {
+  display: grid;
+  gap: 4px;
+  padding: 10px 11px;
+  border-radius: 15px;
+  background: rgba(255,255,255,.055);
+  border: 1px solid rgba(255,255,255,.09);
+}
+
+.admin-contract-list b {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.admin-contract-list span {
+  color: rgba(248,250,252,.68);
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 700;
+}
+
+.admin-console-note.warn {
+  border-left: 4px solid #fb923c;
+}
+
+body[data-visual-mode="day"] .admin-owner-card,
+body[data-visual-mode="day"] .admin-contract-list > div {
+  background: rgba(255,255,255,.82);
+  border-color: rgba(148,163,184,.28);
+}
+
+body[data-visual-mode="day"] .admin-contract-list b,
+body[data-visual-mode="day"] .admin-owner-card h3 {
+  color: #0f172a;
+}
+
+body[data-visual-mode="day"] .admin-contract-list span,
+body[data-visual-mode="day"] .admin-owner-card p {
+  color: #475569;
+}
