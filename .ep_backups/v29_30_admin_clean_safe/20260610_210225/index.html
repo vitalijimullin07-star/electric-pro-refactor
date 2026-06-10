@@ -7,13 +7,17 @@
   <meta http-equiv="Cache-Control" content="no-store" />
   <title>Electric Pro V29 Clean Core</title>
   <link rel="stylesheet" href="assets/css/base.css?v=2918" />
-<link rel="stylesheet" href="assets/css/layout.css?v=2918" />
+  <link rel="stylesheet" href="assets/css/admin.css?v=2918" />
+  <link rel="stylesheet" href="assets/css/layout.css?v=2918" />
   <link rel="stylesheet" href="assets/css/theme.css?v=2918" />
   <link rel="stylesheet" href="assets/css/visual-settings.css?v=2921" />
   <link rel="stylesheet" href="assets/css/visual-firebase-sync.css?v=29281" />
   <link rel="stylesheet" href="assets/css/main-dashboard.css?v=2918" />
     <link rel="stylesheet" href="assets/css/main-day-readable.css?v=2923" />
-<link rel="stylesheet" href="assets/css/database.css?v=2925" />
+<link rel="stylesheet" href="assets/css/admin-console.css?v=2920" />
+  <link rel="stylesheet" href="assets/css/admin-boundaries.css?v=2925" />
+  <link rel="stylesheet" href="assets/css/admin-subscription.css?v=29281" />
+  <link rel="stylesheet" href="assets/css/database.css?v=2925" />
 <link rel="stylesheet" href="assets/css/database-day-readable.css?v=2922d" />
 </head>
 <body data-visual-mode="night" data-animation="glass" data-button-shape="soft" data-bg-style="live">
@@ -30,11 +34,15 @@
   <script defer src="assets/js/core/firebase-init.js?v=2918"></script>
   <script defer src="assets/js/core/router.js?v=2918"></script>
   <script defer src="assets/js/core/app-shell.js?v=2918"></script>
-  <script defer src="assets/js/core/auth.js?v=2932"></script>
+  <script defer src="assets/js/core/auth.js?v=2918"></script>
   <script src="assets/js/modules/visual-settings.js?v=2921"></script>
   <script defer src="assets/js/modules/visual-firebase-sync.js?v=29281"></script>
-<script defer src="assets/js/modules/subscription-state.js?v=29281"></script>
-<!-- Модуль База данных (V29) -->
+
+
+  <script defer src="assets/js/modules/existing-firebase-access.js?v=2920"></script>
+  <script defer src="assets/js/modules/subscription-state.js?v=29281"></script>
+  <script defer src="assets/js/modules/admin-subscription.js?v=29281"></script>
+  <!-- Модуль База данных (V29) -->
   <script defer src="assets/js/modules/estimate/estimate-draft.js?v=2925"></script>
     <script defer src="assets/js/modules/currency.js?v=2925"></script>
 <script defer src="assets/js/modules/database/database-storage.js?v=2925"></script>
@@ -45,14 +53,11 @@
 
   <script defer src="assets/js/core/app.js?v=2918"></script>
   <script src="assets/js/modules/sound-feedback.js?v=2921"></script>
-<!-- EP_ADMIN_V29_32_START -->
-<link rel="stylesheet" href="assets/css/admin.css?v=2932">
-<script defer src="assets/js/modules/admin/admin-core.js?v=2932"></script>
-<script defer src="assets/js/modules/admin/admin-users.js?v=2932"></script>
-<script defer src="assets/js/modules/admin/admin-subscriptions.js?v=2932"></script>
-<script defer src="assets/js/modules/admin/admin-ai-balance.js?v=2932"></script>
-<script defer src="assets/js/modules/admin/admin-security.js?v=2932"></script>
-<script defer src="assets/js/modules/admin/admin-logs.js?v=2932"></script>
-<!-- EP_ADMIN_V29_32_END -->
+  <script defer src="assets/js/modules/admin/admin-core.js?v=2929"></script>
+  <script defer src="assets/js/modules/admin/admin-users.js?v=2929"></script>
+  <script defer src="assets/js/modules/admin/admin-subscriptions.js?v=2929"></script>
+  <script defer src="assets/js/modules/admin/admin-ai-balance.js?v=2929"></script>
+  <script defer src="assets/js/modules/admin/admin-security.js?v=2929"></script>
+  <script defer src="assets/js/modules/admin/admin-logs.js?v=2929"></script>
 </body>
 </html>

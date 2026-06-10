@@ -43,10 +43,7 @@
         };
 
         await Admin.updateUserDoc(uid, {
-          status: blocked ? "blocked" : "approved",
-          accessStatus: blocked ? "blocked" : "approved",
-          approved: !blocked,
-          isApproved: !blocked,
+          status: blocked ? "blocked" : "active",
           securityPolicy: policy
         }, blocked ? "block_user" : "unblock_user");
 
@@ -56,7 +53,7 @@
           reason,
           createdAt: Admin.now(),
           createdBy: Admin.state.currentUser?.uid || "",
-          source: "ep-admin-v29.32"
+          source: "ep-admin-v29.30"
         });
 
         await Admin.reloadAll();

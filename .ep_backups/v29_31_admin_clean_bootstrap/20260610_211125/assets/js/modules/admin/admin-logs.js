@@ -5,6 +5,15 @@
   if (!Admin) return;
 
   Admin.Logs = {
+    shortJson(value) {
+      try {
+        const s = JSON.stringify(value || {});
+        return s.length > 220 ? s.slice(0, 220) + "..." : s;
+      } catch (_) {
+        return "";
+      }
+    },
+
     render() {
       const adminEl = Admin.$("#ep-admin-logs-admin");
       const errorEl = Admin.$("#ep-admin-logs-errors");

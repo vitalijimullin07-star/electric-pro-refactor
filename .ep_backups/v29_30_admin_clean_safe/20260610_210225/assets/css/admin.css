@@ -1,0 +1,143 @@
+:root{
+  --ep-admin-bg:#0f172a;
+  --ep-admin-card:rgba(255,255,255,.08);
+  --ep-admin-card2:rgba(255,255,255,.12);
+  --ep-admin-border:rgba(255,255,255,.14);
+  --ep-admin-text:#f8fafc;
+  --ep-admin-muted:#94a3b8;
+  --ep-admin-good:#22c55e;
+  --ep-admin-bad:#ef4444;
+  --ep-admin-warn:#f59e0b;
+  --ep-admin-blue:#38bdf8;
+}
+.ep-admin-root{
+  min-height:100vh;
+  padding:18px;
+  color:var(--ep-admin-text);
+  background:
+    radial-gradient(circle at 20% 10%, rgba(56,189,248,.14), transparent 30%),
+    radial-gradient(circle at 80% 20%, rgba(34,197,94,.10), transparent 28%),
+    var(--ep-admin-bg);
+  box-sizing:border-box;
+  font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
+.ep-admin-root *{box-sizing:border-box}
+.ep-admin-loading{
+  min-height:300px;
+  display:flex;
+  gap:16px;
+  align-items:center;
+  justify-content:center;
+  text-align:left;
+}
+.ep-admin-loader{
+  width:34px;height:34px;border-radius:50%;
+  border:4px solid rgba(255,255,255,.20);
+  border-top-color:var(--ep-admin-blue);
+  animation:epAdminSpin .8s linear infinite;
+}
+@keyframes epAdminSpin{to{transform:rotate(360deg)}}
+.ep-admin-header{
+  display:flex;align-items:flex-start;justify-content:space-between;
+  gap:14px;margin-bottom:16px;flex-wrap:wrap;
+}
+.ep-admin-title h1{margin:0 0 6px;font-size:26px;line-height:1.15}
+.ep-admin-title p{margin:0;color:var(--ep-admin-muted);font-size:14px}
+.ep-admin-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ep-admin-status{
+  padding:9px 12px;border-radius:999px;border:1px solid var(--ep-admin-border);
+  background:rgba(255,255,255,.06);color:var(--ep-admin-muted);font-size:13px;
+}
+.ep-admin-btn{
+  border:1px solid var(--ep-admin-border);background:var(--ep-admin-card);
+  color:var(--ep-admin-text);padding:10px 12px;border-radius:12px;
+  cursor:pointer;font-weight:650;font-size:13px;
+}
+.ep-admin-btn:hover{background:var(--ep-admin-card2)}
+.ep-admin-btn.primary{background:rgba(56,189,248,.18);border-color:rgba(56,189,248,.35)}
+.ep-admin-btn.good{background:rgba(34,197,94,.16);border-color:rgba(34,197,94,.35)}
+.ep-admin-btn.bad{background:rgba(239,68,68,.16);border-color:rgba(239,68,68,.35)}
+.ep-admin-btn.warn{background:rgba(245,158,11,.16);border-color:rgba(245,158,11,.35)}
+.ep-admin-grid{
+  display:grid;grid-template-columns:repeat(6,minmax(130px,1fr));
+  gap:10px;margin:12px 0 16px;
+}
+.ep-admin-metric{
+  background:var(--ep-admin-card);border:1px solid var(--ep-admin-border);
+  border-radius:16px;padding:12px;min-height:82px;
+}
+.ep-admin-metric b{display:block;font-size:24px;margin-bottom:4px}
+.ep-admin-metric span{display:block;font-size:12px;color:var(--ep-admin-muted)}
+.ep-admin-tabs{
+  display:flex;gap:8px;overflow:auto;margin:10px 0 14px;padding-bottom:3px;
+}
+.ep-admin-tab{
+  white-space:nowrap;border:1px solid var(--ep-admin-border);
+  background:rgba(255,255,255,.05);color:var(--ep-admin-text);
+  padding:10px 13px;border-radius:999px;cursor:pointer;font-weight:700;font-size:13px;
+}
+.ep-admin-tab.active{background:rgba(56,189,248,.18);border-color:rgba(56,189,248,.4)}
+.ep-admin-panel{display:none}
+.ep-admin-panel.active{display:block}
+.ep-admin-card{
+  background:var(--ep-admin-card);border:1px solid var(--ep-admin-border);
+  border-radius:18px;padding:14px;margin-bottom:12px;
+}
+.ep-admin-card h2,.ep-admin-card h3{margin:0 0 10px}
+.ep-admin-search{
+  width:100%;border:1px solid var(--ep-admin-border);background:rgba(15,23,42,.65);
+  color:var(--ep-admin-text);border-radius:14px;padding:12px 13px;margin-bottom:10px;
+}
+.ep-admin-table-wrap{overflow:auto;border-radius:14px;border:1px solid var(--ep-admin-border)}
+.ep-admin-table{width:100%;border-collapse:collapse;min-width:820px}
+.ep-admin-table th,.ep-admin-table td{
+  padding:10px;border-bottom:1px solid rgba(255,255,255,.08);
+  text-align:left;font-size:13px;vertical-align:middle;
+}
+.ep-admin-table th{color:var(--ep-admin-muted);font-size:12px;background:rgba(255,255,255,.04)}
+.ep-admin-table tr:hover td{background:rgba(255,255,255,.04)}
+.ep-admin-badge{
+  display:inline-flex;align-items:center;gap:5px;padding:5px 8px;border-radius:999px;
+  background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);
+  font-size:12px;color:var(--ep-admin-text);
+}
+.ep-admin-badge.good{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.28)}
+.ep-admin-badge.bad{background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.28)}
+.ep-admin-badge.warn{background:rgba(245,158,11,.14);border-color:rgba(245,158,11,.28)}
+.ep-admin-two{
+  display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,420px);gap:12px;
+}
+.ep-admin-form{display:grid;gap:9px}
+.ep-admin-form label{display:grid;gap:5px;color:var(--ep-admin-muted);font-size:12px}
+.ep-admin-form input,.ep-admin-form select,.ep-admin-form textarea{
+  width:100%;border:1px solid var(--ep-admin-border);background:rgba(15,23,42,.70);
+  color:var(--ep-admin-text);border-radius:12px;padding:10px;font:inherit;
+}
+.ep-admin-form textarea{min-height:72px;resize:vertical}
+.ep-admin-button-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.ep-admin-note{color:var(--ep-admin-muted);font-size:13px;line-height:1.45}
+.ep-admin-empty{padding:18px;color:var(--ep-admin-muted);text-align:center}
+.ep-admin-error{
+  background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);
+  color:#fecaca;border-radius:16px;padding:14px;margin:10px 0;
+}
+.ep-admin-ok{
+  background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.35);
+  color:#bbf7d0;border-radius:16px;padding:14px;margin:10px 0;
+}
+.ep-admin-toast{
+  position:fixed;left:50%;bottom:22px;transform:translateX(-50%);
+  z-index:99999;max-width:92vw;padding:12px 14px;border-radius:14px;
+  border:1px solid var(--ep-admin-border);background:#020617;color:#f8fafc;
+  box-shadow:0 14px 40px rgba(0,0,0,.35);font-weight:650;font-size:13px;
+}
+.ep-admin-menu-link{
+  display:inline-flex;align-items:center;justify-content:center;margin:6px;padding:10px 12px;
+  border-radius:12px;border:1px solid rgba(56,189,248,.35);
+  background:rgba(56,189,248,.16);color:#e0f2fe;text-decoration:none;font-weight:800;
+}
+@media(max-width:920px){
+  .ep-admin-grid{grid-template-columns:repeat(2,minmax(130px,1fr))}
+  .ep-admin-two{grid-template-columns:1fr}
+  .ep-admin-root{padding:12px}
+}

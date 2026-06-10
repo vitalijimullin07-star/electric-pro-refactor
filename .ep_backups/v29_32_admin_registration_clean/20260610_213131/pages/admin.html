@@ -1,17 +1,17 @@
-<section id="ep-admin-root" class="ep-admin-page" data-ep-admin="v29.32">
+<section id="ep-admin-root" class="ep-admin-page" data-ep-admin="v29.31">
   <div class="ep-admin-hero">
     <div>
-      <div class="ep-admin-kicker">Electric Pro V29.32</div>
+      <div class="ep-admin-kicker">Electric Pro V29</div>
       <h1>Админка</h1>
-      <p>Пользователи, регистрация мастеров, подписки, ИИ-баланс, безопасность и журналы. БД Claude не изменяется.</p>
+      <p>Пользователи, подписки, ИИ-баланс, безопасность и журналы. БД Claude не изменяется.</p>
     </div>
     <div class="ep-admin-status" id="ep-admin-status">Загрузка...</div>
   </div>
 
   <div class="ep-admin-dashboard" id="ep-admin-dashboard">
     <div class="ep-admin-card"><span>Пользователей</span><b id="ep-admin-count-users">—</b></div>
-    <div class="ep-admin-card"><span>Ожидают активации</span><b id="ep-admin-count-pending">—</b></div>
     <div class="ep-admin-card"><span>Активные подписки</span><b id="ep-admin-count-active">—</b></div>
+    <div class="ep-admin-card"><span>Без подписки</span><b id="ep-admin-count-empty">—</b></div>
     <div class="ep-admin-card"><span>Заблокированы</span><b id="ep-admin-count-blocked">—</b></div>
     <div class="ep-admin-card"><span>ИИ-аккаунты</span><b id="ep-admin-count-ai">—</b></div>
   </div>
@@ -29,7 +29,7 @@
   <div class="ep-admin-panel active" id="ep-admin-tab-users">
     <div class="ep-admin-toolbar">
       <input id="ep-admin-user-search" placeholder="Поиск: email, имя, UID, роль, статус">
-      <button id="ep-admin-refresh" type="button">Обновить</button>
+      <button id="ep-admin-refresh">Обновить</button>
     </div>
     <div class="ep-admin-grid">
       <div class="ep-admin-list" id="ep-admin-users-list"></div>
@@ -42,13 +42,13 @@
 
   <div class="ep-admin-panel" id="ep-admin-tab-subscriptions">
     <h2>Управление подписками</h2>
-    <p>Выберите пользователя во вкладке «Пользователи». Подписка сохраняется в <code>user_subscriptions/{uid}</code> и совместимые поля <code>users/{uid}</code>.</p>
+    <p>Выберите пользователя во вкладке «Пользователи», затем назначьте тариф в карточке.</p>
     <div id="ep-admin-subscription-plans"></div>
   </div>
 
   <div class="ep-admin-panel" id="ep-admin-tab-ai">
     <h2>ИИ-баланс</h2>
-    <p>Баланс сохраняется в <code>ai_accounts/{uid}</code>. API-ключи не показываются и не читаются.</p>
+    <p>Баланс редактируется в карточке пользователя. API-ключи не отображаются.</p>
     <div id="ep-admin-ai-list"></div>
   </div>
 

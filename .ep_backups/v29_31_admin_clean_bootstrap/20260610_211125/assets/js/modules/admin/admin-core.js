@@ -1,14 +1,12 @@
 (() => {
   "use strict";
 
-  const ADMIN_VERSION = "V29.32";
+  const ADMIN_VERSION = "V29.30";
   const EP = window.EP = window.EP || {};
   const Admin = EP.Admin = EP.Admin || {};
 
   Admin.state = {
     version: ADMIN_VERSION,
-    booted: false,
-    initInProgress: false,
     firebaseReady: false,
     db: null,
     auth: null,
@@ -36,17 +34,6 @@
 
   Admin.$ = (selector, root = document) => root.querySelector(selector);
   Admin.$$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
-
-  Admin.isAdminRoute = () => {
-    const hash = String(location.hash || "");
-    const path = String(location.pathname || "");
-    return !!document.querySelector("#ep-admin-root")
-      || hash === "#admin"
-      || hash.startsWith("#admin/")
-      || hash === "#/admin"
-      || hash.startsWith("#/admin/")
-      || path.endsWith("/admin.html");
-  };
 
   Admin.setStatus = (message, tone = "") => {
     const el = Admin.$("#ep-admin-status");
@@ -82,20 +69,8 @@
 
   Admin.now = () => new Date().toISOString();
 
-  Admin.waitForFirebase = () => new Promise((resolve) => {
-    const started = Date.now();
-    const tick = () => {
-      if (window.firebase && firebase.auth && firebase.firestore) return resolve(true);
-      if (EP.Firebase?.db && EP.Firebase?.auth) return resolve(true);
-      if (Date.now() - started > 9000) return resolve(false);
-      setTimeout(tick, 120);
-    };
-    tick();
-  });
-
-  Admin.requireFirebase = async () => {
-    const ok = await Admin.waitForFirebase();
-    if (!ok) {
+  Admin.requireFirebase = () => {
+    if (!window.firebase || !firebase.auth || !firebase.firestore) {
       Admin.setStatus("Firebase не найден", "ep-admin-warn");
       return false;
     }
@@ -105,39 +80,19 @@
     return true;
   };
 
-  Admin.waitForAuth = async () => new Promise(async (resolve) => {
-    const firebaseOk = await Admin.requireFirebase();
-    if (!firebaseOk) return resolve(null);
-
-    const epUser = EP.state?.user || null;
-    if (epUser?.uid && Admin.state.auth.currentUser?.uid === epUser.uid) {
-      Admin.state.currentUser = Admin.state.auth.currentUser;
-      return resolve(Admin.state.auth.currentUser);
-    }
-
-    const current = Admin.state.auth.currentUser;
-    if (current) {
-      Admin.state.currentUser = current;
-      return resolve(current);
-    }
-
-    let finished = false;
+  Admin.waitForAuth = () => new Promise((resolve) => {
+    if (!Admin.requireFirebase()) return resolve(null);
     const done = (user) => {
-      if (finished) return;
-      finished = true;
       Admin.state.currentUser = user || null;
       resolve(user || null);
     };
-
+    const current = Admin.state.auth.currentUser;
+    if (current) return done(current);
     const unsub = Admin.state.auth.onAuthStateChanged((user) => {
       try { unsub(); } catch (_) {}
       done(user);
     });
-
-    setTimeout(() => {
-      try { unsub(); } catch (_) {}
-      done(Admin.state.auth.currentUser || null);
-    }, 4500);
+    setTimeout(() => done(Admin.state.auth.currentUser || null), 3500);
   });
 
   Admin.getDocData = async (collection, id) => {
@@ -185,8 +140,7 @@
 
     Admin.state.currentProfile = profile || { uid: user.uid, email: user.email };
     const role = String(profile?.role || "").toLowerCase();
-    const adminEmail = String(user?.email || "").toLowerCase() === "vits0007@gmail.com";
-    const isAdmin = adminEmail || role === "admin" || profile?.isAdmin === true;
+    const isAdmin = role === "admin" || profile?.isAdmin === true;
     Admin.state.isAdmin = isAdmin;
 
     if (!isAdmin) {
@@ -205,11 +159,10 @@
     root.innerHTML = `
       <div class="ep-admin-hero">
         <div>
-          <div class="ep-admin-kicker">Electric Pro V29.32</div>
+          <div class="ep-admin-kicker">Electric Pro V29</div>
           <h1>Админка</h1>
           <p>${Admin.escape(message)}</p>
         </div>
-        <div id="ep-admin-status" class="ep-admin-status ep-admin-warn">${Admin.escape(message)}</div>
       </div>
     `;
   };
@@ -219,14 +172,12 @@
     if (root) return root;
 
     if (location.hash === "#admin" || location.hash.startsWith("#admin/")) {
-      const target = document.querySelector("#pageContent") || document.querySelector("#app") || document.body;
-      root = document.createElement("section");
+      root = document.createElement("main");
       root.id = "ep-admin-root";
       root.className = "ep-admin-page";
-      root.dataset.epAdmin = "bootstrap";
-      root.innerHTML = "<div class='ep-admin-hero'><div><div class='ep-admin-kicker'>Electric Pro V29.32</div><h1>Админка</h1><p>Загрузка страницы админки...</p></div><div id='ep-admin-status' class='ep-admin-status'>Загрузка...</div></div>";
-      target.innerHTML = "";
-      target.appendChild(root);
+      document.body.innerHTML = "";
+      document.body.appendChild(root);
+      root.innerHTML = "<div class='ep-admin-hero'><h1>Админка</h1><div id='ep-admin-status' class='ep-admin-status'>Загрузка...</div></div>";
       return root;
     }
 
@@ -235,9 +186,7 @@
 
   Admin.injectAdminPageIfNeeded = async () => {
     const root = Admin.ensureRoot();
-    if (!root) return;
-
-    if (root.dataset.epAdmin === "v29.32") return;
+    if (!root || root.dataset.epAdmin === "v29.30") return;
 
     try {
       const res = await fetch("pages/admin.html?admin=" + encodeURIComponent(ADMIN_VERSION), { cache: "no-store" });
@@ -247,11 +196,11 @@
       root.innerHTML = `
         <div class="ep-admin-hero">
           <div>
-            <div class="ep-admin-kicker">Electric Pro V29.32</div>
+            <div class="ep-admin-kicker">Electric Pro V29</div>
             <h1>Админка</h1>
             <p>Не удалось загрузить pages/admin.html</p>
           </div>
-          <div id="ep-admin-status" class="ep-admin-status ep-admin-warn">Ошибка</div>
+          <div id="ep-admin-status" class="ep-admin-status">Ошибка</div>
         </div>
       `;
     }
@@ -259,8 +208,6 @@
 
   Admin.bindTabs = () => {
     Admin.$$(".ep-admin-tab").forEach((btn) => {
-      if (btn.dataset.bound === "1") return;
-      btn.dataset.bound = "1";
       btn.addEventListener("click", () => {
         const tab = btn.dataset.adminTab;
         Admin.$$(".ep-admin-tab").forEach((b) => b.classList.remove("active"));
@@ -272,16 +219,10 @@
     });
 
     const refresh = Admin.$("#ep-admin-refresh");
-    if (refresh && refresh.dataset.bound !== "1") {
-      refresh.dataset.bound = "1";
-      refresh.addEventListener("click", () => Admin.reloadAll());
-    }
+    if (refresh) refresh.addEventListener("click", () => Admin.reloadAll());
 
     const search = Admin.$("#ep-admin-user-search");
-    if (search && search.dataset.bound !== "1") {
-      search.dataset.bound = "1";
-      search.addEventListener("input", () => Admin.Users?.renderList());
-    }
+    if (search) search.addEventListener("input", () => Admin.Users?.renderList());
   };
 
   Admin.reloadAll = async () => {
@@ -322,7 +263,7 @@
         actorUid: actor?.uid || "",
         actorEmail: actor?.email || "",
         createdAt: Admin.now(),
-        source: "ep-admin-v29.32"
+        source: "ep-admin-v29.30"
       });
     } catch (error) {
       console.warn("[EP Admin] log write failed", error);
@@ -339,69 +280,27 @@
   };
 
   Admin.init = async () => {
-    if (!Admin.isAdminRoute()) return;
-    if (Admin.state.initInProgress) return;
+    await Admin.injectAdminPageIfNeeded();
+    if (!Admin.ensureRoot()) return;
 
-    Admin.state.initInProgress = true;
-    try {
-      await Admin.injectAdminPageIfNeeded();
-      if (!Admin.ensureRoot()) return;
+    Admin.bindTabs();
 
-      Admin.bindTabs();
-      Admin.setStatus("Ожидание Firebase...");
+    const user = await Admin.waitForAuth();
+    const ok = await Admin.checkAdminAccess(user);
+    if (!ok) return;
 
-      const user = await Admin.waitForAuth();
-      Admin.setStatus("Проверка прав...");
-
-      const ok = await Admin.checkAdminAccess(user);
-      if (!ok) return;
-
-      await Admin.reloadAll();
-    } finally {
-      Admin.state.initInProgress = false;
-    }
+    await Admin.reloadAll();
   };
 
-  Admin.boot = () => {
-    if (Admin.state.booted) return;
-    Admin.state.booted = true;
-
-    const start = () => setTimeout(() => Admin.init(), 0);
-
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", start, { once: true });
-    } else {
-      start();
+  document.addEventListener("DOMContentLoaded", () => {
+    if (document.querySelector("#ep-admin-root") || location.hash === "#admin" || location.hash.startsWith("#admin/")) {
+      Admin.init();
     }
+  });
 
-    window.addEventListener("load", start, { once: true });
-    window.addEventListener("hashchange", start);
-    window.addEventListener("ep:route-loaded", start);
-    window.addEventListener("ep:auth-changed", start);
-    window.addEventListener("ep:route-error", start);
-
-    const attachObserver = () => {
-      if (!document.body) return;
-      if (document.querySelector("#ep-admin-root")) {
-        start();
-        return;
-      }
-      const observer = new MutationObserver(() => {
-        if (document.querySelector("#ep-admin-root")) {
-          observer.disconnect();
-          start();
-        }
-      });
-      observer.observe(document.body, { childList: true, subtree: true });
-      setTimeout(() => observer.disconnect(), 15000);
-    };
-
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", attachObserver, { once: true });
-    } else {
-      attachObserver();
+  window.addEventListener("hashchange", () => {
+    if (location.hash === "#admin" || location.hash.startsWith("#admin/")) {
+      Admin.init();
     }
-  };
-
-  Admin.boot();
+  });
 })();

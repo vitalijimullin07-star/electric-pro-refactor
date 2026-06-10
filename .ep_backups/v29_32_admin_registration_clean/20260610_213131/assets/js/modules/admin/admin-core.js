@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const ADMIN_VERSION = "V29.32";
+  const ADMIN_VERSION = "V29.31";
   const EP = window.EP = window.EP || {};
   const Admin = EP.Admin = EP.Admin || {};
 
@@ -43,8 +43,6 @@
     return !!document.querySelector("#ep-admin-root")
       || hash === "#admin"
       || hash.startsWith("#admin/")
-      || hash === "#/admin"
-      || hash.startsWith("#/admin/")
       || path.endsWith("/admin.html");
   };
 
@@ -86,7 +84,6 @@
     const started = Date.now();
     const tick = () => {
       if (window.firebase && firebase.auth && firebase.firestore) return resolve(true);
-      if (EP.Firebase?.db && EP.Firebase?.auth) return resolve(true);
       if (Date.now() - started > 9000) return resolve(false);
       setTimeout(tick, 120);
     };
@@ -109,32 +106,25 @@
     const firebaseOk = await Admin.requireFirebase();
     if (!firebaseOk) return resolve(null);
 
-    const epUser = EP.state?.user || null;
-    if (epUser?.uid && Admin.state.auth.currentUser?.uid === epUser.uid) {
-      Admin.state.currentUser = Admin.state.auth.currentUser;
-      return resolve(Admin.state.auth.currentUser);
-    }
-
-    const current = Admin.state.auth.currentUser;
-    if (current) {
-      Admin.state.currentUser = current;
-      return resolve(current);
-    }
-
-    let finished = false;
     const done = (user) => {
-      if (finished) return;
-      finished = true;
       Admin.state.currentUser = user || null;
       resolve(user || null);
     };
 
+    const current = Admin.state.auth.currentUser;
+    if (current) return done(current);
+
+    let finished = false;
     const unsub = Admin.state.auth.onAuthStateChanged((user) => {
+      if (finished) return;
+      finished = true;
       try { unsub(); } catch (_) {}
       done(user);
     });
 
     setTimeout(() => {
+      if (finished) return;
+      finished = true;
       try { unsub(); } catch (_) {}
       done(Admin.state.auth.currentUser || null);
     }, 4500);
@@ -185,8 +175,7 @@
 
     Admin.state.currentProfile = profile || { uid: user.uid, email: user.email };
     const role = String(profile?.role || "").toLowerCase();
-    const adminEmail = String(user?.email || "").toLowerCase() === "vits0007@gmail.com";
-    const isAdmin = adminEmail || role === "admin" || profile?.isAdmin === true;
+    const isAdmin = role === "admin" || profile?.isAdmin === true;
     Admin.state.isAdmin = isAdmin;
 
     if (!isAdmin) {
@@ -205,7 +194,7 @@
     root.innerHTML = `
       <div class="ep-admin-hero">
         <div>
-          <div class="ep-admin-kicker">Electric Pro V29.32</div>
+          <div class="ep-admin-kicker">Electric Pro V29</div>
           <h1>Админка</h1>
           <p>${Admin.escape(message)}</p>
         </div>
@@ -219,14 +208,12 @@
     if (root) return root;
 
     if (location.hash === "#admin" || location.hash.startsWith("#admin/")) {
-      const target = document.querySelector("#pageContent") || document.querySelector("#app") || document.body;
-      root = document.createElement("section");
+      root = document.createElement("main");
       root.id = "ep-admin-root";
       root.className = "ep-admin-page";
-      root.dataset.epAdmin = "bootstrap";
-      root.innerHTML = "<div class='ep-admin-hero'><div><div class='ep-admin-kicker'>Electric Pro V29.32</div><h1>Админка</h1><p>Загрузка страницы админки...</p></div><div id='ep-admin-status' class='ep-admin-status'>Загрузка...</div></div>";
-      target.innerHTML = "";
-      target.appendChild(root);
+      document.body.innerHTML = "";
+      document.body.appendChild(root);
+      root.innerHTML = "<div class='ep-admin-hero'><div><div class='ep-admin-kicker'>Electric Pro V29</div><h1>Админка</h1><p>Загрузка страницы админки...</p></div><div id='ep-admin-status' class='ep-admin-status'>Загрузка...</div></div>";
       return root;
     }
 
@@ -237,7 +224,7 @@
     const root = Admin.ensureRoot();
     if (!root) return;
 
-    if (root.dataset.epAdmin === "v29.32") return;
+    if (root.dataset.epAdmin === "v29.31") return;
 
     try {
       const res = await fetch("pages/admin.html?admin=" + encodeURIComponent(ADMIN_VERSION), { cache: "no-store" });
@@ -247,7 +234,7 @@
       root.innerHTML = `
         <div class="ep-admin-hero">
           <div>
-            <div class="ep-admin-kicker">Electric Pro V29.32</div>
+            <div class="ep-admin-kicker">Electric Pro V29</div>
             <h1>Админка</h1>
             <p>Не удалось загрузить pages/admin.html</p>
           </div>
@@ -322,7 +309,7 @@
         actorUid: actor?.uid || "",
         actorEmail: actor?.email || "",
         createdAt: Admin.now(),
-        source: "ep-admin-v29.32"
+        source: "ep-admin-v29.31"
       });
     } catch (error) {
       console.warn("[EP Admin] log write failed", error);
@@ -376,10 +363,13 @@
 
     window.addEventListener("load", start, { once: true });
     window.addEventListener("hashchange", start);
-    window.addEventListener("ep:route-loaded", start);
-    window.addEventListener("ep:auth-changed", start);
-    window.addEventListener("ep:route-error", start);
 
+    document.addEventListener("ep:route:loaded", start);
+    document.addEventListener("ep:page:loaded", start);
+    document.addEventListener("ep:route:changed", start);
+
+    // Одноразовый безопасный bootstrap для SPA-роутера:
+    // следит только до появления #ep-admin-root и отключается максимум через 15 секунд.
     const attachObserver = () => {
       if (!document.body) return;
       if (document.querySelector("#ep-admin-root")) {

@@ -100,7 +100,6 @@
   overflow-x: auto;
   margin-bottom: 12px;
   padding-bottom: 4px;
-  scroll-snap-type: x proximity;
 }
 
 .ep-admin-tab,
@@ -112,11 +111,6 @@
   padding: 10px 14px;
   cursor: pointer;
   font-weight: 700;
-}
-
-.ep-admin-tab {
-  flex: 0 0 auto;
-  scroll-snap-align: start;
 }
 
 .ep-admin-tab.active,
@@ -191,32 +185,6 @@
   margin-top: 4px;
 }
 
-.ep-admin-badge {
-  display: inline-flex;
-  width: fit-content;
-  margin-top: 7px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--ep-admin-line);
-  color: var(--ep-admin-muted);
-  font-size: 11px;
-}
-
-.ep-admin-badge.pending {
-  color: var(--ep-admin-warn);
-  border-color: rgba(253, 230, 138, .45);
-}
-
-.ep-admin-badge.approved {
-  color: var(--ep-admin-ok);
-  border-color: rgba(134, 239, 172, .45);
-}
-
-.ep-admin-badge.blocked {
-  color: var(--ep-admin-danger);
-  border-color: rgba(251, 113, 133, .45);
-}
-
 .ep-admin-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(180px, 1fr));
@@ -275,15 +243,7 @@
   font-size: 12px;
 }
 
-code {
-  color: var(--ep-admin-warn);
-}
-
 @media (max-width: 820px) {
-  .ep-admin-page {
-    padding: 14px;
-  }
-
   .ep-admin-hero {
     align-items: stretch;
     flex-direction: column;
@@ -297,13 +257,5 @@ code {
   .ep-admin-log-columns,
   .ep-admin-form {
     grid-template-columns: 1fr;
-  }
-
-  .ep-admin-toolbar {
-    align-items: stretch;
-  }
-
-  .ep-admin-status {
-    min-width: 0;
   }
 }

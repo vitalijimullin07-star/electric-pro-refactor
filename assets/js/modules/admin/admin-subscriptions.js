@@ -7,10 +7,15 @@
   Admin.Subscriptions = {
     planName(planId) {
       return {
+        none: "Без подписки",
         basic: "Базовая",
         ai: "С ИИ",
         test_2_days: "Тест 2 дня"
-      }[planId] || planId || "—";
+      }[planId] || planId || "Без подписки";
+    },
+
+    statusForPlan(planId) {
+      return planId === "none" ? "inactive" : "active";
     },
 
     renderPlans() {
@@ -31,29 +36,57 @@
       `).join("");
     },
 
+    payloadFromForm(uid) {
+      const planId = Admin.$("#adm-plan")?.value || "none";
+      const expiresAt = Admin.fromDateInput(Admin.$("#adm-expires")?.value);
+      return {
+        uid,
+        planId,
+        planName: this.planName(planId),
+        status: this.statusForPlan(planId),
+        startsAt: Admin.state.subscriptions.get(uid)?.startsAt || Admin.now(),
+        expiresAt: planId === "none" ? null : expiresAt,
+        updatedAt: Admin.now(),
+        updatedBy: Admin.state.currentUser?.uid || "",
+        adminComment: Admin.$("#adm-comment")?.value || ""
+      };
+    },
+
     async save(uid) {
       try {
-        const planId = Admin.$("#adm-plan")?.value || "basic";
-        const expiresAt = Admin.fromDateInput(Admin.$("#adm-expires")?.value);
-        const payload = {
-          uid,
-          planId,
-          planName: this.planName(planId),
-          status: "active",
-          startsAt: Admin.state.subscriptions.get(uid)?.startsAt || Admin.now(),
-          expiresAt,
-          updatedAt: Admin.now(),
-          updatedBy: Admin.state.currentUser?.uid || "",
-          adminComment: Admin.$("#adm-comment")?.value || ""
-        };
-
+        const payload = this.payloadFromForm(uid);
         await Admin.state.db.collection(Admin.collections.subscriptions).doc(uid).set(payload, { merge: true });
+
+        await Admin.updateUserDoc(uid, {
+          subscriptionPlan: payload.planId,
+          subscriptionPlanName: payload.planName,
+          subscriptionStatus: payload.status,
+          subscriptionExpiresAt: payload.expiresAt,
+          planId: payload.planId,
+          planName: payload.planName
+        }, "update_subscription_user_compat");
+
         await Admin.writeAdminLog({ action: "update_subscription", targetUid: uid, newValue: payload });
         await Admin.reloadAll();
         Admin.Users.renderDetails(uid);
       } catch (error) {
         Admin.showFirestoreError("save subscription", error);
       }
+    },
+
+    async saveDefault(uid) {
+      const payload = {
+        uid,
+        planId: "none",
+        planName: "Без подписки",
+        status: "inactive",
+        startsAt: null,
+        expiresAt: null,
+        updatedAt: Admin.now(),
+        updatedBy: Admin.state.currentUser?.uid || "",
+        adminComment: "Создано автоматически при активации мастера"
+      };
+      await Admin.state.db.collection(Admin.collections.subscriptions).doc(uid).set(payload, { merge: true });
     }
   };
 })();

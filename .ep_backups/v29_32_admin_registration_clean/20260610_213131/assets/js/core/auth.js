@@ -111,7 +111,6 @@ EP.Auth = {
           : this.makePendingMasterProfile(firebaseUser);
 
         await ref.set(profile, { merge: true });
-        await this.ensureAccountDocs(firebaseUser, profile, { createMissingOnly: true });
 
         if (!adminByEmail) {
           this.setLoginStatus("Регистрация отправлена. Жди одобрения администратора.", "wait");
@@ -121,23 +120,7 @@ EP.Auth = {
       }
 
       const freshSnap = await ref.get();
-      let profile = freshSnap.exists ? freshSnap.data() : this.makeAdminProfile(firebaseUser);
-
-      if (adminByEmail && (profile.role !== "admin" || profile.isAdmin !== true)) {
-        await ref.set({
-          role: "admin",
-          isAdmin: true,
-          approved: true,
-          isApproved: true,
-          status: "approved",
-          accessStatus: "approved",
-          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
-        const adminSnap = await ref.get();
-        profile = adminSnap.exists ? adminSnap.data() : profile;
-      }
-
-      await this.ensureAccountDocs(firebaseUser, profile, { createMissingOnly: true });
+      const profile = freshSnap.exists ? freshSnap.data() : this.makeAdminProfile(firebaseUser);
 
       if (!this.canEnter(profile, firebaseUser)) {
         this.setLoginStatus("Аккаунт ожидает одобрения администратора.", "wait");
@@ -182,15 +165,6 @@ EP.Auth = {
       approved: true,
       isApproved: true,
       status: "approved",
-      accessStatus: "approved",
-      securityPolicy: {
-        blocked: false,
-        blockReason: "",
-        aiBlocked: false,
-        cacheDisabled: false,
-        onlineOnly: false,
-        reviewRequired: false
-      },
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     };
@@ -207,75 +181,9 @@ EP.Auth = {
       approved: false,
       isApproved: false,
       status: "pending",
-      accessStatus: "pending",
-      securityPolicy: {
-        blocked: false,
-        blockReason: "",
-        aiBlocked: false,
-        cacheDisabled: false,
-        onlineOnly: false,
-        reviewRequired: true
-      },
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     };
-  },
-
-  defaultSubscription(user, profile) {
-    const isAdmin = this.isAdminEmail(user) || profile?.role === "admin" || profile?.isAdmin === true;
-    return {
-      uid: user.uid,
-      planId: isAdmin ? "ai" : "none",
-      planName: isAdmin ? "С ИИ" : "Без подписки",
-      status: isAdmin ? "active" : "inactive",
-      startsAt: isAdmin ? firebase.firestore.FieldValue.serverTimestamp() : null,
-      expiresAt: null,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-      updatedBy: "auth-bootstrap",
-      source: "auth-v29.32"
-    };
-  },
-
-  defaultAiAccount(user, profile) {
-    const isAdmin = this.isAdminEmail(user) || profile?.role === "admin" || profile?.isAdmin === true;
-    return {
-      uid: user.uid,
-      allowAi: isAdmin,
-      aiMode: isAdmin ? "admin_api" : "disabled",
-      accessMode: isAdmin ? "admin_api" : "disabled",
-      balanceRub: 0,
-      spentRub: 0,
-      limitRub: 0,
-      provider: "mixed",
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-      updatedBy: "auth-bootstrap",
-      source: "auth-v29.32"
-    };
-  },
-
-  async ensureAccountDocs(user, profile, options = {}) {
-    const db = EP.Firebase?.db;
-    if (!db || !user?.uid) return;
-
-    const createMissingOnly = options.createMissingOnly !== false;
-    const subRef = db.collection("user_subscriptions").doc(user.uid);
-    const aiRef = db.collection("ai_accounts").doc(user.uid);
-
-    try {
-      const [subSnap, aiSnap] = await Promise.all([subRef.get(), aiRef.get()]);
-
-      const writes = [];
-      if (!createMissingOnly || !subSnap.exists) {
-        writes.push(subRef.set(this.defaultSubscription(user, profile), { merge: true }));
-      }
-      if (!createMissingOnly || !aiSnap.exists) {
-        writes.push(aiRef.set(this.defaultAiAccount(user, profile), { merge: true }));
-      }
-
-      if (writes.length) await Promise.all(writes);
-    } catch (error) {
-      console.warn("Account docs bootstrap error", error);
-    }
   },
 
   canEnter(profile, user) {
@@ -283,7 +191,6 @@ EP.Auth = {
     if (profile?.isAdmin === true) return true;
     if (profile?.approved === true) return true;
     if (profile?.isApproved === true) return true;
-    if (profile?.accessStatus === "approved") return true;
     return profile?.status === "approved";
   },
 
