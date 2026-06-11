@@ -1,3 +1,75 @@
-<section class="admin-page-shell">
-  <div id="firebase-console-access-root"></div>
+<section id="ep-admin-root" class="ep-admin-page" data-ep-admin="v29-clean">
+  <div class="ep-admin-hero">
+    <div>
+      <div class="ep-admin-kicker">Electric Pro V29 · Админка</div>
+      <h1>Управление доступом</h1>
+      <p>Пользователи, роли, статус доступа, подписки и ИИ-баланс. Запись — через защищённые Cloud Functions.</p>
+    </div>
+    <div class="ep-admin-status" id="ep-admin-status">Готово.</div>
+  </div>
+
+  <div class="ep-admin-dashboard" id="ep-admin-dashboard">
+    <div class="ep-admin-card"><span>Всего</span><b id="ep-admin-count-users">—</b></div>
+    <div class="ep-admin-card"><span>Ожидают</span><b id="ep-admin-count-pending">—</b></div>
+    <div class="ep-admin-card"><span>Активные</span><b id="ep-admin-count-active">—</b></div>
+    <div class="ep-admin-card"><span>Заблокированы</span><b id="ep-admin-count-blocked">—</b></div>
+    <div class="ep-admin-card"><span>С ИИ</span><b id="ep-admin-count-ai">—</b></div>
+  </div>
+
+  <div class="ep-admin-tabs" role="tablist">
+    <button class="ep-admin-tab active" data-admin-tab="users" type="button">Пользователи</button>
+    <button class="ep-admin-tab" data-admin-tab="subscriptions" type="button">Подписки</button>
+    <button class="ep-admin-tab" data-admin-tab="ai" type="button">ИИ-баланс</button>
+    <button class="ep-admin-tab" data-admin-tab="security" type="button">Безопасность</button>
+    <button class="ep-admin-tab" data-admin-tab="logs" type="button">Логи</button>
+    <button class="ep-admin-tab" data-admin-tab="docs" type="button">Документы</button>
+    <button class="ep-admin-tab" data-admin-tab="claude-db" type="button">БД</button>
+  </div>
+
+  <div class="ep-admin-panel active" id="ep-admin-tab-users">
+    <div class="ep-admin-toolbar">
+      <input id="ep-admin-user-search" placeholder="Поиск: email, имя, UID, роль, тариф">
+      <button id="ep-admin-refresh" type="button">Обновить</button>
+    </div>
+    <div class="ep-admin-grid">
+      <div class="ep-admin-list" id="ep-admin-users-list"></div>
+      <div class="ep-admin-details" id="ep-admin-user-details">
+        <h2>Карточка пользователя</h2>
+        <p>Выберите пользователя слева.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="ep-admin-panel" id="ep-admin-tab-subscriptions">
+    <h2>Подписки</h2>
+    <p>Подписка хранится внутри <code>users/{uid}.subscription</code>. Менять — в карточке пользователя (вкладка «Пользователи»): тариф + число дней.</p>
+  </div>
+
+  <div class="ep-admin-panel" id="ep-admin-tab-ai">
+    <h2>ИИ-баланс</h2>
+    <p>ИИ-настройки в <code>users/{uid}.ai</code> (режим, баланс ₽). Менять — в карточке пользователя.</p>
+  </div>
+
+  <div class="ep-admin-panel" id="ep-admin-tab-security">
+    <h2>Безопасность</h2>
+    <p>События безопасности доступны во вкладке «Логи» (правая колонка). Запись делают только функции/сервер.</p>
+  </div>
+
+  <div class="ep-admin-panel" id="ep-admin-tab-logs">
+    <h2>Логи</h2>
+    <div class="ep-admin-log-columns">
+      <div><h3>Действия админа (admin_logs)</h3><div id="ep-admin-logs-admin"></div></div>
+      <div><h3>События безопасности (security_events)</h3><div id="ep-admin-logs-errors"></div></div>
+    </div>
+  </div>
+
+  <div class="ep-admin-panel" id="ep-admin-tab-docs">
+    <h2>Документы и сметы</h2>
+    <p>Раздел в работе. Данные пользователя: <code>drafts/{uid}</code>, <code>estimates/{uid}</code>.</p>
+  </div>
+
+  <div class="ep-admin-panel" id="ep-admin-tab-claude-db">
+    <h2>База данных</h2>
+    <p>Серверная БД: <code>server_db/main</code>. Личная БД мастера: <code>user_db/{uid}</code>. Позиции — в поле <code>items[]</code>, общие для двух проектов на одном Firebase.</p>
+  </div>
 </section>
