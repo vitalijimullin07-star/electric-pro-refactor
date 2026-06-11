@@ -322,3 +322,40 @@ code {
 .ep-admin-muted{font-size:.78rem;opacity:.6}
 .ep-admin-logrow{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.06);font-size:.78rem}
 .ep-admin-placeholder{padding:14px;opacity:.6;font-size:.85rem}
+
+/* === админка: выбор пользователя + карточка + разделы (Claude) === */
+.ep-admin-primary{padding:12px 18px;border:none;border-radius:14px;background:#22c55e;color:#04210f;font-weight:800;cursor:pointer;font-size:.95rem}
+.ep-admin-toolbar{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}
+.ep-admin-toolbar .ghost,.ep-admin-actions .ghost{background:rgba(255,255,255,.06);color:inherit;border:1px solid rgba(255,255,255,.14);font-weight:600}
+.ep-admin-userhead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.ep-admin-userhead h2{margin:0;font-size:1.15rem}
+.ep-admin-badges{display:flex;gap:6px;flex-wrap:wrap}
+.ep-badge{padding:3px 10px;border-radius:999px;background:rgba(255,255,255,.08);font-size:.74rem;border:1px solid rgba(255,255,255,.12)}
+.ep-badge.ok{background:rgba(34,197,94,.16);border-color:rgba(34,197,94,.4)}
+.ep-badge.bad{background:rgba(239,68,68,.16);border-color:rgba(239,68,68,.4)}
+.ep-admin-card2{border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:12px 14px;margin:10px 0;background:rgba(255,255,255,.03)}
+.ep-admin-card2>summary{cursor:pointer;font-weight:700;list-style:none}
+.ep-admin-grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px 12px;margin-top:10px}
+.ep-admin-sections{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 8px}
+.ep-admin-sections button{padding:10px 14px;border:1px solid rgba(255,255,255,.14);border-radius:14px;background:rgba(255,255,255,.04);color:inherit;cursor:pointer;font-size:.88rem}
+.ep-admin-sections button.active{border-color:#22c55e;background:rgba(34,197,94,.12)}
+.ep-admin-section-content{border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:12px;min-height:60px;background:rgba(255,255,255,.02)}
+.ep-admin-table{width:100%;border-collapse:collapse;font-size:.82rem}
+.ep-admin-table th,.ep-admin-table td{text-align:left;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.06)}
+.ep-admin-table th{opacity:.7;font-weight:600}
+.ep-admin-pre{white-space:pre-wrap;word-break:break-word;font-size:.78rem;max-height:420px;overflow:auto;margin:0}
+.ep-admin-aihead{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;font-size:.9rem}
+/* модалка */
+.ep-admin-modal{position:fixed;inset:0;z-index:1000;display:none}
+.ep-admin-modal.open{display:block}
+.ep-admin-modal-overlay{position:absolute;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(3px)}
+.ep-admin-modal-box{position:relative;max-width:560px;margin:8vh auto 0;background:rgba(17,24,39,.98);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:16px;max-height:78vh;display:flex;flex-direction:column;gap:10px}
+.ep-admin-modal-head{display:flex;justify-content:space-between;align-items:center}
+.ep-admin-modal-head h3{margin:0;font-size:1.05rem}
+.ep-admin-modal-head button{background:none;border:none;color:inherit;font-size:1.1rem;cursor:pointer;opacity:.7}
+.ep-admin-modal-box input{padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);color:inherit}
+.ep-admin-modal-list{overflow:auto;display:flex;flex-direction:column;gap:6px}
+.ep-admin-pick-row{text-align:left;padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);color:inherit;cursor:pointer;display:flex;flex-direction:column;gap:3px}
+.ep-admin-pick-row:hover{border-color:#22c55e;background:rgba(34,197,94,.10)}
+.ep-admin-pick-row b{font-size:.9rem}
+.ep-admin-pick-row span{font-size:.74rem;opacity:.7}

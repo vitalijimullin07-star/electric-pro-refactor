@@ -1,1 +1,1 @@
-{ "version": "V29.clean.db1+admin+visualsync", "note": "Чистая сборка: ядро+бургер, БД (user_db/server_db), админка на Cloud Functions, синк визуала (user_db/{uid}/settings/visual). Без патчей GPT." }
+{ "version": "V29.clean.admin-full", "note": "Чистая база + БД (user_db/server_db) + админка (выбор пользователя в модалке, карточка подписки, разделы БД/документы/бухгалтерия/черновики/ИИ/логи на Cloud Functions) + синк визуала." }
