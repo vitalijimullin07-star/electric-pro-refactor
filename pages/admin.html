@@ -1,39 +1,36 @@
-<section id="ep-admin-root" class="ep-admin-page" data-ep-admin="v29-clean">
+<section id="ep-admin-root" class="ep-admin-page" data-ep-admin="v29-real">
   <div class="ep-admin-hero">
     <div>
-      <div class="ep-admin-kicker">Electric Pro V29 · Админка</div>
-      <h1>Управление пользователями</h1>
-      <p>Выберите пользователя, настройте подписку и доступ, откройте его данные. Запись — через защищённые Cloud Functions.</p>
+      <div class="ep-admin-kicker">ELECTRIC PRO V29 · АДМИНКА</div>
+      <h1>Управление мастерами</h1>
+      <p>Регистрация → подтверждение → подписка. Подписки и ИИ-баланс — через защищённые функции, подтверждение — напрямую.</p>
     </div>
     <div class="ep-admin-status" id="ep-admin-status">Готово.</div>
   </div>
 
-  <div class="ep-admin-dashboard" id="ep-admin-dashboard">
-    <div class="ep-admin-card"><span>Всего</span><b id="ep-admin-count-users">—</b></div>
-    <div class="ep-admin-card"><span>Ожидают</span><b id="ep-admin-count-pending">—</b></div>
-    <div class="ep-admin-card"><span>Активные</span><b id="ep-admin-count-active">—</b></div>
-    <div class="ep-admin-card"><span>Заблокированы</span><b id="ep-admin-count-blocked">—</b></div>
-    <div class="ep-admin-card"><span>С ИИ</span><b id="ep-admin-count-ai">—</b></div>
+  <div class="ep-admin-dashboard">
+    <div class="ep-admin-card ep-stat"><span>Всего</span><b id="ep-c-users">—</b></div>
+    <div class="ep-admin-card ep-stat"><span>Заявки</span><b id="ep-c-pending">—</b></div>
+    <div class="ep-admin-card ep-stat"><span>Подписка</span><b id="ep-c-active">—</b></div>
+    <div class="ep-admin-card ep-stat"><span>Заблок.</span><b id="ep-c-blocked">—</b></div>
+    <div class="ep-admin-card ep-stat"><span>С ИИ</span><b id="ep-c-ai">—</b></div>
   </div>
+
+  <div id="ep-admin-pending"></div>
 
   <div class="ep-admin-toolbar">
-    <button id="ep-admin-open-picker" type="button" class="ep-admin-primary">👤 Выбрать пользователя</button>
-    <button id="ep-admin-refresh" type="button" class="ghost">Обновить список</button>
+    <button id="ep-admin-open-picker" class="ep-admin-primary">👤 Выбрать пользователя</button>
+    <button id="ep-admin-toggle-pending" class="ep-ghost">Только заявки</button>
+    <button id="ep-admin-refresh" class="ep-ghost">Обновить</button>
   </div>
 
-  <div class="ep-admin-detail" id="ep-admin-detail">
-    <div class="ep-admin-placeholder">Нажмите «Выбрать пользователя».</div>
-  </div>
+  <div class="ep-admin-detail" id="ep-admin-detail"><div class="ep-admin-empty">Выберите пользователя.</div></div>
 
-  <!-- модалка выбора пользователя -->
   <div class="ep-admin-modal" id="ep-admin-modal">
     <div class="ep-admin-modal-overlay" id="ep-admin-modal-overlay"></div>
     <div class="ep-admin-modal-box">
-      <div class="ep-admin-modal-head">
-        <h3>Выбор пользователя</h3>
-        <button id="ep-admin-modal-close" type="button" aria-label="Закрыть">✕</button>
-      </div>
-      <input id="ep-admin-modal-search" placeholder="Поиск: email, имя, UID, роль, тариф">
+      <div class="ep-admin-modal-head"><h3>Выбор пользователя</h3><button id="ep-admin-modal-close" aria-label="Закрыть">✕</button></div>
+      <input id="ep-admin-modal-search" placeholder="Поиск: email, имя, UID, роль">
       <div class="ep-admin-modal-list" id="ep-admin-modal-list"></div>
     </div>
   </div>
