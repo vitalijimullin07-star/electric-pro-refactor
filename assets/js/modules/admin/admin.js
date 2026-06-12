@@ -1,19 +1,14 @@
 /* ============================================================
-   Electric Pro V29 — Админка (реальный бэкенд), v2: вкладки + БД сервера
-   Регион функций: europe-west1.
-   Вкладки: Пользователи | БД сервера | Запросы | Контакты.
-   Подтверждение/роль/блок: прямая запись users/{uid} (admin).
-   Подписки/ИИ/политика: защищённые функции (europe-west1).
-   БД сервера: server_db/main (items[]) — чтение/запись напрямую (admin).
-   Контакты для мастеров: server_db/__meta__.contact (admin пишет, мастер читает).
-   Заявки: ai_payment_requests / subscription_payment_requests (status=pending).
+   Electric Pro V29 — Админка v3
+   Вид БД (мастера и сервера): тип → категория(папка) → подкатегория(подпапка) → карточки.
+   Из БД мастера позицию можно добавить в БД сервера (➕). Бэкенд: europe-west1.
    ============================================================ */
 (() => {
   "use strict";
   window.EP = window.EP || {};
   const OWNER = "vits0007@gmail.com";
   const SRV_DOC = "main", META_DOC = "__meta__";
-  const A = { tab: "users", users: [], selectedUid: null, userTab: "status", section: null, onlyPending: false, srv: null, requests: null, contact: null };
+  const A = { tab: "users", users: [], selectedUid: null, userTab: "status", section: null, onlyPending: false, srv: null, srvKeys: new Set(), masterDb: [], exp: new Set(), contact: null };
   const $ = (s, r) => (r || document).querySelector(s);
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const jn = (o) => { try { return JSON.stringify(o, null, 2); } catch (e) { return String(o); } };
@@ -36,15 +31,11 @@
   function isApproved(u) { return uStatus(u) === "approved" || u.isApproved === true; }
   function subActive(s) { return s && (s.status === "active" || s.status === "trial") && (!s.expiresAt || (tsDate(s.expiresAt) && tsDate(s.expiresAt).getTime() > Date.now())); }
 
-  // ====== загрузка пользователей ======
+  // ====== загрузка ======
   async function loadUsers() {
     status("Загрузка пользователей…"); const d = db(); if (!d) { status("Firebase недоступен."); return; }
     try {
-      const [us, subs, ais] = await Promise.all([
-        d.collection("users").limit(800).get(),
-        d.collection("user_subscriptions").limit(800).get().catch(() => ({ docs: [] })),
-        d.collection("ai_accounts").limit(800).get().catch(() => ({ docs: [] }))
-      ]);
+      const [us, subs, ais] = await Promise.all([d.collection("users").limit(800).get(), d.collection("user_subscriptions").limit(800).get().catch(() => ({ docs: [] })), d.collection("ai_accounts").limit(800).get().catch(() => ({ docs: [] }))]);
       const sm = {}, am = {}; subs.docs.forEach((x) => sm[x.id] = x.data() || {}); ais.docs.forEach((x) => am[x.id] = x.data() || {});
       A.users = us.docs.map((doc) => { const dt = doc.data() || {}; return { uid: doc.id, email: dt.email || "", displayName: dt.displayName || dt.name || "", role: dt.role || "master", status: dt.status, isApproved: dt.isApproved, isAdmin: dt.isAdmin, blocked: dt.blocked, securityPolicy: dt.securityPolicy || {}, subscription: sm[doc.id] || null, aiAccount: am[doc.id] || null }; });
       status("Пользователей: " + A.users.length); if (A.tab === "users") renderUsersTab();
@@ -52,169 +43,159 @@
   }
   async function readDoc(coll, id) { const d = db(); if (!d) return { error: "no-db" }; try { const s = await d.collection(coll).doc(id).get(); return { exists: s.exists, data: s.exists ? (s.data() || {}) : null }; } catch (e) { return { error: (e && (e.code || e.message)) || "error" }; } }
   async function readColl(coll, field, val) { const d = db(); if (!d) return { error: "no-db" }; try { let q = d.collection(coll); if (field) q = q.where(field, "==", val); const s = await q.limit(80).get(); return { docs: s.docs.map((x) => ({ id: x.id, data: x.data() || {} })) }; } catch (e) { return { error: (e && (e.code || e.message)) || "error" }; } }
+  async function ensureSrv() { if (A.srv !== null) return true; const r = await readDoc("server_db", SRV_DOC); if (r.error) { A.srv = null; return false; } A.srv = (r.data && Array.isArray(r.data.items)) ? r.data.items.slice() : []; buildSrvKeys(); return true; }
+  function buildSrvKeys() { A.srvKeys = new Set((A.srv || []).map(dbKey)); }
+  async function saveSrv(msg) { const d = db(); if (!d) return false; try { await d.collection("server_db").doc(SRV_DOC).set({ items: A.srv || [], workCount: (A.srv || []).filter((x) => x.type === "work").length, materialCount: (A.srv || []).filter((x) => x.type === "material").length, updatedByEmail: (me() || {}).email || "", updatedAt: FV() }, { merge: true }); buildSrvKeys(); status(msg || "БД сервера сохранена ✓"); return true; } catch (e) { const c = e && (e.code || e.message); status(String(c).indexOf("permission-denied") >= 0 ? "Нет прав на запись server_db." : "Ошибка: " + c); return false; } }
 
-  // ====== верхняя навигация ======
-  function renderNav() {
-    const tabs = [["users", "👥 Пользователи"], ["serverdb", "🗄️ БД сервера"], ["requests", "📥 Запросы"], ["contacts", "⚙️ Контакты"]];
-    const nav = $("#ep-admin-nav"); if (nav) nav.innerHTML = tabs.map((t) => `<button data-tab="${t[0]}" class="${A.tab === t[0] ? "on" : ""}">${t[1]}</button>`).join("");
+  // ====== общий вид БД: папки/подпапки/карточки ======
+  function dbKey(it) { return (it.type === "work" ? "work" : "material") + "|" + String(it.name || "").trim().toLowerCase(); }
+  function groupTree(items) {
+    const out = { material: {}, work: {} };
+    (items || []).forEach((it) => { const t = it.type === "work" ? "work" : "material"; const cat = it.category || ""; const sub = it.subcategory || ""; out[t][cat] = out[t][cat] || {}; (out[t][cat][sub] = out[t][cat][sub] || []).push(it); });
+    return out;
   }
-  function switchTab(tab) {
-    A.tab = tab; renderNav();
-    if (tab === "users") { renderUsersTab(); if (!A.users.length) loadUsers(); }
-    else if (tab === "serverdb") renderServerDb();
-    else if (tab === "requests") renderRequests();
-    else if (tab === "contacts") renderContacts();
+  function card(it, mode) {
+    const price = it.price ? num(it.price).toFixed(2) + " ₽" : "—";
+    let act = "";
+    if (mode === "master") { const inS = A.srvKeys.has(dbKey(it)); act = inS ? `<span class="ep-adb-in">✓ в сервере</span>` : `<button class="ep-mini ep-mini-ok" data-add-srv="${esc(it.id)}" title="Добавить в БД сервера">➕</button>`; }
+    else if (mode === "server") { act = `<button class="ep-mini" data-srv-edit="${esc(it.id)}" title="Изменить">✎</button><button class="ep-mini ep-mini-d" data-srv-del="${esc(it.id)}" title="Удалить">✕</button>`; }
+    return `<div class="ep-adb-card"><div class="ep-adb-info"><b>${esc(it.name)}</b><span>${esc(it.unit || "")} · ${price}</span></div>${act}</div>`;
+  }
+  function renderTree(items, mode) {
+    if (!items || !items.length) return "<div class='ep-admin-empty'>Пусто.</div>";
+    if (mode === "master") buildSrvKeys();
+    const tree = groupTree(items);
+    let html = `<p class="ep-admin-muted">Позиций: ${items.length} · нажми папку, чтобы раскрыть</p>`;
+    [["material", "📦 Материалы"], ["work", "🧰 Работа"]].forEach(([t, label]) => {
+      const cats = tree[t]; const catNames = Object.keys(cats).sort((a, b) => a.localeCompare(b, "ru"));
+      const total = catNames.reduce((n, c) => n + Object.values(cats[c]).reduce((m, arr) => m + arr.length, 0), 0);
+      if (!total) return;
+      html += `<div class="ep-adb-type">${label} <span class="ep-adb-cnt">${total}</span></div>`;
+      catNames.forEach((cat) => {
+        const subs = cats[cat]; const catItems = Object.values(subs).reduce((m, arr) => m + arr.length, 0);
+        const fkey = t + "|" + cat; const open = A.exp.has(fkey); const catLabel = cat || "Без категории";
+        html += `<div class="ep-adb-folder ${open ? "is-open" : ""}"><button class="ep-adb-fhead" data-fold="${esc(fkey)}">${open ? "▼" : "▶"} 📁 ${esc(catLabel)} <span class="ep-adb-cnt">${catItems}</span></button>`;
+        if (open) {
+          (subs[""] || []).forEach((it) => { html += card(it, mode); });
+          Object.keys(subs).filter((s) => s).sort((a, b) => a.localeCompare(b, "ru")).forEach((sub) => {
+            const skey = fkey + "|" + sub; const sopen = A.exp.has(skey);
+            html += `<div class="ep-adb-subfolder ${sopen ? "is-open" : ""}"><button class="ep-adb-shead" data-fold="${esc(skey)}">${sopen ? "▼" : "▶"} 📂 ${esc(sub)} <span class="ep-adb-cnt">${subs[sub].length}</span></button>`;
+            if (sopen) subs[sub].forEach((it) => { html += card(it, mode); });
+            html += `</div>`;
+          });
+        }
+        html += `</div>`;
+      });
+    });
+    return html;
+  }
+  async function addToServer(id) {
+    const it = (A.masterDb || []).find((x) => String(x.id) === String(id)); if (!it) return;
+    if (!(await ensureSrv())) { status("Нет доступа к server_db."); return; }
+    if (A.srvKeys.has(dbKey(it))) { status("Эта позиция уже в сервере."); return; }
+    A.srv.push({ id: uid4(), type: it.type === "work" ? "work" : "material", name: it.name, unit: it.unit || "", price: num(it.price), category: it.category || "", subcategory: it.subcategory || "" });
+    buildSrvKeys();
+    const ok = await saveSrv("«" + (it.name || "позиция") + "» добавлена в сервер ✓");
+    if (ok && A.section === "db") openSection("db");
   }
 
-  // ====== ВКЛАДКА: ПОЛЬЗОВАТЕЛИ ======
+  // ====== навигация ======
+  function renderNav() { const tabs = [["users", "👥 Пользователи"], ["serverdb", "🗄️ БД сервера"], ["requests", "📥 Запросы"], ["contacts", "⚙️ Контакты"]]; const nav = $("#ep-admin-nav"); if (nav) nav.innerHTML = tabs.map((t) => `<button data-tab="${t[0]}" class="${A.tab === t[0] ? "on" : ""}">${t[1]}</button>`).join(""); }
+  function switchTab(tab) { A.tab = tab; renderNav(); if (tab === "users") { renderUsersTab(); if (!A.users.length) loadUsers(); } else if (tab === "serverdb") renderServerDb(); else if (tab === "requests") renderRequests(); else if (tab === "contacts") renderContacts(); }
+
+  // ====== ПОЛЬЗОВАТЕЛИ ======
   function renderUsersTab() {
     const host = $("#ep-admin-body"); if (!host) return;
     const pend = A.users.filter(isPending);
-    host.innerHTML = `
-      <div class="ep-admin-dashboard">
+    host.innerHTML = `<div class="ep-admin-dashboard">
         <div class="ep-admin-card ep-stat"><span>Всего</span><b>${A.users.length}</b></div>
         <div class="ep-admin-card ep-stat"><span>Заявки</span><b>${pend.length}</b></div>
         <div class="ep-admin-card ep-stat"><span>Подписка</span><b>${A.users.filter((u) => subActive(u.subscription)).length}</b></div>
         <div class="ep-admin-card ep-stat"><span>Заблок.</span><b>${A.users.filter(isBlocked).length}</b></div>
-        <div class="ep-admin-card ep-stat"><span>С ИИ</span><b>${A.users.filter((u) => u.aiAccount && u.aiAccount.allowAi).length}</b></div>
-      </div>
+        <div class="ep-admin-card ep-stat"><span>С ИИ</span><b>${A.users.filter((u) => u.aiAccount && u.aiAccount.allowAi).length}</b></div></div>
       ${pend.length ? `<div class="ep-admin-card"><h3>Заявки на регистрацию (${pend.length})</h3>${pend.map((u) => `<div class="ep-admin-prow"><div><b>${esc(u.email || u.uid)}</b><span>${esc(u.displayName || "")}</span></div><div class="ep-admin-prow-act"><button data-approve="${esc(u.uid)}" class="ep-ok">Одобрить</button><button data-open="${esc(u.uid)}" class="ep-ghost">Открыть</button></div></div>`).join("")}</div>` : ""}
-      <div class="ep-admin-toolbar">
-        <button id="ep-admin-open-picker" class="ep-admin-primary">👤 Выбрать пользователя</button>
-        <button id="ep-admin-toggle-pending" class="ep-ghost ${A.onlyPending ? "on" : ""}">Только заявки</button>
-        <button id="ep-admin-refresh" class="ep-ghost">Обновить</button>
-      </div>
+      <div class="ep-admin-toolbar"><button id="ep-admin-open-picker" class="ep-admin-primary">👤 Выбрать пользователя</button><button id="ep-admin-toggle-pending" class="ep-ghost ${A.onlyPending ? "on" : ""}">Только заявки</button><button id="ep-admin-refresh" class="ep-ghost">Обновить</button></div>
       <div id="ep-admin-detail"><div class="ep-admin-empty">Выберите пользователя.</div></div>`;
     if (A.selectedUid) renderDetail();
   }
   function user() { return A.users.find((x) => x.uid === A.selectedUid); }
-  function selectUser(uid) { A.selectedUid = uid; A.userTab = "status"; A.section = null; closePicker(); renderDetail(); const h = $("#ep-admin-detail"); if (h && h.scrollIntoView) try { h.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) {} }
-
+  function selectUser(uid) { A.selectedUid = uid; A.userTab = "status"; A.section = null; A.masterDb = []; closePicker(); renderDetail(); const h = $("#ep-admin-detail"); if (h && h.scrollIntoView) try { h.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) {} }
   function renderDetail() {
-    const host = $("#ep-admin-detail"); if (!host) return;
-    const u = user(); if (!u) { host.innerHTML = "<div class='ep-admin-empty'>Выберите пользователя.</div>"; return; }
-    const st = uStatus(u);
-    const tabs = [["status", "Статус"], ["sub", "Подписка"], ["ai", "ИИ"], ["sec", "Безопасность"], ["data", "Данные"]];
-    host.innerHTML = `
-      <div class="ep-admin-card">
-        <div class="ep-admin-uhead"><div><h2>${esc(u.email || u.uid)}</h2><p class="ep-admin-muted">${esc(u.displayName || "")} · UID ${esc(u.uid)}</p></div>
-          <div class="ep-admin-badges"><span class="ep-st ep-st-${esc(st)}">${esc(st)}</span><span class="ep-badge">${esc(u.role)}</span></div></div>
-        <div class="ep-admin-subtabs">${tabs.map((t) => `<button data-utab="${t[0]}" class="${A.userTab === t[0] ? "on" : ""}">${t[1]}</button>`).join("")}</div>
-        <div id="ep-utab"></div>
-        <p id="ep-act-status" class="ep-admin-muted"></p>
-      </div>`;
+    const host = $("#ep-admin-detail"); if (!host) return; const u = user(); if (!u) { host.innerHTML = "<div class='ep-admin-empty'>Выберите пользователя.</div>"; return; }
+    const st = uStatus(u); const tabs = [["status", "Статус"], ["sub", "Подписка"], ["ai", "ИИ"], ["sec", "Безопасность"], ["data", "Данные"]];
+    host.innerHTML = `<div class="ep-admin-card"><div class="ep-admin-uhead"><div><h2>${esc(u.email || u.uid)}</h2><p class="ep-admin-muted">${esc(u.displayName || "")} · UID ${esc(u.uid)}</p></div><div class="ep-admin-badges"><span class="ep-st ep-st-${esc(st)}">${esc(st)}</span><span class="ep-badge">${esc(u.role)}</span></div></div>
+      <div class="ep-admin-subtabs">${tabs.map((t) => `<button data-utab="${t[0]}" class="${A.userTab === t[0] ? "on" : ""}">${t[1]}</button>`).join("")}</div><div id="ep-utab"></div><p id="ep-act-status" class="ep-admin-muted"></p></div>`;
     renderUserTab();
   }
   function renderUserTab() {
     const box = $("#ep-utab"); if (!box) return; const u = user(); if (!u) return;
     const sel = (id, vals, cur) => `<select id="${id}">${vals.map((v) => `<option value="${v[0]}" ${String(cur) === v[0] ? "selected" : ""}>${esc(v[1])}</option>`).join("")}</select>`;
-    if (A.userTab === "status") {
-      box.innerHTML = `<div class="ep-admin-actions">
-        ${isApproved(u) ? "" : `<button id="ep-approve" class="ep-ok">✓ Одобрить</button>`}
-        ${isBlocked(u) ? `<button id="ep-unblock" class="ep-ok">Разблокировать</button>` : `<button id="ep-block" class="ep-danger">Заблокировать</button>`}
-        ${u.role === "admin" ? `<button id="ep-demote" class="ep-ghost">Снять админа</button>` : `<button id="ep-promote" class="ep-ghost">Сделать админом</button>`}</div>`;
-    } else if (A.userTab === "sub") {
-      const s = u.subscription || {};
-      box.innerHTML = `<p class="ep-admin-muted">Сейчас: <b>${esc(s.planName || s.planId || "нет")}</b> · ${esc(s.status || "—")}${s.expiresAt ? " · до " + esc(dstr(s.expiresAt)) : ""}</p>
-        <div class="ep-admin-row">${sel("ep-plan", [["basic", "Базовый"], ["pro_ai", "С ИИ (pro_ai)"]], s.planId || "basic")}<input id="ep-days" type="number" min="1" value="30" title="дней"><label class="ep-admin-chk"><input id="ep-trial" type="checkbox"> пробный</label></div>
-        <div class="ep-admin-row"><input id="ep-amount" type="number" min="0" step="1" value="0" title="сумма ₽"><span class="ep-admin-muted">₽ (для лога/чека)</span></div>
-        <div class="ep-admin-actions"><button id="ep-grant" class="ep-ok">Выдать / продлить</button><button id="ep-cancel-sub" class="ep-danger">Отменить</button></div>`;
-    } else if (A.userTab === "ai") {
-      const ai = u.aiAccount || {};
-      box.innerHTML = `<p class="ep-admin-muted">Баланс: <b>${esc(num(ai.balanceRub).toFixed(2))} ₽</b> · режим: ${esc(ai.accessMode || "—")}</p>
-        <div class="ep-admin-row"><input id="ep-ai-balance" type="number" min="0" step="0.01" value="${esc(num(ai.balanceRub))}"><button id="ep-ai-set" class="ep-ok">Установить</button></div>
-        <div class="ep-admin-row"><input id="ep-ai-topup" type="number" min="0" step="0.01" value="100"><button id="ep-ai-add" class="ep-ghost">Пополнить</button></div>
-        <div class="ep-admin-row">${sel("ep-ai-mode", [["disabled", "выкл"], ["admin_api", "общий ключ (контроль токенов)"], ["own_api", "свой ключ"]], ai.accessMode || "disabled")}<button id="ep-ai-mode-save" class="ep-ghost">Сохранить режим</button></div>`;
-    } else if (A.userTab === "sec") {
-      const p = u.securityPolicy || {};
-      box.innerHTML = `<label class="ep-admin-chk"><input id="ep-p-login" type="checkbox" ${p.allowLogin !== false ? "checked" : ""}> вход разрешён</label>
-        <label class="ep-admin-chk"><input id="ep-p-read" type="checkbox" ${p.allowReadData !== false ? "checked" : ""}> чтение данных</label>
-        <label class="ep-admin-chk"><input id="ep-p-ai" type="checkbox" ${p.allowAi === true ? "checked" : ""}> ИИ разрешён</label>
-        <label class="ep-admin-chk"><input id="ep-p-cache" type="checkbox" ${p.allowLocalCache === true ? "checked" : ""}> локальный кэш</label>
-        <div class="ep-admin-actions"><button id="ep-p-save" class="ep-ghost">Сохранить политику</button></div>`;
-    } else if (A.userTab === "data") {
-      box.innerHTML = `<div class="ep-admin-sections"><button data-sec="db">🗂️ БД</button><button data-sec="sub">📄 Подписка</button><button data-sec="ai">🤖 ИИ-счёт</button><button data-sec="drafts">📝 Черновики</button><button data-sec="estimates">🧾 Сметы</button><button data-sec="usage">📊 Расход ИИ</button><button data-sec="logs">📜 Логи</button></div><div id="ep-sec" class="ep-admin-secbox"><div class="ep-admin-empty">Выберите раздел.</div></div>`;
-      if (A.section) openSection(A.section);
-    }
+    if (A.userTab === "status") box.innerHTML = `<div class="ep-admin-actions">${isApproved(u) ? "" : `<button id="ep-approve" class="ep-ok">✓ Одобрить</button>`}${isBlocked(u) ? `<button id="ep-unblock" class="ep-ok">Разблокировать</button>` : `<button id="ep-block" class="ep-danger">Заблокировать</button>`}${u.role === "admin" ? `<button id="ep-demote" class="ep-ghost">Снять админа</button>` : `<button id="ep-promote" class="ep-ghost">Сделать админом</button>`}</div>`;
+    else if (A.userTab === "sub") { const s = u.subscription || {}; box.innerHTML = `<p class="ep-admin-muted">Сейчас: <b>${esc(s.planName || s.planId || "нет")}</b> · ${esc(s.status || "—")}${s.expiresAt ? " · до " + esc(dstr(s.expiresAt)) : ""}</p><div class="ep-admin-row">${sel("ep-plan", [["basic", "Базовый"], ["pro_ai", "С ИИ (pro_ai)"]], s.planId || "basic")}<input id="ep-days" type="number" min="1" value="30" title="дней"><label class="ep-admin-chk"><input id="ep-trial" type="checkbox"> пробный</label></div><div class="ep-admin-row"><input id="ep-amount" type="number" min="0" step="1" value="0" title="сумма ₽"><span class="ep-admin-muted">₽ (лог/чек)</span></div><div class="ep-admin-actions"><button id="ep-grant" class="ep-ok">Выдать / продлить</button><button id="ep-cancel-sub" class="ep-danger">Отменить</button></div>`; }
+    else if (A.userTab === "ai") { const ai = u.aiAccount || {}; box.innerHTML = `<p class="ep-admin-muted">Баланс: <b>${esc(num(ai.balanceRub).toFixed(2))} ₽</b> · режим: ${esc(ai.accessMode || "—")}</p><div class="ep-admin-row"><input id="ep-ai-balance" type="number" min="0" step="0.01" value="${esc(num(ai.balanceRub))}"><button id="ep-ai-set" class="ep-ok">Установить</button></div><div class="ep-admin-row"><input id="ep-ai-topup" type="number" min="0" step="0.01" value="100"><button id="ep-ai-add" class="ep-ghost">Пополнить</button></div><div class="ep-admin-row">${sel("ep-ai-mode", [["disabled", "выкл"], ["admin_api", "общий ключ (контроль токенов)"], ["own_api", "свой ключ"]], ai.accessMode || "disabled")}<button id="ep-ai-mode-save" class="ep-ghost">Сохранить режим</button></div>`; }
+    else if (A.userTab === "sec") { const p = u.securityPolicy || {}; box.innerHTML = `<label class="ep-admin-chk"><input id="ep-p-login" type="checkbox" ${p.allowLogin !== false ? "checked" : ""}> вход разрешён</label><label class="ep-admin-chk"><input id="ep-p-read" type="checkbox" ${p.allowReadData !== false ? "checked" : ""}> чтение данных</label><label class="ep-admin-chk"><input id="ep-p-ai" type="checkbox" ${p.allowAi === true ? "checked" : ""}> ИИ разрешён</label><label class="ep-admin-chk"><input id="ep-p-cache" type="checkbox" ${p.allowLocalCache === true ? "checked" : ""}> локальный кэш</label><div class="ep-admin-actions"><button id="ep-p-save" class="ep-ghost">Сохранить политику</button></div>`; }
+    else if (A.userTab === "data") { box.innerHTML = `<div class="ep-admin-sections"><button data-sec="db">🗂️ БД мастера</button><button data-sec="sub">📄 Подписка</button><button data-sec="ai">🤖 ИИ-счёт</button><button data-sec="drafts">📝 Черновики</button><button data-sec="estimates">🧾 Сметы</button><button data-sec="usage">📊 Расход ИИ</button><button data-sec="logs">📜 Логи</button></div><div id="ep-sec" class="ep-admin-secbox"><div class="ep-admin-empty">Выберите раздел.</div></div>`; if (A.section) openSection(A.section); }
   }
 
-  // ====== ВКЛАДКА: БД СЕРВЕРА (server_db/main, кликабельно) ======
+  // ====== БД СЕРВЕРА (вид как у мастера + ручное добавление) ======
   async function renderServerDb() {
     const host = $("#ep-admin-body"); if (!host) return;
-    host.innerHTML = `<div class="ep-admin-card"><h3>База сервера (общий каталог для всех мастеров)</h3>
-      <p class="ep-admin-muted">Хранится в Firestore <code>server_db/main</code>. Мастера тянут её в кэш. Цену можно не указывать.</p>
-      <div class="ep-admin-row"><select id="ep-srv-type"><option value="material">материал</option><option value="work">работа</option></select>
-        <input id="ep-srv-name" placeholder="название" style="flex:1;min-width:160px"><input id="ep-srv-unit" placeholder="ед. (шт/м/объект)" style="width:120px"><input id="ep-srv-price" type="number" step="0.01" placeholder="цена (необяз.)" style="width:130px"><button id="ep-srv-add" class="ep-ok">Добавить</button></div>
+    host.innerHTML = `<div class="ep-admin-card"><h3>База сервера (общий каталог)</h3><p class="ep-admin-muted">Хранится в <code>server_db/main</code>, мастера тянут в кэш. Добавлять можно из БД мастера (➕) или вручную ниже.</p>
+      <details class="ep-adb-manual"><summary>+ добавить вручную</summary><div class="ep-admin-row"><select id="ep-srv-type"><option value="material">материал</option><option value="work">работа</option></select><input id="ep-srv-name" placeholder="название" style="flex:1;min-width:140px"><input id="ep-srv-cat" placeholder="категория" style="width:130px"><input id="ep-srv-unit" placeholder="ед." style="width:80px"><input id="ep-srv-price" type="number" step="0.01" placeholder="цена" style="width:100px"><button id="ep-srv-add" class="ep-ok">Добавить</button></div></details>
       <div id="ep-srv-list"><div class="ep-admin-empty">Загрузка…</div></div></div>`;
-    if (!A.srv) { const r = await readDoc("server_db", SRV_DOC); A.srv = (r.data && Array.isArray(r.data.items)) ? r.data.items.slice() : (r.error ? null : []); if (r.error) { $("#ep-srv-list").innerHTML = `<div class='ep-admin-empty'>Нет доступа к server_db (${esc(r.error)}).</div>`; return; } }
-    renderSrvList();
+    if (!(await ensureSrv())) { $("#ep-srv-list").innerHTML = "<div class='ep-admin-empty'>Нет доступа к server_db.</div>"; return; }
+    $("#ep-srv-list").innerHTML = renderTree(A.srv, "server");
   }
-  function renderSrvList() {
-    const el = $("#ep-srv-list"); if (!el) return; const items = A.srv || [];
-    if (!items.length) { el.innerHTML = "<div class='ep-admin-empty'>Каталог пуст. Добавь первую позицию.</div>"; return; }
-    el.innerHTML = `<p class="ep-admin-muted">Позиций: ${items.length}</p>` + items.map((x, i) => `<div class="ep-srv-row" data-i="${i}">
-      <span class="ep-srv-t ep-srv-${esc(x.type)}">${esc(x.type)}</span><span class="ep-srv-n">${esc(x.name)}</span>
-      <span class="ep-srv-u">${esc(x.unit || "")}</span><span class="ep-srv-p">${x.price ? esc(num(x.price).toFixed(2)) : "—"}</span>
-      <button data-srv-edit="${i}" class="ep-mini">✎</button><button data-srv-del="${i}" class="ep-mini ep-mini-d">✕</button></div>`).join("")
-      + `<div class="ep-admin-actions"><button id="ep-srv-save" class="ep-admin-primary">💾 Сохранить в сервер</button></div>`;
+  async function srvAddManual() {
+    const n = (($("#ep-srv-name") || {}).value || "").trim(); if (!n) { status("Введите название."); return; }
+    if (!(await ensureSrv())) return;
+    A.srv.push({ id: uid4(), type: ($("#ep-srv-type") || {}).value || "material", name: n, category: (($("#ep-srv-cat") || {}).value || "").trim(), subcategory: "", unit: (($("#ep-srv-unit") || {}).value || "").trim(), price: num(($("#ep-srv-price") || {}).value) });
+    ["ep-srv-name", "ep-srv-cat", "ep-srv-unit", "ep-srv-price"].forEach((id) => { const e = $("#" + id); if (e) e.value = ""; });
+    if (await saveSrv("Добавлено ✓")) { const el = $("#ep-srv-list"); if (el) el.innerHTML = renderTree(A.srv, "server"); }
   }
-  function srvAdd() {
-    const t = ($("#ep-srv-type") || {}).value || "material", n = (($("#ep-srv-name") || {}).value || "").trim();
-    if (!n) { status("Введите название."); return; }
-    const it = { id: uid4(), type: t, name: n, unit: (($("#ep-srv-unit") || {}).value || "").trim(), price: num(($("#ep-srv-price") || {}).value), category: "" };
-    A.srv = A.srv || []; A.srv.unshift(it);
-    ["ep-srv-name", "ep-srv-unit", "ep-srv-price"].forEach((id) => { const e = $("#" + id); if (e) e.value = ""; });
-    renderSrvList(); status("Добавлено (не забудь «Сохранить в сервер»).");
-  }
-  function srvEdit(i) {
-    const it = (A.srv || [])[i]; if (!it) return;
+  function srvEdit(id) {
+    const it = (A.srv || []).find((x) => String(x.id) === String(id)); if (!it) return;
     const name = prompt("Название:", it.name); if (name === null) return; it.name = name.trim() || it.name;
+    const cat = prompt("Категория:", it.category || ""); if (cat !== null) it.category = cat.trim();
     const unit = prompt("Единица:", it.unit || ""); if (unit !== null) it.unit = unit.trim();
-    const price = prompt("Цена (пусто = без цены):", it.price || ""); if (price !== null) it.price = num(price);
-    renderSrvList();
+    const price = prompt("Цена (пусто = без):", it.price || ""); if (price !== null) it.price = num(price);
+    saveSrv("Изменено ✓").then(() => { const el = $("#ep-srv-list"); if (el) el.innerHTML = renderTree(A.srv, "server"); });
   }
-  async function srvSave() {
-    const d = db(); if (!d) return; status("Сохранение БД сервера…");
-    try { await d.collection("server_db").doc(SRV_DOC).set({ items: A.srv || [], workCount: (A.srv || []).filter((x) => x.type === "work").length, materialCount: (A.srv || []).filter((x) => x.type === "material").length, updatedByEmail: (me() || {}).email || "", updatedAt: FV() }, { merge: true }); status("БД сервера сохранена ✓ (мастера получат при синхронизации)."); }
-    catch (e) { const c = e && (e.code || e.message); status(String(c).indexOf("permission-denied") >= 0 ? "Нет прав на запись server_db." : "Ошибка: " + c); }
-  }
+  function srvDel(id) { A.srv = (A.srv || []).filter((x) => String(x.id) !== String(id)); saveSrv("Удалено ✓").then(() => { const el = $("#ep-srv-list"); if (el) el.innerHTML = renderTree(A.srv, "server"); }); }
 
-  // ====== ВКЛАДКА: ЗАПРОСЫ ======
+  // ====== ЗАЯВКИ ======
   async function renderRequests() {
     const host = $("#ep-admin-body"); if (!host) return;
     host.innerHTML = `<div class="ep-admin-card"><h3>Заявки на пополнение / подписку</h3><div id="ep-req-ai"><div class="ep-admin-empty">Загрузка…</div></div><div id="ep-req-sub"></div></div>`;
-    const emailByUid = {}; A.users.forEach((u) => emailByUid[u.uid] = u.email || u.uid);
-    const ra = await readColl("ai_payment_requests", "status", "pending");
-    const rs = await readColl("subscription_payment_requests", "status", "pending");
-    const eAi = $("#ep-req-ai"), eSub = $("#ep-req-sub");
-    if (eAi) eAi.innerHTML = ra.error ? `<div class='ep-admin-empty'>ИИ-заявки: нет доступа (${esc(ra.error)}).</div>` : (ra.docs.length ? `<h4>Пополнение ИИ (${ra.docs.length})</h4>` + ra.docs.map((d) => `<div class="ep-admin-prow"><div><b>${esc(emailByUid[d.data.uid] || d.data.uid)}</b><span>${esc(num(d.data.amountRub).toFixed(2))} ₽ · ${esc(d.data.comment || "")}</span></div><div class="ep-admin-prow-act"><button data-req-topup="${esc(d.data.uid)}" data-amt="${esc(num(d.data.amountRub))}" class="ep-ok">Пополнить</button><button data-open="${esc(d.data.uid)}" class="ep-ghost">Открыть</button></div></div>`).join("") : "<div class='ep-admin-empty'>Заявок на ИИ нет.</div>");
-    if (eSub) eSub.innerHTML = rs.error ? `<div class='ep-admin-empty'>Заявки на подписку: нет доступа (${esc(rs.error)}).</div>` : (rs.docs.length ? `<h4>Подписка (${rs.docs.length})</h4>` + rs.docs.map((d) => `<div class="ep-admin-prow"><div><b>${esc(emailByUid[d.data.uid] || d.data.uid)}</b><span>${esc(d.data.planId || "")} · ${esc(d.data.periodDays || 30)} дн · ${esc(d.data.comment || "")}</span></div><div class="ep-admin-prow-act"><button data-open="${esc(d.data.uid)}" class="ep-ok">Открыть и выдать</button></div></div>`).join("") : "<div class='ep-admin-empty'>Заявок на подписку нет.</div>");
+    const em = {}; A.users.forEach((u) => em[u.uid] = u.email || u.uid);
+    const ra = await readColl("ai_payment_requests", "status", "pending"); const rs = await readColl("subscription_payment_requests", "status", "pending");
+    const eA = $("#ep-req-ai"), eS = $("#ep-req-sub");
+    if (eA) eA.innerHTML = ra.error ? `<div class='ep-admin-empty'>ИИ-заявки: нет доступа.</div>` : (ra.docs.length ? `<h4>Пополнение ИИ (${ra.docs.length})</h4>` + ra.docs.map((d) => `<div class="ep-admin-prow"><div><b>${esc(em[d.data.uid] || d.data.uid)}</b><span>${esc(num(d.data.amountRub).toFixed(2))} ₽ · ${esc(d.data.comment || "")}</span></div><div class="ep-admin-prow-act"><button data-req-topup="${esc(d.data.uid)}" data-amt="${esc(num(d.data.amountRub))}" class="ep-ok">Пополнить</button><button data-open="${esc(d.data.uid)}" class="ep-ghost">Открыть</button></div></div>`).join("") : "<div class='ep-admin-empty'>Заявок на ИИ нет.</div>");
+    if (eS) eS.innerHTML = rs.error ? `<div class='ep-admin-empty'>Заявки на подписку: нет доступа.</div>` : (rs.docs.length ? `<h4>Подписка (${rs.docs.length})</h4>` + rs.docs.map((d) => `<div class="ep-admin-prow"><div><b>${esc(em[d.data.uid] || d.data.uid)}</b><span>${esc(d.data.planId || "")} · ${esc(d.data.periodDays || 30)} дн · ${esc(d.data.comment || "")}</span></div><div class="ep-admin-prow-act"><button data-open="${esc(d.data.uid)}" class="ep-ok">Открыть и выдать</button></div></div>`).join("") : "<div class='ep-admin-empty'>Заявок на подписку нет.</div>");
   }
 
-  // ====== ВКЛАДКА: КОНТАКТЫ ======
+  // ====== КОНТАКТЫ ======
   async function renderContacts() {
     const host = $("#ep-admin-body"); if (!host) return;
     if (!A.contact) { const r = await readDoc("server_db", META_DOC); A.contact = (r.data && r.data.contact) ? r.data.contact : {}; }
     const c = A.contact || {};
-    host.innerHTML = `<div class="ep-admin-card"><h3>Контакты для мастеров</h3>
-      <p class="ep-admin-muted">Мастера увидят это в приложении, чтобы связаться с тобой (оплата, вопросы). Хранится в <code>server_db/__meta__</code>.</p>
+    host.innerHTML = `<div class="ep-admin-card"><h3>Контакты для мастеров</h3><p class="ep-admin-muted">Мастера увидят это, чтобы связаться (оплата/вопросы). Хранится в <code>server_db/__meta__</code>.</p>
       <div class="ep-admin-row"><label class="ep-admin-fl">Telegram</label><input id="ep-c-tg" value="${esc(c.telegram || "")}" placeholder="@username" style="flex:1"></div>
       <div class="ep-admin-row"><label class="ep-admin-fl">Телефон</label><input id="ep-c-phone" value="${esc(c.phone || "")}" placeholder="+7…" style="flex:1"></div>
       <div class="ep-admin-row"><label class="ep-admin-fl">E-mail</label><input id="ep-c-email" value="${esc(c.email || "")}" placeholder="mail@…" style="flex:1"></div>
-      <div class="ep-admin-row"><label class="ep-admin-fl">Реквизиты/QR</label><input id="ep-c-pay" value="${esc(c.payment || "")}" placeholder="карта / ссылка на оплату" style="flex:1"></div>
+      <div class="ep-admin-row"><label class="ep-admin-fl">Реквизиты/QR</label><input id="ep-c-pay" value="${esc(c.payment || "")}" placeholder="карта / ссылка" style="flex:1"></div>
       <div class="ep-admin-row"><label class="ep-admin-fl">Сообщение</label><input id="ep-c-note" value="${esc(c.note || "")}" placeholder="как связаться / часы" style="flex:1"></div>
       <div class="ep-admin-actions"><button id="ep-c-save" class="ep-admin-primary">💾 Сохранить контакты</button></div></div>`;
   }
   async function saveContacts() {
-    const d = db(); if (!d) return; status("Сохранение контактов…");
+    const d = db(); if (!d) return; status("Сохранение…");
     const c = { telegram: ($("#ep-c-tg") || {}).value || "", phone: ($("#ep-c-phone") || {}).value || "", email: ($("#ep-c-email") || {}).value || "", payment: ($("#ep-c-pay") || {}).value || "", note: ($("#ep-c-note") || {}).value || "" };
-    try { await d.collection("server_db").doc(META_DOC).set({ contact: c, updatedAt: FV() }, { merge: true }); A.contact = c; status("Контакты сохранены ✓"); }
-    catch (e) { const x = e && (e.code || e.message); status(String(x).indexOf("permission-denied") >= 0 ? "Нет прав на запись server_db." : "Ошибка: " + x); }
+    try { await d.collection("server_db").doc(META_DOC).set({ contact: c, updatedAt: FV() }, { merge: true }); A.contact = c; status("Контакты сохранены ✓"); } catch (e) { const x = e && (e.code || e.message); status(String(x).indexOf("permission-denied") >= 0 ? "Нет прав на запись server_db." : "Ошибка: " + x); }
   }
 
   // ====== операции пользователя ======
   function actStatus(m) { const e = $("#ep-act-status"); if (e) e.textContent = m; status(m); }
-  async function writeUserDoc(uid, patch, ok) { const d = db(); if (!d) return; actStatus("Сохранение…"); try { patch.updatedAt = FV(); await d.collection("users").doc(uid).set(patch, { merge: true }); const u = user(); if (u) Object.assign(u, patch); actStatus(ok || "Готово ✓"); if (A.tab === "users") { renderUsersTab(); } } catch (e) { const c = e && (e.code || e.message); actStatus(String(c).indexOf("permission-denied") >= 0 ? "Нет прав на запись users (проверь правила/роль)." : "Ошибка: " + c); } }
+  async function writeUserDoc(uid, patch, ok) { const d = db(); if (!d) return; actStatus("Сохранение…"); try { patch.updatedAt = FV(); await d.collection("users").doc(uid).set(patch, { merge: true }); const u = user(); if (u) Object.assign(u, patch); actStatus(ok || "Готово ✓"); if (A.tab === "users") renderUsersTab(); } catch (e) { const c = e && (e.code || e.message); actStatus(String(c).indexOf("permission-denied") >= 0 ? "Нет прав на запись users." : "Ошибка: " + c); } }
   async function callOp(name, payload, ok) { actStatus("Выполняю…"); try { await call(name, payload); actStatus(ok || "Готово ✓"); await loadUsers(); renderDetail(); } catch (e) { const c = e && (e.code || e.message); actStatus("Ошибка (" + name + "): " + (String(c).indexOf("permission-denied") >= 0 ? "нет прав админа" : c)); } }
 
   // ====== разделы данных пользователя ======
@@ -224,31 +205,26 @@
     A.section = name; const uid = A.selectedUid; if (!uid) return;
     document.querySelectorAll(".ep-admin-sections button").forEach((b) => b.classList.toggle("on", b.getAttribute("data-sec") === name));
     secBox("<div class='ep-admin-empty'>Загрузка…</div>");
-    if (name === "db") { const r = await readDoc("user_db", uid); if (r.error) return secBox(errB("user_db/{uid}", r)); const items = (r.data && Array.isArray(r.data.items)) ? r.data.items : []; if (!items.length) return secBox("<div class='ep-admin-empty'>Личная БД пуста.</div>"); secBox(`<p class="ep-admin-muted">Позиций: ${items.length}</p><table class="ep-admin-table"><thead><tr><th>тип</th><th>название</th><th>ед.</th><th>цена</th></tr></thead><tbody>${items.slice(0, 300).map((x) => `<tr><td>${esc(x.type)}</td><td>${esc(x.name)}</td><td>${esc(x.unit || "")}</td><td>${esc(x.price)}</td></tr>`).join("")}</tbody></table>`); }
+    if (name === "db") { await ensureSrv(); const r = await readDoc("user_db", uid); if (r.error) return secBox(errB("user_db/{uid}", r)); A.masterDb = (r.data && Array.isArray(r.data.items)) ? r.data.items : []; if (!A.masterDb.length) return secBox("<div class='ep-admin-empty'>Личная БД мастера пуста.</div>"); secBox(`<div class="ep-adb-hint">➕ — добавить позицию в БД сервера</div>` + renderTree(A.masterDb, "master")); }
     else if (name === "sub" || name === "ai") { const coll = name === "sub" ? "user_subscriptions" : "ai_accounts"; const r = await readDoc(coll, uid); if (r.error) return secBox(errB(coll + "/{uid}", r)); secBox(r.exists ? `<pre class="ep-admin-pre">${esc(jn(r.data))}</pre>` : "<div class='ep-admin-empty'>Нет данных.</div>"); }
     else if (name === "drafts" || name === "estimates") { const r = await readDoc(name, uid); if (r.error) return secBox(errB(name + "/{uid}", r)); if (!r.exists || !r.data || !Object.keys(r.data).length) return secBox(`<div class='ep-admin-empty'>В <code>${esc(name)}/{uid}</code> нет данных.</div>`); secBox(`<pre class="ep-admin-pre">${esc(jn(r.data))}</pre>`); }
     else if (name === "usage") { const r = await readColl("ai_usage", "uid", uid); if (r.error) return secBox(errB("ai_usage", r)); if (!r.docs || !r.docs.length) return secBox("<div class='ep-admin-empty'>Расхода ИИ нет.</div>"); secBox(r.docs.map((d) => `<div class="ep-admin-logrow">${esc(dstr(d.data.createdAt))} · ${esc(d.data.feature || d.data.model || "")} · ${esc(num(d.data.amountRub).toFixed(2))}₽ · ${esc(d.data.totalTokens || 0)}т</div>`).join("")); }
     else if (name === "logs") { const r = await readColl("admin_logs", "uid", uid); if (r.error) return secBox(errB("admin_logs", r)); if (!r.docs || !r.docs.length) return secBox("<div class='ep-admin-empty'>Логов нет.</div>"); secBox(r.docs.map((d) => `<div class="ep-admin-logrow">${esc(dstr(d.data.createdAt))} · <b>${esc(d.data.type || "")}</b> ${esc(d.data.planId || d.data.accessMode || d.data.feature || "")}</div>`).join("")); }
   }
 
-  // ====== модалка выбора ======
-  function openPicker() { let m = $("#ep-admin-modal"); if (!m) return; m.classList.add("open"); renderPickerList(); const s = $("#ep-admin-modal-search"); if (s) { s.value = ""; } }
+  // ====== модалка ======
+  function openPicker() { const m = $("#ep-admin-modal"); if (!m) return; m.classList.add("open"); renderPickerList(); const s = $("#ep-admin-modal-search"); if (s) s.value = ""; }
   function closePicker() { const m = $("#ep-admin-modal"); if (m) m.classList.remove("open"); }
-  function renderPickerList() {
-    const el = $("#ep-admin-modal-list"); if (!el) return;
-    const q = ($("#ep-admin-modal-search") && $("#ep-admin-modal-search").value || "").trim().toLowerCase();
-    let list = A.users; if (A.onlyPending) list = list.filter(isPending);
-    if (q) list = list.filter((u) => [u.uid, u.email, u.displayName, u.role].some((x) => String(x || "").toLowerCase().indexOf(q) >= 0));
-    el.innerHTML = list.length ? list.map((u) => { const st = uStatus(u), sub = u.subscription; return `<button type="button" class="ep-admin-pick" data-open="${esc(u.uid)}"><b>${esc(u.email || "(без email)")}</b><span>${esc(u.displayName || "—")} · ${esc(u.role)} · <i class="ep-st ep-st-${esc(st)}">${esc(st)}</i>${sub && subActive(sub) ? " · " + esc(sub.planId || "sub") : ""}</span></button>`; }).join("") : "<div class='ep-admin-empty'>Никого не найдено.</div>";
-  }
+  function renderPickerList() { const el = $("#ep-admin-modal-list"); if (!el) return; const q = ($("#ep-admin-modal-search") && $("#ep-admin-modal-search").value || "").trim().toLowerCase(); let list = A.users; if (A.onlyPending) list = list.filter(isPending); if (q) list = list.filter((u) => [u.uid, u.email, u.displayName, u.role].some((x) => String(x || "").toLowerCase().indexOf(q) >= 0)); el.innerHTML = list.length ? list.map((u) => { const st = uStatus(u), sub = u.subscription; return `<button type="button" class="ep-admin-pick" data-open="${esc(u.uid)}"><b>${esc(u.email || "(без email)")}</b><span>${esc(u.displayName || "—")} · ${esc(u.role)} · <i class="ep-st ep-st-${esc(st)}">${esc(st)}</i>${sub && subActive(sub) ? " · " + esc(sub.planId || "sub") : ""}</span></button>`; }).join("") : "<div class='ep-admin-empty'>Никого не найдено.</div>"; }
 
   // ====== делегация ======
   function bind(root) {
-    if (root.__epAdmin3) return; root.__epAdmin3 = true;
+    if (root.__epAdmin4) return; root.__epAdmin4 = true;
     root.addEventListener("click", (ev) => {
       const t = ev.target;
       const nav = t.closest("[data-tab]"); if (nav) return switchTab(nav.getAttribute("data-tab"));
-      // модалка
+      const fold = t.closest("[data-fold]"); if (fold) { const k = fold.getAttribute("data-fold"); if (A.exp.has(k)) A.exp.delete(k); else A.exp.add(k); if (A.tab === "serverdb") { const el = $("#ep-srv-list"); if (el) el.innerHTML = renderTree(A.srv, "server"); } else if (A.section === "db") openSection("db"); return; }
+      const addS = t.closest("[data-add-srv]"); if (addS) return addToServer(addS.getAttribute("data-add-srv"));
       if (t.closest("#ep-admin-open-picker")) return openPicker();
       if (t.closest("#ep-admin-modal-close") || t.closest("#ep-admin-modal-overlay")) return closePicker();
       if (t.closest("#ep-admin-refresh")) return loadUsers();
@@ -257,16 +233,11 @@
       const ap = t.closest("[data-approve]"); if (ap) { A.selectedUid = ap.getAttribute("data-approve"); return writeUserDoc(A.selectedUid, { status: "approved", isApproved: true, blocked: false }, "Мастер одобрен ✓"); }
       const utab = t.closest("[data-utab]"); if (utab) { A.userTab = utab.getAttribute("data-utab"); A.section = null; return renderDetail(); }
       const sec = t.closest("[data-sec]"); if (sec) return openSection(sec.getAttribute("data-sec"));
-      // БД сервера
-      if (t.closest("#ep-srv-add")) return srvAdd();
-      if (t.closest("#ep-srv-save")) return srvSave();
-      const se = t.closest("[data-srv-edit]"); if (se) return srvEdit(num(se.getAttribute("data-srv-edit")));
-      const sd = t.closest("[data-srv-del]"); if (sd) { A.srv.splice(num(sd.getAttribute("data-srv-del")), 1); return renderSrvList(); }
-      // контакты
+      if (t.closest("#ep-srv-add")) return srvAddManual();
+      const se = t.closest("[data-srv-edit]"); if (se) return srvEdit(se.getAttribute("data-srv-edit"));
+      const sd = t.closest("[data-srv-del]"); if (sd) return srvDel(sd.getAttribute("data-srv-del"));
       if (t.closest("#ep-c-save")) return saveContacts();
-      // заявки
-      const rt = t.closest("[data-req-topup]"); if (rt) { A.selectedUid = rt.getAttribute("data-req-topup"); return callOp("topUpAiBalance", { uid: A.selectedUid, amountRub: num(rt.getAttribute("data-amt")), paymentMethod: "admin_request" }, "Баланс пополнен по заявке ✓"); }
-      // операции пользователя
+      const rt = t.closest("[data-req-topup]"); if (rt) { A.selectedUid = rt.getAttribute("data-req-topup"); return callOp("topUpAiBalance", { uid: A.selectedUid, amountRub: num(rt.getAttribute("data-amt")), paymentMethod: "admin_request" }, "Пополнено по заявке ✓"); }
       const uid = A.selectedUid;
       if (t.closest("#ep-approve")) return writeUserDoc(uid, { status: "approved", isApproved: true, blocked: false }, "Одобрен ✓");
       if (t.closest("#ep-block")) return writeUserDoc(uid, { status: "blocked_review", blocked: true }, "Заблокирован");
@@ -282,14 +253,7 @@
     });
     root.addEventListener("input", (ev) => { if (ev.target.id === "ep-admin-modal-search") renderPickerList(); });
   }
-  function mount() {
-    const root = $("#ep-admin-root"); if (!root) return;
-    if (!isAdmin()) { root.innerHTML = "<div class='ep-admin-hero'><h1>Админка</h1><p>Доступ только для администратора.</p></div>"; return; }
-    bind(root); renderNav();
-    if (!db()) { status("Firebase недоступен."); return; }
-    A.srv = null; A.contact = null;
-    loadUsers().then(() => { if (A.tab === "users") renderUsersTab(); });
-  }
+  function mount() { const root = $("#ep-admin-root"); if (!root) return; if (!isAdmin()) { root.innerHTML = "<div class='ep-admin-hero'><h1>Админка</h1><p>Доступ только для администратора.</p></div>"; return; } bind(root); renderNav(); if (!db()) { status("Firebase недоступен."); return; } A.srv = null; A.contact = null; loadUsers().then(() => { if (A.tab === "users") renderUsersTab(); }); }
   window.addEventListener("ep:route-loaded", (e) => { if (e && e.detail && e.detail.route === "admin") mount(); });
   EP.Admin = { mount, reload: loadUsers, isAdmin };
 })();

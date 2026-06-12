@@ -433,3 +433,22 @@ code {
 .ep-mini{border:1px solid var(--ep-admin-line);background:rgba(148,163,184,.10);color:var(--ep-admin-text);border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:.8rem}
 .ep-mini-d{color:var(--ep-admin-danger);border-color:rgba(239,68,68,.4)}
 h4{margin:12px 0 6px;font-size:.92rem}
+
+/* === V29 админка v3: папки/подпапки/карточки БД === */
+.ep-adb-hint,.ep-adb-type{margin:8px 0 4px;font-weight:700;font-size:.9rem}
+.ep-adb-hint{color:var(--ep-admin-accent);font-size:.8rem;font-weight:600}
+.ep-adb-type{padding-top:6px;border-top:1px solid var(--ep-admin-line)}
+.ep-adb-cnt{font-size:.72rem;color:var(--ep-admin-muted);font-weight:400}
+.ep-adb-folder,.ep-adb-subfolder{margin:4px 0}
+.ep-adb-fhead,.ep-adb-shead{width:100%;text-align:left;padding:9px 10px;border:1px solid var(--ep-admin-line);border-radius:10px;background:rgba(148,163,184,.08);color:var(--ep-admin-text);cursor:pointer;font-size:.86rem;font-weight:600}
+.ep-adb-shead{background:rgba(148,163,184,.04);font-weight:500;font-size:.82rem;margin-left:10px;width:calc(100% - 10px)}
+.ep-adb-folder.is-open>.ep-adb-fhead{border-color:var(--ep-admin-accent);background:rgba(56,189,248,.12)}
+.ep-adb-card{display:flex;align-items:center;gap:8px;padding:9px 11px;margin:4px 0 4px 12px;border:1px solid var(--ep-admin-line);border-radius:10px;background:rgba(15,23,42,.5)}
+.ep-adb-info{flex:1;min-width:0}
+.ep-adb-info b{display:block;font-size:.86rem;overflow-wrap:anywhere}
+.ep-adb-info span{font-size:.76rem;color:var(--ep-admin-muted)}
+.ep-adb-in{font-size:.74rem;color:var(--ep-admin-ok);white-space:nowrap}
+.ep-mini-ok{color:var(--ep-admin-ok);border-color:rgba(34,197,94,.45);font-size:1rem;width:34px;height:34px}
+.ep-adb-manual{margin:8px 0;border:1px solid var(--ep-admin-line);border-radius:10px;padding:6px 10px}
+.ep-adb-manual summary{cursor:pointer;font-size:.84rem;color:var(--ep-admin-accent);font-weight:600}
+.ep-adb-manual .ep-admin-row{margin-top:8px}
