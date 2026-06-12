@@ -414,3 +414,22 @@ code {
 .ep-admin-pick:hover{border-color:var(--ep-admin-accent)}
 .ep-admin-pick b{display:block;font-size:.9rem}.ep-admin-pick span{font-size:.74rem;color:var(--ep-admin-muted)}
 .ep-st{font-style:normal}
+
+/* === V29 админка v2: вкладки + БД сервера === */
+.ep-admin-nav{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0;position:sticky;top:0;z-index:5;padding:6px 0;background:linear-gradient(180deg,var(--ep-admin-bg) 70%,transparent)}
+.ep-admin-nav button{padding:10px 14px;border-radius:12px;border:1px solid var(--ep-admin-line);background:rgba(148,163,184,.08);color:var(--ep-admin-text);cursor:pointer;font-weight:600;font-size:.86rem}
+.ep-admin-nav button.on{background:var(--ep-admin-accent);color:#04202e;border-color:transparent}
+.ep-admin-subtabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+.ep-admin-subtabs button{padding:7px 12px;border-radius:10px;border:1px solid var(--ep-admin-line);background:rgba(148,163,184,.06);color:var(--ep-admin-muted);cursor:pointer;font-size:.82rem}
+.ep-admin-subtabs button.on{border-color:var(--ep-admin-accent);background:rgba(56,189,248,.16);color:var(--ep-admin-text)}
+.ep-admin-fl{min-width:96px;font-size:.82rem;color:var(--ep-admin-muted)}
+.ep-srv-row{display:flex;align-items:center;gap:8px;padding:8px 6px;border-bottom:1px solid var(--ep-admin-line)}
+.ep-srv-t{font-size:.66rem;padding:2px 7px;border-radius:6px;white-space:nowrap}
+.ep-srv-material{background:rgba(56,189,248,.16);color:var(--ep-admin-accent)}
+.ep-srv-work{background:rgba(253,224,71,.16);color:var(--ep-admin-warn)}
+.ep-srv-n{flex:1;font-size:.86rem;min-width:0;overflow-wrap:anywhere}
+.ep-srv-u{font-size:.78rem;color:var(--ep-admin-muted);width:48px;text-align:center}
+.ep-srv-p{font-size:.82rem;width:64px;text-align:right;font-variant-numeric:tabular-nums}
+.ep-mini{border:1px solid var(--ep-admin-line);background:rgba(148,163,184,.10);color:var(--ep-admin-text);border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:.8rem}
+.ep-mini-d{color:var(--ep-admin-danger);border-color:rgba(239,68,68,.4)}
+h4{margin:12px 0 6px;font-size:.92rem}
