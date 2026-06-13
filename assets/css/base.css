@@ -529,3 +529,49 @@ body[data-visual-mode="day"] .card,
 body[data-visual-mode="day"] .hero-card {
   text-shadow: none;
 }
+
+/* === Фон плиток и карточки сметы на главной по режиму (Claude) === */
+body[data-visual-mode="day"] .main-dashboard .tile,
+body[data-visual-mode="day"] .main-dashboard .estimate-card { background:rgba(255,255,255,.88) !important; }
+body[data-visual-mode="day"] .main-dashboard .tile h3,
+body[data-visual-mode="day"] .main-dashboard .estimate-card h3 { color:#0f172a !important; }
+body[data-visual-mode="day"] .main-dashboard .tile p,
+body[data-visual-mode="day"] .main-dashboard .estimate-card p:not(.badge) { color:#475569 !important; }
+body[data-visual-mode="night"] .main-dashboard .tile,
+body[data-visual-mode="night"] .main-dashboard .estimate-card { background:rgba(20,28,48,.90) !important; }
+body[data-visual-mode="night"] .main-dashboard .tile h3,
+body[data-visual-mode="night"] .main-dashboard .estimate-card h3 { color:#f1f5f9 !important; }
+body[data-visual-mode="night"] .main-dashboard .tile p,
+body[data-visual-mode="night"] .main-dashboard .estimate-card p:not(.badge) { color:#cbd5e1 !important; }
+
+/* === Предварительная смета на главной: список позиций (Claude) === */
+.ep-est-list{display:flex;flex-direction:column;gap:8px;margin:8px 0}
+.ep-est-section{display:flex;flex-direction:column;gap:5px}
+.ep-est-sec-h{font-size:12px;font-weight:700;color:var(--muted)}
+.ep-est-row{display:grid;grid-template-columns:1fr auto auto auto;align-items:center;gap:8px;padding:7px 9px;border-radius:12px;background:rgba(127,140,170,.12);border:1px solid rgba(127,140,170,.20)}
+.ep-est-name{font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ep-est-unit{color:var(--muted);font-size:11px}
+.ep-est-qty{display:flex;align-items:center;gap:6px}
+.ep-est-qty button{width:26px;height:26px;border-radius:8px;border:1px solid rgba(127,140,170,.3);background:rgba(127,140,170,.16);color:var(--text);font-size:15px;font-weight:700;line-height:1;cursor:pointer}
+.ep-est-qty button:active{transform:scale(.92)}
+.ep-est-qty b{min-width:18px;text-align:center;font-size:13px;color:var(--text)}
+.ep-est-sum{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;font-variant-numeric:tabular-nums}
+.ep-est-rm{width:26px;height:26px;border-radius:8px;border:0;background:rgba(239,68,68,.18);color:#ef6464;font-size:12px;cursor:pointer}
+.ep-est-total{text-align:right;font-size:14px;color:var(--text);padding-top:6px;margin-top:2px;border-top:1px solid rgba(127,140,170,.22)}
+.ep-est-total b{color:var(--accent)}
+
+/* === Читаемость карточек ГЛАВНОЙ в день/ночь (Claude) === */
+body[data-visual-mode="day"] .main-dashboard .tile,
+body[data-visual-mode="day"] .main-dashboard .card{background:rgba(255,255,255,.88)!important;border-color:rgba(15,23,42,.14)!important}
+body[data-visual-mode="day"] .main-dashboard .tile h3,
+body[data-visual-mode="day"] .main-dashboard .card h3,
+body[data-visual-mode="day"] .main-dashboard .card h2{color:#0f172a!important}
+body[data-visual-mode="day"] .main-dashboard .tile p,
+body[data-visual-mode="day"] .main-dashboard .card p:not(.badge){color:#475569!important}
+body[data-visual-mode="night"] .main-dashboard .tile,
+body[data-visual-mode="night"] .main-dashboard .card{background:rgba(20,28,48,.88)!important;border-color:rgba(255,255,255,.10)!important}
+body[data-visual-mode="night"] .main-dashboard .tile h3,
+body[data-visual-mode="night"] .main-dashboard .card h3,
+body[data-visual-mode="night"] .main-dashboard .card h2{color:#f1f5f9!important}
+body[data-visual-mode="night"] .main-dashboard .tile p,
+body[data-visual-mode="night"] .main-dashboard .card p:not(.badge){color:#cbd5e1!important}

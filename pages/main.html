@@ -49,12 +49,13 @@
 
   <div class="card estimate-card">
     <h3>Предварительная смета</h3>
-    <p class="badge">Пока пусто</p>
+    <p class="badge" data-est-badge>Пока пусто</p>
     <p>Нажми «Материалы» или «Работа», выбери позиции плюсиками — они появятся здесь.</p>
+    <div class="ep-est-list" data-est-list></div>
     <div class="grid grid-3">
-      <button class="btn btn-primary ep-clickable" type="button">Открыть черновик</button>
-      <button class="btn btn-ghost ep-clickable" type="button">Очистить</button>
-      <button class="btn btn-primary ep-clickable" type="button">Сохранить</button>
+      <button class="btn btn-primary ep-clickable" type="button" data-est-open>Открыть черновик</button>
+      <button class="btn btn-ghost ep-clickable" type="button" data-est-clear>Очистить</button>
+      <button class="btn btn-primary ep-clickable" type="button" data-est-save>Сохранить</button>
     </div>
   </div>
 </section>
