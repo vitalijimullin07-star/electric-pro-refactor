@@ -205,3 +205,35 @@
   border: 1px solid rgba(255,255,255,.14);
   background: rgba(0,0,0,.22); color: var(--text); font-size: 14px; font-weight: 600;
 }
+
+/* === ФИКС читаемости карточек в день/ночь (Claude) === */
+/* День: светлые карточки, тёмный текст, видимые рамки */
+body[data-visual-mode="day"] .ep-db-row,
+body[data-visual-mode="day"] .ep-db-iconbtn,
+body[data-visual-mode="day"] .ep-db-tab,
+body[data-visual-mode="day"] .ep-db-chip,
+body[data-visual-mode="day"] .ep-db-folder-head,
+body[data-visual-mode="day"] .ep-db-subfolder-head {
+  background: rgba(255,255,255,.88) !important;
+  border-color: rgba(15,23,42,.14) !important;
+}
+body[data-visual-mode="day"] .ep-db-row-name,
+body[data-visual-mode="day"] .ep-db-row-price,
+body[data-visual-mode="day"] .ep-db-folder-head,
+body[data-visual-mode="day"] .ep-db-subfolder-head { color:#0f172a !important; }
+body[data-visual-mode="day"] .ep-db-row-meta,
+body[data-visual-mode="day"] .ep-db-listinfo { color:#475569 !important; }
+body[data-visual-mode="day"] .ep-db-folder.is-open > .ep-db-folder-head { background:rgba(56,189,248,.16) !important; border-color:rgba(2,132,199,.4) !important; }
+body[data-visual-mode="day"] .ep-db-input { background:rgba(255,255,255,.9) !important; color:#0f172a !important; border-color:rgba(15,23,42,.18) !important; }
+
+/* Ночь: тёмные карточки — гарантированно СВЕТЛЫЙ текст (читаемо даже на светлом фоне) */
+body[data-visual-mode="night"] .ep-db-row,
+body[data-visual-mode="night"] .ep-db-folder-head,
+body[data-visual-mode="night"] .ep-db-subfolder-head {
+  background: rgba(20,28,48,.90) !important;
+  border-color: rgba(255,255,255,.12) !important;
+}
+body[data-visual-mode="night"] .ep-db-row-name,
+body[data-visual-mode="night"] .ep-db-row-price { color:#f1f5f9 !important; }
+body[data-visual-mode="night"] .ep-db-row-meta,
+body[data-visual-mode="night"] .ep-db-listinfo { color:#cbd5e1 !important; }
