@@ -14,7 +14,8 @@ EP.routes = {
   pool: "pages/pool.html",
   estimate: "pages/estimate.html",
   details: "pages/details.html",
-  consumables: "pages/consumables.html"
+  consumables: "pages/consumables.html",
+  profile: "pages/profile.html"
 };
 
 EP.Router = {
