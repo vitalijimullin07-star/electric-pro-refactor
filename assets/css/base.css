@@ -599,3 +599,26 @@ body[data-visual-mode="night"] .main-dashboard .card p:not(.badge){color:#cbd5e1
 .ep-sup-total{text-align:right;font-size:15px;color:var(--text);padding:8px 2px 2px;margin-top:6px;border-top:1px solid rgba(127,140,170,.25)}
 .ep-sup-total b{color:var(--accent)}
 .ep-sup-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+
+/* === Этап 4: калькулятор расходников === */
+.ep-cons{display:flex;flex-direction:column;gap:14px}
+.ep-cons-sec{display:flex;flex-direction:column;gap:8px}
+.ep-cons-h{font-size:15px;font-weight:700;color:var(--text);display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ep-cons-hint{font-size:12px;color:var(--muted)}
+.ep-cons-auto{font-size:12px;font-weight:700;padding:6px 10px;border-radius:9px;border:1px solid rgba(127,140,170,.3);background:rgba(127,140,170,.14);color:var(--text);cursor:pointer}
+.ep-cons-params{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ep-cons-field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+.ep-cons-field input{padding:9px 10px;border-radius:10px;border:1px solid rgba(127,140,170,.28);background:rgba(127,140,170,.08);color:var(--text);font-size:15px;width:100%}
+.ep-cons-zapas{max-width:160px}
+.ep-cons-norms{display:flex;flex-direction:column;gap:6px}
+.ep-cons-norm{display:grid;grid-template-columns:1fr auto 66px auto;gap:8px;align-items:center;padding:7px 9px;border-radius:10px;background:rgba(127,140,170,.08);border:1px solid rgba(127,140,170,.16)}
+.ep-cons-chk{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--text);min-width:0}
+.ep-cons-chk span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ep-cons-chk input{width:18px;height:18px;flex:0 0 auto}
+.ep-cons-per{font-size:11px;color:var(--muted);white-space:nowrap}
+.ep-cons-qty{width:66px;padding:6px 8px;border-radius:8px;border:1px solid rgba(127,140,170,.28);background:rgba(127,140,170,.1);color:var(--text);font-size:14px;text-align:center}
+.ep-cons-unit{font-size:11px;color:var(--muted)}
+.ep-cons-prev{display:flex;flex-direction:column;gap:5px}
+.ep-cons-prow{display:flex;justify-content:space-between;gap:8px;padding:7px 10px;border-radius:9px;background:rgba(34,197,94,.10);border:1px solid rgba(34,197,94,.22);font-size:13px;color:var(--text)}
+.ep-cons-prow b{white-space:nowrap;font-variant-numeric:tabular-nums}
+.ep-cons-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}

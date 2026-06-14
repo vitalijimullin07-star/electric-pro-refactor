@@ -13,7 +13,8 @@ EP.routes = {
   scheme: "pages/scheme.html",
   pool: "pages/pool.html",
   estimate: "pages/estimate.html",
-  details: "pages/details.html"
+  details: "pages/details.html",
+  consumables: "pages/consumables.html"
 };
 
 EP.Router = {

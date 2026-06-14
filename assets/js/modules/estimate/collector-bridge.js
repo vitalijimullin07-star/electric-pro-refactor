@@ -107,8 +107,9 @@
     flash("Пул в смете: " + items.length + " позиц.");
   }
   // экспорт на случай прямого вызова
+  function fillPrices(items) { (items || []).forEach((it) => { if (!(Number(it.price) > 0)) it.price = priceByName(it.name); }); return items; }
   window.EP = window.EP || {};
-  window.EP.Collector = { pushShield, pushPool, shieldItems, poolItems };
+  window.EP.Collector = { pushShield, pushPool, shieldItems, poolItems, priceByName, fillPrices };
 
   /* ---------- кнопки ---------- */
   document.addEventListener("click", (e) => {

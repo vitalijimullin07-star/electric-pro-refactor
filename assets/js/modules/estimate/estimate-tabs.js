@@ -53,6 +53,7 @@
         <div class="ep-sup-actions">
           <button type="button" class="btn btn-primary ep-clickable" data-est-print>Печать / PDF</button>
           <button type="button" class="btn btn-ghost ep-clickable" data-est-share>Поделиться</button>
+          ${isSupply ? '<button type="button" class="btn btn-ghost ep-clickable" data-route="consumables">+ Расходники</button>' : ""}
           <button type="button" class="btn btn-ghost ep-clickable" data-route="main">На главный</button>
         </div>
       </div>`;
