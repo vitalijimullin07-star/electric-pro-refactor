@@ -17,7 +17,8 @@ EP.routes = {
   consumables: "pages/consumables.html",
   profile: "pages/profile.html",
   documents: "pages/documents.html",
-  stock: "pages/stock.html"
+  stock: "pages/stock.html",
+  costs: "pages/costs.html"
 };
 
 EP.Router = {
