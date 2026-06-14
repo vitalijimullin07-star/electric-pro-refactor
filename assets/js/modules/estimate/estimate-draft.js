@@ -67,5 +67,27 @@
   function count() { return read().length; }
   function total() { return read().reduce((s, x) => s + num(x.price) * num(x.qty), 0); }
 
-  window.EP.EstimateDraft = { addItem, getItems, removeItem, setQty, clear, count, total };
+  // Заменить все позиции конкретного источника (shield/pool/project) на новый набор.
+  // Так повторное «В смету» из модуля не плодит дубли, а обновляет его вклад.
+  function setSourceItems(source, list) {
+    source = String(source || "");
+    const kept = read().filter((x) => x.source !== source);
+    const add = (Array.isArray(list) ? list : []).map((it) => ({
+      id: lineId(),
+      sourceId: it.sourceId != null ? String(it.sourceId) : "",
+      type: it.type === "work" ? "work" : "material",
+      name: String(it.name || "").trim(),
+      unit: String(it.unit || ""),
+      price: num(it.price),
+      qty: num(it.qty != null ? it.qty : 1) || 1,
+      base: it.base || "",
+      source: source
+    })).filter((x) => x.name);
+    write(kept.concat(add));
+    return add.length;
+  }
+  function removeSource(source) { write(read().filter((x) => x.source !== String(source || ""))); }
+  function itemsBySource(source) { return read().filter((x) => x.source === String(source || "")); }
+
+  window.EP.EstimateDraft = { addItem, getItems, removeItem, setQty, clear, count, total, setSourceItems, removeSource, itemsBySource };
 })();

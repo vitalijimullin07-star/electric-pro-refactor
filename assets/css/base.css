@@ -575,3 +575,9 @@ body[data-visual-mode="night"] .main-dashboard .card h3,
 body[data-visual-mode="night"] .main-dashboard .card h2{color:#f1f5f9!important}
 body[data-visual-mode="night"] .main-dashboard .tile p,
 body[data-visual-mode="night"] .main-dashboard .card p:not(.badge){color:#cbd5e1!important}
+
+/* === Этап 1: кнопки «В смету» (щит/пул) === */
+.ep-to-est-bar{position:sticky;top:0;z-index:5;display:flex;justify-content:flex-end;padding:6px 0 8px}
+.ep-to-est-bar .btn{padding:8px 16px;font-size:14px}
+.ep-pool-to-est{position:fixed;right:14px;bottom:16px;z-index:2147483000;padding:11px 16px;border:0;border-radius:14px;background:#22c55e;color:#06210f;font-weight:800;font-size:14px;box-shadow:0 6px 18px rgba(0,0,0,.4);cursor:pointer}
+.ep-pool-to-est:active{transform:scale(.96)}
