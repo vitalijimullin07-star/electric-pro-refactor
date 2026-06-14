@@ -633,3 +633,26 @@ body[data-visual-mode="night"] .main-dashboard .card p:not(.badge){color:#cbd5e1
 .ep-prof-f input,.ep-prof-f select{padding:10px;border-radius:10px;border:1px solid rgba(127,140,170,.3);background:rgba(127,140,170,.06);color:var(--text);font-size:14px}
 .ep-prof-actions{display:flex;gap:8px;flex-wrap:wrap}
 .ep-prof-status{font-size:12px;color:var(--muted);min-height:16px}
+
+/* === Этап 6: документы / смета заказчику === */
+.ep-docs{display:flex;flex-direction:column;gap:12px}
+.ep-docs-grid{display:flex;flex-direction:column;gap:10px}
+.ep-doc-item{text-align:left;padding:14px;border-radius:14px;border:1px solid rgba(127,140,170,.2);background:rgba(127,140,170,.08);color:var(--text);font-weight:700;font-size:15px;cursor:pointer;display:flex;flex-direction:column;gap:3px}
+.ep-doc-item span{font-size:12px;font-weight:400;color:var(--muted)}
+.ep-doc-item.on{border-color:var(--accent)}
+.ep-doc-item.soon{opacity:.55;cursor:default}
+.ep-docs-bar{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.ep-docs-back{background:none;border:0;color:var(--accent);font-size:14px;font-weight:700;cursor:pointer;padding:4px 0}
+.ep-docs-title{font-size:16px;font-weight:700;color:var(--text)}
+.ep-docs-warn{font-size:12px;color:var(--muted);background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.3);border-radius:10px;padding:8px 10px}
+.ep-docs-warn a{color:var(--accent)}
+.ep-doc-head{font-size:13px;line-height:1.7;background:rgba(127,140,170,.08);border:1px solid rgba(127,140,170,.18);border-radius:12px;padding:10px}
+.ep-doc-ctrls{display:flex;flex-direction:column;gap:8px;background:rgba(127,140,170,.06);border-radius:12px;padding:10px}
+.ep-doc-modes{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);flex-wrap:wrap}
+.ep-doc-mode{padding:6px 12px;border-radius:9px;border:1px solid rgba(127,140,170,.3);background:rgba(127,140,170,.08);color:var(--text);font-size:13px;cursor:pointer}
+.ep-doc-mode.on{background:var(--accent);color:#06210f;border-color:transparent}
+.ep-doc-totals{margin-top:10px;text-align:right;font-size:14px;color:var(--text)}
+.ep-doc-totals>div{margin:2px 0}
+.ep-doc-grand{font-size:17px;font-weight:700}
+.ep-doc-grand b{color:var(--accent)}
+.ep-docs-actions{margin-top:6px}
