@@ -602,6 +602,12 @@
 
   // добавить весь щит в предварительную смету (ep_estimate_draft_v23)
   function addToEstimate() {
+    if (window.EP && EP.Collector && EP.Collector.pushShield) {
+      if (!cfg.draft) { alert("Сначала сгенерируй черновик щита (кнопка «Сгенерировать»)."); return; }
+      EP.Collector.pushShield();
+      alert("Щит добавлен в предварительную смету. Открой «Смета» или главную — оттуда перенесёшь в основную.");
+      return;
+    }
     const draft = cfg.draft;
     if (!draft) { alert("Сначала сгенерируй черновик."); return; }
     const KEY = "ep_estimate_draft_v23";
@@ -869,7 +875,6 @@
 
         <div class="shv28-actions">
           <button type="button" class="shv28-btn gen" data-gen>📋 Черновик</button>
-          <button type="button" class="shv28-btn add" data-add>➕ В смету</button>
           <button type="button" class="shv28-btn clr" data-clear>🗑 Очистить</button>
         </div>
       </div>${railOverlayHtml()}`;
