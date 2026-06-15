@@ -755,7 +755,6 @@
         <div><span>Работа</span><b>${cur(workTotal)}</b></div>
         <div class="grand"><span>ИТОГ</span><b>${cur(grand)}</b></div>
       </div>
-      <button type="button" class="shv28-btn add" style="width:100%;margin-bottom:8px" data-toestimate>➕ Добавить щит в смету</button>
       <div class="shv28-draft-hint">⚙️ ${esc(PROTECTIONS.find(x => x.v === cfg.protection)?.t || "")} · правило БД: ${esc(DB_RULES.find(x => x.v === cfg.dbRule)?.t || "")}<br>Не найдено в БД — нажми «вписать ₽» (своя цена) или оставь до ответа поставщика.</div>`;
   }
 
@@ -984,9 +983,6 @@
         }
         return;
       }
-      // добавить щит в смету
-      const toEst = t.closest?.("[data-toestimate]");
-      if (toEst) { addToEstimate(); return; }
       // показать/скрыть альтернативы группового диф/УЗО
       const palts = t.closest?.("[data-palts]");
       if (palts && !t.closest?.("[data-ppick]")) { const gi = Number(palts.dataset.palts); const g = cfg.draft?.groups?.[gi]; if (g) { g.prot.showAlts = !g.prot.showAlts; save(cfg); render(); } return; }

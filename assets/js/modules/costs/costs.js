@@ -5,7 +5,7 @@
   const KEY = "ep_costs_v29";
   const CATS = [["materials", "Материалы"], ["help", "Помощники"], ["transport", "Транспорт"], ["tools", "Инструмент"], ["other", "Прочее"]];
   const CAT_LABEL = CATS.reduce((a, [k, v]) => (a[k] = v, a), {});
-  function Draft() { return (window.EP && EP.EstimateDraft) || null; }
+  function Draft() { return (window.EP && EP.Estimate) || null; }
   function read() { try { return JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) { return {}; } }
   function write(s) { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) {} }
   function num(v) { const n = Number(v); return isFinite(n) ? n : 0; }
@@ -123,5 +123,5 @@
   });
 
   window.addEventListener("ep:route-loaded", (e) => { const r = e && e.detail && e.detail.route; if (r === "costs") render(); });
-  window.addEventListener("ep:estimate-draft-changed", () => { if (document.getElementById("ep-costs-root")) updateSummary(); });
+  window.addEventListener("ep:estimate-main-changed", () => { if (document.getElementById("ep-costs-root")) updateSummary(); });
 })();

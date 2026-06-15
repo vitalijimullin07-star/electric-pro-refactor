@@ -74,13 +74,19 @@
 
   <div class="card estimate-card">
     <h3>Предварительная смета</h3>
-    <p class="badge" data-est-badge>Пока пусто</p>
-    <p>Нажми «Материалы» или «Работа», выбери позиции плюсиками — они появятся здесь.</p>
+        <p class="badge" data-est-badge>Пока пусто</p>
+    <p>Сюда падают материалы и работы из щита, пула, материалов и работы. Собери и перенеси в основную.</p>
     <div class="ep-est-list" data-est-list></div>
-    <div class="grid grid-3">
-      <button class="btn btn-primary ep-clickable" type="button" data-est-open>Открыть черновик</button>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+      <button class="btn btn-primary ep-clickable" type="button" data-est-tomain>➕ В основную смету</button>
       <button class="btn btn-ghost ep-clickable" type="button" data-est-clear>Очистить</button>
-      <button class="btn btn-primary ep-clickable" type="button" data-est-save>Сохранить</button>
+    </div>
+    <h3 style="margin-top:18px">Основная смета</h3>
+    <p class="badge" data-estmain-badge>Пока пусто</p>
+    <p>Готовая смета: из неё идут «Поставщику», «Смета работ», документы, склад и затраты.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+      <button class="btn btn-primary ep-clickable" type="button" data-est-open>Открыть смету</button>
+      <button class="btn btn-ghost ep-clickable" type="button" data-estmain-clear>Очистить основную</button>
     </div>
   </div>
 </section>

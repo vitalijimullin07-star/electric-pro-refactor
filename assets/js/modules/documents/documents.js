@@ -4,7 +4,7 @@
    Хаб документов: остальные (договор/акт/счёт/гарантия) добавляются на Этапе 7. */
 (() => {
   "use strict";
-  function Draft() { return (window.EP && EP.EstimateDraft) || null; }
+  function Draft() { return (window.EP && EP.Estimate) || null; }
   function Profile() { return (window.EP && EP.Profile) || null; }
   function money(v) { try { if (window.EPCurrency && EPCurrency.format) return EPCurrency.format(v); } catch (e) {} return Number(v || 0).toFixed(2) + " \u20bd"; }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
@@ -365,5 +365,5 @@ ${s.disc > 0 ? `<div class="sub-t">Подытог: <b>${money(s.subtotal)}</b></
     const r = e && e.detail && e.detail.route;
     if (r === "documents") { view = "hub"; render(); }
   });
-  window.addEventListener("ep:estimate-draft-changed", () => { if (document.getElementById("ep-docs-root") && view === "client-estimate") renderClientEstimate(); });
+  window.addEventListener("ep:estimate-main-changed", () => { if (document.getElementById("ep-docs-root") && view === "client-estimate") renderClientEstimate(); });
 })();

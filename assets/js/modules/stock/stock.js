@@ -3,7 +3,7 @@
 (() => {
   "use strict";
   const KEY = "ep_stock_v29";
-  function Draft() { return (window.EP && EP.EstimateDraft) || null; }
+  function Draft() { return (window.EP && EP.Estimate) || null; }
   function read() { try { return JSON.parse(localStorage.getItem(KEY) || "[]") || []; } catch (e) { return []; } }
   function write(a) { try { localStorage.setItem(KEY, JSON.stringify(a || [])); } catch (e) {} try { window.dispatchEvent(new CustomEvent("ep:stock-changed")); } catch (e) {} }
   function uid() { return "s_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
@@ -150,5 +150,5 @@
   });
 
   window.addEventListener("ep:route-loaded", (e) => { const r = e && e.detail && e.detail.route; if (r === "stock") { view = "stock"; render(); } });
-  window.addEventListener("ep:estimate-draft-changed", () => { if (document.getElementById("ep-stock-root") && view === "deficit") renderDeficit(); });
+  window.addEventListener("ep:estimate-main-changed", () => { if (document.getElementById("ep-stock-root") && view === "deficit") renderDeficit(); });
 })();

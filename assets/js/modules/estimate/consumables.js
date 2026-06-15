@@ -4,7 +4,7 @@
 (() => {
   "use strict";
   const KEY = "ep_consumables_v29";
-  function Draft() { return (window.EP && window.EP.EstimateDraft) || null; }
+  function Draft() { return (window.EP && window.EP.Estimate) || null; }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
   // нормы по умолчанию (подрозетник и коробочные клеммы выкл — их обычно считает пул)

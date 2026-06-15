@@ -104,6 +104,9 @@
     const total = draft ? draft.total() : 0;
     const badge = document.querySelector("[data-est-badge]");
     if (badge) badge.textContent = count ? (count + " поз. · " + money(total)) : "Пока пусто";
+    const _main = window.EP && window.EP.Estimate;
+    const _mb = document.querySelector("[data-estmain-badge]");
+    if (_mb) { const _mc = _main ? _main.count() : 0; _mb.textContent = _mc ? (_mc + " поз. · " + money(_main.total())) : "Пока пусто"; }
     const list = document.querySelector("[data-est-list]");
     if (!list) return;
     if (!items.length) { list.innerHTML = ""; return; }
@@ -145,6 +148,8 @@
     if ((el = t.closest("[data-est-open]"))) { if (window.EP && window.EP.Router) window.EP.Router.go("estimate"); return; }
     if ((el = t.closest("[data-est-clear]"))) { const d = Draft(); if (d && (d.count() === 0 || confirm("Очистить предварительную смету?"))) { d.clear(); renderHomeSummary(); flash("Смета очищена"); } return; }
     if ((el = t.closest("[data-est-save]"))) { flash("Черновик сохранён"); if (window.EP && window.EP.Router) window.EP.Router.go("estimate"); return; }
+    if ((el = t.closest("[data-est-tomain]"))) { const d = Draft(); const m = window.EP && window.EP.Estimate; if (d && m) { if (d.count() === 0) { flash("Предварительная пуста"); return; } const n = m.mergeItems(d.getItems()); d.clear(); renderHomeSummary(); flash("В основную добавлено: " + n); } return; }
+    if ((el = t.closest("[data-estmain-clear]"))) { const m = window.EP && window.EP.Estimate; if (m && (m.count() === 0 || confirm("Очистить основную смету?"))) { m.clear(); renderHomeSummary(); flash("Основная смета очищена"); } return; }
   });
 
   /* ---------- тост ---------- */
@@ -167,4 +172,5 @@
     renderHomeSummary();
     if (currentType && document.getElementById("ep-pick-root")) renderPicker(currentType);
   });
+  window.addEventListener("ep:estimate-main-changed", () => { renderHomeSummary(); });
 })();

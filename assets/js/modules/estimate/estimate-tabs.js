@@ -1,8 +1,8 @@
 /* Electric Pro V29 — Этап 2. Вкладки «Смета работ» (работы клиенту) и «Поставщику» (материалы, закупка)
-   из общего сборника EP.EstimateDraft. Суммирование одинаковых, печать/PDF, поделиться. Без MutationObserver. */
+   из общего сборника EP.Estimate. Суммирование одинаковых, печать/PDF, поделиться. Без MutationObserver. */
 (() => {
   "use strict";
-  function Draft() { return (window.EP && window.EP.EstimateDraft) || null; }
+  function Draft() { return (window.EP && window.EP.Estimate) || null; }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
   function money(v) {
     try { if (window.EPCurrency && window.EPCurrency.format) return window.EPCurrency.format(v); } catch (e) {}
@@ -121,5 +121,5 @@ th{background:#f1f5f9;text-align:left}.c{text-align:center}.r{text-align:right}t
       render();
     }
   });
-  window.addEventListener("ep:estimate-draft-changed", () => { if (document.getElementById("ep-estimate-root")) render(); });
+  window.addEventListener("ep:estimate-main-changed", () => { if (document.getElementById("ep-estimate-root")) render(); });
 })();
