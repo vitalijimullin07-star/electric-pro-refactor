@@ -25,8 +25,10 @@
   function profitPlan() { return income() - planTotal(); }
   function profitFact() { return income() - actualTotal(); }
 
+  function addActual(cat, amount, note) { load(); const a = num(amount); if (a <= 0) return false; st.actuals.push({ id: uid(), cat: cat || "other", amount: a, note: note || "" }); save(); return true; }
+
   window.EP = window.EP || {};
-  EP.Costs = { income, planTotal, actualTotal, profitPlan, profitFact };
+  EP.Costs = { income, planTotal, actualTotal, profitPlan, profitFact, addActual };
 
   /* ---------- UI ---------- */
   function summaryHtml() {

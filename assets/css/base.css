@@ -703,3 +703,21 @@ body[data-visual-mode="night"] .main-dashboard .card p:not(.badge){color:#cbd5e1
 .ep-cost-cat{font-size:12px;font-weight:700;color:var(--accent);white-space:nowrap}
 .ep-cost-note{font-size:12px;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis}
 .ep-cost-amt{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;font-variant-numeric:tabular-nums}
+
+/* === Этап 10: инструмент === */
+.ep-tools{display:flex;flex-direction:column;gap:12px}
+.ep-tool-add{display:flex;flex-direction:column;gap:6px}
+.ep-tool-add>input{padding:10px;border-radius:10px;border:1px solid rgba(127,140,170,.3);background:rgba(127,140,170,.06);color:var(--text);font-size:14px}
+.ep-tool-add-r{display:flex;gap:6px;align-items:center}
+.ep-tool-add-r input{flex:1;min-width:0;padding:9px;border-radius:9px;border:1px solid rgba(127,140,170,.3);background:rgba(127,140,170,.06);color:var(--text);font-size:13px}
+.ep-tool-add-r .btn{flex:0 0 44px;padding:0;font-size:18px}
+.ep-tool-list{display:flex;flex-direction:column;gap:8px}
+.ep-tool-row{padding:9px 10px;border-radius:12px;background:rgba(127,140,170,.08);border:1px solid rgba(127,140,170,.18);display:flex;flex-direction:column;gap:8px}
+.ep-tool-row.off{opacity:.55}
+.ep-tool-top{display:flex;align-items:flex-start;gap:8px}
+.ep-tool-main{flex:1;min-width:0}
+.ep-tool-n{font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis}
+.ep-tool-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.ep-tool-bot{display:flex;gap:6px}
+.ep-tool-bot select{flex:0 0 108px;padding:8px;border-radius:8px;border:1px solid rgba(127,140,170,.3);background:rgba(127,140,170,.06);color:var(--text);font-size:13px}
+.ep-tool-bot input{flex:1;min-width:0;padding:8px;border-radius:8px;border:1px solid rgba(127,140,170,.3);background:rgba(127,140,170,.06);color:var(--text);font-size:13px}
