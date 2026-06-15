@@ -49,12 +49,12 @@
     const cur = (window.EP.Currency && EP.Currency.code) ? EP.Currency.code() : "RUB";
     return {
       id: str(raw.id) || uid(),
-      type: normalizeType(raw.type != null ? raw.type : (raw.t || raw.kind), typeHint),
-      name: str(raw.name || raw.title || raw.n),
-      category: str(raw.category || raw.cat || raw.c),
-      subcategory: str(raw.subcategory || raw.subcat || raw.sub || raw.sc || raw.g),
-      unit: str(raw.unit || raw.ed || raw.measure || raw.u) || "шт",
-      price: num(raw.price != null ? raw.price : raw.p),
+      type: normalizeType(raw.type != null ? raw.type : (raw.t || raw.kind || raw["Тип"] || raw["тип"]), typeHint),
+      name: str(raw.name || raw.title || raw.n || raw["Наименование"] || raw["наименование"] || raw["Название"] || raw["название"] || raw["имя"]),
+      category: str(raw.category || raw.cat || raw.c || raw["Категория"] || raw["категория"] || raw["Раздел"] || raw["раздел"] || raw["Группа"]),
+      subcategory: str(raw.subcategory || raw.subcat || raw.sub || raw.sc || raw.g || raw["Подкатегория"] || raw["подкатегория"] || raw["Подраздел"]),
+      unit: str(raw.unit || raw.ed || raw.measure || raw.u || raw["Единица"] || raw["единица"] || raw["Ед"] || raw["ед"] || raw["ед.изм"]) || "шт",
+      price: num(raw.price != null ? raw.price : (raw.p != null ? raw.p : (raw["Цена"] != null ? raw["Цена"] : (raw["цена"] != null ? raw["цена"] : raw["Стоимость"])))),
       currency: str(raw.currency) || cur,
       active: raw.active === false ? false : true,
       deleted: raw.deleted === true ? true : false
@@ -232,8 +232,13 @@
         (work || []).forEach((x) => norm.push(normalizeItem(x, "work")));
         (mat || []).forEach((x) => norm.push(normalizeItem(x, "material")));
       } else {
-        const items = pick(["items", "db", "data", "positions", "rows"]);
+        const items = pick(["items", "db", "data", "positions", "rows", "База", "база", "каталог", "list"]);
         if (items) norm = items.map((x) => normalizeItem(x, x && x.type));
+        if (!norm.length) {
+          // объект вида { "Категория": [ ... ], "Другая": [ ... ] } — ключ как категория
+          const arrKeys = Object.keys(data).filter((k) => Array.isArray(data[k]));
+          if (arrKeys.length) arrKeys.forEach((k) => data[k].forEach((x) => { const it = normalizeItem(x, x && x.type); if (!it.category) it.category = k; norm.push(it); }));
+        }
       }
     }
     if (!norm.length) return { ok: false, error: "Не найден массив позиций (нужен items, либо workDB/matDB)" };

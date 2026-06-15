@@ -163,7 +163,7 @@
   function renderContent() {
     if (state.search) {
       const items = visibleItems();
-      return items.length ? items.map(renderRow).join("") : `<div class="ep-db-empty">Ничего не найдено.</div>`;
+      return items.length ? items.map((it) => renderRow(it, true)).join("") : `<div class="ep-db-empty">Ничего не найдено.</div>`;
     }
     return renderTree();
   }
@@ -220,7 +220,7 @@
       </div>`;
   }
 
-  function renderRow(it) {
+  function renderRow(it, showMeta) {
     const checked = state.selected.has(it.id) ? "checked" : "";
     if (isMy() && state.editId === it.id) return renderEditRow(it);
     return `
@@ -228,6 +228,7 @@
         <input type="checkbox" class="ep-db-check" data-db-pick="${esc(it.id)}" ${checked}/>
         <div class="ep-db-row-main">
           <div class="ep-db-row-name">${esc(it.name) || "<без названия>"}</div>
+          ${(showMeta&&(it.category||it.subcategory))?`<div class="ep-db-row-meta">${esc([it.category,it.subcategory].filter(Boolean).join(" › "))}</div>`:""}
         </div>
         <div class="ep-db-row-price">${priceText(it.price, it.currency)}${it.unit ? `<span class="ep-db-row-unit">${esc(it.unit)}</span>` : ""}</div>
         ${isMy() ? `<button class="ep-db-iconbtn" data-db-edit="${esc(it.id)}" type="button" aria-label="Изменить">✏️</button>` : ""}
