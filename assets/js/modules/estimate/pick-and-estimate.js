@@ -115,16 +115,18 @@
       <div class="ep-est-section">
         <div class="ep-est-sec-h">${title} · ${money(sub(arr))}</div>
         ${arr.map(x => `
-          <div class="ep-est-row">
+          <div class="ep-est-row${(Number(x.price) > 0) ? '' : ' noprice'}">
             <div class="ep-est-name">${esc(x.name)}${x.unit ? ` <span class="ep-est-unit">${esc(x.unit)}</span>` : ""}</div>
             <div class="ep-est-qty">
               <button type="button" data-est-dec="${esc(x.id)}">−</button><b>${esc(x.qty)}</b><button type="button" data-est-inc="${esc(x.id)}">+</button>
             </div>
-            <div class="ep-est-sum">${money((Number(x.price) || 0) * (Number(x.qty) || 0))}</div>
+            <div class="ep-est-sum">${(Number(x.price) > 0) ? money((Number(x.price) || 0) * (Number(x.qty) || 0)) : `<input class="ep-est-price" data-est-price="${esc(x.id)}" type="number" inputmode="decimal" placeholder="цена ₽" />`}</div>
             <button type="button" class="ep-est-rm" data-est-remove="${esc(x.id)}" title="Убрать">✕</button>
           </div>`).join("")}
       </div>` : "";
-    list.innerHTML =
+    const _noPrice = items.filter(x => !(Number(x.price) > 0)).length;
+    const _warn = _noPrice ? `<div class="ep-est-warn">⚠️ ${_noPrice} поз. без цены — впиши стоимость (или оставь до ответа поставщика)</div>` : "";
+    list.innerHTML = _warn +
       section("📦 Материалы", items.filter(x => x.type !== "work")) +
       section("🧰 Работа", items.filter(x => x.type === "work")) +
       `<div class="ep-est-total">Итого: <b>${money(total)}</b></div>`;
@@ -173,4 +175,8 @@
     if (currentType && document.getElementById("ep-pick-root")) renderPicker(currentType);
   });
   window.addEventListener("ep:estimate-main-changed", () => { renderHomeSummary(); });
+  document.addEventListener("change", (e) => {
+    const t = e.target;
+    if (t && t.hasAttribute && t.hasAttribute("data-est-price")) { const d = Draft(); if (d && d.setPrice) { d.setPrice(t.getAttribute("data-est-price"), t.value); renderHomeSummary(); } }
+  });
 })();

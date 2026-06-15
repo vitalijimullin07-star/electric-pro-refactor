@@ -58,12 +58,18 @@
     if (!d) return null;
     const mats = [], works = [];
     (d.groups || []).forEach((g) => {
-      if (g.prot && g.prot.found && g.prot.name) mats.push({ type: "material", name: g.prot.name, price: g.prot.price, qty: 1, unit: "шт" });
-      (g.lines || []).forEach((l) => { if (l.dbFound && l.dbName) mats.push({ type: "material", name: l.dbName, price: l.dbPrice, qty: 1, unit: "шт" }); });
+      if (g.prot) {
+        const nm = g.prot.name || (((g.prot.kind === "dif") ? "Дифавтомат " : "Автомат ") + (g.prot.amp != null ? g.prot.amp + "А" : "") + (g.prot.leakMA ? " " + g.prot.leakMA + "мА" : "")).trim();
+        if (nm) mats.push({ type: "material", name: nm, price: Number(g.prot.price) || 0, qty: 1, unit: "шт" });
+      }
+      (g.lines || []).forEach((l) => {
+        const nm = l.dbName || ("Автомат " + (l.nom || "")).trim();
+        if (nm && nm !== "Автомат") mats.push({ type: "material", name: nm, price: Number(l.dbPrice) || 0, qty: 1, unit: "шт" });
+      });
     });
-    (d.apparatus || []).forEach((a) => { if (a.found && a.name) mats.push({ type: "material", name: a.name, price: a.price, qty: 1, unit: "шт" }); });
-    ((d.cons && d.cons.items) || []).forEach((it) => { if (it.found && it.name) mats.push({ type: "material", name: it.name, price: it.price, qty: it.qty, unit: it.unit || "шт" }); });
-    ((d.work && d.work.items) || []).forEach((it) => { if (it.found && it.name) works.push({ type: "work", name: it.name, price: it.price, qty: it.qty, unit: it.unit || "" }); });
+    (d.apparatus || []).forEach((a) => { const nm = a.name || a.title; if (nm) mats.push({ type: "material", name: nm, price: Number(a.price) || 0, qty: 1, unit: "шт" }); });
+    ((d.cons && d.cons.items) || []).forEach((it) => { const nm = it.name || it.label; if (nm) mats.push({ type: "material", name: nm, price: Number(it.price) || 0, qty: it.qty, unit: it.unit || "шт" }); });
+    ((d.work && d.work.items) || []).forEach((it) => { const nm = it.name || it.label; if (nm) works.push({ type: "work", name: nm, price: Number(it.price) || 0, qty: it.qty, unit: it.unit || "" }); });
     return aggregate(mats).concat(aggregate(works));
   }
 

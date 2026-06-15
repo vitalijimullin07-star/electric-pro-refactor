@@ -63,6 +63,7 @@
     if (it) { it.qty = num(qty); write(items); }
     return it || null;
   }
+  function setPrice(id, price) { const items = read(); const it = items.find((x) => x.id === id); if (it) { it.price = num(price); write(items); } return it || null; }
   function clear() { write([]); }
   function count() { return read().length; }
   function total() { return read().reduce((s, x) => s + num(x.price) * num(x.qty), 0); }
@@ -89,5 +90,5 @@
   function removeSource(source) { write(read().filter((x) => x.source !== String(source || ""))); }
   function itemsBySource(source) { return read().filter((x) => x.source === String(source || "")); }
 
-  window.EP.EstimateDraft = { addItem, getItems, removeItem, setQty, clear, count, total, setSourceItems, removeSource, itemsBySource };
+  window.EP.EstimateDraft = { addItem, getItems, removeItem, setQty, setPrice, clear, count, total, setSourceItems, removeSource, itemsBySource };
 })();
