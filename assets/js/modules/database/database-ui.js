@@ -125,6 +125,7 @@
   const SYNC_STATE_RU = { init: "проверка…", connected: "подключено", "signed-out": "нет входа", error: "ошибка", "permission-denied": "нет прав", cache: "локальный кэш", offline: "недоступно" };
   const SYNC_DOT = { connected: "#22c55e", "permission-denied": "#f59e0b", cache: "#f59e0b", error: "#ef4444", "signed-out": "#a7b0c0" };
 
+  let syncOpen = false;
   function renderSyncBlock() {
     const s = (EP.Database.getFirestoreStatus && EP.Database.getFirestoreStatus()) || { state: "offline" };
     const admin = !!(EP.DatabaseSync && EP.DatabaseSync.isAdmin && EP.DatabaseSync.isAdmin());
@@ -132,18 +133,19 @@
     const time = s.lastSync ? new Date(s.lastSync).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "";
     return `
       <div class="card ep-db-sync" data-db-syncblock>
-        <div class="ep-db-sync-row">
+        <div class="ep-db-syncline">
           <span class="ep-db-sync-dot" style="background:${dot}"></span>
           <span class="ep-db-sync-state">Firebase: ${SYNC_STATE_RU[s.state] || s.state}</span>
+          <span class="ep-db-sync-counts">Моя ${s.myCount == null ? "–" : s.myCount} · Сервер ${s.serverCount == null ? "–" : s.serverCount}</span>
           ${time ? `<span class="ep-db-sync-time">${time}</span>` : ""}
-          <span class="ep-db-sync-counts">облако · Моя ${s.myCount == null ? "–" : s.myCount} · Сервер ${s.serverCount == null ? "–" : s.serverCount}</span>
+          <button class="ep-db-sync-toggle" data-db-sync-toggle type="button" aria-label="Синхронизация">⇅</button>
         </div>
-        ${s.message ? `<div class="ep-db-sync-msg">${esc(s.message)}</div>` : ""}
-        <div class="ep-db-sync-btns">
+        ${s.message && s.state !== "connected" ? `<div class="ep-db-sync-msg">${esc(s.message)}</div>` : ""}
+        ${syncOpen ? `<div class="ep-db-sync-btns">
           <button class="btn btn-ghost ep-clickable" data-db-pull type="button">⬇️ Firebase → локально</button>
           <button class="btn btn-ghost ep-clickable" data-db-push-my type="button">⬆️ Моя → Firebase</button>
           ${admin ? `<button class="btn btn-ghost ep-clickable" data-db-push-server type="button">⬆️ Сервер → Firebase</button>` : ""}
-        </div>
+        </div>` : ""}
       </div>`;
   }
 
@@ -226,9 +228,8 @@
         <input type="checkbox" class="ep-db-check" data-db-pick="${esc(it.id)}" ${checked}/>
         <div class="ep-db-row-main">
           <div class="ep-db-row-name">${esc(it.name) || "<без названия>"}</div>
-          <div class="ep-db-row-meta">${esc(it.category)}${it.subcategory ? " · " + esc(it.subcategory) : ""} · ${esc(it.unit)}</div>
         </div>
-        <div class="ep-db-row-price">${priceText(it.price, it.currency)}</div>
+        <div class="ep-db-row-price">${priceText(it.price, it.currency)}${it.unit ? `<span class="ep-db-row-unit">${esc(it.unit)}</span>` : ""}</div>
         ${isMy() ? `<button class="ep-db-iconbtn" data-db-edit="${esc(it.id)}" type="button" aria-label="Изменить">✏️</button>` : ""}
         <button class="ep-db-iconbtn" data-db-toest="${esc(it.id)}" type="button" aria-label="В смету">＋</button>
       </div>`;
@@ -402,6 +403,7 @@
     if (hit("[data-db-export]")) { doExport(); return; }
     if (hit("[data-db-copy]")) { copySelectedToMy(); return; }
 
+    if (hit("[data-db-sync-toggle]")) { syncOpen = !syncOpen; updateSyncBlock(); return; }
     if (hit("[data-db-pull]")) { syncPull(); return; }
     if (hit("[data-db-push-my]")) { syncPushMy(); return; }
     if (hit("[data-db-push-server]")) { syncPushServer(); return; }

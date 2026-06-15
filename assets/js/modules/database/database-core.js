@@ -221,9 +221,22 @@
     const base = options.base === "server" ? "server" : "my";
     let data;
     try { data = JSON.parse(text); } catch (e) { return { ok: false, error: "Некорректный JSON" }; }
-    const incoming = Array.isArray(data) ? data : (Array.isArray(data.items) ? data.items : null);
-    if (!incoming) return { ok: false, error: "Не найден массив позиций" };
-    const norm = incoming.map((x) => normalizeItem(x, x && x.type));
+    let norm = [];
+    const pick = (keys) => { for (const k of keys) if (data && Array.isArray(data[k])) return data[k]; return null; };
+    if (Array.isArray(data)) {
+      norm = data.map((x) => normalizeItem(x, x && x.type));
+    } else if (data && typeof data === "object") {
+      const work = pick(["workDB", "worksDB", "works", "work"]);
+      const mat = pick(["matDB", "materialDB", "materialsDB", "materials", "material"]);
+      if (work || mat) {
+        (work || []).forEach((x) => norm.push(normalizeItem(x, "work")));
+        (mat || []).forEach((x) => norm.push(normalizeItem(x, "material")));
+      } else {
+        const items = pick(["items", "db", "data", "positions", "rows"]);
+        if (items) norm = items.map((x) => normalizeItem(x, x && x.type));
+      }
+    }
+    if (!norm.length) return { ok: false, error: "Не найден массив позиций (нужен items, либо workDB/matDB)" };
     let result;
     if (options.mode === "replace") {
       result = norm;
