@@ -125,20 +125,4 @@
     if (t.closest && t.closest("[data-pool-to-estimate]")) { e.preventDefault(); pushPool(); return; }
   });
 
-  // Кнопку в пул-оверлей вставляем динамически (оверлей перекрывает экран)
-  function injectPoolButton() {
-    const screen = document.getElementById("ep-pool-v22-screen");
-    if (!screen || screen.querySelector("[data-pool-to-estimate]")) return;
-    const b = document.createElement("button");
-    b.type = "button";
-    b.setAttribute("data-pool-to-estimate", "");
-    b.className = "ep-pool-to-est";
-    b.textContent = "+ В смету";
-    b.addEventListener("click", function (ev) { ev.preventDefault(); ev.stopPropagation(); pushPool(); });
-    screen.appendChild(b);
-  }
-  window.addEventListener("ep:route-loaded", (e) => {
-    const route = e && e.detail && e.detail.route;
-    if (route === "pool") setTimeout(injectPoolButton, 60);
-  });
 })();

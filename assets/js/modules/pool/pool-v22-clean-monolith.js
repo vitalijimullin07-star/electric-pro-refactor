@@ -268,9 +268,8 @@
 
   function render() {
     normalize();
-    const el = ensureScreen();
-    el.style.display = "";
-    el.classList.remove("hidden");
+    const el = document.getElementById("ep-pool-root");
+    if (!el) return;
 
     el.innerHTML = `
       <div class="p22-head">
@@ -409,8 +408,6 @@
   }
 
   function close() {
-    ensureScreen().classList.add("hidden");
-    ensureScreen().style.display = "none";
     save();
   }
 
@@ -817,11 +814,11 @@
 
   function bind() {
     document.addEventListener("click", event => {
-      const root = event.target.closest("#ep-pool-v22-screen");
+      const root = event.target.closest("#ep-pool-root");
       if (!root) return;
 
       let el;
-      if (event.target.closest("[data-p22-close]")) { event.preventDefault(); close(); return; }
+      if (event.target.closest("[data-p22-close]")) { event.preventDefault(); if (window.EP && EP.Router && EP.Router.back) EP.Router.back(); return; }
       if (el = event.target.closest("[data-p22-route]")) { state.route = el.dataset.p22Route; sound(); render(); return; }
       if (el = event.target.closest("[data-p22-wall]")) { state.wall = el.dataset.p22Wall; sound(); render(); return; }
       if (el = event.target.closest("[data-p22-height]")) { state.height = n(el.dataset.p22Height); sound(); render(); return; }
@@ -847,8 +844,8 @@
       if (event.target.closest("[data-p22-clear]")) { clearPool(); return; }
       if (el = event.target.closest("[data-p22-remove]")) { removeGroup(el.dataset.p22Remove); return; }
       if (event.target.closest("[data-p22-pick-db]")) { pickDb(); return; }
-      if (event.target.closest("[data-p22-estimate]")) { toast("Добавление в смету подключим после стабилизации монолита."); return; }
-    }, true);
+      if (event.target.closest("[data-p22-estimate]")) { event.preventDefault(); if (window.EP && EP.Collector && EP.Collector.pushPool) EP.Collector.pushPool(); else toast("Модуль сметы недоступен"); return; }
+    });
   }
 
   function installGlobal() {
@@ -890,305 +887,6 @@
 
   window.addEventListener("DOMContentLoaded", init);
 })();
-
-
-
-
-/* =========================================================
-   MERGED INTO POOL V22.7 MONOLITH FROM: pool-v22-2-force-route.js
-   ========================================================= */
-
-(function () {
-  const VERSION = "V22.8";
-
-  function openPoolV22() {
-    if (window.PoolV22CleanMonolith && typeof window.PoolV22CleanMonolith.open === "function") {
-      window.PoolV22CleanMonolith.open();
-      return true;
-    }
-
-    console.warn("[Pool V22.2] PoolV22CleanMonolith.open не найден");
-    return false;
-  }
-
-  function isPoolTarget(el) {
-    if (!el) return false;
-
-    const text = (el.textContent || "").toLowerCase();
-    const route = (
-      (el.getAttribute && (
-        el.getAttribute("data-route") ||
-        el.getAttribute("data-module") ||
-        el.getAttribute("href") ||
-        el.getAttribute("onclick")
-      )) || ""
-    ).toLowerCase();
-
-    return (
-      text.includes("пул розеток") ||
-      text.includes("пул розеток/штроб") ||
-      text.includes("пул розеток / bim") ||
-      text.includes("розетки, выключатели") ||
-      route.includes("pool") ||
-      route.includes("bim")
-    );
-  }
-
-  function patchRouter() {
-    if (window.Router && typeof window.Router.load === "function" && !window.Router.__poolV22ForcePatched) {
-      const oldLoad = window.Router.load.bind(window.Router);
-
-      window.Router.load = function (route, ...args) {
-        if (String(route).toLowerCase() === "pool" || String(route).toLowerCase() === "bim") {
-          return openPoolV22();
-        }
-
-        return oldLoad(route, ...args);
-      };
-
-      window.Router.__poolV22ForcePatched = true;
-    }
-
-    [
-      "openPool",
-      "openPoolScreen",
-      "openSocketPool",
-      "openStrobePool",
-      "openBim",
-      "openBIM",
-      "showPool",
-      "showPoolScreen"
-    ].forEach(name => {
-      try {
-        window[name] = openPoolV22;
-      } catch (e) {}
-    });
-  }
-
-  function patchClicks() {
-    if (window.__poolV22ForceClickPatched) return;
-    window.__poolV22ForceClickPatched = true;
-
-    document.addEventListener("click", function (event) {
-      if (event.target.closest("#ep-pool-v22-screen")) return;
-
-      const el = event.target.closest("button,a,[role='button'],[data-route],[data-module],.card,.module-card,section,div");
-      if (!isPoolTarget(el)) return;
-
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-
-      openPoolV22();
-    }, true);
-  }
-
-  function syncVersion() {
-    try {
-      if (window.ModuleVersionBadgesV212) {
-        window.ModuleVersionBadgesV212.setVersion?.("pool", VERSION);
-        window.ModuleVersionBadgesV212.setVersion?.("rough", VERSION);
-        window.ModuleVersionBadgesV212.apply?.();
-      }
-    } catch (e) {}
-  }
-
-  function boot() {
-    patchRouter();
-    patchClicks();
-    syncVersion();
-  }
-
-  window.addEventListener("DOMContentLoaded", function () {
-    boot();
-    setTimeout(boot, 300);
-    setTimeout(boot, 1000);
-    setTimeout(boot, 2500);
-  });
-})();
-
-
-
-
-/* =========================================================
-   MERGED INTO POOL V22.7 MONOLITH FROM: v22-3-back-home-menu-fix.js
-   ========================================================= */
-
-(function () {
-  const VERSION = "V22.8";
-
-  function isPoolOpen() {
-    const pool = document.getElementById("ep-pool-v22-screen");
-    return pool && !pool.classList.contains("hidden") && pool.style.display !== "none";
-  }
-
-  function closePoolToHome() {
-    const pool = document.getElementById("ep-pool-v22-screen");
-    if (pool) {
-      pool.classList.add("hidden");
-      pool.style.display = "none";
-    }
-
-    document.body.classList.remove("ep-pool-open");
-
-    if (window.Router && typeof window.Router.load === "function") {
-      try {
-        window.Router.load("home");
-        return true;
-      } catch (e) {}
-    }
-
-    const homeSelectors = [
-      "#home-screen",
-      "#main-screen",
-      "#dashboard-screen",
-      ".home-screen",
-      ".main-screen",
-      "[data-screen='home']",
-      "[data-route='home']"
-    ];
-
-    homeSelectors.forEach(sel => {
-      document.querySelectorAll(sel).forEach(el => {
-        el.classList.remove("hidden");
-        if (el.style.display === "none") el.style.display = "";
-      });
-    });
-
-    return true;
-  }
-
-  function pushPoolHistory() {
-    if (!isPoolOpen()) return;
-
-    if (history.state && history.state.epPoolV22) return;
-
-    try {
-      history.pushState(
-        { epPoolV22: true, screen: "pool" },
-        "",
-        location.href
-      );
-    } catch (e) {}
-  }
-
-  function patchPoolOpen() {
-    if (!window.PoolV22CleanMonolith || window.PoolV22CleanMonolith.__backHomePatched) return;
-
-    const oldOpen = window.PoolV22CleanMonolith.open.bind(window.PoolV22CleanMonolith);
-
-    window.PoolV22CleanMonolith.open = function () {
-      const result = oldOpen();
-      document.body.classList.add("ep-pool-open");
-      setTimeout(pushPoolHistory, 50);
-      setTimeout(pushPoolHistory, 300);
-      return result;
-    };
-
-    window.PoolV22CleanMonolith.__backHomePatched = true;
-  }
-
-  function handleBackButton() {
-    window.addEventListener("popstate", function () {
-      if (isPoolOpen()) {
-        closePoolToHome();
-      }
-    });
-  }
-
-  function openHome() {
-    const oldPool = document.getElementById("ep-pool-v22-screen");
-    if (oldPool) {
-      oldPool.classList.add("hidden");
-      oldPool.style.display = "none";
-    }
-
-    if (window.Router && typeof window.Router.load === "function") {
-      try {
-        window.Router.load("home");
-      } catch (e) {}
-    }
-
-    const menu = document.querySelector(".sidebar, .side-menu, .drawer, .burger-menu, #side-menu, #drawer, [data-menu]");
-    if (menu) {
-      menu.classList.remove("open", "active", "show");
-    }
-
-    document.body.classList.remove("menu-open", "drawer-open", "ep-pool-open");
-  }
-
-  function addHomeButtonToBurger() {
-    const candidates = [
-      document.querySelector("#side-menu"),
-      document.querySelector("#drawer"),
-      document.querySelector(".side-menu"),
-      document.querySelector(".sidebar"),
-      document.querySelector(".drawer"),
-      document.querySelector(".burger-menu"),
-      document.querySelector("[data-menu]")
-    ].filter(Boolean);
-
-    candidates.forEach(menu => {
-      if (menu.querySelector("[data-v223-home]")) return;
-
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.setAttribute("data-v223-home", "1");
-      btn.className = "v223-home-btn";
-      btn.innerHTML = "🏠 Главный экран";
-
-      btn.addEventListener("click", function (event) {
-        event.preventDefault();
-        event.stopPropagation();
-        openHome();
-      }, true);
-
-      const firstButton = menu.querySelector("button, a, [role='button']");
-      if (firstButton && firstButton.parentElement) {
-        firstButton.parentElement.insertBefore(btn, firstButton);
-      } else {
-        menu.insertBefore(btn, menu.firstChild);
-      }
-    });
-  }
-
-  function patchMainCardsVersion() {
-    try {
-      window.ModuleVersionBadgesV212?.setVersion?.("pool", VERSION);
-      window.ModuleVersionBadgesV212?.setVersion?.("rough", VERSION);
-      window.ModuleVersionBadgesV212?.apply?.();
-    } catch (e) {}
-
-    document.querySelectorAll("#ep-pool-v22-screen .p22-head b").forEach(el => {
-      el.textContent = VERSION;
-    });
-  }
-
-  function boot() {
-    patchPoolOpen();
-    addHomeButtonToBurger();
-    patchMainCardsVersion();
-  }
-
-  window.addEventListener("DOMContentLoaded", function () {
-    handleBackButton();
-    boot();
-
-    setTimeout(boot, 300);
-    setTimeout(boot, 1000);
-    setTimeout(boot, 2500);
-    setTimeout(boot, 5000);
-  });
-
-  window.V223BackHomeMenuFix = {
-    version: VERSION,
-    closePoolToHome,
-    openHome,
-    addHomeButtonToBurger
-  };
-})();
-
-
 
 
 /* =========================================================
@@ -1703,7 +1401,7 @@
 
   function patchPickButton() {
     document.addEventListener("click", event => {
-      const root = event.target.closest("#ep-pool-v22-screen");
+      const root = event.target.closest("#ep-pool-root");
       if (!root) return;
 
       const btn = event.target.closest("[data-p22-pick-db], [data-p224-pick], [data-p225-pick]");
@@ -1843,7 +1541,7 @@
     window.__poolV2251InterceptInstalled = true;
 
     document.addEventListener("click", function (event) {
-      const root = event.target.closest("#ep-pool-v22-screen");
+      const root = event.target.closest("#ep-pool-root");
       if (!root) return;
 
       const btn = event.target.closest("[data-p22-pick-db], [data-p224-pick], [data-p225-pick]");
