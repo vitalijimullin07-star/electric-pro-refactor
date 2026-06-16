@@ -874,6 +874,7 @@
 
         <div class="shv28-actions">
           <button type="button" class="shv28-btn gen" data-gen>📋 Черновик</button>
+          <button type="button" class="shv28-btn" style="background:#22c55e" data-shield-to-estimate>➕ В смету</button>
           <button type="button" class="shv28-btn clr" data-clear>🗑 Очистить</button>
         </div>
       </div>${railOverlayHtml()}`;

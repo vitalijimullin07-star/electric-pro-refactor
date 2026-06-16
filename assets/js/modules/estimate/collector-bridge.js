@@ -77,6 +77,7 @@
   function poolItems() {
     const P = window.PoolV22CleanMonolith;
     if (!P || !P.draft) return null;
+    try { if (P.buildDraft) P.buildDraft(); } catch (e) {}
     let rows;
     try { rows = P.draft() || []; } catch (e) { return null; }
     const items = rows.filter((r) => r && r.name).map((r) => ({
@@ -133,29 +134,11 @@
     b.setAttribute("data-pool-to-estimate", "");
     b.className = "ep-pool-to-est";
     b.textContent = "+ В смету";
+    b.addEventListener("click", function (ev) { ev.preventDefault(); ev.stopPropagation(); pushPool(); });
     screen.appendChild(b);
-  }
-  // Кнопку «+ В смету» в щит вставляем в .page (после навшапки)
-  function injectShieldButton() {
-    const app = document.getElementById("app");
-    const page = app && (app.querySelector("section.page") || app.querySelector(".page"));
-    if (!page || page.querySelector("[data-shield-to-estimate]")) return;
-    const bar = document.createElement("div");
-    bar.className = "ep-to-est-bar";
-    const b = document.createElement("button");
-    b.type = "button";
-    b.setAttribute("data-shield-to-estimate", "");
-    b.className = "btn btn-primary";
-    b.textContent = "+ В смету";
-    bar.appendChild(b);
-    const nav = page.querySelector(".ep-navbar");
-    if (nav && nav.nextSibling) page.insertBefore(bar, nav.nextSibling);
-    else if (nav) page.appendChild(bar);
-    else page.insertBefore(bar, page.firstChild);
   }
   window.addEventListener("ep:route-loaded", (e) => {
     const route = e && e.detail && e.detail.route;
     if (route === "pool") setTimeout(injectPoolButton, 60);
-    else if (route === "shield") setTimeout(injectShieldButton, 60);
   });
 })();
