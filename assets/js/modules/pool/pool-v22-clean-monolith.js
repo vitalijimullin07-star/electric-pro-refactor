@@ -222,6 +222,19 @@
     });
   }
 
+  const P22_ICONS = {
+    cable: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18c4 0 4-12 8-12s4 12 8 12"/></svg>',
+    wall: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18M9 6v6M15 12v6"/></svg>',
+    frame: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M12 4v16"/></svg>',
+    socket: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/></svg>',
+    switch: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="3"/><rect x="9" y="7" width="6" height="10" rx="2"/></svg>',
+    pass: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 8h8a3 3 0 0 1 0 6H6"/><path d="m9 17-3-3 3-3"/></svg>',
+    cross: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+    tv: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M8 21h8"/></svg>',
+    thermo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14V5a2 2 0 0 0-4 0v9a4 4 0 1 0 4 0Z"/></svg>'
+  };
+  function p22ic(name) { return `<span class="p22-ic">${P22_ICONS[name] || ""}</span>`; }
+
   function valueTile(label, value, attr) {
     return `<button type="button" class="p22-value" ${attr}><span>${esc(label)}</span><b>${esc(value)}</b></button>`;
   }
@@ -272,24 +285,18 @@
     if (!el) return;
 
     el.innerHTML = `
-      <div class="p22-head">
-        <button type="button" data-p22-close>←</button>
-        <div><h2>Пул розеток / штроб</h2><p>Монолитный модуль без V21-патчей</p></div>
-        <b>${VERSION}</b>
-      </div>
-
       <div class="p22-shell">
         <section class="p22-card">
           <div class="p22-route">
             <div>
-              <span class="p22-label">Трассы (кабель)</span>
+              <span class="p22-label">${p22ic("cable")}Трассы (кабель)</span>
               <div class="p22-buttons two">
                 ${ROUTES.map(([k, l]) => `<button type="button" data-p22-route="${k}" class="${state.route === k ? "active" : ""}">${l}</button>`).join("")}
               </div>
             </div>
             ${valueTile("Потолок, см", state.ceilingHeight, 'data-p22-edit="ceilingHeight"')}
           </div>
-          <span class="p22-label">Стена (для штроб)</span>
+          <span class="p22-label">${p22ic("wall")}Стена (для штроб)</span>
           <div class="p22-buttons four">
             ${WALLS.map(([k, l]) => `<button type="button" data-p22-wall="${k}" class="${state.wall === k ? "active" : ""}">${l}</button>`).join("")}
           </div>
@@ -346,19 +353,19 @@
         </section>
 
         <section class="p22-card">
-          <span class="p22-label">Постов в рамке (всего мест)</span>
+          <span class="p22-label">${p22ic("frame")}Постов в рамке (всего мест)</span>
           <div class="p22-buttons six">
             ${[1,2,3,4,5,6].map(v => `<button type="button" data-p22-post="${v}" class="${state.framePosts === v ? "active" : ""}">${v}</button>`).join("")}
           </div>
         </section>
 
         <section class="p22-card p22-counters">
-          ${counter("🔌", "Розетки 220В", "sockets")}
-          ${counter("💡", "Выключатели", "switches", keySelector("switch"))}
-          ${counter("↩️", "Проходные (Марш)", "pass", keySelector("pass"))}
-          ${counter("🔀", "Перекрёстные", "cross")}
-          ${counter("📺", "ТВ / Интернет", "tv")}
-          ${counter("🌡️", "Регулятор (т. Пол)", "floorReg")}
+          ${counter(p22ic("socket"), "Розетки 220В", "sockets")}
+          ${counter(p22ic("switch"), "Выключатели", "switches", keySelector("switch"))}
+          ${counter(p22ic("pass"), "Проходные (Марш)", "pass", keySelector("pass"))}
+          ${counter(p22ic("cross"), "Перекрёстные", "cross")}
+          ${counter(p22ic("tv"), "ТВ / Интернет", "tv")}
+          ${counter(p22ic("thermo"), "Регулятор (т. Пол)", "floorReg")}
         </section>
 
         <section class="p22-card">
