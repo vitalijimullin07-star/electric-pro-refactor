@@ -78,14 +78,53 @@
     root.innerHTML = `<div class="ep-pick">${head}<div class="ep-pick-body">${body}</div></div>`;
   }
 
-  function addToDraft(id) {
+  function showQtyModal(it, onConfirm) {
+    const ov = document.createElement("div");
+    ov.className = "ep-qty-ov";
+    ov.innerHTML = `
+      <div class="ep-qty-modal">
+        <div class="ep-qty-title">${esc(it.name)}</div>
+        <div class="ep-qty-sub">${esc(it.unit || "шт")} · ${money(it.price)}${(Number(it.price) > 0) ? "" : " · цену впишешь в смете"}</div>
+        <div class="ep-qty-row">
+          <button type="button" class="ep-qty-step" data-qty-dec>−</button>
+          <input class="ep-qty-input" type="number" inputmode="decimal" min="0" value="1" />
+          <button type="button" class="ep-qty-step" data-qty-inc>+</button>
+        </div>
+        <div class="ep-qty-actions">
+          <button type="button" class="btn btn-ghost ep-clickable" data-qty-cancel>Отмена</button>
+          <button type="button" class="btn btn-primary ep-clickable" data-qty-ok>Добавить</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    const input = ov.querySelector(".ep-qty-input");
+    setTimeout(() => { try { input.focus(); input.select(); } catch (e) {} }, 40);
+    const close = () => { try { ov.remove(); } catch (e) {} };
+    const done = () => { const q = Number(input.value) || 0; if (q > 0) { onConfirm(q); close(); } };
+    ov.addEventListener("click", (e) => {
+      const c = (s) => e.target.closest && e.target.closest(s);
+      if (e.target === ov || c("[data-qty-cancel]")) { close(); return; }
+      if (c("[data-qty-inc]")) { input.value = (Number(input.value) || 0) + 1; return; }
+      if (c("[data-qty-dec]")) { input.value = Math.max(0, (Number(input.value) || 0) - 1); return; }
+      if (c("[data-qty-ok]")) { done(); return; }
+    });
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); done(); } });
+  }
+  function openQtyForPick(id) {
+    const base = activeBase();
+    const d = DB();
+    const it = (d && d.getItems) ? d.getItems(base).find(x => x.id === id) : null;
+    if (!it) return;
+    showQtyModal(it, (qty) => addToDraft(id, qty));
+  }
+  function addToDraft(id, qty) {
     const base = activeBase();
     const d = DB();
     const it = (d && d.getItems) ? d.getItems(base).find(x => x.id === id) : null;
     const draft = Draft();
     if (!it || !draft) return;
-    draft.addItem({ sourceId: it.id, type: it.type, name: it.name, unit: it.unit, price: it.price, qty: 1, base, source: "picker" });
-    flash("В смету: " + it.name);
+    const q = Number(qty) || 1;
+    draft.addItem({ sourceId: it.id, type: it.type, name: it.name, unit: it.unit, price: it.price, qty: q, base, source: "picker" });
+    flash("В смету: " + it.name + (q > 1 ? " ×" + q : ""));
     if (currentType) renderPicker(currentType);
   }
 
@@ -139,7 +178,7 @@
     const root = document.getElementById("ep-pick-root");
     if (root && root.contains(t)) {
       if ((el = t.closest("[data-pick-folder]"))) { const k = currentType + "::" + el.dataset.pickFolder; expanded[k] = !expanded[k]; renderPicker(currentType); return; }
-      if ((el = t.closest("[data-pick-add]"))) { addToDraft(el.dataset.pickAdd); return; }
+      if ((el = t.closest("[data-pick-add]"))) { openQtyForPick(el.dataset.pickAdd); return; }
       if ((el = t.closest("[data-pick-base]"))) { toggleBase(); return; }
       if ((el = t.closest("[data-pick-estimate]"))) { if (window.EP && window.EP.Router) window.EP.Router.go("estimate"); return; }
     }
