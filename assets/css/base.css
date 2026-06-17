@@ -815,3 +815,21 @@ body[data-visual-mode="night"] .main-dashboard .card p:not(.badge){color:#cbd5e1
 .ep-cs-grid>*{min-width:0}
 .ep-cs-grid .ep-cs-cfg{flex-direction:row;align-items:center;justify-content:space-between;gap:6px}
 .ep-cs-grid .ep-cs-cfg input{width:72px;flex:none}
+
+/* === расходники: редактор инструментов === */
+.ep-cs-tool{padding:8px;border-radius:12px;background:rgba(127,140,170,.07);margin-bottom:8px}
+.ep-cs-ttop{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.ep-cs-ttop b{font-size:13px;color:var(--text);min-width:52px}
+.ep-cs-tsize{width:52px;min-height:32px;border:1px solid rgba(127,140,170,.25);border-radius:8px;background:rgba(var(--card-bg-rgb),.5);color:var(--text);text-align:center;font-weight:600}
+.ep-cs-mm{font-size:11px;color:var(--muted)}
+.ep-cs-tfn,.ep-cs-tdepth{min-height:32px;border:1px solid rgba(127,140,170,.25);border-radius:8px;background:rgba(var(--card-bg-rgb),.5);color:var(--text);font-size:12px;padding:0 6px;max-width:100%}
+.ep-cs-tfn{flex:1 1 110px;min-width:0}
+.ep-cs-tdepth{flex:0 0 64px}
+.ep-cs-tdel{margin-left:auto;width:30px;height:30px;border:0;border-radius:8px;background:rgba(239,68,68,.12);color:#ef4444;flex:none}
+.ep-cs-tlife{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ep-cs-tlife>span{font-size:11px;color:var(--muted);flex:1 1 100%;margin-bottom:2px}
+.ep-cs-tlife label{display:inline-flex;flex-direction:column;gap:2px;font-size:10px;color:var(--muted);align-items:center}
+.ep-cs-tlife input{width:46px;min-height:30px;border:1px solid rgba(127,140,170,.2);border-radius:8px;background:rgba(var(--card-bg-rgb),.5);color:var(--text);text-align:center;font-weight:600}
+.ep-cs-tadd{display:flex;gap:8px;margin-bottom:6px}
+.ep-cs-tadd button{flex:1;min-height:36px;border:1px dashed rgba(127,140,170,.4);border-radius:10px;background:transparent;color:var(--muted);font-weight:600;font-size:12px}
+.ep-cs-hardrow{display:flex;gap:6px;flex-wrap:wrap}

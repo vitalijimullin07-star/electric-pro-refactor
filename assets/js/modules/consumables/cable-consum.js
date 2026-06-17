@@ -24,6 +24,14 @@
     // Мешки: тв = бетон/кирпич/панель, мягкий = газоблок и т.п.
     trashBags: { hardStrobeM: 10, softStrobeM: 20, hardBox: 30, softBox: 50 },
     vacBags: { strobeM: 30, box: 40 },
+    // Инструмент списком: коронки/диски, привязка к функции, ресурс по материалам. Диск — depth (под размер штробы).
+    tools: [
+      { id: "t76", kind: "crown", size: 76, fn: "podroz", life: { "Бетон": 15, "Кирпич": 40, "Панель": 12, "Мягкий": 120 } },
+      { id: "t82", kind: "crown", size: 82, fn: "boxes",  life: { "Бетон": 12, "Кирпич": 30, "Панель": 10, "Мягкий": 90 } },
+      { id: "t52", kind: "crown", size: 52, fn: "other",  life: { "Бетон": 20, "Кирпич": 50, "Панель": 16, "Мягкий": 150 } },
+      { id: "d125", kind: "disc", size: 125, depth: "small", fn: "strobe", life: { "Бетон": 60,  "Кирпич": 120, "Панель": 50, "Мягкий": 300 } },
+      { id: "d150", kind: "disc", size: 150, depth: "big",   fn: "strobe", life: { "Бетон": 50,  "Кирпич": 100, "Панель": 40, "Мягкий": 250 } }
+    ],
     // Материалы: hard (мешки) + ресурс дисков (м/шт по размеру 125/150) + ресурс коронок (отв/шт по 52/76/82). Правишь сам.
     materials: {
       "Бетон":  { hard: true,  disc: { "125": 60,  "150": 50 },  crown: { "52": 20,  "76": 15,  "82": 12 } },
@@ -50,6 +58,7 @@
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) {}
     const cfg = deepMerge(DEFAULTS, saved);
+    if (Array.isArray(saved.tools)) cfg.tools = saved.tools;
     Object.keys(cfg.materials || {}).forEach(m => {
       const o = cfg.materials[m]; if (!o) return;
       if (o.discM != null && !o.disc) o.disc = { "125": n(o.discM, 60), "150": Math.max(1, Math.round(n(o.discM, 60) * 0.85)) };
@@ -67,6 +76,8 @@
   }
   function materials() { return ["Бетон", "Кирпич", "Панель", "Мягкий"]; }
   function defaults() { return JSON.parse(JSON.stringify(DEFAULTS)); }
+
+  const FUNCTIONS = { podroz: "Подрозетники", boxes: "Распайки", strobe: "Штроба (диск)", shield: "Ниша щита", breezer: "Отверстие под бризер", sewer: "Канализация", other: "Иное" };
 
   const roundUpTo = (x, step) => (step > 0 ? Math.ceil(x / step) * step : Math.ceil(x));
   // Пачки гвоздей/выстрелов: до (pack+tol) — одна пачка, дальше +пачка
@@ -117,20 +128,18 @@
       add(`Газовый баллон (≈${L.packs.shots} выстр.)`, c, "баллон");
     }
 
-    // Диски — по штробе, ресурс по размеру, парами (2 на штроборез)
-    if (strobeM > 0) {
-      const dSize = (inp.depth === "big") ? "150" : "125";
-      const wf = inp.wet ? n(L.wetFactor, 1.5) : 1;
-      const dLife = n(mat.disc && mat.disc[dSize], 60) * wf;
-      add("Диск " + dSize + " мм", Math.ceil(strobeM / dLife) * n(L.discs.pair, 2), "шт");
-    }
-    // Коронки — по подрозетникам, выбранный размер (52/76/82)
-    if (sockets > 0) {
-      const cSize = String(inp.crownSize || "76");
-      const wf2 = inp.wet ? n(L.wetFactor, 1.5) : 1;
-      const cLife = n(mat.crown && mat.crown[cSize], 15) * wf2;
-      add("Коронка " + cSize + " мм по «" + matName.toLowerCase() + "»", Math.ceil(sockets / cLife), "шт");
-    }
+    // Инструмент списком (коронки/диски) — привязка к функции
+    const wf = inp.wet ? n(L.wetFactor, 1.5) : 1;
+    const fnQty = { podroz: sockets, boxes: boxes, strobe: strobeM, shield: n(inp.shield), breezer: n(inp.breezer), sewer: n(inp.sewer), other: n(inp.other) };
+    (L.tools || []).forEach(tool => {
+      if (!tool || tool.off) return;
+      let src = n(fnQty[tool.fn]);
+      if (tool.kind === "disc" && tool.depth && inp.depth && tool.depth !== inp.depth) src = 0;
+      const life = n(tool.life && tool.life[matName], 0) * wf;
+      if (src <= 0 || life <= 0) return;
+      const pair = (tool.kind === "disc") ? n(L.discs.pair, 2) : 1;
+      add((tool.kind === "disc" ? "Диск " : "Коронка ") + tool.size + " мм", Math.ceil(src / life) * pair, "шт");
+    });
 
     // Буры / пики / карандаш — фикс на объект
     add("Бур 6 мм", L.drills.d6, "шт");
@@ -149,5 +158,5 @@
   }
 
   window.EP = window.EP || {};
-  window.EP.CableConsum = { get, set, reset, calc, materials, defaults, KEY };
+  window.EP.CableConsum = { get, set, reset, calc, materials, defaults, functions: () => FUNCTIONS, KEY };
 })();
