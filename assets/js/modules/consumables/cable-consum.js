@@ -16,19 +16,19 @@
     junction: { perBox: 4 },                           // распайка: 4 гвоздя + 4 выстрела
     gofraRoundM: 100,
     packs: { nails: 1000, nailsTol: 200, shots: 1000, shotsTol: 200, ties: 100, pads: 100 },
-    discs: { pair: 2, smallLabel: "125 мм (штроба ≤30×30)", bigLabel: "150 мм (штроба 30–55)" },
+    discs: { pair: 2 },
     drills: { d6: 2, d8: 3 },
     pikes: 1,
     pencil: 1,
     // Мешки: тв = бетон/кирпич/панель, мягкий = газоблок и т.п.
     trashBags: { hardStrobeM: 10, softStrobeM: 20, hardBox: 30, softBox: 50 },
     vacBags: { strobeM: 30, box: 40 },
-    // Материалы: hard (для мешков) + ресурс диска (м.п./диск) + ресурс коронки (отв./коронка). Правишь сам.
+    // Материалы: hard (мешки) + ресурс дисков (м/шт по размеру 125/150) + ресурс коронок (отв/шт по 52/76/82). Правишь сам.
     materials: {
-      "Бетон":  { hard: true,  discM: 60,  coreN: 15 },
-      "Кирпич": { hard: true,  discM: 120, coreN: 40 },
-      "Панель": { hard: true,  discM: 50,  coreN: 12 },
-      "Мягкий": { hard: false, discM: 300, coreN: 120 }
+      "Бетон":  { hard: true,  disc: { "125": 60,  "150": 50 },  crown: { "52": 20,  "76": 15,  "82": 12 } },
+      "Кирпич": { hard: true,  disc: { "125": 120, "150": 100 }, crown: { "52": 50,  "76": 40,  "82": 30 } },
+      "Панель": { hard: true,  disc: { "125": 50,  "150": 40 },  crown: { "52": 16,  "76": 12,  "82": 10 } },
+      "Мягкий": { hard: false, disc: { "125": 300, "150": 250 }, crown: { "52": 150, "76": 120, "82": 90 } }
     }
   };
 
@@ -48,7 +48,15 @@
   function get() {
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) {}
-    return deepMerge(DEFAULTS, saved);
+    const cfg = deepMerge(DEFAULTS, saved);
+    Object.keys(cfg.materials || {}).forEach(m => {
+      const o = cfg.materials[m]; if (!o) return;
+      if (o.discM != null && !o.disc) o.disc = { "125": n(o.discM, 60), "150": Math.max(1, Math.round(n(o.discM, 60) * 0.85)) };
+      if (o.coreN != null && !o.crown) o.crown = { "52": Math.round(n(o.coreN, 15) * 1.3), "76": n(o.coreN, 15), "82": Math.max(1, Math.round(n(o.coreN, 15) * 0.8)) };
+      if (!o.disc) o.disc = { "125": 60, "150": 50 };
+      if (!o.crown) o.crown = { "52": 20, "76": 15, "82": 12 };
+    });
+    return cfg;
   }
   function set(cfg) {
     try { localStorage.setItem(KEY, JSON.stringify(cfg)); } catch (e) {}
@@ -56,7 +64,7 @@
   function reset() {
     try { localStorage.removeItem(KEY); } catch (e) {}
   }
-  function materials() { return Object.keys(get().materials); }
+  function materials() { return ["Бетон", "Кирпич", "Панель", "Мягкий"]; }
   function defaults() { return JSON.parse(JSON.stringify(DEFAULTS)); }
 
   const roundUpTo = (x, step) => (step > 0 ? Math.ceil(x / step) * step : Math.ceil(x));
@@ -108,13 +116,18 @@
       add(`Газовый баллон (≈${L.packs.shots} выстр.)`, c, "баллон");
     }
 
-    // Диски — по штробе, ресурс материала, парами
+    // Диски — по штробе, ресурс по размеру, парами (2 на штроборез)
     if (strobeM > 0) {
-      const pairs = Math.ceil(strobeM / n(mat.discM, 60));
-      add("Диск " + (inp.depth === "big" ? L.discs.bigLabel : L.discs.smallLabel), pairs * n(L.discs.pair, 2), "шт");
+      const dSize = (inp.depth === "big") ? "150" : "125";
+      const dLife = n(mat.disc && mat.disc[dSize], 60);
+      add("Диск " + dSize + " мм", Math.ceil(strobeM / dLife) * n(L.discs.pair, 2), "шт");
     }
-    // Коронки — по подрозетникам
-    if (sockets > 0) add("Коронка по «" + matName.toLowerCase() + "»", Math.ceil(sockets / n(mat.coreN, 15)), "шт");
+    // Коронки — по подрозетникам, выбранный размер (52/76/82)
+    if (sockets > 0) {
+      const cSize = String(inp.crownSize || "76");
+      const cLife = n(mat.crown && mat.crown[cSize], 15);
+      add("Коронка " + cSize + " мм по «" + matName.toLowerCase() + "»", Math.ceil(sockets / cLife), "шт");
+    }
 
     // Буры / пики / карандаш — фикс на объект
     add("Бур 6 мм", L.drills.d6, "шт");

@@ -38,7 +38,8 @@
     floorReg: 0,
     framesQty: 1,
     switchKeys: 1,
-    passKeys: 1
+    passKeys: 1,
+    wallMaterial: "Бетон"
   };
 
   const DEFAULT_LOGIC = {
@@ -283,10 +284,15 @@
     normalize();
     const el = document.getElementById("ep-pool-root");
     if (!el) return;
+    const epMats = (window.EP && EP.CableConsum && EP.CableConsum.materials) ? EP.CableConsum.materials() : ["Бетон", "Кирпич", "Панель", "Мягкий"];
+    if (epMats.indexOf(state.wallMaterial) < 0) state.wallMaterial = epMats[0];
+    const matBtns = epMats.map(m => `<button type="button" data-p22-material="${m}" class="${state.wallMaterial === m ? "active" : ""}">${m}</button>`).join("");
 
     el.innerHTML = `
       <div class="p22-shell">
         <section class="p22-card">
+          <span class="p22-label">🧱 Материал стен</span>
+          <div class="p22-buttons four">${matBtns}</div>
           <div class="p22-route">
             <div>
               <span class="p22-label">${p22ic("cable")}Трассы (кабель)</span>
@@ -827,6 +833,7 @@
       let el;
       if (event.target.closest("[data-p22-close]")) { event.preventDefault(); if (window.EP && EP.Router && EP.Router.back) EP.Router.back(); return; }
       if (el = event.target.closest("[data-p22-route]")) { state.route = el.dataset.p22Route; sound(); render(); return; }
+      if (el = event.target.closest("[data-p22-material]")) { state.wallMaterial = el.dataset.p22Material; sound(); render(); return; }
       if (el = event.target.closest("[data-p22-wall]")) { state.wall = el.dataset.p22Wall; sound(); render(); return; }
       if (el = event.target.closest("[data-p22-height]")) { state.height = n(el.dataset.p22Height); sound(); render(); return; }
       if (el = event.target.closest("[data-p22-post]")) { setPost(el.dataset.p22Post); return; }

@@ -780,3 +780,37 @@ body[data-visual-mode="night"] .main-dashboard .card p:not(.badge){color:#cbd5e1
 .ep-cs-madd{border:1px dashed rgba(127,140,170,.4);border-radius:10px;background:transparent;color:var(--muted);padding:8px 12px;font-size:12px;font-weight:600;margin-top:4px}
 .ep-cs-logic-actions{margin-top:10px}
 .ep-cs-reset{border:0;background:transparent;color:#ef4444;font-size:12px}
+
+/* === расходники: материал из пула + ресурсы по размерам + нормы крепежа === */
+.ep-cs-matinfo{padding:10px 12px;border-radius:12px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.25);color:var(--text);font-weight:600;font-size:14px}
+.ep-cs-matinfo i{font-style:normal;color:var(--muted);font-weight:400;font-size:12px}
+.ep-cs-mline{display:flex;flex-wrap:wrap;align-items:center;gap:6px;width:100%;font-size:12px;color:var(--muted);margin-top:2px}
+.ep-cs-mline>span{min-width:56px;font-weight:600}
+.ep-cs-mline label{display:inline-flex;align-items:center;gap:3px}
+.ep-cs-mline input{width:52px;min-height:30px;border:1px solid rgba(127,140,170,.2);border-radius:8px;background:rgba(var(--card-bg-rgb),.5);color:var(--text);text-align:center;font-weight:600}
+.ep-cs-mline i{font-style:normal;opacity:.6;margin-left:auto}
+.ep-cs-mdel{flex:1 1 100%;width:auto;height:auto;border:0;border-radius:8px;background:rgba(239,68,68,.1);color:#ef4444;font-size:12px;padding:7px;margin-top:6px;font-weight:600}
+.ep-cs-rgrid{display:grid;gap:8px}
+.ep-cs-rsub{font-size:12px;font-weight:700;color:var(--accent);margin-top:8px;padding-top:6px;border-top:1px solid rgba(127,140,170,.15)}
+.ep-cs-rate{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;color:var(--text)}
+.ep-cs-rate>span{flex:1}
+.ep-cs-rate span i{font-style:normal;color:var(--muted);font-size:11px}
+.ep-cs-rate input{width:82px;min-height:34px;border:1px solid rgba(127,140,170,.25);border-radius:10px;background:rgba(127,140,170,.08);color:var(--text);text-align:center;font-weight:600}
+
+/* === расходники: материал из пула + редактор норм === */
+.ep-cs-matshow{padding:10px 12px;border-radius:12px;background:rgba(127,140,170,.1);color:var(--text);font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ep-cs-matshow i{font-style:normal;color:var(--muted);font-weight:400;font-size:12px}
+.ep-cs-frompool{margin-left:auto;font-size:10px;color:var(--muted);font-weight:600;border:1px solid rgba(127,140,170,.3);border-radius:999px;padding:2px 8px}
+.ep-cs-sub{font-size:12px;font-weight:700;color:var(--accent);margin:14px 0 8px;text-transform:uppercase;letter-spacing:.3px}
+.ep-cs-matrow{display:block;padding:10px;border-radius:12px;background:rgba(127,140,170,.07);margin-bottom:8px}
+.ep-cs-mtop{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.ep-cs-mtop b{font-size:14px;color:var(--text)}
+.ep-cs-mline{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.ep-cs-mline>span{font-size:12px;color:var(--muted);min-width:62px}
+.ep-cs-cfg{display:inline-flex;flex-direction:column;gap:3px;font-size:11px;color:var(--muted)}
+.ep-cs-cfg>span{white-space:nowrap}
+.ep-cs-cfg i{font-style:normal;opacity:.6}
+.ep-cs-cfg input{width:64px;min-height:34px;border:1px solid rgba(127,140,170,.25);border-radius:8px;background:rgba(var(--card-bg-rgb),.5);color:var(--text);text-align:center;font-weight:600;font-size:14px}
+.ep-cs-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ep-cs-grid .ep-cs-cfg{flex-direction:row;align-items:center;justify-content:space-between;gap:6px}
+.ep-cs-grid .ep-cs-cfg input{width:72px;flex:none}
