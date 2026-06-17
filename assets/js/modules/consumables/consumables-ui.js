@@ -8,7 +8,7 @@
   const getP = (o, p) => p.split(".").reduce((a, k) => (a && a[k] != null ? a[k] : undefined), o);
   function setP(o, p, val) { const ks = p.split("."); let a = o; for (let i = 0; i < ks.length - 1; i++) { if (typeof a[ks[i]] !== "object" || a[ks[i]] == null) a[ks[i]] = {}; a = a[ks[i]]; } a[ks[ks.length - 1]] = val; }
 
-  const DEF_UI = { surface: "ceil", gofra: false, depth: "small", crownSize: "76", cableM: 0, strobeM: 0, sockets: 0, boxes: 0, material: "", logicOpen: false };
+  const DEF_UI = { surface: "ceil", gofra: false, depth: "small", crownSize: "76", wet: false, cableM: 0, strobeM: 0, sockets: 0, boxes: 0, material: "", logicOpen: false };
   let ui = null, lastItems = [];
 
   function CC() { return window.EP && window.EP.CableConsum ? window.EP.CableConsum : null; }
@@ -27,7 +27,10 @@
   }
   function poolState() { try { const P = window.PoolV22CleanMonolith; return P && P.state ? P.state() : null; } catch (e) { return null; } }
   function poolMaterial() { const st = poolState(); return st && st.wallMaterial ? st.wallMaterial : ""; }
-  function poolPodroz() { const st = poolState(); if (!st) return null; let per = 0; ["sockets", "switches", "pass", "cross", "tv", "floorReg"].forEach(k => per += n(st[k])); return per * (n(st.framesQty, 1) || 1); }
+  function poolDraft() { try { const P = window.PoolV22CleanMonolith; if (!P || !P.draft) return []; if (P.buildDraft) P.buildDraft(); return P.draft() || []; } catch (e) { return []; } }
+  function poolStrobe() { let m = 0; poolDraft().forEach(r => { if (/штроблен/i.test(r.name || "")) m += n(r.qty); }); return Math.round(m); }
+  function poolPodroz() { let c = 0; poolDraft().forEach(r => { if (r.type === "material" && /подрозетник/i.test(r.name || "")) c += n(r.qty); }); return c; }
+  function poolBoxes() { let c = 0; poolDraft().forEach(r => { if (r.type === "material" && /распайк|распаяч/i.test(r.name || "")) c += n(r.qty); }); return c; }
 
   function seg(label, opts, attr, cur) {
     return `<div class="ep-cs-field"><span class="ep-cs-lab">${label}</span><div class="ep-cs-seg">` +
@@ -78,6 +81,7 @@
             <div class="ep-cs-matshow">${pm ? esc(pm) : esc(ui.material) + " <i>(в пуле не задан — задай там)</i>"} <span class="ep-cs-frompool">из пула розеток</span></div></div>
           ${seg("Размер штробы (диск)", [["small", "≤30 → 125"], ["big", "30–55 → 150"]], "cs-depth", ui.depth)}
           ${seg("Коронка", [["52", "52 мм"], ["76", "76 мм"], ["82", "82 мм"]], "cs-crown", ui.crownSize)}
+          ${seg("Рез", [["0", "Насухо"], ["1", "С водой"]], "cs-wet", ui.wet ? "1" : "0")}
         </section>
 
         <section class="card ep-cs-card">
@@ -87,7 +91,7 @@
           ${num("Распайки", "boxes", ui.boxes, "шт")}
           <div class="ep-cs-pulls">
             <button type="button" class="ep-cs-pull" data-cs-pull-cable>⤵ Кабель из материалов</button>
-            <button type="button" class="ep-cs-pull" data-cs-pull-pool>⤵ Подрозетники из пула</button>
+            <button type="button" class="ep-cs-pull" data-cs-pull-pool>⤵ Штроба + подрозетники из пула</button>
           </div>
           <button type="button" class="btn btn-primary ep-clickable ep-cs-calc" data-cs-calc>🧮 Рассчитать</button>
         </section>
@@ -135,6 +139,7 @@
               ${cfg(L, "Бур 8 мм", "drills.d8", "шт")}
               ${cfg(L, "Пика", "pikes", "шт")}
               ${cfg(L, "Карандаш", "pencil", "шт")}
+              ${cfg(L, "Рез с водой: ресурс ×", "wetFactor")}
             </div>
             <div class="ep-cs-logic-actions"><button type="button" class="ep-cs-reset" data-cs-reset>Сбросить все нормы к стандарту</button></div>
           </div>
@@ -144,7 +149,7 @@
 
   function doCalc() {
     const cc = CC(); if (!cc) return;
-    lastItems = cc.calc({ cableM: ui.cableM, strobeM: ui.strobeM, sockets: ui.sockets, boxes: ui.boxes, surface: ui.surface, gofra: !!ui.gofra, material: ui.material, depth: ui.depth, crownSize: ui.crownSize });
+    lastItems = cc.calc({ cableM: ui.cableM, strobeM: ui.strobeM, sockets: ui.sockets, boxes: ui.boxes, surface: ui.surface, gofra: !!ui.gofra, material: ui.material, depth: ui.depth, crownSize: ui.crownSize, wet: !!ui.wet });
     render();
   }
   function addToEstimate() {
@@ -164,10 +169,11 @@
     if (el = t.closest("[data-cs-gofra]")) { ui.gofra = el.dataset.csGofra === "1"; saveUI(); render(); return; }
     if (el = t.closest("[data-cs-depth]")) { ui.depth = el.dataset.csDepth; saveUI(); render(); return; }
     if (el = t.closest("[data-cs-crown]")) { ui.crownSize = el.dataset.csCrown; saveUI(); render(); return; }
+    if (el = t.closest("[data-cs-wet]")) { ui.wet = el.dataset.csWet === "1"; saveUI(); render(); return; }
     if (t.closest("[data-cs-calc]")) { doCalc(); return; }
     if (t.closest("[data-cs-add]")) { addToEstimate(); return; }
     if (t.closest("[data-cs-pull-cable]")) { ui.cableM = cableFromEstimate(); saveUI(); render(); return; }
-    if (t.closest("[data-cs-pull-pool]")) { const p = poolPodroz(); if (p != null) { ui.sockets = p; saveUI(); render(); } return; }
+    if (t.closest("[data-cs-pull-pool]")) { ui.sockets = poolPodroz(); ui.strobeM = poolStrobe(); ui.boxes = poolBoxes(); saveUI(); render(); return; }
     if (t.closest("[data-cs-logic-toggle]")) { ui.logicOpen = !ui.logicOpen; saveUI(); render(); return; }
     if (el = t.closest("[data-cs-hard]")) { toggleHard(el.dataset.csHard); return; }
     if (t.closest("[data-cs-reset]")) { const cc = CC(); if (cc) { cc.reset(); render(); } return; }
@@ -184,7 +190,9 @@
     if (!e || !e.detail || e.detail.route !== "consumables") return;
     loadUI();
     if (!ui.cableM) ui.cableM = cableFromEstimate();
-    const p = poolPodroz(); if (p != null && !ui.sockets) ui.sockets = p;
+    if (!ui.sockets) ui.sockets = poolPodroz();
+    if (!ui.strobeM) ui.strobeM = poolStrobe();
+    if (!ui.boxes) ui.boxes = poolBoxes();
     lastItems = [];
     setTimeout(render, 30);
   });

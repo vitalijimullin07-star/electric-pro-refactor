@@ -15,6 +15,7 @@
     floor: { tapePerM: 0.6, tapeRollM: 20, perM: 4 },  // лента м/м, рулон, (гвоздь+выстрел)/м
     junction: { perBox: 4 },                           // распайка: 4 гвоздя + 4 выстрела
     gofraRoundM: 100,
+    wetFactor: 1.5,  // ресурс дисков/коронок при резе с водой (×). 1 = как насухо
     packs: { nails: 1000, nailsTol: 200, shots: 1000, shotsTol: 200, ties: 100, pads: 100 },
     discs: { pair: 2 },
     drills: { d6: 2, d8: 3 },
@@ -119,13 +120,15 @@
     // Диски — по штробе, ресурс по размеру, парами (2 на штроборез)
     if (strobeM > 0) {
       const dSize = (inp.depth === "big") ? "150" : "125";
-      const dLife = n(mat.disc && mat.disc[dSize], 60);
+      const wf = inp.wet ? n(L.wetFactor, 1.5) : 1;
+      const dLife = n(mat.disc && mat.disc[dSize], 60) * wf;
       add("Диск " + dSize + " мм", Math.ceil(strobeM / dLife) * n(L.discs.pair, 2), "шт");
     }
     // Коронки — по подрозетникам, выбранный размер (52/76/82)
     if (sockets > 0) {
       const cSize = String(inp.crownSize || "76");
-      const cLife = n(mat.crown && mat.crown[cSize], 15);
+      const wf2 = inp.wet ? n(L.wetFactor, 1.5) : 1;
+      const cLife = n(mat.crown && mat.crown[cSize], 15) * wf2;
       add("Коронка " + cSize + " мм по «" + matName.toLowerCase() + "»", Math.ceil(sockets / cLife), "шт");
     }
 
@@ -138,7 +141,7 @@
     // Мешки — штроба + подрозетники
     const trash = strobeM / (mat.hard ? n(L.trashBags.hardStrobeM, 10) : n(L.trashBags.softStrobeM, 20))
                 + sockets / (mat.hard ? n(L.trashBags.hardBox, 30) : n(L.trashBags.softBox, 50));
-    add("Мешки мусорные", Math.ceil(trash), "шт");
+    add("Мешки для строительного мусора", Math.ceil(trash), "шт");
     const vac = strobeM / n(L.vacBags.strobeM, 30) + sockets / n(L.vacBags.box, 40);
     add("Мешки для пылесоса", Math.ceil(vac), "шт");
 
