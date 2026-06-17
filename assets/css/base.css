@@ -833,3 +833,15 @@ body[data-visual-mode="night"] .main-dashboard .card p:not(.badge){color:#cbd5e1
 .ep-cs-tadd{display:flex;gap:8px;margin-bottom:6px}
 .ep-cs-tadd button{flex:1;min-height:36px;border:1px dashed rgba(127,140,170,.4);border-radius:10px;background:transparent;color:var(--muted);font-weight:600;font-size:12px}
 .ep-cs-hardrow{display:flex;gap:6px;flex-wrap:wrap}
+
+/* === расходники: таблица материалов + привязка к работе === */
+.ep-cs-mtable{display:flex;flex-direction:column;gap:6px;margin-bottom:6px}
+.ep-cs-mrow{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ep-cs-mrowsel{flex:1 1 88px;min-width:0;min-height:36px;border:1px solid rgba(127,140,170,.25);border-radius:8px;background:rgba(var(--card-bg-rgb),.5);color:var(--text);font-size:13px;padding:0 6px}
+.ep-cs-mrow label{display:inline-flex;flex-direction:column;gap:2px;font-size:10px;color:var(--muted)}
+.ep-cs-mrow label input{width:62px;min-height:34px;border:1px solid rgba(127,140,170,.25);border-radius:8px;background:rgba(var(--card-bg-rgb),.5);color:var(--text);text-align:center;font-weight:600;font-size:14px}
+.ep-cs-mrowdel{width:30px;height:30px;border:0;border-radius:8px;background:rgba(239,68,68,.12);color:#ef4444;flex:none}
+.ep-cs-madd{width:100%;min-height:36px;border:1px dashed rgba(127,140,170,.4);border-radius:10px;background:transparent;color:var(--muted);font-weight:600;font-size:12px}
+.ep-cs-twork{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.ep-cs-twork>span{font-size:11px;color:var(--muted);flex:none}
+.ep-cs-twork input{flex:1;min-width:0;min-height:32px;border:1px solid rgba(127,140,170,.25);border-radius:8px;background:rgba(var(--card-bg-rgb),.5);color:var(--text);font-size:12px;padding:0 8px}
