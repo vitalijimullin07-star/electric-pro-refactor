@@ -7,7 +7,7 @@
   const getP = (o, p) => p.split(".").reduce((a, k) => (a && a[k] != null ? a[k] : undefined), o);
   function setP(o, p, val) { const ks = p.split("."); let a = o; for (let i = 0; i < ks.length - 1; i++) { if (typeof a[ks[i]] !== "object" || a[ks[i]] == null) a[ks[i]] = {}; a = a[ks[i]]; } a[ks[ks.length - 1]] = val; }
 
-  const DEF_UI = { surface: "ceil", gofra: false, depth: "small", wet: false, cableM: 0, boxes: 0, shield: 0, breezer: 0, sewer: 0, otherCounts: {}, matRows: [], material: "", logicOpen: false };
+  const DEF_UI = { surface: "ceil", gofra: false, depth: "small", wet: false, podrozTool: "", cableM: 0, boxes: 0, shield: 0, breezer: 0, sewer: 0, otherCounts: {}, matRows: [], material: "", logicOpen: false };
   let ui = null, lastItems = [];
 
   function CC() { return window.EP && window.EP.CableConsum ? window.EP.CableConsum : null; }
@@ -24,6 +24,17 @@
   function poolStrobe() { let m = 0; poolDraft().forEach(r => { if (/штроблен/i.test(r.name || "")) m += n(r.qty); }); return Math.round(m); }
   function poolPodroz() { let c = 0; poolDraft().forEach(r => { if (r.type === "material" && /подрозетник/i.test(r.name || "")) c += n(r.qty); }); return c; }
   function poolBoxes() { let c = 0; poolDraft().forEach(r => { if (r.type === "material" && /распайк|распаяч/i.test(r.name || "")) c += n(r.qty); }); return c; }
+  const MAT_BY_LOWER = { "бетон": "Бетон", "кирпич": "Кирпич", "панель": "Панель", "мягкий": "Мягкий" };
+  function lastMat(name) { const w = String(name || "").trim().split(/\s+/).pop().toLowerCase(); return MAT_BY_LOWER[w] || ""; }
+  function poolStrobeByMat() { const m = {}; poolDraft().forEach(r => { if (/штроблен/i.test(r.name || "")) { const mat = lastMat(r.name); if (mat) m[mat] = (m[mat] || 0) + n(r.qty); } }); return m; }
+  function poolPodrozByMat() { const m = {}; poolDraft().forEach(r => { if (r.type === "material" && /подрозетник/i.test(r.name || "")) { const mat = lastMat(r.name); if (mat) m[mat] = (m[mat] || 0) + n(r.qty); } }); return m; }
+  function pullFromPool() {
+    const sM = poolStrobeByMat(), pM = poolPodrozByMat();
+    const set = {}; Object.keys(sM).forEach(m => set[m] = 1); Object.keys(pM).forEach(m => set[m] = 1);
+    const rows = Object.keys(set).map(m => ({ material: m, sockets: pM[m] || 0, strobeM: Math.round(sM[m] || 0) }));
+    if (rows.length) ui.matRows = rows;
+    ui.boxes = poolBoxes();
+  }
   function worksList() {
     const set = {};
     try { const d = Draft(); if (d && d.getItems) d.getItems().forEach(it => { if (it.type === "work" && it.name) set[it.name] = 1; }); } catch (e) {}
@@ -55,6 +66,11 @@
     const FN = cc.functions();
     const L = cc.get();
     ensureRows(mats);
+    const podrozTools = (L.tools || []).filter(t => t && t.fn === "podroz" && !t.off);
+    const effPodroz = (ui.podrozTool && podrozTools.some(t => t.id === ui.podrozTool)) ? ui.podrozTool : (podrozTools[0] ? podrozTools[0].id : "");
+    const podrozSel = podrozTools.length > 1
+      ? `<div class="ep-cs-field"><span class="ep-cs-lab">Подрозетник Ø (коронка)</span><div class="ep-cs-seg">${podrozTools.map(t => `<button type="button" data-cs-podroz="${t.id}" class="${effPodroz === t.id ? "active" : ""}">${n(t.size)} мм</button>`).join("")}</div></div>`
+      : "";
     const works = worksList();
     const worksOpts = works.map(w => `<option value="${esc(w)}">`).join("");
 
@@ -107,6 +123,7 @@
           ${ui.surface === "ceil" ? seg("Гофра", [["0", "Нет"], ["1", "Да"]], "cs-gofra", ui.gofra ? "1" : "0") : `<div class="ep-cs-note">По полу — всегда гофра ПНД, лента, без клипс.</div>`}
           ${seg("Размер штробы (диск)", [["small", "≤30 → 125"], ["big", "30–55 → 150"]], "cs-depth", ui.depth)}
           ${seg("Рез", [["0", "Насухо"], ["1", "С водой"]], "cs-wet", ui.wet ? "1" : "0")}
+          ${podrozSel}
         </section>
 
         <section class="card ep-cs-card">
@@ -173,8 +190,8 @@
     let rows = (ui.matRows || []).filter(r => r && r.material && (n(r.sockets) || n(r.strobeM)));
     if (!rows.length) rows = [{ material: (ui.matRows[0] && ui.matRows[0].material) || mats[0], sockets: 0, strobeM: 0 }];
     const totalStrobe = rows.reduce((s, r) => s + n(r.strobeM), 0);
-    let items = cc.calc({ mode: "mount", cableM: ui.cableM, strobeM: totalStrobe, boxes: ui.boxes, surface: ui.surface, gofra: !!ui.gofra, depth: ui.depth, wet: !!ui.wet, shield: ui.shield, breezer: ui.breezer, sewer: ui.sewer, otherCounts: ui.otherCounts, material: rows[0].material });
-    rows.forEach(r => { items = mergeItems(items, cc.calc({ mode: "material", sockets: r.sockets, strobeM: r.strobeM, material: r.material, depth: ui.depth, wet: !!ui.wet })); });
+    let items = cc.calc({ mode: "mount", cableM: ui.cableM, strobeM: totalStrobe, boxes: ui.boxes, surface: ui.surface, gofra: !!ui.gofra, depth: ui.depth, wet: !!ui.wet, shield: ui.shield, breezer: ui.breezer, sewer: ui.sewer, otherCounts: ui.otherCounts, podrozTool: ui.podrozTool, material: rows[0].material });
+    rows.forEach(r => { items = mergeItems(items, cc.calc({ mode: "material", sockets: r.sockets, strobeM: r.strobeM, material: r.material, depth: ui.depth, wet: !!ui.wet, podrozTool: ui.podrozTool })); });
     lastItems = items;
     render();
   }
@@ -207,10 +224,11 @@
     if (el = t.closest("[data-cs-gofra]")) { ui.gofra = el.dataset.csGofra === "1"; saveUI(); render(); return; }
     if (el = t.closest("[data-cs-depth]")) { ui.depth = el.dataset.csDepth; saveUI(); render(); return; }
     if (el = t.closest("[data-cs-wet]")) { ui.wet = el.dataset.csWet === "1"; saveUI(); render(); return; }
+    if (el = t.closest("[data-cs-podroz]")) { ui.podrozTool = el.dataset.csPodroz; saveUI(); render(); return; }
     if (t.closest("[data-cs-calc]")) { doCalc(); return; }
     if (t.closest("[data-cs-add]")) { addToEstimate(); return; }
     if (t.closest("[data-cs-pull-cable]")) { ui.cableM = cableFromEstimate(); saveUI(); render(); return; }
-    if (t.closest("[data-cs-pull-pool]")) { if (!ui.matRows.length) ui.matRows = [{}]; ui.matRows[0] = { material: poolMaterial() || ui.matRows[0].material || CC().materials()[0], sockets: poolPodroz(), strobeM: poolStrobe() }; ui.boxes = poolBoxes(); saveUI(); render(); return; }
+    if (t.closest("[data-cs-pull-pool]")) { pullFromPool(); saveUI(); render(); return; }
     if (t.closest("[data-mrow-add]")) { ui.matRows.push({ material: CC().materials()[0], sockets: 0, strobeM: 0 }); saveUI(); render(); return; }
     if (el = t.closest("[data-mrow-del]")) { ui.matRows.splice(n(el.dataset.mrowDel), 1); saveUI(); render(); return; }
     if (t.closest("[data-cs-logic-toggle]")) { ui.logicOpen = !ui.logicOpen; saveUI(); render(); return; }
@@ -241,6 +259,7 @@
     if (!e || !e.detail || e.detail.route !== "consumables") return;
     loadUI();
     if (!ui.cableM) ui.cableM = cableFromEstimate();
+    if (!ui.matRows.length) pullFromPool();
     if (!ui.boxes) ui.boxes = poolBoxes();
     lastItems = [];
     setTimeout(render, 30);

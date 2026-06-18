@@ -565,7 +565,7 @@
   }
 
   function buildBaseDraft() {
-    const result = { strobe: {}, ordinary: 0, deep: 0 };
+    const result = { strobe: {}, ordinary: {}, deep: {} };
 
     groups.forEach(g => {
       const qty = Math.max(1, n(g.qty, 1));
@@ -577,8 +577,8 @@
 
       const sockets = n(g.sockets), switches = n(g.switches), pass = n(g.pass), cross = n(g.cross), tv = n(g.tv), thermostat = n(g.thermostat);
 
-      result.ordinary += sockets * qty;
-      result.deep += (switches + pass + cross + tv + thermostat) * qty;
+      addMap(result.ordinary, wall, sockets * qty);
+      addMap(result.deep, wall, (switches + pass + cross + tv + thermostat) * qty);
 
       if (sockets > 0) addStrobe(result.strobe, ordinarySize, (route === "floor" ? toFloor(height) : toCeiling(ceiling, height)) * qty, wall);
       if ((switches + pass + cross) > 0) addStrobe(result.strobe, ordinarySize, toCeiling(ceiling, height) * qty, wall);
@@ -595,15 +595,17 @@
       rows.push(raw("work", `Штробление ${size} ${wall}`, Math.round(meters * 100) / 100, "м", ["штробление", size, wall]));
     });
 
-    if (result.ordinary > 0) {
-      rows.push(raw("material", `Подрозетник ${logic.ordinaryBoxDepthMin}-${logic.ordinaryBoxDepthMax} мм`, result.ordinary, "шт", ["подрозетник", `${logic.ordinaryBoxDepthMin}`, `${logic.ordinaryBoxDepthMax}`]));
-      rows.push(raw("work", "Высверливание подрозетников обычных", result.ordinary, "шт", ["высверливание подрозетник"]));
-    }
+    Object.entries(result.ordinary).forEach(([wall, cnt]) => {
+      if (cnt <= 0) return;
+      rows.push(raw("material", `Подрозетник ${logic.ordinaryBoxDepthMin}-${logic.ordinaryBoxDepthMax} мм ${wall}`, cnt, "шт", ["подрозетник", `${logic.ordinaryBoxDepthMin}`, `${logic.ordinaryBoxDepthMax}`, wall]));
+      rows.push(raw("work", `Высверливание подрозетников обычных ${wall}`, cnt, "шт", ["высверливание подрозетник", wall]));
+    });
 
-    if (result.deep > 0) {
-      rows.push(raw("material", `Подрозетник глубокий ${logic.deepBoxDepthMin}-${logic.deepBoxDepthMax} мм`, result.deep, "шт", ["подрозетник глубокий", `${logic.deepBoxDepthMin}`, `${logic.deepBoxDepthMax}`]));
-      rows.push(raw("work", "Высверливание подрозетников глубоких", result.deep, "шт", ["высверливание подрозетник глубокий"]));
-    }
+    Object.entries(result.deep).forEach(([wall, cnt]) => {
+      if (cnt <= 0) return;
+      rows.push(raw("material", `Подрозетник глубокий ${logic.deepBoxDepthMin}-${logic.deepBoxDepthMax} мм ${wall}`, cnt, "шт", ["подрозетник глубокий", `${logic.deepBoxDepthMin}`, `${logic.deepBoxDepthMax}`, wall]));
+      rows.push(raw("work", `Высверливание подрозетников глубоких ${wall}`, cnt, "шт", ["высверливание подрозетник глубокий", wall]));
+    });
 
     return rows;
   }

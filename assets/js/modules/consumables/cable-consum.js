@@ -126,8 +126,11 @@
     // Инструмент списком (привязка к функции). podroz/strobe — на метраж материала; остальные — объектные.
     const PERMAT = { podroz: 1, strobe: 1 };
     const fnQty = { podroz: sockets, boxes: boxes, strobe: strobeM, shield: n(inp.shield), breezer: n(inp.breezer), sewer: n(inp.sewer) };
+    const podrozTools = (L.tools || []).filter(t => t && t.fn === "podroz" && !t.off);
+    const effPodroz = (inp.podrozTool && podrozTools.some(t => t.id === inp.podrozTool)) ? inp.podrozTool : (podrozTools[0] ? podrozTools[0].id : null);
     (L.tools || []).forEach(tool => {
       if (!tool || tool.off) return;
+      if (tool.fn === "podroz" && tool.id !== effPodroz) return;
       const isPerMat = !!PERMAT[tool.fn];
       if (mode === "mount" && isPerMat) return;
       if (mode === "material" && !isPerMat) return;
