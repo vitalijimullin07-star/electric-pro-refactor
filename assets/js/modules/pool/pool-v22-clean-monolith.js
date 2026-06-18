@@ -577,8 +577,10 @@
 
       const sockets = n(g.sockets), switches = n(g.switches), pass = n(g.pass), cross = n(g.cross), tv = n(g.tv), thermostat = n(g.thermostat);
 
-      addMap(result.ordinary, wall, sockets * qty);
-      addMap(result.deep, wall, (switches + pass + cross + tv + thermostat) * qty);
+      const inBoxes = logic.connectionMode === "in_boxes";
+      const deepMech = switches + pass + cross + tv + thermostat;
+      addMap(result.ordinary, wall, (inBoxes ? 0 : sockets) * qty);
+      addMap(result.deep, wall, (deepMech + (inBoxes ? sockets : 0)) * qty);
 
       if (sockets > 0) addStrobe(result.strobe, ordinarySize, (route === "floor" ? toFloor(height) : toCeiling(ceiling, height)) * qty, wall);
       if ((switches + pass + cross) > 0) addStrobe(result.strobe, ordinarySize, toCeiling(ceiling, height) * qty, wall);
@@ -595,16 +597,20 @@
       rows.push(raw("work", `Штробление ${size} ${wall}`, Math.round(meters * 100) / 100, "м", ["штробление", size, wall]));
     });
 
-    Object.entries(result.ordinary).forEach(([wall, cnt]) => {
-      if (cnt <= 0) return;
-      rows.push(raw("material", `Подрозетник ${logic.ordinaryBoxDepthMin}-${logic.ordinaryBoxDepthMax} мм ${wall}`, cnt, "шт", ["подрозетник", `${logic.ordinaryBoxDepthMin}`, `${logic.ordinaryBoxDepthMax}`, wall]));
-      rows.push(raw("work", `Высверливание подрозетников обычных ${wall}`, cnt, "шт", ["высверливание подрозетник", wall]));
-    });
-
-    Object.entries(result.deep).forEach(([wall, cnt]) => {
-      if (cnt <= 0) return;
-      rows.push(raw("material", `Подрозетник глубокий ${logic.deepBoxDepthMin}-${logic.deepBoxDepthMax} мм ${wall}`, cnt, "шт", ["подрозетник глубокий", `${logic.deepBoxDepthMin}`, `${logic.deepBoxDepthMax}`, wall]));
-      rows.push(raw("work", `Высверливание подрозетников глубоких ${wall}`, cnt, "шт", ["высверливание подрозетник глубокий", wall]));
+    // Подрозетник (продукт) — единой позицией по глубине (материал один; ГКЛ — если появится отдельный материал)
+    const sumOrd = Object.values(result.ordinary).reduce((a, b) => a + b, 0);
+    const sumDeep = Object.values(result.deep).reduce((a, b) => a + b, 0);
+    if (sumOrd > 0) rows.push(raw("material", `Подрозетник ${logic.ordinaryBoxDepthMin}-${logic.ordinaryBoxDepthMax} мм`, sumOrd, "шт", ["подрозетник", `${logic.ordinaryBoxDepthMin}`, `${logic.ordinaryBoxDepthMax}`]));
+    if (sumDeep > 0) rows.push(raw("material", `Подрозетник глубокий ${logic.deepBoxDepthMin}-${logic.deepBoxDepthMax} мм`, sumDeep, "шт", ["подрозетник глубокий", `${logic.deepBoxDepthMin}`, `${logic.deepBoxDepthMax}`]));
+    // Высверливание и вклеивание — по материалам
+    const wallsSet = {};
+    Object.keys(result.ordinary).forEach(w => wallsSet[w] = 1);
+    Object.keys(result.deep).forEach(w => wallsSet[w] = 1);
+    Object.keys(wallsSet).forEach(wall => {
+      const ord = n(result.ordinary[wall]), deep = n(result.deep[wall]), tot = ord + deep;
+      if (ord > 0) rows.push(raw("work", `Высверливание подрозетников обычных ${wall}`, ord, "шт", ["высверливание подрозетник", wall]));
+      if (deep > 0) rows.push(raw("work", `Высверливание подрозетников глубоких ${wall}`, deep, "шт", ["высверливание подрозетник глубокий", wall]));
+      if (tot > 0) rows.push(raw("work", `Вклеивание подрозетников ${wall}`, tot, "шт", ["вклеивание подрозетник", wall]));
     });
 
     return rows;
@@ -729,8 +735,8 @@
     }
 
     if (logic.connectionMode === "junction_boxes") {
-      if (connectors.socketJunctions > 0) draft.push(raw("material", `Распайки розеток: ${connectors.socketDrops} спуск. / ${logic.dropsPerSocketJunction}`, connectors.socketJunctions, "шт", ["распаячная коробка", "розетки"]));
-      if (connectors.switchJunctions > 0) draft.push(raw("material", `Распайки выключателей: ${connectors.switchDrops} спуск. / ${logic.dropsPerSwitchJunction}`, connectors.switchJunctions, "шт", ["распаячная коробка", "выключатели"]));
+      if (connectors.socketJunctions > 0) draft.push(raw("material", `Распайки розеток (потолок): ${connectors.socketDrops} спуск. / ${logic.dropsPerSocketJunction}`, connectors.socketJunctions, "шт", ["распаячная коробка", "розетки"]));
+      if (connectors.switchJunctions > 0) draft.push(raw("material", `Распайки выключателей (потолок): ${connectors.switchDrops} спуск. / ${logic.dropsPerSwitchJunction}`, connectors.switchJunctions, "шт", ["распаячная коробка", "выключатели"]));
     }
 
     save();

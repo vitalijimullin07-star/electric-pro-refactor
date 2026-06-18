@@ -27,7 +27,7 @@
   const MAT_BY_LOWER = { "бетон": "Бетон", "кирпич": "Кирпич", "панель": "Панель", "мягкий": "Мягкий" };
   function lastMat(name) { const w = String(name || "").trim().split(/\s+/).pop().toLowerCase(); return MAT_BY_LOWER[w] || ""; }
   function poolStrobeByMat() { const m = {}; poolDraft().forEach(r => { if (/штроблен/i.test(r.name || "")) { const mat = lastMat(r.name); if (mat) m[mat] = (m[mat] || 0) + n(r.qty); } }); return m; }
-  function poolPodrozByMat() { const m = {}; poolDraft().forEach(r => { if (r.type === "material" && /подрозетник/i.test(r.name || "")) { const mat = lastMat(r.name); if (mat) m[mat] = (m[mat] || 0) + n(r.qty); } }); return m; }
+  function poolPodrozByMat() { const m = {}; poolDraft().forEach(r => { if (r.type === "work" && /высверливан.*подрозетник/i.test(r.name || "")) { const mat = lastMat(r.name); if (mat) m[mat] = (m[mat] || 0) + n(r.qty); } }); return m; }
   function pullFromPool() {
     const sM = poolStrobeByMat(), pM = poolPodrozByMat();
     const set = {}; Object.keys(sM).forEach(m => set[m] = 1); Object.keys(pM).forEach(m => set[m] = 1);
