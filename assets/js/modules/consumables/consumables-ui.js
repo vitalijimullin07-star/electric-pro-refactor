@@ -91,10 +91,9 @@
     const manualBlock = parts.length ? `<div class="ep-cs-field"><span class="ep-cs-lab">Доп. отверстия (для коронок)</span><div class="ep-cs-grid">${parts.join("")}</div></div>` : "";
 
     const result = lastItems.length
-      ? `<div class="ep-cs-result"><div class="ep-cs-rhead">Расходка (${lastItems.length} поз.)</div>` +
-        lastItems.map(it => `<div class="ep-cs-row"><span>${esc(it.name)}</span><b>${it.qty} ${esc(it.unit)}</b></div>`).join("") +
-        `<button type="button" class="btn btn-primary ep-clickable ep-cs-add" data-cs-add>➕ Добавить в предварительную</button></div>`
-      : `<div class="ep-cs-hint">Заполни данные и нажми «Рассчитать».</div>`;
+      ? `<div class="ep-cs-result"><div class="ep-cs-rhead">Расходка (${lastItems.length} поз.) — в предварительной ✓</div>` +
+        lastItems.map(it => `<div class="ep-cs-row"><span>${esc(it.name)}</span><b>${it.qty} ${esc(it.unit)}</b></div>`).join("") + `</div>`
+      : `<div class="ep-cs-hint">Параметры подтянуты из пула. Нажми «Рассчитать и добавить».</div>`;
 
     // редактор инструментов
     const fnOpts = (cur) => Object.keys(FN).map(k => `<option value="${k}" ${cur === k ? "selected" : ""}>${esc(FN[k])}</option>`).join("");
@@ -138,7 +137,7 @@
             <button type="button" class="ep-cs-pull" data-cs-pull-cable>⤵ Кабель из материалов</button>
             <button type="button" class="ep-cs-pull" data-cs-pull-pool>⤵ Из пула (в строку 1)</button>
           </div>
-          <button type="button" class="btn btn-primary ep-clickable ep-cs-calc" data-cs-calc>🧮 Рассчитать</button>
+          <button type="button" class="btn btn-primary ep-clickable ep-cs-calc" data-cs-calcadd>✅ Рассчитать и добавить</button>
         </section>
 
         ${result}
@@ -184,8 +183,8 @@
       </div>`;
   }
 
-  function doCalc() {
-    const cc = CC(); if (!cc) return;
+  function computeItems() {
+    const cc = CC(); if (!cc) { lastItems = []; return; }
     const mats = cc.materials();
     let rows = (ui.matRows || []).filter(r => r && r.material && (n(r.sockets) || n(r.strobeM)));
     if (!rows.length) rows = [{ material: (ui.matRows[0] && ui.matRows[0].material) || mats[0], sockets: 0, strobeM: 0 }];
@@ -193,14 +192,24 @@
     let items = cc.calc({ mode: "mount", cableM: ui.cableM, strobeM: totalStrobe, boxes: ui.boxes, surface: ui.surface, gofra: !!ui.gofra, depth: ui.depth, wet: !!ui.wet, shield: ui.shield, breezer: ui.breezer, sewer: ui.sewer, otherCounts: ui.otherCounts, podrozTool: ui.podrozTool, material: rows[0].material });
     rows.forEach(r => { items = mergeItems(items, cc.calc({ mode: "material", sockets: r.sockets, strobeM: r.strobeM, material: r.material, depth: ui.depth, wet: !!ui.wet, podrozTool: ui.podrozTool })); });
     lastItems = items;
-    render();
   }
-  function addToEstimate() {
-    const d = Draft(); if (!d || !lastItems.length) return;
+  function pushToEstimate() {
+    const d = Draft(); if (!d || !lastItems.length) return false;
     const list = lastItems.map((it, i) => ({ id: "consum_" + i, sourceId: "consum_" + i, type: "material", name: it.name, unit: it.unit || "шт", price: 0, qty: n(it.qty, 1), base: "consum", source: "consum" }));
     if (d.setSourceItems) d.setSourceItems("consum", list); else list.forEach(x => d.addItem && d.addItem(x));
-    const btn = document.querySelector("[data-cs-add]");
-    if (btn) { btn.textContent = "✓ Добавлено"; setTimeout(() => { if (btn) btn.textContent = "➕ Добавить в предварительную"; }, 1600); }
+    return true;
+  }
+  function doCalcAdd() { computeItems(); pushToEstimate(); render(); }
+  // Быстрый расчёт с главной: подтянуть всё из пула/материалов, посчитать и добавить за один тап
+  function quickCalc() {
+    const cc = CC(), d = Draft(); if (!cc || !d) return 0;
+    loadUI();
+    ui.cableM = cableFromEstimate() || ui.cableM;
+    pullFromPool();
+    saveUI();
+    computeItems();
+    pushToEstimate();
+    return lastItems.length;
   }
   function saveCfg(path, value) { const cc = CC(); if (!cc) return; const L = cc.get(); setP(L, path, Math.max(0, n(value))); cc.set(L); }
   function toggleHard(name) { const cc = CC(); if (!cc) return; const L = cc.get(); if (!L.materials[name]) L.materials[name] = {}; L.materials[name].hard = !L.materials[name].hard; cc.set(L); render(); }
@@ -218,15 +227,17 @@
   function delTool(id) { saveTools(tools().filter(t => t && t.id !== id)); render(); }
 
   function onClick(e) {
-    const t = e.target; if (!t || !t.closest || !t.closest("#ep-consum-root")) return;
+    const t = e.target; if (!t || !t.closest) return;
+    const quick = t.closest("[data-consum-quick]");
+    if (quick) { const cnt = quickCalc(); quick.textContent = "✓ Добавлено: " + cnt + " поз."; setTimeout(() => { quick.textContent = "🧮 Рассчитать расходку"; }, 1800); return; }
+    if (!t.closest("#ep-consum-root")) return;
     let el;
     if (el = t.closest("[data-cs-surface]")) { ui.surface = el.dataset.csSurface; if (ui.surface === "floor") ui.gofra = true; saveUI(); render(); return; }
     if (el = t.closest("[data-cs-gofra]")) { ui.gofra = el.dataset.csGofra === "1"; saveUI(); render(); return; }
     if (el = t.closest("[data-cs-depth]")) { ui.depth = el.dataset.csDepth; saveUI(); render(); return; }
     if (el = t.closest("[data-cs-wet]")) { ui.wet = el.dataset.csWet === "1"; saveUI(); render(); return; }
     if (el = t.closest("[data-cs-podroz]")) { ui.podrozTool = el.dataset.csPodroz; saveUI(); render(); return; }
-    if (t.closest("[data-cs-calc]")) { doCalc(); return; }
-    if (t.closest("[data-cs-add]")) { addToEstimate(); return; }
+    if (t.closest("[data-cs-calcadd]")) { doCalcAdd(); return; }
     if (t.closest("[data-cs-pull-cable]")) { ui.cableM = cableFromEstimate(); saveUI(); render(); return; }
     if (t.closest("[data-cs-pull-pool]")) { pullFromPool(); saveUI(); render(); return; }
     if (t.closest("[data-mrow-add]")) { ui.matRows.push({ material: CC().materials()[0], sockets: 0, strobeM: 0 }); saveUI(); render(); return; }
@@ -266,5 +277,5 @@
   });
 
   window.EP = window.EP || {};
-  window.EP.ConsumablesUI = { render, calc: doCalc };
+  window.EP.ConsumablesUI = { render, calc: doCalcAdd, quickCalc };
 })();
