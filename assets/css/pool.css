@@ -23,3 +23,22 @@
 .p22-label .p22-ic svg{width:15px;height:15px}
 .p22-counter-title{gap:9px}
 .p22-counter-title .p22-ic svg{width:16px;height:16px}
+
+/* === черновик пула: цена + из БД === */
+.p22-draft-info{min-width:0;flex:1}
+.p22-draft-edit{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:none}
+.p22-draft-pricerow{display:flex;align-items:center;gap:6px}
+.p22-draft-price{width:84px;min-height:36px;border:1px solid rgba(127,140,170,.3);border-radius:8px;background:rgba(var(--card-bg-rgb),.6);color:var(--text);text-align:right;font-weight:600;padding:0 8px}
+.p22-draft-dbbtn{min-height:36px;padding:0 10px;border:1px solid var(--accent,#3b82f6);border-radius:8px;background:transparent;color:var(--accent,#3b82f6);font-weight:600;font-size:12px;white-space:nowrap}
+.p22-draft-sum{color:var(--muted);font-size:11px}
+.p22-dbmodal{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center}
+.p22-dbmodal-card{width:100%;max-width:560px;max-height:80vh;background:var(--bg-a,#0f172a);border-radius:16px 16px 0 0;padding:14px;display:flex;flex-direction:column;gap:10px;box-shadow:0 -8px 30px rgba(0,0,0,.4)}
+.p22-dbmodal-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.p22-dbmodal-head b{color:var(--text);font-size:15px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.p22-dbmodal-head button{width:34px;height:34px;border:0;border-radius:8px;background:rgba(127,140,170,.15);color:var(--text);font-size:16px;flex:none}
+.p22-dbmodal-search{min-height:42px;border:1px solid rgba(127,140,170,.3);border-radius:10px;background:rgba(var(--card-bg-rgb),.6);color:var(--text);padding:0 12px;font-size:15px}
+.p22-dbmodal-list{overflow-y:auto;display:flex;flex-direction:column;gap:6px}
+.p22-dbmodal-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 12px;border:1px solid rgba(127,140,170,.2);border-radius:10px;background:rgba(127,140,170,.06);color:var(--text);text-align:left}
+.p22-dbmodal-item span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.p22-dbmodal-item b{color:var(--accent,#3b82f6);flex:none;font-size:13px}
+.p22-dbmodal-empty{color:var(--muted);text-align:center;padding:20px;font-size:13px}

@@ -107,6 +107,9 @@
   let logic = { ...DEFAULT_LOGIC };
   let templates = JSON.parse(JSON.stringify(DEFAULT_TEMPLATES));
   let groups = [];
+  const STORAGE_PRICES = "ep_pool_v22_prices";
+  let priceMap = {};
+  let dbModal = { open: false, idx: -1, q: "" };
   let draft = [];
   let logicOpen = false;
   let connOpen = false;
@@ -147,6 +150,7 @@
     try { templates = mergeTemplates(JSON.parse(localStorage.getItem(STORAGE_TEMPLATES) || "{}")); } catch { templates = mergeTemplates({}); }
     try { groups = JSON.parse(localStorage.getItem(STORAGE_GROUPS) || "[]"); } catch { groups = []; }
     try { draft = JSON.parse(localStorage.getItem(STORAGE_DRAFT) || "[]"); } catch { draft = []; }
+    try { priceMap = JSON.parse(localStorage.getItem(STORAGE_PRICES) || "{}") || {}; } catch { priceMap = {}; }
     normalize();
   }
 
@@ -165,6 +169,7 @@
     try { localStorage.setItem(STORAGE_TEMPLATES, JSON.stringify(templates)); } catch {}
     try { localStorage.setItem(STORAGE_GROUPS, JSON.stringify(groups)); } catch {}
     try { localStorage.setItem(STORAGE_DRAFT, JSON.stringify(draft)); } catch {}
+    try { localStorage.setItem(STORAGE_PRICES, JSON.stringify(priceMap)); } catch {}
   }
 
   function totalMechanisms() {
@@ -739,6 +744,7 @@
       if (connectors.switchJunctions > 0) draft.push(raw("material", `Распайки выключателей (потолок): ${connectors.switchDrops} спуск. / ${logic.dropsPerSwitchJunction}`, connectors.switchJunctions, "шт", ["распаячная коробка", "выключатели"]));
     }
 
+    applyPrices(draft);
     save();
     renderDraft();
     renderConnectorsPanel(connectors);
@@ -783,20 +789,56 @@
     }
 
     let total = 0;
-    box.innerHTML = draft.map(i => {
+    box.innerHTML = draft.map((i, idx) => {
       const sum = n(i.price) * n(i.qty);
       total += sum;
       return `
         <div class="p22-draft-row">
-          <div>
+          <div class="p22-draft-info">
             <b>${esc(i.name)}</b>
             <p>${i.type === "work" ? "Работа" : "Материал"} · ${esc(i.qty)} ${esc(i.unit || "шт")}</p>
-            <small>${i.dbName ? "БД: " + esc(i.dbName) : "Не подобрано из БД"}</small>
+            <small>${i.dbName ? "БД: " + esc(i.dbName) : "цена вручную"}</small>
           </div>
-          <div><strong>${money(i.price)}</strong><small>${money(sum)}</small></div>
+          <div class="p22-draft-edit">
+            <div class="p22-draft-pricerow">
+              <input type="number" inputmode="decimal" min="0" class="p22-draft-price" data-p22-price="${idx}" value="${n(i.price)}" placeholder="цена" />
+              <button type="button" class="p22-draft-dbbtn" data-p22-rowdb="${idx}">из БД</button>
+            </div>
+            <small class="p22-draft-sum">${money(sum)}</small>
+          </div>
         </div>
       `;
     }).join("") + `<div class="p22-total"><span>Итого</span><b>${money(total)}</b></div>`;
+  }
+
+  function savePrices() { try { localStorage.setItem(STORAGE_PRICES, JSON.stringify(priceMap)); } catch {} }
+  function applyPrices(list) { (list || []).forEach(r => { const pr = priceMap[r.name]; if (pr) { r.price = n(pr.price); r.dbName = pr.dbName || ""; r.dbItemId = pr.dbItemId || ""; } }); }
+  function setRowPrice(idx, val) { const row = draft[idx]; if (!row) return; row.price = Math.max(0, n(val)); priceMap[row.name] = { price: row.price, dbName: row.dbName || "", dbItemId: row.dbItemId || "" }; savePrices(); save(); }
+  function dbItemsForRow() {
+    const row = draft[dbModal.idx]; if (!row) return [];
+    let items = []; try { if (window.EP && EP.Database && EP.Database.getItems) items = EP.Database.getItems() || []; } catch (e) {}
+    const q = String(dbModal.q || "").toLowerCase().trim();
+    return items.filter(it => it && (!row.type || it.type === row.type) && (!q || String(it.name || "").toLowerCase().includes(q))).slice(0, 60);
+  }
+  function dbItemRowHtml(it) { return `<button type="button" class="p22-dbmodal-item" data-p22-dbpick="${esc(it.id)}"><span>${esc(it.name)}</span><b>${money(it.price)}${it.unit ? " / " + esc(it.unit) : ""}</b></button>`; }
+  function updateDbModalList() { const list = document.querySelector("#p22-dbmodal .p22-dbmodal-list"); if (!list) return; const items = dbItemsForRow(); list.innerHTML = items.length ? items.map(dbItemRowHtml).join("") : `<div class="p22-dbmodal-empty">Ничего не найдено в активной базе.</div>`; }
+  function renderDbModal() {
+    let o = document.getElementById("p22-dbmodal");
+    if (!dbModal.open) { if (o) o.remove(); return; }
+    const root = document.getElementById("ep-pool-root") || document.body;
+    if (!o) { o = document.createElement("div"); o.id = "p22-dbmodal"; o.className = "p22-dbmodal"; root.appendChild(o); }
+    const row = draft[dbModal.idx]; const items = dbItemsForRow();
+    o.innerHTML = `<div class="p22-dbmodal-card"><div class="p22-dbmodal-head"><b>Из БД: ${esc(row ? row.name : "")}</b><button type="button" data-p22-dbclose>✕</button></div><input type="text" class="p22-dbmodal-search" data-p22-dbsearch value="${esc(dbModal.q)}" placeholder="поиск по базе" /><div class="p22-dbmodal-list">${items.length ? items.map(dbItemRowHtml).join("") : `<div class="p22-dbmodal-empty">Ничего не найдено в активной базе.</div>`}</div></div>`;
+  }
+  function openDbRow(idx) { dbModal = { open: true, idx: idx, q: "" }; renderDbModal(); }
+  function closeDbModal() { dbModal.open = false; const o = document.getElementById("p22-dbmodal"); if (o) o.remove(); }
+  function pickDbRow(itemId) {
+    const row = draft[dbModal.idx]; if (!row) return;
+    let items = []; try { items = EP.Database.getItems() || []; } catch (e) {}
+    const it = items.find(x => String(x.id) === String(itemId)); if (!it) return;
+    row.price = n(it.price); row.dbName = it.name; row.dbItemId = it.id;
+    priceMap[row.name] = { price: row.price, dbName: row.dbName, dbItemId: row.dbItemId };
+    savePrices(); save(); closeDbModal(); renderDraft();
   }
 
   function clearPool() {
@@ -866,7 +908,19 @@
       if (event.target.closest("[data-p22-clear]")) { clearPool(); return; }
       if (el = event.target.closest("[data-p22-remove]")) { removeGroup(el.dataset.p22Remove); return; }
       if (event.target.closest("[data-p22-pick-db]")) { pickDb(); return; }
+      if (el = event.target.closest("[data-p22-rowdb]")) { openDbRow(n(el.dataset.p22Rowdb)); return; }
+      if (el = event.target.closest("[data-p22-dbpick]")) { pickDbRow(el.dataset.p22Dbpick); return; }
+      if (event.target.closest("[data-p22-dbclose]")) { closeDbModal(); return; }
       if (event.target.closest("[data-p22-estimate]")) { event.preventDefault(); if (window.EP && EP.Collector && EP.Collector.pushPool) EP.Collector.pushPool(); else toast("Модуль сметы недоступен"); return; }
+    });
+    document.addEventListener("change", event => {
+      if (!event.target.closest("#ep-pool-root")) return;
+      const el = event.target.closest("[data-p22-price]");
+      if (el) { setRowPrice(n(el.dataset.p22Price), el.value); renderDraft(); }
+    });
+    document.addEventListener("input", event => {
+      const el = event.target.closest("[data-p22-dbsearch]");
+      if (el) { dbModal.q = el.value; updateDbModalList(); }
     });
   }
 
