@@ -303,3 +303,19 @@
 .shv28-manual-banner { background:#ecfeff; border:1px solid #06b6d4; color:#155e75; border-radius:10px; padding:10px 12px; font:600 12px/1.4 system-ui; margin-bottom:10px; }
 .shv28-manual-banner b { color:#0e7490; }
 .shv28-manual-banner button { margin-left:6px; background:#06b6d4; color:#fff; border:0; border-radius:7px; padding:5px 10px; font:700 11px/1 system-ui; cursor:pointer; }
+
+/* ── модалка «вписать ₽ / выбрать из БД» (как в пуле) ── */
+.shv28-dbmodal { position:fixed; inset:0; z-index:10000; background:rgba(8,12,22,.62); display:flex; align-items:flex-end; justify-content:center; }
+.shv28-dbmodal-card { width:100%; max-width:560px; background:#fff; border-radius:16px 16px 0 0; padding:14px; max-height:82vh; overflow:auto; box-shadow:0 -8px 30px rgba(0,0,0,.3); }
+.shv28-dbmodal-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+.shv28-dbmodal-head b { font:800 14px/1.3 system-ui; color:#0f172a; }
+.shv28-dbmodal-head button { border:0; background:#f1f5f9; border-radius:8px; width:30px; height:30px; font:700 14px/1 system-ui; cursor:pointer; color:#475569; }
+.shv28-dbmodal-manual { display:flex; gap:8px; margin-bottom:10px; }
+.shv28-dbmodal-price { flex:1; min-width:0; border:1px solid #cbd5e1; border-radius:9px; padding:9px 11px; font:700 14px/1 system-ui; }
+.shv28-dbmodal-save { border:0; background:#7c3aed; color:#fff; border-radius:9px; padding:9px 12px; font:800 12px/1.2 system-ui; cursor:pointer; white-space:nowrap; }
+.shv28-dbmodal-or { font:700 11px/1 system-ui; color:#94a3b8; text-transform:uppercase; letter-spacing:.04em; margin:6px 0; }
+.shv28-dbmodal-search { width:100%; box-sizing:border-box; border:1px solid #cbd5e1; border-radius:9px; padding:9px 11px; font:600 13px/1 system-ui; margin-bottom:8px; }
+.shv28-dbmodal-list { display:flex; flex-direction:column; gap:6px; }
+.shv28-dbmodal-item { display:flex; align-items:center; justify-content:space-between; gap:10px; border:1px solid #e2e8f0; background:#f8fafc; border-radius:9px; padding:9px 11px; font:600 13px/1.3 system-ui; color:#334155; cursor:pointer; text-align:left; }
+.shv28-dbmodal-item b { color:#7c3aed; white-space:nowrap; }
+.shv28-dbmodal-empty { color:#94a3b8; font:600 12px/1.4 system-ui; padding:10px; text-align:center; }

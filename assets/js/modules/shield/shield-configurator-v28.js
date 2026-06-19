@@ -140,6 +140,7 @@
   let cfg = load();
   const openState = { tpl: false, settings: false, opts: false, rail: false };
   let railOpen = false, railSel = null, railCells = [], railView = "rails";
+  let dbModal = { open: false, key: "", name: "", type: "material", unit: "шт", q: "" };
   const esc = v => String(v == null ? "" : v).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const cur = v => (window.EPCurrency && window.EPCurrency.format) ? window.EPCurrency.format(v) : (Number(v || 0).toFixed(2) + " ₽");
   // бейдж бренда выбранной позиции (определяется из названия)
@@ -703,7 +704,7 @@
         appTotal += price || 0;
         const right = a.found
           ? `<span class="cp">${cur(a.price)}</span>`
-          : (manualFor(key) ? `<span class="cp">${cur(manualFor(key))} <i>(вручную)</i></span>` : `<button type="button" class="shv28-manual" data-manual="${esc(key)}">вписать ₽</button>`);
+          : (manualFor(key) ? `<span class="cp">${cur(manualFor(key))} <i>(вручную)</i></span>` : `<button type="button" class="shv28-manual" data-manual="${esc(key)}" data-mname="${esc(a.title)}" data-mtype="material" data-munit="шт">вписать ₽</button>`);
         return `<div class="shv28-cons-row"><span class="cl">${esc(a.title)}${a.found ? ` <i style="color:#94a3b8;font-weight:600">${esc(a.name)}</i>${brandTag(a.name)}` : ""}</span>${right}</div>`;
       }).join("");
       appHtml = `<div class="shv28-cons"><div class="shv28-cons-head" style="background:#ede9fe;color:#5b21b6">Аппараты защиты / автоматика · ≈ <b>${cur(appTotal)}</b></div>${rows}</div>`;
@@ -718,7 +719,7 @@
         consTotal += price || 0;
         const right = x.found
           ? `<span class="cp">${cur(x.total)}</span>`
-          : (manualFor(key) ? `<span class="cp">${cur(manualFor(key) * x.qty)} <i>(вручную)</i></span>` : `<button type="button" class="shv28-manual" data-manual="${esc(key)}">вписать ₽</button>`);
+          : (manualFor(key) ? `<span class="cp">${cur(manualFor(key) * x.qty)} <i>(вручную)</i></span>` : `<button type="button" class="shv28-manual" data-manual="${esc(key)}" data-mname="${esc(x.label)}" data-mtype="material" data-munit="шт">вписать ₽</button>`);
         return `<div class="shv28-cons-row"><span class="cl">${esc(x.label)}</span><span class="cq">×${x.qty}</span>${right}</div>`;
       }).join("");
       consHtml = `<div class="shv28-cons"><div class="shv28-cons-head">Расходка и шины · ≈ <b id="x">${cur(consTotal)}</b></div>${rows}<div class="shv28-cons-note">Автоматов: ${cons.automats} · групп: ${cons.rcds} · ПуГВ/НШВИ: 1×${cons.sec}</div></div>`;
@@ -736,7 +737,7 @@
         const breakdown = x.perModule && unit ? ` <i>(${cur(unit)} × ${x.qty})</i>` : "";
         const right = (x.found || manualFor(key))
           ? `<span class="cp">${cur(total)}${x.found ? breakdown : (breakdown || " <i>(вручную)</i>")}</span>`
-          : `<button type="button" class="shv28-manual" data-manual="${esc(key)}">вписать ₽${x.perModule ? " за модуль" : ""}</button>`;
+          : `<button type="button" class="shv28-manual" data-manual="${esc(key)}" data-mname="${esc(x.label)}" data-mtype="work" data-munit="шт">вписать ₽${x.perModule ? " за модуль" : ""}</button>`;
         return `<div class="shv28-cons-row"><span class="cl">${esc(x.label)}</span><span class="cq">×${x.qty}</span>${right}</div>`;
       }).join("");
       workHtml = `<div class="shv28-cons"><div class="shv28-cons-head work">Работа · ≈ <b>${cur(workTotal)}</b></div>${rows}</div>`;
@@ -756,6 +757,54 @@
         <div class="grand"><span>ИТОГ</span><b>${cur(grand)}</b></div>
       </div>
       <div class="shv28-draft-hint">⚙️ ${esc(PROTECTIONS.find(x => x.v === cfg.protection)?.t || "")} · правило БД: ${esc(DB_RULES.find(x => x.v === cfg.dbRule)?.t || "")}<br>Не найдено в БД — нажми «вписать ₽» (своя цена) или оставь до ответа поставщика.</div>`;
+  }
+
+  // ── вписать цену / создать в «Моей БД» либо выбрать из базы (как в пуле) ──
+  function shieldDbItems() { try { return (window.EP && EP.Database && EP.Database.getItems) ? (EP.Database.getItems("my") || []) : []; } catch (e) { return []; } }
+  function upsertShieldDb(name, type, unit, price) {
+    try {
+      if (!(window.EP && EP.Database)) return "";
+      const items = shieldDbItems();
+      const ex = items.find(x => x && x.type === type && String(x.name).toLowerCase() === String(name).toLowerCase());
+      if (ex) { if (EP.Database.updateMyItem) EP.Database.updateMyItem(ex.id, { price: price }); return ex.id; }
+      if (EP.Database.addMyItem) { const c = EP.Database.addMyItem({ type: type, name: name, unit: unit || "шт", price: price, category: "Щит" }); return (c && c.id) || ""; }
+    } catch (e) {}
+    return "";
+  }
+  function shieldDbListHtml() {
+    const q = (dbModal.q || "").toLowerCase().trim();
+    let items = shieldDbItems().filter(x => x && !x.deleted);
+    if (q) items = items.filter(x => String(x.name).toLowerCase().includes(q));
+    items = items.slice(0, 40);
+    if (!items.length) return `<div class="shv28-dbmodal-empty">${q ? "Ничего не найдено" : "В «Моей БД» пока пусто — впиши свою цену выше"}</div>`;
+    return items.map(it => `<button type="button" class="shv28-dbmodal-item" data-shdbpick="${esc(it.id)}"><span>${esc(it.name)}</span><b>${cur(it.price)}${it.unit ? " / " + esc(it.unit) : ""}</b></button>`).join("");
+  }
+  function renderShieldDbModal() {
+    const root = document.getElementById("ep-shield-v28-root"); if (!root) return;
+    let o = document.getElementById("shv28-dbmodal");
+    if (!o) { o = document.createElement("div"); o.id = "shv28-dbmodal"; o.className = "shv28-dbmodal"; root.appendChild(o); }
+    const cv = manualFor(dbModal.key);
+    o.innerHTML = `<div class="shv28-dbmodal-card"><div class="shv28-dbmodal-head"><b>${esc(dbModal.name)}</b><button type="button" data-shdbclose>✕</button></div>
+      <div class="shv28-dbmodal-manual"><input type="number" inputmode="decimal" min="0" class="shv28-dbmodal-price" data-shdbmanual value="${cv ? cv : ""}" placeholder="своя цена ₽" /><button type="button" class="shv28-dbmodal-save" data-shdbsave>✓ Вписать (создать в БД)</button></div>
+      <div class="shv28-dbmodal-or">или выбрать из базы:</div>
+      <input type="text" class="shv28-dbmodal-search" data-shdbsearch value="${esc(dbModal.q)}" placeholder="поиск по базе" />
+      <div class="shv28-dbmodal-list">${shieldDbListHtml()}</div></div>`;
+  }
+  function updateShieldDbList() { const box = document.querySelector("#shv28-dbmodal .shv28-dbmodal-list"); if (box) box.innerHTML = shieldDbListHtml(); }
+  function openShieldDb(key, name, type, unit) { dbModal = { open: true, key: key, name: name || key, type: type || "material", unit: unit || "шт", q: "" }; renderShieldDbModal(); }
+  function closeShieldDbModal() { dbModal.open = false; const o = document.getElementById("shv28-dbmodal"); if (o) o.remove(); }
+  function saveShieldManual() {
+    const inp = document.querySelector("#shv28-dbmodal .shv28-dbmodal-price");
+    const val = inp ? Math.max(0, Number(String(inp.value).replace(",", ".").replace(/[^\d.]/g, "")) || 0) : 0;
+    if (val <= 0) { if (window.alert) alert("Впиши цену"); return; }
+    cfg.manualPrices[dbModal.key] = val;
+    upsertShieldDb(dbModal.name, dbModal.type, dbModal.unit, val);
+    save(cfg); closeShieldDbModal(); render();
+  }
+  function pickShieldDb(itemId) {
+    const it = shieldDbItems().find(x => String(x.id) === String(itemId)); if (!it) return;
+    cfg.manualPrices[dbModal.key] = Number(it.price) || 0;
+    save(cfg); closeShieldDbModal(); render();
   }
 
   function render() {
@@ -973,17 +1022,10 @@
       }
       // вписать цену вручную для ненайденной позиции
       const man = t.closest?.("[data-manual]");
-      if (man) {
-        const key = man.dataset.manual;
-        const curVal = cfg.manualPrices[key] || "";
-        const val = prompt("Цена за единицу (пусто — отмена):", curVal);
-        if (val !== null) {
-          const n = Math.max(0, Number(String(val).replace(",", ".").replace(/[^\d.]/g, "")) || 0);
-          if (n > 0) cfg.manualPrices[key] = n; else delete cfg.manualPrices[key];
-          save(cfg); render();
-        }
-        return;
-      }
+      if (man) { openShieldDb(man.dataset.manual, man.dataset.mname || man.dataset.manual, man.dataset.mtype || "material", man.dataset.munit || "шт"); return; }
+      if (t.closest?.("[data-shdbsave]")) { saveShieldManual(); return; }
+      const shpick = t.closest?.("[data-shdbpick]"); if (shpick) { pickShieldDb(shpick.dataset.shdbpick); return; }
+      if (t.closest?.("[data-shdbclose]")) { closeShieldDbModal(); return; }
       // показать/скрыть альтернативы группового диф/УЗО
       const palts = t.closest?.("[data-palts]");
       if (palts && !t.closest?.("[data-ppick]")) { const gi = Number(palts.dataset.palts); const g = cfg.draft?.groups?.[gi]; if (g) { g.prot.showAlts = !g.prot.showAlts; save(cfg); render(); } return; }
@@ -1000,6 +1042,10 @@
       if (add) { alert("Подбор позиций по БД и добавление в смету появятся на шаге V28.3.\nСейчас черновик — это план линий."); return; }
       const clr = t.closest?.("[data-clear]");
       if (clr) { if (confirm("Очистить черновик и сбросить настройки щита?")) { cfg = defaultConfig(); save(cfg); render(); } return; }
+    });
+    document.addEventListener("input", (e) => {
+      const sb = e.target.closest?.("[data-shdbsearch]");
+      if (sb) { dbModal.q = sb.value || ""; updateShieldDbList(); }
     });
     document.addEventListener("change", (e) => {
       const root = document.getElementById("ep-shield-v28-root");

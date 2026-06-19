@@ -800,10 +800,9 @@
             <small>${i.dbName ? "БД: " + esc(i.dbName) : "цена вручную"}</small>
           </div>
           <div class="p22-draft-edit">
-            <div class="p22-draft-pricerow">
-              <input type="number" inputmode="decimal" min="0" class="p22-draft-price" data-p22-price="${idx}" value="${n(i.price)}" placeholder="цена" />
-              <button type="button" class="p22-draft-dbbtn" data-p22-rowdb="${idx}">из БД</button>
-            </div>
+            ${n(i.price) > 0
+              ? `<div class="p22-draft-priced"><strong>${money(i.price)}</strong><small>${i.dbName ? "БД" : "вручную"}</small></div><button type="button" class="p22-draft-dbbtn" data-p22-rowdb="${idx}">изм.</button>`
+              : `<button type="button" class="p22-draft-dbbtn p22-draft-fill" data-p22-rowdb="${idx}">вписать ₽</button>`}
             <small class="p22-draft-sum">${money(sum)}</small>
           </div>
         </div>
@@ -813,7 +812,6 @@
 
   function savePrices() { try { localStorage.setItem(STORAGE_PRICES, JSON.stringify(priceMap)); } catch {} }
   function applyPrices(list) { (list || []).forEach(r => { const pr = priceMap[r.name]; if (pr) { r.price = n(pr.price); r.dbName = pr.dbName || ""; r.dbItemId = pr.dbItemId || ""; } }); }
-  function setRowPrice(idx, val) { const row = draft[idx]; if (!row) return; row.price = Math.max(0, n(val)); priceMap[row.name] = { price: row.price, dbName: row.dbName || "", dbItemId: row.dbItemId || "" }; savePrices(); save(); }
   function dbItemsForRow() {
     const row = draft[dbModal.idx]; if (!row) return [];
     let items = []; try { if (window.EP && EP.Database && EP.Database.getItems) items = EP.Database.getItems() || []; } catch (e) {}
@@ -828,7 +826,33 @@
     const root = document.getElementById("ep-pool-root") || document.body;
     if (!o) { o = document.createElement("div"); o.id = "p22-dbmodal"; o.className = "p22-dbmodal"; root.appendChild(o); }
     const row = draft[dbModal.idx]; const items = dbItemsForRow();
-    o.innerHTML = `<div class="p22-dbmodal-card"><div class="p22-dbmodal-head"><b>Из БД: ${esc(row ? row.name : "")}</b><button type="button" data-p22-dbclose>✕</button></div><input type="text" class="p22-dbmodal-search" data-p22-dbsearch value="${esc(dbModal.q)}" placeholder="поиск по базе" /><div class="p22-dbmodal-list">${items.length ? items.map(dbItemRowHtml).join("") : `<div class="p22-dbmodal-empty">Ничего не найдено в активной базе.</div>`}</div></div>`;
+    o.innerHTML = `<div class="p22-dbmodal-card"><div class="p22-dbmodal-head"><b>${esc(row ? row.name : "")}</b><button type="button" data-p22-dbclose>✕</button></div>
+      <div class="p22-dbmodal-manual"><input type="number" inputmode="decimal" min="0" class="p22-dbmodal-price" data-p22-dbmanual value="${row && n(row.price) ? n(row.price) : ""}" placeholder="своя цена ₽" /><button type="button" class="p22-dbmodal-save" data-p22-dbsave>✓ Вписать (создать в БД)</button></div>
+      <div class="p22-dbmodal-or">или выбрать из базы:</div>
+      <input type="text" class="p22-dbmodal-search" data-p22-dbsearch value="${esc(dbModal.q)}" placeholder="поиск по базе" />
+      <div class="p22-dbmodal-list">${items.length ? items.map(dbItemRowHtml).join("") : `<div class="p22-dbmodal-empty">Ничего не найдено в активной базе.</div>`}</div></div>`;
+  }
+  function upsertDb(name, type, unit, price) {
+    try {
+      if (!(window.EP && EP.Database)) return "";
+      const items = (EP.Database.getItems ? EP.Database.getItems("my") : []) || [];
+      const ex = items.find(x => x && x.type === type && String(x.name).toLowerCase() === String(name).toLowerCase());
+      if (ex) { if (EP.Database.updateMyItem) EP.Database.updateMyItem(ex.id, { price: price }); return ex.id; }
+      if (EP.Database.addMyItem) { const c = EP.Database.addMyItem({ type: type, name: name, unit: unit || "шт", price: price, category: "Из пула" }); return (c && c.id) || ""; }
+    } catch (e) {}
+    return "";
+  }
+  function saveManualPrice() {
+    const row = draft[dbModal.idx]; if (!row) return;
+    const inp = document.querySelector("#p22-dbmodal .p22-dbmodal-price");
+    const val = inp ? Math.max(0, n(inp.value)) : 0;
+    if (val <= 0) { toast("Впиши цену"); return; }
+    row.price = val;
+    const id = upsertDb(row.name, row.type, row.unit, val);
+    if (id) { row.dbItemId = id; row.dbName = row.name; }
+    priceMap[row.name] = { price: val, dbName: row.dbName || "", dbItemId: row.dbItemId || "" };
+    savePrices(); save(); closeDbModal(); renderDraft();
+    toast(id ? "Сумма вписана и создана в Моей БД" : "Сумма вписана");
   }
   function openDbRow(idx) { dbModal = { open: true, idx: idx, q: "" }; renderDbModal(); }
   function closeDbModal() { dbModal.open = false; const o = document.getElementById("p22-dbmodal"); if (o) o.remove(); }
@@ -911,12 +935,8 @@
       if (el = event.target.closest("[data-p22-rowdb]")) { openDbRow(n(el.dataset.p22Rowdb)); return; }
       if (el = event.target.closest("[data-p22-dbpick]")) { pickDbRow(el.dataset.p22Dbpick); return; }
       if (event.target.closest("[data-p22-dbclose]")) { closeDbModal(); return; }
+      if (event.target.closest("[data-p22-dbsave]")) { saveManualPrice(); return; }
       if (event.target.closest("[data-p22-estimate]")) { event.preventDefault(); if (window.EP && EP.Collector && EP.Collector.pushPool) EP.Collector.pushPool(); else toast("Модуль сметы недоступен"); return; }
-    });
-    document.addEventListener("change", event => {
-      if (!event.target.closest("#ep-pool-root")) return;
-      const el = event.target.closest("[data-p22-price]");
-      if (el) { setRowPrice(n(el.dataset.p22Price), el.value); renderDraft(); }
     });
     document.addEventListener("input", event => {
       const el = event.target.closest("[data-p22-dbsearch]");
