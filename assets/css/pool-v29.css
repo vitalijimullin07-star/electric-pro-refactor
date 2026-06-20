@@ -59,13 +59,13 @@
 
 /* черновик-строки */
 .pv29-draftrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 4px; border-bottom: 1px solid rgba(120,130,150,.12); }
-.pv29-draftname { display: flex; flex-direction: column; min-width: 0; }
+.pv29-draftname { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .pv29-draftname span { font: 600 13px/1.25 system-ui; }
 .pv29-draftname small { font: 500 11px/1 system-ui; color: var(--muted,#94a3b8); margin-top: 2px; }
-.pv29-priced { text-align: right; }
-.pv29-priced b { display: block; font: 800 13px/1 system-ui; }
+.pv29-priced { flex: none; text-align: right; white-space: nowrap; }
+.pv29-priced b { display: block; font: 800 13px/1.1 system-ui; white-space: nowrap; }
 .pv29-priced small { font: 500 10px/1 system-ui; color: var(--muted,#94a3b8); }
-.pv29-dbbtn { border: 1px solid rgba(120,130,150,.35); background: transparent; color: var(--text,#0f172a); border-radius: 8px; padding: 6px 9px; font: 600 12px/1 system-ui; cursor: pointer; flex: none; margin-left: 8px; }
+.pv29-dbbtn { flex: none; border: 1px solid rgba(120,130,150,.35); background: transparent; color: var(--text,#0f172a); border-radius: 8px; padding: 6px 9px; font: 600 12px/1 system-ui; cursor: pointer; margin-left: 4px; white-space: nowrap; }
 .pv29-dbbtn.pv29-fill { background: rgba(124,58,237,.1); color: var(--accent,#7c3aed); border-color: rgba(124,58,237,.4); }
 
 .pv29-total { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(120,130,150,.2); font: 600 14px/1 system-ui; }

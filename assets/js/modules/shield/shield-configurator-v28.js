@@ -600,6 +600,15 @@
 
   // применить ручную цену к ненайденной позиции
   function manualFor(key) { const v = cfg.manualPrices && cfg.manualPrices[key]; return v ? Number(v) : 0; }
+  // глобальная память цен по ИМЕНИ позиции (переживает смену проекта/конфигурации)
+  const PRICEMEM_KEY = "ep_shield_pricemem_v28";
+  function memLoad() { try { return JSON.parse(localStorage.getItem(PRICEMEM_KEY) || "{}") || {}; } catch (e) { return {}; } }
+  function memSave() { try { localStorage.setItem(PRICEMEM_KEY, JSON.stringify(priceMem)); } catch (e) {} }
+  let priceMem = memLoad();
+  function memPrice(name) { const m = priceMem[String(name || "")]; if (!m) return 0; if (m.dbItemId) { try { const it = shieldDbItems().find(x => x && String(x.id) === String(m.dbItemId) && !x.deleted); if (it) return Number(it.price) || 0; } catch (e) {} } return Number(m.price) || 0; }
+  function rememberPrice(name, price, dbItemId) { if (!name) return; priceMem[String(name)] = { price: Number(price) || 0, dbItemId: dbItemId || "" }; memSave(); }
+  // эффективная ручная цена: текущий проект → глобальная память
+  function effManual(key, name) { const v = manualFor(key); if (v) return v; return memPrice(name); }
 
   // добавить весь щит в предварительную смету (ep_estimate_draft_v23)
   function addToEstimate() {
@@ -700,11 +709,12 @@
     if (apps.length) {
       const rows = apps.map(a => {
         const key = "app:" + a.key;
-        const price = a.found ? a.price : manualFor(key);
+        const mp = effManual(key, a.title);
+        const price = a.found ? a.price : mp;
         appTotal += price || 0;
         const right = a.found
           ? `<span class="cp">${cur(a.price)}</span>`
-          : (manualFor(key) ? `<span class="cp">${cur(manualFor(key))} <i>(вручную)</i></span>` : `<button type="button" class="shv28-manual" data-manual="${esc(key)}" data-mname="${esc(a.title)}" data-mtype="material" data-munit="шт">вписать ₽</button>`);
+          : (mp ? `<span class="cp">${cur(mp)} <i>(вручную)</i></span>` : `<button type="button" class="shv28-manual" data-manual="${esc(key)}" data-mname="${esc(a.title)}" data-mtype="material" data-munit="шт">вписать ₽</button>`);
         return `<div class="shv28-cons-row"><span class="cl">${esc(a.title)}${a.found ? ` <i style="color:#94a3b8;font-weight:600">${esc(a.name)}</i>${brandTag(a.name)}` : ""}</span>${right}</div>`;
       }).join("");
       appHtml = `<div class="shv28-cons"><div class="shv28-cons-head" style="background:#ede9fe;color:#5b21b6">Аппараты защиты / автоматика · ≈ <b>${cur(appTotal)}</b></div>${rows}</div>`;
@@ -715,11 +725,12 @@
     if (cons) {
       const rows = cons.items.map(x => {
         const key = "cons:" + x.label;
-        let price = x.found ? x.total : manualFor(key) * x.qty;
+        const mp = effManual(key, x.label);
+        let price = x.found ? x.total : mp * x.qty;
         consTotal += price || 0;
         const right = x.found
           ? `<span class="cp">${cur(x.total)}</span>`
-          : (manualFor(key) ? `<span class="cp">${cur(manualFor(key) * x.qty)} <i>(вручную)</i></span>` : `<button type="button" class="shv28-manual" data-manual="${esc(key)}" data-mname="${esc(x.label)}" data-mtype="material" data-munit="шт">вписать ₽</button>`);
+          : (mp ? `<span class="cp">${cur(mp * x.qty)} <i>(вручную)</i></span>` : `<button type="button" class="shv28-manual" data-manual="${esc(key)}" data-mname="${esc(x.label)}" data-mtype="material" data-munit="шт">вписать ₽</button>`);
         return `<div class="shv28-cons-row"><span class="cl">${esc(x.label)}</span><span class="cq">×${x.qty}</span>${right}</div>`;
       }).join("");
       consHtml = `<div class="shv28-cons"><div class="shv28-cons-head">Расходка и шины · ≈ <b id="x">${cur(consTotal)}</b></div>${rows}<div class="shv28-cons-note">Автоматов: ${cons.automats} · групп: ${cons.rcds} · ПуГВ/НШВИ: 1×${cons.sec}</div></div>`;
@@ -731,11 +742,12 @@
     if (work) {
       const rows = work.items.map(x => {
         const key = "work:" + x.label;
-        const unit = x.found ? x.price : manualFor(key);
-        const total = x.found ? x.total : manualFor(key) * x.qty;
+        const mp = effManual(key, x.label);
+        const unit = x.found ? x.price : mp;
+        const total = x.found ? x.total : mp * x.qty;
         workTotal += total || 0;
         const breakdown = x.perModule && unit ? ` <i>(${cur(unit)} × ${x.qty})</i>` : "";
-        const right = (x.found || manualFor(key))
+        const right = (x.found || mp)
           ? `<span class="cp">${cur(total)}${x.found ? breakdown : (breakdown || " <i>(вручную)</i>")}</span>`
           : `<button type="button" class="shv28-manual" data-manual="${esc(key)}" data-mname="${esc(x.label)}" data-mtype="work" data-munit="шт">вписать ₽${x.perModule ? " за модуль" : ""}</button>`;
         return `<div class="shv28-cons-row"><span class="cl">${esc(x.label)}</span><span class="cq">×${x.qty}</span>${right}</div>`;
@@ -823,12 +835,14 @@
     const val = inp ? Math.max(0, Number(String(inp.value).replace(",", ".").replace(/[^\d.]/g, "")) || 0) : 0;
     if (val <= 0) { if (window.alert) alert("Впиши цену"); return; }
     cfg.manualPrices[dbModal.key] = val;
-    upsertShieldDb(dbModal.name, dbModal.type, dbModal.unit, val);
+    const id = upsertShieldDb(dbModal.name, dbModal.type, dbModal.unit, val);
+    rememberPrice(dbModal.name, val, id);          // запомнить глобально (переживёт смену проекта)
     save(cfg); closeShieldDbModal(); render();
   }
   function pickShieldDb(itemId) {
     const it = shieldDbItems().find(x => String(x.id) === String(itemId)); if (!it) return;
     cfg.manualPrices[dbModal.key] = Number(it.price) || 0;
+    rememberPrice(dbModal.name, Number(it.price) || 0, it.id);   // запомнить глобально + ссылка на позицию БД
     save(cfg); closeShieldDbModal(); render();
   }
 

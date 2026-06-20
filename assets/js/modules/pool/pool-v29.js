@@ -5,7 +5,7 @@
    ============================================================ */
 (function () {
   "use strict";
-  const VERSION = "V29.pool.ui.3";
+  const VERSION = "V29.pool.ui.4";
   const ENGINE = () => (window.EP && window.EP.PoolEngine) || null;
 
   const K_BLOCKS = "ep_pool_v29_blocks";
@@ -62,7 +62,15 @@
   function compute() { const E = ENGINE(); if (!E) return { draftItems: [], byMat: {}, junctions: {}, cable: {}, conn: {} }; return E.calc(engineInput()); }
   function draftItemsWithPrices() {
     const r = compute();
-    return (r.draftItems || []).map(it => { const p = priceMap[it.name]; return Object.assign({}, it, { price: p ? n(p.price) : 0, dbName: p ? p.dbName : "" }); });
+    let db = []; try { if (window.EP && EP.Database && EP.Database.getItems) db = EP.Database.getItems("my") || []; } catch (e) {}
+    return (r.draftItems || []).map(it => {
+      const p = priceMap[it.name]; let price = 0, dbName = "";
+      if (p) {
+        price = n(p.price); dbName = p.dbName || "";
+        if (p.dbItemId) { const f = db.find(x => x && String(x.id) === String(p.dbItemId) && !x.deleted); if (f) { price = n(f.price); dbName = f.name; } }
+      }
+      return Object.assign({}, it, { price: price, dbName: dbName });
+    });
   }
 
   // ── helpers UI ──
@@ -291,7 +299,7 @@
     if (window.EP && EP.Collector && EP.Collector.pushPool) { EP.Collector.pushPool(); toast("Отправлено в предварительную"); }
     else toast("Модуль сметы недоступен");
   }
-  function clearPool() { if (!window.confirm("Очистить все блоки пула?")) return; blocks = []; priceMap = {}; builder = defBuilder(); save(); render(); }
+  function clearPool() { if (!window.confirm("Очистить блоки пула? Привязки цен из БД сохранятся.")) return; blocks = []; builder = defBuilder(); save(); render(); }
 
   // ── toast ──
   function toast(text) {

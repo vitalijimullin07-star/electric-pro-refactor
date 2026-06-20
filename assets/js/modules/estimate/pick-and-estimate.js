@@ -64,7 +64,7 @@
           <div class="ep-db-row">
             <div class="ep-db-row-main">
               <div class="ep-db-row-name">${esc(it.name)}</div>
-              <div class="ep-db-row-meta">${esc(c)}${it.subcategory ? " · " + esc(it.subcategory) : ""}${it.unit ? " · " + esc(it.unit) : ""}</div>
+              ${it.unit ? `<div class="ep-db-row-meta">${esc(it.unit)}</div>` : ""}
             </div>
             <div class="ep-db-row-price">${money(it.price)}</div>
             <button type="button" class="ep-db-iconbtn ep-pick-add" data-pick-add="${esc(it.id)}" title="Добавить в смету">+</button>
