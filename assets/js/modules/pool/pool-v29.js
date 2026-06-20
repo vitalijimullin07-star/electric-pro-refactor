@@ -5,7 +5,7 @@
    ============================================================ */
 (function () {
   "use strict";
-  const VERSION = "V29.pool.ui.2";
+  const VERSION = "V29.pool.ui.3";
   const ENGINE = () => (window.EP && window.EP.PoolEngine) || null;
 
   const K_BLOCKS = "ep_pool_v29_blocks";
@@ -220,6 +220,21 @@
   }
 
   // ── цена → БД (вписать ₽) ──
+  // ключевые слова поиска по типу позиции (широкие — находят все варианты; имена в БД могут отличаться)
+  function searchKeywords(name) {
+    const s = String(name || "").toLowerCase();
+    if (/штроблен|штроб/.test(s)) return "штроб";
+    if (/высверливан/.test(s)) return "подрозетник";          // работа высверливания
+    if (/подрозетник/.test(s)) return "подрозетник";
+    if (/распаечн|распайк|распаеч/.test(s)) return "распаеч";
+    if (/ваго/.test(s)) return "ваго";
+    if (/гмл|гильз/.test(s)) return "гильз";
+    if (/сиз/.test(s)) return "сиз";
+    if (/термоусадк/.test(s)) return "термоусад";
+    if (/кабель|ввг|nym/.test(s)) return "кабель";
+    if (/коробк/.test(s)) return "коробк";
+    return (s.split(/\s+/)[0] || "");
+  }
   function dbItemsForRow(row) {
     let items = []; try { if (window.EP && EP.Database && EP.Database.getItems) items = EP.Database.getItems("my") || []; } catch (e) {}
     const q = String(dbModal.q || "").toLowerCase().trim();
@@ -227,7 +242,7 @@
   }
   function dbListHtml(row) {
     const items = dbItemsForRow(row);
-    if (!items.length) return `<div class="pv29-dbempty">${dbModal.q ? "Ничего не найдено" : "В «Моей БД» пусто — впиши цену выше"}</div>`;
+    if (!items.length) return `<div class="pv29-dbempty">${dbModal.q ? `По запросу «${esc(dbModal.q)}» ничего. Измени слово или очисти поиск, чтобы видеть всю базу.` : "В «Моей БД» пусто — впиши цену выше"}</div>`;
     return items.map(it => `<button type="button" class="pv29-dbitem" data-pv-dbpick="${esc(it.id)}"><span>${esc(it.name)}</span><b>${money(it.price)}${it.unit ? " / " + esc(it.unit) : ""}</b></button>`).join("");
   }
   function renderDbModal() {
@@ -242,7 +257,7 @@
       <div class="pv29-dblist">${dbListHtml(row)}</div></div>`;
   }
   function updateDbList() { const box = document.querySelector("#pv29-dbmodal .pv29-dblist"); if (!box) return; const items = draftItemsWithPrices(); const row = items[dbModal.idx]; if (row) box.innerHTML = dbListHtml(row); }
-  function openDbRow(idx) { dbModal = { open: true, idx: idx, q: "" }; renderDbModal(); }
+  function openDbRow(idx) { const row = draftItemsWithPrices()[idx]; dbModal = { open: true, idx: idx, q: row ? searchKeywords(row.name) : "" }; renderDbModal(); }
   function closeDbModal() { dbModal.open = false; const o = document.getElementById("pv29-dbmodal"); if (o) o.remove(); }
   function upsertDb(name, type, unit, price) {
     try {

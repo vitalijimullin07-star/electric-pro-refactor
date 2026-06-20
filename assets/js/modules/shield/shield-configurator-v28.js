@@ -761,6 +761,31 @@
 
   // ── вписать цену / создать в «Моей БД» либо выбрать из базы (как в пуле) ──
   function shieldDbItems() { try { return (window.EP && EP.Database && EP.Database.getItems) ? (EP.Database.getItems("my") || []) : []; } catch (e) { return []; } }
+  // ключевые слова поиска по типу позиции щита (широкие; имена в БД могут отличаться)
+  function shieldKeywords(name, type) {
+    const s = String(name || "").toLowerCase();
+    if (type === "work") {
+      if (/сборк|собрат/.test(s)) return "сборк";
+      if (/монтаж|установ|навес/.test(s)) return "монтаж";
+      if (/маркир|подпис/.test(s)) return "маркир";
+      return (s.split(/\s+/)[0] || "");
+    }
+    if (/дифавтомат|дифф|авдт|ад-?\d|\bдиф\b/.test(s)) return "диф";
+    if (/узо/.test(s)) return "узо";
+    if (/реле напряж|узм/.test(s)) return "реле напряж";
+    if (/приоритет/.test(s)) return "приоритет";
+    if (/контактор/.test(s)) return "контактор";
+    if (/рубильник|выключатель нагрузк/.test(s)) return "рубильник";
+    if (/автомат|выключател|ва ?47|\bc\d/.test(s)) return "автомат";
+    if (/сальник|кабельн.*ввод/.test(s)) return "сальник";
+    if (/кабель|ввг|nym|провод/.test(s)) return "кабель";
+    if (/шина|pe-?шин|n-?шин/.test(s)) return "шина";
+    if (/бокс|корпус|щиток|\bщит\b/.test(s)) return "бокс";
+    if (/клемм/.test(s)) return "клемм";
+    if (/din|дин.?рейк|рейк/.test(s)) return "рейк";
+    if (/реле/.test(s)) return "реле";
+    return (s.split(/\s+/)[0] || "");
+  }
   function upsertShieldDb(name, type, unit, price) {
     try {
       if (!(window.EP && EP.Database)) return "";
@@ -773,10 +798,10 @@
   }
   function shieldDbListHtml() {
     const q = (dbModal.q || "").toLowerCase().trim();
-    let items = shieldDbItems().filter(x => x && !x.deleted);
+    let items = shieldDbItems().filter(x => x && !x.deleted && (!dbModal.type || x.type === dbModal.type));
     if (q) items = items.filter(x => String(x.name).toLowerCase().includes(q));
     items = items.slice(0, 40);
-    if (!items.length) return `<div class="shv28-dbmodal-empty">${q ? "Ничего не найдено" : "В «Моей БД» пока пусто — впиши свою цену выше"}</div>`;
+    if (!items.length) return `<div class="shv28-dbmodal-empty">${q ? `По запросу «${esc(q)}» ничего. Измени слово или очисти поиск, чтобы видеть всю базу.` : "В «Моей БД» пока пусто — впиши свою цену выше"}</div>`;
     return items.map(it => `<button type="button" class="shv28-dbmodal-item" data-shdbpick="${esc(it.id)}"><span>${esc(it.name)}</span><b>${cur(it.price)}${it.unit ? " / " + esc(it.unit) : ""}</b></button>`).join("");
   }
   function renderShieldDbModal() {
@@ -791,7 +816,7 @@
       <div class="shv28-dbmodal-list">${shieldDbListHtml()}</div></div>`;
   }
   function updateShieldDbList() { const box = document.querySelector("#shv28-dbmodal .shv28-dbmodal-list"); if (box) box.innerHTML = shieldDbListHtml(); }
-  function openShieldDb(key, name, type, unit) { dbModal = { open: true, key: key, name: name || key, type: type || "material", unit: unit || "шт", q: "" }; renderShieldDbModal(); }
+  function openShieldDb(key, name, type, unit) { dbModal = { open: true, key: key, name: name || key, type: type || "material", unit: unit || "шт", q: shieldKeywords(name || key, type || "material") }; renderShieldDbModal(); }
   function closeShieldDbModal() { dbModal.open = false; const o = document.getElementById("shv28-dbmodal"); if (o) o.remove(); }
   function saveShieldManual() {
     const inp = document.querySelector("#shv28-dbmodal .shv28-dbmodal-price");
