@@ -23,7 +23,7 @@
   function poolDraft() { try { const P = window.PoolV22CleanMonolith; if (!P || !P.draft) return []; if (P.buildDraft) P.buildDraft(); return P.draft() || []; } catch (e) { return []; } }
   function poolStrobe() { let m = 0; poolDraft().forEach(r => { if (/штроблен/i.test(r.name || "")) m += n(r.qty); }); return Math.round(m); }
   function poolPodroz() { let c = 0; poolDraft().forEach(r => { if (r.type === "material" && /подрозетник/i.test(r.name || "")) c += n(r.qty); }); return c; }
-  function poolBoxes() { let c = 0; poolDraft().forEach(r => { if (r.type === "material" && /распайк|распаяч/i.test(r.name || "")) c += n(r.qty); }); return c; }
+  function poolBoxes() { let c = 0; poolDraft().forEach(r => { if (r.type === "material" && /распа.{0,3}ч|распайк/i.test(r.name || "")) c += n(r.qty); }); return c; }
   const MAT_BY_LOWER = { "бетон": "Бетон", "кирпич": "Кирпич", "панель": "Панель", "мягкий": "Мягкий" };
   function lastMat(name) { const w = String(name || "").trim().split(/\s+/).pop().toLowerCase(); return MAT_BY_LOWER[w] || ""; }
   function poolStrobeByMat() { const m = {}; poolDraft().forEach(r => { if (/штроблен/i.test(r.name || "")) { const mat = lastMat(r.name); if (mat) m[mat] = (m[mat] || 0) + n(r.qty); } }); return m; }
