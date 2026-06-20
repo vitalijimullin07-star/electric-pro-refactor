@@ -5,7 +5,7 @@
    ============================================================ */
 (function () {
   "use strict";
-  const VERSION = "V29.pool.ui.1";
+  const VERSION = "V29.pool.ui.2";
   const ENGINE = () => (window.EP && window.EP.PoolEngine) || null;
 
   const K_BLOCKS = "ep_pool_v29_blocks";
@@ -17,15 +17,16 @@
   const HEIGHTS = [30, 60, 90, 110, 150];
   const COUNTERS = [
     { k: "sockets", t: "Розетки", i: "🔌" },
-    { k: "sw1", t: "Выкл 1кл", i: "💡" },
-    { k: "sw2", t: "Выкл 2кл", i: "💡" },
-    { k: "sw3", t: "Выкл 3кл", i: "💡" },
-    { k: "pass", t: "Проходной", i: "🔁", keys: "passKeys" },
-    { k: "cross", t: "Перекрёстный", i: "🔀", keys: "crossKeys" },
+    { k: "switches", t: "Выключатели", i: "💡", keys: "switchKeys", keyOpts: [1, 2, 3] },
+    { k: "pass", t: "Проходной", i: "🔁", keys: "passKeys", keyOpts: [1, 2] },
+    { k: "cross", t: "Перекрёстный", i: "🔀", keys: "crossKeys", keyOpts: [1, 2] },
     { k: "tv", t: "ТВ", i: "📺" },
-    { k: "internet", t: "Интернет", i: "🌐" }
+    { k: "internet", t: "Интернет", i: "🌐" },
+    { k: "warmFloor", t: "Тёплый пол", i: "♨️" }
   ];
-  const DEDICATED = ["Тёплый пол", "Кондей", "Стиралка", "Сушилка", "Нептун", "Плита"];
+  const DEDICATED = ["Кондей", "Стиралка", "Сушилка", "Нептун", "Плита"];
+  const MAX_POSTS = 6;
+  const CELL_ICON = { sockets: "🔌", sw1: "💡", sw2: "💡", sw3: "💡", pass: "🔁", cross: "🔀", tv: "📺", internet: "🌐", warmFloor: "♨️" };
   const TPL_LABELS = { switch_1: "Выкл 1кл", switch_2: "Выкл 2кл", switch_3: "Выкл 3кл", pass_1: "Проходной", pass_2: "Двойной проходной", cross_1: "Перекрёстный", cross_2: "Двойной перекрёстный" };
   const PIN_ORDER = ["pin2", "pin3", "pin4", "pin5", "pin6", "pin8", "pin10"];
 
@@ -33,13 +34,13 @@
   const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const money = v => (Math.round(n(v) * 100) / 100).toLocaleString("ru-RU") + " ₽";
 
-  let settings, blocks, builder, priceMap, templates, dbModal = { open: false };
+  let settings, blocks, builder, priceMap, templates, dbModal = { open: false }, folds = { set: false, conn: false };
 
   function defSettings() {
     const D = (ENGINE() && ENGINE().DEFAULTS) || {};
     return { ceilingHeight: D.ceilingHeight || 270, mode: D.mode || "junction", connectorMode: D.connectorMode || "gml", shape: D.shape || "round", crown: D.crown || 68, shrinkCmPerJoint: D.shrinkCmPerJoint || 5, heatShrinkType: D.heatShrinkType || "12/4", dropsPerSocketJunction: D.dropsPerSocketJunction || 2, dropsPerSwitchJunction: D.dropsPerSwitchJunction || 2 };
   }
-  function defBuilder() { return { material: "Бетон", route: "ceiling", height: 30, sockets: 0, sw1: 0, sw2: 0, sw3: 0, pass: 0, passKeys: 1, cross: 0, crossKeys: 1, tv: 0, internet: 0 }; }
+  function defBuilder() { return { material: "Бетон", route: "ceiling", height: 30, sockets: 0, sw1: 0, sw2: 0, sw3: 0, switchKeys: 1, pass: 0, passKeys: 1, cross: 0, crossKeys: 1, tv: 0, internet: 0, warmFloor: 0 }; }
   function defTemplates() { const D = (ENGINE() && ENGINE().DEFAULTS && ENGINE().DEFAULTS.templates) || {}; return JSON.parse(JSON.stringify(D)); }
 
   function load() {
@@ -65,22 +66,47 @@
   }
 
   // ── helpers UI ──
+  // суммарное число постов в наборе механизмов
+  function postsOf(o) { return n(o.sockets) + n(o.sw1) + n(o.sw2) + n(o.sw3) + n(o.pass) + n(o.cross) + n(o.tv) + n(o.internet) + n(o.warmFloor); }
+  // отображаемое значение счётчика (выключатели = сумма по клавишам)
+  function counterVal(o, k) { return k === "switches" ? (n(o.sw1) + n(o.sw2) + n(o.sw3)) : n(o[k]); }
+
   function counterTile(c) {
-    const v = n(builder[c.k]);
-    const keysSel = c.keys ? `<div class="pv29-keys">${[1, 2].map(kk => `<button type="button" data-pv-keys="${c.keys}" data-val="${kk}" class="${n(builder[c.keys], 1) === kk ? "on" : ""}">${kk}кл</button>`).join("")}</div>` : "";
+    const v = counterVal(builder, c.k);
+    const keysSel = c.keys ? `<div class="pv29-keys">${c.keyOpts.map(kk => `<button type="button" data-pv-keys="${c.keys}" data-val="${kk}" class="${n(builder[c.keys], 1) === kk ? "on" : ""}">${kk}кл</button>`).join("")}</div>` : "";
     return `<div class="pv29-counter"><div class="pv29-counter-top"><span>${c.i} ${c.t}</span><b>${v}</b></div>
       <div class="pv29-counter-btns"><button type="button" data-pv-dec="${c.k}">−</button><button type="button" data-pv-inc="${c.k}">+</button></div>${keysSel}</div>`;
   }
+
+  // визуализация блока «рамкой» с механизмами
+  function frameCells(b) {
+    const cells = [];
+    const push = (key, badge) => cells.push({ icon: CELL_ICON[key], badge: badge || "" });
+    for (let i = 0; i < n(b.sockets); i++) push("sockets");
+    for (let i = 0; i < n(b.sw1); i++) push("sw1", "1");
+    for (let i = 0; i < n(b.sw2); i++) push("sw2", "2");
+    for (let i = 0; i < n(b.sw3); i++) push("sw3", "3");
+    for (let i = 0; i < n(b.pass); i++) push("pass", "⇄" + (n(b.passKeys, 1) > 1 ? n(b.passKeys) : ""));
+    for (let i = 0; i < n(b.cross); i++) push("cross", "✕" + (n(b.crossKeys, 1) > 1 ? n(b.crossKeys) : ""));
+    for (let i = 0; i < n(b.tv); i++) push("tv");
+    for (let i = 0; i < n(b.internet); i++) push("internet");
+    for (let i = 0; i < n(b.warmFloor); i++) push("warmFloor");
+    return cells;
+  }
+  function frameViz(b, opts) {
+    opts = opts || {};
+    const cells = frameCells(b);
+    const posts = cells.length;
+    const inner = cells.length
+      ? cells.map(c => `<div class="pv29-cell">${c.icon}${c.badge ? `<i>${esc(c.badge)}</i>` : ""}</div>`).join("")
+      : `<div class="pv29-cell pv29-cell-empty">+</div>`;
+    const meta = opts.meta ? `<div class="pv29-frame-meta">${esc(opts.meta)}</div>` : "";
+    return `<div class="pv29-frameview"><div class="pv29-frame">${inner}</div><div class="pv29-frame-cap">${meta}<span class="pv29-posts ${posts > MAX_POSTS ? "over" : ""}">${posts}/${MAX_POSTS} постов</span></div></div>`;
+  }
+
   function blockSummary(b) {
     if (b.dedicated) return `${esc(b.dedicated)} · ${b.route === "floor" ? "пол" : "потолок"} · h${b.height}`;
-    const parts = [];
-    if (n(b.sockets)) parts.push(n(b.sockets) + " роз");
-    const sw = n(b.sw1) + n(b.sw2) + n(b.sw3); if (sw) parts.push(sw + " выкл");
-    if (n(b.pass)) parts.push(n(b.pass) + " прох");
-    if (n(b.cross)) parts.push(n(b.cross) + " перекр");
-    if (n(b.tv)) parts.push(n(b.tv) + " ТВ");
-    if (n(b.internet)) parts.push(n(b.internet) + " инет");
-    return `${esc(b.material)} · ${b.route === "floor" ? "пол" : "потолок"} · h${b.height} — ${parts.join(", ") || "пусто"}`;
+    return `${esc(b.material)} · ${b.route === "floor" ? "пол" : "потолок"} · h${b.height}`;
   }
 
   function render() {
@@ -106,55 +132,26 @@
       return `<div class="pv29-draftrow"><div class="pv29-draftname"><span>${esc(it.name)}</span><small>${it.type === "work" ? "работа" : "материал"} · ${it.qty} ${esc(it.unit)}</small></div>${right}</div>`;
     }).join("") || `<div class="pv29-hint">Черновик пуст.</div>`;
 
-    const seg = (attr, val, opts) => opts.map(([v, l]) => `<button type="button" data-pv-set="${attr}" data-val="${v}" class="${val === v ? "on" : ""}">${l}</button>`).join("");
+    const seg = (attr, val, opts, collapse) => opts.map(([v, l]) => `<button type="button" data-pv-set="${attr}" data-val="${v}"${collapse ? ` data-pv-collapse="${collapse}"` : ""} class="${val === v ? "on" : ""}">${l}</button>`).join("");
 
     root.innerHTML = `
     <div class="pv29">
       <div class="pv29-head"><h2>Пул розеток</h2><span class="pv29-ver">${VERSION}</span></div>
 
-      <details class="pv29-card" data-fold="set">
+      <details class="pv29-card" data-fold="set" ${folds.set ? "open" : ""}>
         <summary>⚙ Настройки квартиры</summary>
         <div class="pv29-set">
           <label class="pv29-field"><span>Высота потолка, см</span><input type="number" inputmode="numeric" data-pv-ceil value="${n(settings.ceilingHeight, 270)}" /></label>
           <div class="pv29-field"><span>Соединения</span><div class="pv29-seg">${seg("mode", settings.mode, [["junction", "В распайках"], ["boxes", "В подрозетниках"]])}</div></div>
-          <div class="pv29-field"><span>Коннектор</span><div class="pv29-seg">${seg("connectorMode", settings.connectorMode, [["gml", "Гильзы"], ["wago", "ВАГО"], ["siz", "СИЗ"]])}</div></div>
           <div class="pv29-field"><span>Кабель</span><div class="pv29-seg">${seg("shape", settings.shape, [["round", "Круглый"], ["flat", "Плоский"]])}</div></div>
           <label class="pv29-field"><span>Ø коронки, мм</span><input type="number" inputmode="numeric" data-pv-crown value="${n(settings.crown, 68)}" /></label>
         </div>
       </details>
 
-      <div class="pv29-card pv29-builder">
-        <div class="pv29-row2"><div class="pv29-seg pv29-mats">${MATS.map(m => `<button type="button" data-pv-mat="${m}" class="${builder.material === m ? "on" : ""}">${m}</button>`).join("")}</div></div>
-        <div class="pv29-row2">
-          <div class="pv29-seg">${seg("route", builder.route, [["ceiling", "С потолка"], ["floor", "С пола"]])}</div>
-        </div>
-        <div class="pv29-row2"><span class="pv29-lab">Высота, см</span><div class="pv29-seg pv29-heights">${HEIGHTS.map(h => `<button type="button" data-pv-h="${h}" class="${n(builder.height) === h ? "on" : ""}">${h}</button>`).join("")}<input type="number" inputmode="numeric" class="pv29-hcustom" data-pv-hcustom value="${HEIGHTS.indexOf(n(builder.height)) < 0 ? n(builder.height) : ""}" placeholder="своя" /></div></div>
-
-        <div class="pv29-counters">${COUNTERS.map(counterTile).join("")}</div>
-
-        <div class="pv29-ded"><span class="pv29-lab">Отдельные линии (своя высота):</span><div class="pv29-dedbtns">${DEDICATED.map(d => `<button type="button" class="pv29-dedbtn" data-pv-ded="${d}">+ ${d}</button>`).join("")}</div></div>
-
-        <button type="button" class="pv29-add" data-pv-addblock>➕ Добавить блок</button>
-      </div>
-
-      <div class="pv29-card">
-        <div class="pv29-blockshead">Блоки (${blocks.length})</div>
-        ${blocks.length ? blocks.map((b, i) => `<div class="pv29-block"><span>${esc(blockSummary(b))}</span><button type="button" class="pv29-del" data-pv-delblock="${i}">✕</button></div>`).join("") : `<div class="pv29-hint">Пока нет блоков.</div>`}
-      </div>
-
-      <div class="pv29-card">
-        <div class="pv29-blockshead">Черновик · по материалам</div>
-        ${matRows}
-        <div class="pv29-drafthead">Позиции (${items.length})</div>
-        ${rows}
-        <div class="pv29-total"><span>Итого по ценам:</span><b>${money(total)}</b></div>
-        <div class="pv29-actions"><button type="button" class="pv29-est" data-pv-estimate>➕ В смету (предварительную)</button><button type="button" class="pv29-clear" data-pv-clear>Очистить</button></div>
-      </div>
-
-      <details class="pv29-card" data-fold="conn">
-        <summary>🔧 Редактор ваго / гильз</summary>
+      <details class="pv29-card" data-fold="conn" ${folds.conn ? "open" : ""}>
+        <summary>🔧 Редактор ваго / гильз <small>(${({ gml: "Гильзы", wago: "ВАГО", siz: "СИЗ" })[settings.connectorMode] || ""})</small></summary>
         <div class="pv29-set">
-          <div class="pv29-field"><span>Тип коннектора</span><div class="pv29-seg">${seg("connectorMode", settings.connectorMode, [["gml", "Гильзы"], ["wago", "ВАГО"], ["siz", "СИЗ"]])}</div></div>
+          <div class="pv29-field"><span>Тип коннектора (свернётся после выбора)</span><div class="pv29-seg">${seg("connectorMode", settings.connectorMode, [["gml", "Гильзы"], ["wago", "ВАГО"], ["siz", "СИЗ"]], "conn")}</div></div>
           <label class="pv29-field"><span>Термоусадка, см/стык</span><input type="number" inputmode="decimal" data-pv-shrink value="${n(settings.shrinkCmPerJoint, 5)}" /></label>
           <label class="pv29-field"><span>Тип термоусадки</span><input type="text" data-pv-shrinktype value="${esc(settings.heatShrinkType)}" /></label>
           <label class="pv29-field"><span>Спусков на розет. распайку</span><input type="number" inputmode="numeric" data-pv-dps value="${n(settings.dropsPerSocketJunction, 2)}" /></label>
@@ -166,6 +163,34 @@
           return `<div class="pv29-tpl"><div class="pv29-tpltitle">${esc(TPL_LABELS[key])}</div><div class="pv29-tplpins">${PIN_ORDER.map(pin => `<label class="pv29-pin"><span>${pin.replace("pin", "")}пр</span><input type="number" inputmode="numeric" data-pv-tpl="${key}" data-pin="${pin}" value="${n(t[pin], 0) || ""}" placeholder="0" /></label>`).join("")}</div></div>`;
         }).join("")}</div>
       </details>
+
+      <div class="pv29-card pv29-builder">
+        <div class="pv29-row2"><div class="pv29-seg pv29-mats">${MATS.map(m => `<button type="button" data-pv-mat="${m}" class="${builder.material === m ? "on" : ""}">${m}</button>`).join("")}</div></div>
+        <div class="pv29-row2"><div class="pv29-seg">${seg("route", builder.route, [["ceiling", "С потолка"], ["floor", "С пола"]])}</div></div>
+        <div class="pv29-row2"><span class="pv29-lab">Высота, см</span><div class="pv29-seg pv29-heights">${HEIGHTS.map(h => `<button type="button" data-pv-h="${h}" class="${n(builder.height) === h ? "on" : ""}">${h}</button>`).join("")}<input type="number" inputmode="numeric" class="pv29-hcustom" data-pv-hcustom value="${HEIGHTS.indexOf(n(builder.height)) < 0 ? n(builder.height) : ""}" placeholder="своя" /></div></div>
+
+        ${frameViz(builder, { meta: "Сборка блока" })}
+
+        <div class="pv29-counters">${COUNTERS.map(counterTile).join("")}</div>
+
+        <div class="pv29-ded"><span class="pv29-lab">Отдельные линии (своя высота):</span><div class="pv29-dedbtns">${DEDICATED.map(d => `<button type="button" class="pv29-dedbtn" data-pv-ded="${d}">+ ${d}</button>`).join("")}</div></div>
+
+        <button type="button" class="pv29-add" data-pv-addblock>➕ Добавить блок</button>
+      </div>
+
+      <div class="pv29-card">
+        <div class="pv29-blockshead">Блоки (${blocks.length})</div>
+        ${blocks.length ? blocks.map((b, i) => `<div class="pv29-blockitem"><div class="pv29-blocktop"><span>${esc(blockSummary(b))}</span><button type="button" class="pv29-del" data-pv-delblock="${i}">✕</button></div>${b.dedicated || n(b.warmFloor) && postsOf(b) === n(b.warmFloor) ? "" : frameViz(b, {})}</div>`).join("") : `<div class="pv29-hint">Пока нет блоков.</div>`}
+      </div>
+
+      <div class="pv29-card">
+        <div class="pv29-blockshead">Черновик · по материалам</div>
+        ${matRows}
+        <div class="pv29-drafthead">Позиции (${items.length})</div>
+        ${rows}
+        <div class="pv29-total"><span>Итого по ценам:</span><b>${money(total)}</b></div>
+        <div class="pv29-actions"><button type="button" class="pv29-est" data-pv-estimate>➕ В смету (предварительную)</button><button type="button" class="pv29-clear" data-pv-clear>Очистить</button></div>
+      </div>
     </div>`;
     if (dbModal.open) renderDbModal();
   }
@@ -175,9 +200,10 @@
   function applyBuilderChange() { save(); render(); }
 
   function addBlock() {
+    if (postsOf(builder) > MAX_POSTS) { toast("Максимум " + MAX_POSTS + " постов в блоке"); return; }
     const b = { material: builder.material, route: builder.route, height: clampH(builder.height) };
     let any = false;
-    ["sockets", "sw1", "sw2", "sw3", "pass", "cross", "tv", "internet"].forEach(k => { if (n(builder[k]) > 0) { b[k] = n(builder[k]); any = true; } });
+    ["sockets", "sw1", "sw2", "sw3", "pass", "cross", "tv", "internet", "warmFloor"].forEach(k => { if (n(builder[k]) > 0) { b[k] = n(builder[k]); any = true; } });
     if (n(builder.pass) > 0) b.passKeys = n(builder.passKeys, 1);
     if (n(builder.cross) > 0) b.crossKeys = n(builder.crossKeys, 1);
     if (!any) { toast("Блок пустой — добавь механизмы"); return; }
@@ -187,11 +213,10 @@
     toast("Блок добавлен");
   }
   function addDedicated(name) {
-    const h = window.prompt(`Высота для «${name}», см:`, name === "Тёплый пол" ? "90" : name === "Плита" ? "60" : name === "Кондей" ? "220" : "110");
+    const h = window.prompt(`Высота для «${name}», см:`, name === "Плита" ? "60" : name === "Кондей" ? "220" : "110");
     if (h === null) return;
-    const b = { material: builder.material, route: builder.route, height: clampH(h) };
-    if (name === "Тёплый пол") b.warmFloor = 1; else b.dedicated = name;
-    blocks.push(b); save(); render(); toast(name + " добавлен");
+    blocks.push({ material: builder.material, route: builder.route, height: clampH(h), dedicated: name });
+    save(); render(); toast(name + " добавлен");
   }
 
   // ── цена → БД (вписать ₽) ──
@@ -266,12 +291,21 @@
     const t = e.target; if (!t || !t.closest) return;
     if (!t.closest("#ep-pool-root")) return;
     let el;
-    if (el = t.closest("[data-pv-inc]")) { builder[el.dataset.pvInc] = n(builder[el.dataset.pvInc]) + 1; return applyBuilderChange(); }
-    if (el = t.closest("[data-pv-dec]")) { const k = el.dataset.pvDec; builder[k] = Math.max(0, n(builder[k]) - 1); return applyBuilderChange(); }
+    if (el = t.closest("[data-pv-inc]")) {
+      const k = el.dataset.pvInc;
+      if (postsOf(builder) >= MAX_POSTS) { toast("Максимум " + MAX_POSTS + " постов в блоке"); return; }
+      const tgt = k === "switches" ? "sw" + n(builder.switchKeys, 1) : k;
+      builder[tgt] = n(builder[tgt]) + 1; return applyBuilderChange();
+    }
+    if (el = t.closest("[data-pv-dec]")) {
+      const k = el.dataset.pvDec;
+      const tgt = k === "switches" ? "sw" + n(builder.switchKeys, 1) : k;
+      builder[tgt] = Math.max(0, n(builder[tgt]) - 1); return applyBuilderChange();
+    }
     if (el = t.closest("[data-pv-keys]")) { builder[el.dataset.pvKeys] = n(el.dataset.val, 1); return applyBuilderChange(); }
     if (el = t.closest("[data-pv-mat]")) { builder.material = el.dataset.pvMat; return applyBuilderChange(); }
     if (el = t.closest("[data-pv-h]")) { builder.height = n(el.dataset.pvH); return applyBuilderChange(); }
-    if (el = t.closest("[data-pv-set]")) { settings[el.dataset.pvSet] = el.dataset.val; if (el.dataset.pvSet === "route") builder.route = el.dataset.val; return applyBuilderChange(); }
+    if (el = t.closest("[data-pv-set]")) { settings[el.dataset.pvSet] = el.dataset.val; if (el.dataset.pvSet === "route") builder.route = el.dataset.val; if (el.dataset.pvCollapse) folds[el.dataset.pvCollapse] = false; return applyBuilderChange(); }
     if (el = t.closest("[data-pv-ded]")) { return addDedicated(el.dataset.pvDed); }
     if (t.closest("[data-pv-addblock]")) { return addBlock(); }
     if (el = t.closest("[data-pv-delblock]")) { blocks.splice(n(el.dataset.pvDelblock), 1); save(); return render(); }
@@ -300,8 +334,10 @@
     if (t.matches("[data-pv-ceil],[data-pv-crown],[data-pv-shrink],[data-pv-shrinktype],[data-pv-dps],[data-pv-dpw],[data-pv-tpl],[data-pv-hcustom]")) render();
   }
 
+  function onToggle(e) { const d = e.target; if (d && d.dataset && d.dataset.fold && (d.dataset.fold in folds)) folds[d.dataset.fold] = !!d.open; }
+
   let bound = false;
-  function bindOnce() { if (bound) return; bound = true; document.addEventListener("click", onClick); document.addEventListener("input", onInput); document.addEventListener("change", onChange); }
+  function bindOnce() { if (bound) return; bound = true; document.addEventListener("click", onClick); document.addEventListener("input", onInput); document.addEventListener("change", onChange); document.addEventListener("toggle", onToggle, true); }
 
   // ── API ──
   function open() { bindOnce(); load(); render(); }

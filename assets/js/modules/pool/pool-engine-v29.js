@@ -251,13 +251,7 @@
     if (pDeep > 0) add("material", `Подрозетник Ø${cfg.crown} 65 мм глубокий`, pDeep, "шт");
     // распайки
     if (junctions.total > 0) add("material", `Распаечная коробка (потолок)`, junctions.total, "шт");
-    // кабель по сечениям
-    Object.keys(cable).forEach(k => {
-      if (k === "LV" || k === "warm") return;
-      add("material", `Кабель ${k}`, cable[k], "м");
-    });
-    if (cable.LV > 0) add("material", `Кабель слаботочный`, cable.LV, "м");
-    if (cable.warm > 0) add("material", `Кабель тёплый пол`, cable.warm, "м");
+    // кабель НЕ кладём в черновик (считается в result.cable для будущих расчётов материала)
     // коннекторы (ваго/гильзы/СИЗ)
     if (conn && conn.materials) {
       Object.keys(conn.materials).forEach(k => add("material", connMatName(k), conn.materials[k], "шт"));
