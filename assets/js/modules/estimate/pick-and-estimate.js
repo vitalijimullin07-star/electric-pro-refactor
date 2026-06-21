@@ -165,7 +165,21 @@
       </div>` : "";
     const _noPrice = items.filter(x => !(Number(x.price) > 0)).length;
     const _warn = _noPrice ? `<div class="ep-est-warn">⚠️ ${_noPrice} поз. без цены — впиши стоимость (или оставь до ответа поставщика)</div>` : "";
-    list.innerHTML = _warn +
+    const _hasFast = items.some(x => /площадк|стяжк|гвозд|баллон|клипс|гофра|лента монтаж/i.test(x.name || ""));
+    const _res = (window.EP && window.EP.ConsumablesUI && window.EP.ConsumablesUI.getReserve) ? window.EP.ConsumablesUI.getReserve() : 0;
+    const _resCtrl = _hasFast ? `
+      <div class="ep-est-reserve">
+        <div class="ep-est-reserve-top"><span>Запас на крепёж</span>
+          <div class="ep-est-reserve-ctl">
+            <button type="button" data-est-reserve-step="-5" aria-label="−5%">−</button>
+            <input class="ep-est-reserve-inp" data-est-reserve type="number" inputmode="numeric" value="${_res}" />
+            <span class="ep-est-reserve-pct">%</span>
+            <button type="button" data-est-reserve-step="5" aria-label="+5%">+</button>
+          </div>
+        </div>
+        <div class="ep-est-reserve-hint">Добавляется к площадкам, стяжкам, гвоздям. Пересчитывается сразу.</div>
+      </div>` : "";
+    list.innerHTML = _warn + _resCtrl +
       section("📦 Материалы", items.filter(x => x.type !== "work")) +
       section("🧰 Работа", items.filter(x => x.type === "work")) +
       `<div class="ep-est-total">Итого: <b>${money(total)}</b></div>`;
@@ -259,6 +273,7 @@
     if ((el = t.closest("[data-est-dec]"))) { const d = Draft(); if (d) { const it = d.getItems().find(x => x.id === el.dataset.estDec); if (it) { const q = (Number(it.qty) || 0) - 1; if (q <= 0) d.removeItem(it.id); else d.setQty(it.id, q); } } return; }
     if ((el = t.closest("[data-est-remove]"))) { const d = Draft(); if (d) d.removeItem(el.dataset.estRemove); return; }
     if ((el = t.closest("[data-est-card]"))) { const d = Draft(); if (d) { const it = d.getItems().find((x) => x.id === el.dataset.estCard); if (it) showItemCard(it); } return; }
+    if ((el = t.closest("[data-est-reserve-step]"))) { const cu = window.EP && window.EP.ConsumablesUI; if (cu && cu.setReserve) { const cur = cu.getReserve ? cu.getReserve() : 0; cu.setReserve(Math.max(0, cur + (Number(el.dataset.estReserveStep) || 0))); } return; }
     if ((el = t.closest("[data-est-open]"))) { if (window.EP && window.EP.Router) window.EP.Router.go("estimate"); return; }
     if ((el = t.closest("[data-est-clear]"))) { const d = Draft(); if (d && (d.count() === 0 || confirm("Очистить предварительную смету?"))) { d.clear(); renderHomeSummary(); flash("Смета очищена"); } return; }
     if ((el = t.closest("[data-est-save]"))) { flash("Черновик сохранён"); if (window.EP && window.EP.Router) window.EP.Router.go("estimate"); return; }
@@ -290,5 +305,6 @@
   document.addEventListener("change", (e) => {
     const t = e.target;
     if (t && t.hasAttribute && t.hasAttribute("data-est-price")) { const d = Draft(); if (d && d.setPrice) { d.setPrice(t.getAttribute("data-est-price"), t.value); renderHomeSummary(); } }
+    if (t && t.hasAttribute && t.hasAttribute("data-est-reserve")) { const cu = window.EP && window.EP.ConsumablesUI; if (cu && cu.setReserve) cu.setReserve(Math.max(0, Number(t.value) || 0)); }
   });
 })();

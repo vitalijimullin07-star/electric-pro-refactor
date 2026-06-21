@@ -7,7 +7,7 @@
   const getP = (o, p) => p.split(".").reduce((a, k) => (a && a[k] != null ? a[k] : undefined), o);
   function setP(o, p, val) { const ks = p.split("."); let a = o; for (let i = 0; i < ks.length - 1; i++) { if (typeof a[ks[i]] !== "object" || a[ks[i]] == null) a[ks[i]] = {}; a = a[ks[i]]; } a[ks[ks.length - 1]] = val; }
 
-  const DEF_UI = { surface: "ceil", gofra: false, depth: "small", wet: false, podrozTool: "", cableM: 0, boxes: 0, shield: 0, breezer: 0, sewer: 0, otherCounts: {}, matRows: [], material: "", logicOpen: false };
+  const DEF_UI = { surface: "ceil", gofra: false, depth: "small", wet: false, podrozTool: "", cableM: 0, boxes: 0, shield: 0, breezer: 0, sewer: 0, otherCounts: {}, matRows: [], material: "", logicOpen: false, fastenerReserve: 0 };
   let ui = null, lastItems = [];
 
   function CC() { return window.EP && window.EP.CableConsum ? window.EP.CableConsum : null; }
@@ -204,7 +204,7 @@
     if (!rows.length) rows = [{ material: (ui.matRows[0] && ui.matRows[0].material) || mats[0], sockets: 0, strobeM: 0 }];
     const crownP = poolCrownSize();
     // крепёж/буры (один раз) + коронки/диски/мешки по материалам (агрегировано)
-    let items = cc.calc({ mode: "mount", cableM: effCable(), boxes: ui.boxes, surface: ui.surface, gofra: !!ui.gofra, depth: ui.depth, wet: !!ui.wet, shield: ui.shield, breezer: ui.breezer, sewer: ui.sewer, otherCounts: ui.otherCounts, matRows: rows });
+    let items = cc.calc({ mode: "mount", cableM: effCable(), boxes: ui.boxes, surface: ui.surface, gofra: !!ui.gofra, depth: ui.depth, wet: !!ui.wet, shield: ui.shield, breezer: ui.breezer, sewer: ui.sewer, otherCounts: ui.otherCounts, matRows: rows, fastenerReserve: n(ui.fastenerReserve) });
     items = mergeItems(items, cc.calc({ mode: "materials", matRows: rows, boxes: ui.boxes, depth: ui.depth, wet: !!ui.wet, crownPodroz: crownP, crownBox: n(ui.crownBox) }));
     lastItems = items;
   }
@@ -290,5 +290,13 @@
   });
 
   window.EP = window.EP || {};
-  window.EP.ConsumablesUI = { render, calc: doCalcAdd, quickCalc };
+  // запас на крепёж — управляется из предварительной, применяется в расчёте крепежа
+  function getReserve() { try { const s = JSON.parse(localStorage.getItem(UIKEY) || "{}"); return Math.max(0, n(s.fastenerReserve)); } catch (e) { return 0; } }
+  function setReserve(pct) {
+    loadUI(); ui.fastenerReserve = Math.max(0, n(pct)); saveUI();
+    // пересчитать только из текущего состояния (без повторного подтягивания из пула), обновить крепёж в смете
+    computeItems(); pushToEstimate();
+    if (document.getElementById("ep-consum-root")) render();
+  }
+  window.EP.ConsumablesUI = { render, calc: doCalcAdd, quickCalc, getReserve, setReserve };
 })();

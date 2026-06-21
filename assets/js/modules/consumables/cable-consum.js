@@ -122,21 +122,23 @@
     if (mode === "mount" || mode === "single") {
       // гвозди/баллон/площадки/стяжки/гофра — ТОЛЬКО при поверхностном кабеле (нет кабеля → ничего этого)
       if (surfaceCable > 0) {
+        const resMul = 1 + Math.max(0, n(inp.fastenerReserve)) / 100; // запас на крепёж (до округления)
+        const sc = surfaceCable * resMul;
         let nails = 0, shots = 0;
         if (inp.surface === "floor") {
-          add("Гофра ПНД", roundUpTo(surfaceCable, L.gofraRoundM), "м");
-          add(`Лента монтажная (рулон ${L.floor.tapeRollM} м)`, Math.ceil(surfaceCable * n(L.floor.tapePerM) / n(L.floor.tapeRollM, 20)), "рулон");
-          nails += surfaceCable * n(L.floor.perM); shots += surfaceCable * n(L.floor.perM);
+          add("Гофра ПНД", roundUpTo(sc, L.gofraRoundM), "м");
+          add(`Лента монтажная (рулон ${L.floor.tapeRollM} м)`, Math.ceil(sc * n(L.floor.tapePerM) / n(L.floor.tapeRollM, 20)), "рулон");
+          nails += sc * n(L.floor.perM); shots += sc * n(L.floor.perM);
         } else if (inp.gofra) {
-          add("Гофра", roundUpTo(surfaceCable, L.gofraRoundM), "м");
-          const clips = Math.ceil(surfaceCable * n(L.gofraCeil.clips));
+          add("Гофра", roundUpTo(sc, L.gofraRoundM), "м");
+          const clips = Math.ceil(sc * n(L.gofraCeil.clips));
           add("Клипсы для гофры", clips, "шт"); nails += clips; shots += clips;
         } else {
-          add("Площадки под стяжку (прямой монтаж)", roundUpTo(surfaceCable * n(L.direct.pads), L.packs.pads), "шт");
-          add("Стяжки кабельные", roundUpTo(surfaceCable * n(L.direct.ties), L.packs.ties), "шт");
-          nails += surfaceCable * n(L.direct.perM); shots += surfaceCable * n(L.direct.perM);
+          add("Площадки под стяжку (прямой монтаж)", roundUpTo(sc * n(L.direct.pads), L.packs.pads), "шт");
+          add("Стяжки кабельные", roundUpTo(sc * n(L.direct.ties), L.packs.ties), "шт");
+          nails += sc * n(L.direct.perM); shots += sc * n(L.direct.perM);
         }
-        nails += boxes * n(L.junction.perBox); shots += boxes * n(L.junction.perBox);
+        nails += boxes * n(L.junction.perBox) * resMul; shots += boxes * n(L.junction.perBox) * resMul;
         nails = Math.ceil(nails); shots = Math.ceil(shots);
         if (nails > 0) add(`Гвозди для пистолета (упак. ${L.packs.nails})`, packCount(nails, n(L.packs.nails, 1000), n(L.packs.nailsTol)) * n(L.packs.nails, 1000), "шт");
         if (shots > 0) add(`Газовый баллон (≈${L.packs.shots} выстр.)`, packCount(shots, n(L.packs.shots, 1000), n(L.packs.shotsTol)), "баллон");

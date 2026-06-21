@@ -882,3 +882,14 @@ body[data-visual-mode="night"] .main-dashboard .card p:not(.badge){color:#cbd5e1
 .ep-card-cancel { flex: 1; padding: 12px; font: 600 13px/1 system-ui; border: 1.5px solid rgba(120,130,150,.35); background: transparent; color: var(--text,#0f172a); border-radius: 10px; cursor: pointer; }
 .ep-card-save { flex: 1; padding: 12px; font: 700 13px/1 system-ui; border: none; background: var(--accent,#7c3aed); color: #fff; border-radius: 10px; cursor: pointer; }
 .ep-cs-cable-hint { margin: -2px 0 10px; font: 500 11px/1.35 system-ui; color: var(--muted,#94a3b8); }
+
+/* ── Запас на крепёж (контрол в предварительной) ── */
+.ep-est-reserve { background: rgba(124,58,237,.06); border: 1px solid rgba(124,58,237,.2); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
+.ep-est-reserve-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ep-est-reserve-top > span { font: 700 13px/1 system-ui; color: var(--text,#0f172a); }
+.ep-est-reserve-ctl { display: flex; align-items: center; gap: 6px; }
+.ep-est-reserve-ctl button { width: 34px; height: 34px; border: 1px solid rgba(124,58,237,.35); background: var(--bg-a,#fff); color: var(--accent,#7c3aed); border-radius: 8px; font: 700 18px/1 system-ui; cursor: pointer; }
+.ep-est-reserve-inp { width: 52px; height: 34px; text-align: center; border: 1.5px solid rgba(124,58,237,.35); border-radius: 8px; font: 700 14px/1 system-ui; color: var(--text,#0f172a); background: var(--bg-a,#fff); box-sizing: border-box; }
+.ep-est-reserve-inp:focus { outline: none; border-color: var(--accent,#7c3aed); }
+.ep-est-reserve-pct { font: 700 13px/1 system-ui; color: var(--text,#0f172a); }
+.ep-est-reserve-hint { margin-top: 6px; font: 500 11px/1.35 system-ui; color: var(--muted,#94a3b8); }
