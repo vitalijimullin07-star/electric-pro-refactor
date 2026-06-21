@@ -26,6 +26,28 @@
   function num(v) { const n = typeof v === "number" ? v : parseFloat(String(v).replace(",", ".")); return isFinite(n) ? n : 0; }
   function lineId() { _seq += 1; return "ed_" + Date.now().toString(36) + "_" + _seq.toString(36); }
 
+  // ── Переопределения цены по ИМЕНИ позиции ──────────────────
+  // Заданная в карточке цена переживает повторный re-push источника
+  // (setSourceItems пересоздаёт строки с новыми id). Привязка к БД → цена актуальная.
+  const OVR_KEY = "ep_estimate_overrides_v29";
+  function ovrLoad() { try { return JSON.parse(localStorage.getItem(OVR_KEY) || "{}") || {}; } catch (e) { return {}; } }
+  function ovrSave(o) { try { localStorage.setItem(OVR_KEY, JSON.stringify(o)); } catch (e) {} }
+  function dbPriceById(id) {
+    try {
+      const db = window.EP && window.EP.Database; if (!db || !db.getItems) return null;
+      const bases = []; if (db.getActiveDb) { const a = db.getActiveDb(); if (a) bases.push(a); } if (bases.indexOf("my") < 0) bases.push("my");
+      for (let i = 0; i < bases.length; i++) { const it = (db.getItems(bases[i]) || []).find(x => x && String(x.id) === String(id) && !x.deleted); if (it) return num(it.price); }
+    } catch (e) {}
+    return null;
+  }
+  function ovrApply(line) {
+    if (!line || !line.name) return line;
+    const o = ovrLoad(); const ovr = o[line.name]; if (!ovr) return line;
+    let p = num(ovr.price); if (ovr.dbItemId) { const dp = dbPriceById(ovr.dbItemId); if (dp != null) p = dp; }
+    line.price = p; return line;
+  }
+  function rememberOverride(name, price, dbItemId) { if (!name) return; const o = ovrLoad(); o[String(name)] = { price: num(price), dbItemId: dbItemId || "" }; ovrSave(o); }
+
   // item: { sourceId, type, name, unit, price, qty, base, source }
   function addItem(item) {
     item = item || {};
@@ -50,7 +72,7 @@
       base,
       source: item.source || "database"
     };
-    items.push(line);
+    items.push(ovrApply(line));
     write(items);
     return line;
   }
@@ -63,7 +85,7 @@
     if (it) { it.qty = num(qty); write(items); }
     return it || null;
   }
-  function setPrice(id, price) { const items = read(); const it = items.find((x) => x.id === id); if (it) { it.price = num(price); write(items); } return it || null; }
+  function setPrice(id, price, dbItemId) { const items = read(); const it = items.find((x) => x.id === id); if (it) { it.price = num(price); write(items); rememberOverride(it.name, price, dbItemId); } return it || null; }
   function clear() { write([]); }
   function count() { return read().length; }
   function total() { return read().reduce((s, x) => s + num(x.price) * num(x.qty), 0); }
@@ -84,6 +106,7 @@
       base: it.base || "",
       source: source
     })).filter((x) => x.name);
+    add.forEach(ovrApply);
     write(kept.concat(add));
     return add.length;
   }

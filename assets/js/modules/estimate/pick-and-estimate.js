@@ -155,7 +155,7 @@
         <div class="ep-est-sec-h">${title} · ${money(sub(arr))}</div>
         ${arr.map(x => `
           <div class="ep-est-row${(Number(x.price) > 0) ? '' : ' noprice'}">
-            <div class="ep-est-name">${esc(x.name)}${x.unit ? ` <span class="ep-est-unit">${esc(x.unit)}</span>` : ""}</div>
+            <div class="ep-est-name ep-est-card" data-est-card="${esc(x.id)}" role="button" tabindex="0">${esc(x.name)}${x.unit ? ` <span class="ep-est-unit">${esc(x.unit)}</span>` : ""}</div>
             <div class="ep-est-qty">
               <button type="button" data-est-dec="${esc(x.id)}">−</button><b>${esc(x.qty)}</b><button type="button" data-est-inc="${esc(x.id)}">+</button>
             </div>
@@ -169,6 +169,78 @@
       section("📦 Материалы", items.filter(x => x.type !== "work")) +
       section("🧰 Работа", items.filter(x => x.type === "work")) +
       `<div class="ep-est-total">Итого: <b>${money(total)}</b></div>`;
+  }
+
+  /* ---------- карточка позиции (клик по имени в предварительной) ---------- */
+  function cardNum(v) { const n = parseFloat(String(v == null ? "" : v).replace(",", ".")); return isFinite(n) ? n : 0; }
+  function cardKeywords(name) {
+    const w = String(name || "").trim().split(/\s+/);
+    for (let i = 0; i < w.length; i++) { const t = w[i].replace(/[^A-Za-zА-Яа-яЁё]/g, ""); if (t.length >= 3) return t.toLowerCase(); }
+    return String(w[0] || "").toLowerCase();
+  }
+  function cardDbByType(type) { const db = DB(); return (db && db.getItemsByType) ? (db.getItemsByType(type, activeBase()) || []) : []; }
+  function showItemCard(item) {
+    let curPrice = Number(item.price) > 0 ? String(item.price) : "";
+    let linkedId = "";
+    let q = cardKeywords(item.name);
+    let dbOpen = false;
+    const ov = document.createElement("div");
+    ov.className = "ep-card-ov";
+    document.body.appendChild(ov);
+    function dbList() {
+      let arr = cardDbByType(item.type);
+      if (!DB() || !DB().getItemsByType) return `<div class="ep-card-empty">База недоступна</div>`;
+      const qq = String(q || "").trim().toLowerCase();
+      if (qq) arr = arr.filter((x) => String(x.name || "").toLowerCase().includes(qq));
+      if (!arr.length) return `<div class="ep-card-empty">Ничего не найдено${qq ? ` по «${esc(q)}»` : ""}. Очисти поиск, чтобы видеть всё.</div>`;
+      return arr.slice(0, 50).map((x) => `<button type="button" class="ep-card-dbrow${String(x.id) === String(linkedId) ? " is-sel" : ""}" data-card-pick="${esc(x.id)}"><span class="ep-card-dbname">${esc(x.name)}</span><span class="ep-card-dbprice">${money(x.price)}${x.unit ? ` <i>${esc(x.unit)}</i>` : ""}</span></button>`).join("");
+    }
+    function draw() {
+      ov.innerHTML = `
+        <div class="ep-card" role="dialog" aria-modal="true">
+          <div class="ep-card-head"><b>Карточка позиции</b><button type="button" class="ep-card-x" data-card-close aria-label="Закрыть">✕</button></div>
+          <div class="ep-card-body">
+            <div class="ep-card-name">${esc(item.name)}</div>
+            <div class="ep-card-tags">
+              <span class="ep-card-tag ${item.type === "work" ? "is-work" : "is-mat"}">${item.type === "work" ? "🧰 Работа" : "📦 Материал"}</span>
+              <span class="ep-card-tag">${esc(item.qty)} ${esc(item.unit || "шт")}</span>
+            </div>
+            <label class="ep-card-pricelab">Цена за единицу, ₽
+              <input class="ep-card-price" type="number" inputmode="decimal" value="${curPrice === "" ? "" : esc(curPrice)}" placeholder="0" />
+            </label>
+            ${linkedId ? `<div class="ep-card-linked">✓ Привязано к позиции базы — цена обновляется автоматически</div>` : ""}
+            <button type="button" class="ep-card-dbtoggle" data-card-dbtoggle>${dbOpen ? "▲ Скрыть базу" : "🔎 Выбрать цену из базы"}</button>
+            ${dbOpen ? `<div class="ep-card-db"><input class="ep-card-search" data-card-search value="${esc(q)}" placeholder="Поиск в базе…" /><div class="ep-card-dblist">${dbList()}</div></div>` : ""}
+          </div>
+          <div class="ep-card-foot">
+            <button type="button" class="ep-card-cancel" data-card-close>Закрыть</button>
+            <button type="button" class="ep-card-save" data-card-save>Сохранить</button>
+          </div>
+        </div>`;
+    }
+    function close() { ov.remove(); }
+    ov.addEventListener("click", (e) => {
+      const c = (sel) => e.target.closest(sel); let pk;
+      if (e.target === ov || c("[data-card-close]")) { close(); return; }
+      if (c("[data-card-dbtoggle]")) { dbOpen = !dbOpen; draw(); return; }
+      if ((pk = c("[data-card-pick]"))) {
+        const found = cardDbByType(item.type).find((x) => String(x.id) === String(pk.dataset.cardPick));
+        if (found) { curPrice = String(found.price); linkedId = String(found.id); }
+        draw(); return;
+      }
+      if (c("[data-card-save]")) {
+        const inp = ov.querySelector(".ep-card-price"); const val = inp ? cardNum(inp.value) : cardNum(curPrice);
+        const d = Draft(); if (d && d.setPrice) d.setPrice(item.id, val, linkedId);
+        close(); renderHomeSummary(); flash("Цена сохранена");
+        return;
+      }
+    });
+    ov.addEventListener("input", (e) => {
+      const t = e.target;
+      if (t.classList && t.classList.contains("ep-card-price")) { curPrice = t.value; if (linkedId) { linkedId = ""; const ln = ov.querySelector(".ep-card-linked"); if (ln) ln.remove(); } return; }
+      if (t.classList && t.classList.contains("ep-card-search")) { q = t.value; const box = ov.querySelector(".ep-card-dblist"); if (box) box.innerHTML = dbList(); return; }
+    });
+    draw();
   }
 
   /* ---------- единый делегированный клик ---------- */
@@ -186,6 +258,7 @@
     if ((el = t.closest("[data-est-inc]"))) { const d = Draft(); if (d) { const it = d.getItems().find(x => x.id === el.dataset.estInc); if (it) d.setQty(it.id, (Number(it.qty) || 0) + 1); } return; }
     if ((el = t.closest("[data-est-dec]"))) { const d = Draft(); if (d) { const it = d.getItems().find(x => x.id === el.dataset.estDec); if (it) { const q = (Number(it.qty) || 0) - 1; if (q <= 0) d.removeItem(it.id); else d.setQty(it.id, q); } } return; }
     if ((el = t.closest("[data-est-remove]"))) { const d = Draft(); if (d) d.removeItem(el.dataset.estRemove); return; }
+    if ((el = t.closest("[data-est-card]"))) { const d = Draft(); if (d) { const it = d.getItems().find((x) => x.id === el.dataset.estCard); if (it) showItemCard(it); } return; }
     if ((el = t.closest("[data-est-open]"))) { if (window.EP && window.EP.Router) window.EP.Router.go("estimate"); return; }
     if ((el = t.closest("[data-est-clear]"))) { const d = Draft(); if (d && (d.count() === 0 || confirm("Очистить предварительную смету?"))) { d.clear(); renderHomeSummary(); flash("Смета очищена"); } return; }
     if ((el = t.closest("[data-est-save]"))) { flash("Черновик сохранён"); if (window.EP && window.EP.Router) window.EP.Router.go("estimate"); return; }
