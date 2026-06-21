@@ -4,7 +4,8 @@
    Хаб документов: остальные (договор/акт/счёт/гарантия) добавляются на Этапе 7. */
 (() => {
   "use strict";
-  function Draft() { return (window.EP && EP.Estimate) || null; }
+  let ctx = { items: null, client: null };       // контекст из сохранённой сметы клиента (если открыто из раздела «Клиенты»)
+  function Draft() { return ctx.items ? { getItems: function () { return ctx.items; } } : ((window.EP && EP.Estimate) || null); }
   function Profile() { return (window.EP && EP.Profile) || null; }
   function money(v) { try { if (window.EPCurrency && EPCurrency.format) return EPCurrency.format(v); } catch (e) {} return Number(v || 0).toFixed(2) + " \u20bd"; }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
@@ -51,6 +52,7 @@
     return parts.join(", ");
   }
   function clientInfo() {
+    if (ctx.client) { var cc = ctx.client; return { client: [cc.name, cc.phone ? ("тел. " + cc.phone) : ""].filter(Boolean).join(", "), object: cc.object || "" }; }
     const P = Profile(); const c = P ? P.getClient() : {};
     return { client: [c.name, c.phone ? ("тел. " + c.phone) : ""].filter(Boolean).join(", "), object: c.object || "" };
   }
@@ -58,8 +60,10 @@
   /* ---------- хаб ---------- */
   function renderHub() {
     const root = document.getElementById("ep-docs-root"); if (!root) return;
+    const ctxBanner = ctx.client ? `<div class="ep-docs-ctx" style="background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.3);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">📄 По сохранённой смете для <b>${esc(ctx.client.name || "")}</b> · ${ctx.items ? ctx.items.length : 0} поз.<button type="button" class="ep-clickable" data-doc-ctxclear style="margin-left:auto;background:none;border:none;color:#7c3aed;font-weight:700;cursor:pointer">✕ к общей смете</button></div>` : "";
     root.innerHTML = `
       <div class="ep-docs">
+        ${ctxBanner}
         <div class="ep-docs-grid">
           <button type="button" class="ep-doc-item on" data-doc="client-estimate">Смета заказчику<span>Клиентская смета с реквизитами, PDF</span></button>
           <button type="button" class="ep-doc-item on" data-doc="contract">Договор подряда<span>Подрядный договор: реквизиты, стоимость, сроки</span></button>
@@ -355,6 +359,7 @@ ${s.disc > 0 ? `<div class="sub-t">Подытог: <b>${money(s.subtotal)}</b></
     const t = e.target; if (!t || !t.closest) return;
     let el;
     if ((el = t.closest("[data-doc]"))) { view = el.getAttribute("data-doc"); render(); return; }
+    if (t.closest("[data-doc-ctxclear]")) { ctx = { items: null, client: null }; view = "hub"; render(); return; }
     if (t.closest("[data-doc-back]")) { view = "hub"; render(); return; }
     if ((el = t.closest("[data-doc-mat]"))) { opt.matMode = el.getAttribute("data-doc-mat") === "sum" ? "sum" : "list"; renderClientEstimate(); return; }
     if (t.closest("[data-doc-print]")) { printCurrent(); return; }
@@ -364,6 +369,18 @@ ${s.disc > 0 ? `<div class="sub-t">Подытог: <b>${money(s.subtotal)}</b></
   window.addEventListener("ep:route-loaded", (e) => {
     const r = e && e.detail && e.detail.route;
     if (r === "documents") { view = "hub"; render(); }
+    else { ctx = { items: null, client: null }; }   // ушли со страницы документов — контекст сбрасывается
   });
   window.addEventListener("ep:estimate-main-changed", () => { if (document.getElementById("ep-docs-root") && view === "client-estimate") renderClientEstimate(); });
+
+  // вызывается из раздела «Клиенты»: открыть документы по сохранённой смете конкретного клиента
+  window.EP = window.EP || {};
+  window.EP.Documents = {
+    openFor: function (o) {
+      o = o || {};
+      ctx = { items: Array.isArray(o.items) ? o.items : null, client: o.client || null };
+      view = "hub";
+      if (window.EP && window.EP.Router) window.EP.Router.go("documents");
+    }
+  };
 })();

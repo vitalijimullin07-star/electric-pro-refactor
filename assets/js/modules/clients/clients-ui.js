@@ -104,9 +104,9 @@
         '<button type="button" class="ep-cl-row" data-cl-folder="smety">' +
           '<span class="ep-cl-ico">📋</span><span class="ep-cl-main"><span class="ep-cl-name">Сметы</span>' +
           '<span class="ep-cl-sub">' + nEst + ' шт</span></span><span class="ep-cl-chev">›</span></button>' +
-        '<button type="button" class="ep-cl-row is-disabled" disabled>' +
+        '<button type="button" class="ep-cl-row" data-cl-docs="' + esc(c.id) + '">' +
           '<span class="ep-cl-ico">📄</span><span class="ep-cl-main"><span class="ep-cl-name">Документы</span>' +
-          '<span class="ep-cl-sub">скоро — договор, акт, счёт</span></span></button>' +
+          '<span class="ep-cl-sub">договор, акт, счёт, смета заказчику</span></span><span class="ep-cl-chev">›</span></button>' +
       '</div>' +
       '<button type="button" class="ep-cl-danger" data-cl-del-client="' + esc(c.id) + '">🗑 Удалить клиента</button>';
   }
@@ -149,7 +149,8 @@
         '<div class="ep-cl-total">Итого: <b>' + money(e.total) + '</b></div>' +
       '</div>' +
       '<div class="ep-cl-actions">' +
-        '<button type="button" class="ep-cl-load" data-cl-load-est="' + esc(e.id) + '">⬇️ Загрузить в предварительную</button>' +
+        '<button type="button" class="ep-cl-load" data-cl-makedocs="' + esc(e.id) + '">📄 Документы по этой смете</button>' +
+        '<button type="button" class="ep-cl-load" data-cl-load-est="' + esc(e.id) + '" style="background:transparent;color:var(--accent,#7c3aed);border:1px solid rgba(124,58,237,.4)">⬇️ Загрузить в предварительную</button>' +
         '<button type="button" class="ep-cl-danger" data-cl-del-est="' + esc(e.id) + '">🗑 Удалить</button>' +
       '</div>';
   }
@@ -163,6 +164,13 @@
     });
     d.setSourceItems("saved", list);
     return true;
+  }
+
+  // ---------- Открыть документы по сохранённой смете клиента ----------
+  function openDocsFor(client, items) {
+    if (window.EP && window.EP.Documents && window.EP.Documents.openFor) {
+      window.EP.Documents.openFor({ items: items || [], client: client ? { name: client.name, object: "", phone: "" } : null });
+    }
   }
 
   // ---------- Делегированный клик ----------
@@ -193,6 +201,14 @@
         if (window.EP && window.EP.Router) window.EP.Router.go("main");
       }
       return;
+    }
+    if ((el = t.closest("[data-cl-docs]"))) {
+      var cid = el.getAttribute("data-cl-docs"); var cc = findClient(cid); var es = listEstimates(cid);
+      openDocsFor(cc, es[0] ? es[0].items : []); return;
+    }
+    if ((el = t.closest("[data-cl-makedocs]"))) {
+      var ee = getEstimate(el.getAttribute("data-cl-makedocs"));
+      if (ee) openDocsFor(findClient(ee.clientId), ee.items); return;
     }
   });
 
