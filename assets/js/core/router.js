@@ -69,6 +69,7 @@ EP.Router = {
     try {
       const res = await fetch(EP.routes[route] + "?v=2915", { cache: "no-store" });
       target.innerHTML = await res.text();
+      try { window.scrollTo(0, 0); if (document.scrollingElement) document.scrollingElement.scrollTop = 0; } catch (e) {}
       window.dispatchEvent(new CustomEvent("ep:route-loaded", { detail: { route } }));
     } catch (err) {
       target.innerHTML = `<div class="card"><h2>Ошибка загрузки</h2><p>${route}</p></div>`;
