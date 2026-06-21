@@ -83,7 +83,24 @@
   // Пачки гвоздей/выстрелов: до (pack+tol) — одна пачка, дальше +пачка
   const packCount = (count, pack, tol) => Math.max(1, Math.ceil((count - tol) / pack));
 
-  // inputs: { mode:"single"|"mount"|"material", cableM, strobeM, sockets, boxes, surface, gofra, material, depth, wet, shield, breezer, sewer, otherCounts }
+  // подбор инструмента (коронки) по Ø — точное совпадение, иначе ближайший по размеру
+  function crownToolBySize(L, size) {
+    const cr = (L.tools || []).filter(t => t && t.kind === "crown" && !t.off);
+    if (!cr.length) return null;
+    const exact = cr.find(t => n(t.size) === n(size));
+    if (exact) return exact;
+    return cr.slice().sort((a, b) => Math.abs(n(a.size) - n(size)) - Math.abs(n(b.size) - n(size)))[0];
+  }
+  function discToolByDepth(L, depth) {
+    const ds = (L.tools || []).filter(t => t && t.kind === "disc" && !t.off);
+    if (!ds.length) return null;
+    return ds.find(t => t.depth === depth) || ds[0];
+  }
+  function podrozDefaultSize(L) { const t = (L.tools || []).find(x => x && x.fn === "podroz" && !x.off); return t ? n(t.size, 76) : 76; }
+  function boxDefaultSize(L) { const t = (L.tools || []).find(x => x && x.fn === "boxes" && !x.off); return t ? n(t.size, 82) : 82; }
+
+  // inputs: { mode:"single"|"mount"|"materials", cableM, strobeM, sockets, boxes, surface, gofra, material, depth, wet,
+  //           matRows:[{material,sockets,strobeM}], crownPodroz, crownBox, shield, breezer, sewer, otherCounts }
   function calc(inp) {
     inp = inp || {};
     const L = get();
@@ -95,61 +112,82 @@
     const wf = inp.wet ? n(L.wetFactor, 1.5) : 1;
 
     const items = [];
-    const add = (name, qty, unit) => { const q = Math.ceil(n(qty)); if (q > 0) items.push({ name, qty: q, unit: unit || "шт" }); };
+    const add = (name, qty, unit, wear) => { const q = Math.ceil(n(qty)); if (q > 0) { const it = { name, qty: q, unit: unit || "шт" }; if (wear != null) it.wear = wear; items.push(it); } };
 
-    // Крепёж + распайки + фикс — один раз (в режиме "material" пропускаем)
-    if (mode !== "material") {
-      let nails = 0, shots = 0;
-      if (inp.surface === "floor") {
-        add("Гофра ПНД", roundUpTo(surfaceCable, L.gofraRoundM), "м");
-        add(`Лента монтажная (рулон ${L.floor.tapeRollM} м)`, Math.ceil(surfaceCable * n(L.floor.tapePerM) / n(L.floor.tapeRollM, 20)), "рулон");
-        nails += surfaceCable * n(L.floor.perM); shots += surfaceCable * n(L.floor.perM);
-      } else if (inp.gofra) {
-        add("Гофра", roundUpTo(surfaceCable, L.gofraRoundM), "м");
-        const clips = Math.ceil(surfaceCable * n(L.gofraCeil.clips));
-        add("Клипсы для гофры", clips, "шт"); nails += clips; shots += clips;
-      } else {
-        add("Площадки под стяжку (прямой монтаж)", roundUpTo(surfaceCable * n(L.direct.pads), L.packs.pads), "шт");
-        add("Стяжки кабельные", roundUpTo(surfaceCable * n(L.direct.ties), L.packs.ties), "шт");
-        nails += surfaceCable * n(L.direct.perM); shots += surfaceCable * n(L.direct.perM);
+    // суммарно подрозетники/штроба (из matRows либо одиночных полей)
+    const totalSockets = (inp.matRows && inp.matRows.length) ? inp.matRows.reduce((s, r) => s + n(r.sockets), 0) : sockets;
+    const totalStrobe = (inp.matRows && inp.matRows.length) ? inp.matRows.reduce((s, r) => s + n(r.strobeM), 0) : strobeM;
+
+    // ── MOUNT: крепёж кабеля + распайки + буры (один раз) ──
+    if (mode === "mount" || mode === "single") {
+      // гвозди/баллон/площадки/стяжки/гофра — ТОЛЬКО при поверхностном кабеле (нет кабеля → ничего этого)
+      if (surfaceCable > 0) {
+        let nails = 0, shots = 0;
+        if (inp.surface === "floor") {
+          add("Гофра ПНД", roundUpTo(surfaceCable, L.gofraRoundM), "м");
+          add(`Лента монтажная (рулон ${L.floor.tapeRollM} м)`, Math.ceil(surfaceCable * n(L.floor.tapePerM) / n(L.floor.tapeRollM, 20)), "рулон");
+          nails += surfaceCable * n(L.floor.perM); shots += surfaceCable * n(L.floor.perM);
+        } else if (inp.gofra) {
+          add("Гофра", roundUpTo(surfaceCable, L.gofraRoundM), "м");
+          const clips = Math.ceil(surfaceCable * n(L.gofraCeil.clips));
+          add("Клипсы для гофры", clips, "шт"); nails += clips; shots += clips;
+        } else {
+          add("Площадки под стяжку (прямой монтаж)", roundUpTo(surfaceCable * n(L.direct.pads), L.packs.pads), "шт");
+          add("Стяжки кабельные", roundUpTo(surfaceCable * n(L.direct.ties), L.packs.ties), "шт");
+          nails += surfaceCable * n(L.direct.perM); shots += surfaceCable * n(L.direct.perM);
+        }
+        nails += boxes * n(L.junction.perBox); shots += boxes * n(L.junction.perBox);
+        nails = Math.ceil(nails); shots = Math.ceil(shots);
+        if (nails > 0) add(`Гвозди для пистолета (упак. ${L.packs.nails})`, packCount(nails, n(L.packs.nails, 1000), n(L.packs.nailsTol)) * n(L.packs.nails, 1000), "шт");
+        if (shots > 0) add(`Газовый баллон (≈${L.packs.shots} выстр.)`, packCount(shots, n(L.packs.shots, 1000), n(L.packs.shotsTol)), "баллон");
       }
-      nails += boxes * n(L.junction.perBox); shots += boxes * n(L.junction.perBox);
-      nails = Math.ceil(nails); shots = Math.ceil(shots);
-      if (nails > 0) add(`Гвозди для пистолета (упак. ${L.packs.nails})`, packCount(nails, n(L.packs.nails, 1000), n(L.packs.nailsTol)) * n(L.packs.nails, 1000), "шт");
-      if (shots > 0) add(`Газовый баллон (≈${L.packs.shots} выстр.)`, packCount(shots, n(L.packs.shots, 1000), n(L.packs.shotsTol)), "баллон");
-      add("Бур 6 мм", L.drills.d6, "шт");
-      add("Бур 8 мм", L.drills.d8, "шт");
-      add("Пика", L.pikes, "шт");
-      add("Карандаш", L.pencil, "шт");
+      // буры/пика/карандаш — для сверления подрозетников и штробления (нужны и без кабеля)
+      if (totalSockets > 0 || boxes > 0) { add("Бур 6 мм", L.drills.d6, "шт"); add("Бур 8 мм", L.drills.d8, "шт"); }
+      if (totalSockets > 0 || totalStrobe > 0) { add("Пика", L.pikes, "шт"); add("Карандаш", L.pencil, "шт"); }
+      // объектный инструмент (ниша щита / бризер / канализация / иное) — по счётчикам
+      (L.tools || []).forEach(tool => {
+        if (!tool || tool.off) return;
+        if (tool.fn === "podroz" || tool.fn === "strobe" || tool.fn === "boxes") return; // эти — в materials
+        const src = (tool.fn === "other") ? n((inp.otherCounts || {})[tool.id]) : n({ shield: inp.shield, breezer: inp.breezer, sewer: inp.sewer }[tool.fn]);
+        const life = n(tool.life && tool.life[matName], 0) * wf;
+        if (src <= 0 || life <= 0) return;
+        const pair = (tool.kind === "disc") ? n(L.discs.pair, 2) : 1;
+        add((tool.kind === "disc" ? "Диск " : "Коронка ") + tool.size + " мм" + (tool.work ? " (" + tool.work + ")" : ""), Math.ceil(src / life) * pair, "шт");
+      });
     }
 
-    // Инструмент списком (привязка к функции). podroz/strobe — на метраж материала; остальные — объектные.
-    const PERMAT = { podroz: 1, strobe: 1 };
-    const fnQty = { podroz: sockets, boxes: boxes, strobe: strobeM, shield: n(inp.shield), breezer: n(inp.breezer), sewer: n(inp.sewer) };
-    const podrozTools = (L.tools || []).filter(t => t && t.fn === "podroz" && !t.off);
-    const effPodroz = (inp.podrozTool && podrozTools.some(t => t.id === inp.podrozTool)) ? inp.podrozTool : (podrozTools[0] ? podrozTools[0].id : null);
-    (L.tools || []).forEach(tool => {
-      if (!tool || tool.off) return;
-      if (tool.fn === "podroz" && tool.id !== effPodroz) return;
-      const isPerMat = !!PERMAT[tool.fn];
-      if (mode === "mount" && isPerMat) return;
-      if (mode === "material" && !isPerMat) return;
-      let src = (tool.fn === "other") ? n((inp.otherCounts || {})[tool.id]) : n(fnQty[tool.fn]);
-      if (tool.kind === "disc" && tool.depth && inp.depth && tool.depth !== inp.depth) src = 0;
-      const life = n(tool.life && tool.life[matName], 0) * wf;
-      if (src <= 0 || life <= 0) return;
-      const pair = (tool.kind === "disc") ? n(L.discs.pair, 2) : 1;
-      const nm = (tool.kind === "disc" ? "Диск " : "Коронка ") + tool.size + " мм" + (tool.fn === "other" && tool.work ? " (" + tool.work + ")" : "");
-      add(nm, Math.ceil(src / life) * pair, "шт");
-    });
-
-    // Мешки — на метраж материала (в режиме "mount" пропускаем)
-    if (mode !== "mount") {
-      const trash = strobeM / (mat.hard ? n(L.trashBags.hardStrobeM, 10) : n(L.trashBags.softStrobeM, 20))
-                  + sockets / (mat.hard ? n(L.trashBags.hardBox, 30) : n(L.trashBags.softBox, 50));
-      add("Мешки для строительного мусора", Math.ceil(trash), "шт");
-      const vac = strobeM / n(L.vacBags.strobeM, 30) + sockets / n(L.vacBags.box, 40);
-      add("Мешки для пылесоса", Math.ceil(vac), "шт");
+    // ── MATERIALS: коронки/диски/мешки по материалам (агрегация ДО округления, износ %) ──
+    if (mode === "materials" || mode === "single") {
+      const rows = (inp.matRows && inp.matRows.length) ? inp.matRows : [{ material: matName, sockets: sockets, strobeM: strobeM }];
+      const crownP = n(inp.crownPodroz) || podrozDefaultSize(L);
+      const crownB = n(inp.crownBox) || boxDefaultSize(L);
+      const podrozCrown = crownToolBySize(L, crownP);
+      const boxCrown = (boxes > 0) ? crownToolBySize(L, crownB) : null;
+      // доминирующий материал для распаек (по числу подрозетников)
+      let domMat = rows[0] ? rows[0].material : matName, domN = -1;
+      rows.forEach(r => { if (n(r.sockets) > domN) { domN = n(r.sockets); domMat = r.material; } });
+      // доли расхода коронок по материалам
+      let fracP = 0;
+      if (podrozCrown) rows.forEach(r => { const life = n(podrozCrown.life && podrozCrown.life[r.material], 0) * wf; if (n(r.sockets) > 0 && life > 0) fracP += n(r.sockets) / life; });
+      let fracB = 0;
+      if (boxCrown) { const life = n(boxCrown.life && boxCrown.life[domMat], 0) * wf; if (life > 0) fracB = boxes / life; }
+      // вывод коронок (если Ø совпали — одна позиция)
+      if (podrozCrown && boxCrown && n(podrozCrown.size) === n(boxCrown.size)) {
+        const tot = fracP + fracB; if (tot > 0) add(`Коронка ${podrozCrown.size} мм`, Math.ceil(tot), "шт", tot / Math.ceil(tot));
+      } else {
+        if (podrozCrown && fracP > 0) add(`Коронка ${podrozCrown.size} мм`, Math.ceil(fracP), "шт", fracP / Math.ceil(fracP));
+        if (boxCrown && fracB > 0) add(`Коронка ${boxCrown.size} мм`, Math.ceil(fracB), "шт", fracB / Math.ceil(fracB));
+      }
+      // диски штробы (агрегат по материалам)
+      const discTool = discToolByDepth(L, inp.depth || "small");
+      let fracD = 0;
+      if (discTool) rows.forEach(r => { const life = n(discTool.life && discTool.life[r.material], 0) * wf; if (n(r.strobeM) > 0 && life > 0) fracD += n(r.strobeM) / life; });
+      if (discTool && fracD > 0) add(`Диск ${discTool.size} мм`, Math.ceil(fracD) * n(L.discs.pair, 2), "шт", fracD / Math.ceil(fracD));
+      // мешки (агрегат по материалам)
+      let trash = 0, vac = 0;
+      rows.forEach(r => { const mc = L.materials[r.material] || { hard: true }; trash += n(r.strobeM) / (mc.hard ? n(L.trashBags.hardStrobeM, 10) : n(L.trashBags.softStrobeM, 20)) + n(r.sockets) / (mc.hard ? n(L.trashBags.hardBox, 30) : n(L.trashBags.softBox, 50)); vac += n(r.strobeM) / n(L.vacBags.strobeM, 30) + n(r.sockets) / n(L.vacBags.box, 40); });
+      if (trash > 0) add("Мешки для строительного мусора", Math.ceil(trash), "шт");
+      if (vac > 0) add("Мешки для пылесоса", Math.ceil(vac), "шт");
     }
 
     return items;
