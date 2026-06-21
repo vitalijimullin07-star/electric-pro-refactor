@@ -193,6 +193,66 @@
     return String(w[0] || "").toLowerCase();
   }
   function cardDbByType(type) { const db = DB(); return (db && db.getItemsByType) ? (db.getItemsByType(type, activeBase()) || []) : []; }
+  function saveDraftToBase() {
+    const d = Draft(); const C = window.EP && window.EP.Clients;
+    if (!d) return;
+    if (!C || !C.saveEstimate) { flash("Раздел клиентов не загружен"); return; }
+    const items = d.getItems();
+    if (!items.length) { flash("Предварительная пуста — нечего сохранять"); return; }
+    const clients = C.listClients();
+    const today = new Date();
+    const defName = "Смета " + ("0" + today.getDate()).slice(-2) + "." + ("0" + (today.getMonth() + 1)).slice(-2) + "." + today.getFullYear();
+    const ov = document.createElement("div");
+    ov.className = "ep-card-ov";
+    document.body.appendChild(ov);
+    function close() { ov.remove(); }
+    const opts = clients.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");
+    ov.innerHTML = `
+      <div class="ep-card" role="dialog" aria-modal="true">
+        <div class="ep-card-head"><b>💾 Сохранить в базу</b><button type="button" class="ep-card-x" data-save-close aria-label="Закрыть">✕</button></div>
+        <div class="ep-card-body">
+          ${clients.length ? `<label class="ep-card-pricelab">Клиент / объект
+            <select class="ep-card-price" data-save-client>${opts}<option value="__new">➕ Новый клиент…</option></select></label>` : ``}
+          <label class="ep-card-pricelab" data-save-newwrap ${clients.length ? `style="display:none"` : ``}>Имя нового клиента
+            <input class="ep-card-price" data-save-newclient placeholder="Напр.: Иванов, ул. Ленина 5" />
+          </label>
+          <label class="ep-card-pricelab">Название сметы
+            <input class="ep-card-price" data-save-name value="${esc(defName)}" />
+          </label>
+          <div class="ep-card-linked">Позиций: ${items.length} · Итого: ${money(d.total())}</div>
+        </div>
+        <div class="ep-card-foot">
+          <button type="button" class="ep-card-cancel" data-save-close>Отмена</button>
+          <button type="button" class="ep-card-save" data-save-do>Сохранить</button>
+        </div>
+      </div>`;
+    ov.addEventListener("change", (e) => {
+      if (e.target.closest && e.target.closest("[data-save-client]")) {
+        const wrap = ov.querySelector("[data-save-newwrap]");
+        if (wrap) wrap.style.display = e.target.value === "__new" ? "" : "none";
+      }
+    });
+    ov.addEventListener("click", (e) => {
+      if (e.target === ov || (e.target.closest && e.target.closest("[data-save-close]"))) { close(); return; }
+      if (e.target.closest && e.target.closest("[data-save-do]")) {
+        const nameEl = ov.querySelector("[data-save-name]");
+        const name = nameEl && nameEl.value.trim() ? nameEl.value.trim() : defName;
+        const clientSel = ov.querySelector("[data-save-client]");
+        const newEl = ov.querySelector("[data-save-newclient]");
+        let clientId = "";
+        if (!clients.length || (clientSel && clientSel.value === "__new")) {
+          const nm = newEl ? newEl.value.trim() : "";
+          if (!nm) { flash("Введи имя клиента"); return; }
+          const c = C.addClient(nm); clientId = c ? c.id : "";
+        } else if (clientSel) { clientId = clientSel.value; }
+        if (!clientId) { flash("Выбери клиента"); return; }
+        C.saveEstimate({ clientId: clientId, name: name, items: d.getItems(), total: d.total() });
+        close();
+        flash("Сохранено в базу ✓");
+      }
+    });
+  }
+
   function showItemCard(item) {
     let curPrice = Number(item.price) > 0 ? String(item.price) : "";
     let linkedId = "";
@@ -320,6 +380,7 @@
     if ((el = t.closest("[data-est-card]"))) { const d = Draft(); if (d) { const it = d.getItems().find((x) => x.id === el.dataset.estCard); if (it) showItemCard(it); } return; }
     if ((el = t.closest("[data-est-reserve-step]"))) { const cu = window.EP && window.EP.ConsumablesUI; if (cu && cu.setReserve) { const cur = cu.getReserve ? cu.getReserve() : 0; cu.setReserve(Math.max(0, cur + (Number(el.dataset.estReserveStep) || 0))); } return; }
     if ((el = t.closest("[data-est-genworks]"))) { const cnt = genWorksFromDraft(); flash(cnt ? ("Добавлено работ из материалов: " + cnt) : "Подходящих работ в базе не нашлось"); return; }
+    if ((el = t.closest("[data-est-savebase]"))) { saveDraftToBase(); return; }
     if ((el = t.closest("[data-est-open]"))) { if (window.EP && window.EP.Router) window.EP.Router.go("estimate"); return; }
     if ((el = t.closest("[data-est-clear]"))) { const d = Draft(); if (d && (d.count() === 0 || confirm("Очистить предварительную смету?"))) { d.clear(); renderHomeSummary(); flash("Смета очищена"); } return; }
     if ((el = t.closest("[data-est-save]"))) { flash("Черновик сохранён"); if (window.EP && window.EP.Router) window.EP.Router.go("estimate"); return; }

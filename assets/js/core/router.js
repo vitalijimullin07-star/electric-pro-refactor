@@ -7,6 +7,7 @@ EP.routes = {
   settings: "pages/settings.html",
   subscription: "pages/subscription.html",
   database: "pages/database.html",
+  clients: "pages/clients.html",
   materials: "pages/materials.html",
   work: "pages/work.html",
   shield: "pages/shield.html",
@@ -67,7 +68,7 @@ EP.Router = {
     window.dispatchEvent(new CustomEvent("ep:route-loading", { detail: { route } }));
 
     try {
-      const res = await fetch(EP.routes[route] + "?v=2992", { cache: "no-store" });
+      const res = await fetch(EP.routes[route] + "?v=2993", { cache: "no-store" });
       target.innerHTML = await res.text();
       try { window.scrollTo(0, 0); if (document.scrollingElement) document.scrollingElement.scrollTop = 0; } catch (e) {}
       window.dispatchEvent(new CustomEvent("ep:route-loaded", { detail: { route } }));
