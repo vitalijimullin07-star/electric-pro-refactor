@@ -257,6 +257,51 @@
     draw();
   }
 
+  /* ---------- генератор работ из материалов (универсально, по активной БД) ---------- */
+  function cableSection(name) { const m = String(name || "").match(/[x×хХ*]\s*(\d+(?:[.,]\d+)?)/i); return m ? parseFloat(m[1].replace(",", ".")) : 0; }
+  function pickCableWork(cand, matName) {
+    const ukl = cand.filter(w => /укладк/i.test(w.name || "")); const pool = ukl.length ? ukl : cand;
+    const sec = cableSection(matName); let p = null;
+    if (sec && sec <= 4) p = pool.find(w => /до\s*4/i.test(w.name || ""));
+    else if (sec && sec <= 10) p = pool.find(w => /6\s*мм|10\s*мм/i.test(w.name || ""));
+    else if (sec > 10) p = pool.find(w => /16/i.test(w.name || ""));
+    return p || pool.find(w => /до\s*4/i.test(w.name || "")) || pool[0] || null;
+  }
+  // правила: какой материал → какую работу искать в БД (по ключевым словам, не по точному имени)
+  // ВНИМАНИЕ: \w в JS не матчит кириллицу — используем .{0,N}
+  const WORK_RULES = [
+    { matchMat: n => /(кабель|ввг|nym|пвс|кввг|сип|пунп)/i.test(n) && !/(стяжк|канал|лоток|короб|гофр|наконечник|маркир|клемм|гильз|хомут)/i.test(n),
+      workKw: /укладк.{0,4}кабел|проклад.{0,4}кабел|кабел.{0,15}штраб/i, cable: true },
+    { matchMat: n => /(подрозетник|установочн.{0,6}короб)/i.test(n) && !/распред/i.test(n),
+      workKw: /монтаж\s+установочн.{0,6}короб|монтаж\s+подрозетник/i, prefer: /внутренн/i },
+    { matchMat: n => /(распа.{0,3}ч|распред.{0,12}короб)/i.test(n),
+      workKw: /монтаж\s+распред.{0,12}короб/i, prefer: /внутренн/i },
+    { matchMat: n => /(розетк|выключател|диммер|кнопк|механизм)/i.test(n) && !/(подрозетник|распа|распред|din|дин)/i.test(n),
+      workKw: /внутренн.{0,4}точк/i, prefer: /внутренн/i }
+  ];
+  function pickWork(works, rule, matName) {
+    const cand = works.filter(w => rule.workKw.test(w.name || ""));
+    if (!cand.length) return null;
+    if (rule.cable) return pickCableWork(cand, matName);
+    if (rule.prefer) { const p = cand.find(w => rule.prefer.test(w.name || "")); if (p) return p; }
+    return cand[0];
+  }
+  function genWorksFromDraft() {
+    const d = Draft(), db = DB(); if (!d || !db || !db.getItemsByType) return 0;
+    const works = db.getItemsByType("work", activeBase()) || [];
+    const mats = d.getItems().filter(x => x.type !== "work");
+    const acc = {};
+    mats.forEach(m => {
+      const rule = WORK_RULES.find(r => r.matchMat(m.name || "")); if (!rule) return;
+      const w = pickWork(works, rule, m.name); if (!w) return;
+      const q = Number(m.qty) || 0; if (q <= 0) return;
+      if (acc[w.id]) acc[w.id].qty += q; else acc[w.id] = { w: w, qty: q };
+    });
+    const list = Object.keys(acc).map(k => { const { w, qty } = acc[k]; return { sourceId: w.id, type: "work", name: w.name, unit: w.unit || "шт", price: Number(w.price) || 0, qty: qty, source: "autowork" }; });
+    d.setSourceItems("autowork", list);
+    return list.length;
+  }
+
   /* ---------- единый делегированный клик ---------- */
   document.addEventListener("click", (e) => {
     const t = e.target;
@@ -274,6 +319,7 @@
     if ((el = t.closest("[data-est-remove]"))) { const d = Draft(); if (d) d.removeItem(el.dataset.estRemove); return; }
     if ((el = t.closest("[data-est-card]"))) { const d = Draft(); if (d) { const it = d.getItems().find((x) => x.id === el.dataset.estCard); if (it) showItemCard(it); } return; }
     if ((el = t.closest("[data-est-reserve-step]"))) { const cu = window.EP && window.EP.ConsumablesUI; if (cu && cu.setReserve) { const cur = cu.getReserve ? cu.getReserve() : 0; cu.setReserve(Math.max(0, cur + (Number(el.dataset.estReserveStep) || 0))); } return; }
+    if ((el = t.closest("[data-est-genworks]"))) { const cnt = genWorksFromDraft(); flash(cnt ? ("Добавлено работ из материалов: " + cnt) : "Подходящих работ в базе не нашлось"); return; }
     if ((el = t.closest("[data-est-open]"))) { if (window.EP && window.EP.Router) window.EP.Router.go("estimate"); return; }
     if ((el = t.closest("[data-est-clear]"))) { const d = Draft(); if (d && (d.count() === 0 || confirm("Очистить предварительную смету?"))) { d.clear(); renderHomeSummary(); flash("Смета очищена"); } return; }
     if ((el = t.closest("[data-est-save]"))) { flash("Черновик сохранён"); if (window.EP && window.EP.Router) window.EP.Router.go("estimate"); return; }
