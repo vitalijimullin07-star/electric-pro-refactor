@@ -881,3 +881,4 @@ body[data-visual-mode="night"] .main-dashboard .card p:not(.badge){color:#cbd5e1
 .ep-card-foot { display: flex; gap: 10px; padding: 14px 16px; border-top: 1px solid rgba(120,130,150,.18); }
 .ep-card-cancel { flex: 1; padding: 12px; font: 600 13px/1 system-ui; border: 1.5px solid rgba(120,130,150,.35); background: transparent; color: var(--text,#0f172a); border-radius: 10px; cursor: pointer; }
 .ep-card-save { flex: 1; padding: 12px; font: 700 13px/1 system-ui; border: none; background: var(--accent,#7c3aed); color: #fff; border-radius: 10px; cursor: pointer; }
+.ep-cs-cable-hint { margin: -2px 0 10px; font: 500 11px/1.35 system-ui; color: var(--muted,#94a3b8); }

@@ -12,12 +12,22 @@
 
   function CC() { return window.EP && window.EP.CableConsum ? window.EP.CableConsum : null; }
   function Draft() { return window.EP && window.EP.EstimateDraft ? window.EP.EstimateDraft : null; }
-  function loadUI() { let s = {}; try { s = JSON.parse(localStorage.getItem(UIKEY) || "{}") || {}; } catch (e) {} ui = Object.assign({}, DEF_UI, s); if (!ui.otherCounts) ui.otherCounts = {}; if (!Array.isArray(ui.matRows)) ui.matRows = []; }
+  function loadUI() { let s = {}; try { s = JSON.parse(localStorage.getItem(UIKEY) || "{}") || {}; } catch (e) {} ui = Object.assign({}, DEF_UI, s); if (!ui.otherCounts) ui.otherCounts = {}; if (!Array.isArray(ui.matRows)) ui.matRows = []; if (!ui._cm2) { ui.cableM = 0; ui._cm2 = 1; try { localStorage.setItem(UIKEY, JSON.stringify(ui)); } catch (e) {} } }
   function saveUI() { try { localStorage.setItem(UIKEY, JSON.stringify(ui)); } catch (e) {} }
 
   function cableFromEstimate() {
-    try { const d = Draft(); if (!d || !d.getItems) return 0; const re = /кабель|ввг|nym|пвс|шввп|швввп|провод|сип|ппв|кввг|ввгнг/i; let m = 0; d.getItems().forEach(it => { if (re.test(it.name || "")) m += n(it.qty); }); return Math.round(m); } catch (e) { return 0; }
+    try {
+      const d = Draft(); if (!d || !d.getItems) return 0;
+      // настоящий кабель/провод, но НЕ "стяжки кабельные", НЕ "кабель-канал", НЕ позиции самой расходки
+      const re = /(кабель|провод|ввгнг|ввг|nym|пвс|шввп|кввг|сип|ппв|пунп)/i;
+      const bad = /стяжк|канал|лоток|хомут|площадк|короб/i;
+      let m = 0;
+      d.getItems().forEach(it => { if (it.source === "consum") return; const nm = it.name || ""; if (re.test(nm) && !bad.test(nm)) m += n(it.qty); });
+      return Math.round(m);
+    } catch (e) { return 0; }
   }
+  // эффективный кабель: ручной ввод приоритетнее, иначе — из добавленного в смету кабеля
+  function effCable() { const man = n(ui.cableM); return man > 0 ? man : cableFromEstimate(); }
   function poolState() { try { const P = window.PoolV22CleanMonolith; return P && P.state ? P.state() : null; } catch (e) { return null; } }
   function poolMaterial() { const st = poolState(); return st && st.wallMaterial ? st.wallMaterial : ""; }
   function poolDraft() { try { const P = window.PoolV22CleanMonolith; if (!P || !P.draft) return []; if (P.buildDraft) P.buildDraft(); return P.draft() || []; } catch (e) { return []; } }
@@ -126,7 +136,8 @@
         </section>
 
         <section class="card ep-cs-card">
-          ${num("Кабель (всего)", "cableM", ui.cableM, "м")}
+          ${num("Кабель (всего), ручной ввод", "cableM", ui.cableM, "м")}
+          <div class="ep-cs-cable-hint">${cableFromEstimate() > 0 ? `В смете кабеля: ${cableFromEstimate()} м${n(ui.cableM) > 0 ? " (перекрыт ручным вводом выше)" : " — крепёж считается от него"}` : "Кабеля в смете нет. Крепёж (площадки/стяжки/гвозди) не считается, пока не добавишь кабель в смету или не впишешь метры вручную."}</div>
           ${num("Распайки", "boxes", ui.boxes, "шт")}
           <div class="ep-cs-field"><span class="ep-cs-lab">Подрозетники и штроба по материалам <span class="ep-cs-frompool">материал 1 — из пула</span></span>
             <div class="ep-cs-mtable">${matTable}</div>
@@ -193,7 +204,7 @@
     if (!rows.length) rows = [{ material: (ui.matRows[0] && ui.matRows[0].material) || mats[0], sockets: 0, strobeM: 0 }];
     const crownP = poolCrownSize();
     // крепёж/буры (один раз) + коронки/диски/мешки по материалам (агрегировано)
-    let items = cc.calc({ mode: "mount", cableM: ui.cableM, boxes: ui.boxes, surface: ui.surface, gofra: !!ui.gofra, depth: ui.depth, wet: !!ui.wet, shield: ui.shield, breezer: ui.breezer, sewer: ui.sewer, otherCounts: ui.otherCounts, matRows: rows });
+    let items = cc.calc({ mode: "mount", cableM: effCable(), boxes: ui.boxes, surface: ui.surface, gofra: !!ui.gofra, depth: ui.depth, wet: !!ui.wet, shield: ui.shield, breezer: ui.breezer, sewer: ui.sewer, otherCounts: ui.otherCounts, matRows: rows });
     items = mergeItems(items, cc.calc({ mode: "materials", matRows: rows, boxes: ui.boxes, depth: ui.depth, wet: !!ui.wet, crownPodroz: crownP, crownBox: n(ui.crownBox) }));
     lastItems = items;
   }

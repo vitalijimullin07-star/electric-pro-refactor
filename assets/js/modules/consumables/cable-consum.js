@@ -106,17 +106,17 @@
     const L = get();
     const mode = inp.mode || "single";
     const cableM = n(inp.cableM), strobeM = n(inp.strobeM), sockets = n(inp.sockets), boxes = n(inp.boxes);
-    const surfaceCable = Math.max(0, cableM - strobeM);
+    // суммарно подрозетники/штроба (из matRows либо одиночных полей)
+    const totalSockets = (inp.matRows && inp.matRows.length) ? inp.matRows.reduce((s, r) => s + n(r.sockets), 0) : sockets;
+    const totalStrobe = (inp.matRows && inp.matRows.length) ? inp.matRows.reduce((s, r) => s + n(r.strobeM), 0) : strobeM;
+    // поверхностный кабель = весь кабель − штроба (в штробе крепёж не нужен)
+    const surfaceCable = Math.max(0, cableM - totalStrobe);
     const matName = inp.material && L.materials[inp.material] ? inp.material : materials()[0];
     const mat = L.materials[matName] || { hard: true };
     const wf = inp.wet ? n(L.wetFactor, 1.5) : 1;
 
     const items = [];
     const add = (name, qty, unit, wear) => { const q = Math.ceil(n(qty)); if (q > 0) { const it = { name, qty: q, unit: unit || "шт" }; if (wear != null) it.wear = wear; items.push(it); } };
-
-    // суммарно подрозетники/штроба (из matRows либо одиночных полей)
-    const totalSockets = (inp.matRows && inp.matRows.length) ? inp.matRows.reduce((s, r) => s + n(r.sockets), 0) : sockets;
-    const totalStrobe = (inp.matRows && inp.matRows.length) ? inp.matRows.reduce((s, r) => s + n(r.strobeM), 0) : strobeM;
 
     // ── MOUNT: крепёж кабеля + распайки + буры (один раз) ──
     if (mode === "mount" || mode === "single") {
