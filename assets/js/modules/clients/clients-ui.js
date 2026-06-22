@@ -34,17 +34,18 @@
     var ex = arr.find(function (c) { return c.name.toLowerCase() === name.toLowerCase(); });
     if (ex) return ex;
     var c = { id: uid(), name: name, createdAt: nowTs() };
-    arr.push(c); saveJSON(CLIENTS_KEY, arr); return c;
+    arr.push(c); saveJSON(CLIENTS_KEY, arr); pushCloud(); return c;
   }
   function removeClient(id) {
     saveJSON(CLIENTS_KEY, listClients().filter(function (c) { return c.id !== id; }));
     saveJSON(EST_KEY, listEstimatesRaw().filter(function (e) { return e.clientId !== id; }));
+    pushCloud();
   }
   function listEstimatesRaw() { return loadJSON(EST_KEY); }
   function listEstimates(clientId) { return listEstimatesRaw().filter(function (e) { return e.clientId === clientId; }).sort(function (a, b) { return b.createdAt - a.createdAt; }); }
   function countEstimates(clientId) { return listEstimatesRaw().filter(function (e) { return e.clientId === clientId; }).length; }
   function getEstimate(id) { return listEstimatesRaw().find(function (e) { return e.id === id; }) || null; }
-  function removeEstimate(id) { saveJSON(EST_KEY, listEstimatesRaw().filter(function (e) { return e.id !== id; })); }
+  function removeEstimate(id) { saveJSON(EST_KEY, listEstimatesRaw().filter(function (e) { return e.id !== id; })); pushCloud(); }
   function saveEstimate(rec) {
     rec = rec || {};
     var arr = listEstimatesRaw();
@@ -56,7 +57,7 @@
       items: Array.isArray(rec.items) ? rec.items.map(function (x) { return { type: x.type, name: x.name, unit: x.unit || "шт", qty: num(x.qty), price: num(x.price) }; }) : [],
       total: num(rec.total)
     };
-    arr.push(e); saveJSON(EST_KEY, arr); return e;
+    arr.push(e); saveJSON(EST_KEY, arr); pushCloud(); return e;
   }
 
   window.EP.Clients = {
@@ -64,6 +65,53 @@
     listEstimates: listEstimates, countEstimates: countEstimates,
     getEstimate: getEstimate, removeEstimate: removeEstimate, saveEstimate: saveEstimate
   };
+
+  // ---------- Облако (Firestore, по аккаунту мастера) ----------
+  // Источник истины — localStorage (офлайн). Облако — синхронизация поверх, best-effort,
+  // НИКОГДА не роняет приложение. Пишем в drafts/{uid}/v29/bundle — эта ветка уже разрешена
+  // владельцу в правилах Firestore (менять правила не нужно).
+  function db() { try { return (window.EP && window.EP.Firebase && window.EP.Firebase.db) || null; } catch (e) { return null; } }
+  function authUid() { try { var u = window.EP && window.EP.Auth && window.EP.Auth.currentUser && window.EP.Auth.currentUser(); return u && u.uid ? u.uid : null; } catch (e) { return null; } }
+  function bundleRef() { var d = db(), u = authUid(); if (!d || !u) return null; try { return d.collection("drafts").doc(u).collection("v29").doc("bundle"); } catch (e) { return null; } }
+  function mergeById(localArr, cloudArr) {
+    var map = {};
+    (localArr || []).forEach(function (x) { if (x && x.id) map[x.id] = x; });
+    (cloudArr || []).forEach(function (x) { if (x && x.id) map[x.id] = x; }); // облако перекрывает при совпадении id
+    return Object.keys(map).map(function (k) { return map[k]; });
+  }
+  function pushCloud() {
+    var ref = bundleRef(); if (!ref) return Promise.resolve(false);
+    try {
+      return ref.set({ clients: listClients(), estimates: listEstimatesRaw(), updatedAt: Date.now() }, { merge: true }).then(function () { return true; }).catch(function () { return false; });
+    } catch (e) { return Promise.resolve(false); }
+  }
+  function pullCloud() {
+    var ref = bundleRef(); if (!ref) return Promise.resolve(false);
+    try {
+      return ref.get().then(function (snap) {
+        var data = (snap && snap.exists ? snap.data() : {}) || {};
+        var cloudClients = data.clients || [], cloudEst = data.estimates || [];
+        var localClients = listClients(), localEst = listEstimatesRaw();
+        saveJSON(CLIENTS_KEY, mergeById(localClients, cloudClients));
+        saveJSON(EST_KEY, mergeById(localEst, cloudEst));
+        // локально есть то, чего нет в облаке → отправить наверх (чтобы появилось на других телефонах)
+        var cIds = {}; cloudClients.forEach(function (x) { if (x && x.id) cIds[x.id] = 1; });
+        var eIds = {}; cloudEst.forEach(function (x) { if (x && x.id) eIds[x.id] = 1; });
+        var localOnly = localClients.some(function (x) { return x && !cIds[x.id]; }) || localEst.some(function (x) { return x && !eIds[x.id]; });
+        if (localOnly) pushCloud();
+        return true;
+      }).catch(function () { return false; });
+    } catch (e) { return Promise.resolve(false); }
+  }
+  var pulled = false;
+  function tryPull() {
+    if (pulled || !authUid()) return;
+    pulled = true;
+    pullCloud().then(function (ok) { if (ok && root()) render(); });
+  }
+  window.addEventListener("ep:auth-changed", function (e) { if (e && e.detail && e.detail.user) { pulled = false; tryPull(); } });
+  setTimeout(tryPull, 1800); // если вход уже произошёл до загрузки модуля
+  window.EP.Clients.syncNow = function () { pulled = false; tryPull(); };
 
   // ---------- Браузер (рендер в #ep-clients-root) ----------
   var view = { level: "clients", clientId: "", estimateId: "" };
@@ -91,7 +139,10 @@
       : '<div class="ep-cl-empty">Пока нет клиентов. Создай первого и сохраняй в него сметы из предварительной.</div>';
     el.innerHTML =
       '<div class="ep-cl-head"><div class="ep-cl-crumbs">👥 Клиенты</div>' +
-      '<button type="button" class="ep-cl-add" data-cl-newclient>＋ Новый клиент</button></div>' +
+      '<div style="display:flex;gap:8px">' +
+        '<button type="button" class="ep-cl-add" data-cl-sync style="background:transparent;color:var(--accent,#7c3aed);border:1px solid rgba(124,58,237,.4)">⟳ Синхр.</button>' +
+        '<button type="button" class="ep-cl-add" data-cl-newclient>＋ Новый клиент</button></div></div>' +
+      '<div class="ep-cl-synchint" style="font:500 11px/1.4 system-ui;color:var(--muted,#94a3b8);margin:-6px 0 10px">Сметы и клиенты хранятся в твоём аккаунте — на новом телефоне войди тем же логином и нажми «Синхр.».</div>' +
       '<div class="ep-cl-list">' + rows + '</div>';
   }
 
@@ -180,6 +231,14 @@
     var el;
     if ((el = t.closest("[data-cl-newclient]"))) {
       var nm = window.prompt("Имя клиента / объекта:"); if (nm && nm.trim()) { addClient(nm.trim()); render(); } return;
+    }
+    if ((el = t.closest("[data-cl-sync]"))) {
+      var loggedIn = false; try { loggedIn = !!(window.EP && window.EP.Auth && window.EP.Auth.currentUser && window.EP.Auth.currentUser()); } catch (e) {}
+      if (!loggedIn) { el.textContent = "нужен вход"; setTimeout(function () { if (root()) render(); }, 1600); return; }
+      el.textContent = "⟳ синхронизация…";
+      if (window.EP.Clients && window.EP.Clients.syncNow) window.EP.Clients.syncNow();
+      setTimeout(function () { if (root()) render(); }, 1400);
+      return;
     }
     if ((el = t.closest("[data-cl-open-client]"))) { view.level = "client"; view.clientId = el.getAttribute("data-cl-open-client"); render(); return; }
     if ((el = t.closest("[data-cl-folder]"))) { view.level = "folder"; render(); return; }

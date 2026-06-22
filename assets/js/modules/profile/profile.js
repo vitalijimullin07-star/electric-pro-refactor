@@ -27,7 +27,7 @@
     const d = db(), u = uid();
     if (!d || !u) return Promise.resolve(false);
     try {
-      return d.collection("users").doc(u).set({
+      return d.collection("drafts").doc(u).collection("v29").doc("profile").set({
         requisites: getMaster(), clientCard: getClient(), visualSettings: getVisualBlob() || null, profileUpdatedAt: Date.now()
       }, { merge: true }).then(() => true).catch(() => false);
     } catch (e) { return Promise.resolve(false); }
@@ -36,7 +36,7 @@
     const d = db(), u = uid();
     if (!d || !u) return Promise.resolve(null);
     try {
-      return d.collection("users").doc(u).get().then((snap) => {
+      return d.collection("drafts").doc(u).collection("v29").doc("profile").get().then((snap) => {
         const data = (snap && snap.exists ? snap.data() : {}) || {};
         if (data.requisites && !notEmpty(getMaster())) setMaster(data.requisites);
         if (data.clientCard && !notEmpty(getClient())) setClient(data.clientCard);
