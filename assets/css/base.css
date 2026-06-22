@@ -893,3 +893,41 @@ body[data-visual-mode="night"] .main-dashboard .card p:not(.badge){color:#cbd5e1
 .ep-est-reserve-inp:focus { outline: none; border-color: var(--accent,#7c3aed); }
 .ep-est-reserve-pct { font: 700 13px/1 system-ui; color: var(--text,#0f172a); }
 .ep-est-reserve-hint { margin-top: 6px; font: 500 11px/1.35 system-ui; color: var(--muted,#94a3b8); }
+
+/* ── Инструмент: ресурс, режимы учёта ── */
+.ep-tool-model { font: 600 12px/1 system-ui; color: var(--muted,#94a3b8); }
+.ep-tool-res { font: 500 12px/1.4 system-ui; color: var(--muted,#94a3b8); margin-top: 3px; }
+.ep-tool-bar { height: 6px; border-radius: 4px; background: rgba(255,255,255,.1); overflow: hidden; margin-top: 6px; }
+.ep-tool-bar > i { display: block; height: 100%; border-radius: 4px; }
+.ep-tool-modlab { font: 600 12px/1 system-ui; color: var(--text,#e8eef7); margin: 10px 0 6px; }
+.ep-tool-seg-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.ep-tool-seg { flex: 1; min-width: 70px; padding: 8px 6px; border-radius: 8px; border: 1px solid rgba(255,255,255,.14); background: var(--bg-a,#0f172a); color: var(--text,#e8eef7); font: 600 12px/1.1 system-ui; cursor: pointer; }
+.ep-tool-seg.on { border-color: var(--accent,#7c3aed); background: rgba(124,58,237,.18); color: #fff; }
+.ep-tool-caps { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+.ep-tool-cap { display: flex; flex-direction: column; gap: 3px; font: 500 11px/1 system-ui; color: var(--muted,#94a3b8); }
+.ep-tool-cap.full { grid-column: 1 / -1; }
+.ep-tool-cap input { padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,.14); background: var(--bg-a,#0f172a); color: var(--text,#e8eef7); }
+.ep-tool-invs { font: 500 12px/1.6 system-ui; color: var(--muted,#94a3b8); margin-top: 8px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.ep-tool-chk { display: inline-flex; align-items: center; gap: 5px; color: var(--text,#e8eef7); font: 500 13px/1 system-ui; }
+.ep-tool-reset { width: 38px; flex: none; border: 1px solid rgba(255,255,255,.18); background: var(--bg-a,#0f172a); color: var(--accent,#7c3aed); border-radius: 8px; font-size: 16px; cursor: pointer; }
+
+/* ── Инструмент: ресурс + настройка ── */
+.ep-tool-res { margin-top: 6px; }
+.ep-tool-bar { height: 7px; border-radius: 5px; background: rgba(255,255,255,.1); overflow: hidden; }
+.ep-tool-bar i { display: block; height: 100%; background: linear-gradient(90deg,#22c55e,#eab308); transition: width .3s; }
+.ep-tool-res.low .ep-tool-bar i { background: linear-gradient(90deg,#f59e0b,#ef4444); }
+.ep-tool-restxt { display: block; margin-top: 4px; font: 600 11px/1.35 system-ui; color: var(--muted,#94a3b8); }
+.ep-tool-res.low .ep-tool-restxt { color: #ef4444; }
+.ep-tool-n small { font: 500 11px/1 system-ui; color: var(--muted,#94a3b8); }
+.ep-tool-exp { border: 1px solid rgba(124,58,237,.35); background: transparent; color: var(--accent,#7c3aed); border-radius: 8px; padding: 7px 10px; font: 700 12px/1 system-ui; cursor: pointer; white-space: nowrap; }
+.ep-tool-cfg { margin-top: 10px; padding-top: 10px; border-top: 1px dashed rgba(255,255,255,.12); display: flex; flex-direction: column; gap: 8px; }
+.ep-tool-f { display: flex; align-items: center; justify-content: space-between; gap: 10px; font: 600 12px/1.2 system-ui; color: var(--text,#e8eef7); }
+.ep-tool-f span { color: var(--muted,#94a3b8); }
+.ep-tool-f select, .ep-tool-f input { flex: 0 0 auto; max-width: 58%; padding: 7px 9px; border: 1px solid rgba(255,255,255,.14); border-radius: 8px; background: var(--bg-a,#0f172a); color: var(--text,#e8eef7); font: 600 12px/1 system-ui; }
+.ep-tool-caps { background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.08); border-radius: 10px; padding: 8px 10px; }
+.ep-tool-caps-h { font: 600 11px/1.3 system-ui; color: var(--muted,#94a3b8); margin-bottom: 6px; }
+.ep-tool-cap { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 3px 0; font: 600 12px/1 system-ui; color: var(--text,#e8eef7); }
+.ep-tool-cap input { width: 90px; padding: 6px 8px; border: 1px solid rgba(255,255,255,.14); border-radius: 8px; background: var(--bg-a,#0f172a); color: var(--text,#e8eef7); text-align: right; font: 700 12px/1 system-ui; }
+.ep-tool-reset { margin-top: 4px; border: 1px solid rgba(255,255,255,.16); background: transparent; color: var(--muted,#cbd5e1); border-radius: 8px; padding: 9px; font: 600 12px/1 system-ui; cursor: pointer; }
+.ep-tool-add input[data-tool-model] { width: 100%; margin-top: 6px; }
+.ep-tool-add-r select[data-tool-newmode] { padding: 8px; border: 1px solid rgba(255,255,255,.14); border-radius: 8px; background: var(--bg-a,#0f172a); color: var(--text,#e8eef7); font: 600 12px/1 system-ui; }

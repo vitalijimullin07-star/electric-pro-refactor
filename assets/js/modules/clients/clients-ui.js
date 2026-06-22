@@ -57,7 +57,9 @@
       items: Array.isArray(rec.items) ? rec.items.map(function (x) { return { type: x.type, name: x.name, unit: x.unit || "шт", qty: num(x.qty), price: num(x.price) }; }) : [],
       total: num(rec.total)
     };
-    arr.push(e); saveJSON(EST_KEY, arr); pushCloud(); return e;
+    arr.push(e); saveJSON(EST_KEY, arr); pushCloud();
+    try { window.dispatchEvent(new CustomEvent("ep:estimate-saved", { detail: { estimate: e } })); } catch (er) {}
+    return e;
   }
 
   window.EP.Clients = {
