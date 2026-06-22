@@ -5,7 +5,7 @@
   const KEY = "ep_stock_v29";
   function Draft() { return (window.EP && EP.Estimate) || null; }
   function read() { try { return JSON.parse(localStorage.getItem(KEY) || "[]") || []; } catch (e) { return []; } }
-  function write(a) { try { localStorage.setItem(KEY, JSON.stringify(a || [])); } catch (e) {} try { window.dispatchEvent(new CustomEvent("ep:stock-changed")); } catch (e) {} }
+  function write(a) { try { localStorage.setItem(KEY, JSON.stringify(a || [])); } catch (e) {} try { window.dispatchEvent(new CustomEvent("ep:stock-changed")); } catch (e) {} syncPush(); }
   function uid() { return "s_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
   function norm(s) { return String(s == null ? "" : s).toLowerCase().replace(/ё/g, "е").replace(/[^0-9a-zа-я]+/gi, " ").trim(); }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
@@ -151,4 +151,18 @@
 
   window.addEventListener("ep:route-loaded", (e) => { const r = e && e.detail && e.detail.route; if (r === "stock") { view = "stock"; render(); } });
   window.addEventListener("ep:estimate-main-changed", () => { if (document.getElementById("ep-stock-root") && view === "deficit") renderDeficit(); });
+
+  // ---- облако (по аккаунту мастера, через общий EP.Cloud) ----
+  function syncPush() { if (window.EP && window.EP.Cloud) window.EP.Cloud.push("stock", { items: read() }); }
+  function syncPull() {
+    if (!window.EP || !window.EP.Cloud) return;
+    window.EP.Cloud.pull("stock").then(function (d) {
+      if (!d || !Array.isArray(d.items)) return;
+      write(window.EP.Cloud.mergeById(read(), d.items));
+      if (document.getElementById("ep-stock-root")) render();
+    });
+  }
+  if (window.EP && window.EP.Cloud && window.EP.Cloud.onLogin) window.EP.Cloud.onLogin(syncPull);
+  window.EP = window.EP || {};
+  window.EP.Stock = { getStock: getStock, syncPush: syncPush, syncPull: syncPull };
 })();

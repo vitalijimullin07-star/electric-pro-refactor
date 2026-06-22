@@ -15,7 +15,7 @@
 
   let st = null;
   function load() { if (st) return st; const s = read(); st = { income: s.income != null ? s.income : null, planExtra: num(s.planExtra), actuals: Array.isArray(s.actuals) ? s.actuals : [] }; return st; }
-  function save() { load(); write({ income: st.income, planExtra: st.planExtra, actuals: st.actuals }); }
+  function save() { load(); write({ income: st.income, planExtra: st.planExtra, actuals: st.actuals }); syncPush(); }
 
   function estimateTotal() { const d = Draft(); if (!d) return 0; return (d.getItems() || []).reduce((s, x) => s + num(x.price) * num(x.qty), 0); }
   function planMaterials() { const d = Draft(); if (!d) return 0; return (d.getItems() || []).filter(x => x.type === "material").reduce((s, x) => s + num(x.price) * num(x.qty), 0); }
@@ -124,4 +124,22 @@
 
   window.addEventListener("ep:route-loaded", (e) => { const r = e && e.detail && e.detail.route; if (r === "costs") render(); });
   window.addEventListener("ep:estimate-main-changed", () => { if (document.getElementById("ep-costs-root")) updateSummary(); });
+
+  // ---- облако (через общий EP.Cloud) ----
+  function syncPush() { if (window.EP && window.EP.Cloud) { load(); window.EP.Cloud.push("costs", { income: st.income, planExtra: st.planExtra, actuals: st.actuals }); } }
+  function syncPull() {
+    if (!window.EP || !window.EP.Cloud) return;
+    window.EP.Cloud.pull("costs").then(function (d) {
+      if (!d) return;
+      load();
+      st.actuals = window.EP.Cloud.mergeById(st.actuals, d.actuals || []);
+      if (st.income == null && d.income != null) st.income = d.income;
+      if (!st.planExtra && d.planExtra) st.planExtra = num(d.planExtra);
+      save();
+      if (document.getElementById("ep-costs-root")) render();
+    });
+  }
+  if (window.EP && window.EP.Cloud && window.EP.Cloud.onLogin) window.EP.Cloud.onLogin(syncPull);
+  window.EP = window.EP || {};
+  window.EP.Costs = { getData: function () { return load(); }, syncPush: syncPush, syncPull: syncPull };
 })();

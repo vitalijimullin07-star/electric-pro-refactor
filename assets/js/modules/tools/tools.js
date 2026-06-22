@@ -6,7 +6,7 @@
   const CONDS = [["new", "Новый"], ["work", "Рабочий"], ["repair", "Ремонт"], ["off", "Списан"]];
   const COND_LABEL = CONDS.reduce((a, [k, v]) => (a[k] = v, a), {});
   function read() { try { return JSON.parse(localStorage.getItem(KEY) || "[]") || []; } catch (e) { return []; } }
-  function write(a) { try { localStorage.setItem(KEY, JSON.stringify(a || [])); } catch (e) {} }
+  function write(a) { try { localStorage.setItem(KEY, JSON.stringify(a || [])); } catch (e) {} syncPush(); }
   function uid() { return "t_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
   function num(v) { const n = Number(v); return isFinite(n) ? n : 0; }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
@@ -108,4 +108,18 @@
     }
   });
   window.addEventListener("ep:route-loaded", (e) => { const r = e && e.detail && e.detail.route; if (r === "tools") render(); });
+
+  // ---- облако (через общий EP.Cloud) ----
+  function syncPush() { if (window.EP && window.EP.Cloud) window.EP.Cloud.push("tools", { items: read() }); }
+  function syncPull() {
+    if (!window.EP || !window.EP.Cloud) return;
+    window.EP.Cloud.pull("tools").then(function (d) {
+      if (!d || !Array.isArray(d.items)) return;
+      write(window.EP.Cloud.mergeById(read(), d.items));
+      if (document.getElementById("ep-tools-root")) render();
+    });
+  }
+  if (window.EP && window.EP.Cloud && window.EP.Cloud.onLogin) window.EP.Cloud.onLogin(syncPull);
+  window.EP = window.EP || {};
+  window.EP.Tools = { getTools: getTools, syncPush: syncPush, syncPull: syncPull };
 })();
