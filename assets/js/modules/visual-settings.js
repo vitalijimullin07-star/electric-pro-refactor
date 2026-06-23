@@ -42,6 +42,7 @@
     reduceMotion: false,
     perfLite: false,
     perfMode: "auto",
+    perfLevelLearned: null,
     electricPulse: false,
     soundEnabled: false,
     hapticEnabled: true,
@@ -130,6 +131,58 @@
     return isWeakDevice(); // auto
   }
 
+  /* ── Адаптивная деградация: лесенка уровней (наименьшая потеря визуала первой) ──
+     0 — всё включено
+     1 — убрать backdrop-filter (дорогой blur, минимальная потеря)
+     2 — + лёгкие тени
+     3 — + без анимаций и плоский фон (максимум скорости) */
+  const PERF_MAX = 3;
+  let perfLevel = 0;
+  function computeStartLevel() {
+    const m = settings.perfMode || "auto";
+    if (m === "rich") return 0;
+    if (m === "lite") return PERF_MAX;
+    if (settings.perfLevelLearned != null) return Math.max(0, Math.min(PERF_MAX, Number(settings.perfLevelLearned) || 0));
+    return isWeakDevice() ? 2 : 0; // auto, ещё не училось — прикидка по устройству
+  }
+  function applyPerfLevel(n) {
+    perfLevel = Math.max(0, Math.min(PERF_MAX, Number(n) || 0));
+    const b = document.body; if (!b) return;
+    b.dataset.perfLevel = String(perfLevel);
+    b.dataset.noblur = perfLevel >= 1 ? "1" : "";
+    b.dataset.flatshadow = perfLevel >= 2 ? "1" : "";
+    b.dataset.noanim = perfLevel >= 3 ? "1" : "";
+  }
+  let _monitorOn = false;
+  function startPerfMonitor() {
+    if (_monitorOn || typeof requestAnimationFrame !== "function") return;
+    _monitorOn = true;
+    const nowMs = () => (window.performance && performance.now ? performance.now() : Date.now());
+    let sampling = false, frames = 0, dropped = 0, last = 0, until = 0;
+    function frame(now) {
+      if (last) { const dt = now - last; frames++; if (dt > 34) dropped++; } // >34мс ≈ ниже 30 fps
+      last = now;
+      if (now < until) requestAnimationFrame(frame);
+      else { judge(); sampling = false; last = 0; }
+    }
+    function judge() {
+      if ((settings.perfMode || "auto") === "auto" && frames >= 18 && dropped / frames > 0.28 && perfLevel < PERF_MAX) {
+        applyPerfLevel(perfLevel + 1);
+        settings.perfLevelLearned = perfLevel;
+        save();
+      }
+      frames = 0; dropped = 0;
+    }
+    function kick(ms) {
+      until = nowMs() + (ms || 600);
+      if (!sampling) { sampling = true; frames = 0; dropped = 0; last = 0; requestAnimationFrame(frame); }
+    }
+    try {
+      window.addEventListener("scroll", () => kick(600), { passive: true, capture: true });
+      window.addEventListener("ep:route-loaded", () => kick(500));
+    } catch (e) {}
+  }
+
   function apply(value) {
     settings = normalizeValue(value || settings);
     const theme = themes.find((item) => item.id === settings.themeId) || themes[0];
@@ -162,7 +215,7 @@
       body.dataset.buttonShape = settings.buttonShape;
       body.dataset.animation = settings.animationStyle;
       body.dataset.reduceMotion = settings.reduceMotion ? "true" : "false";
-      body.dataset.perf = liteActive() ? "lite" : "normal";
+      applyPerfLevel(computeStartLevel());
       body.dataset.electricPulse = settings.electricPulse ? "true" : "false";
       body.dataset.bgStyle = settings.backgroundStyle;
       body.dataset.soundEnabled = settings.soundEnabled ? "true" : "false";
@@ -402,7 +455,7 @@
             <div class="visual-section">
               <p class="visual-section-title">Поведение интерфейса</p>
               <div class="settings-grid grid-2">
-                ${selectControl("perfModeInput", "perfMode", "Производительность", [["auto", "Авто (по устройству)"], ["lite", "Лёгкий (быстро)"], ["rich", "Красиво (стекло)"]])}
+                ${selectControl("perfModeInput", "perfMode", "Производительность", [["auto", "Авто (адаптивно)"], ["lite", "Лёгкий (быстро)"], ["rich", "Красиво (стекло)"]])}
                 ${selectControl("densityInput", "density", "Плотность", [["compact", "Компактно"], ["normal", "Обычно"], ["large", "Крупнее"]])}
                 ${selectControl("buttonShapeInput", "buttonShape", "Форма кнопок", [["soft", "Мягкая"], ["round", "Круглая"], ["pill", "Пилюля"], ["square", "Квадратнее"], ["minimal", "Минимальная"]])}
                 ${selectControl("backgroundStyleInput", "backgroundStyle", "Стиль фона", [["glass", "Стекло"], ["gradient", "Градиент"], ["blueprint", "Чертёж"], ["dark", "Тёмный"], ["light", "Светлый"], ["solid", "Сплошной"], ["minimal", "Минимальный"], ["neon", "Неон"]])}
@@ -520,6 +573,7 @@
 
   function init() {
     apply();
+    startPerfMonitor();
     window.addEventListener("ep:route-loaded", (event) => {
       if (event.detail?.route === "settings") render();
       else apply();

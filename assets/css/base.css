@@ -935,13 +935,16 @@ body[data-visual-mode="night"] .main-dashboard .card p:not(.badge){color:#cbd5e1
 /* ── Масштаб интерфейса (работает на фикс-px через zoom контейнера) ── */
 #app{zoom:var(--font-scale,1)}
 
-/* ── Лёгкий режим для слабых устройств: убираем дорогой backdrop-filter и анимации ── */
-body[data-perf="lite"] .glass,
-body[data-perf="lite"] .card,
-body[data-perf="lite"] .ep-navbar,
-body[data-perf="lite"] .ep-qty-ov{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
-body[data-perf="lite"] .card,
-body[data-perf="lite"] .glass{box-shadow:0 2px 10px rgba(0,0,0,.25)!important}
-body[data-perf="lite"] *,
-body[data-perf="lite"] *::before,
-body[data-perf="lite"] *::after{animation-duration:.001s!important;transition-duration:.001s!important}
+/* ── Адаптивная деградация: лесенка (наименьшая потеря визуала первой) ── */
+/* Уровень 1+: убрать дорогой backdrop-filter (blur) — главный выигрыш */
+body[data-noblur="1"] .glass,
+body[data-noblur="1"] .card,
+body[data-noblur="1"] .ep-navbar,
+body[data-noblur="1"] .ep-qty-ov{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+/* Уровень 2+: лёгкие тени */
+body[data-flatshadow="1"] .card,
+body[data-flatshadow="1"] .glass{box-shadow:0 2px 8px rgba(0,0,0,.22)!important}
+/* Уровень 3: без анимаций */
+body[data-noanim="1"] *,
+body[data-noanim="1"] *::before,
+body[data-noanim="1"] *::after{animation-duration:.001s!important;transition-duration:.001s!important}
