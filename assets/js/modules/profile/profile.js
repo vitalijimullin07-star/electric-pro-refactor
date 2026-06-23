@@ -40,7 +40,7 @@
         const data = (snap && snap.exists ? snap.data() : {}) || {};
         if (data.requisites && !notEmpty(getMaster())) setMaster(data.requisites);
         if (data.clientCard && !notEmpty(getClient())) setClient(data.clientCard);
-        if (opts && opts.applyVisual && data.visualSettings) setVisualBlob(data.visualSettings);
+        if (opts && opts.applyVisual && data.visualSettings && !getVisualBlob()) setVisualBlob(data.visualSettings);
         return data;
       }).catch(() => null);
     } catch (e) { return Promise.resolve(null); }

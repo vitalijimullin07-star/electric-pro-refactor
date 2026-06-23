@@ -39,6 +39,7 @@
     animationStyle: "soft",
     animationSpeed: 1,
     reduceMotion: false,
+    perfLite: false,
     electricPulse: false,
     soundEnabled: false,
     hapticEnabled: true,
@@ -72,8 +73,11 @@
 
   function save() {
     settings = normalizeValue(settings);
-    localStorage.setItem(KEY, JSON.stringify(settings));
-    localStorage.setItem(NEXT_KEY, JSON.stringify(settings));
+    try {
+      const s = JSON.stringify(settings);
+      localStorage.setItem(KEY, s);
+      localStorage.setItem(NEXT_KEY, s);
+    } catch (e) {}
   }
 
   function autoMode() {
@@ -137,6 +141,7 @@
       body.dataset.buttonShape = settings.buttonShape;
       body.dataset.animation = settings.animationStyle;
       body.dataset.reduceMotion = settings.reduceMotion ? "true" : "false";
+      body.dataset.perf = settings.perfLite ? "lite" : "normal";
       body.dataset.electricPulse = settings.electricPulse ? "true" : "false";
       body.dataset.bgStyle = settings.backgroundStyle;
       body.dataset.soundEnabled = settings.soundEnabled ? "true" : "false";
@@ -368,7 +373,7 @@
                 ${rangeControl("radiusInput", "radius", "Скругление карточек", 8, 34, 1)}
                 ${rangeControl("buttonRadiusInput", "buttonRadius", "Скругление кнопок", 6, 30, 1)}
                 ${rangeControl("blurInput", "blur", "Размытие стекла", 0, 28, 1)}
-                ${rangeControl("fontScaleInput", "fontScale", "Масштаб шрифта", 0.9, 1.16, 0.01)}
+                ${rangeControl("fontScaleInput", "fontScale", "Масштаб интерфейса", 0.85, 1.35, 0.05)}
               </div>
             </div>
 
@@ -405,6 +410,7 @@
             <div class="visual-section">
               <p class="visual-section-title">Отклик</p>
               <div class="settings-grid">
+                ${switchControl("perfLiteInput", "perfLite", "Лёгкий режим (для слабых устройств)")}
                 ${switchControl("reduceMotionInput", "reduceMotion", "Уменьшить анимации")}
                 ${switchControl("electricPulseInput", "electricPulse", "Электро-импульс на кнопках")}
                 ${switchControl("soundEnabledInput", "soundEnabled", "Звуки интерфейса")}
@@ -455,13 +461,15 @@
 
     root.querySelectorAll("[data-visual-key]").forEach((input) => {
       const handler = () => {
-        let value = input.type === "checkbox" ? input.checked : input.value;
-        if (input.type === "range") value = Number(value);
-        settings[input.dataset.visualKey] = value;
-        save();
-        apply();
-        const valueNode = root.querySelector(`[data-range-value="${input.dataset.visualKey}"]`);
-        if (valueNode) valueNode.textContent = String(value);
+        try {
+          let value = input.type === "checkbox" ? input.checked : input.value;
+          if (input.type === "range") value = Number(value);
+          settings[input.dataset.visualKey] = value;
+          save();
+          apply();
+          const valueNode = root.querySelector(`[data-range-value="${input.dataset.visualKey}"]`);
+          if (valueNode) valueNode.textContent = String(value);
+        } catch (e) {}
       };
       input.addEventListener("input", handler);
       input.addEventListener("change", handler);
