@@ -34,12 +34,14 @@
     blur: 16,
     density: "normal",
     fontScale: 1,
+    textScale: 1,
     buttonShape: "soft",
     backgroundStyle: "glass",
     animationStyle: "soft",
     animationSpeed: 1,
     reduceMotion: false,
     perfLite: false,
+    perfMode: "auto",
     electricPulse: false,
     soundEnabled: false,
     hapticEnabled: true,
@@ -110,6 +112,24 @@
     };
   }
 
+  let _weakCache = null;
+  function isWeakDevice() {
+    if (_weakCache !== null) return _weakCache;
+    try {
+      const cores = Number(navigator.hardwareConcurrency) || 8;
+      const mem = Number(navigator.deviceMemory) || 8;
+      const noBlur = !(window.CSS && CSS.supports && (CSS.supports("backdrop-filter", "blur(2px)") || CSS.supports("-webkit-backdrop-filter", "blur(2px)")));
+      _weakCache = cores <= 4 || mem <= 3 || noBlur;
+    } catch (e) { _weakCache = false; }
+    return _weakCache;
+  }
+  function liteActive() {
+    const m = settings.perfMode || "auto";
+    if (m === "lite") return true;
+    if (m === "rich") return false;
+    return isWeakDevice(); // auto
+  }
+
   function apply(value) {
     settings = normalizeValue(value || settings);
     const theme = themes.find((item) => item.id === settings.themeId) || themes[0];
@@ -130,6 +150,7 @@
     root.style.setProperty("--button-radius", `${Number(settings.buttonRadius || base.buttonRadius)}px`);
     root.style.setProperty("--blur", `${Number(settings.blur || base.blur)}px`);
     root.style.setProperty("--font-scale", String(settings.fontScale || 1));
+    root.style.setProperty("--text-scale", String(settings.textScale || 1));
     root.style.setProperty("--anim-speed", String(settings.animationSpeed || 1));
 
     const cardRgb = rgb(day.cardColor || settings.cardColor || theme.card);
@@ -141,7 +162,7 @@
       body.dataset.buttonShape = settings.buttonShape;
       body.dataset.animation = settings.animationStyle;
       body.dataset.reduceMotion = settings.reduceMotion ? "true" : "false";
-      body.dataset.perf = settings.perfLite ? "lite" : "normal";
+      body.dataset.perf = liteActive() ? "lite" : "normal";
       body.dataset.electricPulse = settings.electricPulse ? "true" : "false";
       body.dataset.bgStyle = settings.backgroundStyle;
       body.dataset.soundEnabled = settings.soundEnabled ? "true" : "false";
@@ -374,12 +395,14 @@
                 ${rangeControl("buttonRadiusInput", "buttonRadius", "Скругление кнопок", 6, 30, 1)}
                 ${rangeControl("blurInput", "blur", "Размытие стекла", 0, 28, 1)}
                 ${rangeControl("fontScaleInput", "fontScale", "Масштаб интерфейса", 0.85, 1.35, 0.05)}
+                ${rangeControl("textScaleInput", "textScale", "Размер текста", 0.8, 1.4, 0.05)}
               </div>
             </div>
 
             <div class="visual-section">
               <p class="visual-section-title">Поведение интерфейса</p>
               <div class="settings-grid grid-2">
+                ${selectControl("perfModeInput", "perfMode", "Производительность", [["auto", "Авто (по устройству)"], ["lite", "Лёгкий (быстро)"], ["rich", "Красиво (стекло)"]])}
                 ${selectControl("densityInput", "density", "Плотность", [["compact", "Компактно"], ["normal", "Обычно"], ["large", "Крупнее"]])}
                 ${selectControl("buttonShapeInput", "buttonShape", "Форма кнопок", [["soft", "Мягкая"], ["round", "Круглая"], ["pill", "Пилюля"], ["square", "Квадратнее"], ["minimal", "Минимальная"]])}
                 ${selectControl("backgroundStyleInput", "backgroundStyle", "Стиль фона", [["glass", "Стекло"], ["gradient", "Градиент"], ["blueprint", "Чертёж"], ["dark", "Тёмный"], ["light", "Светлый"], ["solid", "Сплошной"], ["minimal", "Минимальный"], ["neon", "Неон"]])}
@@ -410,7 +433,6 @@
             <div class="visual-section">
               <p class="visual-section-title">Отклик</p>
               <div class="settings-grid">
-                ${switchControl("perfLiteInput", "perfLite", "Лёгкий режим (для слабых устройств)")}
                 ${switchControl("reduceMotionInput", "reduceMotion", "Уменьшить анимации")}
                 ${switchControl("electricPulseInput", "electricPulse", "Электро-импульс на кнопках")}
                 ${switchControl("soundEnabledInput", "soundEnabled", "Звуки интерфейса")}

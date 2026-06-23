@@ -42,10 +42,15 @@
     const u = uid(), r = ref(u); if (!r) return;
     st.busy = true;
     try {
-      const snap = await r.get();
-      const cloud = snap.exists ? (snap.data() || {}).settings : null;
-      if (cloud && Object.keys(cloud).length) { applyDownloaded(cloud); }
-      else if (hasLocal()) { await upload("seed-local"); }
+      if (hasLocal()) {
+        // на устройстве уже есть свои настройки — они главнее. Облако НЕ применяем
+        // (иначе затрёт локальные), а наоборот отправляем локальные наверх.
+        await upload("local-wins");
+      } else {
+        const snap = await r.get();
+        const cloud = snap.exists ? (snap.data() || {}).settings : null;
+        if (cloud && Object.keys(cloud).length) applyDownloaded(cloud); // только на чистом устройстве
+      }
     } catch (e) { if (!(e && e.code === "permission-denied")) console.warn("[visual-sync-download]", e && (e.code || e.message)); }
     finally { st.busy = false; }
   }
