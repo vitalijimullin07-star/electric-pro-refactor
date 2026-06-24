@@ -14,8 +14,30 @@
     ["carbon", "Карбон", "#020617", "#111827", "#1e293b", "#94a3b8", "#f8fafc", "#cbd5e1", "#020617"],
     ["ice", "Лёд", "#0f172a", "#1e3a8a", "#0369a1", "#67e8f9", "#f0f9ff", "#bae6fd", "#0f172a"],
     ["rose", "Роза", "#2a0f1f", "#831843", "#9f1239", "#fb7185", "#fff1f2", "#fecdd3", "#2a0f1f"],
-    ["mono", "Моно", "#111111", "#262626", "#404040", "#ffffff", "#ffffff", "#d4d4d4", "#171717"]
+    ["mono", "Моно", "#111111", "#262626", "#404040", "#ffffff", "#ffffff", "#d4d4d4", "#171717"],
+    ["midnight", "Полночь", "#0a0f1f", "#111a33", "#1e2a4a", "#3b82f6", "#f8fafc", "#9aa6c0", "#0d1428"],
+    ["sakura", "Сакура", "#1a0f17", "#2d1521", "#3f1d2e", "#f472b6", "#fdf2f8", "#d8b4c8", "#1a0f17"],
+    ["pine", "Хвоя", "#0a1410", "#0f2419", "#16301f", "#34d399", "#ecfdf5", "#9fc4b0", "#0a1410"],
+    ["amber", "Янтарь", "#1a1206", "#2d1f0a", "#3f2d10", "#f59e0b", "#fffbeb", "#d8c4a0", "#1a1206"],
+    ["slate", "Сланец", "#0f1419", "#1a2129", "#252f3a", "#64748b", "#f1f5f9", "#94a3b8", "#131922"],
+    ["cyber", "Кибер", "#0a0a12", "#14081f", "#1f0a2e", "#d946ef", "#faf5ff", "#c4a0d8", "#0a0a12"],
+    ["mocha", "Мокко", "#15100c", "#241a12", "#33271a", "#d2a679", "#faf5f0", "#c8b49a", "#15100c"],
+    ["arctic", "Арктика", "#06101c", "#0c1f33", "#103047", "#67e8f9", "#f0f9ff", "#a0c4d8", "#06101c"],
+    ["gold", "Золото", "#0f0f0a", "#1a1a10", "#262616", "#eab308", "#fffef0", "#cfc89a", "#0f0f0a"],
+    ["ruby", "Рубин", "#1a0a0f", "#2d0f17", "#3f1520", "#fb7185", "#fff1f3", "#d8a0aa", "#1a0a0f"],
+    ["glass-indigo", "Индиго-стекло ◆", "#0b1026", "#161d3d", "#232a52", "#818cf8", "#f8fafc", "#a5b0d0", "#10162e"],
+    ["aurora-glow", "Аврора-глоу ◆", "#04140f", "#06241c", "#0a3528", "#2dd4bf", "#ecfffb", "#9fd8cc", "#06140f"],
+    ["paper-light", "Бумага ▭", "#eef1f6", "#e3e8f0", "#d7dde8", "#2563eb", "#0f172a", "#475569", "#ffffff"],
+    ["graphite-flat", "Графит-флэт ▭", "#15171c", "#1d2026", "#262a31", "#f59e0b", "#f3f4f6", "#9ca3af", "#1a1d23"]
   ].map(([id, name, bgA, bgB, bgC, accent, text, muted, card]) => ({ id, name, bgA, bgB, bgC, accent, text, muted, card }));
+
+  // Пресеты эффектов для дизайнерских тем: ◆ для мощных (насыщенное стекло), ▭ для слабых (плоско/быстро)
+  const themePresets = {
+    "glass-indigo":  { mode: "night", perfMode: "rich", backgroundStyle: "glass", blur: 26, opacity: 0.58, radius: 24, buttonRadius: 16, animationStyle: "premium", animationSpeed: 1.1 },
+    "aurora-glow":   { mode: "night", perfMode: "rich", backgroundStyle: "glass", blur: 24, opacity: 0.60, radius: 22, buttonRadius: 15, animationStyle: "premium", animationSpeed: 1.1 },
+    "paper-light":   { mode: "day",   perfMode: "lite", backgroundStyle: "light", blur: 0,  opacity: 0.96, radius: 16, buttonRadius: 12, animationStyle: "minimal", animationSpeed: 0.7 },
+    "graphite-flat": { mode: "night", perfMode: "lite", backgroundStyle: "solid", blur: 0,  opacity: 0.98, radius: 14, buttonRadius: 12, animationStyle: "minimal", animationSpeed: 0.7 }
+  };
 
   const base = {
     themeId: "aurora",
@@ -35,6 +57,7 @@
     density: "normal",
     fontScale: 1,
     textScale: 1,
+    cardTextScale: 1,
     buttonShape: "soft",
     backgroundStyle: "glass",
     animationStyle: "soft",
@@ -204,6 +227,7 @@
     root.style.setProperty("--blur", `${Number(settings.blur || base.blur)}px`);
     root.style.setProperty("--font-scale", String(settings.fontScale || 1));
     root.style.setProperty("--text-scale", String(settings.textScale || 1));
+    root.style.setProperty("--card-text-scale", String(settings.cardTextScale || 1));
     root.style.setProperty("--anim-speed", String(settings.animationSpeed || 1));
 
     const cardRgb = rgb(day.cardColor || settings.cardColor || theme.card);
@@ -282,6 +306,11 @@
     return `<label>${label}<select id="${id}" data-visual-key="${key}">${items}</select></label>`;
   }
 
+  function setThemeColors(id) {
+    const t = themes.find((x) => x.id === id) || themes[0];
+    Object.assign(settings, { themeId: t.id, accent: t.accent, buttonColor: t.accent, backgroundColor: t.bgA, cardColor: t.card, textColor: t.text, mutedColor: t.muted });
+  }
+
   function applyProfile(profile) {
     settings.profile = profile;
 
@@ -351,6 +380,23 @@
         mutedColor: "#334155",
         backgroundStyle: "light"
       });
+    }
+
+    if (profile === "flagship") { // мощные: максимум стекла
+      setThemeColors("midnight");
+      Object.assign(settings, { mode: "night", perfMode: "rich", backgroundStyle: "glass", blur: 20, opacity: 0.68, buttonShape: "soft", animationStyle: "premium", animationSpeed: 1.1, radius: 24, buttonRadius: 16, fontScale: 1, textScale: 1, cardTextScale: 1, reduceMotion: false, electricPulse: false, perfLevelLearned: null });
+    }
+    if (profile === "neonpro") { // мощные: неон
+      setThemeColors("cyber");
+      Object.assign(settings, { mode: "night", perfMode: "rich", backgroundStyle: "neon", blur: 18, opacity: 0.66, buttonShape: "pill", animationStyle: "spring", animationSpeed: 1.0, radius: 20, buttonRadius: 18, electricPulse: true, reduceMotion: false, perfLevelLearned: null });
+    }
+    if (profile === "paper") { // слабые: чистая «бумага»
+      setThemeColors("mono");
+      Object.assign(settings, { mode: "day", perfMode: "lite", backgroundStyle: "light", blur: 0, opacity: 0.95, buttonShape: "round", animationStyle: "minimal", animationSpeed: 0.6, radius: 16, textColor: "#0f172a", mutedColor: "#475569", cardColor: "#ffffff", reduceMotion: true, electricPulse: false });
+    }
+    if (profile === "minimal") { // слабые: плоский тёмный минимал
+      setThemeColors("slate");
+      Object.assign(settings, { mode: "night", perfMode: "lite", backgroundStyle: "solid", blur: 0, opacity: 0.96, buttonShape: "minimal", animationStyle: "off", animationSpeed: 0.6, radius: 14, reduceMotion: true, electricPulse: false });
     }
 
     commit();
@@ -449,6 +495,7 @@
                 ${rangeControl("blurInput", "blur", "Размытие стекла", 0, 28, 1)}
                 ${rangeControl("fontScaleInput", "fontScale", "Масштаб интерфейса", 0.85, 1.35, 0.05)}
                 ${rangeControl("textScaleInput", "textScale", "Размер текста", 0.8, 1.4, 0.05)}
+                ${rangeControl("cardTextScaleInput", "cardTextScale", "Размер текста в карточках", 0.8, 1.4, 0.05)}
               </div>
             </div>
 
@@ -519,6 +566,8 @@
           textColor: theme.text,
           mutedColor: theme.muted
         });
+        const preset = themePresets[theme.id];
+        if (preset) settings = Object.assign({}, settings, preset);
         commit();
       });
     });
