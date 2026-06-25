@@ -32,7 +32,8 @@
     t = t || {};
     return Object.assign({
       id: uid(), name: "", model: "", price: 0, buyDate: "", condition: "work", location: "",
-      resMode: "period", workKind: "", unit: "м", cap: {}, hoursTotal: 0, used: 0, lifeMonths: 36, doneEstimates: []
+      resMode: "period", workKind: "", unit: "м", cap: {}, hoursTotal: 0, used: 0, lifeMonths: 36, doneEstimates: [],
+      boundWorks: [], capTotal: 0, unitName: ""
     }, t);
   }
 
@@ -44,12 +45,31 @@
   }
   function setField(id, key, val) {
     const a = read(); const it = a.find(x => x.id === id); if (!it) return;
-    if (key === "price" || key === "lifeMonths" || key === "hoursTotal" || key === "used") it[key] = num(val);
+    if (["price", "lifeMonths", "hoursTotal", "used", "capTotal"].indexOf(key) >= 0) it[key] = num(val);
     else it[key] = val;
     if (key === "workKind") it.unit = (val === "подрозетник") ? "шт" : "м";
     write(a);
   }
   function setCap(id, mat, val) { const a = read(); const it = a.find(x => x.id === id); if (!it) return; it.cap = it.cap || {}; it.cap[mat] = num(val); write(a); }
+  // ---- привязка к работам ----
+  function dbWorks() {
+    try { if (window.EP && EP.Database && EP.Database.getItemsByType) return (EP.Database.getItemsByType("work") || []).map(w => String(w.name || "").trim()).filter(Boolean); } catch (e) {}
+    return [];
+  }
+  function bindWork(id, name) {
+    name = String(name || "").trim(); if (!name) return;
+    const a = read(); const it = a.find(x => x.id === id); if (!it) return;
+    it.boundWorks = it.boundWorks || [];
+    const low = name.toLowerCase(); const i = it.boundWorks.findIndex(b => String(b).toLowerCase() === low);
+    if (i >= 0) it.boundWorks.splice(i, 1); else it.boundWorks.push(name);
+    write(a);
+  }
+  function unbindWork(id, name) {
+    const a = read(); const it = a.find(x => x.id === id); if (!it || !it.boundWorks) return;
+    const low = String(name || "").toLowerCase();
+    it.boundWorks = it.boundWorks.filter(b => String(b).toLowerCase() !== low);
+    write(a);
+  }
   function resetResource(id) { const a = read(); const it = a.find(x => x.id === id); if (it) { it.used = 0; it.doneEstimates = []; write(a); } }
   function removeTool(id) { write(read().filter(x => x.id !== id)); }
 
@@ -102,6 +122,21 @@
       } else if (t.resMode === "hours") {
         const h = hoursFor(items, t.workKind);
         if (h > 0) { t.used = num(t.used) + h; consumedPct = num(t.hoursTotal) > 0 ? h / num(t.hoursTotal) * 100 : 1; info = "~" + Math.round(h * 10) / 10 + " ч"; }
+      } else if (t.resMode === "works") {
+        let total = 0; const hits = {};
+        items.forEach(it => {
+          if (it.type !== "work") return;
+          const nm = String(it.name || "").toLowerCase();
+          const bw = (t.boundWorks || []).find(b => b && nm.indexOf(String(b).toLowerCase()) >= 0);
+          if (!bw) return;
+          total += num(it.qty); hits[bw] = (hits[bw] || 0) + num(it.qty);
+        });
+        if (total > 0) {
+          t.used = num(t.used) + total;
+          consumedPct = num(t.capTotal) > 0 ? total / num(t.capTotal) * 100 : 1;
+          const u = t.unitName || "";
+          info = Object.keys(hits).map(k => Math.round(hits[k] * 10) / 10 + u + " (" + k + ")").join(", ");
+        }
       }
       if (consumedPct > 0 || info) {
         if (estimateId) { t.doneEstimates = t.doneEstimates || []; t.doneEstimates.push(estimateId); }
@@ -117,11 +152,13 @@
   function wearPct(t) {
     if (t.resMode === "material") return Math.min(100, Math.max(0, Math.round(num(t.used))));
     if (t.resMode === "hours") return num(t.hoursTotal) > 0 ? Math.min(100, Math.round(num(t.used) / num(t.hoursTotal) * 100)) : 0;
+    if (t.resMode === "works") return num(t.capTotal) > 0 ? Math.min(100, Math.round(num(t.used) / num(t.capTotal) * 100)) : 0;
     const life = num(t.lifeMonths) || 36; return t.buyDate ? Math.min(100, Math.round(monthsSince(t.buyDate) / life * 100)) : 0;
   }
   function remainText(t) {
     const rem = 100 - wearPct(t);
     if (t.resMode === "hours") return num(t.hoursTotal) > 0 ? ("осталось ~" + Math.max(0, Math.round(num(t.hoursTotal) - num(t.used))) + " ч из " + num(t.hoursTotal)) : "задай ресурс в часах";
+    if (t.resMode === "works") return num(t.capTotal) > 0 ? ("осталось ~" + Math.max(0, Math.round(num(t.capTotal) - num(t.used))) + " " + (t.unitName || "ед") + " из " + num(t.capTotal)) : "задай, на сколько хватает";
     if (t.resMode === "material") {
       const m = MATS.find(x => num((t.cap || {})[x]) > 0);
       if (m) { const left = Math.max(0, Math.round(num(t.cap[m]) * (rem / 100))); return "ресурс ~" + rem + "% (≈" + left + " " + (t.unit || "") + " по «" + m + "»)"; }
@@ -129,7 +166,7 @@
     }
     return t.buyDate ? ("износ " + wearPct(t) + "% (срок " + (num(t.lifeMonths) || 36) + " мес)") : "укажи дату покупки";
   }
-  function lowRes(t) { return (100 - wearPct(t)) <= 20 && (t.resMode !== "material" || MATS.some(x => num((t.cap || {})[x]) > 0)) && (t.resMode !== "hours" || num(t.hoursTotal) > 0); }
+  function lowRes(t) { return (100 - wearPct(t)) <= 20 && (t.resMode !== "material" || MATS.some(x => num((t.cap || {})[x]) > 0)) && (t.resMode !== "hours" || num(t.hoursTotal) > 0) && (t.resMode !== "works" || num(t.capTotal) > 0); }
 
   // амортизация (как было) → затраты
   function dep(t) { const life = num(t.lifeMonths) || 36; return num(t.price) / life; }
@@ -137,10 +174,39 @@
   function totals() { const ts = read(); return { value: ts.reduce((s, t) => s + num(t.price), 0), perMonth: ts.reduce((s, t) => s + dep(t), 0), residual: ts.reduce((s, t) => s + residual(t), 0) }; }
 
   window.EP = window.EP || {};
-  EP.Tools = { getTools: getTools, addTool: addTool, setField: setField, setCap: setCap, resetResource: resetResource, removeTool: removeTool, consumeFromEstimate: consumeFromEstimate };
+  EP.Tools = { getTools: getTools, addTool: addTool, setField: setField, setCap: setCap, resetResource: resetResource, removeTool: removeTool, consumeFromEstimate: consumeFromEstimate, bindWork: bindWork, unbindWork: unbindWork };
 
   /* ---------- UI ---------- */
   const expanded = {};
+  const searchText = {};
+  function worksListHtml(t, filter) {
+    const f = String(filter || "").toLowerCase().trim();
+    const bound = (t.boundWorks || []).map(b => String(b).toLowerCase());
+    let works = dbWorks();
+    if (f) works = works.filter(w => w.toLowerCase().indexOf(f) >= 0);
+    works = works.slice(0, 40);
+    let rows = works.map(w => {
+      const on = bound.indexOf(w.toLowerCase()) >= 0;
+      return `<button type="button" class="ep-tool-wopt ${on ? "on" : ""}" data-tool-bind="${t.id}" data-bw="${esc(w)}">${on ? "✓ " : ""}${esc(w)}</button>`;
+    }).join("");
+    if (f && !works.some(w => w.toLowerCase() === f)) {
+      rows += `<button type="button" class="ep-tool-wopt add" data-tool-bind="${t.id}" data-bw="${esc(String(filter).trim())}">+ привязать «${esc(String(filter).trim())}»</button>`;
+    }
+    if (!rows) rows = `<div class="ep-db-empty">Нет работ в базе. Введи название и нажми «+ привязать».</div>`;
+    return rows;
+  }
+  function worksConfig(t) {
+    const bound = (t.boundWorks || []);
+    const chips = bound.length
+      ? bound.map(b => `<span class="ep-tool-chip">${esc(b)}<button type="button" data-tool-unbind="${t.id}" data-bw="${esc(b)}">✕</button></span>`).join("")
+      : `<span class="ep-tool-chip mut">пока ничего не привязано</span>`;
+    return `
+      <label class="ep-tool-f"><span>На сколько хватает, всего</span><input data-tool-captotal="${t.id}" type="number" inputmode="numeric" min="0" value="${num(t.capTotal) || ""}" placeholder="напр. 10000"></label>
+      <label class="ep-tool-f"><span>Единица (выстрел/м/шт)</span><input data-tool-unitname="${t.id}" type="text" value="${esc(t.unitName || "")}" placeholder="выстрел"></label>
+      <div class="ep-tool-bound">Привязано (из них считаем расход): ${chips}</div>
+      <input class="ep-tool-search" data-tool-search="${t.id}" type="text" value="${esc(searchText[t.id] || "")}" placeholder="🔎 поиск работы для привязки…">
+      <div class="ep-tool-works" id="tw-${t.id}">${worksListHtml(t, searchText[t.id] || "")}</div>`;
+  }
   function flash(msg) {
     try {
       let el = document.getElementById("ep-collector-flash");
@@ -153,6 +219,7 @@
     const modeSel = `<label class="ep-tool-f"><span>Учёт ресурса</span><select data-tool-mode="${t.id}">
       <option value="period" ${t.resMode === "period" ? "selected" : ""}>по сроку (календарь)</option>
       <option value="material" ${t.resMode === "material" ? "selected" : ""}>по материалам (штроба / подрозетники)</option>
+      <option value="works" ${t.resMode === "works" ? "selected" : ""}>по работам (привязка + поиск)</option>
       <option value="hours" ${t.resMode === "hours" ? "selected" : ""}>по часам (из сметы)</option>
     </select></label>`;
     let body = "";
@@ -164,6 +231,8 @@
         <div class="ep-tool-caps"><div class="ep-tool-caps-h">На сколько хватает (${esc(t.unit || "м")}):</div>
           ${MATS.map(m => `<label class="ep-tool-cap"><span>${m}</span><input data-tool-cap="${t.id}" data-mat="${m}" type="number" inputmode="numeric" min="0" value="${num((t.cap || {})[m]) || ""}" placeholder="0"></label>`).join("")}
         </div>`;
+    } else if (t.resMode === "works") {
+      body = worksConfig(t);
     } else if (t.resMode === "hours") {
       body = `<label class="ep-tool-f"><span>Ресурс, часов</span><input data-tool-hours="${t.id}" type="number" inputmode="numeric" min="0" value="${num(t.hoursTotal) || ""}" placeholder="напр. 300"></label>
         <label class="ep-tool-f"><span>Считать часы</span><select data-tool-kind="${t.id}">
@@ -220,6 +289,7 @@
             <input data-tool-price type="number" inputmode="decimal" min="0" placeholder="цена">
             <select data-tool-newmode>
               <option value="material">по материалам</option>
+              <option value="works">по работам</option>
               <option value="hours">по часам</option>
               <option value="period" selected>по сроку</option>
             </select>
@@ -231,7 +301,7 @@
           <button type="button" class="btn btn-primary ep-clickable" data-tool-tocosts>Списать амортизацию за месяц в затраты</button>
           <button type="button" class="btn btn-ghost ep-clickable" data-route="main">На главный</button>
         </div>
-        <div class="ep-stock-hint">Ресурс списывается сам после сохранения сметы (штробы и подрозетники из сметы → минус ресурс). «⚙ ресурс» — настроить, на сколько хватает.</div>
+        <div class="ep-stock-hint">Ресурс списывается сам после сохранения сметы. Режим «по работам»: жми «⚙ ресурс», найди и привяжи работы (напр. пистолет → крепления/«выстрелы», штроборез → штробление) — расход считается из этих работ в смете.</div>
       </div>`;
   }
 
@@ -242,6 +312,13 @@
     else if (t.hasAttribute("data-tool-hours")) setField(t.getAttribute("data-tool-hours"), "hoursTotal", t.value);
     else if (t.hasAttribute("data-tool-life")) setField(t.getAttribute("data-tool-life"), "lifeMonths", t.value);
     else if (t.hasAttribute("data-tool-date")) setField(t.getAttribute("data-tool-date"), "buyDate", t.value);
+    else if (t.hasAttribute("data-tool-captotal")) setField(t.getAttribute("data-tool-captotal"), "capTotal", t.value);
+    else if (t.hasAttribute("data-tool-unitname")) setField(t.getAttribute("data-tool-unitname"), "unitName", t.value);
+    else if (t.hasAttribute("data-tool-search")) {
+      const id = t.getAttribute("data-tool-search"); searchText[id] = t.value;
+      const cont = document.getElementById("tw-" + id);
+      if (cont) cont.innerHTML = worksListHtml(read().find(x => x.id === id) || { id: id, boundWorks: [] }, t.value);
+    }
   });
   document.addEventListener("change", (e) => {
     const t = e.target; if (!t || !t.getAttribute || !document.getElementById("ep-tools-root")) return;
@@ -260,6 +337,8 @@
     }
     if ((el = t.closest("[data-tool-del]"))) { removeTool(el.getAttribute("data-tool-del")); render(); return; }
     if ((el = t.closest("[data-tool-expand]"))) { const id = el.getAttribute("data-tool-expand"); expanded[id] = !expanded[id]; render(); return; }
+    if ((el = t.closest("[data-tool-bind]"))) { bindWork(el.getAttribute("data-tool-bind"), el.getAttribute("data-bw")); render(); return; }
+    if ((el = t.closest("[data-tool-unbind]"))) { unbindWork(el.getAttribute("data-tool-unbind"), el.getAttribute("data-bw")); render(); return; }
     if ((el = t.closest("[data-tool-reset]"))) { resetResource(el.getAttribute("data-tool-reset")); flash("Ресурс сброшен на 100%"); render(); return; }
     if (t.closest("[data-tool-tocosts]")) {
       const tot = totals();
