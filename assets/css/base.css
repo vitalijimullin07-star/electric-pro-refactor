@@ -962,3 +962,10 @@ body[data-noanim="1"] *::after{animation-duration:.001s!important;transition-dur
 .ep-tool-wopt{text-align:left;padding:7px 10px;border-radius:9px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text,#e8eef7);font:600 calc(11px * var(--eff-text-scale,1))/1.2 system-ui;cursor:pointer}
 .ep-tool-wopt.on{background:color-mix(in srgb,var(--accent) 26%,transparent);border-color:color-mix(in srgb,var(--accent) 45%,transparent)}
 .ep-tool-wopt.add{border-style:dashed;color:var(--accent)}
+
+/* ── Инструмент: добавление расходника ── */
+.ep-tool-consum-add{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.ep-tool-consum-add input{padding:8px 10px;border-radius:9px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);color:var(--text,#e8eef7);font:600 calc(12px * var(--eff-text-scale,1))/1 system-ui}
+.ep-tool-consum-add input[data-tc-name]{flex:1;min-width:120px}
+.ep-tool-consum-add input[data-tc-per]{width:70px}
+.ep-tool-consum-add input[data-tc-unit]{width:56px}

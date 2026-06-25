@@ -33,7 +33,7 @@
     return Object.assign({
       id: uid(), name: "", model: "", price: 0, buyDate: "", condition: "work", location: "",
       resMode: "period", workKind: "", unit: "м", cap: {}, hoursTotal: 0, used: 0, lifeMonths: 36, doneEstimates: [],
-      boundWorks: [], capTotal: 0, unitName: ""
+      boundWorks: [], capTotal: 0, unitName: "", consum: []
     }, t);
   }
 
@@ -69,6 +69,49 @@
     const low = String(name || "").toLowerCase();
     it.boundWorks = it.boundWorks.filter(b => String(b).toLowerCase() !== low);
     write(a);
+  }
+  // ---- расходники инструмента (на 1 использование) ----
+  function addConsum(id, name, perUse, unit) {
+    name = String(name || "").trim(); if (!name) return;
+    const a = read(); const it = a.find(x => x.id === id); if (!it) return;
+    it.consum = it.consum || [];
+    it.consum.push({ name: name, perUse: num(perUse) || 1, unit: String(unit || "шт").trim() || "шт" });
+    write(a);
+  }
+  function removeConsum(id, idx) {
+    const a = read(); const it = a.find(x => x.id === id); if (!it || !it.consum) return;
+    it.consum.splice(idx, 1); write(a);
+  }
+  // расходники по позициям сметы: для каждого инструмента (по работам) uses = сумма привязанных работ, расход = uses * perUse
+  function consumablesForItems(items) {
+    const a = read(); const out = [];
+    a.forEach(t => {
+      if (t.condition === "off" || t.resMode !== "works" || !(t.consum && t.consum.length)) return;
+      let uses = 0;
+      (items || []).forEach(it => {
+        if (it.type !== "work") return;
+        const nm = String(it.name || "").toLowerCase();
+        if ((t.boundWorks || []).some(b => b && nm.indexOf(String(b).toLowerCase()) >= 0)) uses += num(it.qty);
+      });
+      if (uses <= 0) return;
+      t.consum.forEach(c => {
+        const qty = uses * num(c.perUse); if (qty <= 0) return;
+        const u = c.unit || "шт"; const e = out.find(x => x.name === c.name && x.unit === u);
+        if (e) e.qty += qty; else out.push({ name: c.name, qty: qty, unit: u, type: "material" });
+      });
+    });
+    out.forEach(x => x.qty = Math.round(x.qty * 100) / 100);
+    return out;
+  }
+  function estimateItems() { try { return (window.EP && EP.Estimate && EP.Estimate.getItems) ? (EP.Estimate.getItems() || []) : []; } catch (e) { return []; } }
+  function addConsumablesToEstimate() {
+    const list = consumablesForItems(estimateItems());
+    if (!list.length) { flash("Нет расходников по текущей смете (привяжи работы и задай расходник)"); return; }
+    try { if (window.EP && EP.Collector && EP.Collector.fillPrices) EP.Collector.fillPrices(list); } catch (e) {}
+    const d = (window.EP && EP.Estimate && EP.Estimate.setSourceItems) ? EP.Estimate : ((window.EP && EP.EstimateDraft && EP.EstimateDraft.setSourceItems) ? EP.EstimateDraft : null);
+    if (!d) { flash("Смета недоступна"); return; }
+    d.setSourceItems("tools-consum", list);
+    flash("Расходники инструмента в смете: " + list.length + " позиц. (см. «Поставщику»)");
   }
   function resetResource(id) { const a = read(); const it = a.find(x => x.id === id); if (it) { it.used = 0; it.doneEstimates = []; write(a); } }
   function removeTool(id) { write(read().filter(x => x.id !== id)); }
@@ -174,7 +217,7 @@
   function totals() { const ts = read(); return { value: ts.reduce((s, t) => s + num(t.price), 0), perMonth: ts.reduce((s, t) => s + dep(t), 0), residual: ts.reduce((s, t) => s + residual(t), 0) }; }
 
   window.EP = window.EP || {};
-  EP.Tools = { getTools: getTools, addTool: addTool, setField: setField, setCap: setCap, resetResource: resetResource, removeTool: removeTool, consumeFromEstimate: consumeFromEstimate, bindWork: bindWork, unbindWork: unbindWork };
+  EP.Tools = { getTools: getTools, addTool: addTool, setField: setField, setCap: setCap, resetResource: resetResource, removeTool: removeTool, consumeFromEstimate: consumeFromEstimate, bindWork: bindWork, unbindWork: unbindWork, addConsum: addConsum, removeConsum: removeConsum, consumablesForItems: consumablesForItems };
 
   /* ---------- UI ---------- */
   const expanded = {};
@@ -205,7 +248,19 @@
       <label class="ep-tool-f"><span>Единица (выстрел/м/шт)</span><input data-tool-unitname="${t.id}" type="text" value="${esc(t.unitName || "")}" placeholder="выстрел"></label>
       <div class="ep-tool-bound">Привязано (из них считаем расход): ${chips}</div>
       <input class="ep-tool-search" data-tool-search="${t.id}" type="text" value="${esc(searchText[t.id] || "")}" placeholder="🔎 поиск работы для привязки…">
-      <div class="ep-tool-works" id="tw-${t.id}">${worksListHtml(t, searchText[t.id] || "")}</div>`;
+      <div class="ep-tool-works" id="tw-${t.id}">${worksListHtml(t, searchText[t.id] || "")}</div>
+      <div class="ep-tool-bound">Расходник на 1 ${esc(t.unitName || "ед")} (→ в закупку): ${consumChips(t)}</div>
+      <div class="ep-tool-consum-add">
+        <input data-tc-name="${t.id}" type="text" placeholder="расходник (заряд)">
+        <input data-tc-per="${t.id}" type="number" inputmode="decimal" min="0" placeholder="кол-во" value="1">
+        <input data-tc-unit="${t.id}" type="text" placeholder="ед" value="шт">
+        <button type="button" class="ep-tool-wopt add" data-tc-add="${t.id}">+ расходник</button>
+      </div>`;
+  }
+  function consumChips(t) {
+    const c = (t.consum || []);
+    if (!c.length) return `<span class="ep-tool-chip mut">нет</span>`;
+    return c.map((x, i) => `<span class="ep-tool-chip">${esc(x.name)} ×${num(x.perUse)} ${esc(x.unit || "шт")}<button type="button" data-tc-del="${t.id}" data-tci="${i}">✕</button></span>`).join("");
   }
   function flash(msg) {
     try {
@@ -250,6 +305,13 @@
     const root = document.getElementById("ep-tools-root"); if (!root) return;
     const ts = read().slice().sort((a, b) => String(a.name).localeCompare(String(b.name), "ru"));
     const tot = totals();
+    const consumList = consumablesForItems(estimateItems());
+    const consumHtml = consumList.length ? `
+      <div class="ep-cost-summary">
+        <div class="ep-cost-sum-row"><b>📦 Расходники к закупке (по текущей смете)</b></div>
+        ${consumList.map(c => `<div class="ep-cost-sum-row mut"><span>${esc(c.name)}</span><b>${Math.round(c.qty * 10) / 10} ${esc(c.unit)}</b></div>`).join("")}
+        <button type="button" class="btn btn-primary ep-clickable" data-tool-consum-add style="margin-top:8px">Добавить в смету → «Поставщику»</button>
+      </div>` : "";
     const list = ts.length ? ts.map(t => {
       const w = wearPct(t), rem = 100 - w, low = lowRes(t);
       const opts = CONDS.map(([k, v]) => `<option value="${k}" ${t.condition === k ? "selected" : ""}>${v}</option>`).join("");
@@ -297,6 +359,7 @@
           </div>
         </div>
         <div class="ep-tool-list">${list}</div>
+        ${consumHtml}
         <div class="ep-prof-actions">
           <button type="button" class="btn btn-primary ep-clickable" data-tool-tocosts>Списать амортизацию за месяц в затраты</button>
           <button type="button" class="btn btn-ghost ep-clickable" data-route="main">На главный</button>
@@ -339,6 +402,15 @@
     if ((el = t.closest("[data-tool-expand]"))) { const id = el.getAttribute("data-tool-expand"); expanded[id] = !expanded[id]; render(); return; }
     if ((el = t.closest("[data-tool-bind]"))) { bindWork(el.getAttribute("data-tool-bind"), el.getAttribute("data-bw")); render(); return; }
     if ((el = t.closest("[data-tool-unbind]"))) { unbindWork(el.getAttribute("data-tool-unbind"), el.getAttribute("data-bw")); render(); return; }
+    if ((el = t.closest("[data-tc-add]"))) {
+      const id = el.getAttribute("data-tc-add"); const root = document.getElementById("ep-tools-root"); if (!root) return;
+      const nm = root.querySelector('[data-tc-name="' + id + '"]'), pr = root.querySelector('[data-tc-per="' + id + '"]'), un = root.querySelector('[data-tc-unit="' + id + '"]');
+      if (nm && nm.value.trim()) { addConsum(id, nm.value, pr ? pr.value : 1, un ? un.value : "шт"); render(); }
+      else flash("Введи название расходника");
+      return;
+    }
+    if ((el = t.closest("[data-tc-del]"))) { removeConsum(el.getAttribute("data-tc-del"), num(el.getAttribute("data-tci"))); render(); return; }
+    if (t.closest("[data-tool-consum-add]")) { addConsumablesToEstimate(); return; }
     if ((el = t.closest("[data-tool-reset]"))) { resetResource(el.getAttribute("data-tool-reset")); flash("Ресурс сброшен на 100%"); render(); return; }
     if (t.closest("[data-tool-tocosts]")) {
       const tot = totals();
