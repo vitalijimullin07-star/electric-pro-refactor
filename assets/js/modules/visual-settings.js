@@ -58,6 +58,7 @@
     fontScale: 1,
     textScale: 1,
     cardTextScale: 1,
+    iconPack: "emoji",
     buttonShape: "soft",
     backgroundStyle: "glass",
     animationStyle: "soft",
@@ -228,6 +229,7 @@
     root.style.setProperty("--font-scale", String(settings.fontScale || 1));
     root.style.setProperty("--text-scale", String(settings.textScale || 1));
     root.style.setProperty("--card-text-scale", String(settings.cardTextScale || 1));
+    try { if (window.EP && EP.Icon && EP.Icon.use) EP.Icon.use(settings.iconPack || "emoji"); } catch (e) {}
     root.style.setProperty("--anim-speed", String(settings.animationSpeed || 1));
 
     const cardRgb = rgb(day.cardColor || settings.cardColor || theme.card);
@@ -503,6 +505,7 @@
               <p class="visual-section-title">Поведение интерфейса</p>
               <div class="settings-grid grid-2">
                 ${selectControl("perfModeInput", "perfMode", "Производительность", [["auto", "Авто (адаптивно)"], ["lite", "Лёгкий (быстро)"], ["rich", "Красиво (стекло)"]])}
+                ${selectControl("iconPackInput", "iconPack", "Набор значков", [["emoji", "Эмодзи"], ["line", "Контур"], ["mono", "Минимал"]])}
                 ${selectControl("densityInput", "density", "Плотность", [["compact", "Компактно"], ["normal", "Обычно"], ["large", "Крупнее"]])}
                 ${selectControl("buttonShapeInput", "buttonShape", "Форма кнопок", [["soft", "Мягкая"], ["round", "Круглая"], ["pill", "Пилюля"], ["square", "Квадратнее"], ["minimal", "Минимальная"]])}
                 ${selectControl("backgroundStyleInput", "backgroundStyle", "Стиль фона", [["glass", "Стекло"], ["gradient", "Градиент"], ["blueprint", "Чертёж"], ["dark", "Тёмный"], ["light", "Светлый"], ["solid", "Сплошной"], ["minimal", "Минимальный"], ["neon", "Неон"]])}
