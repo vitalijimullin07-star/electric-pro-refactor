@@ -78,6 +78,8 @@
             <button class="btn btn-ghost ep-clickable ep-db-danger" data-db-del type="button" ${selCount ? "" : "disabled"}>🗑️ Удалить</button>
             <button class="btn btn-ghost ep-clickable" data-db-import type="button">⬇️ Импорт</button>
             <button class="btn btn-ghost ep-clickable" data-db-export type="button">⬆️ Экспорт</button>
+            <button class="btn btn-ghost ep-clickable" data-db-backup type="button">📦 Бэкап всего</button>
+            <button class="btn btn-ghost ep-clickable" data-db-restore type="button">📦 Восстановить</button>
           ` : `
             <button class="btn btn-primary ep-clickable" data-db-copy type="button" ${selCount ? "" : "disabled"}>⭐ В Мою БД (${selCount})</button>
             <button class="btn btn-ghost ep-clickable" data-db-export type="button">⬆️ Экспорт</button>
@@ -376,6 +378,44 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  function doBackupAll() {
+    const json = DB.exportAllData();
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "electric-pro-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function doRestoreAll() {
+    openModal("Восстановить всё из бэкапа", `
+      <p>Полный бэкап: база, документы/сметы, клиенты, инструмент, склад, расходка, затраты, реквизиты, визуал. Данные с этими ключами будут заменены из файла. После восстановления страница перезагрузится.</p>
+      <input type="file" id="bakFile" accept=".json,application/json" class="ep-db-input"/>
+      <textarea id="bakText" class="ep-db-textarea" placeholder="…или вставь JSON бэкапа сюда"></textarea>
+      <div class="ep-db-edit-actions">
+        <button class="btn btn-primary ep-clickable" data-db-restoreok type="button">Восстановить и перезагрузить</button>
+        <button class="btn btn-ghost ep-clickable" data-db-mclose type="button">Отмена</button>
+      </div>
+      <p class="ep-db-imp-msg" id="bakMsg"></p>
+    `, (ov) => {
+      const file = ov.querySelector("#bakFile");
+      file.addEventListener("change", () => {
+        const f = file.files && file.files[0]; if (!f) return;
+        const r = new FileReader();
+        r.onload = () => { ov.querySelector("#bakText").value = String(r.result || ""); };
+        r.readAsText(f);
+      });
+    });
+  }
+  function runRestoreAll(ov) {
+    const text = ov.querySelector("#bakText").value;
+    if (!text.trim()) { ov.querySelector("#bakMsg").textContent = "Пусто."; return; }
+    const res = DB.importAllData(text);
+    if (res.ok) { ov.querySelector("#bakMsg").textContent = "Восстановлено ключей: " + res.keys + ". Перезагрузка…"; setTimeout(() => { try { location.reload(); } catch (e) {} }, 800); }
+    else ov.querySelector("#bakMsg").textContent = "Ошибка: " + res.error;
+  }
+
   // ---------- делегирование событий (на своём контейнере) ----------
   function onClick(e) {
     const t = e.target;
@@ -401,6 +441,8 @@
     if (hit("[data-db-del]")) { doDelete(); return; }
     if (hit("[data-db-import]")) { doImport(); return; }
     if (hit("[data-db-export]")) { doExport(); return; }
+    if (hit("[data-db-backup]")) { doBackupAll(); return; }
+    if (hit("[data-db-restore]")) { doRestoreAll(); return; }
     if (hit("[data-db-copy]")) { copySelectedToMy(); return; }
 
     if (hit("[data-db-sync-toggle]")) { syncOpen = !syncOpen; updateSyncBlock(); return; }
@@ -505,6 +547,7 @@
       return;
     }
     if (t.closest("[data-db-importok]")) { runImport(t.closest(".ep-db-modal-ov")); return; }
+    if (t.closest("[data-db-restoreok]")) { runRestoreAll(t.closest(".ep-db-modal-ov")); return; }
   }
 
   let flashTimer = null;

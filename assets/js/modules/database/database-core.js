@@ -305,6 +305,37 @@
     return { ok: true, added: norm.length, total: result.length };
   }
 
+  // ---- ПОЛНЫЙ бэкап всего приложения (БД, документы/сметы, клиенты, инструмент, склад, расходка, затраты, реквизиты, визуал) ----
+  function isAppKey(k) { return /^ep[_.]/.test(k) || /^epdb/.test(k) || k === "user_db"; }
+  function exportAllData() {
+    const data = {};
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && isAppKey(k)) data[k] = localStorage.getItem(k);
+      }
+    } catch (e) {}
+    return JSON.stringify({ format: "electric-pro-full", version: 1, exportedAt: new Date().toISOString(), keys: Object.keys(data).length, data: data }, null, 2);
+  }
+  function importAllData(text) {
+    let obj;
+    try { obj = JSON.parse(text); } catch (e) { return { ok: false, error: "Некорректный файл" }; }
+    let data = null;
+    if (obj && obj.data && typeof obj.data === "object") data = obj.data;
+    else if (obj && typeof obj === "object" && obj.format !== "electric-pro-db" && !Array.isArray(obj)) data = obj;
+    if (!data || typeof data !== "object") return { ok: false, error: "Это не полный бэкап (используй обычный импорт для одной БД)" };
+    let n = 0;
+    try {
+      Object.keys(data).forEach((k) => {
+        if (!isAppKey(k)) return;
+        const v = data[k];
+        if (typeof v === "string") { localStorage.setItem(k, v); n++; }
+        else if (v != null) { localStorage.setItem(k, JSON.stringify(v)); n++; }
+      });
+    } catch (e) { return { ok: false, error: "Не удалось записать (хранилище переполнено?)" }; }
+    return { ok: true, keys: n };
+  }
+
   // ---- алиасы и делегаты синхронизации (Firestore) -------------------
   function getLocalItems(base) { return getItems(base); }
   function saveLocalItems(base, items) {
@@ -349,6 +380,8 @@
     exportJson,
     importJson,
     importCsv,
+    exportAllData,
+    importAllData,
     getLocalItems,
     saveLocalItems,
     syncFromFirestore,
