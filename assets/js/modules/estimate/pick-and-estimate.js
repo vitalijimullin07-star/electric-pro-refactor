@@ -320,29 +320,42 @@
   /* ---------- генератор работ из материалов (универсально, по активной БД) ---------- */
   function cableSection(name) { const m = String(name || "").match(/[x×хХ*]\s*(\d+(?:[.,]\d+)?)/i); return m ? parseFloat(m[1].replace(",", ".")) : 0; }
   function pickCableWork(cand, matName) {
-    const ukl = cand.filter(w => /укладк/i.test(w.name || "")); const pool = ukl.length ? ukl : cand;
     const sec = cableSection(matName); let p = null;
-    if (sec && sec <= 4) p = pool.find(w => /до\s*4/i.test(w.name || ""));
-    else if (sec && sec <= 10) p = pool.find(w => /6\s*мм|10\s*мм/i.test(w.name || ""));
-    else if (sec > 10) p = pool.find(w => /16/i.test(w.name || ""));
-    return p || pool.find(w => /до\s*4/i.test(w.name || "")) || pool[0] || null;
+    if (sec && sec <= 4) p = cand.find(w => /до\s*4|1[.,]5|2[.,]5|[x×хХ*]\s*[1-4]\b/i.test(w.name || ""));
+    else if (sec && sec <= 10) p = cand.find(w => /6\s*мм|10\s*мм|[x×хХ*]\s*(6|10)\b/i.test(w.name || ""));
+    else if (sec > 10) p = cand.find(w => /1[0-9]|2[0-9]|3[0-9]/.test(w.name || ""));
+    return p || cand[0] || null;
   }
   // правила: какой материал → какую работу искать в БД (по ключевым словам, не по точному имени)
   // ВНИМАНИЕ: \w в JS не матчит кириллицу — используем .{0,N}
   const WORK_RULES = [
-    { matchMat: n => /(кабель|ввг|nym|пвс|кввг|сип|пунп)/i.test(n) && !/(стяжк|канал|лоток|короб|гофр|наконечник|маркир|клемм|гильз|хомут)/i.test(n),
-      workKw: /укладк.{0,4}кабел|проклад.{0,4}кабел|кабел.{0,15}штраб/i, cable: true },
-    { matchMat: n => /(подрозетник|установочн.{0,6}короб)/i.test(n) && !/распред/i.test(n),
-      workKw: /монтаж\s+установочн.{0,6}короб|монтаж\s+подрозетник/i, prefer: /внутренн/i },
-    { matchMat: n => /(распа.{0,3}ч|распред.{0,12}короб)/i.test(n),
-      workKw: /монтаж\s+распред.{0,12}короб/i, prefer: /внутренн/i },
-    { matchMat: n => /(розетк|выключател|диммер|кнопк|механизм)/i.test(n) && !/(подрозетник|распа|распред|din|дин)/i.test(n),
-      workKw: /внутренн.{0,4}точк/i, prefer: /внутренн/i }
+    { name: "кабель",
+      matchMat: n => /(кабел|ввг|nym|пвс|кввг|сип|пунп|провод|пугв|пв-?\d|шввп)/i.test(n) && !/(стяжк|канал|лоток|короб|гофр|наконечник|маркир|клемм|гильз|хомут|дюбель|скоб)/i.test(n),
+      workKw: /(укладк|проклад|монтаж|затяг|прокид|завод).{0,10}(кабел|провод)|(кабел|провод).{0,22}(штроб|штраб|гофр|лоток|труб|канал)/i, cable: true },
+    { name: "подрозетник",
+      matchMat: n => /(подрозетник|установочн.{0,8}короб)/i.test(n) && !/распред/i.test(n),
+      workKw: /(подрозетник|установочн.{0,8}короб)/i, prefer: /(монтаж|установ|высверл|сверл|устройств)/i },
+    { name: "распайка",
+      matchMat: n => /(распа.{0,3}ч|распред.{0,12}короб)/i.test(n),
+      workKw: /(распа.{0,4}ч|распред.{0,14}короб)/i, prefer: /(монтаж|установ|расключ)/i },
+    { name: "механизм",
+      matchMat: n => /(розетк|выключател|диммер|кнопк|механизм|переключател|терморегулятор|термостат)/i.test(n) && !/(подрозетник|распа|распред|din|дин|автомат|узо|дифф)/i.test(n),
+      workKw: /(внутренн.{0,6}точк|устан.{0,16}(розетк|выключател|механизм|диммер|термо)|монтаж.{0,16}(розетк|выключател|механизм|диммер|термо)|подключ.{0,16}(розетк|выключател|механизм|диммер|термо|точк))/i, prefer: /(установ|монтаж|подключ)/i }
   ];
   function pickWork(works, rule, matName) {
-    const cand = works.filter(w => rule.workKw.test(w.name || ""));
+    let cand = works.filter(w => rule.workKw.test(w.name || ""));
+    cand = cand.filter(w => !/демонтаж|снят|удален|разбор/i.test(w.name || "")); // не берём демонтажные
     if (!cand.length) return null;
     if (rule.cable) return pickCableWork(cand, matName);
+    if (rule.name === "механизм") {
+      const vt = cand.find(w => /внутренн.{0,6}точк/i.test(w.name || "")); if (vt) return vt; // универсальная «внутренняя точка»
+      const sub = /выключател|переключател/i.test(matName) ? /выключател|переключател/i
+        : /диммер/i.test(matName) ? /диммер/i
+        : /розетк/i.test(matName) ? /розетк/i
+        : /термо/i.test(matName) ? /термо/i : null;
+      if (sub) { const s = cand.find(w => sub.test(w.name || "")); if (s) return s; }
+      return cand[0];
+    }
     if (rule.prefer) { const p = cand.find(w => rule.prefer.test(w.name || "")); if (p) return p; }
     return cand[0];
   }
@@ -350,15 +363,17 @@
     const d = Draft(), db = DB(); if (!d || !db || !db.getItemsByType) return 0;
     const works = db.getItemsByType("work", activeBase()) || [];
     const mats = d.getItems().filter(x => x.type !== "work");
-    const acc = {};
+    const acc = {}; const missing = [];
     mats.forEach(m => {
       const rule = WORK_RULES.find(r => r.matchMat(m.name || "")); if (!rule) return;
-      const w = pickWork(works, rule, m.name); if (!w) return;
+      const w = pickWork(works, rule, m.name);
+      if (!w) { missing.push((m.name || "") + " → нет работы «" + rule.name + "» в базе"); return; }
       const q = Number(m.qty) || 0; if (q <= 0) return;
       if (acc[w.id]) acc[w.id].qty += q; else acc[w.id] = { w: w, qty: q };
     });
     const list = Object.keys(acc).map(k => { const { w, qty } = acc[k]; return { sourceId: w.id, type: "work", name: w.name, unit: w.unit || "шт", price: Number(w.price) || 0, qty: qty, source: "autowork" }; });
     d.setSourceItems("autowork", list);
+    try { if (missing.length && window.EP && EP.Log) EP.Log.warn("Работы не найдены в базе: " + missing.join("; ")); } catch (e) {}
     return list.length;
   }
 
