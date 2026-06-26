@@ -30,7 +30,11 @@
     const isSupply = tab === "supply";
     const rs = rows(isSupply ? "material" : "work");
     const tot = total(rs);
-    const list = rs.length ? rs.map((x, i) => `
+    const list = rs.length ? rs.map((x, i) => isSupply ? `
+      <div class="ep-sup-row supply">
+        <div class="ep-sup-n">${i + 1}. ${esc(x.name)}</div>
+        <div class="ep-sup-q">${x.qty}${x.unit ? " " + esc(x.unit) : ""}</div>
+      </div>` : `
       <div class="ep-sup-row">
         <div class="ep-sup-n">${i + 1}. ${esc(x.name)}</div>
         <div class="ep-sup-q">${x.qty}${x.unit ? " " + esc(x.unit) : ""}</div>
@@ -46,10 +50,10 @@
       <div class="ep-sup">
         <div class="ep-sup-head">
           <div class="ep-sup-title">${isSupply ? "Материалы для закупки" : "Работы для заказчика"}</div>
-          <div class="ep-sup-sub">${rs.length} позиц.${rs.length ? " · итого <b>" + money(tot) + "</b>" : ""}</div>
+          <div class="ep-sup-sub">${rs.length} позиц.${(!isSupply && rs.length) ? " · итого <b>" + money(tot) + "</b>" : ""}</div>
         </div>
         <div class="ep-sup-list">${list}</div>
-        ${rs.length ? `<div class="ep-sup-total">Итого: <b>${money(tot)}</b></div>` : ""}
+        ${(!isSupply && rs.length) ? `<div class="ep-sup-total">Итого: <b>${money(tot)}</b></div>` : ""}
         <div class="ep-sup-actions">
           <button type="button" class="btn btn-primary ep-clickable" data-est-print>Печать / PDF</button>
           <button type="button" class="btn btn-ghost ep-clickable" data-est-share>Поделиться</button>
@@ -66,14 +70,20 @@
     const tot = total(rs);
     const title = isSupply ? "Материалы (поставщику)" : "Смета работ";
     const col2 = isSupply ? "Материал" : "Работа";
-    const trs = rs.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.name)}</td><td class="c">${x.qty} ${esc(x.unit)}</td><td class="r">${x.price ? money(x.price) : "—"}</td><td class="r">${money(x.price * x.qty)}</td></tr>`).join("");
+    const trs = rs.map((x, i) => isSupply
+      ? `<tr><td>${i + 1}</td><td>${esc(x.name)}</td><td class="c">${x.qty} ${esc(x.unit)}</td></tr>`
+      : `<tr><td>${i + 1}</td><td>${esc(x.name)}</td><td class="c">${x.qty} ${esc(x.unit)}</td><td class="r">${x.price ? money(x.price) : "—"}</td><td class="r">${money(x.price * x.qty)}</td></tr>`).join("");
+    const thead = isSupply
+      ? `<tr><th>№</th><th>${col2}</th><th class="c">Кол-во</th></tr>`
+      : `<tr><th>№</th><th>${col2}</th><th class="c">Кол-во</th><th class="r">Цена</th><th class="r">Сумма</th></tr>`;
+    const tfoot = isSupply ? "" : `<tfoot><tr><td colspan="4" class="r">Итого</td><td class="r">${money(tot)}</td></tr></tfoot>`;
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
 <style>body{font-family:Arial,Helvetica,sans-serif;color:#111;padding:18px}h1{font-size:18px;margin:0 0 12px}
 table{width:100%;border-collapse:collapse;font-size:13px}th,td{border:1px solid #cbd5e1;padding:6px 8px}
 th{background:#f1f5f9;text-align:left}.c{text-align:center}.r{text-align:right}tfoot td{font-weight:700}
 .foot{margin-top:14px;color:#64748b;font-size:12px}</style></head>
-<body><h1>${title}</h1><table><thead><tr><th>№</th><th>${col2}</th><th class="c">Кол-во</th><th class="r">Цена</th><th class="r">Сумма</th></tr></thead>
-<tbody>${trs}</tbody><tfoot><tr><td colspan="4" class="r">Итого</td><td class="r">${money(tot)}</td></tr></tfoot></table>
+<body><h1>${title}</h1><table><thead>${thead}</thead>
+<tbody>${trs}</tbody>${tfoot}</table>
 <p class="foot">Electric Pro</p>
 <script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script></body></html>`;
     const w = window.open("", "_blank");
@@ -86,8 +96,10 @@ th{background:#f1f5f9;text-align:left}.c{text-align:center}.r{text-align:right}t
     const rs = rows(isSupply ? "material" : "work");
     const tot = total(rs);
     const title = isSupply ? "Материалы (закупка)" : "Смета работ";
-    const lines = rs.map((x, i) => `${i + 1}. ${x.name} — ${x.qty}${x.unit ? " " + x.unit : ""}` + (x.price ? ` x ${money(x.price)} = ${money(x.price * x.qty)}` : "")).join("\n");
-    const text = title + "\n" + lines + "\n\nИтого: " + money(tot);
+    const lines = rs.map((x, i) => isSupply
+      ? `${i + 1}. ${x.name} — ${x.qty}${x.unit ? " " + x.unit : ""}`
+      : `${i + 1}. ${x.name} — ${x.qty}${x.unit ? " " + x.unit : ""}` + (x.price ? ` x ${money(x.price)} = ${money(x.price * x.qty)}` : "")).join("\n");
+    const text = title + "\n" + lines + (isSupply ? "" : "\n\nИтого: " + money(tot));
     try {
       if (navigator.share) { navigator.share({ title: title, text: text }).catch(() => {}); }
       else if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(() => flash("Скопировано")).catch(() => flash("Не удалось скопировать")); }
