@@ -211,13 +211,54 @@
   }
   function lowRes(t) { return (100 - wearPct(t)) <= 20 && (t.resMode !== "material" || MATS.some(x => num((t.cap || {})[x]) > 0)) && (t.resMode !== "hours" || num(t.hoursTotal) > 0) && (t.resMode !== "works" || num(t.capTotal) > 0); }
 
-  // амортизация (как было) → затраты
-  function dep(t) { const life = num(t.lifeMonths) || 36; return num(t.price) / life; }
-  function residual(t) { const acc = Math.min(num(t.price), dep(t) * monthsSince(t.buyDate)); return Math.max(0, num(t.price) - acc); }
+  // амортизация по СРОКУ (помесячно) — только для режима «по сроку»; у ресурсных инструментов износ считается от работы
+  function dep(t) { if (t.resMode !== "period") return 0; const life = num(t.lifeMonths) || 36; return num(t.price) / life; }
+  function residual(t) {
+    if (t.resMode === "period") { const acc = Math.min(num(t.price), dep(t) * monthsSince(t.buyDate)); return Math.max(0, num(t.price) - acc); }
+    return Math.max(0, Math.round(num(t.price) * (1 - wearPct(t) / 100)));
+  }
+  // ---- износ инструмента от выполненной работы (доля израсходованного ресурса) ----
+  function consumedFractionFor(t, items) {
+    if (t.resMode === "works") {
+      if (num(t.capTotal) <= 0) return 0;
+      let total = 0;
+      (items || []).forEach(it => { if (it.type !== "work") return; const nm = String(it.name || "").toLowerCase(); if ((t.boundWorks || []).some(b => b && nm.indexOf(String(b).toLowerCase()) >= 0)) total += num(it.qty); });
+      return total / num(t.capTotal);
+    }
+    if (t.resMode === "hours") { return num(t.hoursTotal) > 0 ? hoursFor(items, t.workKind) / num(t.hoursTotal) : 0; }
+    if (t.resMode === "material") {
+      let frac = 0;
+      (items || []).forEach(it => {
+        if (it.type !== "work") return;
+        const nm = String(it.name || "").toLowerCase();
+        let match = false;
+        if (t.workKind === "штроба") match = /штроб/i.test(nm);
+        else if (t.workKind === "подрозетник") match = /высверливани.{0,20}подрозетник|коронк|подрозетник/i.test(nm);
+        if (!match) return;
+        const m = matOf(nm); if (!m) return;
+        const cap = num((t.cap || {})[m]); if (cap <= 0) return;
+        frac += num(it.qty) / cap;
+      });
+      return frac;
+    }
+    return 0; // period — износ не от сметы
+  }
+  // суммарная амортизация инструмента по позициям сметы (₽) + разбивка
+  function depreciationForItems(items) {
+    const a = read(); let total = 0; const parts = [];
+    a.forEach(t => {
+      if (t.condition === "off") return;
+      const price = num(t.price); if (price <= 0) return;
+      const frac = consumedFractionFor(t, items); if (frac <= 0) return;
+      const cost = Math.round(price * Math.min(frac, 1) * 100) / 100; if (cost <= 0) return;
+      total += cost; parts.push({ name: t.name, cost: cost });
+    });
+    return { total: Math.round(total * 100) / 100, parts: parts };
+  }
   function totals() { const ts = read(); return { value: ts.reduce((s, t) => s + num(t.price), 0), perMonth: ts.reduce((s, t) => s + dep(t), 0), residual: ts.reduce((s, t) => s + residual(t), 0) }; }
 
   window.EP = window.EP || {};
-  EP.Tools = { getTools: getTools, addTool: addTool, setField: setField, setCap: setCap, resetResource: resetResource, removeTool: removeTool, consumeFromEstimate: consumeFromEstimate, bindWork: bindWork, unbindWork: unbindWork, addConsum: addConsum, removeConsum: removeConsum, consumablesForItems: consumablesForItems };
+  EP.Tools = { getTools: getTools, addTool: addTool, setField: setField, setCap: setCap, resetResource: resetResource, removeTool: removeTool, consumeFromEstimate: consumeFromEstimate, bindWork: bindWork, unbindWork: unbindWork, addConsum: addConsum, removeConsum: removeConsum, consumablesForItems: consumablesForItems, depreciationForItems: depreciationForItems };
 
   /* ---------- UI ---------- */
   const expanded = {};
@@ -321,7 +362,7 @@
         <div class="ep-tool-top">
           <div class="ep-tool-main">
             <div class="ep-tool-n">${esc(t.name)}${t.model ? ` <small>${esc(t.model)}</small>` : ""}</div>
-            <div class="ep-tool-sub">${money(t.price)} · аморт ${money(dep(t))}/мес</div>
+            <div class="ep-tool-sub">${money(t.price)}${t.resMode === "period" ? " · аморт " + money(dep(t)) + "/мес" : " · износ от работы"}</div>
             <div class="ep-tool-res ${low ? "low" : ""}">
               <div class="ep-tool-bar"><i style="width:${w}%"></i></div>
               <span class="ep-tool-restxt">${esc(remainText(t))}${low ? " · ⚠ скоро замена" : ""}</span>
@@ -361,7 +402,8 @@
         <div class="ep-tool-list">${list}</div>
         ${consumHtml}
         <div class="ep-prof-actions">
-          <button type="button" class="btn btn-primary ep-clickable" data-tool-tocosts>Списать амортизацию за месяц в затраты</button>
+          <button type="button" class="btn btn-primary ep-clickable" data-tool-tocosts>Списать месячную амортизацию (по сроку) в Затраты</button>
+          <div class="ep-stock-hint">Износ ресурсного инструмента (пистолет/штроборез и т.п.) считается от работ и сам попадает в «Затраты» при добавлении в основную смету. Кнопка выше — для инструмента «по сроку» (помесячно).</div>
           <button type="button" class="btn btn-ghost ep-clickable" data-route="main">На главный</button>
         </div>
         <div class="ep-stock-hint">Ресурс списывается сам после сохранения сметы. Режим «по работам»: жми «⚙ ресурс», найди и привяжи работы (напр. пистолет → крепления/«выстрелы», штроборез → штробление) — расход считается из этих работ в смете.</div>
@@ -431,6 +473,18 @@
       }
     } catch (er) {}
   });
+
+  // АВТО-АМОРТИЗАЦИЯ: при изменении основной сметы считаем износ инструмента от её работ → в Затраты (факт, заменяемая запись)
+  function pushDepreciation() {
+    try {
+      if (!(window.EP && EP.Estimate && EP.Estimate.getItems && EP.Costs && EP.Costs.setAuto)) return;
+      const dep = depreciationForItems(EP.Estimate.getItems() || []);
+      EP.Costs.setAuto("tool-amort", dep.total, "Амортизация инструмента (по смете)");
+    } catch (e) {}
+  }
+  window.addEventListener("ep:estimate-main-changed", pushDepreciation);
+  if (document.readyState !== "loading") setTimeout(pushDepreciation, 0);
+  else document.addEventListener("DOMContentLoaded", () => setTimeout(pushDepreciation, 0));
 
   // ---- облако (через общий EP.Cloud) ----
   function syncPush() { if (window.EP && window.EP.Cloud) window.EP.Cloud.push("tools", { items: read() }); }

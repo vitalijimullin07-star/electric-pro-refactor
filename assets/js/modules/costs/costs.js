@@ -26,9 +26,16 @@
   function profitFact() { return income() - actualTotal(); }
 
   function addActual(cat, amount, note) { load(); const a = num(amount); if (a <= 0) return false; st.actuals.push({ id: uid(), cat: cat || "other", amount: a, note: note || "" }); save(); return true; }
+  // авто-расход (заменяемый): убирает прежние авто-записи этой категории и ставит одну новую — без дублей
+  function setAuto(cat, amount, note) {
+    load(); const a = num(amount);
+    st.actuals = st.actuals.filter(x => !(x && x.auto && x.cat === cat));
+    if (a > 0) st.actuals.push({ id: uid(), cat: cat || "auto", amount: a, note: note || "", auto: true });
+    save(); return true;
+  }
 
   window.EP = window.EP || {};
-  EP.Costs = { income, planTotal, actualTotal, profitPlan, profitFact, addActual };
+  EP.Costs = { income, planTotal, actualTotal, profitPlan, profitFact, addActual, setAuto };
 
   /* ---------- UI ---------- */
   function summaryHtml() {
@@ -141,5 +148,7 @@
   }
   if (window.EP && window.EP.Cloud && window.EP.Cloud.onLogin) window.EP.Cloud.onLogin(syncPull);
   window.EP = window.EP || {};
-  window.EP.Costs = { getData: function () { return load(); }, syncPush: syncPush, syncPull: syncPull };
+  window.EP.Costs.getData = function () { return load(); };
+  window.EP.Costs.syncPush = syncPush;
+  window.EP.Costs.syncPull = syncPull;
 })();
