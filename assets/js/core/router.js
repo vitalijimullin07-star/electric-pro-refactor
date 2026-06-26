@@ -20,7 +20,8 @@ EP.routes = {
   documents: "pages/documents.html",
   stock: "pages/stock.html",
   costs: "pages/costs.html",
-  tools: "pages/tools.html"
+  tools: "pages/tools.html",
+  guide: "pages/guide.html"
 };
 
 EP.Router = {
@@ -68,7 +69,7 @@ EP.Router = {
     window.dispatchEvent(new CustomEvent("ep:route-loading", { detail: { route } }));
 
     try {
-      const res = await fetch(EP.routes[route] + "?v=3005", { cache: "no-store" });
+      const res = await fetch(EP.routes[route] + "?v=3010", { cache: "no-store" });
       target.innerHTML = await res.text();
       try { window.scrollTo(0, 0); if (document.scrollingElement) document.scrollingElement.scrollTop = 0; } catch (e) {}
       window.dispatchEvent(new CustomEvent("ep:route-loaded", { detail: { route } }));
