@@ -54,6 +54,7 @@
           <button type="button" class="btn btn-primary ep-clickable" data-est-print>Печать / PDF</button>
           <button type="button" class="btn btn-ghost ep-clickable" data-est-share>Поделиться</button>
           ${isSupply ? '<button type="button" class="btn btn-ghost ep-clickable" data-route="consumables">+ Расходники</button>' : ""}
+          ${isSupply ? '<button type="button" class="btn btn-ghost ep-clickable" data-est-usestock>📤 Задействовать со склада</button>' : ""}
           <button type="button" class="btn btn-ghost ep-clickable" data-route="main">На главный</button>
         </div>
       </div>`;
@@ -109,6 +110,7 @@ th{background:#f1f5f9;text-align:left}.c{text-align:center}.r{text-align:right}t
     if (document.getElementById("ep-estimate-root")) {
       if (t.closest && t.closest("[data-est-print]")) { printDoc(); return; }
       if (t.closest && t.closest("[data-est-share]")) { shareText(); return; }
+      if (t.closest && t.closest("[data-est-usestock]")) { if (window.EP && EP.Stock && EP.Stock.useFromSupply) EP.Stock.useFromSupply(); return; }
     }
   });
 
