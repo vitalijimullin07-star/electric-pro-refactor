@@ -113,14 +113,19 @@ EP.Auth = {
         await ref.set(profile, { merge: true });
 
         if (!adminByEmail) {
-          this.setLoginStatus("Регистрация отправлена. Жди одобрения администратора.", "wait");
-          await EP.Firebase.auth.signOut();
-          return;
+          this.setLoginStatus("Тест на 10 дней активирован. Добро пожаловать!", "ok");
         }
       }
 
       const freshSnap = await ref.get();
       const profile = freshSnap.exists ? freshSnap.data() : this.makeAdminProfile(firebaseUser);
+
+      // не-админу без подписки выдаём тест 10 дней (чтобы не запереть существующих)
+      if (!adminByEmail && !(profile && (profile.isAdmin === true || profile.role === "admin")) && !this.hasSubscriptionInfo(profile)) {
+        const tf = this.trialFields();
+        try { await ref.set(tf, { merge: true }); } catch (e) {}
+        Object.assign(profile, tf);
+      }
 
       if (!this.canEnter(profile, firebaseUser)) {
         this.setLoginStatus("Аккаунт ожидает одобрения администратора.", "wait");
@@ -170,20 +175,36 @@ EP.Auth = {
     };
   },
 
+  trialDays: 10,
+  trialFields() {
+    const ms = Date.now() + this.trialDays * 86400000;
+    const ts = (window.firebase && firebase.firestore && firebase.firestore.Timestamp)
+      ? firebase.firestore.Timestamp.fromDate(new Date(ms)) : new Date(ms).toISOString();
+    const now = (window.firebase && firebase.firestore && firebase.firestore.FieldValue)
+      ? firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString();
+    return { subscriptionPlan: "trial", subscriptionStatus: "active", trialStartedAt: now, trialEndsAt: ts, subscriptionExpiresAt: ts };
+  },
+  hasSubscriptionInfo(p) {
+    if (!p) return false;
+    if (p.subscriptionExpiresAt || p.trialEndsAt || p.subscriptionUntil || p.expiresAt) return true;
+    const plan = p.subscriptionPlan || p.plan;
+    return !!(plan && plan !== "none");
+  },
+
   makePendingMasterProfile(user) {
-    return {
+    return Object.assign({
       uid: user.uid,
       name: user.displayName || "Мастер",
       displayName: user.displayName || "Мастер",
       email: user.email || "",
       role: "master",
       isAdmin: false,
-      approved: false,
-      isApproved: false,
-      status: "pending",
+      approved: true,
+      isApproved: true,
+      status: "approved",
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    };
+    }, this.trialFields());
   },
 
   canEnter(profile, user) {

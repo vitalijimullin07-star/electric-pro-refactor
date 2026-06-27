@@ -38,7 +38,7 @@
   }
 
   function planTitle(plan) {
-    return ({ none: "Нет", basic: "Базовая", ai: "С ИИ", trial: "Тест 2 дня" })[plan] || "Нет";
+    return ({ none: "Нет", basic: "Базовая", ai: "С ИИ", trial: "Тест 10 дней" })[plan] || "Нет";
   }
 
   const AdminSubscription = {
@@ -141,7 +141,7 @@
                 <option value="none" ${sub.plan === "none" ? "selected" : ""}>Нет</option>
                 <option value="basic" ${sub.plan === "basic" ? "selected" : ""}>Базовая</option>
                 <option value="ai" ${sub.plan === "ai" ? "selected" : ""}>С ИИ</option>
-                <option value="trial" ${sub.plan === "trial" ? "selected" : ""}>Тест 2 дня</option>
+                <option value="trial" ${sub.plan === "trial" ? "selected" : ""}>Тест 10 дней</option>
               </select>
             </label>
             <label>Срок

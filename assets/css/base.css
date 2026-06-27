@@ -1059,3 +1059,10 @@ body[data-noanim="1"] *::after{animation-duration:.001s!important;transition-dur
 /* Поставщику без цен — позиция + количество */
 .ep-sup-row.supply{grid-template-columns:1fr auto}
 .ep-sup-row.supply .ep-sup-q{font-size:calc(13px * var(--eff-text-scale,1));font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+
+/* ── Блокировка доступа (тест/подписка истекли) ── */
+.ep-blocked{margin:0 0 16px;padding:18px 16px;border:1px solid rgba(248,113,113,.5);border-radius:14px;background:rgba(248,113,113,.1);text-align:center}
+.ep-blocked-i{font-size:calc(34px * var(--eff-text-scale,1));line-height:1}
+.ep-blocked-t{margin-top:6px;font:800 calc(17px * var(--eff-text-scale,1))/1.2 system-ui;color:#fca5a5}
+.ep-blocked-s{margin-top:6px;font:400 calc(13.5px * var(--eff-text-scale,1))/1.5 system-ui;color:var(--text,#e8eef7)}
+.ep-blocked-actions{margin-top:12px}
