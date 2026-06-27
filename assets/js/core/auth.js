@@ -113,24 +113,26 @@ EP.Auth = {
         await ref.set(profile, { merge: true });
 
         if (!adminByEmail) {
-          this.setLoginStatus("Тест на 10 дней активирован. Добро пожаловать!", "ok");
+          this.setLoginStatus("Регистрация отправлена. Ожидайте подтверждения администратора.", "wait");
+          await EP.Firebase.auth.signOut();
+          return;
         }
       }
 
       const freshSnap = await ref.get();
       const profile = freshSnap.exists ? freshSnap.data() : this.makeAdminProfile(firebaseUser);
 
-      // не-админу без подписки выдаём тест 10 дней (чтобы не запереть существующих)
+      if (!this.canEnter(profile, firebaseUser)) {
+        this.setLoginStatus("Аккаунт ожидает подтверждения администратора.", "wait");
+        await EP.Firebase.auth.signOut();
+        return;
+      }
+
+      // одобренному мастеру без подписки выдаём тест 10 дней (отсчёт с первого входа после одобрения)
       if (!adminByEmail && !(profile && (profile.isAdmin === true || profile.role === "admin")) && !this.hasSubscriptionInfo(profile)) {
         const tf = this.trialFields();
         try { await ref.set(tf, { merge: true }); } catch (e) {}
         Object.assign(profile, tf);
-      }
-
-      if (!this.canEnter(profile, firebaseUser)) {
-        this.setLoginStatus("Аккаунт ожидает одобрения администратора.", "wait");
-        await EP.Firebase.auth.signOut();
-        return;
       }
 
       await ref.set({
@@ -192,19 +194,19 @@ EP.Auth = {
   },
 
   makePendingMasterProfile(user) {
-    return Object.assign({
+    return {
       uid: user.uid,
       name: user.displayName || "Мастер",
       displayName: user.displayName || "Мастер",
       email: user.email || "",
       role: "master",
       isAdmin: false,
-      approved: true,
-      isApproved: true,
-      status: "approved",
+      approved: false,
+      isApproved: false,
+      status: "pending",
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }, this.trialFields());
+    };
   },
 
   canEnter(profile, user) {
@@ -212,12 +214,16 @@ EP.Auth = {
     if (profile?.isAdmin === true) return true;
     if (profile?.approved === true) return true;
     if (profile?.isApproved === true) return true;
-    return profile?.status === "approved";
+    return profile?.status === "approved" || profile?.status === "active";
   },
 
   bindLoginPage() {
     document.querySelector("#googleLoginBtn")?.addEventListener("click", () => this.signIn("login"));
     document.querySelector("#registerGoogleBtn")?.addEventListener("click", () => this.signIn("register"));
+
+    let reason = "";
+    try { reason = sessionStorage.getItem("ep_block_reason") || ""; if (reason) sessionStorage.removeItem("ep_block_reason"); } catch (e) {}
+    if (reason) { this.setLoginStatus(reason, "error"); return; }
 
     if (EP.Firebase?.ready) {
       this.setLoginStatus("Firebase готов", "ok");

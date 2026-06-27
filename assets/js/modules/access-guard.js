@@ -3,7 +3,7 @@
    блокируется: пользователя перебрасывает на «Подписку» с баннером. Админ не блокируется. */
 (() => {
   "use strict";
-  const FREE = ["login", "subscription"]; // всегда доступны
+  const FREE = ["login"]; // при блокировке оставляем доступным только экран входа/регистрации
 
   function normDate(v) {
     if (!v) return null;
@@ -33,33 +33,25 @@
   }
   function daysLeft(p) { const e = expiryDate(p); return e ? Math.max(0, Math.ceil((e.getTime() - Date.now()) / 86400000)) : 0; }
 
-  function showBanner() {
-    const sec = document.querySelector("#ep-app .page, .page"); if (!sec) return;
-    if (document.getElementById("ep-blocked-banner")) return;
-    const b = document.createElement("div");
-    b.id = "ep-blocked-banner"; b.className = "ep-blocked";
-    b.innerHTML =
-      '<div class="ep-blocked-i">⛔</div>' +
-      '<div class="ep-blocked-t">Доступ закрыт</div>' +
-      '<div class="ep-blocked-s">Тест или подписка истекли — работа в приложении приостановлена. Продлите доступ, чтобы продолжить.</div>' +
-      '<div class="ep-blocked-actions"><button type="button" class="btn btn-ghost ep-clickable" id="ep-blocked-logout">Выйти</button></div>';
-    sec.insertBefore(b, sec.firstChild);
-    const lo = document.getElementById("ep-blocked-logout");
-    if (lo) lo.addEventListener("click", () => { try { if (window.EP && EP.Auth && EP.Auth.signOut) EP.Auth.signOut(); } catch (e) {} });
+  function blockReason(p) {
+    if (blockedProfile(p)) return "Аккаунт закрыт администратором. Обратитесь к администратору.";
+    return "Доступ закрыт — тест или подписка истекли. Обратитесь к администратору.";
   }
 
   let busy = false;
   function enforce(route) {
     route = route || (window.EP && EP.state && EP.state.currentRoute) || "";
     const p = profile();
-    if (!p) return;                                  // нет профиля — не вмешиваемся
-    const ok = accessOk();
-    if (route === "subscription") { if (!ok && !isAdmin(p)) showBanner(); return; }
-    if (FREE.indexOf(route) >= 0) return;            // login — свободно
-    if (ok) return;
-    if (busy) return; busy = true;                   // блокируем доступ → на подписку
-    try { if (window.EP && EP.Router && EP.Router.go) EP.Router.go("subscription", { replace: true }); } catch (e) {}
-    setTimeout(() => { busy = false; }, 60);
+    if (!p) return;                                  // нет профиля / не залогинен — не вмешиваемся
+    if (FREE.indexOf(route) >= 0) return;            // экран входа — свободно
+    if (accessOk()) return;
+    if (busy) return; busy = true;                   // доступ закрыт → выкидываем на вход/регистрацию
+    try { sessionStorage.setItem("ep_block_reason", blockReason(p)); } catch (e) {}
+    try {
+      if (window.EP && EP.Auth && EP.Auth.signOut) EP.Auth.signOut();
+      else if (window.EP && EP.Router && EP.Router.go) EP.Router.go("login", { replace: true });
+    } catch (e) {}
+    setTimeout(() => { busy = false; }, 250);
   }
 
   window.EP = window.EP || {};
