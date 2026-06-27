@@ -5,7 +5,7 @@
 (() => {
   "use strict";
   const KEY = "ep_whatsnew_seen_v29";
-  const VERSION = 2; // ← бампать +1 при каждой новой записи в whatsnew.html
+  const VERSION = 3; // ← бампать +1 при каждой новой записи в whatsnew.html
 
   function seen() { try { return parseInt(localStorage.getItem(KEY) || "0", 10) || 0; } catch (e) { return 0; } }
   function hasNew() { return seen() < VERSION; }
