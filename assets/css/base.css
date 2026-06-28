@@ -1135,3 +1135,34 @@ body[data-noanim="1"] *::after{animation-duration:.001s!important;transition-dur
 .ep-ai-lockt{font:800 calc(18px * var(--eff-text-scale,1)) system-ui;color:var(--text,#e8eef7);margin-top:8px}
 .ep-ai-locks{font:400 calc(13.5px * var(--eff-text-scale,1))/1.5 system-ui;color:var(--muted,#94a3b8);margin:8px auto 16px;max-width:380px}
 @media (max-width:520px){.ep-ai-stats{grid-template-columns:repeat(3,1fr)}}
+
+/* ── Админка: карточки пользователей с тумблерами ── */
+.ep-pend h3{margin:0 0 8px;font:800 calc(14px * var(--eff-text-scale,1)) system-ui;color:#fcd34d}
+.ep-ulist{margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.ep-ucard{border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(255,255,255,.035);overflow:hidden}
+.ep-ucard.is-open{border-color:rgba(124,196,255,.35);background:rgba(124,196,255,.05)}
+.ep-ucard.is-blk{border-color:rgba(248,113,113,.4)}
+.ep-ucard-head{width:100%;display:flex;align-items:center;gap:10px;padding:11px 12px;background:transparent;border:none;cursor:pointer;text-align:left;color:var(--text,#e8eef7)}
+.ep-ucard-ex{color:var(--muted,#94a3b8);font-size:calc(11px * var(--eff-text-scale,1));flex:none}
+.ep-ucard-main{flex:1;min-width:0;display:flex;flex-direction:column}
+.ep-ucard-main b{font:600 calc(13.5px * var(--eff-text-scale,1)) system-ui;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ep-ucard-main small{font:400 calc(11px * var(--eff-text-scale,1)) system-ui;color:var(--muted,#94a3b8);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ep-ucard-bal{font:700 calc(13px * var(--eff-text-scale,1)) system-ui;color:#6ee7b7;flex:none;font-variant-numeric:tabular-nums}
+.ep-ucard-body{padding:4px 12px 14px;border-top:1px solid rgba(255,255,255,.07)}
+.ep-togs{display:flex;flex-direction:column;gap:2px;margin:8px 0}
+.ep-tog{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 2px;cursor:pointer}
+.ep-tog>span{font:500 calc(13.5px * var(--eff-text-scale,1)) system-ui;color:var(--text,#dbe4f0)}
+.ep-tog input{position:absolute;opacity:0;width:0;height:0}
+.ep-tog i{position:relative;width:42px;height:24px;border-radius:99px;background:rgba(255,255,255,.18);flex:none;transition:background .2s}
+.ep-tog i::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;transition:left .2s}
+.ep-tog input:checked + i{background:#34d399}
+.ep-tog input:checked + i::after{left:20px}
+.ep-ubal{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 2px;padding-top:10px;border-top:1px solid rgba(255,255,255,.06)}
+.ep-ubal>span{font:600 calc(12.5px * var(--eff-text-scale,1)) system-ui;color:var(--muted,#cbd5e1)}
+.ep-ubal input{width:90px;padding:7px 9px;border-radius:9px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);color:var(--text,#e8eef7);font:600 calc(13px * var(--eff-text-scale,1)) system-ui}
+.ep-ubal select{padding:7px 8px;border-radius:9px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);color:var(--text,#e8eef7);font:500 calc(12px * var(--eff-text-scale,1)) system-ui}
+.ep-ucard-sub{margin:8px 0 0;font-size:calc(11.5px * var(--eff-text-scale,1))}
+.ep-ucard-more{margin-top:10px}
+.ep-ucard-more .ep-ghost{font:500 calc(12px * var(--eff-text-scale,1)) system-ui;background:transparent;border:1px solid rgba(255,255,255,.14);color:var(--muted,#cbd5e1);border-radius:8px;padding:6px 12px;cursor:pointer}
+.ep-act-st{margin:8px 0 0;font:500 calc(11.5px * var(--eff-text-scale,1)) system-ui;color:#6ee7b7;min-height:1px}
+#ep-uq{flex:1;min-width:140px;padding:8px 11px;border-radius:9px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);color:var(--text,#e8eef7);font:400 calc(13px * var(--eff-text-scale,1)) system-ui}
