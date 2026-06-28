@@ -49,6 +49,7 @@ EP.AppShell = {
             <button class="ep-clickable" type="button" data-route="profile">👤 Профиль и реквизиты</button>
             <button class="ep-clickable" type="button" data-route="settings">🎨 Настройки визуала</button>
             <button class="ep-clickable" type="button" data-route="subscription">💳 Подписка</button>
+            <button class="ep-clickable" type="button" data-route="ai" id="aiMenuBtn" style="display:none">🤖 ИИ-ассистент</button>
             <button class="ep-clickable" type="button" data-route="admin" id="adminMenuBtn" style="display:none">👑 Админка</button>
           </nav>
           <button class="btn btn-ghost btn-wide ep-clickable" id="logoutBtn" type="button" style="display:none">Выйти</button>
@@ -127,6 +128,8 @@ EP.AppShell = {
 
     const adminBtn = document.querySelector("#adminMenuBtn");
     if (adminBtn) adminBtn.style.display = isAdmin ? "" : "none";
+    const aiBtn = document.querySelector("#aiMenuBtn");
+    if (aiBtn) aiBtn.style.display = isAdmin ? "" : "none";
 
     const logoutBtn = document.querySelector("#logoutBtn");
     if (logoutBtn) logoutBtn.style.display = isAuthed ? "" : "none";

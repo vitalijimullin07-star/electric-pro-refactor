@@ -22,7 +22,8 @@ EP.routes = {
   costs: "pages/costs.html",
   tools: "pages/tools.html",
   guide: "pages/guide.html",
-  whatsnew: "pages/whatsnew.html"
+  whatsnew: "pages/whatsnew.html",
+  ai: "pages/ai.html"
 };
 
 EP.Router = {
