@@ -122,37 +122,28 @@
       <p class="ep-admin-muted">Сохраняется на этом устройстве (для теста). Для общего доступа мастеров вынесем ключи в Firestore + прокси.</p></div>`;
   }
 
-  // ====== ПОЛЬЗОВАТЕЛИ (карточки-гармошки с тумблерами) ======
+  // ====== ПОЛЬЗОВАТЕЛИ (сверху выбор раздела → раскрыть пользователя → этот раздел) ======
   const CURSYM = { USD: "$", EUR: "€", RUB: "₽" };
   function curSym(c) { return CURSYM[c] || "$"; }
   function uBal(u) { const v = num(u.aiBalance); return curSym(u.aiBalanceCurrency || "USD") + (Math.round(v * 100) / 100); }
   function isTrialSub(s) { return subActive(s) && (s.status === "trial" || /trial/i.test(s.planId || s.plan || "")); }
   function tog(uid, id, on, label) { return `<label class="ep-tog"><span>${label}</span><input type="checkbox" data-u-tog="${id}" data-uid="${esc(uid)}" ${on ? "checked" : ""}><i></i></label>`; }
+  const FACETS = [["access", "Доступ"], ["sub", "Подписка"], ["ai", "ИИ / API"], ["balance", "Баланс API"], ["db", "БД"], ["docs", "Документы"]];
+  function aiModeSel(uid, cur) { return `<select data-u-aimode="${esc(uid)}">${[["disabled", "выкл"], ["own_api", "свой ключ"], ["admin_api", "общий ключ (сервер)"]].map((o) => `<option value="${o[0]}" ${(cur || "disabled") === o[0] ? "selected" : ""}>${o[1]}</option>`).join("")}</select>`; }
+  function curSel(uid, cur) { return `<select data-u-cur="${esc(uid)}">${["USD", "EUR", "RUB"].map((c) => `<option value="${c}" ${(cur || "USD") === c ? "selected" : ""}>${curSym(c)} ${c}</option>`).join("")}</select>`; }
+  function renderFacet(u, f) {
+    const uid = u.uid;
+    if (f === "access") { const blocked = isBlocked(u); const access = isApproved(u) && !blocked; return `<div class="ep-togs">${tog(uid, "access", access, "Доступ (вход разрешён)")}${tog(uid, "block", blocked, "Заблокирован")}</div>`; }
+    if (f === "sub") { const sub = u.subscription || {}; const trial = isTrialSub(sub); const paid = subActive(sub) && !trial; return `<div class="ep-togs">${tog(uid, "sub", paid, "Подписка (30 дней)")}${tog(uid, "trial", trial, "Тест 10 дней")}</div><p class="ep-admin-muted ep-ucard-sub">${subActive(sub) ? "План: " + esc(sub.planId || sub.plan || "—") + (sub.expiresAt ? " · до " + esc(dstr(sub.expiresAt)) : "") : "Подписки нет."}</p>`; }
+    if (f === "ai") { const ai = u.aiAccount || {}; return `<div class="ep-ubal"><span>ИИ / режим API:</span>${aiModeSel(uid, ai.accessMode)}<button type="button" class="ep-mini ep-mini-ok" data-u-aimodeset="${esc(uid)}">сохранить</button></div><p class="ep-admin-muted ep-ucard-sub">Сейчас: ${esc(ai.accessMode || "выкл")}</p>`; }
+    if (f === "balance") { return `<div class="ep-ubal"><span>Баланс API:</span><input type="number" step="0.01" min="0" data-u-bal="${esc(uid)}" value="${u.aiBalance != null ? esc(u.aiBalance) : ""}" placeholder="0">${curSel(uid, u.aiBalanceCurrency)}<button type="button" class="ep-mini ep-mini-ok" data-u-balset="${esc(uid)}">задать</button></div>`; }
+    if (f === "db" || f === "docs") return `<div class="ep-ufd" id="ep-ufd-${esc(uid)}"><div class="ep-admin-empty">Загрузка…</div></div>`;
+    return "";
+  }
   function uCard(u) {
-    const open = A.uexp.has(u.uid); const st = uStatus(u); const sub = u.subscription || {};
-    const trial = isTrialSub(sub); const paid = subActive(sub) && !trial;
-    const aiOn = !!(u.aiAccount && u.aiAccount.accessMode && u.aiAccount.accessMode !== "disabled");
-    const blocked = isBlocked(u); const access = isApproved(u) && !blocked;
-    let body = "";
-    if (open) body = `<div class="ep-ucard-body">
-        <div class="ep-togs">
-          ${tog(u.uid, "access", access, "Доступ")}
-          ${tog(u.uid, "sub", paid, "Подписка")}
-          ${tog(u.uid, "trial", trial, "Тест 10 дней")}
-          ${tog(u.uid, "ai", aiOn, "ИИ")}
-          ${tog(u.uid, "block", blocked, "Заблокирован")}
-        </div>
-        <div class="ep-ubal">
-          <span>Баланс:</span>
-          <input type="number" step="0.01" min="0" data-u-bal="${esc(u.uid)}" value="${u.aiBalance != null ? esc(u.aiBalance) : ""}" placeholder="0">
-          <select data-u-cur="${esc(u.uid)}">${["USD", "EUR", "RUB"].map((c) => `<option value="${c}" ${(u.aiBalanceCurrency || "USD") === c ? "selected" : ""}>${curSym(c)} ${c}</option>`).join("")}</select>
-          <button type="button" class="ep-mini ep-mini-ok" data-u-balset="${esc(u.uid)}">задать</button>
-        </div>
-        ${subActive(sub) ? `<p class="ep-admin-muted ep-ucard-sub">План: ${esc(sub.planId || sub.plan || "—")}${sub.expiresAt ? " · до " + esc(dstr(sub.expiresAt)) : ""}</p>` : ""}
-        <div class="ep-ucard-more"><button type="button" class="ep-ghost" data-open="${esc(u.uid)}">Данные / подробно →</button></div>
-        <p class="ep-act-st" id="ep-act-${esc(u.uid)}"></p>
-      </div>`;
-    return `<div class="ep-ucard ${open ? "is-open" : ""} ${blocked ? "is-blk" : ""}">
+    const open = (A.selectedUid === u.uid); const st = uStatus(u);
+    const body = open ? `<div class="ep-ucard-body">${renderFacet(u, A.facet)}<p class="ep-act-st" id="ep-act-${esc(u.uid)}"></p></div>` : "";
+    return `<div class="ep-ucard ${open ? "is-open" : ""} ${isBlocked(u) ? "is-blk" : ""}">
       <button type="button" class="ep-ucard-head" data-u-exp="${esc(u.uid)}">
         <span class="ep-ucard-ex">${open ? "▼" : "▶"}</span>
         <span class="ep-ucard-main"><b>${esc(u.email || u.uid)}</b><small>${esc(u.displayName || "—")} · рег. ${esc(dstr(u.createdAt))}</small></span>
@@ -160,22 +151,29 @@
         <span class="ep-st ep-st-${esc(st)}">${esc(st)}</span>
       </button>${body}</div>`;
   }
+  async function loadFacetData() {
+    const uid = A.selectedUid; if (!uid) return; const box = $("#ep-ufd-" + uid); if (!box) return;
+    if (A.facet === "db") { const r = await readDoc("user_db", uid); if (r.error) { box.innerHTML = errB("user_db/{uid}", r); return; } const items = (r.data && Array.isArray(r.data.items)) ? r.data.items : []; box.innerHTML = items.length ? `<p class="ep-admin-muted">Позиций в БД: ${items.length}</p>` + items.slice(0, 80).map((it) => `<div class="ep-adb-card"><div class="ep-adb-info"><b>${esc(it.name || "")}</b><span>${esc(it.type === "work" ? "работа" : "материал")} · ${esc(it.unit || "")}${it.price != null ? " · " + esc(it.price) : ""}</span></div></div>`).join("") : "<div class='ep-admin-empty'>Личная БД мастера пуста.</div>"; }
+    else { const re = await readDoc("estimates", uid); const rd = await readDoc("drafts", uid); if (re.error && rd.error) { box.innerHTML = errB("estimates/{uid}", re); return; } let h = ""; if (re.exists && re.data && Object.keys(re.data).length) h += `<p class="ep-admin-muted">Сметы:</p><pre class="ep-admin-pre">${esc(jn(re.data))}</pre>`; if (rd.exists && rd.data && Object.keys(rd.data).length) h += `<p class="ep-admin-muted">Черновики:</p><pre class="ep-admin-pre">${esc(jn(rd.data))}</pre>`; box.innerHTML = h || "<div class='ep-admin-empty'>Смет и документов нет.</div>"; }
+  }
   function renderUsersTab() {
-    const host = $("#ep-admin-body"); if (!host) return;
+    const host = $("#ep-admin-body"); if (!host) return; A.facet = A.facet || "access";
     const pend = A.users.filter(isPending);
     const q = (A.uq || "").toLowerCase();
     let list = A.users.slice();
     if (q) list = list.filter((u) => [u.email, u.displayName, u.uid].some((x) => String(x || "").toLowerCase().indexOf(q) >= 0));
-    host.innerHTML = `<div class="ep-admin-dashboard">
+    const facetName = (FACETS.find((f) => f[0] === A.facet) || [])[1] || "";
+    host.innerHTML = `<div class="ep-facets">${FACETS.map((f) => `<button type="button" class="ep-facet ${A.facet === f[0] ? "on" : ""}" data-facet="${f[0]}">${f[1]}</button>`).join("")}</div>
+      <div class="ep-facet-hint">Раздел: <b>${esc(facetName)}</b> — раскрой пользователя, откроется этот раздел.</div>
+      <div class="ep-admin-dashboard">
         <div class="ep-admin-card ep-stat"><span>Всего</span><b>${A.users.length}</b></div>
         <div class="ep-admin-card ep-stat"><span>Заявки</span><b>${pend.length}</b></div>
         <div class="ep-admin-card ep-stat"><span>Подписка</span><b>${A.users.filter((u) => subActive(u.subscription)).length}</b></div>
         <div class="ep-admin-card ep-stat"><span>Заблок.</span><b>${A.users.filter(isBlocked).length}</b></div></div>
       ${pend.length ? `<div class="ep-admin-card ep-pend"><h3>🔔 Новые заявки (${pend.length})</h3>${pend.map((u) => `<div class="ep-admin-prow"><div><b>${esc(u.email || u.uid)}</b><span>${esc(u.displayName || "")} · ${esc(dstr(u.createdAt))}</span></div><div class="ep-admin-prow-act"><button data-u-tog="access" data-uid="${esc(u.uid)}" data-quick="1" class="ep-ok">Одобрить</button></div></div>`).join("")}</div>` : ""}
       <div class="ep-admin-toolbar"><input id="ep-uq" placeholder="🔍 поиск по пользователям" value="${esc(A.uq || "")}"><button id="ep-admin-refresh" class="ep-ghost">Обновить</button></div>
-      <div class="ep-ulist">${list.length ? list.map(uCard).join("") : "<div class='ep-admin-empty'>Никого не найдено.</div>"}</div>
-      <div id="ep-admin-detail"></div>`;
-    if (A.selectedUid && A.uexp.has(A.selectedUid)) renderDetail();
+      <div class="ep-ulist">${list.length ? list.map(uCard).join("") : "<div class='ep-admin-empty'>Никого не найдено.</div>"}</div>`;
+    if ((A.facet === "db" || A.facet === "docs") && A.selectedUid) loadFacetData();
   }
   function uToggle(uid, which, on) {
     A.selectedUid = uid;
@@ -186,23 +184,8 @@
     if (which === "ai") return on ? callOp("setAiAccessMode", { uid, accessMode: "own_api" }, "ИИ включён ✓") : callOp("setAiAccessMode", { uid, accessMode: "disabled" }, "ИИ выключен");
   }
   function user() { return A.users.find((x) => x.uid === A.selectedUid); }
-  function selectUser(uid) { A.selectedUid = uid; A.userTab = "status"; A.section = null; A.masterDb = []; closePicker(); renderDetail(); const h = $("#ep-admin-detail"); if (h && h.scrollIntoView) try { h.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) {} }
-  function renderDetail() {
-    const host = $("#ep-admin-detail"); if (!host) return; const u = user(); if (!u) { host.innerHTML = "<div class='ep-admin-empty'>Выберите пользователя.</div>"; return; }
-    const st = uStatus(u); const tabs = [["status", "Статус"], ["sub", "Подписка"], ["ai", "ИИ"], ["sec", "Безопасность"], ["data", "Данные"]];
-    host.innerHTML = `<div class="ep-admin-card"><div class="ep-admin-uhead"><div><h2>${esc(u.email || u.uid)}</h2><p class="ep-admin-muted">${esc(u.displayName || "")} · UID ${esc(u.uid)}</p></div><div class="ep-admin-badges"><span class="ep-st ep-st-${esc(st)}">${esc(st)}</span><span class="ep-badge">${esc(u.role)}</span></div></div>
-      <div class="ep-admin-subtabs">${tabs.map((t) => `<button data-utab="${t[0]}" class="${A.userTab === t[0] ? "on" : ""}">${t[1]}</button>`).join("")}</div><div id="ep-utab"></div><p id="ep-act-status" class="ep-admin-muted"></p></div>`;
-    renderUserTab();
-  }
-  function renderUserTab() {
-    const box = $("#ep-utab"); if (!box) return; const u = user(); if (!u) return;
-    const sel = (id, vals, cur) => `<select id="${id}">${vals.map((v) => `<option value="${v[0]}" ${String(cur) === v[0] ? "selected" : ""}>${esc(v[1])}</option>`).join("")}</select>`;
-    if (A.userTab === "status") box.innerHTML = `<div class="ep-admin-actions">${isApproved(u) ? "" : `<button id="ep-approve" class="ep-ok">✓ Одобрить</button>`}${isBlocked(u) ? `<button id="ep-unblock" class="ep-ok">Разблокировать</button>` : `<button id="ep-block" class="ep-danger">Заблокировать</button>`}${u.role === "admin" ? `<button id="ep-demote" class="ep-ghost">Снять админа</button>` : `<button id="ep-promote" class="ep-ghost">Сделать админом</button>`}</div>`;
-    else if (A.userTab === "sub") { const s = u.subscription || {}; box.innerHTML = `<p class="ep-admin-muted">Сейчас: <b>${esc(s.planName || s.planId || "нет")}</b> · ${esc(s.status || "—")}${s.expiresAt ? " · до " + esc(dstr(s.expiresAt)) : ""}</p><div class="ep-admin-row">${sel("ep-plan", [["basic", "Базовый"], ["pro_ai", "С ИИ (pro_ai)"]], s.planId || "basic")}<input id="ep-days" type="number" min="1" value="30" title="дней"><label class="ep-admin-chk"><input id="ep-trial" type="checkbox"> пробный</label></div><div class="ep-admin-row"><input id="ep-amount" type="number" min="0" step="1" value="0" title="сумма ₽"><span class="ep-admin-muted">₽ (лог/чек)</span></div><div class="ep-admin-actions"><button id="ep-grant" class="ep-ok">Выдать / продлить</button><button id="ep-cancel-sub" class="ep-danger">Отменить</button></div>`; }
-    else if (A.userTab === "ai") { const ai = u.aiAccount || {}; box.innerHTML = `<p class="ep-admin-muted">Баланс: <b>${esc(num(ai.balanceRub).toFixed(2))} ₽</b> · режим: ${esc(ai.accessMode || "—")}</p><div class="ep-admin-row"><input id="ep-ai-balance" type="number" min="0" step="0.01" value="${esc(num(ai.balanceRub))}"><button id="ep-ai-set" class="ep-ok">Установить</button></div><div class="ep-admin-row"><input id="ep-ai-topup" type="number" min="0" step="0.01" value="100"><button id="ep-ai-add" class="ep-ghost">Пополнить</button></div><div class="ep-admin-row">${sel("ep-ai-mode", [["disabled", "выкл"], ["admin_api", "общий ключ (контроль токенов)"], ["own_api", "свой ключ"]], ai.accessMode || "disabled")}<button id="ep-ai-mode-save" class="ep-ghost">Сохранить режим</button></div>`; }
-    else if (A.userTab === "sec") { const p = u.securityPolicy || {}; box.innerHTML = `<label class="ep-admin-chk"><input id="ep-p-login" type="checkbox" ${p.allowLogin !== false ? "checked" : ""}> вход разрешён</label><label class="ep-admin-chk"><input id="ep-p-read" type="checkbox" ${p.allowReadData !== false ? "checked" : ""}> чтение данных</label><label class="ep-admin-chk"><input id="ep-p-ai" type="checkbox" ${p.allowAi === true ? "checked" : ""}> ИИ разрешён</label><label class="ep-admin-chk"><input id="ep-p-cache" type="checkbox" ${p.allowLocalCache === true ? "checked" : ""}> локальный кэш</label><div class="ep-admin-actions"><button id="ep-p-save" class="ep-ghost">Сохранить политику</button></div>`; }
-    else if (A.userTab === "data") { box.innerHTML = `<div class="ep-admin-sections"><button data-sec="db">🗂️ БД мастера</button><button data-sec="sub">📄 Подписка</button><button data-sec="ai">🤖 ИИ-счёт</button><button data-sec="drafts">📝 Черновики</button><button data-sec="estimates">🧾 Сметы</button><button data-sec="usage">📊 Расход ИИ</button><button data-sec="logs">📜 Логи</button></div><div id="ep-sec" class="ep-admin-secbox"><div class="ep-admin-empty">Выберите раздел.</div></div>`; if (A.section) openSection(A.section); }
-  }
+  function selectUser(uid) { A.selectedUid = (A.selectedUid === uid ? null : uid); renderUsersTab(); }
+
 
   // ====== БД СЕРВЕРА (вид как у мастера + ручное добавление) ======
   async function renderServerDb() {
@@ -263,7 +246,7 @@
   // ====== операции пользователя ======
   function actStatus(m) { const e = $("#ep-act-status"); if (e) e.textContent = m; status(m); }
   async function writeUserDoc(uid, patch, ok) { const d = db(); if (!d) return; actStatus("Сохранение…"); try { patch.updatedAt = FV(); await d.collection("users").doc(uid).set(patch, { merge: true }); const u = user(); if (u) Object.assign(u, patch); actStatus(ok || "Готово ✓"); if (A.tab === "users") renderUsersTab(); } catch (e) { const c = e && (e.code || e.message); actStatus(String(c).indexOf("permission-denied") >= 0 ? "Нет прав на запись users." : "Ошибка: " + c); } }
-  async function callOp(name, payload, ok) { actStatus("Выполняю…"); try { await call(name, payload); actStatus(ok || "Готово ✓"); await loadUsers(); renderDetail(); } catch (e) { const c = e && (e.code || e.message); actStatus("Ошибка (" + name + "): " + (String(c).indexOf("permission-denied") >= 0 ? "нет прав админа" : c)); } }
+  async function callOp(name, payload, ok) { actStatus("Выполняю…"); try { await call(name, payload); actStatus(ok || "Готово ✓"); await loadUsers(); renderUsersTab(); } catch (e) { const c = e && (e.code || e.message); actStatus("Ошибка (" + name + "): " + (String(c).indexOf("permission-denied") >= 0 ? "нет прав админа" : c)); } }
 
   // ====== разделы данных пользователя ======
   function secBox(h) { const el = $("#ep-sec"); if (el) el.innerHTML = h; }
@@ -295,14 +278,15 @@
       if (t.closest("#ep-admin-open-picker")) return openPicker();
       if (t.closest("#ep-admin-modal-close") || t.closest("#ep-admin-modal-overlay")) return closePicker();
       if (t.closest("#ep-admin-refresh")) return loadUsers();
-      const uexp = t.closest("[data-u-exp]"); if (uexp) { const id = uexp.getAttribute("data-u-exp"); if (A.uexp.has(id)) A.uexp.delete(id); else { A.uexp.add(id); A.selectedUid = id; } renderUsersTab(); return; }
+      const uexp = t.closest("[data-u-exp]"); if (uexp) { selectUser(uexp.getAttribute("data-u-exp")); return; }
+      const fct = t.closest("[data-facet]"); if (fct) { A.facet = fct.getAttribute("data-facet"); renderUsersTab(); return; }
+      const aim = t.closest("[data-u-aimodeset]"); if (aim) { const id = aim.getAttribute("data-u-aimodeset"); const mode = ($('[data-u-aimode="' + id + '"]') || {}).value || "disabled"; A.selectedUid = id; return callOp("setAiAccessMode", { uid: id, accessMode: mode }, "Режим ИИ сохранён ✓"); }
       const uquick = t.closest("[data-u-tog][data-quick]"); if (uquick) return uToggle(uquick.getAttribute("data-uid"), uquick.getAttribute("data-u-tog"), true);
       const ubs = t.closest("[data-u-balset]"); if (ubs) { const id = ubs.getAttribute("data-u-balset"); const amt = num(($('[data-u-bal="' + id + '"]') || {}).value); const cur = ($('[data-u-cur="' + id + '"]') || {}).value || "USD"; A.selectedUid = id; return writeUserDoc(id, { aiBalance: amt, aiBalanceCurrency: cur }, "Баланс задан ✓"); }
       const asp = t.closest("[data-aisrv-prov]"); if (asp) { A.aiProv = asp.getAttribute("data-aisrv-prov"); return renderAiServer(); }
       if (t.closest("#ep-admin-toggle-pending")) { A.onlyPending = !A.onlyPending; renderPickerList(); const b = $("#ep-admin-toggle-pending"); if (b) b.classList.toggle("on", A.onlyPending); return; }
       const op = t.closest("[data-open]"); if (op) { if (A.tab !== "users") switchTab("users"); return selectUser(op.getAttribute("data-open")); }
       const ap = t.closest("[data-approve]"); if (ap) { A.selectedUid = ap.getAttribute("data-approve"); return writeUserDoc(A.selectedUid, { status: "approved", isApproved: true, blocked: false }, "Мастер одобрен ✓"); }
-      const utab = t.closest("[data-utab]"); if (utab) { A.userTab = utab.getAttribute("data-utab"); A.section = null; return renderDetail(); }
       const sec = t.closest("[data-sec]"); if (sec) return openSection(sec.getAttribute("data-sec"));
       if (t.closest("#ep-srv-add")) return srvAddManual();
       const se = t.closest("[data-srv-edit]"); if (se) return srvEdit(se.getAttribute("data-srv-edit"));

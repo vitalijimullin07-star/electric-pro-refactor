@@ -1179,3 +1179,13 @@ body[data-noanim="1"] *::after{animation-duration:.001s!important;transition-dur
 .ep-ai-ctxbox{border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:9px 11px;background:rgba(255,255,255,.03)}
 .ep-ai-ctxh{font:600 calc(12px * var(--eff-text-scale,1)) system-ui;color:var(--muted,#cbd5e1);margin-bottom:6px}
 .ep-ai-ctx{display:inline-flex;align-items:center;gap:6px;margin:3px 12px 3px 0;font:400 calc(12.5px * var(--eff-text-scale,1)) system-ui;color:var(--text,#dbe4f0);cursor:pointer}
+
+/* ── Админка: выбор раздела (фасеты) ── */
+.ep-facets{display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:2px 0 6px;margin-bottom:4px;scrollbar-width:none}
+.ep-facets::-webkit-scrollbar{display:none}
+.ep-facet{flex:none;padding:8px 14px;border-radius:99px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:var(--muted,#cbd5e1);font:600 calc(12.5px * var(--eff-text-scale,1)) system-ui;cursor:pointer;white-space:nowrap}
+.ep-facet.on{background:var(--accent,#2f6fed);color:#fff;border-color:transparent}
+.ep-facet-hint{font:400 calc(11.5px * var(--eff-text-scale,1))/1.5 system-ui;color:var(--muted,#94a3b8);margin:0 0 10px}
+.ep-facet-hint b{color:var(--text,#e8eef7)}
+.ep-ufd{margin-top:4px}
+.ep-ufd .ep-adb-card{margin-bottom:5px}
