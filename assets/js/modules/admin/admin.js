@@ -100,8 +100,27 @@
   }
 
   // ====== навигация ======
-  function renderNav() { const tabs = [["users", "👥 Пользователи"], ["serverdb", "🗄️ БД сервера"], ["requests", "📥 Запросы"], ["contacts", "⚙️ Контакты"]]; const nav = $("#ep-admin-nav"); if (nav) nav.innerHTML = tabs.map((t) => `<button data-tab="${t[0]}" class="${A.tab === t[0] ? "on" : ""}">${t[1]}</button>`).join(""); }
-  function switchTab(tab) { A.tab = tab; renderNav(); if (tab === "users") { renderUsersTab(); if (!A.users.length) loadUsers(); } else if (tab === "serverdb") renderServerDb(); else if (tab === "requests") renderRequests(); else if (tab === "contacts") renderContacts(); }
+  function renderNav() { const tabs = [["users", "👥 Пользователи"], ["serverdb", "🗄️ БД сервера"], ["aiserver", "🤖 ИИ-сервер"], ["requests", "📥 Запросы"], ["contacts", "⚙️ Контакты"]]; const nav = $("#ep-admin-nav"); if (nav) nav.innerHTML = tabs.map((t) => `<button data-tab="${t[0]}" class="${A.tab === t[0] ? "on" : ""}">${t[1]}</button>`).join(""); }
+  function switchTab(tab) { A.tab = tab; renderNav(); if (tab === "users") { renderUsersTab(); if (!A.users.length) loadUsers(); } else if (tab === "serverdb") renderServerDb(); else if (tab === "aiserver") renderAiServer(); else if (tab === "requests") renderRequests(); else if (tab === "contacts") renderContacts(); }
+
+  // ====== ИИ-СЕРВЕР (серверные ключи API) ======
+  const AIKEY = "ep_ai_v29";
+  function aiLoad() { try { return JSON.parse(localStorage.getItem(AIKEY) || "null") || {}; } catch (e) { return {}; } }
+  function aiSaveObj(o) { try { localStorage.setItem(AIKEY, JSON.stringify(o)); } catch (e) {} }
+  function aiSrvCfg(prov) { const o = aiLoad(); o.server = o.server || {}; o.server[prov] = Object.assign({ key: "", model: "", priceIn: 0, priceOut: 0, balance: 0 }, o.server[prov] || {}); return o; }
+  function renderAiServer() {
+    const host = $("#ep-admin-body"); if (!host) return; A.aiProv = A.aiProv || "openai";
+    const o = aiSrvCfg(A.aiProv); const c = o.server[A.aiProv];
+    const provs = [["openai", "OpenAI (ChatGPT)"], ["gemini", "Google Gemini"]];
+    host.innerHTML = `<div class="ep-admin-card"><h3>🤖 Серверные API (для ИИ-прокси)</h3>
+      <p class="ep-admin-muted">Общие ключи, на которых работает ИИ через сервер. Баланс привязан к ключу — расход списывается с него. Сам серверный прокси (Cloud Functions) подключим позже; пока это хранилище ключей + тест под админом (переключатель «Серверный» в ИИ-ассистенте).</p>
+      <div class="ep-ai-ptabs">${provs.map((p) => `<button type="button" class="ep-ai-ptab ${A.aiProv === p[0] ? "on" : ""}" data-aisrv-prov="${p[0]}">${esc(p[1])}</button>`).join("")}</div>
+      <label class="ep-ai-f"><span>Серверный API-ключ</span><input type="password" data-aisrv="key" value="${esc(c.key || "")}" placeholder="ключ ${esc(A.aiProv)}" autocomplete="off"></label>
+      <label class="ep-ai-f"><span>Модель</span><input type="text" data-aisrv="model" value="${esc(c.model || "")}" placeholder="${A.aiProv === "openai" ? "gpt-4o-mini" : "gemini-1.5-flash"}"></label>
+      <div class="ep-ai-f2"><label class="ep-ai-f"><span>Цена 1M вход, $</span><input type="number" step="0.01" min="0" data-aisrv="priceIn" value="${c.priceIn || ""}"></label><label class="ep-ai-f"><span>Цена 1M исход, $</span><input type="number" step="0.01" min="0" data-aisrv="priceOut" value="${c.priceOut || ""}"></label></div>
+      <label class="ep-ai-f"><span>Баланс серверного ключа, $</span><input type="number" step="0.01" min="0" data-aisrv="balance" value="${c.balance || ""}" placeholder="напр. 50"></label>
+      <p class="ep-admin-muted">Сохраняется на этом устройстве (для теста). Для общего доступа мастеров вынесем ключи в Firestore + прокси.</p></div>`;
+  }
 
   // ====== ПОЛЬЗОВАТЕЛИ (карточки-гармошки с тумблерами) ======
   const CURSYM = { USD: "$", EUR: "€", RUB: "₽" };
@@ -279,6 +298,7 @@
       const uexp = t.closest("[data-u-exp]"); if (uexp) { const id = uexp.getAttribute("data-u-exp"); if (A.uexp.has(id)) A.uexp.delete(id); else { A.uexp.add(id); A.selectedUid = id; } renderUsersTab(); return; }
       const uquick = t.closest("[data-u-tog][data-quick]"); if (uquick) return uToggle(uquick.getAttribute("data-uid"), uquick.getAttribute("data-u-tog"), true);
       const ubs = t.closest("[data-u-balset]"); if (ubs) { const id = ubs.getAttribute("data-u-balset"); const amt = num(($('[data-u-bal="' + id + '"]') || {}).value); const cur = ($('[data-u-cur="' + id + '"]') || {}).value || "USD"; A.selectedUid = id; return writeUserDoc(id, { aiBalance: amt, aiBalanceCurrency: cur }, "Баланс задан ✓"); }
+      const asp = t.closest("[data-aisrv-prov]"); if (asp) { A.aiProv = asp.getAttribute("data-aisrv-prov"); return renderAiServer(); }
       if (t.closest("#ep-admin-toggle-pending")) { A.onlyPending = !A.onlyPending; renderPickerList(); const b = $("#ep-admin-toggle-pending"); if (b) b.classList.toggle("on", A.onlyPending); return; }
       const op = t.closest("[data-open]"); if (op) { if (A.tab !== "users") switchTab("users"); return selectUser(op.getAttribute("data-open")); }
       const ap = t.closest("[data-approve]"); if (ap) { A.selectedUid = ap.getAttribute("data-approve"); return writeUserDoc(A.selectedUid, { status: "approved", isApproved: true, blocked: false }, "Мастер одобрен ✓"); }
@@ -305,6 +325,7 @@
     root.addEventListener("change", (ev) => { const u = ev.target.closest && ev.target.closest("[data-u-tog]"); if (u && u.type === "checkbox") uToggle(u.getAttribute("data-uid"), u.getAttribute("data-u-tog"), !!u.checked); });
     root.addEventListener("input", (ev) => {
       if (ev.target.id === "ep-admin-modal-search") return renderPickerList();
+      if (ev.target.getAttribute && ev.target.getAttribute("data-aisrv")) { const f = ev.target.getAttribute("data-aisrv"); const p = A.aiProv || "openai"; const o = aiSrvCfg(p); o.server[p][f] = (f === "key" || f === "model") ? ev.target.value : num(ev.target.value); aiSaveObj(o); return; }
       if (ev.target.id === "ep-uq") { A.uq = ev.target.value; const el = $(".ep-ulist"); if (el) { const q = A.uq.toLowerCase(); let list = A.users.slice(); if (q) list = list.filter((x) => [x.email, x.displayName, x.uid].some((v) => String(v || "").toLowerCase().indexOf(q) >= 0)); el.innerHTML = list.length ? list.map(uCard).join("") : "<div class='ep-admin-empty'>Никого не найдено.</div>"; } }
     });
   }

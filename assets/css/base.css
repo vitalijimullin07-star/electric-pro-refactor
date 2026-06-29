@@ -1166,3 +1166,16 @@ body[data-noanim="1"] *::after{animation-duration:.001s!important;transition-dur
 .ep-ucard-more .ep-ghost{font:500 calc(12px * var(--eff-text-scale,1)) system-ui;background:transparent;border:1px solid rgba(255,255,255,.14);color:var(--muted,#cbd5e1);border-radius:8px;padding:6px 12px;cursor:pointer}
 .ep-act-st{margin:8px 0 0;font:500 calc(11.5px * var(--eff-text-scale,1)) system-ui;color:#6ee7b7;min-height:1px}
 #ep-uq{flex:1;min-width:140px;padding:8px 11px;border-radius:9px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);color:var(--text,#e8eef7);font:400 calc(13px * var(--eff-text-scale,1)) system-ui}
+
+/* ── ИИ v2: источник, быстрые действия, контекст ── */
+.ep-ai-srcrow{display:flex;align-items:center;gap:10px;margin:8px 0 6px;flex-wrap:wrap}
+.ep-ai-srclbl{font:600 calc(12.5px * var(--eff-text-scale,1)) system-ui;color:var(--muted,#cbd5e1)}
+.ep-ai-srctog{display:inline-flex;border:1px solid rgba(255,255,255,.14);border-radius:99px;overflow:hidden}
+.ep-ai-srctog button{padding:6px 16px;background:transparent;border:none;color:var(--muted,#cbd5e1);font:600 calc(12.5px * var(--eff-text-scale,1)) system-ui;cursor:pointer}
+.ep-ai-srctog button.on{background:var(--accent,#2f6fed);color:#fff}
+.ep-ai-quick{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 4px}
+.ep-ai-qbtn{padding:7px 12px;border-radius:99px;border:1px solid rgba(124,196,255,.3);background:rgba(124,196,255,.08);color:#cfe6ff;font:500 calc(12px * var(--eff-text-scale,1)) system-ui;cursor:pointer}
+.ep-ai-note{font:400 calc(11.5px * var(--eff-text-scale,1))/1.5 system-ui;color:#cfe6ff;background:rgba(124,196,255,.08);border:1px solid rgba(124,196,255,.2);border-radius:10px;padding:9px 11px}
+.ep-ai-ctxbox{border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:9px 11px;background:rgba(255,255,255,.03)}
+.ep-ai-ctxh{font:600 calc(12px * var(--eff-text-scale,1)) system-ui;color:var(--muted,#cbd5e1);margin-bottom:6px}
+.ep-ai-ctx{display:inline-flex;align-items:center;gap:6px;margin:3px 12px 3px 0;font:400 calc(12.5px * var(--eff-text-scale,1)) system-ui;color:var(--text,#dbe4f0);cursor:pointer}
