@@ -118,6 +118,7 @@
       </div>
       <div class="ep-ai-usage">
         <div class="ep-ai-ubar"><span><b>${esc(sourceName())}</b> · ${esc(PROVIDERS[st.provider].name)}</span><span>модель: ${esc(c.model || "—")}</span></div>
+        <div class="ep-ai-keysrow">Баланс ключей (${esc(PROVIDERS[st.provider].name)}): Личный <b>${money(st.personal[st.provider].balance)}</b> · Серверный <b>${money(st.server[st.provider].balance)}</b></div>
         <div class="ep-ai-stats">
           <div class="ep-ai-stat"><span>${u.req}</span><small>запросов</small></div>
           <div class="ep-ai-stat"><span>${u.pTok}</span><small>вход.</small></div>

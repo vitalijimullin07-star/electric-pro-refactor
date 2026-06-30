@@ -100,8 +100,8 @@
   }
 
   // ====== навигация ======
-  function renderNav() { const tabs = [["users", "👥 Пользователи"], ["serverdb", "🗄️ БД сервера"], ["aiserver", "🤖 ИИ-сервер"], ["requests", "📥 Запросы"], ["contacts", "⚙️ Контакты"]]; const nav = $("#ep-admin-nav"); if (nav) nav.innerHTML = tabs.map((t) => `<button data-tab="${t[0]}" class="${A.tab === t[0] ? "on" : ""}">${t[1]}</button>`).join(""); }
-  function switchTab(tab) { A.tab = tab; renderNav(); if (tab === "users") { renderUsersTab(); if (!A.users.length) loadUsers(); } else if (tab === "serverdb") renderServerDb(); else if (tab === "aiserver") renderAiServer(); else if (tab === "requests") renderRequests(); else if (tab === "contacts") renderContacts(); }
+  function renderNav() { const tabs = [["users", "👥 Пользователи"], ["serverdb", "🗄️ БД сервера"], ["aiserver", "🤖 ИИ-сервер"], ["requests", "📥 Запросы"], ["backups", "💾 Бекапы"], ["contacts", "⚙️ Контакты"]]; const nav = $("#ep-admin-nav"); if (nav) nav.innerHTML = tabs.map((t) => `<button data-tab="${t[0]}" class="${A.tab === t[0] ? "on" : ""}">${t[1]}</button>`).join(""); }
+  function switchTab(tab) { A.tab = tab; renderNav(); if (tab === "users") { renderUsersTab(); if (!A.users.length) loadUsers(); } else if (tab === "serverdb") renderServerDb(); else if (tab === "aiserver") renderAiServer(); else if (tab === "requests") renderRequests(); else if (tab === "backups") renderBackups(); else if (tab === "contacts") renderContacts(); }
 
   // ====== ИИ-СЕРВЕР (серверные ключи API) ======
   const AIKEY = "ep_ai_v29";
@@ -122,69 +122,138 @@
       <p class="ep-admin-muted">Сохраняется на этом устройстве (для теста). Для общего доступа мастеров вынесем ключи в Firestore + прокси.</p></div>`;
   }
 
-  // ====== ПОЛЬЗОВАТЕЛИ (сверху выбор раздела → раскрыть пользователя → этот раздел) ======
+  // ====== ПОЛЬЗОВАТЕЛИ (полноэкранный вид: список → карточка) ======
   const CURSYM = { USD: "$", EUR: "€", RUB: "₽" };
   function curSym(c) { return CURSYM[c] || "$"; }
   function uBal(u) { const v = num(u.aiBalance); return curSym(u.aiBalanceCurrency || "USD") + (Math.round(v * 100) / 100); }
   function isTrialSub(s) { return subActive(s) && (s.status === "trial" || /trial/i.test(s.planId || s.plan || "")); }
-  function tog(uid, id, on, label) { return `<label class="ep-tog"><span>${label}</span><input type="checkbox" data-u-tog="${id}" data-uid="${esc(uid)}" ${on ? "checked" : ""}><i></i></label>`; }
-  const FACETS = [["access", "Доступ"], ["sub", "Подписка"], ["ai", "ИИ / API"], ["balance", "Баланс API"], ["db", "БД"], ["docs", "Документы"]];
-  function aiModeSel(uid, cur) { return `<select data-u-aimode="${esc(uid)}">${[["disabled", "выкл"], ["own_api", "свой ключ"], ["admin_api", "общий ключ (сервер)"]].map((o) => `<option value="${o[0]}" ${(cur || "disabled") === o[0] ? "selected" : ""}>${o[1]}</option>`).join("")}</select>`; }
-  function curSel(uid, cur) { return `<select data-u-cur="${esc(uid)}">${["USD", "EUR", "RUB"].map((c) => `<option value="${c}" ${(cur || "USD") === c ? "selected" : ""}>${curSym(c)} ${c}</option>`).join("")}</select>`; }
-  function renderFacet(u, f) {
-    const uid = u.uid;
-    if (f === "access") { const blocked = isBlocked(u); const access = isApproved(u) && !blocked; return `<div class="ep-togs">${tog(uid, "access", access, "Доступ (вход разрешён)")}${tog(uid, "block", blocked, "Заблокирован")}</div>`; }
-    if (f === "sub") { const sub = u.subscription || {}; const trial = isTrialSub(sub); const paid = subActive(sub) && !trial; return `<div class="ep-togs">${tog(uid, "sub", paid, "Подписка (30 дней)")}${tog(uid, "trial", trial, "Тест 10 дней")}</div><p class="ep-admin-muted ep-ucard-sub">${subActive(sub) ? "План: " + esc(sub.planId || sub.plan || "—") + (sub.expiresAt ? " · до " + esc(dstr(sub.expiresAt)) : "") : "Подписки нет."}</p>`; }
-    if (f === "ai") { const ai = u.aiAccount || {}; return `<div class="ep-ubal"><span>ИИ / режим API:</span>${aiModeSel(uid, ai.accessMode)}<button type="button" class="ep-mini ep-mini-ok" data-u-aimodeset="${esc(uid)}">сохранить</button></div><p class="ep-admin-muted ep-ucard-sub">Сейчас: ${esc(ai.accessMode || "выкл")}</p>`; }
-    if (f === "balance") { return `<div class="ep-ubal"><span>Баланс API:</span><input type="number" step="0.01" min="0" data-u-bal="${esc(uid)}" value="${u.aiBalance != null ? esc(u.aiBalance) : ""}" placeholder="0">${curSel(uid, u.aiBalanceCurrency)}<button type="button" class="ep-mini ep-mini-ok" data-u-balset="${esc(uid)}">задать</button></div>`; }
-    if (f === "db" || f === "docs") return `<div class="ep-ufd" id="ep-ufd-${esc(uid)}"><div class="ep-admin-empty">Загрузка…</div></div>`;
-    return "";
+  function user() { return A.users.find((x) => x.uid === A.selectedUid); }
+  function openUser(uid) { A.selectedUid = uid; A.view = "user"; A.tab = "users"; renderNav(); renderUsersTab(); const h = $("#ep-admin-body"); if (h && h.scrollIntoView) try { h.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) {} }
+  function downloadJSON(name, obj) {
+    try { const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(() => URL.revokeObjectURL(url), 1500); return true; }
+    catch (e) { try { status("Не удалось скачать: " + (e && e.message)); } catch (x) {} return false; }
   }
-  function uCard(u) {
-    const open = (A.selectedUid === u.uid); const st = uStatus(u);
-    const body = open ? `<div class="ep-ucard-body">${renderFacet(u, A.facet)}<p class="ep-act-st" id="ep-act-${esc(u.uid)}"></p></div>` : "";
-    return `<div class="ep-ucard ${open ? "is-open" : ""} ${isBlocked(u) ? "is-blk" : ""}">
-      <button type="button" class="ep-ucard-head" data-u-exp="${esc(u.uid)}">
-        <span class="ep-ucard-ex">${open ? "▼" : "▶"}</span>
-        <span class="ep-ucard-main"><b>${esc(u.email || u.uid)}</b><small>${esc(u.displayName || "—")} · рег. ${esc(dstr(u.createdAt))}</small></span>
-        <span class="ep-ucard-bal">${esc(uBal(u))}</span>
-        <span class="ep-st ep-st-${esc(st)}">${esc(st)}</span>
-      </button>${body}</div>`;
-  }
-  async function loadFacetData() {
-    const uid = A.selectedUid; if (!uid) return; const box = $("#ep-ufd-" + uid); if (!box) return;
-    if (A.facet === "db") { const r = await readDoc("user_db", uid); if (r.error) { box.innerHTML = errB("user_db/{uid}", r); return; } const items = (r.data && Array.isArray(r.data.items)) ? r.data.items : []; box.innerHTML = items.length ? `<p class="ep-admin-muted">Позиций в БД: ${items.length}</p>` + items.slice(0, 80).map((it) => `<div class="ep-adb-card"><div class="ep-adb-info"><b>${esc(it.name || "")}</b><span>${esc(it.type === "work" ? "работа" : "материал")} · ${esc(it.unit || "")}${it.price != null ? " · " + esc(it.price) : ""}</span></div></div>`).join("") : "<div class='ep-admin-empty'>Личная БД мастера пуста.</div>"; }
-    else { const re = await readDoc("estimates", uid); const rd = await readDoc("drafts", uid); if (re.error && rd.error) { box.innerHTML = errB("estimates/{uid}", re); return; } let h = ""; if (re.exists && re.data && Object.keys(re.data).length) h += `<p class="ep-admin-muted">Сметы:</p><pre class="ep-admin-pre">${esc(jn(re.data))}</pre>`; if (rd.exists && rd.data && Object.keys(rd.data).length) h += `<p class="ep-admin-muted">Черновики:</p><pre class="ep-admin-pre">${esc(jn(rd.data))}</pre>`; box.innerHTML = h || "<div class='ep-admin-empty'>Смет и документов нет.</div>"; }
+  function aiKeyBalanceStr() { try { const o = JSON.parse(localStorage.getItem("ep_ai_v29") || "null") || {}; const p = o.provider || "openai"; const pb = (o.personal && o.personal[p]) ? num(o.personal[p].balance) : 0; const sb = (o.server && o.server[p]) ? num(o.server[p].balance) : 0; return "личный $" + pb + " / сервер $" + sb; } catch (e) { return "—"; } }
+
+  const UFILTERS = [["all", "Все"], ["pending", "Заявки"], ["active", "Активные"], ["blocked", "Заблок."]];
+  function matchFilter(u) { if (A.ufilter === "pending") return isPending(u); if (A.ufilter === "active") return subActive(u.subscription); if (A.ufilter === "blocked") return isBlocked(u); return true; }
+  function uRow(u) {
+    const st = uStatus(u);
+    return `<button type="button" class="ep-urow ${isBlocked(u) ? "is-blk" : ""}" data-u-open="${esc(u.uid)}">
+      <span class="ep-urow-main"><b>${esc(u.email || u.uid)}</b><small>${esc(u.displayName || "—")} · рег. ${esc(dstr(u.createdAt))}</small></span>
+      <span class="ep-urow-meta"><span class="ep-urow-bal">${esc(uBal(u))}</span><span class="ep-st ep-st-${esc(st)}">${esc(st)}</span></span>
+      <span class="ep-urow-go">›</span></button>`;
   }
   function renderUsersTab() {
-    const host = $("#ep-admin-body"); if (!host) return; A.facet = A.facet || "access";
+    const host = $("#ep-admin-body"); if (!host) return;
+    if (A.view === "user" && A.selectedUid) return renderUserPage();
+    A.ufilter = A.ufilter || "all";
     const pend = A.users.filter(isPending);
     const q = (A.uq || "").toLowerCase();
-    let list = A.users.slice();
+    let list = A.users.filter(matchFilter);
     if (q) list = list.filter((u) => [u.email, u.displayName, u.uid].some((x) => String(x || "").toLowerCase().indexOf(q) >= 0));
-    const facetName = (FACETS.find((f) => f[0] === A.facet) || [])[1] || "";
-    host.innerHTML = `<div class="ep-facets">${FACETS.map((f) => `<button type="button" class="ep-facet ${A.facet === f[0] ? "on" : ""}" data-facet="${f[0]}">${f[1]}</button>`).join("")}</div>
-      <div class="ep-facet-hint">Раздел: <b>${esc(facetName)}</b> — раскрой пользователя, откроется этот раздел.</div>
-      <div class="ep-admin-dashboard">
+    host.innerHTML = `<div class="ep-admin-dashboard">
         <div class="ep-admin-card ep-stat"><span>Всего</span><b>${A.users.length}</b></div>
         <div class="ep-admin-card ep-stat"><span>Заявки</span><b>${pend.length}</b></div>
         <div class="ep-admin-card ep-stat"><span>Подписка</span><b>${A.users.filter((u) => subActive(u.subscription)).length}</b></div>
         <div class="ep-admin-card ep-stat"><span>Заблок.</span><b>${A.users.filter(isBlocked).length}</b></div></div>
-      ${pend.length ? `<div class="ep-admin-card ep-pend"><h3>🔔 Новые заявки (${pend.length})</h3>${pend.map((u) => `<div class="ep-admin-prow"><div><b>${esc(u.email || u.uid)}</b><span>${esc(u.displayName || "")} · ${esc(dstr(u.createdAt))}</span></div><div class="ep-admin-prow-act"><button data-u-tog="access" data-uid="${esc(u.uid)}" data-quick="1" class="ep-ok">Одобрить</button></div></div>`).join("")}</div>` : ""}
-      <div class="ep-admin-toolbar"><input id="ep-uq" placeholder="🔍 поиск по пользователям" value="${esc(A.uq || "")}"><button id="ep-admin-refresh" class="ep-ghost">Обновить</button></div>
-      <div class="ep-ulist">${list.length ? list.map(uCard).join("") : "<div class='ep-admin-empty'>Никого не найдено.</div>"}</div>`;
-    if ((A.facet === "db" || A.facet === "docs") && A.selectedUid) loadFacetData();
+      ${pend.length ? `<div class="ep-admin-card ep-pend"><h3>🔔 Новые заявки (${pend.length})</h3>${pend.map((u) => `<div class="ep-admin-prow"><div><b>${esc(u.email || u.uid)}</b><span>${esc(u.displayName || "")} · ${esc(dstr(u.createdAt))}</span></div><div class="ep-admin-prow-act"><button data-u-open="${esc(u.uid)}" class="ep-btn ep-btn-sm">Открыть</button></div></div>`).join("")}</div>` : ""}
+      <div class="ep-ufilters">${UFILTERS.map((f) => `<button type="button" class="ep-facet ${A.ufilter === f[0] ? "on" : ""}" data-ufilter="${f[0]}">${f[1]}</button>`).join("")}</div>
+      <div class="ep-admin-toolbar"><input id="ep-uq" placeholder="🔍 поиск" value="${esc(A.uq || "")}"><button id="ep-admin-refresh" class="ep-btn ep-btn-sm">Обновить</button></div>
+      <div class="ep-ulist">${list.length ? list.map(uRow).join("") : "<div class='ep-admin-empty'>Никого не найдено.</div>"}</div>`;
   }
-  function uToggle(uid, which, on) {
-    A.selectedUid = uid;
-    if (which === "access") return on ? writeUserDoc(uid, { status: "approved", isApproved: true, blocked: false }, "Доступ открыт ✓") : writeUserDoc(uid, { status: "blocked_review", blocked: true }, "Доступ закрыт");
-    if (which === "block") return on ? writeUserDoc(uid, { status: "blocked_review", blocked: true }, "Заблокирован") : writeUserDoc(uid, { status: "approved", blocked: false, isApproved: true }, "Разблокирован");
-    if (which === "sub") return on ? callOp("grantSubscription", { uid, planId: "basic", periodDays: 30, trial: false }, "Подписка включена ✓") : callOp("cancelSubscription", { uid, reason: "admin_panel" }, "Подписка выключена");
-    if (which === "trial") return on ? callOp("grantSubscription", { uid, planId: "basic", periodDays: 10, trial: true }, "Тест 10 дней включён ✓") : callOp("cancelSubscription", { uid, reason: "admin_panel" }, "Тест выключен");
-    if (which === "ai") return on ? callOp("setAiAccessMode", { uid, accessMode: "own_api" }, "ИИ включён ✓") : callOp("setAiAccessMode", { uid, accessMode: "disabled" }, "ИИ выключен");
+  function renderUserPage() {
+    const host = $("#ep-admin-body"); if (!host) return; const u = user(); if (!u) { A.view = "list"; return renderUsersTab(); }
+    const st = uStatus(u); const sub = u.subscription || {}; const ai = u.aiAccount || {};
+    const blocked = isBlocked(u); const access = isApproved(u) && !blocked;
+    const planId = sub.planId || sub.plan || "basic";
+    const opt = (v, l, cur) => `<option value="${v}" ${cur === v ? "selected" : ""}>${l}</option>`;
+    host.innerHTML = `<div class="ep-uback"><button type="button" class="ep-btn ep-btn-sm" data-u-back>‹ К списку</button></div>
+      <div class="ep-uhead"><h2>${esc(u.email || u.uid)}</h2><p class="ep-admin-muted">${esc(u.displayName || "—")} · рег. ${esc(dstr(u.createdAt))}</p><div class="ep-uhead-badges"><span class="ep-st ep-st-${esc(st)}">${esc(st)}</span><span class="ep-badge">${esc(u.role || "master")}</span></div></div>
+
+      <div class="ep-usec"><h3>Доступ</h3><div class="ep-usec-btns">
+        ${access ? `<button type="button" class="ep-btn ep-btn-danger" data-u-act="block">Заблокировать</button>` : `<button type="button" class="ep-btn ep-btn-ok" data-u-act="approve">Открыть доступ</button>`}
+        ${blocked ? `<button type="button" class="ep-btn ep-btn-ok" data-u-act="unblock">Разблокировать</button>` : ""}</div></div>
+
+      <div class="ep-usec"><h3>Подписка</h3>
+        <p class="ep-admin-muted">${subActive(sub) ? "Активна: <b>" + esc(isTrialSub(sub) ? "Тест" : planId) + "</b>" + (sub.expiresAt ? " · до " + esc(dstr(sub.expiresAt)) : "") : "Подписки нет."}</p>
+        <div class="ep-uform">
+          <label class="ep-ufield"><span>План</span><select id="ep-uplan">${opt("basic", "Базовый", planId)}${opt("pro_ai", "С ИИ", planId)}</select></label>
+          <label class="ep-uchk"><input type="checkbox" id="ep-utrial"> пробный (тест)</label>
+        </div>
+        <div class="ep-udur"><span class="ep-udur-lbl">Срок:</span>${[30, 60, 90, 180, 365].map((d) => `<button type="button" class="ep-chip" data-u-dur="${d}">${d} дн</button>`).join("")}</div>
+        <div class="ep-uform">
+          <label class="ep-ufield"><span>или дней</span><input type="number" min="1" id="ep-udays" placeholder="напр. 45"></label>
+          <label class="ep-ufield"><span>или до даты</span><input type="date" id="ep-udate"></label>
+        </div>
+        <div class="ep-usec-btns"><button type="button" class="ep-btn ep-btn-ok" data-u-act="grant">Выдать / продлить</button><button type="button" class="ep-btn ep-btn-danger" data-u-act="cancelsub">Отменить</button></div>
+      </div>
+
+      <div class="ep-usec"><h3>ИИ / API</h3>
+        <label class="ep-ufield"><span>Режим</span><select id="ep-uaimode">${opt("disabled", "выкл", ai.accessMode || "disabled")}${opt("own_api", "свой ключ", ai.accessMode || "disabled")}${opt("admin_api", "общий ключ (сервер)", ai.accessMode || "disabled")}</select></label>
+        <div class="ep-usec-btns"><button type="button" class="ep-btn" data-u-act="aimode">Сохранить режим</button></div>
+        <p class="ep-admin-muted">Сейчас: ${esc(ai.accessMode || "выкл")}. Баланс твоих ключей (из ИИ-ассистента): <b>${esc(aiKeyBalanceStr())}</b>.</p>
+      </div>
+
+      <div class="ep-usec"><h3>Баланс (выделено мастеру)</h3>
+        <div class="ep-ubal"><input type="number" step="0.01" min="0" id="ep-ubalamt" value="${u.aiBalance != null ? esc(u.aiBalance) : ""}" placeholder="0"><select id="ep-ubalcur">${["USD", "EUR", "RUB"].map((c) => `<option value="${c}" ${(u.aiBalanceCurrency || "USD") === c ? "selected" : ""}>${curSym(c)} ${c}</option>`).join("")}</select><button type="button" class="ep-btn ep-btn-ok" data-u-act="setbal">Задать</button></div>
+        <p class="ep-admin-muted">Баланс, выделенный мастеру (заработает с ИИ-прокси). Реальный баланс твоих ключей — в ИИ-ассистенте.</p></div>
+
+      <div class="ep-usec"><h3>Данные</h3>
+        <div class="ep-usec-btns"><button type="button" class="ep-btn" data-u-data="db">🗂️ База мастера</button><button type="button" class="ep-btn" data-u-data="docs">🧾 Сметы / документы</button></div>
+        <div id="ep-udata" class="ep-udata"></div>
+        <div class="ep-usec-btns"><button type="button" class="ep-btn ep-btn-ok" data-u-act="backupuser">⬇️ Бекап этого пользователя</button></div></div>
+
+      <p id="ep-act-status" class="ep-act-st"></p>`;
   }
-  function user() { return A.users.find((x) => x.uid === A.selectedUid); }
-  function selectUser(uid) { A.selectedUid = (A.selectedUid === uid ? null : uid); renderUsersTab(); }
+  function grantDays() {
+    const dt = ($("#ep-udate") || {}).value; if (dt) { const ms = new Date(dt + "T23:59:59").getTime() - Date.now(); const d = Math.ceil(ms / 86400000); if (d > 0) return d; }
+    const days = num(($("#ep-udays") || {}).value); if (days > 0) return days;
+    return 30;
+  }
+  async function uAct(act) {
+    const u = user(); if (!u) return; const uid = u.uid;
+    if (act === "approve") return writeUserDoc(uid, { status: "approved", isApproved: true, blocked: false }, "Доступ открыт ✓");
+    if (act === "block") return writeUserDoc(uid, { status: "blocked_review", blocked: true }, "Заблокирован");
+    if (act === "unblock") return writeUserDoc(uid, { status: "approved", blocked: false, isApproved: true }, "Разблокирован");
+    if (act === "grant") { const planId = ($("#ep-uplan") || {}).value || "basic"; const trial = !!($("#ep-utrial") || {}).checked; return callOp("grantSubscription", { uid, planId, periodDays: grantDays(), trial }, "Подписка выдана ✓"); }
+    if (act === "cancelsub") return callOp("cancelSubscription", { uid, reason: "admin_panel" }, "Подписка отменена");
+    if (act === "aimode") { const mode = ($("#ep-uaimode") || {}).value || "disabled"; return callOp("setAiAccessMode", { uid, accessMode: mode }, "Режим ИИ сохранён ✓"); }
+    if (act === "setbal") { const amt = num(($("#ep-ubalamt") || {}).value); const cur = ($("#ep-ubalcur") || {}).value || "USD"; return writeUserDoc(uid, { aiBalance: amt, aiBalanceCurrency: cur }, "Баланс задан ✓"); }
+    if (act === "backupuser") { actStatus("Собираю бекап…"); const dbr = await readDoc("user_db", uid); const er = await readDoc("estimates", uid); const dr = await readDoc("drafts", uid); const dump = { type: "ep-user-backup", uid, email: u.email, exportedAt: new Date().toISOString(), user_db: dbr.data || null, estimates: er.data || null, drafts: dr.data || null }; downloadJSON("ep-backup-" + (u.email || uid).replace(/[^a-z0-9]+/gi, "_") + ".json", dump); actStatus("Бекап скачан ✓"); }
+  }
+  async function loadUserData(which) {
+    const box = $("#ep-udata"); if (!box || !A.selectedUid) return; const uid = A.selectedUid; box.innerHTML = "<div class='ep-admin-empty'>Загрузка…</div>";
+    if (which === "db") { const r = await readDoc("user_db", uid); if (r.error) { box.innerHTML = errB("user_db/{uid}", r); return; } const items = (r.data && Array.isArray(r.data.items)) ? r.data.items : []; box.innerHTML = items.length ? `<p class="ep-admin-muted">Позиций в БД: ${items.length}</p>` + items.slice(0, 100).map((it) => `<div class="ep-adb-card"><div class="ep-adb-info"><b>${esc(it.name || "")}</b><span>${esc(it.type === "work" ? "работа" : "материал")} · ${esc(it.unit || "")}${it.price != null ? " · " + esc(it.price) : ""}</span></div></div>`).join("") : "<div class='ep-admin-empty'>Личная БД мастера пуста.</div>"; }
+    else { const er = await readDoc("estimates", uid); const dr = await readDoc("drafts", uid); if (er.error && dr.error) { box.innerHTML = errB("estimates/{uid}", er); return; } let h = ""; if (er.exists && er.data && Object.keys(er.data).length) h += `<p class="ep-admin-muted">Сметы:</p><pre class="ep-admin-pre">${esc(jn(er.data))}</pre>`; if (dr.exists && dr.data && Object.keys(dr.data).length) h += `<p class="ep-admin-muted">Черновики:</p><pre class="ep-admin-pre">${esc(jn(dr.data))}</pre>`; box.innerHTML = h || "<div class='ep-admin-empty'>Смет и документов нет.</div>"; }
+  }
+
+  // ====== БЕКАПЫ ======
+  async function renderBackups() {
+    const host = $("#ep-admin-body"); if (!host) return;
+    host.innerHTML = `<div class="ep-admin-card"><h3>💾 Бекапы</h3>
+      <p class="ep-admin-muted">Скачиваются JSON-файлами на устройство. Можно целиком или по отдельности.</p>
+      <div class="ep-usec-btns ep-bk-btns">
+        <button type="button" class="ep-btn ep-btn-ok" data-bk="all">⬇️ Бекап ВСЕГО (сервер + все пользователи)</button>
+        <button type="button" class="ep-btn" data-bk="server">🗄️ Бекап базы сервера (каталог)</button>
+        <button type="button" class="ep-btn" data-bk="users">👥 Бекап данных всех пользователей</button>
+      </div>
+      <p id="ep-bk-status" class="ep-act-st"></p>
+      <p class="ep-admin-muted">«Бекап всего» может занять время — читает базу каждого пользователя.</p></div>`;
+  }
+  function bkStatus(m) { const e = $("#ep-bk-status"); if (e) e.textContent = m; status(m); }
+  async function backupServer() { const r = await readDoc("server_db", SRV_DOC); if (r.error) { bkStatus("Ошибка чтения server_db: " + r.error); return null; } return { server_db: r.data || null }; }
+  async function backupAllUsers() {
+    const out = []; let i = 0;
+    for (const u of A.users) { i++; bkStatus("Чтение пользователей… " + i + "/" + A.users.length); const dbr = await readDoc("user_db", u.uid); const er = await readDoc("estimates", u.uid); const dr = await readDoc("drafts", u.uid); out.push({ uid: u.uid, email: u.email, displayName: u.displayName, status: uStatus(u), subscription: u.subscription || null, aiAccount: u.aiAccount || null, aiBalance: u.aiBalance, aiBalanceCurrency: u.aiBalanceCurrency, user_db: dbr.data || null, estimates: er.data || null, drafts: dr.data || null }); }
+    return out;
+  }
+  async function doBackup(kind) {
+    const ts = new Date().toISOString().slice(0, 10);
+    if (kind === "server") { bkStatus("Собираю базу сервера…"); const s = await backupServer(); if (!s) return; downloadJSON("ep-backup-server-" + ts + ".json", { type: "ep-server-backup", exportedAt: new Date().toISOString(), ...s }); bkStatus("Бекап сервера скачан ✓"); return; }
+    if (kind === "users") { const us = await backupAllUsers(); downloadJSON("ep-backup-users-" + ts + ".json", { type: "ep-users-backup", exportedAt: new Date().toISOString(), count: us.length, users: us }); bkStatus("Бекап пользователей скачан ✓ (" + us.length + ")"); return; }
+    if (kind === "all") { bkStatus("Собираю полный бекап…"); const s = await backupServer(); const us = await backupAllUsers(); downloadJSON("ep-backup-FULL-" + ts + ".json", { type: "ep-full-backup", exportedAt: new Date().toISOString(), server_db: s ? s.server_db : null, usersCount: us.length, users: us }); bkStatus("Полный бекап скачан ✓"); return; }
+  }
 
 
   // ====== БД СЕРВЕРА (вид как у мастера + ручное добавление) ======
@@ -278,14 +347,16 @@
       if (t.closest("#ep-admin-open-picker")) return openPicker();
       if (t.closest("#ep-admin-modal-close") || t.closest("#ep-admin-modal-overlay")) return closePicker();
       if (t.closest("#ep-admin-refresh")) return loadUsers();
-      const uexp = t.closest("[data-u-exp]"); if (uexp) { selectUser(uexp.getAttribute("data-u-exp")); return; }
-      const fct = t.closest("[data-facet]"); if (fct) { A.facet = fct.getAttribute("data-facet"); renderUsersTab(); return; }
-      const aim = t.closest("[data-u-aimodeset]"); if (aim) { const id = aim.getAttribute("data-u-aimodeset"); const mode = ($('[data-u-aimode="' + id + '"]') || {}).value || "disabled"; A.selectedUid = id; return callOp("setAiAccessMode", { uid: id, accessMode: mode }, "Режим ИИ сохранён ✓"); }
-      const uquick = t.closest("[data-u-tog][data-quick]"); if (uquick) return uToggle(uquick.getAttribute("data-uid"), uquick.getAttribute("data-u-tog"), true);
-      const ubs = t.closest("[data-u-balset]"); if (ubs) { const id = ubs.getAttribute("data-u-balset"); const amt = num(($('[data-u-bal="' + id + '"]') || {}).value); const cur = ($('[data-u-cur="' + id + '"]') || {}).value || "USD"; A.selectedUid = id; return writeUserDoc(id, { aiBalance: amt, aiBalanceCurrency: cur }, "Баланс задан ✓"); }
+      const uopen = t.closest("[data-u-open]"); if (uopen) { openUser(uopen.getAttribute("data-u-open")); return; }
+      if (t.closest("[data-u-back]")) { A.view = "list"; A.selectedUid = null; renderUsersTab(); return; }
+      const uf = t.closest("[data-ufilter]"); if (uf) { A.ufilter = uf.getAttribute("data-ufilter"); renderUsersTab(); return; }
+      const udur = t.closest("[data-u-dur]"); if (udur) { const f = $("#ep-udays"); if (f) f.value = udur.getAttribute("data-u-dur"); const dt = $("#ep-udate"); if (dt) dt.value = ""; document.querySelectorAll("[data-u-dur]").forEach((b) => b.classList && b.classList.toggle("on", b === udur)); return; }
+      const uact = t.closest("[data-u-act]"); if (uact) return uAct(uact.getAttribute("data-u-act"));
+      const udata = t.closest("[data-u-data]"); if (udata) return loadUserData(udata.getAttribute("data-u-data"));
+      const bk = t.closest("[data-bk]"); if (bk) return doBackup(bk.getAttribute("data-bk"));
       const asp = t.closest("[data-aisrv-prov]"); if (asp) { A.aiProv = asp.getAttribute("data-aisrv-prov"); return renderAiServer(); }
       if (t.closest("#ep-admin-toggle-pending")) { A.onlyPending = !A.onlyPending; renderPickerList(); const b = $("#ep-admin-toggle-pending"); if (b) b.classList.toggle("on", A.onlyPending); return; }
-      const op = t.closest("[data-open]"); if (op) { if (A.tab !== "users") switchTab("users"); return selectUser(op.getAttribute("data-open")); }
+      const op = t.closest("[data-open]"); if (op) { return openUser(op.getAttribute("data-open")); }
       const ap = t.closest("[data-approve]"); if (ap) { A.selectedUid = ap.getAttribute("data-approve"); return writeUserDoc(A.selectedUid, { status: "approved", isApproved: true, blocked: false }, "Мастер одобрен ✓"); }
       const sec = t.closest("[data-sec]"); if (sec) return openSection(sec.getAttribute("data-sec"));
       if (t.closest("#ep-srv-add")) return srvAddManual();
@@ -306,7 +377,6 @@
       if (t.closest("#ep-ai-mode-save")) return callOp("setAiAccessMode", { uid, accessMode: ($("#ep-ai-mode") || {}).value || "disabled" }, "Режим ИИ сохранён ✓");
       if (t.closest("#ep-p-save")) return callOp("setUserSecurityPolicy", { uid, allowLogin: !!($("#ep-p-login") || {}).checked, allowReadData: !!($("#ep-p-read") || {}).checked, allowAi: !!($("#ep-p-ai") || {}).checked, allowLocalCache: !!($("#ep-p-cache") || {}).checked }, "Политика сохранена ✓");
     });
-    root.addEventListener("change", (ev) => { const u = ev.target.closest && ev.target.closest("[data-u-tog]"); if (u && u.type === "checkbox") uToggle(u.getAttribute("data-uid"), u.getAttribute("data-u-tog"), !!u.checked); });
     root.addEventListener("input", (ev) => {
       if (ev.target.id === "ep-admin-modal-search") return renderPickerList();
       if (ev.target.getAttribute && ev.target.getAttribute("data-aisrv")) { const f = ev.target.getAttribute("data-aisrv"); const p = A.aiProv || "openai"; const o = aiSrvCfg(p); o.server[p][f] = (f === "key" || f === "model") ? ev.target.value : num(ev.target.value); aiSaveObj(o); return; }
