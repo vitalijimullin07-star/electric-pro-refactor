@@ -5,7 +5,7 @@
   const TITLES = { shield: "Конфигуратор щита", pool: "Пул розеток", consumables: "Расходники", materials: "Материалы", work: "Работа", scheme: "Однолинейная схема", settings: "Настройки", subscription: "Подписка", admin: "Админка" };
   const NO_BAR = { main: 1, login: 1 };
   function cap(s) { s = String(s || ""); return s.charAt(0).toUpperCase() + s.slice(1); }
-  function clean(s) { return String(s == null ? "" : s).replace(/[&<>]/g, ""); }
+  function clean(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
   function build(route) {
     const app = document.getElementById("app"); if (!app) return;

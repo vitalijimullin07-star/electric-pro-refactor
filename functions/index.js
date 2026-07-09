@@ -1,7 +1,11 @@
 const crypto = require("crypto");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { setGlobalOptions } = require("firebase-functions/v2");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
+
+// Клиент (admin.js, auth.js, access-policy.js) вызывает функции в europe-west1.
+setGlobalOptions({ region: "europe-west1", maxInstances: 10 });
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -45,13 +49,25 @@ function signingSecret() {
   return secret;
 }
 
+// Канонический payload: фиксированный набор и порядок ключей, чтобы подпись
+// не зависела от порядка полей, который возвращает Firestore.
 function safeAccessPayload(data) {
+  const sub = data.subscription || {};
+  const ai = data.ai || {};
   return {
     uid: data.uid || "",
     role: data.role || "master",
     accessStatus: data.accessStatus || "pending",
-    subscription: data.subscription || {},
-    ai: data.ai || {},
+    subscription: {
+      plan: sub.plan || "none",
+      active: Boolean(sub.active),
+      expiresAtMs: sub.expiresAt && typeof sub.expiresAt.toMillis === "function" ? sub.expiresAt.toMillis() : null
+    },
+    ai: {
+      mode: ai.mode || "off",
+      enabled: Boolean(ai.enabled),
+      balanceRub: Number(ai.balanceRub || 0)
+    },
     version: "v29-secure-access"
   };
 }
@@ -63,6 +79,23 @@ function signAccess(data) {
     .createHmac("sha256", secret)
     .update(JSON.stringify(safeAccessPayload(data)))
     .digest("hex");
+}
+
+function verifyAccessSignature(uid, data) {
+  const secret = signingSecret();
+  if (!secret) return true; // подпись выключена, пока секрет не задан
+  const expected = signAccess({ ...data, uid });
+  const actual = String(data.accessSignature || "");
+  if (actual.length !== expected.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(actual), Buffer.from(expected));
+}
+
+async function logSecurityEvent(type, details) {
+  try {
+    await db.collection("security_events").add({ type, ...details, createdAt: now() });
+  } catch (e) {
+    logger.error("security_events write failed", e);
+  }
 }
 
 function daysFromNow(days) {
@@ -140,6 +173,7 @@ exports.ensureUserProfile = onCall(async (request) => {
     email,
     displayName: request.auth.token.name || email,
     photoURL: request.auth.token.picture || "",
+    lastLoginAt: now(),
     updatedAt: now()
   };
 
@@ -177,8 +211,15 @@ exports.getAccessPolicy = onCall(async (request) => {
   }
 
   const data = snap.data() || {};
+
+  if (data.accessSignature && !verifyAccessSignature(uid, data)) {
+    await logSecurityEvent("access-signature-mismatch", { uid, email });
+    logger.warn("Access signature mismatch", { uid });
+  }
+
   if (OWNER_EMAILS.has(email) && data.role !== "admin") {
-    await ref.set({ role: "admin", accessStatus: "approved", updatedAt: now() }, { merge: true });
+    const patched = { ...data, role: "admin", accessStatus: "approved" };
+    await ref.set({ role: "admin", accessStatus: "approved", accessSignature: signAccess({ ...patched, uid }), updatedAt: now() }, { merge: true });
     const fresh = await ref.get();
     return normalizeAccessDoc(uid, fresh.data() || {});
   }
@@ -191,6 +232,124 @@ exports.adminListUsers = onCall(async (request) => {
   const snap = await db.collection("users").orderBy("updatedAt", "desc").limit(100).get();
   const users = snap.docs.map((doc) => normalizeAccessDoc(doc.id, doc.data() || {}));
   return { users };
+});
+
+const TRIAL_DAYS = 10;
+
+// Единая точка админ-операций над пользователем. Заменяет прямые записи в users
+// с клиента (правила их запрещают) и покрывает все действия админки.
+exports.adminUpdateUser = onCall(async (request) => {
+  await assertAdmin(request);
+  const input = request.data || {};
+  const targetUid = String(input.targetUid || "");
+  const op = String(input.op || "");
+  if (!targetUid) throw new HttpsError("invalid-argument", "Не указан пользователь.");
+
+  const ref = db.collection("users").doc(targetUid);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError("not-found", "Пользователь не найден.");
+  const cur = snap.data() || {};
+  const curSub = cur.subscription || {};
+  const curAi = cur.ai || {};
+
+  const patch = { updatedAt: now(), updatedBy: request.auth.uid };
+  const logExtra = {};
+
+  switch (op) {
+    case "approve": {
+      patch.accessStatus = "approved";
+      // одобренному мастеру без подписки выдаём тест TRIAL_DAYS дней (один раз)
+      const hasSub = curSub.plan && curSub.plan !== "none";
+      if (!hasSub && !cur.trialUsed) {
+        patch.subscription = {
+          plan: "trial",
+          title: planTitle("trial"),
+          active: true,
+          expiresAt: daysFromNow(TRIAL_DAYS),
+          updatedAt: now()
+        };
+        patch.trialUsed = true;
+        logExtra.trialDays = TRIAL_DAYS;
+      }
+      break;
+    }
+    case "block":
+      patch.accessStatus = "blocked";
+      break;
+    case "unblock":
+      patch.accessStatus = "approved";
+      break;
+    case "setRole": {
+      const role = String(input.role || "");
+      if (role !== "admin" && role !== "master") throw new HttpsError("invalid-argument", "Недопустимая роль.");
+      patch.role = role;
+      logExtra.role = role;
+      break;
+    }
+    case "grantSubscription": {
+      const plan = ["basic", "ai", "trial"].indexOf(String(input.plan || "")) >= 0 ? String(input.plan) : "basic";
+      const days = Math.max(1, Math.min(3650, Number(input.days || 30)));
+      // продление: если текущая подписка ещё активна, дни прибавляются к её концу
+      const baseMs = curSub.expiresAt && typeof curSub.expiresAt.toMillis === "function" && curSub.expiresAt.toMillis() > Date.now() && input.extend !== false
+        ? curSub.expiresAt.toMillis() : Date.now();
+      patch.subscription = {
+        plan,
+        title: planTitle(plan),
+        active: true,
+        expiresAt: admin.firestore.Timestamp.fromMillis(baseMs + days * 86400000),
+        updatedAt: now()
+      };
+      if (plan === "trial") patch.trialUsed = true;
+      patch.accessStatus = cur.accessStatus === "blocked" ? cur.accessStatus : "approved";
+      logExtra.plan = plan; logExtra.days = days;
+      break;
+    }
+    case "cancelSubscription":
+      patch.subscription = { plan: "none", title: planTitle("none"), active: false, expiresAt: null, updatedAt: now() };
+      break;
+    case "setAiMode": {
+      const mode = ["off", "client", "server"].indexOf(String(input.mode || "")) >= 0 ? String(input.mode) : "off";
+      patch.ai = { ...curAi, mode, enabled: mode !== "off", updatedAt: now() };
+      logExtra.aiMode = mode;
+      break;
+    }
+    case "setAiBalance": {
+      const balanceRub = Math.max(0, Number(input.balanceRub || 0));
+      patch.ai = { ...curAi, balanceRub, updatedAt: now() };
+      logExtra.aiBalanceRub = balanceRub;
+      break;
+    }
+    case "topUpAiBalance": {
+      const amountRub = Number(input.amountRub || 0);
+      if (!(amountRub > 0)) throw new HttpsError("invalid-argument", "Сумма пополнения должна быть больше нуля.");
+      patch.ai = { ...curAi, balanceRub: Math.max(0, Number(curAi.balanceRub || 0) + amountRub), updatedAt: now() };
+      logExtra.amountRub = amountRub;
+      break;
+    }
+    case "setNote":
+      patch.adminNote = String(input.note || "");
+      break;
+    default:
+      throw new HttpsError("invalid-argument", "Неизвестная операция: " + op);
+  }
+
+  const next = { ...cur, ...patch };
+  patch.accessSignature = signAccess({ ...next, uid: targetUid });
+
+  await ref.set(patch, { merge: true });
+  await db.collection("admin_logs").add({
+    type: "adminUpdateUser",
+    op,
+    actorUid: request.auth.uid,
+    actorEmail: request.auth.token.email || "",
+    targetUid,
+    uid: targetUid,
+    ...logExtra,
+    createdAt: now()
+  });
+
+  const fresh = await ref.get();
+  return { ok: true, user: normalizeAccessDoc(targetUid, fresh.data() || {}) };
 });
 
 exports.adminSetUserAccess = onCall(async (request) => {

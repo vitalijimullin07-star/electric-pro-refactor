@@ -60,7 +60,7 @@
 
   /* ---- UI ---- */
   const TYPES = [["self", "Самозанятый"], ["ip", "ИП"], ["ooo", "ООО"], ["fiz", "Физлицо"]];
-  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
   function field(scope, key, label, ph, type) {
     const v = (scope === "m" ? getMaster() : getClient())[key] || "";
     return `<label class="ep-prof-f"><span>${label}</span><input data-prof="${scope}.${key}" type="${type || "text"}" value="${esc(v)}" placeholder="${esc(ph || "")}"></label>`;

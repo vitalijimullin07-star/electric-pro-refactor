@@ -1235,3 +1235,13 @@ body[data-noanim="1"] *::after{animation-duration:.001s!important;transition-dur
 .ep-udata:empty{display:none}
 .ep-ai-keysrow{font:500 calc(11.5px * var(--eff-text-scale,1)) system-ui;color:var(--muted,#94a3b8);margin:0 0 8px;padding:6px 9px;background:rgba(255,255,255,.03);border-radius:8px}
 .ep-ai-keysrow b{color:#6ee7b7;font-variant-numeric:tabular-nums}
+
+/* ==== Доступность: уважаем системную настройку «меньше движения» ==== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -25,24 +25,28 @@
   function FV() { return (typeof firebase !== "undefined" && firebase.firestore && firebase.firestore.FieldValue) ? firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString(); }
   function status(m) { const el = $("#ep-admin-status"); if (el) el.textContent = m; }
 
-  function uStatus(u) { return u.status || (u.isApproved ? "approved" : "pending"); }
+  // Статусы: сначала V29 (accessStatus), потом легаси-поля для старых документов
+  function uStatus(u) { return u.accessStatus || u.status || (u.isApproved ? "approved" : "pending"); }
   function isPending(u) { const s = uStatus(u); return s === "pending" || s === "pending_review" || (!u.isApproved && ["approved", "blocked", "blocked_review", "deleted"].indexOf(s) < 0); }
   function isBlocked(u) { const s = uStatus(u); return u.blocked === true || ["blocked", "blocked_review", "deleted"].indexOf(s) >= 0; }
   function isApproved(u) { return uStatus(u) === "approved" || u.isApproved === true; }
-  function subActive(s) { return s && (s.status === "active" || s.status === "trial") && (!s.expiresAt || (tsDate(s.expiresAt) && tsDate(s.expiresAt).getTime() > Date.now())); }
+  function subActive(s) {
+    if (!s) return false;
+    const notExpired = !s.expiresAt || (tsDate(s.expiresAt) && tsDate(s.expiresAt).getTime() > Date.now());
+    if (typeof s.active === "boolean") return s.active && s.plan !== "none" && notExpired; // V29
+    return (s.status === "active" || s.status === "trial") && notExpired; // легаси
+  }
 
   // ====== загрузка ======
   async function loadUsers() {
     status("Загрузка пользователей…"); const d = db(); if (!d) { status("Firebase недоступен."); return; }
     try {
-      const [us, subs, ais] = await Promise.all([d.collection("users").limit(800).get(), d.collection("user_subscriptions").limit(800).get().catch(() => ({ docs: [] })), d.collection("ai_accounts").limit(800).get().catch(() => ({ docs: [] }))]);
-      const sm = {}, am = {}; subs.docs.forEach((x) => sm[x.id] = x.data() || {}); ais.docs.forEach((x) => am[x.id] = x.data() || {});
-      A.users = us.docs.map((doc) => { const dt = doc.data() || {}; return { uid: doc.id, email: dt.email || "", displayName: dt.displayName || dt.name || "", role: dt.role || "master", status: dt.status, isApproved: dt.isApproved, isAdmin: dt.isAdmin, blocked: dt.blocked, createdAt: dt.createdAt, aiBalance: dt.aiBalance, aiBalanceCurrency: dt.aiBalanceCurrency, securityPolicy: dt.securityPolicy || {}, subscription: sm[doc.id] || null, aiAccount: am[doc.id] || null }; });
+      const us = await d.collection("users").limit(800).get();
+      A.users = us.docs.map((doc) => { const dt = doc.data() || {}; return { uid: doc.id, email: dt.email || "", displayName: dt.displayName || dt.name || "", role: dt.role || "master", accessStatus: dt.accessStatus, status: dt.status, isApproved: dt.isApproved, isAdmin: dt.isAdmin, blocked: dt.blocked, createdAt: dt.createdAt, adminNote: dt.adminNote || "", subscription: dt.subscription || null, ai: dt.ai || null }; });
       status("Пользователей: " + A.users.length); if (A.tab === "users") renderUsersTab();
-    } catch (e) { const c = e && (e.code || e.message); status(String(c).indexOf("permission-denied") >= 0 ? "Нет прав (нужна роль admin + status approved)." : "Ошибка: " + c); }
+    } catch (e) { const c = e && (e.code || e.message); status(String(c).indexOf("permission-denied") >= 0 ? "Нет прав (нужна роль admin + accessStatus approved)." : "Ошибка: " + c); }
   }
   async function readDoc(coll, id) { const d = db(); if (!d) return { error: "no-db" }; try { const s = await d.collection(coll).doc(id).get(); return { exists: s.exists, data: s.exists ? (s.data() || {}) : null }; } catch (e) { return { error: (e && (e.code || e.message)) || "error" }; } }
-  async function readColl(coll, field, val) { const d = db(); if (!d) return { error: "no-db" }; try { let q = d.collection(coll); if (field) q = q.where(field, "==", val); const s = await q.limit(80).get(); return { docs: s.docs.map((x) => ({ id: x.id, data: x.data() || {} })) }; } catch (e) { return { error: (e && (e.code || e.message)) || "error" }; } }
   async function ensureSrv() { if (A.srv !== null) return true; const r = await readDoc("server_db", SRV_DOC); if (r.error) { A.srv = null; return false; } A.srv = (r.data && Array.isArray(r.data.items)) ? r.data.items.slice() : []; buildSrvKeys(); return true; }
   function buildSrvKeys() { A.srvKeys = new Set((A.srv || []).map(dbKey)); }
   async function saveSrv(msg) { const d = db(); if (!d) return false; try { await d.collection("server_db").doc(SRV_DOC).set({ items: A.srv || [], workCount: (A.srv || []).filter((x) => x.type === "work").length, materialCount: (A.srv || []).filter((x) => x.type === "material").length, updatedByEmail: (me() || {}).email || "", updatedAt: FV() }, { merge: true }); buildSrvKeys(); status(msg || "БД сервера сохранена ✓"); return true; } catch (e) { const c = e && (e.code || e.message); status(String(c).indexOf("permission-denied") >= 0 ? "Нет прав на запись server_db." : "Ошибка: " + c); return false; } }
@@ -57,8 +61,8 @@
   function card(it, mode) {
     const price = it.price ? num(it.price).toFixed(2) + " ₽" : "—";
     let act = "";
-    if (mode === "master") { const inS = A.srvKeys.has(dbKey(it)); act = inS ? `<span class="ep-adb-in">✓ в сервере</span>` : `<button class="ep-mini ep-mini-ok" data-add-srv="${esc(it.id)}" title="Добавить в БД сервера">➕</button>`; }
-    else if (mode === "server") { act = `<button class="ep-mini" data-srv-edit="${esc(it.id)}" title="Изменить">✎</button><button class="ep-mini ep-mini-d" data-srv-del="${esc(it.id)}" title="Удалить">✕</button>`; }
+    if (mode === "master") { const inS = A.srvKeys.has(dbKey(it)); act = inS ? `<span class="ep-adb-in">✓ в сервере</span>` : `<button class="ep-mini ep-mini-ok" data-add-srv="${esc(it.id)}" title="Добавить в БД сервера" aria-label="Добавить «${esc(it.name)}» в БД сервера">➕</button>`; }
+    else if (mode === "server") { act = `<button class="ep-mini" data-srv-edit="${esc(it.id)}" title="Изменить" aria-label="Изменить «${esc(it.name)}»">✎</button><button class="ep-mini ep-mini-d" data-srv-del="${esc(it.id)}" title="Удалить" aria-label="Удалить «${esc(it.name)}»">✕</button>`; }
     return `<div class="ep-adb-card"><div class="ep-adb-info"><b>${esc(it.name)}</b><span>${esc(it.unit || "")} · ${price}</span></div>${act}</div>`;
   }
   function renderTree(items, mode) {
@@ -96,12 +100,12 @@
     A.srv.push({ id: uid4(), type: it.type === "work" ? "work" : "material", name: it.name, unit: it.unit || "", price: num(it.price), category: it.category || "", subcategory: it.subcategory || "" });
     buildSrvKeys();
     const ok = await saveSrv("«" + (it.name || "позиция") + "» добавлена в сервер ✓");
-    if (ok && A.section === "db") openSection("db");
+    if (ok && A.view === "user" && A.section === "db") loadUserData("db");
   }
 
   // ====== навигация ======
-  function renderNav() { const tabs = [["users", "👥 Пользователи"], ["serverdb", "🗄️ БД сервера"], ["aiserver", "🤖 ИИ-сервер"], ["requests", "📥 Запросы"], ["backups", "💾 Бекапы"], ["contacts", "⚙️ Контакты"]]; const nav = $("#ep-admin-nav"); if (nav) nav.innerHTML = tabs.map((t) => `<button data-tab="${t[0]}" class="${A.tab === t[0] ? "on" : ""}">${t[1]}</button>`).join(""); }
-  function switchTab(tab) { A.tab = tab; renderNav(); if (tab === "users") { renderUsersTab(); if (!A.users.length) loadUsers(); } else if (tab === "serverdb") renderServerDb(); else if (tab === "aiserver") renderAiServer(); else if (tab === "requests") renderRequests(); else if (tab === "backups") renderBackups(); else if (tab === "contacts") renderContacts(); }
+  function renderNav() { const tabs = [["users", "👥 Пользователи"], ["serverdb", "🗄️ БД сервера"], ["aiserver", "🤖 ИИ-сервер"], ["backups", "💾 Бекапы"], ["contacts", "⚙️ Контакты"]]; const nav = $("#ep-admin-nav"); if (nav) nav.innerHTML = tabs.map((t) => `<button data-tab="${t[0]}" class="${A.tab === t[0] ? "on" : ""}">${t[1]}</button>`).join(""); }
+  function switchTab(tab) { A.tab = tab; renderNav(); if (tab === "users") { renderUsersTab(); if (!A.users.length) loadUsers(); } else if (tab === "serverdb") renderServerDb(); else if (tab === "aiserver") renderAiServer(); else if (tab === "backups") renderBackups(); else if (tab === "contacts") renderContacts(); }
 
   // ====== ИИ-СЕРВЕР (серверные ключи API) ======
   const AIKEY = "ep_ai_v29";
@@ -123,9 +127,7 @@
   }
 
   // ====== ПОЛЬЗОВАТЕЛИ (полноэкранный вид: список → карточка) ======
-  const CURSYM = { USD: "$", EUR: "€", RUB: "₽" };
-  function curSym(c) { return CURSYM[c] || "$"; }
-  function uBal(u) { const v = num(u.aiBalance); return curSym(u.aiBalanceCurrency || "USD") + (Math.round(v * 100) / 100); }
+  function uBal(u) { const v = num(u.ai && u.ai.balanceRub); return (Math.round(v * 100) / 100) + " ₽"; }
   function isTrialSub(s) { return subActive(s) && (s.status === "trial" || /trial/i.test(s.planId || s.plan || "")); }
   function user() { return A.users.find((x) => x.uid === A.selectedUid); }
   function openUser(uid) { A.selectedUid = uid; A.view = "user"; A.tab = "users"; renderNav(); renderUsersTab(); const h = $("#ep-admin-body"); if (h && h.scrollIntoView) try { h.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) {} }
@@ -164,7 +166,7 @@
   }
   function renderUserPage() {
     const host = $("#ep-admin-body"); if (!host) return; const u = user(); if (!u) { A.view = "list"; return renderUsersTab(); }
-    const st = uStatus(u); const sub = u.subscription || {}; const ai = u.aiAccount || {};
+    const st = uStatus(u); const sub = u.subscription || {}; const ai = u.ai || {};
     const blocked = isBlocked(u); const access = isApproved(u) && !blocked;
     const planId = sub.planId || sub.plan || "basic";
     const opt = (v, l, cur) => `<option value="${v}" ${cur === v ? "selected" : ""}>${l}</option>`;
@@ -178,7 +180,7 @@
       <div class="ep-usec"><h3>Подписка</h3>
         <p class="ep-admin-muted">${subActive(sub) ? "Активна: <b>" + esc(isTrialSub(sub) ? "Тест" : planId) + "</b>" + (sub.expiresAt ? " · до " + esc(dstr(sub.expiresAt)) : "") : "Подписки нет."}</p>
         <div class="ep-uform">
-          <label class="ep-ufield"><span>План</span><select id="ep-uplan">${opt("basic", "Базовый", planId)}${opt("pro_ai", "С ИИ", planId)}</select></label>
+          <label class="ep-ufield"><span>План</span><select id="ep-uplan">${opt("basic", "Базовый", planId)}${opt("ai", "С ИИ", planId)}</select></label>
           <label class="ep-uchk"><input type="checkbox" id="ep-utrial"> пробный (тест)</label>
         </div>
         <div class="ep-udur"><span class="ep-udur-lbl">Срок:</span>${[30, 60, 90, 180, 365].map((d) => `<button type="button" class="ep-chip" data-u-dur="${d}">${d} дн</button>`).join("")}</div>
@@ -190,14 +192,14 @@
       </div>
 
       <div class="ep-usec"><h3>ИИ / API</h3>
-        <label class="ep-ufield"><span>Режим</span><select id="ep-uaimode">${opt("disabled", "выкл", ai.accessMode || "disabled")}${opt("own_api", "свой ключ", ai.accessMode || "disabled")}${opt("admin_api", "общий ключ (сервер)", ai.accessMode || "disabled")}</select></label>
+        <label class="ep-ufield"><span>Режим</span><select id="ep-uaimode">${opt("off", "выкл", ai.mode || "off")}${opt("client", "свой ключ", ai.mode || "off")}${opt("server", "общий ключ (сервер)", ai.mode || "off")}</select></label>
         <div class="ep-usec-btns"><button type="button" class="ep-btn" data-u-act="aimode">Сохранить режим</button></div>
-        <p class="ep-admin-muted">Сейчас: ${esc(ai.accessMode || "выкл")}. Баланс твоих ключей (из ИИ-ассистента): <b>${esc(aiKeyBalanceStr())}</b>.</p>
+        <p class="ep-admin-muted">Сейчас: ${esc(ai.mode || "выкл")}. Баланс твоих ключей (из ИИ-ассистента): <b>${esc(aiKeyBalanceStr())}</b>.</p>
       </div>
 
-      <div class="ep-usec"><h3>Баланс (выделено мастеру)</h3>
-        <div class="ep-ubal"><input type="number" step="0.01" min="0" id="ep-ubalamt" value="${u.aiBalance != null ? esc(u.aiBalance) : ""}" placeholder="0"><select id="ep-ubalcur">${["USD", "EUR", "RUB"].map((c) => `<option value="${c}" ${(u.aiBalanceCurrency || "USD") === c ? "selected" : ""}>${curSym(c)} ${c}</option>`).join("")}</select><button type="button" class="ep-btn ep-btn-ok" data-u-act="setbal">Задать</button></div>
-        <p class="ep-admin-muted">Баланс, выделенный мастеру (заработает с ИИ-прокси). Реальный баланс твоих ключей — в ИИ-ассистенте.</p></div>
+      <div class="ep-usec"><h3>Баланс мастера (₽)</h3>
+        <div class="ep-ubal"><input type="number" step="0.01" min="0" id="ep-ubalamt" value="${ai.balanceRub != null ? esc(ai.balanceRub) : ""}" placeholder="0"><button type="button" class="ep-btn ep-btn-ok" data-u-act="setbal">Задать</button><input type="number" step="0.01" min="0" id="ep-utopup" placeholder="+ сумма"><button type="button" class="ep-btn" data-u-act="topup">Пополнить</button></div>
+        <p class="ep-admin-muted">Баланс, выделенный мастеру на ИИ (заработает с ИИ-прокси). Реальный баланс твоих ключей — в ИИ-ассистенте.</p></div>
 
       <div class="ep-usec"><h3>Данные</h3>
         <div class="ep-usec-btns"><button type="button" class="ep-btn" data-u-data="db">🗂️ База мастера</button><button type="button" class="ep-btn" data-u-data="docs">🧾 Сметы / документы</button></div>
@@ -213,18 +215,19 @@
   }
   async function uAct(act) {
     const u = user(); if (!u) return; const uid = u.uid;
-    if (act === "approve") return writeUserDoc(uid, { status: "approved", isApproved: true, blocked: false }, "Доступ открыт ✓");
-    if (act === "block") return writeUserDoc(uid, { status: "blocked_review", blocked: true }, "Заблокирован");
-    if (act === "unblock") return writeUserDoc(uid, { status: "approved", blocked: false, isApproved: true }, "Разблокирован");
-    if (act === "grant") { const planId = ($("#ep-uplan") || {}).value || "basic"; const trial = !!($("#ep-utrial") || {}).checked; return callOp("grantSubscription", { uid, planId, periodDays: grantDays(), trial }, "Подписка выдана ✓"); }
-    if (act === "cancelsub") return callOp("cancelSubscription", { uid, reason: "admin_panel" }, "Подписка отменена");
-    if (act === "aimode") { const mode = ($("#ep-uaimode") || {}).value || "disabled"; return callOp("setAiAccessMode", { uid, accessMode: mode }, "Режим ИИ сохранён ✓"); }
-    if (act === "setbal") { const amt = num(($("#ep-ubalamt") || {}).value); const cur = ($("#ep-ubalcur") || {}).value || "USD"; return writeUserDoc(uid, { aiBalance: amt, aiBalanceCurrency: cur }, "Баланс задан ✓"); }
+    if (act === "approve") return adminOp(uid, "approve", {}, "Доступ открыт ✓");
+    if (act === "block") return adminOp(uid, "block", {}, "Заблокирован");
+    if (act === "unblock") return adminOp(uid, "unblock", {}, "Разблокирован");
+    if (act === "grant") { const trial = !!($("#ep-utrial") || {}).checked; const plan = trial ? "trial" : (($("#ep-uplan") || {}).value || "basic"); return adminOp(uid, "grantSubscription", { plan, days: grantDays() }, "Подписка выдана ✓"); }
+    if (act === "cancelsub") return adminOp(uid, "cancelSubscription", {}, "Подписка отменена");
+    if (act === "aimode") { const mode = ($("#ep-uaimode") || {}).value || "off"; return adminOp(uid, "setAiMode", { mode }, "Режим ИИ сохранён ✓"); }
+    if (act === "setbal") { const balanceRub = num(($("#ep-ubalamt") || {}).value); return adminOp(uid, "setAiBalance", { balanceRub }, "Баланс задан ✓"); }
+    if (act === "topup") { const amountRub = num(($("#ep-utopup") || {}).value); if (!(amountRub > 0)) return actStatus("Введите сумму пополнения."); return adminOp(uid, "topUpAiBalance", { amountRub }, "Баланс пополнен ✓"); }
     if (act === "backupuser") { actStatus("Собираю бекап…"); const dbr = await readDoc("user_db", uid); const er = await readDoc("estimates", uid); const dr = await readDoc("drafts", uid); const dump = { type: "ep-user-backup", uid, email: u.email, exportedAt: new Date().toISOString(), user_db: dbr.data || null, estimates: er.data || null, drafts: dr.data || null }; downloadJSON("ep-backup-" + (u.email || uid).replace(/[^a-z0-9]+/gi, "_") + ".json", dump); actStatus("Бекап скачан ✓"); }
   }
   async function loadUserData(which) {
     const box = $("#ep-udata"); if (!box || !A.selectedUid) return; const uid = A.selectedUid; box.innerHTML = "<div class='ep-admin-empty'>Загрузка…</div>";
-    if (which === "db") { const r = await readDoc("user_db", uid); if (r.error) { box.innerHTML = errB("user_db/{uid}", r); return; } const items = (r.data && Array.isArray(r.data.items)) ? r.data.items : []; box.innerHTML = items.length ? `<p class="ep-admin-muted">Позиций в БД: ${items.length}</p>` + items.slice(0, 100).map((it) => `<div class="ep-adb-card"><div class="ep-adb-info"><b>${esc(it.name || "")}</b><span>${esc(it.type === "work" ? "работа" : "материал")} · ${esc(it.unit || "")}${it.price != null ? " · " + esc(it.price) : ""}</span></div></div>`).join("") : "<div class='ep-admin-empty'>Личная БД мастера пуста.</div>"; }
+    if (which === "db") { await ensureSrv(); const r = await readDoc("user_db", uid); if (r.error) { box.innerHTML = errB("user_db/{uid}", r); return; } A.masterDb = (r.data && Array.isArray(r.data.items)) ? r.data.items : []; A.section = "db"; box.innerHTML = A.masterDb.length ? `<div class="ep-adb-hint">➕ — добавить позицию в БД сервера</div>` + renderTree(A.masterDb, "master") : "<div class='ep-admin-empty'>Личная БД мастера пуста.</div>"; }
     else { const er = await readDoc("estimates", uid); const dr = await readDoc("drafts", uid); if (er.error && dr.error) { box.innerHTML = errB("estimates/{uid}", er); return; } let h = ""; if (er.exists && er.data && Object.keys(er.data).length) h += `<p class="ep-admin-muted">Сметы:</p><pre class="ep-admin-pre">${esc(jn(er.data))}</pre>`; if (dr.exists && dr.data && Object.keys(dr.data).length) h += `<p class="ep-admin-muted">Черновики:</p><pre class="ep-admin-pre">${esc(jn(dr.data))}</pre>`; box.innerHTML = h || "<div class='ep-admin-empty'>Смет и документов нет.</div>"; }
   }
 
@@ -245,7 +248,7 @@
   async function backupServer() { const r = await readDoc("server_db", SRV_DOC); if (r.error) { bkStatus("Ошибка чтения server_db: " + r.error); return null; } return { server_db: r.data || null }; }
   async function backupAllUsers() {
     const out = []; let i = 0;
-    for (const u of A.users) { i++; bkStatus("Чтение пользователей… " + i + "/" + A.users.length); const dbr = await readDoc("user_db", u.uid); const er = await readDoc("estimates", u.uid); const dr = await readDoc("drafts", u.uid); out.push({ uid: u.uid, email: u.email, displayName: u.displayName, status: uStatus(u), subscription: u.subscription || null, aiAccount: u.aiAccount || null, aiBalance: u.aiBalance, aiBalanceCurrency: u.aiBalanceCurrency, user_db: dbr.data || null, estimates: er.data || null, drafts: dr.data || null }); }
+    for (const u of A.users) { i++; bkStatus("Чтение пользователей… " + i + "/" + A.users.length); const dbr = await readDoc("user_db", u.uid); const er = await readDoc("estimates", u.uid); const dr = await readDoc("drafts", u.uid); out.push({ uid: u.uid, email: u.email, displayName: u.displayName, status: uStatus(u), subscription: u.subscription || null, ai: u.ai || null, user_db: dbr.data || null, estimates: er.data || null, drafts: dr.data || null }); }
     return out;
   }
   async function doBackup(kind) {
@@ -282,17 +285,6 @@
   }
   function srvDel(id) { A.srv = (A.srv || []).filter((x) => String(x.id) !== String(id)); saveSrv("Удалено ✓").then(() => { const el = $("#ep-srv-list"); if (el) el.innerHTML = renderTree(A.srv, "server"); }); }
 
-  // ====== ЗАЯВКИ ======
-  async function renderRequests() {
-    const host = $("#ep-admin-body"); if (!host) return;
-    host.innerHTML = `<div class="ep-admin-card"><h3>Заявки на пополнение / подписку</h3><div id="ep-req-ai"><div class="ep-admin-empty">Загрузка…</div></div><div id="ep-req-sub"></div></div>`;
-    const em = {}; A.users.forEach((u) => em[u.uid] = u.email || u.uid);
-    const ra = await readColl("ai_payment_requests", "status", "pending"); const rs = await readColl("subscription_payment_requests", "status", "pending");
-    const eA = $("#ep-req-ai"), eS = $("#ep-req-sub");
-    if (eA) eA.innerHTML = ra.error ? `<div class='ep-admin-empty'>ИИ-заявки: нет доступа.</div>` : (ra.docs.length ? `<h4>Пополнение ИИ (${ra.docs.length})</h4>` + ra.docs.map((d) => `<div class="ep-admin-prow"><div><b>${esc(em[d.data.uid] || d.data.uid)}</b><span>${esc(num(d.data.amountRub).toFixed(2))} ₽ · ${esc(d.data.comment || "")}</span></div><div class="ep-admin-prow-act"><button data-req-topup="${esc(d.data.uid)}" data-amt="${esc(num(d.data.amountRub))}" class="ep-ok">Пополнить</button><button data-open="${esc(d.data.uid)}" class="ep-ghost">Открыть</button></div></div>`).join("") : "<div class='ep-admin-empty'>Заявок на ИИ нет.</div>");
-    if (eS) eS.innerHTML = rs.error ? `<div class='ep-admin-empty'>Заявки на подписку: нет доступа.</div>` : (rs.docs.length ? `<h4>Подписка (${rs.docs.length})</h4>` + rs.docs.map((d) => `<div class="ep-admin-prow"><div><b>${esc(em[d.data.uid] || d.data.uid)}</b><span>${esc(d.data.planId || "")} · ${esc(d.data.periodDays || 30)} дн · ${esc(d.data.comment || "")}</span></div><div class="ep-admin-prow-act"><button data-open="${esc(d.data.uid)}" class="ep-ok">Открыть и выдать</button></div></div>`).join("") : "<div class='ep-admin-empty'>Заявок на подписку нет.</div>");
-  }
-
   // ====== КОНТАКТЫ ======
   async function renderContacts() {
     const host = $("#ep-admin-body"); if (!host) return;
@@ -313,23 +305,26 @@
   }
 
   // ====== операции пользователя ======
+  // Запись в users с клиента запрещена правилами — все действия идут через
+  // Cloud Function adminUpdateUser (см. functions/index.js).
   function actStatus(m) { const e = $("#ep-act-status"); if (e) e.textContent = m; status(m); }
-  async function writeUserDoc(uid, patch, ok) { const d = db(); if (!d) return; actStatus("Сохранение…"); try { patch.updatedAt = FV(); await d.collection("users").doc(uid).set(patch, { merge: true }); const u = user(); if (u) Object.assign(u, patch); actStatus(ok || "Готово ✓"); if (A.tab === "users") renderUsersTab(); } catch (e) { const c = e && (e.code || e.message); actStatus(String(c).indexOf("permission-denied") >= 0 ? "Нет прав на запись users." : "Ошибка: " + c); } }
-  async function callOp(name, payload, ok) { actStatus("Выполняю…"); try { await call(name, payload); actStatus(ok || "Готово ✓"); await loadUsers(); renderUsersTab(); } catch (e) { const c = e && (e.code || e.message); actStatus("Ошибка (" + name + "): " + (String(c).indexOf("permission-denied") >= 0 ? "нет прав админа" : c)); } }
-
-  // ====== разделы данных пользователя ======
-  function secBox(h) { const el = $("#ep-sec"); if (el) el.innerHTML = h; }
-  function errB(coll, r) { return String(r.error).indexOf("permission-denied") >= 0 ? `<div class='ep-admin-empty'>Нет доступа к <code>${esc(coll)}</code>.</div>` : `<div class='ep-admin-empty'>Ошибка <code>${esc(coll)}</code>: ${esc(r.error)}</div>`; }
-  async function openSection(name) {
-    A.section = name; const uid = A.selectedUid; if (!uid) return;
-    document.querySelectorAll(".ep-admin-sections button").forEach((b) => b.classList.toggle("on", b.getAttribute("data-sec") === name));
-    secBox("<div class='ep-admin-empty'>Загрузка…</div>");
-    if (name === "db") { await ensureSrv(); const r = await readDoc("user_db", uid); if (r.error) return secBox(errB("user_db/{uid}", r)); A.masterDb = (r.data && Array.isArray(r.data.items)) ? r.data.items : []; if (!A.masterDb.length) return secBox("<div class='ep-admin-empty'>Личная БД мастера пуста.</div>"); secBox(`<div class="ep-adb-hint">➕ — добавить позицию в БД сервера</div>` + renderTree(A.masterDb, "master")); }
-    else if (name === "sub" || name === "ai") { const coll = name === "sub" ? "user_subscriptions" : "ai_accounts"; const r = await readDoc(coll, uid); if (r.error) return secBox(errB(coll + "/{uid}", r)); secBox(r.exists ? `<pre class="ep-admin-pre">${esc(jn(r.data))}</pre>` : "<div class='ep-admin-empty'>Нет данных.</div>"); }
-    else if (name === "drafts" || name === "estimates") { const r = await readDoc(name, uid); if (r.error) return secBox(errB(name + "/{uid}", r)); if (!r.exists || !r.data || !Object.keys(r.data).length) return secBox(`<div class='ep-admin-empty'>В <code>${esc(name)}/{uid}</code> нет данных.</div>`); secBox(`<pre class="ep-admin-pre">${esc(jn(r.data))}</pre>`); }
-    else if (name === "usage") { const r = await readColl("ai_usage", "uid", uid); if (r.error) return secBox(errB("ai_usage", r)); if (!r.docs || !r.docs.length) return secBox("<div class='ep-admin-empty'>Расхода ИИ нет.</div>"); secBox(r.docs.map((d) => `<div class="ep-admin-logrow">${esc(dstr(d.data.createdAt))} · ${esc(d.data.feature || d.data.model || "")} · ${esc(num(d.data.amountRub).toFixed(2))}₽ · ${esc(d.data.totalTokens || 0)}т</div>`).join("")); }
-    else if (name === "logs") { const r = await readColl("admin_logs", "uid", uid); if (r.error) return secBox(errB("admin_logs", r)); if (!r.docs || !r.docs.length) return secBox("<div class='ep-admin-empty'>Логов нет.</div>"); secBox(r.docs.map((d) => `<div class="ep-admin-logrow">${esc(dstr(d.data.createdAt))} · <b>${esc(d.data.type || "")}</b> ${esc(d.data.planId || d.data.accessMode || d.data.feature || "")}</div>`).join("")); }
+  async function adminOp(uid, op, extra, ok) {
+    actStatus("Выполняю…");
+    try {
+      const res = await call("adminUpdateUser", Object.assign({ targetUid: uid, op }, extra || {}));
+      const fresh = res && res.user;
+      const u = A.users.find((x) => x.uid === uid);
+      if (u && fresh) Object.assign(u, fresh, { accessStatus: fresh.accessStatus, subscription: fresh.subscription, ai: fresh.ai });
+      actStatus(ok || "Готово ✓");
+      if (A.tab === "users") renderUsersTab();
+    } catch (e) {
+      const c = e && (e.code || e.message);
+      actStatus("Ошибка (" + op + "): " + (String(c).indexOf("permission-denied") >= 0 ? "нет прав админа" : c));
+    }
   }
+
+  // ====== ошибки чтения ======
+  function errB(coll, r) { return String(r.error).indexOf("permission-denied") >= 0 ? `<div class='ep-admin-empty'>Нет доступа к <code>${esc(coll)}</code>.</div>` : `<div class='ep-admin-empty'>Ошибка <code>${esc(coll)}</code>: ${esc(r.error)}</div>`; }
 
   // ====== модалка ======
   function openPicker() { const m = $("#ep-admin-modal"); if (!m) return; m.classList.add("open"); renderPickerList(); const s = $("#ep-admin-modal-search"); if (s) s.value = ""; }
@@ -342,7 +337,7 @@
     root.addEventListener("click", (ev) => {
       const t = ev.target;
       const nav = t.closest("[data-tab]"); if (nav) return switchTab(nav.getAttribute("data-tab"));
-      const fold = t.closest("[data-fold]"); if (fold) { const k = fold.getAttribute("data-fold"); if (A.exp.has(k)) A.exp.delete(k); else A.exp.add(k); if (A.tab === "serverdb") { const el = $("#ep-srv-list"); if (el) el.innerHTML = renderTree(A.srv, "server"); } else if (A.section === "db") openSection("db"); return; }
+      const fold = t.closest("[data-fold]"); if (fold) { const k = fold.getAttribute("data-fold"); if (A.exp.has(k)) A.exp.delete(k); else A.exp.add(k); if (A.tab === "serverdb") { const el = $("#ep-srv-list"); if (el) el.innerHTML = renderTree(A.srv, "server"); } else if (A.view === "user" && A.section === "db") { const box = $("#ep-udata"); if (box && A.masterDb.length) box.innerHTML = `<div class="ep-adb-hint">➕ — добавить позицию в БД сервера</div>` + renderTree(A.masterDb, "master"); } return; }
       const addS = t.closest("[data-add-srv]"); if (addS) return addToServer(addS.getAttribute("data-add-srv"));
       if (t.closest("#ep-admin-open-picker")) return openPicker();
       if (t.closest("#ep-admin-modal-close") || t.closest("#ep-admin-modal-overlay")) return closePicker();
@@ -357,30 +352,16 @@
       const asp = t.closest("[data-aisrv-prov]"); if (asp) { A.aiProv = asp.getAttribute("data-aisrv-prov"); return renderAiServer(); }
       if (t.closest("#ep-admin-toggle-pending")) { A.onlyPending = !A.onlyPending; renderPickerList(); const b = $("#ep-admin-toggle-pending"); if (b) b.classList.toggle("on", A.onlyPending); return; }
       const op = t.closest("[data-open]"); if (op) { return openUser(op.getAttribute("data-open")); }
-      const ap = t.closest("[data-approve]"); if (ap) { A.selectedUid = ap.getAttribute("data-approve"); return writeUserDoc(A.selectedUid, { status: "approved", isApproved: true, blocked: false }, "Мастер одобрен ✓"); }
-      const sec = t.closest("[data-sec]"); if (sec) return openSection(sec.getAttribute("data-sec"));
+      const ap = t.closest("[data-approve]"); if (ap) { A.selectedUid = ap.getAttribute("data-approve"); return adminOp(A.selectedUid, "approve", {}, "Мастер одобрен ✓"); }
       if (t.closest("#ep-srv-add")) return srvAddManual();
       const se = t.closest("[data-srv-edit]"); if (se) return srvEdit(se.getAttribute("data-srv-edit"));
       const sd = t.closest("[data-srv-del]"); if (sd) return srvDel(sd.getAttribute("data-srv-del"));
       if (t.closest("#ep-c-save")) return saveContacts();
-      const rt = t.closest("[data-req-topup]"); if (rt) { A.selectedUid = rt.getAttribute("data-req-topup"); return callOp("topUpAiBalance", { uid: A.selectedUid, amountRub: num(rt.getAttribute("data-amt")), paymentMethod: "admin_request" }, "Пополнено по заявке ✓"); }
-      const uid = A.selectedUid;
-      if (t.closest("#ep-approve")) return writeUserDoc(uid, { status: "approved", isApproved: true, blocked: false }, "Одобрен ✓");
-      if (t.closest("#ep-block")) return writeUserDoc(uid, { status: "blocked_review", blocked: true }, "Заблокирован");
-      if (t.closest("#ep-unblock")) return writeUserDoc(uid, { status: "approved", blocked: false, isApproved: true }, "Разблокирован");
-      if (t.closest("#ep-promote")) return writeUserDoc(uid, { role: "admin" }, "Назначен админом");
-      if (t.closest("#ep-demote")) return writeUserDoc(uid, { role: "master" }, "Роль: мастер");
-      if (t.closest("#ep-grant")) return callOp("grantSubscription", { uid, planId: ($("#ep-plan") || {}).value || "basic", periodDays: num(($("#ep-days") || {}).value) || 30, trial: !!($("#ep-trial") || {}).checked, amountRub: num(($("#ep-amount") || {}).value) }, "Подписка выдана ✓");
-      if (t.closest("#ep-cancel-sub")) return callOp("cancelSubscription", { uid, reason: "admin_panel" }, "Подписка отменена");
-      if (t.closest("#ep-ai-set")) return callOp("setAiBalanceExact", { uid, balanceRub: num(($("#ep-ai-balance") || {}).value) }, "Баланс установлен ✓");
-      if (t.closest("#ep-ai-add")) return callOp("topUpAiBalance", { uid, amountRub: num(($("#ep-ai-topup") || {}).value), paymentMethod: "admin_panel" }, "Баланс пополнен ✓");
-      if (t.closest("#ep-ai-mode-save")) return callOp("setAiAccessMode", { uid, accessMode: ($("#ep-ai-mode") || {}).value || "disabled" }, "Режим ИИ сохранён ✓");
-      if (t.closest("#ep-p-save")) return callOp("setUserSecurityPolicy", { uid, allowLogin: !!($("#ep-p-login") || {}).checked, allowReadData: !!($("#ep-p-read") || {}).checked, allowAi: !!($("#ep-p-ai") || {}).checked, allowLocalCache: !!($("#ep-p-cache") || {}).checked }, "Политика сохранена ✓");
     });
     root.addEventListener("input", (ev) => {
       if (ev.target.id === "ep-admin-modal-search") return renderPickerList();
       if (ev.target.getAttribute && ev.target.getAttribute("data-aisrv")) { const f = ev.target.getAttribute("data-aisrv"); const p = A.aiProv || "openai"; const o = aiSrvCfg(p); o.server[p][f] = (f === "key" || f === "model") ? ev.target.value : num(ev.target.value); aiSaveObj(o); return; }
-      if (ev.target.id === "ep-uq") { A.uq = ev.target.value; const el = $(".ep-ulist"); if (el) { const q = A.uq.toLowerCase(); let list = A.users.slice(); if (q) list = list.filter((x) => [x.email, x.displayName, x.uid].some((v) => String(v || "").toLowerCase().indexOf(q) >= 0)); el.innerHTML = list.length ? list.map(uCard).join("") : "<div class='ep-admin-empty'>Никого не найдено.</div>"; } }
+      if (ev.target.id === "ep-uq") { A.uq = ev.target.value; const el = $(".ep-ulist"); if (el) { const q = A.uq.toLowerCase(); let list = A.users.filter(matchFilter); if (q) list = list.filter((x) => [x.email, x.displayName, x.uid].some((v) => String(v || "").toLowerCase().indexOf(q) >= 0)); el.innerHTML = list.length ? list.map(uRow).join("") : "<div class='ep-admin-empty'>Никого не найдено.</div>"; } }
     });
   }
   function mount() { const root = $("#ep-admin-root"); if (!root) return; if (!isAdmin()) { root.innerHTML = "<div class='ep-admin-hero'><h1>Админка</h1><p>Доступ только для администратора.</p></div>"; return; } bind(root); renderNav(); if (!db()) { status("Firebase недоступен."); return; } A.srv = null; A.contact = null; loadUsers().then(() => { if (A.tab === "users") renderUsersTab(); }); }

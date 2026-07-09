@@ -10,7 +10,7 @@
   function write(s) { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) {} }
   function num(v) { const n = Number(v); return isFinite(n) ? n : 0; }
   function uid() { return "c_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
-  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
   function money(v) { try { if (window.EPCurrency && EPCurrency.format) return EPCurrency.format(v); } catch (e) {} return num(v).toFixed(2) + " \u20bd"; }
 
   let st = null;

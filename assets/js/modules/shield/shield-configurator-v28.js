@@ -141,7 +141,7 @@
   const openState = { tpl: false, settings: false, opts: false, rail: false };
   let railOpen = false, railSel = null, railCells = [], railView = "rails";
   let dbModal = { open: false, key: "", name: "", type: "material", unit: "шт", q: "" };
-  const esc = v => String(v == null ? "" : v).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const esc = v => String(v == null ? "" : v).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const cur = v => (window.EPCurrency && window.EPCurrency.format) ? window.EPCurrency.format(v) : (Number(v || 0).toFixed(2) + " ₽");
   // бейдж бренда выбранной позиции (определяется из названия)
   const brandTag = name => {

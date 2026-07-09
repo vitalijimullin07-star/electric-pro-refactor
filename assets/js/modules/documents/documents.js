@@ -8,7 +8,7 @@
   function Draft() { return ctx.items ? { getItems: function () { return ctx.items; } } : ((window.EP && EP.Estimate) || null); }
   function Profile() { return (window.EP && EP.Profile) || null; }
   function money(v) { try { if (window.EPCurrency && EPCurrency.format) return EPCurrency.format(v); } catch (e) {} return Number(v || 0).toFixed(2) + " \u20bd"; }
-  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
   const NKEY = "ep_smeta_no_v29";
   const TYPE_LABEL = { self: "Самозанятый", ip: "ИП", ooo: "ООО", fiz: "" };
 

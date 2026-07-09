@@ -52,7 +52,7 @@
   function paintDot() { const d = dotEl(); if (d) { d.style.background = COLORS[worst]; d.style.boxShadow = "0 0 6px " + COLORS[worst]; } }
 
   // ---- панель ----
-  function esc(s) { return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+  function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
   function panelEl() { return document.getElementById("ep-log-panel"); }
   function renderPanel() {
     let p = panelEl();
