@@ -57,7 +57,7 @@
   }
   function save(s) { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) {} }
   function num(v) { return Number(v) || 0; }
-  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
   function money(v) { return "$" + (Math.round(num(v) * 10000) / 10000); }
 
   let st = load();

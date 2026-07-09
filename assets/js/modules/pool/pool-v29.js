@@ -31,7 +31,7 @@
   const PIN_ORDER = ["pin2", "pin3", "pin4", "pin5", "pin6", "pin8", "pin10"];
 
   const n = (v, d = 0) => { const x = Number(String(v).replace(",", ".").replace(/[^\d.\-]/g, "")); return Number.isFinite(x) ? x : d; };
-  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const money = v => (Math.round(n(v) * 100) / 100).toLocaleString("ru-RU") + " ₽";
 
   let settings, blocks, builder, priceMap, templates, dbModal = { open: false }, folds = { set: false, conn: false };

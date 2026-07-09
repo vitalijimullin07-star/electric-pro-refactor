@@ -15,7 +15,7 @@
     } catch (e) {}
     try { return localStorage.getItem("epdb26_active_base") || "my"; } catch (e) { return "my"; }
   }
-  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
   function money(v) {
     try { if (window.EPCurrency && window.EPCurrency.format) return window.EPCurrency.format(v); } catch (e) {}
     return (Number(v || 0).toFixed(2)) + " ₽";

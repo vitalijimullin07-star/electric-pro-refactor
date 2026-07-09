@@ -115,7 +115,10 @@
   async function callFunction(name, payload) {
     const fb = getFirebase();
     if (!fb || !fb.functions) throw new Error("Firebase Functions unavailable");
-    return fb.functions().httpsCallable(name)(payload || {});
+    let fns = null;
+    try { fns = fb.app().functions("europe-west1"); } catch (e) {}
+    if (!fns) fns = fb.functions("europe-west1");
+    return fns.httpsCallable(name)(payload || {});
   }
 
   async function readUserDoc(uid) {

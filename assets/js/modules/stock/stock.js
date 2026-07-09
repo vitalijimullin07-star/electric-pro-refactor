@@ -11,7 +11,7 @@
   function uid() { return "s_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
   function num(v) { return Number(v) || 0; }
   function norm(s) { return String(s == null ? "" : s).toLowerCase().replace(/ё/g, "е").replace(/[^0-9a-zа-я]+/gi, " ").trim(); }
-  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
   function money(v) { try { return (window.EPCurrency && EPCurrency.format) ? EPCurrency.format(num(v)) : (Math.round(num(v) * 100) / 100) + " ₽"; } catch (e) { return num(v) + " ₽"; } }
 
   function guessCat(name) {

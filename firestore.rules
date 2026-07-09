@@ -21,6 +21,11 @@ service cloud.firestore {
       return ownerEmail() || (signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && userDoc(request.auth.uid).data.role == "admin" && userDoc(request.auth.uid).data.accessStatus != "blocked");
     }
 
+    // Одобренный (и не заблокированный) пользователь — для доступа к общему каталогу
+    function isApproved() {
+      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && userDoc(request.auth.uid).data.accessStatus == "approved";
+    }
+
     match /users/{uid} {
       allow read: if isSelf(uid) || isAdmin();
       allow create, update, delete: if false;
@@ -31,7 +36,7 @@ service cloud.firestore {
     }
 
     match /server_db/{document=**} {
-      allow read: if signedIn();
+      allow read: if isApproved() || isAdmin();
       allow write: if isAdmin();
     }
 

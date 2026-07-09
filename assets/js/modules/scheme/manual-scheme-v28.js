@@ -38,7 +38,7 @@
   function brandsAll() { return BRANDS_BASE.concat(customBrands().filter(b => BRANDS_BASE.indexOf(b) < 0)); }
 
   const uid = () => "x" + Math.random().toString(36).slice(2, 8);
-  const esc = v => String(v == null ? "" : v).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const esc = v => String(v == null ? "" : v).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
   function def() {
     return {
