@@ -63,6 +63,7 @@
       },
       underlay: null, // { imageDataUri, scale (см/пиксель), opacity }
       rooms: [], panels: [], elements: [], routes: [], circuits: [],
+      openings: [], // двери и окна в стенах
       layers: blankLayers(),
       versions: [], // { at, note } — история версий (заполняется в следующих слоях)
       createdAt: now(), updatedAt: now()
@@ -79,6 +80,10 @@
     return { id: uid("rt"), layer: layer || "routes", routeType: routeType || "ceiling", points: points || [], fromId: fromId || null, toId: toId || null, throughWalls: [] };
   }
   function newCircuit(name) { return { id: uid("cc"), name: name || "Группа", elements: [], breaker: null, rcd: null }; }
+  function newOpening(type, wallId, offset, width) {
+    // hinge: у какого края петли ('a' — ближний угол), flip: сторона открывания (±1)
+    return { id: uid("op"), type: type === "window" ? "window" : "door", wallId, offset: offset || 0, width: width || (type === "window" ? 140 : 90), hinge: "a", flip: 1 };
+  }
 
   // ---------- состояние ----------
   const S = { project: null, index: [], undo: [], redo: [], cloudTimer: null, listeners: new Set() };
@@ -143,6 +148,7 @@
     let p = lsGet(LS_PROJECT + id, null);
     if (!p) p = await cloudPullProject(id); // проект, созданный на другом устройстве
     if (!p) return null;
+    p.openings = p.openings || []; // проекты, сохранённые до появления проёмов
     S.project = p; S.undo = []; S.redo = [];
     emit("open");
     return p;
@@ -228,6 +234,6 @@
     listProjects, createProject, openProject, closeProject, deleteProject, renameProject,
     commit, undo, redo, canUndo, canRedo, persist,
     exportJSON, importJSON, cloudPullIndex,
-    model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit }
+    model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening }
   };
 })();

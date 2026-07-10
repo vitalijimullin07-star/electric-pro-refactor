@@ -179,6 +179,27 @@
     }
     return out;
   };
+  // Отрезки стены за вычетом проёмов: [[от,до],...] в см от угла a
+  G.spansMinusOpenings = (len, opens) => {
+    const spans = (opens || [])
+      .map((o) => [Math.max(0, o.offset), Math.min(len, o.offset + o.width)])
+      .filter(([s, e]) => e > s)
+      .sort((x, y) => x[0] - y[0]);
+    const out = [];
+    let cur = 0;
+    spans.forEach(([s, e]) => {
+      if (s > cur) out.push([cur, s]);
+      cur = Math.max(cur, e);
+    });
+    if (cur < len) out.push([cur, len]);
+    return out;
+  };
+  G.pointAtOffset = (w, d) => {
+    const t = w.len ? d / w.len : 0;
+    return { x: w.a.x + (w.b.x - w.a.x) * t, y: w.a.y + (w.b.y - w.a.y) * t };
+  };
+  G.openingsOnWall = (project, wallId) => (project.openings || []).filter((o) => o.wallId === wallId);
+
   G.polylineLen = (pts) => {
     let L = 0;
     for (let i = 0; i < pts.length - 1; i++) L += G.dist(pts[i], pts[i + 1]);

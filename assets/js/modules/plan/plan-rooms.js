@@ -129,6 +129,7 @@
         R.selectedRoomId = null;
         if (hit.el) EP.Plan.Elements.openEditor(hit.el);
         else if (hit.panel) EP.Plan.Elements.openPanelEditor(hit.panel);
+        else if (hit.opening) EP.Plan.Elements.openOpeningEditor(hit.opening);
         return;
       }
       EP.Plan.Elements.deselect();

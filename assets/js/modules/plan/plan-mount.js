@@ -77,6 +77,7 @@
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-redo aria-label="Вернуть">${T.redo}</button>
         <span class="ep-plan-savenote" id="ep-plan-savenote"></span>
         <span class="ep-plan-flex"></span>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-pdf aria-label="Печатный лист (PDF)">📄</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-export>${T.exportBtn}</button>
       </div>
       <div class="ep-plan-toolbar ep-plan-modes">

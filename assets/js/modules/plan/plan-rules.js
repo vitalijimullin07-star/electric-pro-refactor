@@ -19,6 +19,7 @@
     low: (h) => `Точка слишком низко: ${h} см`,
     high: (h) => `Точка слишком высоко: ${h} см`,
     offWall: "Точка за пределами стены",
+    inOpening: "Точка попадает в дверной/оконный проём",
     noLight: (r) => `«${r}»: нет света`,
     noPanel: "Есть точки, но нет щита — трассы не построить",
     labels: {
@@ -53,6 +54,10 @@
         (el.type === "block" && ((el.params && el.params.items) || []).indexOf("socket") >= 0);
       if (carriesSocket && roomId && wetRooms.has(roomId) && el.height < R.wetMinSocketH) {
         issues.push({ id: el.id, msg: T.wet(Math.round(el.height), R.wetMinSocketH) }); badIds.add(el.id);
+      }
+      if (el.wallId) {
+        const inOpening = (p.openings || []).some((o) => o.wallId === el.wallId && el.offset >= o.offset && el.offset <= o.offset + o.width);
+        if (inOpening) { issues.push({ id: el.id, msg: T.inOpening }); badIds.add(el.id); }
       }
       if (el.type !== "warmfloor" && el.height < R.minSocketH) {
         issues.push({ id: el.id, msg: T.low(Math.round(el.height)) }); badIds.add(el.id);
