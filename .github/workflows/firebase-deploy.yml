@@ -29,7 +29,7 @@ jobs:
       - name: Deploy (hosting + rules + functions)
         uses: w9jds/firebase-action@v13.35.1
         with:
-          args: deploy --only hosting,firestore:rules,functions --non-interactive
+          args: deploy --only hosting,firestore:rules,functions --force --non-interactive
         env:
           GCP_SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           PROJECT_ID: electric-489f7
