@@ -11,14 +11,27 @@
   G.snapPoint = (p, step) => ({ x: G.snap(p.x, step), y: G.snap(p.y, step) });
   G.dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
-  // Привязка к углам существующих комнат (радиус в см), иначе к сетке
+  // Привязка: угол комнаты -> выравнивание по осям чужих углов -> сетка
   G.snapSmart = (project, p, step, cornerRadius) => {
-    let best = null;
+    let best = null, ax = null, ay = null;
     (project.rooms || []).forEach((r) => (r.points || []).forEach((c) => {
       const d = G.dist(p, c);
       if (d <= cornerRadius && (!best || d < best.d)) best = { d, x: c.x, y: c.y };
+      if (Math.abs(p.x - c.x) <= cornerRadius && (ax == null || Math.abs(p.x - c.x) < Math.abs(p.x - ax))) ax = c.x;
+      if (Math.abs(p.y - c.y) <= cornerRadius && (ay == null || Math.abs(p.y - c.y) < Math.abs(p.y - ay))) ay = c.y;
     }));
-    return best ? { x: best.x, y: best.y } : G.snapPoint(p, step);
+    if (best) return { x: best.x, y: best.y };
+    return { x: ax != null ? ax : G.snap(p.x, step), y: ay != null ? ay : G.snap(p.y, step) };
+  };
+
+  // Автовыравнивание под 90°: если линия от prev почти вертикальна/горизонтальна — доводим
+  G.orthoAdjust = (prev, p, ratio) => {
+    if (!prev) return p;
+    const r = ratio == null ? 0.3 : ratio;
+    const dx = Math.abs(p.x - prev.x), dy = Math.abs(p.y - prev.y);
+    if (dx <= dy * r) return { x: prev.x, y: p.y };
+    if (dy <= dx * r) return { x: p.x, y: prev.y };
+    return p;
   };
 
   // ---- стены комнаты (производные от точек полигона) ----

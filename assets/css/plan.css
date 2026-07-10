@@ -187,3 +187,31 @@ body[data-visual-mode="day"] .ep-plan-room.is-sel { fill: rgba(2, 132, 199, .17)
 
 body[data-visual-mode="day"] .ep-plan-el circle { stroke: rgba(15, 23, 42, .5); }
 body[data-visual-mode="day"] .ep-plan-unfwall { fill: rgba(71, 85, 105, .06); }
+
+/* — UX-пакет: блоки постов, полный экран, материалы стен — */
+.ep-plan-blockframe {
+  display: flex; gap: 6px; flex-wrap: wrap; padding: 9px;
+  border: 2px solid var(--accent, #38bdf8); border-radius: 13px;
+  background: rgba(56, 189, 248, .06);
+}
+.ep-plan-post {
+  width: 46px; height: 46px; border-radius: 10px; cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, .18); background: rgba(255, 255, 255, .08);
+  color: var(--text, #e8eef7); font: 700 13px system-ui;
+}
+.ep-plan-blockrect { stroke: rgba(255, 255, 255, .8); }
+
+/* материалы стен: бетон — сплошная, кирпич — терракот, панель — двойной штрих, мягкий — светлый пунктир */
+.ep-plan-wall.mat-brick { stroke: #d97706; }
+.ep-plan-wall.mat-panel { stroke: #94a3b8; stroke-dasharray: 12 4; }
+.ep-plan-wall.mat-soft { stroke: #a8b3c5; stroke-dasharray: 5 5; }
+body[data-visual-mode="day"] .ep-plan-wall.mat-brick { stroke: #b45309; }
+body[data-visual-mode="day"] .ep-plan-wall.mat-soft { stroke: #94a3b8; }
+
+/* полный экран */
+.ep-plan.is-full {
+  position: fixed; inset: 0; z-index: 9999; margin: 0; padding: 10px;
+  overflow: auto; background: #0b1220;
+}
+.ep-plan.is-full .ep-plan-canvas { height: calc(100vh - 215px); height: calc(100dvh - 215px); }
+body[data-visual-mode="day"] .ep-plan.is-full { background: #eef1f6; }

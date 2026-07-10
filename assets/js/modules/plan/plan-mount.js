@@ -91,6 +91,7 @@
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-calc aria-label="Расчёт и смета">🧮</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-checks aria-label="Проверки норм">✅</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-fit aria-label="Показать всё">⛶</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-full aria-label="Во весь экран">⤢</button>
       </div>
       <div class="ep-plan-modehint" id="ep-plan-modehint"></div>
       <div class="ep-plan-canvas" id="ep-plan-canvas">
@@ -183,6 +184,25 @@
     if (t.closest("[data-plan-redo]")) { core().redo(); return; }
     if (t.closest("[data-plan-export]")) return doExport();
     if (t.closest("[data-plan-import]")) return doImport(r);
+    if (t.closest("[data-plan-full]")) return toggleFullscreen(r);
+  });
+
+  // Во весь экран: нативный Fullscreen API + фиксированная раскладка как запас (iOS)
+  function toggleFullscreen(r) {
+    const box = r.querySelector(".ep-plan");
+    if (!box) return;
+    const on = !box.classList.contains("is-full");
+    box.classList.toggle("is-full", on);
+    try {
+      if (on && box.requestFullscreen) box.requestFullscreen().catch(() => {});
+      else if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    } catch (e) {}
+  }
+  document.addEventListener("fullscreenchange", () => {
+    if (!document.fullscreenElement) {
+      const box = document.querySelector(".ep-plan.is-full");
+      if (box) box.classList.remove("is-full");
+    }
   });
 
   document.addEventListener("keydown", (e) => {

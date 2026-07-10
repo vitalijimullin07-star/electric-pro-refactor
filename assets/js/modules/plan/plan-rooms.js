@@ -99,7 +99,9 @@
         sheetCreatePoly();
         return;
       }
-      pts.push(G().snapSmart(p, w, step, CFG.cornerSnapCm));
+      // автовыравнивание: линия от предыдущей точки доводится до 90°
+      const ortho = G().orthoAdjust(pts[pts.length - 1] || null, w);
+      pts.push(G().snapSmart(p, ortho, step, CFG.cornerSnapCm));
       renderScaled();
       return;
     }
@@ -181,6 +183,9 @@
         ${isR ? `<label>${T.width}<input id="ep-pr-rw" type="number" inputmode="numeric" min="30" value="${Math.round(d.w)}"></label>
         <label>${T.depth}<input id="ep-pr-rh" type="number" inputmode="numeric" min="30" value="${Math.round(d.h)}"></label>` : ""}
         <label>${T.ceil}<input id="ep-pr-rc" type="number" inputmode="numeric" min="150" placeholder="${p.settings.ceilingHeight}" value="${room.height || ""}"></label>
+      </div>
+      <div class="ep-plan-srow">Стены:
+        ${(EP.Plan.Core.DEFAULTS.materials || []).map((m) => `<button type="button" class="ep-plan-chip ep-clickable ${(room.material || p.settings.wallMaterial) === m ? "on" : ""}" data-pr-mat="${esc(m)}">${esc(m)}</button>`).join("")}
       </div>
       <div class="ep-plan-srow"><label class="ep-plan-chk"><input id="ep-pr-wet" type="checkbox" ${wet ? "checked" : ""}> ${T.wet}</label></div>
       <div class="ep-plan-srow ep-plan-sbtns">
@@ -340,6 +345,11 @@
     if (t.closest("[data-pr-cancel]")) { setMode(R.mode === "underlay" ? "view" : R.mode); return; }
     if (t.closest("[data-pr-create-rect]")) return createRect();
     if (t.closest("[data-pr-create-poly]")) return createPoly();
+    if ((el = t.closest("[data-pr-mat]"))) {
+      const c = core(), room = c.project.rooms.find((r) => r.id === R.selectedRoomId);
+      if (room) { c.commit(); room.material = el.getAttribute("data-pr-mat"); c.persist("room-mat"); sheetRoom(room); }
+      return;
+    }
     if ((el = t.closest("[data-pr-apply]"))) return applyRoom(el.getAttribute("data-pr-apply"));
     if ((el = t.closest("[data-pr-dup]"))) return dupRoom(el.getAttribute("data-pr-dup"));
     if ((el = t.closest("[data-pr-mirror]"))) return mirrorRoom(el.getAttribute("data-pr-mirror"));

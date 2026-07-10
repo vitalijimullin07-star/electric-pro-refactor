@@ -23,16 +23,28 @@
 
   // ---------- сбор блоков по комнатам ----------
   function roomStats(p, room) {
-    const els = G().elementsInRoom(p, room.id);
-    const cnt = (t) => els.filter((e) => e.type === t && e.status !== "existing").length;
-    const sockets = els.filter((e) => e.type === "socket" && e.status !== "existing");
-    const medianH = sockets.length
-      ? sockets.map((e) => e.height).sort((a, b) => a - b)[Math.floor(sockets.length / 2)]
+    const els = G().elementsInRoom(p, room.id).filter((e) => e.status !== "existing");
+    // блоки (рамки) раскрываются на посты
+    const n = { socket: 0, switch: 0, light: 0, tv: 0, internet: 0, warmfloor: 0, ac: 0 };
+    const socketHeights = [];
+    els.forEach((e) => {
+      if (e.type === "block") {
+        ((e.params && e.params.items) || []).forEach((it) => {
+          if (n[it] != null) n[it]++;
+          if (it === "socket") socketHeights.push(e.height);
+        });
+      } else {
+        if (n[e.type] != null) n[e.type]++;
+        if (e.type === "socket") socketHeights.push(e.height);
+      }
+    });
+    const medianH = socketHeights.length
+      ? socketHeights.sort((a, b) => a - b)[Math.floor(socketHeights.length / 2)]
       : (p.settings.heightPresets.socket || 30);
     return {
-      room, sockets: sockets.length, sw: cnt("switch"), light: cnt("light"),
-      tv: cnt("tv"), internet: cnt("internet"), warm: cnt("warmfloor"),
-      ac: cnt("ac"), height: medianH
+      room, sockets: n.socket, sw: n.switch, light: n.light,
+      tv: n.tv, internet: n.internet, warm: n.warmfloor,
+      ac: n.ac, height: medianH, material: room.material || p.settings.wallMaterial || "Бетон"
     };
   }
   function buildBlocks(p) {
@@ -44,7 +56,7 @@
   function runEngine(p, stats) {
     if (!window.EP.PoolEngine) return null;
     const blocks = stats.map((s) => ({
-      material: p.settings.wallMaterial || "Бетон",
+      material: s.material,
       route: p.settings.routeType === "floor" ? "floor" : "ceiling",
       height: s.height,
       sockets: s.sockets, sw1: s.sw, sw2: 0, sw3: 0, pass: 0, cross: 0,
