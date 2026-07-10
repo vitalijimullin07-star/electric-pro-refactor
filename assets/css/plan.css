@@ -1,0 +1,75 @@
+/* Electric Pro V29 — Проект квартиры (Слой 0) */
+.ep-plan { display: flex; flex-direction: column; gap: 10px; }
+
+/* — список проектов — */
+.ep-plan-new { display: flex; flex-direction: column; gap: 8px; }
+.ep-plan-newrow { display: flex; gap: 8px; align-items: center; }
+.ep-plan-newrow input[type="text"] {
+  flex: 1; min-width: 120px; padding: 11px 13px; border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, .16); background: rgba(255, 255, 255, .05);
+  color: var(--text, #e8eef7); font: 500 14px system-ui;
+}
+.ep-plan-list { display: flex; flex-direction: column; gap: 8px; }
+.ep-plan-item { display: flex; align-items: stretch; gap: 8px; padding: 0; overflow: hidden; }
+.ep-plan-item-main {
+  flex: 1; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left;
+  padding: 13px 14px; background: none; border: 0; color: var(--text, #e8eef7); cursor: pointer;
+}
+.ep-plan-item-main b { font: 700 15px system-ui; }
+.ep-plan-item-main span { font: 500 12px system-ui; color: var(--muted, #94a3b8); }
+.ep-plan-item-del {
+  width: 46px; border: 0; background: rgba(248, 113, 113, .08); color: #f87171;
+  font: 600 15px system-ui; cursor: pointer;
+}
+.ep-plan-empty { color: var(--muted, #94a3b8); font: 500 13.5px system-ui; }
+
+/* — редактор — */
+.ep-plan-top { display: flex; align-items: center; gap: 10px; }
+.ep-plan-title { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1; }
+.ep-plan-title b { font: 700 16px system-ui; color: var(--text, #e8eef7); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ep-plan-title input {
+  flex: 1; min-width: 100px; padding: 8px 11px; border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, .2); background: rgba(255, 255, 255, .06);
+  color: var(--text, #e8eef7); font: 600 15px system-ui;
+}
+.ep-plan-mini {
+  border: 0; background: rgba(255, 255, 255, .07); color: var(--muted, #cbd5e1);
+  width: 32px; height: 32px; border-radius: 9px; cursor: pointer; flex: none;
+}
+.ep-plan-toolbar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.ep-plan-flex { flex: 1; }
+.ep-plan-tbtn {
+  min-width: 44px; min-height: 40px; padding: 8px 13px; border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, .14); background: rgba(255, 255, 255, .05);
+  color: var(--text, #e8eef7); font: 600 14px system-ui; cursor: pointer;
+}
+.ep-plan-tbtn:disabled { opacity: .35; cursor: default; }
+.ep-plan-savenote { font: 500 11.5px system-ui; color: var(--muted, #94a3b8); }
+
+/* — холст — */
+.ep-plan-canvas {
+  position: relative; height: calc(100vh - 250px); height: calc(100dvh - 250px);
+  min-height: 320px; border-radius: 16px; overflow: hidden;
+  background: rgba(255, 255, 255, .03); border: 1px solid rgba(255, 255, 255, .09);
+}
+.ep-plan-svg { width: 100%; height: 100%; display: block; cursor: grab; }
+.ep-plan-grid-line { stroke: rgba(148, 163, 184, .14); }
+.ep-plan-grid-major { stroke: rgba(148, 163, 184, .30); }
+.ep-plan-grid-axis { stroke: rgba(56, 189, 248, .45); }
+.ep-plan-hint {
+  position: absolute; inset: 0; display: flex; flex-direction: column; gap: 6px;
+  align-items: center; justify-content: center; text-align: center;
+  pointer-events: none; padding: 20px;
+  color: var(--muted, #94a3b8); font: 600 14px system-ui;
+}
+.ep-plan-hint2 { font: 500 12.5px system-ui; opacity: .8; }
+
+/* — дневная тема — */
+body[data-visual-mode="day"] .ep-plan-canvas { background: #fff; border-color: #dbe3ee; }
+body[data-visual-mode="day"] .ep-plan-grid-line { stroke: rgba(71, 85, 105, .12); }
+body[data-visual-mode="day"] .ep-plan-grid-major { stroke: rgba(71, 85, 105, .28); }
+body[data-visual-mode="day"] .ep-plan-grid-axis { stroke: rgba(2, 132, 199, .5); }
+body[data-visual-mode="day"] .ep-plan-newrow input[type="text"],
+body[data-visual-mode="day"] .ep-plan-title input { background: #fff; border-color: #cbd5e1; color: #0f172a; }
+body[data-visual-mode="day"] .ep-plan-tbtn { background: #fff; border-color: #cbd5e1; color: #0f172a; }
+body[data-visual-mode="day"] .ep-plan-item-main { color: #0f172a; }

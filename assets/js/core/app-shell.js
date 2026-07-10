@@ -39,6 +39,7 @@ EP.AppShell = {
             <button class="ep-clickable" type="button" data-route="work">🧰 Работа</button>
             <button class="ep-clickable" type="button" data-route="shield">🛡️ Конфигуратор щита</button>
             <button class="ep-clickable" type="button" data-route="pool">🔌 Пул розеток/штроб</button>
+            <button class="ep-clickable" type="button" data-route="plan">🏗️ Проект квартиры</button>
             <button class="ep-clickable" type="button" data-route="scheme">📐 Однолинейная схема</button>
             <button class="ep-clickable" type="button" data-route="estimate">📋 Смета</button>
             <button class="ep-clickable" type="button" data-route="clients">👥 Клиенты</button>
