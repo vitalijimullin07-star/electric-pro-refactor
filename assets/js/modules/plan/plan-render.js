@@ -74,7 +74,9 @@
       const sel = ui && ui.selectedRoomId === room.id;
       const closed = pts.length >= 3;
       const d = "M" + pts.map((p) => p.x + " " + p.y).join(" L") + (closed ? " Z" : "");
-      g.appendChild(el("path", { d, class: "ep-plan-wall" + (sel ? " is-sel" : ""), "stroke-width": sw, fill: "none" }));
+      const mat = room.material || (project.settings && project.settings.wallMaterial) || "Бетон";
+      const matClass = { "Бетон": " mat-concrete", "Кирпич": " mat-brick", "Панель": " mat-panel", "Мягкий": " mat-soft" }[mat] || "";
+      g.appendChild(el("path", { d, class: "ep-plan-wall" + matClass + (sel ? " is-sel" : ""), "stroke-width": sw, fill: "none" }));
 
       if (closed && dimsOn) {
         const c = G.centroid(pts);
@@ -142,9 +144,21 @@
       if (!pt) return;
       const r0 = 11 * k;
       const grp = el("g", { class: "ep-plan-el" + (elem.status === "mounted" ? " is-done" : "") + (elem.status === "existing" ? " is-exist" : "") + (elem.id === selId ? " is-sel" : "") });
-      if (bad.has(elem.id)) grp.appendChild(el("circle", { cx: pt.x, cy: pt.y, r: r0 * 1.55, class: "ep-plan-warnring", "stroke-width": sw * 0.7 }));
-      grp.appendChild(el("circle", { cx: pt.x, cy: pt.y, r: r0, fill: layerColor2(elem.layer), "stroke-width": sw * 0.7 }));
-      grp.appendChild(el("text", { x: pt.x, y: pt.y, "font-size": 10 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph" }, (TY[elem.type] || {}).glyph || "?"));
+      if (elem.type === "block") {
+        // рамка постов: скруглённый прямоугольник с глифами внутри
+        const items = (elem.params && elem.params.items) || ["socket"];
+        const step2 = 16 * k, bw = items.length * step2 + 8 * k, bh = 22 * k;
+        if (bad.has(elem.id)) grp.appendChild(el("rect", { x: pt.x - bw / 2 - 4 * k, y: pt.y - bh / 2 - 4 * k, width: bw + 8 * k, height: bh + 8 * k, rx: 6 * k, class: "ep-plan-warnring", fill: "none", "stroke-width": sw * 0.7 }));
+        grp.appendChild(el("rect", { x: pt.x - bw / 2, y: pt.y - bh / 2, width: bw, height: bh, rx: 5 * k, fill: layerColor2(elem.layer), class: "ep-plan-blockrect", "stroke-width": sw * 0.7 }));
+        items.forEach((it, i) => grp.appendChild(el("text", {
+          x: pt.x - bw / 2 + 4 * k + step2 * i + step2 / 2, y: pt.y,
+          "font-size": 9 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph"
+        }, (TY[it] || {}).glyph || "?")));
+      } else {
+        if (bad.has(elem.id)) grp.appendChild(el("circle", { cx: pt.x, cy: pt.y, r: r0 * 1.55, class: "ep-plan-warnring", "stroke-width": sw * 0.7 }));
+        grp.appendChild(el("circle", { cx: pt.x, cy: pt.y, r: r0, fill: layerColor2(elem.layer), "stroke-width": sw * 0.7 }));
+        grp.appendChild(el("text", { x: pt.x, y: pt.y, "font-size": 10 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph" }, (TY[elem.type] || {}).glyph || "?"));
+      }
       if (elem.status === "mounted") grp.appendChild(el("text", { x: pt.x + r0, y: pt.y - r0, "font-size": 10 * k, class: "ep-plan-eldone" }, "✓"));
       g.appendChild(grp);
     });

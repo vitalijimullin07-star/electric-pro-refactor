@@ -49,7 +49,9 @@
         if (!w) { issues.push({ id: el.id, msg: T.offWall }); badIds.add(el.id); return; }
         if (el.offset > w.len) { issues.push({ id: el.id, msg: T.offWall }); badIds.add(el.id); }
       }
-      if (el.type === "socket" && roomId && wetRooms.has(roomId) && el.height < R.wetMinSocketH) {
+      const carriesSocket = el.type === "socket" ||
+        (el.type === "block" && ((el.params && el.params.items) || []).indexOf("socket") >= 0);
+      if (carriesSocket && roomId && wetRooms.has(roomId) && el.height < R.wetMinSocketH) {
         issues.push({ id: el.id, msg: T.wet(Math.round(el.height), R.wetMinSocketH) }); badIds.add(el.id);
       }
       if (el.type !== "warmfloor" && el.height < R.minSocketH) {

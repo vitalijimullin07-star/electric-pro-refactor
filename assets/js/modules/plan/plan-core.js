@@ -21,7 +21,8 @@
     cloudDebounceMs: 1500,
     heightPresets: { socket: 30, switch: 90, kitchen: 110 }, // см от пола
     panelHeight: 150,     // см — низ щита (для вертикалей трасс)
-    wallMaterial: "Бетон", // материал стен для расчёта штробления
+    wallMaterial: "Бетон", // материал стен по умолчанию (для расчёта штробления)
+    materials: ["Бетон", "Кирпич", "Панель", "Мягкий"], // как в движке пула
     routeType: "ceiling",  // потолок/пол — как ведём трассы
     layers: [
       { id: "light",  name: "Освещение",       color: "#facc15" },
@@ -68,7 +69,7 @@
     };
   }
   function newRoom(points, name) {
-    return { id: uid("rm"), name: name || "Комната", points: points || [], height: null /* null = settings.ceilingHeight */, zones: [] };
+    return { id: uid("rm"), name: name || "Комната", points: points || [], height: null /* null = settings.ceilingHeight */, zones: [], material: null /* null = settings.wallMaterial */ };
   }
   function newPanel(x, y, name) { return { id: uid("pn"), x: x || 0, y: y || 0, name: name || "Щит" }; }
   function newElement(type, wallId, offset, height, layer) {

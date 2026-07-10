@@ -87,6 +87,7 @@
     let pinch = null;      // { dist, cx, cy } на старте пинча
     let tapStart = null;   // { x, y, t, id }
     let dragHandler = null, dragMoved = false; // перехват одиночного перетаскивания (подложка/элементы)
+    let penActive = false; // стилус (S Pen / Apple Pencil): пока он на экране — касания ладони игнорируем
 
     function dist2(a, b) { const dx = a.x - b.x, dy = a.y - b.y; return Math.hypot(dx, dy); }
     function pinchInfo() {
@@ -95,6 +96,8 @@
     }
 
     svg.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "pen") penActive = true;
+      else if (e.pointerType === "touch" && penActive) return; // ладонь при работе стилусом
       svg.setPointerCapture(e.pointerId);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pts.size === 1) tapStart = { x: e.clientX, y: e.clientY, t: Date.now(), id: e.pointerId };
@@ -125,6 +128,7 @@
       }
     });
     function endPointer(e) {
+      if (e.pointerType === "pen") penActive = false;
       pts.delete(e.pointerId);
       if (pts.size < 2) pinch = null;
       if (dragHandler && dragMoved && pts.size === 0) { dragMoved = false; dragHandler(0, 0, "end"); }

@@ -6,6 +6,7 @@
   window.EP = window.EP || {};
 
   const TYPES = {
+    block:     { name: "Блок (рамка)", glyph: "▣", layer: "power", h: 30, block: true },
     socket:    { name: "Розетка",     glyph: "Р",  layer: "power", h: 30 },
     switch:    { name: "Выключатель", glyph: "В",  layer: "light", h: 90 },
     light:     { name: "Свет",        glyph: "С",  layer: "light", h: null, free: true },
@@ -18,13 +19,16 @@
     panel:     { name: "Щит",         glyph: "Щ",  layer: "power", h: 150, panel: true }
   };
   const STATUS = [["planned", "План"], ["mounted", "Готово ✓"], ["existing", "Было"]];
-  const CFG = { hitPx: 22, wallSnapPx: 26, photoMax: 4, photoSide: 640 };
+  const CFG = { hitPx: 22, wallSnapPx: 26, photoMax: 4, photoSide: 640, blockMax: 6 };
+  const BLOCK_TYPES = ["socket", "switch", "tv", "internet"]; // что можно ставить в рамку
   const T = {
     palette: "Палитра", progress: "Смонтировано",
     offset: "Отступ от угла, см", height: "Высота от пола, см",
     status: "Статус", del: "✕ Удалить", apply: "✓", photo: "📷 Фото",
     confirmDel: "Удалить точку?", tapWall: "Тапни ближе к стене — элемент сядет на неё.",
-    presets: "Пресеты:"
+    presets: "Пресеты:",
+    blockTitle: "Сборка блока", blockPosts: (n, m) => `${n}/${m} постов`,
+    blockAdd: "Добавить пост:", blockTapDel: "Тап по посту в рамке — убрать"
   };
 
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -68,7 +72,11 @@
     c.commit();
     if (hit) {
       const el = c.model.newElement(S.selType, hit.wall.id, G().snap(hit.offset, p.settings.gridStep), defaultHeight(S.selType), t.layer);
+      if (t.block) el.params = { items: ["socket"] }; // рамка начинается с одной розетки
       p.elements.push(el);
+      c.persist("elem-add");
+      if (t.block) { openEditor(el); return; } // сразу открываем сборку блока
+      return;
     } else if (t.free) {
       const sp = G().snapPoint(w, p.settings.gridStep);
       const el = c.model.newElement(S.selType, null, 0, defaultHeight(S.selType), t.layer);
@@ -111,6 +119,7 @@
       <div class="ep-plan-srow">${T.presets}
         ${[hp.socket, hp.switch, hp.kitchen].map((v) => `<button type="button" class="ep-plan-chip ep-clickable" data-pe-preset="${v}">${v}</button>`).join("")}
       </div>
+      ${el.type === "block" ? blockHtml(el) : ""}
       <div class="ep-plan-srow">${T.status}:
         ${STATUS.map(([v, l]) => `<button type="button" class="ep-plan-chip ep-clickable ${el.status === v ? "on" : ""}" data-pe-status="${v}">${l}</button>`).join("")}
       </div>
@@ -133,6 +142,19 @@
       </div>`);
     rooms().renderScene();
   }
+  // «Сборка блока»: рамка с постами (как на бумажных схемах — 1-6 в общей рамке)
+  function blockHtml(el) {
+    const items = (el.params && el.params.items) || [];
+    return `<div class="ep-plan-srow"><b>${T.blockTitle}</b><span class="ep-plan-flex"></span><span>${T.blockPosts(items.length, CFG.blockMax)}</span></div>
+      <div class="ep-plan-blockframe">${items.map((k, i) =>
+        `<button type="button" class="ep-plan-post ep-clickable" data-pe-bdel="${i}" aria-label="Убрать пост ${esc((TYPES[k] || {}).name || k)}">${esc((TYPES[k] || {}).glyph || "?")}</button>`).join("")}
+      </div>
+      <div class="ep-plan-srow">${T.blockAdd}
+        ${BLOCK_TYPES.map((k) => `<button type="button" class="ep-plan-chip ep-clickable" data-pe-badd="${k}">+${esc(TYPES[k].glyph)}</button>`).join("")}
+      </div>
+      <div class="ep-plan-modehint">${T.blockTapDel}</div>`;
+  }
+
   function photosHtml(el) {
     return (el.photos || []).map((src, i) =>
       `<span class="ep-plan-ph"><img src="${src}" alt="фото точки"><button type="button" data-pe-phdel="${i}" aria-label="Удалить фото">✕</button></span>`).join("");
@@ -184,6 +206,18 @@
     if ((b = t.closest("[data-pe-status]"))) {
       const c = core(), el = current(); if (!el) return;
       c.commit(); el.status = b.getAttribute("data-pe-status"); c.persist("elem-status"); openEditor(el); return;
+    }
+    if ((b = t.closest("[data-pe-badd]"))) {
+      const c = core(), el = current(); if (!el || el.type !== "block") return;
+      const items = (el.params.items = el.params.items || []);
+      if (items.length >= CFG.blockMax) return;
+      c.commit(); items.push(b.getAttribute("data-pe-badd")); c.persist("block-add"); openEditor(el); return;
+    }
+    if ((b = t.closest("[data-pe-bdel]"))) {
+      const c = core(), el = current(); if (!el || el.type !== "block") return;
+      const items = (el.params.items = el.params.items || []);
+      if (items.length <= 1) return; // пустых рамок не бывает — удаляй сам блок
+      c.commit(); items.splice(Number(b.getAttribute("data-pe-bdel")), 1); c.persist("block-del"); openEditor(el); return;
     }
     if (t.closest("[data-pe-apply]")) return applyEditor();
     if (t.closest("[data-pe-del]")) {

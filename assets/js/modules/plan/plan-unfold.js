@@ -7,7 +7,7 @@
   window.EP = window.EP || {};
   const NS = "http://www.w3.org/2000/svg";
 
-  const CFG = { hPx: 200, hitPx: 24, addTypes: ["socket", "switch", "tv", "internet", "ac", "camera", "sensor"] };
+  const CFG = { hPx: 200, hitPx: 24, addTypes: ["block", "socket", "switch", "tv", "internet", "ac", "camera", "sensor"] };
   const T = { title: "Стена", close: "Закрыть", hint: "Тяни точку пальцем · тап по пустому — добавить выбранный тип" };
 
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -68,11 +68,20 @@
     const TY = EL().TYPES;
     wallElems(p, S.wallId).forEach((el) => {
       const x = el.offset, y = H - el.height;
-      const gl = (TY[el.type] || {}).glyph || "?";
       const gr = svgEl("g", { "data-pu-el": el.id, class: "ep-plan-unfel" + (el.status === "mounted" ? " is-done" : "") });
-      gr.appendChild(svgEl("circle", { cx: x, cy: y, r: 12 * kk }));
-      gr.appendChild(svgEl("text", { x, y, "font-size": 10 * kk, "text-anchor": "middle", "dominant-baseline": "central" }, gl));
-      gr.appendChild(svgEl("text", { x, y: y + 22 * kk, "font-size": 8 * kk, "text-anchor": "middle", class: "ep-plan-unfdim" }, Math.round(el.offset) + "/" + Math.round(el.height)));
+      if (el.type === "block") {
+        const items = (el.params && el.params.items) || ["socket"];
+        const step2 = 18 * kk, bw = items.length * step2 + 6 * kk, bh = 24 * kk;
+        gr.appendChild(svgEl("rect", { x: x - bw / 2, y: y - bh / 2, width: bw, height: bh, rx: 5 * kk }));
+        items.forEach((it, i) => gr.appendChild(svgEl("text", {
+          x: x - bw / 2 + 3 * kk + step2 * i + step2 / 2, y,
+          "font-size": 9 * kk, "text-anchor": "middle", "dominant-baseline": "central"
+        }, (TY[it] || {}).glyph || "?")));
+      } else {
+        gr.appendChild(svgEl("circle", { cx: x, cy: y, r: 12 * kk }));
+        gr.appendChild(svgEl("text", { x, y, "font-size": 10 * kk, "text-anchor": "middle", "dominant-baseline": "central" }, (TY[el.type] || {}).glyph || "?"));
+      }
+      gr.appendChild(svgEl("text", { x, y: y + 24 * kk, "font-size": 8 * kk, "text-anchor": "middle", class: "ep-plan-unfdim" }, Math.round(el.offset) + "/" + Math.round(el.height)));
       svg.appendChild(gr);
     });
     box.appendChild(svg);
@@ -102,6 +111,7 @@
         const c = core(), TY = EL().TYPES[S.addType];
         c.commit();
         const el = c.model.newElement(S.addType, S.wallId, G().snap(pt.x, step), G().snap(Math.max(0, H - pt.y), step), TY.layer);
+        if (TY.block) el.params = { items: ["socket"] };
         p.elements.push(el);
         c.persist("elem-add");
         drawStrip(); rooms().renderScene();
