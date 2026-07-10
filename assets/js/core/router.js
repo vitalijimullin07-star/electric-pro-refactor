@@ -13,6 +13,7 @@ EP.routes = {
   shield: "pages/shield.html",
   scheme: "pages/scheme.html",
   pool: "pages/pool.html",
+  plan: "pages/plan.html",
   estimate: "pages/estimate.html",
   details: "pages/details.html",
   consumables: "pages/consumables.html",
