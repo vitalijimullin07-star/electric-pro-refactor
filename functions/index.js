@@ -1,11 +1,17 @@
 const crypto = require("crypto");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { setGlobalOptions } = require("firebase-functions/v2");
+const { defineSecret } = require("firebase-functions/params");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
 
 // Клиент (admin.js, auth.js, access-policy.js) вызывает функции в europe-west1.
 setGlobalOptions({ region: "europe-west1", maxInstances: 10 });
+
+// Секрет из Secret Manager: `firebase functions:secrets:set ACCESS_SIGNING_SECRET`.
+// Подключён к функциям ниже через { secrets: [ACCESS_SIGNING_SECRET] } — без этого
+// process.env.ACCESS_SIGNING_SECRET будет пустым, даже если секрет создан в облаке.
+const ACCESS_SIGNING_SECRET = defineSecret("ACCESS_SIGNING_SECRET");
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -162,7 +168,7 @@ function normalizeAccessDoc(uid, data) {
   return normalized;
 }
 
-exports.ensureUserProfile = onCall(async (request) => {
+exports.ensureUserProfile = onCall({ secrets: [ACCESS_SIGNING_SECRET] }, async (request) => {
   assertSignedIn(request);
   const uid = request.auth.uid;
   const email = request.auth.token.email || "";
@@ -198,7 +204,7 @@ exports.ensureUserProfile = onCall(async (request) => {
   return normalizeAccessDoc(uid, fresh.data() || {});
 });
 
-exports.getAccessPolicy = onCall(async (request) => {
+exports.getAccessPolicy = onCall({ secrets: [ACCESS_SIGNING_SECRET] }, async (request) => {
   assertSignedIn(request);
   const uid = request.auth.uid;
   const email = request.auth.token.email || "";
@@ -238,7 +244,7 @@ const TRIAL_DAYS = 10;
 
 // Единая точка админ-операций над пользователем. Заменяет прямые записи в users
 // с клиента (правила их запрещают) и покрывает все действия админки.
-exports.adminUpdateUser = onCall(async (request) => {
+exports.adminUpdateUser = onCall({ secrets: [ACCESS_SIGNING_SECRET] }, async (request) => {
   await assertAdmin(request);
   const input = request.data || {};
   const targetUid = String(input.targetUid || "");
@@ -352,7 +358,7 @@ exports.adminUpdateUser = onCall(async (request) => {
   return { ok: true, user: normalizeAccessDoc(targetUid, fresh.data() || {}) };
 });
 
-exports.adminSetUserAccess = onCall(async (request) => {
+exports.adminSetUserAccess = onCall({ secrets: [ACCESS_SIGNING_SECRET] }, async (request) => {
   await assertAdmin(request);
   const input = request.data || {};
   const targetUid = String(input.targetUid || "");
