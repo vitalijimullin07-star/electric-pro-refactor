@@ -86,6 +86,7 @@
     const pts = new Map(); // pointerId -> {x,y}
     let pinch = null;      // { dist, cx, cy } на старте пинча
     let tapStart = null;   // { x, y, t, id }
+    let dragHandler = null, dragMoved = false; // перехват одиночного перетаскивания (подложка/элементы)
 
     function dist2(a, b) { const dx = a.x - b.x, dy = a.y - b.y; return Math.hypot(dx, dy); }
     function pinchInfo() {
@@ -117,15 +118,16 @@
         apply();
       } else if (pts.size === 1) {
         const k = pxToCm();
-        view.x -= (e.clientX - prev.x) * k;
-        view.y -= (e.clientY - prev.y) * k;
-        apply();
+        const dx = (e.clientX - prev.x) * k, dy = (e.clientY - prev.y) * k;
+        if (dragHandler) { dragMoved = true; dragHandler(dx, dy, "move"); }
+        else { view.x -= dx; view.y -= dy; apply(); }
         if (tapStart && Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y) > CFG.tapMaxPx) tapStart = null;
       }
     });
     function endPointer(e) {
       pts.delete(e.pointerId);
       if (pts.size < 2) pinch = null;
+      if (dragHandler && dragMoved && pts.size === 0) { dragMoved = false; dragHandler(0, 0, "end"); }
       if (tapStart && tapStart.id === e.pointerId) {
         const dt = Date.now() - tapStart.t;
         if (dt <= CFG.tapMaxMs && cb.tap) cb.tap(toWorld(e.clientX, e.clientY), e);
@@ -172,9 +174,11 @@
     return {
       svg, layers,
       getView: () => ({ ...view }),
+      cmPerPx: pxToCm,
       toWorld, fit, redraw: apply,
       onTap: (fn) => { cb.tap = fn; },
       onViewChanged: (fn) => { cb.viewChanged = fn; },
+      setDragHandler: (fn) => { dragHandler = fn || null; dragMoved = false; },
       destroy: () => { if (ro) ro.disconnect(); if (svg.parentNode) svg.parentNode.removeChild(svg); }
     };
   }
