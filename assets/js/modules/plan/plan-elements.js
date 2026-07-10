@@ -7,6 +7,8 @@
 
   const TYPES = {
     block:     { name: "Блок (рамка)", glyph: "▣", layer: "power", h: 30, block: true },
+    door:      { name: "Дверь",       glyph: "Дв", layer: "labels", h: 0, opening: true },
+    window:    { name: "Окно",        glyph: "Ок", layer: "labels", h: 90, opening: true },
     socket:    { name: "Розетка",     glyph: "Р",  layer: "power", h: 30 },
     switch:    { name: "Выключатель", glyph: "В",  layer: "light", h: 90 },
     light:     { name: "Свет",        glyph: "С",  layer: "light", h: null, free: true },
@@ -69,6 +71,22 @@
       return;
     }
     const hit = G().wallAt(p, w, CFG.wallSnapPx * k);
+    if (t.opening) { // дверь/окно — это проём в стене, не электроточка
+      if (!hit) { rooms().toast(T.tapWall); return; }
+      c.commit();
+      const op = c.model.newOpening(S.selType, hit.wall.id, G().snap(Math.max(0, hit.offset - (S.selType === "window" ? 70 : 45)), p.settings.gridStep), undefined);
+      // дверь по умолчанию открывается внутрь комнаты
+      const room = p.rooms.find((r) => r.id === String(hit.wall.id).split(":")[0]);
+      if (room) {
+        const cpt = G().centroid(room.points);
+        const nx = -(hit.wall.b.y - hit.wall.a.y), ny = hit.wall.b.x - hit.wall.a.x;
+        op.flip = (nx * (cpt.x - hit.wall.mx) + ny * (cpt.y - hit.wall.my)) >= 0 ? 1 : -1;
+      }
+      p.openings.push(op);
+      c.persist("opening-add");
+      openOpeningEditor(op);
+      return;
+    }
     c.commit();
     if (hit) {
       const el = c.model.newElement(S.selType, hit.wall.id, G().snap(hit.offset, p.settings.gridStep), defaultHeight(S.selType), t.layer);
@@ -99,6 +117,14 @@
     p.panels.forEach((pn) => {
       const d = G().dist(w, pn);
       if (d <= maxCm && (!best || d < best.d)) best = { d, panel: pn };
+    });
+    (p.openings || []).forEach((op) => {
+      const wall = G().wallById(p, op.wallId);
+      if (!wall) return;
+      const mid = G().pointAtOffset(wall, op.offset + op.width / 2);
+      const d = G().dist(w, mid);
+      const r = Math.max(maxCm, op.width / 2);
+      if (d <= r && (!best || d < best.d)) best = { d, opening: op };
     });
     return best;
   }
@@ -132,6 +158,28 @@
       <input id="ep-pe-file" type="file" accept="image/*" capture="environment" hidden>`);
     rooms().renderScene();
   }
+  function openOpeningEditor(op) {
+    S.selId = op.id;
+    const p = core().project, wall = G().wallById(p, op.wallId);
+    const isDoor = op.type === "door";
+    rooms().openSheet(`<div class="ep-plan-srow"><b>${isDoor ? "Дверь" : "Окно"}</b>
+        <span>· стена ${wall ? wall.n : "?"} (${wall ? Math.round(wall.len) : 0} см)</span></div>
+      <div class="ep-plan-srow ep-plan-s2">
+        <label>${T.offset}<input id="ep-po-off" type="number" inputmode="numeric" min="0" value="${Math.round(op.offset)}"></label>
+        <label>Ширина, см<input id="ep-po-w" type="number" inputmode="numeric" min="40" value="${Math.round(op.width)}"></label>
+      </div>
+      ${isDoor ? `<div class="ep-plan-srow">
+        <button type="button" class="ep-plan-chip ep-clickable" data-po-hinge>Петли: ${op.hinge === "a" ? "слева" : "справа"}</button>
+        <button type="button" class="ep-plan-chip ep-clickable" data-po-flip>Открывание: ${op.flip > 0 ? "внутрь" : "наружу"}</button>
+      </div>` : ""}
+      <div class="ep-plan-srow ep-plan-sbtns">
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-po-apply>${T.apply}</button>
+        <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-po-del>${T.del}</button>
+      </div>`);
+    rooms().renderScene();
+  }
+  function currentOpening() { return (core().project.openings || []).find((o) => o.id === S.selId) || null; }
+
   function openPanelEditor(pn) {
     S.selId = pn.id;
     rooms().openSheet(`<div class="ep-plan-srow"><b>${esc(pn.name || "Щит")}</b></div>
@@ -234,6 +282,28 @@
       const c = core(), el = current(); if (!el) return;
       c.commit(); el.photos.splice(Number(b.getAttribute("data-pe-phdel")), 1); c.persist("elem-photo-del"); openEditor(el); return;
     }
+    if (t.closest("[data-po-apply]")) {
+      const c = core(), op = currentOpening(); if (!op) return;
+      const wall = G().wallById(c.project, op.wallId);
+      c.commit();
+      const off = Number(($("#ep-po-off") || {}).value), wd = Number(($("#ep-po-w") || {}).value);
+      if (Number.isFinite(wd) && wd >= 40) op.width = wd;
+      if (Number.isFinite(off) && wall) op.offset = Math.max(0, Math.min(wall.len - op.width, off));
+      c.persist("opening-edit"); openOpeningEditor(op); return;
+    }
+    if (t.closest("[data-po-hinge]")) {
+      const c = core(), op = currentOpening(); if (!op) return;
+      c.commit(); op.hinge = op.hinge === "a" ? "b" : "a"; c.persist("opening-hinge"); openOpeningEditor(op); return;
+    }
+    if (t.closest("[data-po-flip]")) {
+      const c = core(), op = currentOpening(); if (!op) return;
+      c.commit(); op.flip = -op.flip; c.persist("opening-flip"); openOpeningEditor(op); return;
+    }
+    if (t.closest("[data-po-del]")) {
+      const c = core(), op = currentOpening(); if (!op) return;
+      c.commit(); c.project.openings = c.project.openings.filter((o) => o.id !== op.id); c.persist("opening-del");
+      S.selId = null; rooms().closeSheet(); rooms().renderScene(); return;
+    }
     if ((b = t.closest("[data-pe-papply]"))) {
       const c = core(), pn = c.project.panels.find((x) => x.id === b.getAttribute("data-pe-papply")); if (!pn) return;
       c.commit(); pn.name = (($("#ep-pe-pname") || {}).value || "Щит").trim() || "Щит"; c.persist("panel-edit"); return;
@@ -251,5 +321,5 @@
   function deselect() { S.selId = null; }
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Elements = { TYPES, CFG, onModeEnter, placeAt, hitAt, openEditor, openPanelEditor, selectedId, deselect };
+  EP.Plan.Elements = { TYPES, CFG, onModeEnter, placeAt, hitAt, openEditor, openPanelEditor, openOpeningEditor, selectedId, deselect };
 })();

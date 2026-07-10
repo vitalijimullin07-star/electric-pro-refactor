@@ -215,3 +215,15 @@ body[data-visual-mode="day"] .ep-plan-wall.mat-soft { stroke: #94a3b8; }
 }
 .ep-plan.is-full .ep-plan-canvas { height: calc(100vh - 215px); height: calc(100dvh - 215px); }
 body[data-visual-mode="day"] .ep-plan.is-full { background: #eef1f6; }
+
+/* — Remplanner-пакет: двери/окна, размерные цепочки — */
+.ep-plan-doorarc { stroke: #94a3b8; fill: none; }
+.ep-plan-doorleaf { stroke: #e2e8f0; }
+.ep-plan-window { stroke: #cbd5e1; }
+.ep-plan-chain { stroke: #f87171; }
+.ep-plan-chaintext { fill: #f87171; font-family: system-ui; font-weight: 600; }
+body[data-visual-mode="day"] .ep-plan-doorarc { stroke: #64748b; }
+body[data-visual-mode="day"] .ep-plan-doorleaf { stroke: #334155; }
+body[data-visual-mode="day"] .ep-plan-window { stroke: #334155; }
+body[data-visual-mode="day"] .ep-plan-chain { stroke: #dc2626; }
+body[data-visual-mode="day"] .ep-plan-chaintext { fill: #dc2626; }

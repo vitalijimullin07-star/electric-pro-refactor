@@ -73,10 +73,19 @@
       if (pts.length < 2) return;
       const sel = ui && ui.selectedRoomId === room.id;
       const closed = pts.length >= 3;
-      const d = "M" + pts.map((p) => p.x + " " + p.y).join(" L") + (closed ? " Z" : "");
       const mat = room.material || (project.settings && project.settings.wallMaterial) || "Бетон";
       const matClass = { "Бетон": " mat-concrete", "Кирпич": " mat-brick", "Панель": " mat-panel", "Мягкий": " mat-soft" }[mat] || "";
-      g.appendChild(el("path", { d, class: "ep-plan-wall" + matClass + (sel ? " is-sel" : ""), "stroke-width": sw, fill: "none" }));
+      // стены — отрезками, с разрывами под двери/окна
+      const dParts = [];
+      G.walls(room).forEach((w) => {
+        const opens = G.openingsOnWall(project, w.id);
+        G.spansMinusOpenings(w.len, opens).forEach(([s, e]) => {
+          const p1 = G.pointAtOffset(w, s), p2 = G.pointAtOffset(w, e);
+          dParts.push("M" + p1.x + " " + p1.y + " L" + p2.x + " " + p2.y);
+        });
+      });
+      if (dParts.length) g.appendChild(el("path", { d: dParts.join(" "), class: "ep-plan-wall" + matClass + (sel ? " is-sel" : ""), "stroke-width": sw, fill: "none" }));
+      else if (!closed) g.appendChild(el("path", { d: "M" + pts.map((p) => p.x + " " + p.y).join(" L"), class: "ep-plan-wall" + matClass, "stroke-width": sw, fill: "none" }));
 
       if (closed && dimsOn) {
         const c = G.centroid(pts);
@@ -116,6 +125,70 @@
         cx: p.x, cy: p.y, r: CFG.pointPx * k,
         class: "ep-plan-draftpt" + (i === 0 ? " is-first" : "")
       })));
+    }
+
+    // двери (дуга открывания) и окна (двойная линия)
+    (project.openings || []).forEach((op) => {
+      const w = G.wallById(project, op.wallId);
+      if (!w) return;
+      const a = G.pointAtOffset(w, op.offset), b = G.pointAtOffset(w, op.offset + op.width);
+      const dirx = (w.b.x - w.a.x) / (w.len || 1), diry = (w.b.y - w.a.y) / (w.len || 1);
+      const nx = -diry * op.flip, ny = dirx * op.flip; // сторона открывания/выступа
+      if (op.type === "door") {
+        const h = op.hinge === "a" ? a : b, far = op.hinge === "a" ? b : a;
+        const leaf = { x: h.x + nx * op.width, y: h.y + ny * op.width };
+        const cross = (far.x - h.x) * (leaf.y - h.y) - (far.y - h.y) * (leaf.x - h.x);
+        const sweep = cross > 0 ? 1 : 0;
+        g.appendChild(el("path", {
+          d: `M${far.x} ${far.y} A${op.width} ${op.width} 0 0 ${sweep} ${leaf.x} ${leaf.y}`,
+          class: "ep-plan-doorarc", "stroke-width": sw * 0.45, fill: "none"
+        }));
+        g.appendChild(el("line", { x1: h.x, y1: h.y, x2: leaf.x, y2: leaf.y, class: "ep-plan-doorleaf", "stroke-width": sw * 0.7 }));
+      } else {
+        const off3 = 3.2 * k;
+        [-1, 1].forEach((s) => g.appendChild(el("line", {
+          x1: a.x + nx * off3 * s, y1: a.y + ny * off3 * s,
+          x2: b.x + nx * off3 * s, y2: b.y + ny * off3 * s,
+          class: "ep-plan-window", "stroke-width": sw * 0.5
+        })));
+        [a, b].forEach((p) => g.appendChild(el("line", {
+          x1: p.x + nx * off3, y1: p.y + ny * off3, x2: p.x - nx * off3, y2: p.y - ny * off3,
+          class: "ep-plan-window", "stroke-width": sw * 0.5
+        })));
+      }
+    });
+
+    // размерные цепочки: привязки точек и проёмов к углам стены (слой «Размеры»)
+    if (dimsOn) {
+      (project.rooms || []).forEach((room) => {
+        if ((room.points || []).length < 3) return;
+        const c0 = G.centroid(room.points);
+        G.walls(room).forEach((w) => {
+          const stations = new Set([0, Math.round(w.len)]);
+          (project.elements || []).forEach((e2) => { if (e2.wallId === w.id) stations.add(Math.round(e2.offset)); });
+          G.openingsOnWall(project, w.id).forEach((o) => { stations.add(Math.round(o.offset)); stations.add(Math.round(o.offset + o.width)); });
+          if (stations.size <= 2) return; // нечего привязывать
+          let nx = -(w.b.y - w.a.y), ny = w.b.x - w.a.x;
+          const nl = Math.hypot(nx, ny) || 1;
+          nx /= nl; ny /= nl;
+          if ((w.mx - c0.x) * nx + (w.my - c0.y) * ny < 0) { nx = -nx; ny = -ny; }
+          const off2 = CFG.labelOffsetPx * 2.6 * k, tick = 4 * k, fs2 = 8.5 * k;
+          const st2 = [...stations].sort((x, y) => x - y);
+          const base = (d) => { const p = G.pointAtOffset(w, d); return { x: p.x + nx * off2, y: p.y + ny * off2 }; };
+          const b0 = base(st2[0]), b1 = base(st2[st2.length - 1]);
+          g.appendChild(el("line", { x1: b0.x, y1: b0.y, x2: b1.x, y2: b1.y, class: "ep-plan-chain", "stroke-width": sw * 0.35 }));
+          st2.forEach((d) => {
+            const p = base(d);
+            g.appendChild(el("line", { x1: p.x - nx * tick, y1: p.y - ny * tick, x2: p.x + nx * tick, y2: p.y + ny * tick, class: "ep-plan-chain", "stroke-width": sw * 0.35 }));
+          });
+          for (let i = 0; i < st2.length - 1; i++) {
+            const seg = st2[i + 1] - st2[i];
+            if (seg < 2) continue;
+            const m = base((st2[i] + st2[i + 1]) / 2);
+            g.appendChild(el("text", { x: m.x + nx * 6 * k, y: m.y + ny * 6 * k, class: "ep-plan-chaintext", "font-size": fs2, "text-anchor": "middle", "dominant-baseline": "middle" }, String(seg)));
+          }
+        });
+      });
     }
 
     // трассы (Слой 4): полилинии цветом слоя + проходки
