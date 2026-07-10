@@ -21,8 +21,6 @@
     confirmDel: "Удалить проект безвозвратно?",
     savedAt: "Сохранено",
     storageFull: "Мало места в памяти устройства — проект может не сохраниться.",
-    hint0: "Холст готов: пинч — масштаб, палец — перемещение.",
-    hint0b: "Рисование комнат появится в следующем обновлении (Слой 1).",
     stats: (r, e) => `Комнат: ${r} · Точек: ${e}`,
     updated: "изм."
   };
@@ -81,8 +79,18 @@
         <span class="ep-plan-flex"></span>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-export>${T.exportBtn}</button>
       </div>
+      <div class="ep-plan-toolbar ep-plan-modes">
+        <button type="button" class="ep-plan-tbtn on ep-clickable" data-plan-mode="view" aria-label="Просмотр и выбор">☝</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="rect" aria-label="Прямоугольная комната">▭</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="poly" aria-label="Комната по точкам">⬠</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="ruler" aria-label="Рулетка">📏</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="underlay" aria-label="Подложка-фото">🖼</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-layers aria-label="Слои">🗂</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-fit aria-label="Показать всё">⛶</button>
+      </div>
+      <div class="ep-plan-modehint" id="ep-plan-modehint"></div>
       <div class="ep-plan-canvas" id="ep-plan-canvas">
-        <div class="ep-plan-hint"><div>${esc(T.hint0)}</div><div class="ep-plan-hint2">${esc(T.hint0b)}</div></div>
+        <div class="ep-plan-sheet" id="ep-plan-sheet" hidden></div>
       </div>
     </div>`;
     mountCanvas();
@@ -94,7 +102,11 @@
     if (!host || !EP.Plan.Canvas) return;
     if (V.canvas) { try { V.canvas.destroy(); } catch (e) {} }
     V.canvas = EP.Plan.Canvas.create(host);
-    V.canvas.onTap(() => {}); // слои 1-2 повесят сюда рисование/расстановку
+    if (EP.Plan.Rooms) EP.Plan.Rooms.attach(V.canvas);
+    if (EP.Plan.Geometry) {
+      const bb = EP.Plan.Geometry.projectBBox(core().project);
+      if (bb) V.canvas.fit(bb);
+    }
     V.canvas.redraw();
   }
 
@@ -179,9 +191,10 @@
   function onCoreChange(what) {
     if (!V.active) return;
     if (what === "storage-full") { V.saveNote = T.storageFull; refreshToolbar(); return; }
-    if (["create", "rename", "undo", "redo", "change", "import"].indexOf(what) >= 0) {
+    if (what !== "index" && what !== "close") {
       V.saveNote = T.savedAt + " " + fmtDate(Date.now());
       refreshToolbar();
+      if ((what === "undo" || what === "redo") && EP.Plan.Rooms) EP.Plan.Rooms.renderScene();
     }
     if (what === "index" && !core().project) { const r = root(); if (r) renderList(r); }
   }
@@ -197,8 +210,9 @@
   window.addEventListener("ep:route-loaded", (e) => {
     const routeName = e && e.detail && e.detail.route;
     V.active = routeName === "plan";
+    if (EP.Plan.Rooms) EP.Plan.Rooms.setActive(V.active);
     if (V.active) mount();
-    else if (V.canvas) { try { V.canvas.destroy(); } catch (err) {} V.canvas = null; }
+    else if (V.canvas) { try { V.canvas.destroy(); } catch (err) {} V.canvas = null; if (EP.Plan.Rooms) EP.Plan.Rooms.detach(); }
   });
 
   EP.Plan = EP.Plan || {};

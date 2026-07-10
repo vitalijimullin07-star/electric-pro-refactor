@@ -73,3 +73,57 @@ body[data-visual-mode="day"] .ep-plan-newrow input[type="text"],
 body[data-visual-mode="day"] .ep-plan-title input { background: #fff; border-color: #cbd5e1; color: #0f172a; }
 body[data-visual-mode="day"] .ep-plan-tbtn { background: #fff; border-color: #cbd5e1; color: #0f172a; }
 body[data-visual-mode="day"] .ep-plan-item-main { color: #0f172a; }
+
+/* — Слой 1: режимы, шторка, сцена — */
+.ep-plan-modes { gap: 6px; }
+.ep-plan-modes .ep-plan-tbtn { min-width: 42px; padding: 8px 10px; }
+.ep-plan-tbtn.on { background: var(--accent, #38bdf8); border-color: transparent; color: #06121f; }
+.ep-plan-modehint { font: 500 12px system-ui; color: var(--muted, #94a3b8); padding: 0 2px; }
+
+.ep-plan-sheet {
+  position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 5;
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px; border-radius: 14px; max-height: 60%; overflow: auto;
+  background: rgba(10, 16, 28, .92); border: 1px solid rgba(255, 255, 255, .12);
+  backdrop-filter: blur(8px); color: var(--text, #e8eef7);
+}
+.ep-plan-srow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font: 500 13.5px system-ui; }
+.ep-plan-srow b { font: 700 14.5px system-ui; }
+.ep-plan-srow input[type="text"], .ep-plan-srow input[type="number"] {
+  flex: 1; min-width: 70px; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, .16); background: rgba(255, 255, 255, .05);
+  color: var(--text, #e8eef7); font: 500 14px system-ui;
+}
+.ep-plan-s2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
+.ep-plan-s2 label { display: flex; flex-direction: column; gap: 4px; font: 600 11.5px system-ui; color: var(--muted, #94a3b8); }
+.ep-plan-sbtns { gap: 7px; }
+.ep-plan-sbtns .ep-plan-tbtn, .ep-plan-sbtns .btn { flex: 1 1 auto; }
+.ep-plan-danger { color: #f87171; border-color: rgba(248, 113, 113, .35); }
+.ep-plan-chk { display: inline-flex; align-items: center; gap: 8px; font: 500 13.5px system-ui; }
+.ep-plan-range { display: flex; flex-direction: column; gap: 4px; flex: 1; font: 600 11.5px system-ui; color: var(--muted, #94a3b8); }
+.ep-plan-layers { display: flex; flex-direction: column; gap: 9px; }
+.ep-plan-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: none; }
+.ep-plan-toast { justify-content: center; color: #fbbf24; }
+
+/* — сцена (SVG) — */
+.ep-plan-room { fill: rgba(56, 189, 248, .07); stroke: none; }
+.ep-plan-room.is-sel { fill: rgba(56, 189, 248, .16); }
+.ep-plan-wall { stroke: #cbd5e1; stroke-linejoin: round; }
+.ep-plan-wall.is-sel { stroke: var(--accent, #38bdf8); }
+.ep-plan-dim { fill: #94a3b8; font-family: system-ui; }
+.ep-plan-name { fill: #e2e8f0; font-family: system-ui; font-weight: 600; }
+.ep-plan-draft { stroke: var(--accent, #38bdf8); stroke-dasharray: 6 5; }
+.ep-plan-draftpt { fill: var(--accent, #38bdf8); }
+.ep-plan-draftpt.is-first { fill: #34d399; }
+.ep-plan-ruler { stroke: #fbbf24; stroke-dasharray: 5 4; }
+.ep-plan-rulerpt { fill: #fbbf24; }
+.ep-plan-rulertext { fill: #fbbf24; font-family: system-ui; font-weight: 700; }
+
+body[data-visual-mode="day"] .ep-plan-sheet { background: rgba(255, 255, 255, .95); border-color: #dbe3ee; color: #0f172a; }
+body[data-visual-mode="day"] .ep-plan-srow input[type="text"],
+body[data-visual-mode="day"] .ep-plan-srow input[type="number"] { background: #fff; border-color: #cbd5e1; color: #0f172a; }
+body[data-visual-mode="day"] .ep-plan-wall { stroke: #334155; }
+body[data-visual-mode="day"] .ep-plan-dim { fill: #64748b; }
+body[data-visual-mode="day"] .ep-plan-name { fill: #0f172a; }
+body[data-visual-mode="day"] .ep-plan-room { fill: rgba(2, 132, 199, .08); }
+body[data-visual-mode="day"] .ep-plan-room.is-sel { fill: rgba(2, 132, 199, .17); }
