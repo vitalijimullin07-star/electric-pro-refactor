@@ -123,6 +123,55 @@
     return Math.abs(s / 2);
   };
 
+  // ---- позиции элементов и пересечения (Слои 2-4) ----
+  G.pointOnWall = (project, wallId, offset) => {
+    const w = G.wallById(project, wallId);
+    if (!w) return null;
+    const t = Math.max(0, Math.min(1, (offset || 0) / (w.len || 1)));
+    return { x: w.a.x + (w.b.x - w.a.x) * t, y: w.a.y + (w.b.y - w.a.y) * t, wall: w };
+  };
+  G.elemPoint = (project, el) => {
+    if (el.wallId) {
+      const p = G.pointOnWall(project, el.wallId, el.offset);
+      return p ? { x: p.x, y: p.y, wall: p.wall } : null;
+    }
+    const q = el.params || {};
+    return q.x != null && q.y != null ? { x: q.x, y: q.y, wall: null } : null;
+  };
+  G.elementsInRoom = (project, roomId) => (project.elements || []).filter((el) => {
+    if (el.wallId) return String(el.wallId).split(":")[0] === roomId;
+    const q = el.params || {};
+    if (q.x == null) return false;
+    const room = (project.rooms || []).find((r) => r.id === roomId);
+    return !!(room && G.pointInPolygon(q, room.points));
+  });
+  // Пересечение отрезков (для проходок); касания концов не считаются
+  G.segIntersect = (a, b, c, d) => {
+    const r = { x: b.x - a.x, y: b.y - a.y }, s = { x: d.x - c.x, y: d.y - c.y };
+    const den = r.x * s.y - r.y * s.x;
+    if (!den) return null;
+    const t = ((c.x - a.x) * s.y - (c.y - a.y) * s.x) / den;
+    const u = ((c.x - a.x) * r.y - (c.y - a.y) * r.x) / den;
+    if (t <= 0.001 || t >= 0.999 || u <= 0.001 || u >= 0.999) return null;
+    return { x: a.x + t * r.x, y: a.y + t * r.y };
+  };
+  G.polylineCrossings = (project, pts, skipWallId) => {
+    const out = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      (project.rooms || []).forEach((room) => G.walls(room).forEach((w) => {
+        if (w.id === skipWallId) return;
+        const hit = G.segIntersect(pts[i], pts[i + 1], w.a, w.b);
+        if (hit) out.push({ x: hit.x, y: hit.y, wallId: w.id });
+      }));
+    }
+    return out;
+  };
+  G.polylineLen = (pts) => {
+    let L = 0;
+    for (let i = 0; i < pts.length - 1; i++) L += G.dist(pts[i], pts[i + 1]);
+    return L;
+  };
+
   // ---- форматирование ----
   G.fmtLen = (cm) => (cm >= 100 ? (Math.round(cm) / 100).toFixed(2).replace(/\.?0+$/, "") + " м" : Math.round(cm) + " см");
   G.fmtArea = (cm2) => (Math.round(cm2 / 1000) / 10).toFixed(1) + " м²";

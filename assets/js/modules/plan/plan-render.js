@@ -116,6 +116,46 @@
       })));
     }
 
+    // трассы (Слой 4): полилинии цветом слоя + проходки
+    if (layerOn(project, "routes")) {
+      const layerColor = (id) => (((project.layers || []).find((l) => l.id === id) || {}).color) || "#94a3b8";
+      (project.routes || []).forEach((rt) => {
+        if (!layerOn(project, rt.layer)) return;
+        g.appendChild(el("polyline", {
+          points: (rt.points || []).map((p) => p.x + "," + p.y).join(" "),
+          class: "ep-plan-route", stroke: layerColor(rt.layer), "stroke-width": sw * 0.8
+        }));
+        (rt.throughWalls || []).forEach((c) => g.appendChild(el("circle", {
+          cx: c.x, cy: c.y, r: 5 * k, class: "ep-plan-cross", "stroke-width": sw * 0.6
+        })));
+      });
+    }
+
+    // элементы и щиты (Слой 2)
+    const TY = (EP.Plan.Elements && EP.Plan.Elements.TYPES) || {};
+    const bad = EP.Plan.Rules ? EP.Plan.Rules.badSet() : new Set();
+    const selId = EP.Plan.Elements ? EP.Plan.Elements.selectedId() : null;
+    const layerColor2 = (id) => (((project.layers || []).find((l) => l.id === id) || {}).color) || "#94a3b8";
+    (project.elements || []).forEach((elem) => {
+      if (!layerOn(project, elem.layer)) return;
+      const pt = EP.Plan.Geometry.elemPoint(project, elem);
+      if (!pt) return;
+      const r0 = 11 * k;
+      const grp = el("g", { class: "ep-plan-el" + (elem.status === "mounted" ? " is-done" : "") + (elem.status === "existing" ? " is-exist" : "") + (elem.id === selId ? " is-sel" : "") });
+      if (bad.has(elem.id)) grp.appendChild(el("circle", { cx: pt.x, cy: pt.y, r: r0 * 1.55, class: "ep-plan-warnring", "stroke-width": sw * 0.7 }));
+      grp.appendChild(el("circle", { cx: pt.x, cy: pt.y, r: r0, fill: layerColor2(elem.layer), "stroke-width": sw * 0.7 }));
+      grp.appendChild(el("text", { x: pt.x, y: pt.y, "font-size": 10 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph" }, (TY[elem.type] || {}).glyph || "?"));
+      if (elem.status === "mounted") grp.appendChild(el("text", { x: pt.x + r0, y: pt.y - r0, "font-size": 10 * k, class: "ep-plan-eldone" }, "✓"));
+      g.appendChild(grp);
+    });
+    (project.panels || []).forEach((pn) => {
+      const s2 = 14 * k;
+      const grp = el("g", { class: "ep-plan-panel" + (pn.id === selId ? " is-sel" : "") });
+      grp.appendChild(el("rect", { x: pn.x - s2, y: pn.y - s2, width: s2 * 2, height: s2 * 2, rx: 3 * k, "stroke-width": sw * 0.8 }));
+      grp.appendChild(el("text", { x: pn.x, y: pn.y, "font-size": 12 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph" }, "Щ"));
+      g.appendChild(grp);
+    });
+
     // рулетка
     const r = ui && ui.ruler;
     if (r && r.a) {
