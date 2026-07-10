@@ -83,9 +83,13 @@
         <button type="button" class="ep-plan-tbtn on ep-clickable" data-plan-mode="view" aria-label="Просмотр и выбор">☝</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="rect" aria-label="Прямоугольная комната">▭</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="poly" aria-label="Комната по точкам">⬠</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="elem" aria-label="Точки: розетки, свет">🔌</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="ruler" aria-label="Рулетка">📏</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="underlay" aria-label="Подложка-фото">🖼</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-layers aria-label="Слои">🗂</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-routes aria-label="Трассы">🧵</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-calc aria-label="Расчёт и смета">🧮</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-checks aria-label="Проверки норм">✅</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-fit aria-label="Показать всё">⛶</button>
       </div>
       <div class="ep-plan-modehint" id="ep-plan-modehint"></div>
@@ -194,7 +198,10 @@
     if (what !== "index" && what !== "close") {
       V.saveNote = T.savedAt + " " + fmtDate(Date.now());
       refreshToolbar();
-      if ((what === "undo" || what === "redo") && EP.Plan.Rooms) EP.Plan.Rooms.renderScene();
+      if ((what === "undo" || what === "redo") && EP.Plan.Rooms) {
+        EP.Plan.Rooms.renderScene();
+        if (EP.Plan.Unfold && EP.Plan.Unfold.isOpen()) EP.Plan.Unfold.drawStrip();
+      }
     }
     if (what === "index" && !core().project) { const r = root(); if (r) renderList(r); }
   }

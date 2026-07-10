@@ -127,3 +127,63 @@ body[data-visual-mode="day"] .ep-plan-dim { fill: #64748b; }
 body[data-visual-mode="day"] .ep-plan-name { fill: #0f172a; }
 body[data-visual-mode="day"] .ep-plan-room { fill: rgba(2, 132, 199, .08); }
 body[data-visual-mode="day"] .ep-plan-room.is-sel { fill: rgba(2, 132, 199, .17); }
+
+/* — Слои 2-6: палитра, чипы, развёртка, таблицы, предупреждения — */
+.ep-plan-palette { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 7px; }
+.ep-plan-pbtn {
+  display: flex; align-items: center; gap: 7px; padding: 9px 10px; border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, .14); background: rgba(255, 255, 255, .05);
+  color: var(--text, #e8eef7); font: 600 12.5px system-ui; cursor: pointer; text-align: left;
+}
+.ep-plan-pbtn.on { background: var(--accent, #38bdf8); border-color: transparent; color: #06121f; }
+.ep-plan-glyph {
+  width: 26px; height: 26px; border-radius: 50%; flex: none; font-style: normal;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255, 255, 255, .12); font: 700 11px system-ui;
+}
+.ep-plan-chip {
+  padding: 8px 12px; border-radius: 99px; border: 1px solid rgba(255, 255, 255, .16);
+  background: rgba(255, 255, 255, .05); color: var(--text, #e8eef7);
+  font: 600 12.5px system-ui; cursor: pointer;
+}
+.ep-plan-chip.on { background: var(--accent, #38bdf8); border-color: transparent; color: #06121f; }
+.ep-plan-ph { position: relative; display: inline-block; }
+.ep-plan-ph img { width: 52px; height: 52px; object-fit: cover; border-radius: 9px; display: block; }
+.ep-plan-ph button {
+  position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%;
+  border: 0; background: #f87171; color: #fff; font: 700 10px system-ui; cursor: pointer;
+}
+
+/* развёртка стены */
+.ep-plan-unfold { width: 100%; }
+.ep-plan-unfsvg { width: 100%; height: 200px; display: block; }
+.ep-plan-unfwall { fill: rgba(148, 163, 184, .08); stroke: rgba(148, 163, 184, .35); stroke-width: 1; }
+.ep-plan-unffloor { stroke: #94a3b8; }
+.ep-plan-unfel circle { fill: var(--accent, #38bdf8); }
+.ep-plan-unfel.is-done circle { fill: #34d399; }
+.ep-plan-unfel text { fill: #06121f; font-family: system-ui; font-weight: 700; }
+.ep-plan-unfel .ep-plan-unfdim { fill: #94a3b8; font-weight: 500; }
+.ep-plan-unftypes { overflow-x: auto; flex-wrap: nowrap; }
+
+/* таблица расчёта и списки */
+.ep-plan-table { width: 100%; border-collapse: collapse; font: 500 12.5px system-ui; }
+.ep-plan-table th, .ep-plan-table td { padding: 6px 7px; text-align: center; border-bottom: 1px solid rgba(148, 163, 184, .18); }
+.ep-plan-table td:first-child, .ep-plan-table th:first-child { text-align: left; }
+.ep-plan-items { display: flex; flex-direction: column; gap: 5px; max-height: 180px; overflow: auto; }
+.ep-plan-irow { display: flex; justify-content: space-between; gap: 10px; font: 500 12.5px system-ui; }
+.ep-plan-warnrow { color: #fbbf24; }
+.ep-plan-rlens { gap: 12px; }
+
+/* сцена: элементы, щиты, трассы, предупреждения */
+.ep-plan-el circle { stroke: rgba(255, 255, 255, .75); }
+.ep-plan-el.is-exist circle { stroke-dasharray: 3 2; opacity: .55; }
+.ep-plan-el.is-sel circle { stroke: #fff; }
+.ep-plan-elglyph { fill: #06121f; font-family: system-ui; font-weight: 700; }
+.ep-plan-eldone { fill: #34d399; font-family: system-ui; font-weight: 700; }
+.ep-plan-panel rect { fill: #0ea5e9; stroke: #e0f2fe; }
+.ep-plan-route { fill: none; opacity: .85; }
+.ep-plan-cross { fill: none; stroke: #fbbf24; }
+.ep-plan-warnring { fill: none; stroke: #fbbf24; stroke-dasharray: 4 3; }
+
+body[data-visual-mode="day"] .ep-plan-el circle { stroke: rgba(15, 23, 42, .5); }
+body[data-visual-mode="day"] .ep-plan-unfwall { fill: rgba(71, 85, 105, .06); }

@@ -7,11 +7,12 @@
   window.EP = window.EP || {};
 
   const T = {
-    modes: { view: "☝", rect: "▭", poly: "⬠", ruler: "📏", underlay: "🖼" },
+    modes: { view: "☝", rect: "▭", poly: "⬠", elem: "🔌", ruler: "📏", underlay: "🖼" },
     modeHint: {
-      view: "Тапни комнату — редактирование. ▭ или ⬠ — нарисовать комнату.",
+      view: "Тап: точка — редактор, стена — развёртка, комната — свойства.",
       rect: "Тапни два противоположных угла комнаты.",
       poly: "Ставь точки по контуру. Замкни тапом в первую точку.",
+      elem: "Выбери тип в палитре и тапай по стене (свет/ТП — внутрь комнаты).",
       ruler: "Тапни две точки — расстояние.",
       underlay: "Фото-план: загрузка, масштаб по известной длине, перенос."
     },
@@ -58,7 +59,9 @@
     R.calib = { on: false, a: null, b: null };
     setMove(false);
     document.querySelectorAll("[data-plan-mode]").forEach((b) => b.classList.toggle("on", b.getAttribute("data-plan-mode") === mode));
-    if (mode === "underlay") sheetUnderlay(); else closeSheet();
+    if (mode === "underlay") sheetUnderlay();
+    else if (mode === "elem" && EP.Plan.Elements) EP.Plan.Elements.onModeEnter();
+    else closeSheet();
     renderScene();
   }
   function setMove(on) {
@@ -115,7 +118,26 @@
       }
       return;
     }
-    // view: выбор комнаты
+    if (R.mode === "elem") { if (EP.Plan.Elements) { EP.Plan.Elements.placeAt(w); renderScene(); } return; }
+    // view: приоритет — элемент/щит > стена (развёртка) > комната
+    const k = R.canvas.cmPerPx();
+    if (EP.Plan.Elements) {
+      const hit = EP.Plan.Elements.hitAt(w, EP.Plan.Elements.CFG.hitPx * k);
+      if (hit) {
+        R.selectedRoomId = null;
+        if (hit.el) EP.Plan.Elements.openEditor(hit.el);
+        else if (hit.panel) EP.Plan.Elements.openPanelEditor(hit.panel);
+        return;
+      }
+      EP.Plan.Elements.deselect();
+    }
+    const wallHit = G().wallAt(p, w, CFG.hitWallPx * k);
+    if (wallHit && EP.Plan.Unfold) {
+      R.selectedRoomId = null;
+      EP.Plan.Unfold.open(wallHit.wall.id);
+      renderScene();
+      return;
+    }
     const room = G().roomAt(p, w);
     R.selectedRoomId = room ? room.id : null;
     if (room) sheetRoom(room); else closeSheet();
@@ -352,9 +374,15 @@
     R.selectedRoomId = null;
     renderScene();
   }
-  function detach() { R.canvas = null; }
+  function detach() { R.canvas = null; if (EP.Plan.Unfold) EP.Plan.Unfold.close(); }
   function setActive(on) { R.active = on; }
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Rooms = { attach, detach, setActive, setMode, renderScene, T, CFG };
+  EP.Plan.Rooms = {
+    attach, detach, setActive, setMode, renderScene, T, CFG,
+    // общий доступ для модулей слоёв 2-6
+    openSheet, closeSheet, toast,
+    isActive: () => R.active,
+    canvasCmPerPx: () => (R.canvas ? R.canvas.cmPerPx() : 1)
+  };
 })();

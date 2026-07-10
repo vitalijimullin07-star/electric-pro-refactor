@@ -20,6 +20,9 @@
     undoLimit: 100,
     cloudDebounceMs: 1500,
     heightPresets: { socket: 30, switch: 90, kitchen: 110 }, // см от пола
+    panelHeight: 150,     // см — низ щита (для вертикалей трасс)
+    wallMaterial: "Бетон", // материал стен для расчёта штробления
+    routeType: "ceiling",  // потолок/пол — как ведём трассы
     layers: [
       { id: "light",  name: "Освещение",       color: "#facc15" },
       { id: "power",  name: "Силовые",         color: "#f87171" },
@@ -51,7 +54,11 @@
         wallThickness: DEFAULTS.wallThickness,
         gridStep: DEFAULTS.gridStep,
         snapEnabled: DEFAULTS.snapEnabled,
-        heightPresets: { ...DEFAULTS.heightPresets }
+        heightPresets: { ...DEFAULTS.heightPresets },
+        panelHeight: DEFAULTS.panelHeight,
+        wallMaterial: DEFAULTS.wallMaterial,
+        routeType: DEFAULTS.routeType,
+        rules: {} // пороги проверок (Слой 6), пусто = дефолты plan-rules
       },
       underlay: null, // { imageDataUri, scale (см/пиксель), opacity }
       rooms: [], panels: [], elements: [], routes: [], circuits: [],
