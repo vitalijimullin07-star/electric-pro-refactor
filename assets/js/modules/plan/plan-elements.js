@@ -7,6 +7,7 @@
 
   const TYPES = {
     block:     { name: "Блок (рамка)", glyph: "▣", layer: "power", h: 30, block: true },
+    junction:  { name: "Распайка",    glyph: "◇", layer: "routes", h: null, free: true, node: true },
     door:      { name: "Дверь",       glyph: "Дв", layer: "labels", h: 0, opening: true },
     window:    { name: "Окно",        glyph: "Ок", layer: "labels", h: 90, opening: true },
     socket:    { name: "Розетка",     glyph: "Р",  layer: "power", h: 30 },
@@ -145,6 +146,7 @@
       <div class="ep-plan-srow">${T.presets}
         ${[hp.socket, hp.switch, hp.kitchen].map((v) => `<button type="button" class="ep-plan-chip ep-clickable" data-pe-preset="${v}">${v}</button>`).join("")}
       </div>
+      ${circuitRow(el)}
       ${el.type === "block" ? blockHtml(el) : ""}
       <div class="ep-plan-srow">${T.status}:
         ${STATUS.map(([v, l]) => `<button type="button" class="ep-plan-chip ep-clickable ${el.status === v ? "on" : ""}" data-pe-status="${v}">${l}</button>`).join("")}
@@ -190,6 +192,15 @@
       </div>`);
     rooms().renderScene();
   }
+  // Назначение линии (автомата): чипы существующих линий + «новая»
+  function circuitRow(el) {
+    const cs = core().project.circuits || [];
+    return `<div class="ep-plan-srow">Линия:
+      ${cs.map((c) => `<button type="button" class="ep-plan-chip ep-clickable ${el.circuitId === c.id ? "on" : ""}" data-pe-circ="${esc(c.id)}" style="border-color:${esc(c.color)}"><i class="ep-plan-cdot" style="background:${esc(c.color)}"></i>${esc(c.name)}·${c.breaker}A</button>`).join("")}
+      <button type="button" class="ep-plan-chip ep-clickable" data-pe-circ-new>+ линия</button>
+    </div>`;
+  }
+
   // «Сборка блока»: рамка с постами (как на бумажных схемах — 1-6 в общей рамке)
   function blockHtml(el) {
     const items = (el.params && el.params.items) || [];
@@ -266,6 +277,20 @@
       const items = (el.params.items = el.params.items || []);
       if (items.length <= 1) return; // пустых рамок не бывает — удаляй сам блок
       c.commit(); items.splice(Number(b.getAttribute("data-pe-bdel")), 1); c.persist("block-del"); openEditor(el); return;
+    }
+    if ((b = t.closest("[data-pe-circ]"))) {
+      const c = core(), el = current(); if (!el) return;
+      const id = b.getAttribute("data-pe-circ");
+      c.commit(); el.circuitId = el.circuitId === id ? null : id; c.persist("elem-circuit"); openEditor(el); return;
+    }
+    if (t.closest("[data-pe-circ-new]")) {
+      const c = core(), el = current(); if (!el) return;
+      c.commit();
+      const colors = EP.Plan.Core.DEFAULTS.circuitColors;
+      const cs = c.project.circuits;
+      const circ = c.model.newCircuit("Линия " + (cs.length + 1), colors[cs.length % colors.length], 16);
+      cs.push(circ); el.circuitId = circ.id;
+      c.persist("circuit-add"); openEditor(el); return;
     }
     if (t.closest("[data-pe-apply]")) return applyEditor();
     if (t.closest("[data-pe-del]")) {

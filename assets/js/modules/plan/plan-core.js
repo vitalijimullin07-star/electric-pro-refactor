@@ -24,6 +24,8 @@
     wallMaterial: "Бетон", // материал стен по умолчанию (для расчёта штробления)
     materials: ["Бетон", "Кирпич", "Панель", "Мягкий"], // как в движке пула
     routeType: "ceiling",  // потолок/пол — как ведём трассы
+    breakers: [10, 16, 20, 25, 32, 40, 63], // номиналы автоматов, А
+    circuitColors: ["#ef4444", "#f59e0b", "#22c55e", "#3b82f6", "#a855f7", "#ec4899", "#14b8a6", "#eab308"],
     layers: [
       { id: "light",  name: "Освещение",       color: "#facc15" },
       { id: "power",  name: "Силовые",         color: "#f87171" },
@@ -79,7 +81,7 @@
   function newRoute(layer, routeType, points, fromId, toId) {
     return { id: uid("rt"), layer: layer || "routes", routeType: routeType || "ceiling", points: points || [], fromId: fromId || null, toId: toId || null, throughWalls: [] };
   }
-  function newCircuit(name) { return { id: uid("cc"), name: name || "Группа", elements: [], breaker: null, rcd: null }; }
+  function newCircuit(name, color, breaker) { return { id: uid("cc"), name: name || "Линия", color: color || DEFAULTS.circuitColors[0], breaker: breaker || 16, rcd: false }; }
   function newOpening(type, wallId, offset, width) {
     // hinge: у какого края петли ('a' — ближний угол), flip: сторона открывания (±1)
     return { id: uid("op"), type: type === "window" ? "window" : "door", wallId, offset: offset || 0, width: width || (type === "window" ? 140 : 90), hinge: "a", flip: 1 };
@@ -149,6 +151,7 @@
     if (!p) p = await cloudPullProject(id); // проект, созданный на другом устройстве
     if (!p) return null;
     p.openings = p.openings || []; // проекты, сохранённые до появления проёмов
+    p.circuits = p.circuits || [];
     S.project = p; S.undo = []; S.redo = [];
     emit("open");
     return p;

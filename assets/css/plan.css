@@ -227,3 +227,13 @@ body[data-visual-mode="day"] .ep-plan-doorleaf { stroke: #334155; }
 body[data-visual-mode="day"] .ep-plan-window { stroke: #334155; }
 body[data-visual-mode="day"] .ep-plan-chain { stroke: #dc2626; }
 body[data-visual-mode="day"] .ep-plan-chaintext { fill: #dc2626; }
+
+/* — Трассы v2: распайки, линии на автоматах — */
+.ep-plan-junction { fill: #0ea5e9; stroke: #e0f2fe; }
+.ep-plan-cdot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; flex: none; }
+.ep-plan-cdot { margin-right: 2px; }
+.ep-plan-lineRow { display: flex; align-items: center; gap: 8px; font: 500 12.5px system-ui; padding: 4px 0; border-bottom: 1px solid rgba(148,163,184,.14); flex-wrap: wrap; }
+.ep-plan-lineRow b { font: 700 13px system-ui; }
+.ep-plan-sel { padding: 5px 7px; border-radius: 8px; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.05); color: var(--text,#e8eef7); font: 600 12px system-ui; }
+body[data-visual-mode="day"] .ep-plan-sel { background:#fff; border-color:#cbd5e1; color:#0f172a; }
+body[data-visual-mode="day"] .ep-plan-junction { fill:#0284c7; stroke:#0f172a; }

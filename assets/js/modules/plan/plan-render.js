@@ -198,7 +198,7 @@
         if (!layerOn(project, rt.layer)) return;
         g.appendChild(el("polyline", {
           points: (rt.points || []).map((p) => p.x + "," + p.y).join(" "),
-          class: "ep-plan-route", stroke: layerColor(rt.layer), "stroke-width": sw * 0.8
+          class: "ep-plan-route", stroke: rt.color || layerColor(rt.layer), "stroke-width": sw * 0.8
         }));
         (rt.throughWalls || []).forEach((c) => g.appendChild(el("circle", {
           cx: c.x, cy: c.y, r: 5 * k, class: "ep-plan-cross", "stroke-width": sw * 0.6
@@ -217,7 +217,12 @@
       if (!pt) return;
       const r0 = 11 * k;
       const grp = el("g", { class: "ep-plan-el" + (elem.status === "mounted" ? " is-done" : "") + (elem.status === "existing" ? " is-exist" : "") + (elem.id === selId ? " is-sel" : "") });
-      if (elem.type === "block") {
+      if (elem.type === "junction") {
+        // распайка: ромб (повёрнутый квадрат) на слое трасс
+        const s2 = 12 * k;
+        grp.appendChild(el("rect", { x: pt.x - s2, y: pt.y - s2, width: s2 * 2, height: s2 * 2, transform: `rotate(45 ${pt.x} ${pt.y})`, class: "ep-plan-junction", "stroke-width": sw * 0.7 }));
+        if (bad.has(elem.id)) grp.appendChild(el("circle", { cx: pt.x, cy: pt.y, r: r0 * 1.7, class: "ep-plan-warnring", "stroke-width": sw * 0.7 }));
+      } else if (elem.type === "block") {
         // рамка постов: скруглённый прямоугольник с глифами внутри
         const items = (elem.params && elem.params.items) || ["socket"];
         const step2 = 16 * k, bw = items.length * step2 + 8 * k, bh = 22 * k;
