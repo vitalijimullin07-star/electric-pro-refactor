@@ -239,21 +239,25 @@ body[data-visual-mode="day"] .ep-plan-sel { background:#fff; border-color:#cbd5e
 body[data-visual-mode="day"] .ep-plan-junction { fill:#0284c7; stroke:#0f172a; }
 
 /* — v3: толстые стены, балки, QF, развёртка-fullscreen — */
+/* материалы стен видно по цвету: бетон — серый, кирпич — кирпичный, панель — светло-серый
+   штрих, мягкий — мелкий штрих (гипсокартон/дерево) */
 .ep-plan-wallband { stroke: #64748b; stroke-linecap: butt; }
 .ep-plan-wallband.is-sel { stroke: var(--accent, #38bdf8); }
-.ep-plan-wallband.mat-brick { stroke: #b06a3a; }
-.ep-plan-wallband.mat-panel { stroke: #7c8aa0; }
-.ep-plan-wallband.mat-soft { stroke: #8a94a6; }
+.ep-plan-wallband.mat-concrete { stroke: #64748b; }
+.ep-plan-wallband.mat-brick { stroke: #c2551f; }
+.ep-plan-wallband.mat-panel { stroke: #8aa0bd; stroke-dasharray: 40 10; }
+.ep-plan-wallband.mat-soft { stroke: #b0a07a; stroke-dasharray: 16 9; }
+.ep-plan-wallband.is-lintel-band { opacity: .7; stroke-dasharray: 22 12; }
 .ep-plan-wallcorner { fill: #64748b; }
 .ep-plan-wallcorner.is-sel { fill: var(--accent, #38bdf8); }
-.ep-plan-wallcorner.mat-brick { fill: #b06a3a; }
-.ep-plan-wallcorner.mat-panel { fill: #7c8aa0; }
-.ep-plan-wallcorner.mat-soft { fill: #8a94a6; }
-body[data-visual-mode="day"] .ep-plan-wallband, body[data-visual-mode="day"] .ep-plan-wallcorner { stroke: #64748b; fill: #64748b; }
+.ep-plan-wallcorner.mat-concrete { fill: #64748b; }
+.ep-plan-wallcorner.mat-brick { fill: #c2551f; }
+.ep-plan-wallcorner.mat-panel { fill: #8aa0bd; }
+.ep-plan-wallcorner.mat-soft { fill: #b0a07a; }
+body[data-visual-mode="day"] .ep-plan-wallband.mat-concrete, body[data-visual-mode="day"] .ep-plan-wallcorner.mat-concrete { stroke: #64748b; fill: #64748b; }
 
-.ep-plan-beam { stroke: #a78bfa; stroke-dasharray: 14 8; stroke-linecap: round; opacity: .85; }
-.ep-plan-beam.is-lintel { stroke: #f0abfc; stroke-dasharray: 6 6; }
 .ep-plan-beamdraft { opacity: .5; }
+.ep-plan-beamhandle { fill: #38bdf8; stroke: #fff; stroke-width: 1; }
 .ep-plan-qf { font-family: system-ui; font-weight: 700; }
 
 /* развёртка v2 */

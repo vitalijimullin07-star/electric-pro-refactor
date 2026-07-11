@@ -46,10 +46,16 @@
     });
     return best && best.node;
   }
-  // Г-образная ортогональная линия между двумя точками (сначала по Y, потом по X)
-  function ortho(a, b) {
+  // Г-образная ортогональная линия между двумя точками; выбираем колено (Y-first / X-first),
+  // которое пересекает МЕНЬШЕ стен — так трассы реже налезают друг на друга.
+  function ortho(p, a, b, skipWall) {
     if (Math.abs(a.x - b.x) < 1 || Math.abs(a.y - b.y) < 1) return [{ x: a.x, y: a.y }, { x: b.x, y: b.y }];
-    return [{ x: a.x, y: a.y }, { x: a.x, y: b.y }, { x: b.x, y: b.y }];
+    const e1 = [{ x: a.x, y: a.y }, { x: a.x, y: b.y }, { x: b.x, y: b.y }]; // сначала по Y
+    const e2 = [{ x: a.x, y: a.y }, { x: b.x, y: a.y }, { x: b.x, y: b.y }]; // сначала по X
+    if (!p || !G().polylineCrossings) return e1;
+    const c1 = G().polylineCrossings(p, e1, skipWall || null).length;
+    const c2 = G().polylineCrossings(p, e2, skipWall || null).length;
+    return c2 < c1 ? e2 : e1;
   }
 
   function build() {
@@ -124,7 +130,7 @@
   }
 
   function addRoute(c, p, fromEl, a, target, circuitId, color) {
-    const pts = ortho(a, target.pos);
+    const pts = ortho(p, a, target.pos, fromEl.wallId || null);
     const rt = c.model.newRoute(fromEl.layer, p.settings.routeType, pts, fromEl.id, target.id || null);
     rt.circuitId = circuitId || null;
     rt.color = color;

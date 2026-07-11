@@ -52,6 +52,18 @@
     const sheet = $("#ep-plan-sheet");
     if (box) box.classList.toggle("is-full", S.full);
     if (sheet) sheet.classList.toggle("ep-plan-sheet-full", S.full);
+    // настоящий полный экран + поворот в альбомную (Android Chrome); тихо игнорим отказ
+    try {
+      if (S.full) {
+        const target = sheet || box;
+        if (target && target.requestFullscreen) target.requestFullscreen().then(() => {
+          if (screen.orientation && screen.orientation.lock) screen.orientation.lock("landscape").catch(() => {});
+        }).catch(() => {});
+      } else {
+        if (screen.orientation && screen.orientation.unlock) { try { screen.orientation.unlock(); } catch (e) {} }
+        if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      }
+    } catch (e) {}
     drawStrip();
   }
 

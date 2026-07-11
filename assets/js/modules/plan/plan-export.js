@@ -31,6 +31,48 @@
     return html;
   }
 
+  // развёртка одной стены для печати (длина × высота, точки с рулетками от угла и от пола)
+  function unfoldSvg(p, room, w, els) {
+    const H = room.height || p.settings.ceilingHeight, L = w.len, pad = 45;
+    const TY = EP.Plan.Elements.TYPES;
+    const kk = (H + pad) / 200;
+    let s = `<svg viewBox="${-pad} ${-pad} ${L + pad * 1.5} ${H + pad * 1.9}" preserveAspectRatio="xMidYMid meet" class="unf">`;
+    s += `<rect x="0" y="0" width="${L}" height="${H}" class="unfwall"/>`;
+    s += `<line x1="0" y1="${H}" x2="${L}" y2="${H}" class="unffloor"/>`;
+    els.slice().sort((a, b) => a.offset - b.offset).forEach((el) => {
+      const x = el.offset, y = H - el.height;
+      const cc = (p.circuits || []).find((c) => c.id === el.circuitId);
+      const col = cc ? cc.color : "#1d4ed8";
+      s += `<line x1="${x}" y1="${H}" x2="${x}" y2="${y}" class="unfdim"/>`;
+      s += `<text x="${x + 6 * kk}" y="${(H + y) / 2}" font-size="${11 * kk}" class="unfdimt">${Math.round(el.height)}</text>`;
+      s += `<line x1="0" y1="${H + 16 * kk}" x2="${x}" y2="${H + 16 * kk}" class="unfdim"/>`;
+      s += `<text x="${x / 2}" y="${H + 30 * kk}" font-size="${11 * kk}" text-anchor="middle" class="unfdimt">${Math.round(el.offset)}</text>`;
+      if (el.type === "block") {
+        const items = (el.params && el.params.items) || ["socket"];
+        const step = 18 * kk, bw = items.length * step + 6 * kk, bh = 24 * kk;
+        s += `<rect x="${x - bw / 2}" y="${y - bh / 2}" width="${bw}" height="${bh}" rx="${5 * kk}" fill="${col}" class="unfshape"/>`;
+        items.forEach((it, i) => { s += `<text x="${x - bw / 2 + 3 * kk + step * i + step / 2}" y="${y}" font-size="${9 * kk}" text-anchor="middle" dominant-baseline="central" class="unfglyph">${esc((TY[it] || {}).glyph || "?")}</text>`; });
+      } else {
+        s += `<circle cx="${x}" cy="${y}" r="${13 * kk}" fill="${col}" class="unfshape"/>`;
+        s += `<text x="${x}" y="${y}" font-size="${10 * kk}" text-anchor="middle" dominant-baseline="central" class="unfglyph">${esc((TY[el.type] || {}).glyph || "?")}</text>`;
+      }
+      if (cc) s += `<text x="${x}" y="${y - 18 * kk}" font-size="${8.5 * kk}" text-anchor="middle" fill="${col}" class="unfqf">${esc(cc.name)}</text>`;
+    });
+    return s + "</svg>";
+  }
+  function buildUnfolds(p) {
+    const cards = [];
+    (p.rooms || []).forEach((room) => {
+      if ((room.points || []).length < 2) return;
+      G().walls(room).forEach((w) => {
+        const els = (p.elements || []).filter((e) => e.wallId === w.id);
+        if (!els.length) return;
+        cards.push(`<div class="unfcard"><h4>${esc(room.name)} · стена ${w.n} · ${G().fmtLen(w.len)} × ${G().fmtLen(room.height || p.settings.ceilingHeight)}</h4>${unfoldSvg(p, room, w, els)}</div>`);
+      });
+    });
+    return cards.length ? `<div class="unfsec"><h3>Развёртки стен</h3><div class="unfgrid">${cards.join("")}</div></div>` : "";
+  }
+
   function counts(p) {
     const TY = EP.Plan.Elements.TYPES, out = {};
     (p.elements || []).forEach((e) => {
@@ -68,8 +110,15 @@
       .stamp div { border: .6px solid #555; padding: 3px 6px; }
       .stamp b { display: block; font-size: 8.5px; color: #555; font-weight: 600; }
       /* сцена SVG — печатные цвета */
-      .ep-plan-wall { stroke: #111; } .ep-plan-wall.mat-brick { stroke: #92400e; }
-      .ep-plan-wall.mat-panel { stroke: #555; stroke-dasharray: 12 4; } .ep-plan-wall.mat-soft { stroke: #777; stroke-dasharray: 5 5; }
+      .ep-plan-wallband { stroke: #111; fill: none; }
+      .ep-plan-wallband.mat-brick { stroke: #b45309; }
+      .ep-plan-wallband.mat-panel { stroke: #555; stroke-dasharray: 40 10; }
+      .ep-plan-wallband.mat-soft { stroke: #777; stroke-dasharray: 16 9; }
+      .ep-plan-wallband.is-lintel-band { opacity: .7; }
+      .ep-plan-wallcorner { fill: #111; }
+      .ep-plan-wallcorner.mat-brick { fill: #b45309; }
+      .ep-plan-wallcorner.mat-panel, .ep-plan-wallcorner.mat-soft { fill: #555; }
+      .ep-plan-junction { fill: #1d4ed8; stroke: #111; }
       .ep-plan-room { fill: rgba(37, 99, 235, .05); }
       .ep-plan-dim { fill: #444; font-family: system-ui; } .ep-plan-name { fill: #111; font-family: system-ui; font-weight: 600; }
       .ep-plan-chain, .ep-plan-chaintext { stroke: #dc2626; fill: #dc2626; font-family: system-ui; }
@@ -79,6 +128,20 @@
       .ep-plan-el circle, .ep-plan-blockrect { stroke: #111; } .ep-plan-panel rect { fill: #1d4ed8; stroke: #111; }
       .ep-plan-route { opacity: .75; } .ep-plan-cross { stroke: #b45309; fill: none; }
       .ep-plan-warnring, .ep-plan-eldone { display: none; }
+      /* развёртки стен */
+      .unfsec { break-before: page; page-break-before: always; margin-top: 6px; }
+      .unfsec h3 { font-size: 12px; margin-bottom: 6px; }
+      .unfgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .unfcard { border: 1px solid #999; padding: 4px 6px; break-inside: avoid; }
+      .unfcard h4 { font-size: 9.5px; margin-bottom: 2px; }
+      .unf { width: 100%; max-height: 62mm; }
+      .unfwall { fill: #f1f5f9; stroke: #94a3b8; stroke-width: 1; }
+      .unffloor { stroke: #111; stroke-width: 2; }
+      .unfdim { stroke: #0891b2; stroke-width: 1; }
+      .unfdimt { fill: #0e7490; font-family: system-ui; }
+      .unfshape { stroke: #111; stroke-width: 1; }
+      .unfglyph { fill: #fff; font-weight: 700; font-family: system-ui; }
+      .unfqf { font-weight: 700; font-family: system-ui; }
     </style></head><body><div class="frame">
       <div class="plan">${buildSvg(p)}</div>
       <div class="cols">
@@ -86,6 +149,7 @@
         <div><h3>${T.spec}</h3><table><tr><th></th><th>Тип</th><th>Кол-во</th></tr>${spec}</table></div>
         <div class="legend"><h3>${T.legend}</h3>${legendRows}</div>
       </div>
+      ${buildUnfolds(p)}
       <div class="stamp">
         <div><b>${T.obj}</b>${esc(p.name)}</div>
         <div><b>${T.addr}</b>${esc(p.address || "—")}</div>

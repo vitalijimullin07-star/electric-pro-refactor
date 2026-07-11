@@ -200,6 +200,24 @@
   };
   G.openingsOnWall = (project, wallId) => (project.openings || []).filter((o) => o.wallId === wallId);
 
+  // Локальный «репер» стены: направление вдоль (a→b), нормаль ВНУТРЬ комнаты, угол в градусах.
+  // Нужно, чтобы точки/блоки отступали от стены внутрь и поворачивались вдоль неё.
+  G.wallFrame = (project, wall) => {
+    if (!wall) return null;
+    const len = wall.len || 1;
+    const dir = { x: (wall.b.x - wall.a.x) / len, y: (wall.b.y - wall.a.y) / len };
+    let nrm = { x: -dir.y, y: dir.x };
+    const room = (project.rooms || []).find((r) => r.id === wall.roomId);
+    if (room && (room.points || []).length >= 3) {
+      const c = G.centroid(room.points);
+      if ((c.x - wall.mx) * nrm.x + (c.y - wall.my) * nrm.y < 0) { nrm = { x: -nrm.x, y: -nrm.y }; }
+    }
+    let angle = Math.atan2(dir.y, dir.x) * 180 / Math.PI;
+    // держим подписи/глифы «не вверх ногами»
+    if (angle > 90) angle -= 180; else if (angle < -90) angle += 180;
+    return { dir, nrm, angle };
+  };
+
   G.polylineLen = (pts) => {
     let L = 0;
     for (let i = 0; i < pts.length - 1; i++) L += G.dist(pts[i], pts[i + 1]);

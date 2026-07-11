@@ -58,6 +58,7 @@
     R.draft = { points: [] }; R.pendingRect = null; R.pendingPoly = null;
     R.ruler = { a: null, b: null }; R.beamDraft = { a: null, b: null };
     R.calib = { on: false, a: null, b: null };
+    R.selectedBeam = null;
     setMove(false);
     document.querySelectorAll("[data-plan-mode]").forEach((b) => b.classList.toggle("on", b.getAttribute("data-plan-mode") === mode));
     if (mode === "underlay") sheetUnderlay();
@@ -115,14 +116,16 @@
     if (R.mode === "beam") {
       const snapped = G().snapSmart(p, w, step, CFG.cornerSnapCm);
       if (!R.beamDraft.a) { R.beamDraft = { a: snapped, b: null }; renderScaled(); return; }
-      const end = G().orthoAdjust(R.beamDraft.a, snapped); // прямая балка под 90°
+      const end = G().orthoAdjust(R.beamDraft.a, snapped); // прямая балка/перегородка под 90°
       const c = core();
       c.commit();
       c.project.beams = c.project.beams || [];
-      c.project.beams.push(c.model.newBeam(R.beamDraft.a, end, "beam"));
+      // балка/перегородка — тем же материалом и толщиной, что и стена
+      const beam = c.model.newBeam(R.beamDraft.a, end, "beam", p.settings.wallThickness, p.settings.wallMaterial);
+      c.project.beams.push(beam);
       c.persist("beam-add");
       R.beamDraft = { a: null, b: null };
-      renderScene();
+      setMode("view"); sheetBeam(beam); // сразу выделяем — можно тянуть концы
       return;
     }
     if (R.mode === "underlay") {
@@ -135,7 +138,8 @@
       return;
     }
     if (R.mode === "elem") { if (EP.Plan.Elements) { EP.Plan.Elements.placeAt(w); renderScene(); } return; }
-    // view: приоритет — элемент/щит > стена (развёртка) > комната
+    // view: приоритет — элемент/щит > балка > стена (развёртка) > комната
+    clearBeamSel();
     const k = R.canvas.cmPerPx();
     if (EP.Plan.Elements) {
       const hit = EP.Plan.Elements.hitAt(w, EP.Plan.Elements.CFG.hitPx * k);
@@ -246,15 +250,51 @@
     return best && best.beam;
   }
   function sheetBeam(bm) {
-    openSheet(`<div class="ep-plan-srow"><b>${bm.kind === "lintel" ? "Перемычка" : "Балка"}</b> · ${G().fmtLen(G().dist(bm.a, bm.b))}</div>
+    const p = core().project;
+    const mat = bm.material || p.settings.wallMaterial;
+    openSheet(`<div class="ep-plan-srow"><b>${bm.kind === "lintel" ? "Перемычка" : "Балка/перегородка"}</b> · ${G().fmtLen(G().dist(bm.a, bm.b))}</div>
       <div class="ep-plan-srow">
         <button type="button" class="ep-plan-chip ep-clickable ${bm.kind !== "lintel" ? "on" : ""}" data-pr-beamkind="beam">Балка</button>
         <button type="button" class="ep-plan-chip ep-clickable ${bm.kind === "lintel" ? "on" : ""}" data-pr-beamkind="lintel">Перемычка</button>
-        <label class="ep-plan-range" style="flex:0 0 120px">Ширина, см<input type="number" inputmode="numeric" min="3" data-pr-beamw="${esc(bm.id)}" value="${Math.round(bm.width || 20)}"></label>
+        <label class="ep-plan-range" style="flex:0 0 120px">Толщина, см<input type="number" inputmode="numeric" min="3" data-pr-beamw="${esc(bm.id)}" value="${Math.round(bm.width || p.settings.wallThickness)}"></label>
       </div>
-      <div class="ep-plan-srow ep-plan-sbtns"><button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pr-beamdel="${esc(bm.id)}">✕ Удалить</button></div>`);
+      <div class="ep-plan-srow">Материал:
+        ${(EP.Plan.Core.DEFAULTS.materials || []).map((m) => `<button type="button" class="ep-plan-chip ep-clickable ${mat === m ? "on" : ""}" data-pr-beammat="${esc(m)}">${esc(m)}</button>`).join("")}
+      </div>
+      <div class="ep-plan-modehint">Тяни синие концы, чтобы двигать. ✓ — закрыть.</div>
+      <div class="ep-plan-srow ep-plan-sbtns">
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-beamdone>✓</button>
+        <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pr-beamdel="${esc(bm.id)}">✕ Удалить</button></div>`);
     R.selectedBeam = bm.id;
+    enableBeamDrag();
+    renderScene();
   }
+  // тянуть концы выбранной балки/перегородки пальцем
+  function enableBeamDrag() {
+    if (!R.canvas) return;
+    let grabbed = null; // 'a' | 'b'
+    R.canvas.setDragHandler((dx, dy, phase, start) => {
+      const c = core(), bm = (c.project.beams || []).find((b) => b.id === R.selectedBeam);
+      if (!bm) return;
+      if (phase === "start") {
+        const rr = Math.max(20, (bm.width || 20)) ;
+        const da = G().dist(start, bm.a), db = G().dist(start, bm.b);
+        grabbed = (da <= db ? "a" : "b");
+        if (Math.min(da, db) > rr * 2) grabbed = null; // не по концу — не тянем
+        if (grabbed) core().commit();
+        return;
+      }
+      if (phase === "move" && grabbed) {
+        bm[grabbed] = { x: bm[grabbed].x + dx, y: bm[grabbed].y + dy };
+        renderScene();
+      } else if (phase === "end" && grabbed) {
+        const step = c.project.settings.gridStep || 10;
+        bm[grabbed] = G().snapPoint(bm[grabbed], step);
+        c.persist("beam-move"); grabbed = null; renderScene();
+      }
+    });
+  }
+  function clearBeamSel() { R.selectedBeam = null; if (R.canvas) R.canvas.setDragHandler(null); }
   function sheetLayers() {
     const p = core().project; if (!p) return;
     openSheet(`<div class="ep-plan-srow"><b>${T.layersTitle}</b></div>
@@ -302,7 +342,7 @@
     const wet = !!($("#ep-pr-wet") || {}).checked;
     room.zones = wet ? ["wet"] : [];
     c.persist("room-edit");
-    sheetRoom(room);
+    R.selectedRoomId = null; closeSheet(); renderScene(); // ✓ — применить и закрыть вкладку
   }
   function dupRoom(id) {
     const c = core(), room = c.project.rooms.find((r) => r.id === id); if (!room) return;
@@ -400,10 +440,16 @@
       if (bm) { c.commit(); bm.kind = el.getAttribute("data-pr-beamkind"); c.persist("beam-kind"); sheetBeam(bm); }
       return;
     }
+    if ((el = t.closest("[data-pr-beammat]"))) {
+      const c = core(), bm = (c.project.beams || []).find((b) => b.id === R.selectedBeam);
+      if (bm) { c.commit(); bm.material = el.getAttribute("data-pr-beammat"); c.persist("beam-mat"); sheetBeam(bm); }
+      return;
+    }
+    if (t.closest("[data-pr-beamdone]")) { clearBeamSel(); closeSheet(); renderScene(); return; }
     if ((el = t.closest("[data-pr-beamdel]"))) {
       const c = core(); c.commit();
       c.project.beams = (c.project.beams || []).filter((b) => b.id !== el.getAttribute("data-pr-beamdel"));
-      c.persist("beam-del"); closeSheet(); renderScene(); return;
+      c.persist("beam-del"); clearBeamSel(); closeSheet(); renderScene(); return;
     }
   });
 
@@ -443,6 +489,8 @@
     // общий доступ для модулей слоёв 2-6
     openSheet, closeSheet, toast,
     isActive: () => R.active,
+    currentMode: () => R.mode,
+    selectedBeamId: () => R.selectedBeam || null,
     canvasCmPerPx: () => (R.canvas ? R.canvas.cmPerPx() : 1)
   };
 })();

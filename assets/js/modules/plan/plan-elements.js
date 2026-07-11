@@ -231,7 +231,7 @@
     const h = Number(($("#ep-pe-h") || {}).value);
     if (Number.isFinite(h)) el.height = Math.max(0, h);
     c.persist("elem-edit");
-    openEditor(el);
+    S.selId = null; rooms().closeSheet(); rooms().renderScene(); // ✓ — применить и закрыть
   }
   function addPhoto(file) {
     const el = current(); if (!el) return;
@@ -288,7 +288,12 @@
       c.commit();
       const colors = EP.Plan.Core.DEFAULTS.circuitColors;
       const cs = c.project.circuits;
-      const circ = c.model.newCircuit("QF" + (cs.length + 1), colors[cs.length % colors.length], 16);
+      // берём первый НЕзанятый цвет — чтобы QF разных номеров всегда различались визуально
+      const used = new Set(cs.map((x) => x.color));
+      const color = colors.find((col) => !used.has(col)) || colors[cs.length % colors.length];
+      // номер линии = максимум существующих QF + 1 (без повторов после удалений)
+      const maxN = cs.reduce((m, x) => { const n = parseInt(String(x.name).replace(/\D/g, ""), 10); return Number.isFinite(n) ? Math.max(m, n) : m; }, 0);
+      const circ = c.model.newCircuit("QF" + (maxN + 1), color, 16);
       cs.push(circ); el.circuitId = circ.id;
       c.persist("circuit-add"); openEditor(el); return;
     }
