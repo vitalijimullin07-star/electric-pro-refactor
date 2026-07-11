@@ -260,12 +260,10 @@
       const pt = EP.Plan.Geometry.elemPoint(project, elem);
       if (!pt) return;
       const r0 = 11 * k;
-      // отступ от стены ВНУТРЬ комнаты + поворот вдоль стены (как реальные посты)
-      const fr = pt.wall ? EP.Plan.Geometry.wallFrame(project, pt.wall) : null;
-      const inset = wallThEl / 2 + r0 * 0.9;
-      const cx = fr ? pt.x + fr.nrm.x * inset : pt.x;
-      const cy = fr ? pt.y + fr.nrm.y * inset : pt.y;
-      const rot = fr ? fr.angle : 0;
+      // отступ от стены ВНУТРЬ комнаты + поворот вдоль стены (ЕДИНАЯ точка с трассой)
+      const dp = pt.wall ? EP.Plan.Geometry.elemDrawPoint(project, elem) : pt;
+      const cx = dp.x, cy = dp.y;
+      const rot = dp.angle || 0;
       const grp = el("g", { class: "ep-plan-el" + (elem.status === "mounted" ? " is-done" : "") + (elem.status === "existing" ? " is-exist" : "") + (elem.id === selId ? " is-sel" : "") });
       if (elem.type === "junction") {
         // распайка: ромб (повёрнутый квадрат) на слое трасс — на самой стене, без отступа
