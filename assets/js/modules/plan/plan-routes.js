@@ -1,9 +1,10 @@
-/* Electric Pro V29 — Проект квартиры: трассы v2 (дерево через распайки).
+/* Electric Pro V29 — Проект квартиры: трассы v3 (дерево + шлейф).
    Топология как на реальных планах, НЕ «звезда»:
-     точка -> ближайшая распайка (или щит, если распаек нет) — спуск;
-     распайка -> ближайший узел ближе к щиту (или щит) — магистраль (дерево).
-   Если у точки задана линия (автомат) — предпочитаем распайку той же линии;
-   цвет трассы = цвет линии, иначе цвет слоя. Длины и разбивка по линиям. */
+     • есть распайка линии -> точки идут к своей распайке, распайки деревом к щиту;
+     • НЕТ распайки у линии -> ШЛЕЙФ: щит -> розетка -> розетка (каждая к ближайшему
+       уже подключённому узлу своей линии), а не каждая отдельно к щиту.
+   Линии (QF) изолированы: QF1 отдельно от QF2. Цвет трассы = цвет линии/слоя.
+   Спуск у щита считается один раз (та трасса, что реально доходит до щита). */
 (() => {
   "use strict";
   window.EP = window.EP || {};
@@ -34,10 +35,7 @@
     const l = (p.layers || []).find((x) => x.id === el.layer);
     return (l && l.color) || "#94a3b8";
   }
-  function nodePos(p, node) {
-    if (node.kind === "panel") return { x: node.x, y: node.y };
-    return G().elemPoint(p, node.el);
-  }
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
   function nearest(pos, nodes, filter) {
     let best = null;
     nodes.forEach((n) => {
@@ -64,48 +62,73 @@
     p.routes = [];
 
     // узлы: щиты + распайки
-    const panels = (p.panels || []).map((pn) => ({ kind: "panel", id: pn.id, x: pn.x, y: pn.y, pos: { x: pn.x, y: pn.y } }));
+    const panels = (p.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y } }));
     const juncts = (p.elements || []).filter(isJunction).map((el) => ({ kind: "junction", id: el.id, el, circuitId: el.circuitId, pos: G().elemPoint(p, el) })).filter((n) => n.pos);
-    const nodes = panels.concat(juncts);
 
-    // 1) точки -> узел СВОЕЙ линии (QF): дерево QF1 отдельно от QF2.
-    //    точка с линией идёт только к распайке своей линии или к щиту (не к чужой QF);
-    //    точка без линии — к любой распайке или щиту.
+    // группируем точки по линии (QF): QF1 отдельно от QF2, «без линии» — своя группа.
+    const groups = new Map();
     points.forEach((el) => {
       const pos = G().elemPoint(p, el);
       if (!pos) return;
-      let cand;
-      if (el.circuitId) {
-        const sameC = juncts.filter((n) => n.circuitId === el.circuitId);
-        cand = (sameC.length ? sameC : []).concat(panels);
-      } else {
-        cand = (juncts.length ? juncts : []).concat(panels);
-      }
-      const target = nearest(pos, cand);
-      if (!target) return;
-      addRoute(c, p, el, pos, target.pos, el.circuitId, colorOf(p, el));
+      const key = el.circuitId || "_none";
+      if (!groups.has(key)) groups.set(key, { circuitId: el.circuitId || null, items: [] });
+      groups.get(key).items.push({ el, pos });
     });
 
-    // 2) распайки -> дерево к щиту. Распайка с линией предпочитает узлы своей QF
-    //    (ближе к щиту), иначе — щит. Без цикла: сортировка по расстоянию до щита.
-    const panelDist = (pos) => { const n = nearest(pos, panels); return n ? Math.hypot(pos.x - n.pos.x, pos.y - n.pos.y) : Infinity; };
+    // 1) для каждой линии:
+    groups.forEach((g) => {
+      // распайки, доступные этой линии (своей QF; «без линии» — любые распайки)
+      const J = g.circuitId ? juncts.filter((n) => n.circuitId === g.circuitId) : juncts.slice();
+      if (J.length) {
+        // есть распайка -> каждая точка к ближайшей распайке своей линии (или щиту)
+        g.items.forEach(({ el, pos }) => {
+          const target = nearest(pos, J.concat(panels));
+          if (target) addRoute(c, p, el, pos, target, el.circuitId, colorOf(p, el));
+        });
+      } else {
+        // НЕТ распайки -> шлейф: щит -> розетка -> розетка (дерево от щита)
+        chainFromPanel(c, p, g.items, panels, g.circuitId);
+      }
+    });
+
+    // 2) распайки -> дерево к щиту. Распайка предпочитает узел своей QF ближе к щиту.
+    const panelDist = (pos) => { const n = nearest(pos, panels); return n ? dist(pos, n.pos) : Infinity; };
     const js = juncts.map((n) => ({ n, d: panelDist(n.pos) })).sort((a, b) => a.d - b.d);
     js.forEach(({ n, d }) => {
       const closerJ = js.filter((x) => x.d < d - 1 && (!n.circuitId || x.n.circuitId === n.circuitId)).map((x) => x.n);
       const target = nearest(n.pos, panels.concat(closerJ));
-      if (!target) return;
-      addRoute(c, p, n.el, n.pos, target.pos, n.circuitId, colorOf(p, n.el));
+      if (target) addRoute(c, p, n.el, n.pos, target, n.circuitId, colorOf(p, n.el));
     });
 
     c.persist("routes-build");
     sheet();
   }
 
-  function addRoute(c, p, fromEl, a, b, circuitId, color) {
-    const pts = ortho(a, b);
-    const rt = c.model.newRoute(fromEl.layer, p.settings.routeType, pts, fromEl.id, null);
+  // шлейф от щита: каждая точка подключается к ближайшему уже подключённому узлу
+  // (щиту или ранее подключённой розетке той же линии) — как реальная гирлянда.
+  function chainFromPanel(c, p, items, panels, circuitId) {
+    const connected = panels.slice(); // {kind:'panel', pos}
+    const rest = items.slice();
+    while (rest.length) {
+      let best = null;
+      rest.forEach((it, idx) => connected.forEach((cn) => {
+        const d = dist(it.pos, cn.pos);
+        if (!best || d < best.d) best = { d, idx, cn };
+      }));
+      if (!best) break;
+      const it = rest[best.idx];
+      addRoute(c, p, it.el, it.pos, best.cn, circuitId, colorOf(p, it.el));
+      connected.push({ kind: "point", id: it.el.id, pos: it.pos });
+      rest.splice(best.idx, 1);
+    }
+  }
+
+  function addRoute(c, p, fromEl, a, target, circuitId, color) {
+    const pts = ortho(a, target.pos);
+    const rt = c.model.newRoute(fromEl.layer, p.settings.routeType, pts, fromEl.id, target.id || null);
     rt.circuitId = circuitId || null;
     rt.color = color;
+    rt.toPanel = target.kind === "panel"; // спуск у щита считаем один раз
     rt.throughWalls = G().polylineCrossings(p, pts, fromEl.wallId || null);
     p.routes.push(rt);
   }
@@ -116,19 +139,22 @@
     sheet();
   }
 
-  // вертикали (спуски у точки и у щита) — как в v1
-  function verticalLen(p, el) {
-    const ceil = p.settings.ceilingHeight, ph = p.settings.panelHeight;
-    if (el.type === "junction") return 0;
-    if (p.settings.routeType === "floor") return (el.height || 0) + ph;
-    return Math.max(0, ceil - (el.height || 0)) + Math.max(0, ceil - ph);
+  // вертикали: спуск у точки (потолок/пол -> точка) и спуск у щита (считается один раз)
+  function pointVert(p, el) {
+    if (!el || el.type === "junction") return 0;
+    if (p.settings.routeType === "floor") return el.height || 0;
+    return Math.max(0, p.settings.ceilingHeight - (el.height || 0));
+  }
+  function panelVert(p) {
+    const ph = p.settings.panelHeight;
+    return p.settings.routeType === "floor" ? ph : Math.max(0, p.settings.ceilingHeight - ph);
   }
   function lengths(p) {
     const byLayer = {}, byCircuit = {};
     let crossings = 0, total = 0;
     (p.routes || []).forEach((r) => {
       const el = (p.elements || []).find((e) => e.id === r.fromId);
-      const L = G().polylineLen(r.points) + (el ? verticalLen(p, el) : 0);
+      const L = G().polylineLen(r.points) + pointVert(p, el) + (r.toPanel ? panelVert(p) : 0);
       byLayer[r.layer] = (byLayer[r.layer] || 0) + L;
       const cid = r.circuitId || "_none";
       byCircuit[cid] = (byCircuit[cid] || 0) + L;
@@ -208,5 +234,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { build, clearRoutes, lengths, sheet, verticalLen };
+  EP.Plan.Routes = { build, clearRoutes, lengths, sheet, pointVert, panelVert };
 })();
