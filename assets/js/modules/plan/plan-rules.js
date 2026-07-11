@@ -43,7 +43,7 @@
     const wetRooms = new Set((p.rooms || []).filter((r) => (r.zones || []).indexOf("wet") >= 0).map((r) => r.id));
 
     (p.elements || []).forEach((el) => {
-      if (el.status === "existing") return;
+      if (el.status === "existing" || el.type === "junction") return;
       const roomId = el.wallId ? String(el.wallId).split(":")[0] : null;
       if (el.wallId) {
         const w = G().wallById(p, el.wallId);
