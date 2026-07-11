@@ -322,3 +322,6 @@ body[data-visual-mode="day"] .ep-plan-opnum { fill: #0f172a; stroke: rgba(255,25
 body[data-visual-mode="day"] .ep-plan-sel { background: #fff; border-color: #cbd5e1; color: #0f172a; }
 .ep-plan-lineRow input[type="text"] { padding: 7px 9px; border-radius: 9px; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.05); color: var(--text,#e8eef7); font: 600 12.5px system-ui; }
 body[data-visual-mode="day"] .ep-plan-lineRow input[type="text"] { background:#fff; border-color:#cbd5e1; color:#0f172a; }
+
+/* — v11: развёртка — разделитель палитры проёмов — */
+.ep-plan-unfsep { display: inline-block; width: 1px; align-self: stretch; margin: 0 3px; background: rgba(148,163,184,.4); }
