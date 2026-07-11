@@ -30,7 +30,15 @@
     chaseW: 25, chaseH: 30,     // мм — сечение штробы под провод (стандарт), редактируется
     tpChaseW: 50, tpChaseH: 50, // мм — штроба тёплого пола (в пол)
     mainBreaker: 40, phases: 1, // вводной автомат (А) и число фаз (1/3) для однолинейки
+    panelBrand: "IEK", panelReserve: 6, // бренд корпуса щита и запас модулей
     cables: ["3×1.5", "3×2.5", "3×4", "3×6", "5×2.5", "5×4", "5×6", "5×10"], // сечения кабеля
+    // типовые модульные корпуса: бренд -> {модулей в ряду, размеры [Ш,В,Г] мм по числу модулей}
+    panelBoxes: {
+      "IEK":       { rowCap: 12, sizes: { "12": [285, 205, 102], "24": [395, 310, 120], "36": [395, 435, 120], "48": [395, 560, 120], "54": [460, 560, 120], "72": [460, 685, 120] } },
+      "ABB":       { rowCap: 12, sizes: { "12": [300, 220, 103], "24": [300, 360, 103], "36": [300, 500, 108], "48": [320, 735, 108], "54": [550, 585, 120], "72": [550, 720, 120] } },
+      "Schneider": { rowCap: 13, sizes: { "13": [296, 236, 97], "26": [296, 376, 97], "39": [296, 516, 97], "52": [296, 656, 97] } },
+      "ТЕКФОР":    { rowCap: 12, sizes: { "12": [280, 200, 100], "24": [385, 300, 115], "36": [385, 430, 115], "48": [385, 560, 115], "54": [450, 560, 115] } }
+    },
     breakers: [10, 16, 20, 25, 32, 40, 63], // номиналы автоматов, А
     circuitColors: ["#ef4444", "#f59e0b", "#22c55e", "#3b82f6", "#a855f7", "#ec4899", "#14b8a6", "#eab308"],
     layers: [
@@ -71,6 +79,7 @@
         chaseW: DEFAULTS.chaseW, chaseH: DEFAULTS.chaseH,
         tpChaseW: DEFAULTS.tpChaseW, tpChaseH: DEFAULTS.tpChaseH,
         mainBreaker: DEFAULTS.mainBreaker, phases: DEFAULTS.phases, meter: false, mainRcd: false,
+        panelBrand: DEFAULTS.panelBrand, panelReserve: DEFAULTS.panelReserve, panelBox: null,
         rules: {} // пороги проверок (Слой 6), пусто = дефолты plan-rules
       },
       underlay: null, // { imageDataUri, scale (см/пиксель), opacity }
