@@ -71,13 +71,12 @@
     const panels = (p.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y } }));
     const juncts = (p.elements || []).filter(isJunction).map((el) => ({ kind: "junction", id: el.id, el, circuitId: el.circuitId, pos: G().elemPoint(p, el) })).filter((n) => n.pos);
 
-    // индекс линии -> своя «полоса» отступа, чтобы параллельные трассы QF не ложились друг на друга
-    const laneOf = (cid) => { const i = (p.circuits || []).findIndex((c) => c.id === cid); return i < 0 ? 0 : i; };
     // группируем точки по линии (QF): QF1 отдельно от QF2, «без линии» — своя группа.
-    // pos СДВИНУТ внутрь комнаты от стены (трасса не идёт по стене) + полоса по номеру линии.
+    // pos — ЕДИНАЯ точка отрисовки (та же, что у маркера): трасса доходит до точки,
+    // а зазор между линиями QF заложен в самой точке (полоса по номеру линии).
     const groups = new Map();
     points.forEach((el) => {
-      const pos = G().elemInsetPoint(p, el, 12 + laneOf(el.circuitId) * 9);
+      const pos = G().elemDrawPoint(p, el);
       if (!pos) return;
       const key = el.circuitId || "_none";
       if (!groups.has(key)) groups.set(key, { circuitId: el.circuitId || null, items: [] });

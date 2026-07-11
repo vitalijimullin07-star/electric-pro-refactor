@@ -200,6 +200,21 @@
   };
   G.openingsOnWall = (project, wallId) => (project.openings || []).filter((o) => o.wallId === wallId);
 
+  // ЕДИНАЯ точка отрисовки/трассировки элемента на стене: фиксированный отступ внутрь
+  // комнаты (в СМ, не зависит от зума) + «полоса» по номеру линии QF (зазор между трассами).
+  // И маркер, и трасса берут ОДНУ эту точку — поэтому линия всегда доходит до точки.
+  G.elemDrawPoint = (project, el) => {
+    const pt = G.elemPoint(project, el);
+    if (!pt || !pt.wall) return pt;
+    const fr = G.wallFrame(project, pt.wall);
+    if (!fr) return pt;
+    const th = Math.max(4, (project.settings && project.settings.wallThickness) || 10);
+    const laneIdx = el.circuitId ? (project.circuits || []).findIndex((c) => c.id === el.circuitId) : -1;
+    const lane = laneIdx < 0 ? 0 : laneIdx;
+    const d = th / 2 + 11 + lane * 5; // фикс. отступ + зазор по линии
+    return { x: pt.x + fr.nrm.x * d, y: pt.y + fr.nrm.y * d, wall: pt.wall, nrm: fr.nrm, angle: fr.angle };
+  };
+
   // Точка элемента, СДВИНУТАЯ внутрь комнаты от стены (чтобы трасса не шла по стене
   // и параллельные линии разных QF не ложились друг на друга). extra — доп. отступ (полоса).
   G.elemInsetPoint = (project, el, extra) => {

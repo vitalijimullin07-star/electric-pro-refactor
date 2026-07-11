@@ -302,3 +302,9 @@ body[data-visual-mode="day"] .ep-plan-opnum { fill: #0f172a; stroke: rgba(255,25
 .ep-plan-unfopen.is-win { fill: rgba(56,189,248,.16); }
 .ep-plan-unfopent { fill: #7dd3fc; font-family: system-ui; font-weight: 700; }
 .ep-plan-unfwalls .ep-plan-chip { min-width: 30px; }
+
+/* — v6: щит на развёртке, крупнее в полный экран — */
+.ep-plan-unfpanel { fill: #1d4ed8; stroke: #0b1220; opacity: .92; }
+.ep-plan-unfpanelt { fill: #fff; font-family: system-ui; font-weight: 700; }
+.ep-plan-unfopen { cursor: pointer; }
+.ep-plan-unfold.is-full .ep-plan-unfsvg, .ep-plan-sheet-full .ep-plan-unfsvg { height: 80vh; height: 80dvh; }

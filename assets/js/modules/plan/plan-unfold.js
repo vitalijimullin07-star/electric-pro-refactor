@@ -102,14 +102,25 @@
     svg.appendChild(svgEl("line", { x1: 0, y1: H, x2: L, y2: H, class: "ep-plan-unffloor", "stroke-width": 2.5 * kk }));
 
     // проёмы на этой стене: окно/дверь/балкон — прямоугольник по (offset..+width) × (sill..+height)
+    // Тап по проёму — открыть его редактор (размеры), а не ставить механизм.
     (p.openings || []).filter((o) => o.wallId === S.wallId).forEach((op) => {
       const oh = op.height || (op.type === "window" ? 140 : 200);
       const sill = op.sill || 0;
       const yTop = H - (sill + oh), hgt = Math.min(oh, H - sill);
       const isWin = op.type === "window" || op.kind === "window" || op.kind === "balcony";
-      svg.appendChild(svgEl("rect", { x: op.offset, y: yTop, width: op.width, height: hgt, class: "ep-plan-unfopen" + (isWin ? " is-win" : ""), "stroke-width": 1.5 * kk }));
+      svg.appendChild(svgEl("rect", { "data-pu-open": op.id, x: op.offset, y: yTop, width: op.width, height: hgt, class: "ep-plan-unfopen" + (isWin ? " is-win" : ""), "stroke-width": 1.5 * kk }));
       const meta = (EL().OPEN_TYPES || {})[op.kind || (isWin ? "window" : "door")] || {};
-      svg.appendChild(svgEl("text", { x: op.offset + op.width / 2, y: yTop + 12 * kk, "font-size": 10 * kk, "text-anchor": "middle", class: "ep-plan-unfopent" }, (EL().openingNum ? EL().openingNum(p, op) : (meta.glyph || ""))));
+      svg.appendChild(svgEl("text", { "data-pu-open": op.id, x: op.offset + op.width / 2, y: yTop + 12 * kk, "font-size": 10 * kk, "text-anchor": "middle", class: "ep-plan-unfopent" }, (EL().openingNum ? EL().openingNum(p, op) : (meta.glyph || ""))));
+    });
+
+    // щит на этой стене (если стоит рядом со стеной) — на высоте установки щита
+    (p.panels || []).forEach((pn) => {
+      const c = G().closestOnSeg({ x: pn.x, y: pn.y }, w.a, w.b);
+      if (c.d > 60) return; // щит не на этой стене
+      const px = c.t * L, ph = p.settings.panelHeight || 150, pw = 36, phh = 60;
+      const py = H - ph;
+      svg.appendChild(svgEl("rect", { x: px - pw / 2, y: py - phh / 2, width: pw, height: phh, rx: 3, class: "ep-plan-unfpanel", "stroke-width": 1.5 * kk }));
+      svg.appendChild(svgEl("text", { x: px, y: py, "font-size": 12 * kk, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfpanelt" }, "Щ"));
     });
 
     const TY = EL().TYPES;
@@ -154,6 +165,13 @@
     svg.addEventListener("pointerdown", (e) => {
       const p = core().project, step = p.settings.gridStep;
       const pt = stripPoint(svg, w, H, pad, L, e.clientX, e.clientY);
+      // тап по ПРОЁМУ — открыть его редактор (задать размеры), а не ставить механизм
+      const og = e.target.closest && e.target.closest("[data-pu-open]");
+      if (og) {
+        const op = (p.openings || []).find((o) => o.id === og.getAttribute("data-pu-open"));
+        if (op && EL().openOpeningEditor) EL().openOpeningEditor(op);
+        return;
+      }
       const g = e.target.closest && e.target.closest("[data-pu-el]");
       if (g) {
         const el = p.elements.find((x) => x.id === g.getAttribute("data-pu-el"));
