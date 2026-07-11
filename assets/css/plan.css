@@ -312,3 +312,13 @@ body[data-visual-mode="day"] .ep-plan-opnum { fill: #0f172a; stroke: rgba(255,25
 /* — v7: штробы (вход в подрозетник) — */
 .ep-plan-entrymark { fill: #f59e0b; stroke: #fff; stroke-width: .6px; }
 .ep-plan-unfentry { fill: #f59e0b; stroke: #0b1220; stroke-width: .8px; }
+
+/* — v9: однолинейная схема — */
+.ep-plan-scheme { width: 100%; }
+.ep-plan-schemescroll { width: 100%; max-height: 42vh; overflow: auto; background: #fff; border-radius: 10px; padding: 6px; }
+.ep-plan-scheme.is-full .ep-plan-schemescroll, .ep-plan-sheet-full .ep-plan-schemescroll { max-height: 74vh; max-height: 74dvh; }
+.ep-plan-schemesvg { display: block; }
+.ep-plan-sel { padding: 7px 8px; border-radius: 9px; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.05); color: var(--text, #e8eef7); font: 600 12.5px system-ui; }
+body[data-visual-mode="day"] .ep-plan-sel { background: #fff; border-color: #cbd5e1; color: #0f172a; }
+.ep-plan-lineRow input[type="text"] { padding: 7px 9px; border-radius: 9px; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.05); color: var(--text,#e8eef7); font: 600 12.5px system-ui; }
+body[data-visual-mode="day"] .ep-plan-lineRow input[type="text"] { background:#fff; border-color:#cbd5e1; color:#0f172a; }

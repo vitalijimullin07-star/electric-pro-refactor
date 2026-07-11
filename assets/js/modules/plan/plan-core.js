@@ -29,6 +29,8 @@
     routeType: "ceiling",  // потолок/пол — как ведём трассы
     chaseW: 25, chaseH: 30,     // мм — сечение штробы под провод (стандарт), редактируется
     tpChaseW: 50, tpChaseH: 50, // мм — штроба тёплого пола (в пол)
+    mainBreaker: 40, phases: 1, // вводной автомат (А) и число фаз (1/3) для однолинейки
+    cables: ["3×1.5", "3×2.5", "3×4", "3×6", "5×2.5", "5×4", "5×6", "5×10"], // сечения кабеля
     breakers: [10, 16, 20, 25, 32, 40, 63], // номиналы автоматов, А
     circuitColors: ["#ef4444", "#f59e0b", "#22c55e", "#3b82f6", "#a855f7", "#ec4899", "#14b8a6", "#eab308"],
     layers: [
@@ -68,6 +70,7 @@
         routeType: DEFAULTS.routeType,
         chaseW: DEFAULTS.chaseW, chaseH: DEFAULTS.chaseH,
         tpChaseW: DEFAULTS.tpChaseW, tpChaseH: DEFAULTS.tpChaseH,
+        mainBreaker: DEFAULTS.mainBreaker, phases: DEFAULTS.phases, meter: false, mainRcd: false,
         rules: {} // пороги проверок (Слой 6), пусто = дефолты plan-rules
       },
       underlay: null, // { imageDataUri, scale (см/пиксель), opacity }
@@ -89,7 +92,7 @@
   function newRoute(layer, routeType, points, fromId, toId) {
     return { id: uid("rt"), layer: layer || "routes", routeType: routeType || "ceiling", points: points || [], fromId: fromId || null, toId: toId || null, throughWalls: [] };
   }
-  function newCircuit(name, color, breaker) { return { id: uid("cc"), name: name || "Линия", color: color || DEFAULTS.circuitColors[0], breaker: breaker || 16, rcd: false }; }
+  function newCircuit(name, color, breaker) { return { id: uid("cc"), name: name || "Линия", color: color || DEFAULTS.circuitColors[0], breaker: breaker || 16, rcd: false, poles: 1, cable: null, rcdRating: 30 }; }
   // Проёмы: дверь / раздвижная / окно / балконный блок. Размеры настраиваемые.
   // height — высота проёма (см), sill — низ проёма от пола (окно ~90, дверь 0).
   const OPENING_KINDS = {
