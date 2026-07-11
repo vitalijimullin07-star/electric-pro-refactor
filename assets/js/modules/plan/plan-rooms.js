@@ -7,13 +7,14 @@
   window.EP = window.EP || {};
 
   const T = {
-    modes: { view: "☝", rect: "▭", poly: "⬠", beam: "▬", elem: "🔌", ruler: "📏", underlay: "🖼" },
+    modes: { view: "☝", rect: "▭", poly: "⬠", beam: "▬", elem: "🔌", opening: "🚪", ruler: "📏", underlay: "🖼" },
     modeHint: {
       view: "Тап: точка — редактор, стена — развёртка, комната — свойства.",
       rect: "Тапни два противоположных угла комнаты.",
       poly: "Ставь точки по контуру. Замкни тапом в первую точку.",
-      beam: "Перемычка/балка на потолке: тапни начало и конец.",
+      beam: "Балка/перегородка: тапни начало и конец, потом тяни концы.",
       elem: "Выбери тип в палитре и тапай по стене (свет/ТП — внутрь комнаты).",
+      opening: "Проёмы: выбери дверь/окно/раздвижную/балкон и тапни по стене.",
       ruler: "Тапни две точки — расстояние.",
       underlay: "Фото-план: загрузка, масштаб по известной длине, перенос."
     },
@@ -63,6 +64,7 @@
     document.querySelectorAll("[data-plan-mode]").forEach((b) => b.classList.toggle("on", b.getAttribute("data-plan-mode") === mode));
     if (mode === "underlay") sheetUnderlay();
     else if (mode === "elem" && EP.Plan.Elements) EP.Plan.Elements.onModeEnter();
+    else if (mode === "opening" && EP.Plan.Elements) EP.Plan.Elements.onOpeningModeEnter();
     else closeSheet();
     renderScene();
   }
@@ -138,6 +140,7 @@
       return;
     }
     if (R.mode === "elem") { if (EP.Plan.Elements) { EP.Plan.Elements.placeAt(w); renderScene(); } return; }
+    if (R.mode === "opening") { if (EP.Plan.Elements) { EP.Plan.Elements.placeOpening(w); renderScene(); } return; }
     // view: приоритет — элемент/щит > балка > стена (развёртка) > комната
     clearBeamSel();
     const k = R.canvas.cmPerPx();
@@ -205,6 +208,7 @@
         ${isR ? `<label>${T.width}<input id="ep-pr-rw" type="number" inputmode="numeric" min="30" value="${Math.round(d.w)}"></label>
         <label>${T.depth}<input id="ep-pr-rh" type="number" inputmode="numeric" min="30" value="${Math.round(d.h)}"></label>` : ""}
         <label>${T.ceil}<input id="ep-pr-rc" type="number" inputmode="numeric" min="150" placeholder="${p.settings.ceilingHeight}" value="${room.height || ""}"></label>
+        <label>Толщина стен, см<input id="ep-pr-th" type="number" inputmode="numeric" min="4" value="${Math.round(p.settings.wallThickness || 10)}"></label>
       </div>
       <div class="ep-plan-srow">Стены:
         ${(EP.Plan.Core.DEFAULTS.materials || []).map((m) => `<button type="button" class="ep-plan-chip ep-clickable ${(room.material || p.settings.wallMaterial) === m ? "on" : ""}" data-pr-mat="${esc(m)}">${esc(m)}</button>`).join("")}
@@ -259,7 +263,7 @@
         <label class="ep-plan-range" style="flex:0 0 120px">Толщина, см<input type="number" inputmode="numeric" min="3" data-pr-beamw="${esc(bm.id)}" value="${Math.round(bm.width || p.settings.wallThickness)}"></label>
       </div>
       <div class="ep-plan-srow">Материал:
-        ${(EP.Plan.Core.DEFAULTS.materials || []).map((m) => `<button type="button" class="ep-plan-chip ep-clickable ${mat === m ? "on" : ""}" data-pr-beammat="${esc(m)}">${esc(m)}</button>`).join("")}
+        ${(EP.Plan.Core.DEFAULTS.partitionMaterials || []).map((m) => `<button type="button" class="ep-plan-chip ep-clickable ${mat === m ? "on" : ""}" data-pr-beammat="${esc(m)}">${esc(m)}</button>`).join("")}
       </div>
       <div class="ep-plan-modehint">Тяни синие концы, чтобы двигать. ✓ — закрыть.</div>
       <div class="ep-plan-srow ep-plan-sbtns">
@@ -335,6 +339,8 @@
     if (name && name.trim()) room.name = name.trim();
     const hv = Number(($("#ep-pr-rc") || {}).value) || 0;
     room.height = hv >= 150 ? hv : null;
+    const thv = Number(($("#ep-pr-th") || {}).value) || 0;
+    if (thv >= 4) c.project.settings.wallThickness = thv;
     if (G().isRect(room)) {
       const w = Number(($("#ep-pr-rw") || {}).value) || 0, h = Number(($("#ep-pr-rh") || {}).value) || 0;
       if (w >= CFG.minRoomCm && h >= CFG.minRoomCm) G().setRectDims(room, w, h);
@@ -442,7 +448,12 @@
     }
     if ((el = t.closest("[data-pr-beammat]"))) {
       const c = core(), bm = (c.project.beams || []).find((b) => b.id === R.selectedBeam);
-      if (bm) { c.commit(); bm.material = el.getAttribute("data-pr-beammat"); c.persist("beam-mat"); sheetBeam(bm); }
+      if (bm) {
+        c.commit(); bm.material = el.getAttribute("data-pr-beammat");
+        const th = (EP.Plan.Core.DEFAULTS.partitionThickness || {})[bm.material];
+        if (th) bm.width = th;
+        c.persist("beam-mat"); sheetBeam(bm);
+      }
       return;
     }
     if (t.closest("[data-pr-beamdone]")) { clearBeamSel(); closeSheet(); renderScene(); return; }

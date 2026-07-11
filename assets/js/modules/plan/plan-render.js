@@ -22,6 +22,9 @@
     return n;
   }
   const clear = (g) => { while (g.firstChild) g.removeChild(g.firstChild); };
+  // материал стены/перегородки -> css-класс (цвет/штрих)
+  const MATMAP = { "Бетон": " mat-concrete", "Кирпич": " mat-brick", "Панель": " mat-panel", "Мягкий": " mat-soft", "Газоблок": " mat-block", "Пеноблок": " mat-block", "ГКЛ": " mat-gkl", "ПГП": " mat-pgp", "Дерево": " mat-wood" };
+  const MATCLASS = (m) => MATMAP[m] || " mat-concrete";
   const layerOn = (project, id) => {
     const l = (project.layers || []).find((x) => x.id === id);
     return !l || l.visible !== false;
@@ -74,7 +77,7 @@
       const sel = ui && ui.selectedRoomId === room.id;
       const closed = pts.length >= 3;
       const mat = room.material || (project.settings && project.settings.wallMaterial) || "Бетон";
-      const matClass = { "Бетон": " mat-concrete", "Кирпич": " mat-brick", "Панель": " mat-panel", "Мягкий": " mat-soft" }[mat] || "";
+      const matClass = MATCLASS(mat);
       // стены — ТОЛСТЫЕ (как на плане): band шириной = толщина стены + скруглённые углы
       const th = Math.max(4, (project.settings && project.settings.wallThickness) || 10); // см
       const dParts = [];
@@ -132,39 +135,53 @@
       })));
     }
 
-    // двери (дуга открывания) и окна (двойная линия)
+    // проёмы: дверь (дуга) / раздвижная / окно (двойная линия) / балкон (окно+дверь)
     (project.openings || []).forEach((op) => {
       const w = G.wallById(project, op.wallId);
       if (!w) return;
       const a = G.pointAtOffset(w, op.offset), b = G.pointAtOffset(w, op.offset + op.width);
       const dirx = (w.b.x - w.a.x) / (w.len || 1), diry = (w.b.y - w.a.y) / (w.len || 1);
       const nx = -diry * op.flip, ny = dirx * op.flip; // сторона открывания/выступа
-      if (op.type === "door") {
-        const h = op.hinge === "a" ? a : b, far = op.hinge === "a" ? b : a;
-        const leaf = { x: h.x + nx * op.width, y: h.y + ny * op.width };
+      const kind = op.kind || (op.type === "window" ? "window" : "door");
+      const drawSwing = (h, far, width) => {
+        const leaf = { x: h.x + nx * width, y: h.y + ny * width };
         const cross = (far.x - h.x) * (leaf.y - h.y) - (far.y - h.y) * (leaf.x - h.x);
         const sweep = cross > 0 ? 1 : 0;
-        g.appendChild(el("path", {
-          d: `M${far.x} ${far.y} A${op.width} ${op.width} 0 0 ${sweep} ${leaf.x} ${leaf.y}`,
-          class: "ep-plan-doorarc", "stroke-width": sw * 0.45, fill: "none"
-        }));
+        g.appendChild(el("path", { d: `M${far.x} ${far.y} A${width} ${width} 0 0 ${sweep} ${leaf.x} ${leaf.y}`, class: "ep-plan-doorarc", "stroke-width": sw * 0.45, fill: "none" }));
         g.appendChild(el("line", { x1: h.x, y1: h.y, x2: leaf.x, y2: leaf.y, class: "ep-plan-doorleaf", "stroke-width": sw * 0.7 }));
-      } else {
+      };
+      const drawWindow = (pa, pb) => {
         const off3 = 3.2 * k;
-        [-1, 1].forEach((s) => g.appendChild(el("line", {
-          x1: a.x + nx * off3 * s, y1: a.y + ny * off3 * s,
-          x2: b.x + nx * off3 * s, y2: b.y + ny * off3 * s,
-          class: "ep-plan-window", "stroke-width": sw * 0.5
-        })));
-        [a, b].forEach((p) => g.appendChild(el("line", {
-          x1: p.x + nx * off3, y1: p.y + ny * off3, x2: p.x - nx * off3, y2: p.y - ny * off3,
-          class: "ep-plan-window", "stroke-width": sw * 0.5
-        })));
+        [-1, 1].forEach((s) => g.appendChild(el("line", { x1: pa.x + nx * off3 * s, y1: pa.y + ny * off3 * s, x2: pb.x + nx * off3 * s, y2: pb.y + ny * off3 * s, class: "ep-plan-window", "stroke-width": sw * 0.5 })));
+        [pa, pb].forEach((p) => g.appendChild(el("line", { x1: p.x + nx * off3, y1: p.y + ny * off3, x2: p.x - nx * off3, y2: p.y - ny * off3, class: "ep-plan-window", "stroke-width": sw * 0.5 })));
+      };
+      if (kind === "door") {
+        const h = op.hinge === "a" ? a : b, far = op.hinge === "a" ? b : a;
+        drawSwing(h, far, op.width);
+      } else if (kind === "sliding") {
+        const off3 = 3.5 * k, mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        g.appendChild(el("line", { x1: a.x + nx * off3, y1: a.y + ny * off3, x2: mid.x + dirx * 3 * k + nx * off3, y2: mid.y + diry * 3 * k + ny * off3, class: "ep-plan-doorleaf", "stroke-width": sw * 0.7 }));
+        g.appendChild(el("line", { x1: mid.x - dirx * 3 * k - nx * off3, y1: mid.y - diry * 3 * k - ny * off3, x2: b.x - nx * off3, y2: b.y - ny * off3, class: "ep-plan-doorleaf", "stroke-width": sw * 0.7 }));
+        g.appendChild(el("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: "ep-plan-window", "stroke-width": sw * 0.4 }));
+      } else if (kind === "balcony") {
+        const dW = Math.min(80, op.width * 0.5);
+        const hinge = op.hinge === "a" ? a : b;
+        const doorFar = { x: hinge.x + dirx * (op.hinge === "a" ? dW : -dW), y: hinge.y + diry * (op.hinge === "a" ? dW : -dW) };
+        const winA = op.hinge === "a" ? doorFar : a, winB = op.hinge === "a" ? b : doorFar;
+        drawWindow(winA, winB);
+        drawSwing(hinge, doorFar, dW);
+      } else {
+        drawWindow(a, b);
+      }
+      // номер проёма (О1, Дв2 …) — на слое «Подписи»
+      if (labelsOn && EP.Plan.Elements && EP.Plan.Elements.openingNum) {
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        g.appendChild(el("text", { x: mid.x - nx * 16 * k, y: mid.y - ny * 16 * k, class: "ep-plan-opnum", "font-size": 10 * k, "text-anchor": "middle", "dominant-baseline": "middle" }, EP.Plan.Elements.openingNum(project, op)));
       }
     });
 
     // балки / перемычки / перегородки — рисуются КАК СТЕНА: тем же материалом и толщиной
-    const matClassOf = (m) => ({ "Бетон": " mat-concrete", "Кирпич": " mat-brick", "Панель": " mat-panel", "Мягкий": " mat-soft" }[m] || "");
+    const matClassOf = MATCLASS;
     const wallTh = Math.max(4, (project.settings && project.settings.wallThickness) || 10);
     (project.beams || []).forEach((bm) => {
       const bw = Math.max(4, bm.width || wallTh);

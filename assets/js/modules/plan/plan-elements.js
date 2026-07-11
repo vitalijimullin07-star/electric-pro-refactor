@@ -21,9 +21,18 @@
     sensor:    { name: "Датчик",      glyph: "Д",  layer: "lv",    h: 220 },
     panel:     { name: "Щит",         glyph: "Щ",  layer: "power", h: 150, panel: true }
   };
+  // Проёмы — под ОТДЕЛЬНОЙ кнопкой (🚪): дверь / раздвижная / окно / балкон.
+  const OPEN_TYPES = {
+    door:    { name: "Дверь",      glyph: "Дв" },
+    sliding: { name: "Раздвижная", glyph: "РД" },
+    window:  { name: "Окно",       glyph: "Ок" },
+    balcony: { name: "Балкон",     glyph: "Бл" }
+  };
   const STATUS = [["planned", "План"], ["mounted", "Готово ✓"], ["existing", "Было"]];
   const CFG = { hitPx: 22, wallSnapPx: 26, photoMax: 4, photoSide: 640, blockMax: 6 };
   const BLOCK_TYPES = ["socket", "switch", "tv", "internet"]; // что можно ставить в рамку
+  // электропалитра — без дверей/окон (они в отдельном инструменте «Проёмы»)
+  const PALETTE_TYPES = Object.keys(TYPES).filter((k) => !TYPES[k].opening);
   const T = {
     palette: "Палитра", progress: "Смонтировано",
     offset: "Отступ от угла, см", height: "Высота от пола, см",
@@ -40,7 +49,7 @@
   const G = () => EP.Plan.Geometry;
   const rooms = () => EP.Plan.Rooms;
 
-  const S = { selType: "socket", selId: null };
+  const S = { selType: "socket", selId: null, openType: "door" };
 
   // ---------- палитра / размещение ----------
   function onModeEnter() { sheetPalette(); }
@@ -51,10 +60,47 @@
     const pct = total ? Math.round((done / total) * 100) : 0;
     rooms().openSheet(`<div class="ep-plan-srow"><b>${T.palette}</b><span class="ep-plan-flex"></span>
         <span>${T.progress}: <b>${done}/${total}</b> · ${pct}%</span></div>
-      <div class="ep-plan-palette">${Object.keys(TYPES).map((k) => `
+      <div class="ep-plan-palette">${PALETTE_TYPES.map((k) => `
         <button type="button" class="ep-plan-pbtn ep-clickable ${S.selType === k ? "on" : ""}" data-pe-type="${k}">
           <i class="ep-plan-glyph" data-glyph="${esc(TYPES[k].glyph)}">${esc(TYPES[k].glyph)}</i>${esc(TYPES[k].name)}</button>`).join("")}
       </div>`);
+  }
+  // ----- Проёмы (отдельный инструмент) -----
+  function onOpeningModeEnter() { sheetOpenings(); }
+  function sheetOpenings() {
+    const p = core().project;
+    const cnt = (p.openings || []).length;
+    rooms().openSheet(`<div class="ep-plan-srow"><b>🚪 Проёмы</b><span class="ep-plan-flex"></span><span>Всего: <b>${cnt}</b></span></div>
+      <div class="ep-plan-palette">${Object.keys(OPEN_TYPES).map((k) => `
+        <button type="button" class="ep-plan-pbtn ep-clickable ${S.openType === k ? "on" : ""}" data-pe-otype="${k}">
+          <i class="ep-plan-glyph">${esc(OPEN_TYPES[k].glyph)}</i>${esc(OPEN_TYPES[k].name)}</button>`).join("")}
+      </div>
+      <div class="ep-plan-modehint">Тапни по стене — проём сядет на неё. Номер задаётся автоматически, размеры — в редакторе.</div>`);
+  }
+  // Номер проёма внутри своего вида (О1..О7, Дв1..): для отображения на плане
+  function openingNum(p, op) {
+    const same = (p.openings || []).filter((o) => (o.kind || o.type) === (op.kind || op.type));
+    const i = same.findIndex((o) => o.id === op.id);
+    const pfx = (EP.Plan.Core.OPENING_KINDS[op.kind] || {}).pfx || "П";
+    return pfx + (i + 1);
+  }
+  function placeOpening(w) {
+    const c = core(), p = c.project;
+    const k = rooms().canvasCmPerPx();
+    const hit = G().wallAt(p, w, CFG.wallSnapPx * k);
+    if (!hit) { rooms().toast(T.tapWall); return; }
+    c.commit();
+    const d = EP.Plan.Core.OPENING_KINDS[S.openType] || {};
+    const op = c.model.newOpening(S.openType, hit.wall.id, G().snap(Math.max(0, hit.offset - (d.w || 90) / 2), p.settings.gridStep), undefined);
+    const room = p.rooms.find((r) => r.id === String(hit.wall.id).split(":")[0]);
+    if (room) {
+      const cpt = G().centroid(room.points);
+      const nx = -(hit.wall.b.y - hit.wall.a.y), ny = hit.wall.b.x - hit.wall.a.x;
+      op.flip = (nx * (cpt.x - hit.wall.mx) + ny * (cpt.y - hit.wall.my)) >= 0 ? 1 : -1;
+    }
+    p.openings.push(op);
+    c.persist("opening-add");
+    openOpeningEditor(op);
   }
   function defaultHeight(type) {
     const s = core().project.settings;
@@ -163,17 +209,28 @@
   function openOpeningEditor(op) {
     S.selId = op.id;
     const p = core().project, wall = G().wallById(p, op.wallId);
-    const isDoor = op.type === "door";
-    rooms().openSheet(`<div class="ep-plan-srow"><b>${isDoor ? "Дверь" : "Окно"}</b>
+    const kind = op.kind || (op.type === "window" ? "window" : "door");
+    const meta = OPEN_TYPES[kind] || OPEN_TYPES.door;
+    const isWin = kind === "window" || kind === "balcony";
+    const swingKind = kind === "door" || kind === "balcony";
+    rooms().openSheet(`<div class="ep-plan-srow"><b>${esc(meta.name)} ${esc(openingNum(p, op))}</b>
         <span>· стена ${wall ? wall.n : "?"} (${wall ? Math.round(wall.len) : 0} см)</span></div>
+      <div class="ep-plan-srow">Тип:
+        ${Object.keys(OPEN_TYPES).map((k) => `<button type="button" class="ep-plan-chip ep-clickable ${kind === k ? "on" : ""}" data-po-kind="${k}">${esc(OPEN_TYPES[k].name)}</button>`).join("")}
+      </div>
       <div class="ep-plan-srow ep-plan-s2">
         <label>${T.offset}<input id="ep-po-off" type="number" inputmode="numeric" min="0" value="${Math.round(op.offset)}"></label>
         <label>Ширина, см<input id="ep-po-w" type="number" inputmode="numeric" min="40" value="${Math.round(op.width)}"></label>
       </div>
-      ${isDoor ? `<div class="ep-plan-srow">
+      <div class="ep-plan-srow ep-plan-s2">
+        <label>Высота проёма, см<input id="ep-po-h" type="number" inputmode="numeric" min="40" value="${Math.round(op.height || 200)}"></label>
+        ${isWin ? `<label>Низ от пола, см<input id="ep-po-sill" type="number" inputmode="numeric" min="0" value="${Math.round(op.sill || 0)}"></label>` : ""}
+      </div>
+      ${swingKind ? `<div class="ep-plan-srow">
         <button type="button" class="ep-plan-chip ep-clickable" data-po-hinge>Петли: ${op.hinge === "a" ? "слева" : "справа"}</button>
         <button type="button" class="ep-plan-chip ep-clickable" data-po-flip>Открывание: ${op.flip > 0 ? "внутрь" : "наружу"}</button>
       </div>` : ""}
+      <div class="ep-plan-modehint">Номера проёмов вкл/выкл — слой «Подписи» (🗂).</div>
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="ep-plan-tbtn ep-clickable" data-po-apply>${T.apply}</button>
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-po-del>${T.del}</button>
@@ -261,6 +318,7 @@
     if (!rooms() || !rooms().isActive()) return;
     const t = e.target; let b;
     if ((b = t.closest("[data-pe-type]"))) { S.selType = b.getAttribute("data-pe-type"); sheetPalette(); return; }
+    if ((b = t.closest("[data-pe-otype]"))) { S.openType = b.getAttribute("data-pe-otype"); sheetOpenings(); return; }
     if ((b = t.closest("[data-pe-preset]"))) { const i = $("#ep-pe-h"); if (i) i.value = b.getAttribute("data-pe-preset"); return; }
     if ((b = t.closest("[data-pe-status]"))) {
       const c = core(), el = current(); if (!el) return;
@@ -312,14 +370,28 @@
       const c = core(), el = current(); if (!el) return;
       c.commit(); el.photos.splice(Number(b.getAttribute("data-pe-phdel")), 1); c.persist("elem-photo-del"); openEditor(el); return;
     }
+    if ((b = t.closest("[data-po-kind]"))) {
+      const c = core(), op = currentOpening(); if (!op) return;
+      const kind = b.getAttribute("data-po-kind");
+      const d = EP.Plan.Core.OPENING_KINDS[kind]; if (!d) return;
+      c.commit();
+      op.kind = kind; op.type = d.win ? "window" : "door";
+      if (op.height == null) op.height = d.h;
+      op.sill = d.win ? (op.sill || d.sill) : 0;
+      c.persist("opening-kind"); openOpeningEditor(op); return;
+    }
     if (t.closest("[data-po-apply]")) {
       const c = core(), op = currentOpening(); if (!op) return;
       const wall = G().wallById(c.project, op.wallId);
       c.commit();
       const off = Number(($("#ep-po-off") || {}).value), wd = Number(($("#ep-po-w") || {}).value);
+      const hd = Number(($("#ep-po-h") || {}).value), sill = Number(($("#ep-po-sill") || {}).value);
       if (Number.isFinite(wd) && wd >= 40) op.width = wd;
+      if (Number.isFinite(hd) && hd >= 40) op.height = hd;
+      if (Number.isFinite(sill) && sill >= 0) op.sill = sill;
       if (Number.isFinite(off) && wall) op.offset = Math.max(0, Math.min(wall.len - op.width, off));
-      c.persist("opening-edit"); openOpeningEditor(op); return;
+      c.persist("opening-edit");
+      S.selId = null; rooms().closeSheet(); rooms().renderScene(); return; // ✓ применить и закрыть
     }
     if (t.closest("[data-po-hinge]")) {
       const c = core(), op = currentOpening(); if (!op) return;
@@ -336,7 +408,8 @@
     }
     if ((b = t.closest("[data-pe-papply]"))) {
       const c = core(), pn = c.project.panels.find((x) => x.id === b.getAttribute("data-pe-papply")); if (!pn) return;
-      c.commit(); pn.name = (($("#ep-pe-pname") || {}).value || "Щит").trim() || "Щит"; c.persist("panel-edit"); return;
+      c.commit(); pn.name = (($("#ep-pe-pname") || {}).value || "Щит").trim() || "Щит"; c.persist("panel-edit");
+      S.selId = null; rooms().closeSheet(); rooms().renderScene(); return; // ✓ применить и закрыть
     }
     if ((b = t.closest("[data-pe-pdel]"))) {
       const c = core(), id = b.getAttribute("data-pe-pdel");
@@ -351,5 +424,5 @@
   function deselect() { S.selId = null; }
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Elements = { TYPES, CFG, onModeEnter, placeAt, hitAt, openEditor, openPanelEditor, openOpeningEditor, selectedId, deselect };
+  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, onModeEnter, onOpeningModeEnter, placeAt, placeOpening, openingNum, hitAt, openEditor, openPanelEditor, openOpeningEditor, selectedId, deselect };
 })();
