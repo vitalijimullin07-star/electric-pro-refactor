@@ -23,6 +23,9 @@
     panelHeight: 150,     // см — низ щита (для вертикалей трасс)
     wallMaterial: "Бетон", // материал стен по умолчанию (для расчёта штробления)
     materials: ["Бетон", "Кирпич", "Панель", "Мягкий"], // как в движке пула
+    // материалы конструкций (стены/перегородки): для перегородок из ГКЛ/ПГП и пр.
+    partitionMaterials: ["Бетон", "Кирпич", "Газоблок", "Пеноблок", "ГКЛ", "ПГП", "Дерево"],
+    partitionThickness: { "Бетон": 12, "Кирпич": 12, "Газоблок": 10, "Пеноблок": 10, "ГКЛ": 8, "ПГП": 8, "Дерево": 8 },
     routeType: "ceiling",  // потолок/пол — как ведём трассы
     breakers: [10, 16, 20, 25, 32, 40, 63], // номиналы автоматов, А
     circuitColors: ["#ef4444", "#f59e0b", "#22c55e", "#3b82f6", "#a855f7", "#ec4899", "#14b8a6", "#eab308"],
@@ -83,9 +86,19 @@
     return { id: uid("rt"), layer: layer || "routes", routeType: routeType || "ceiling", points: points || [], fromId: fromId || null, toId: toId || null, throughWalls: [] };
   }
   function newCircuit(name, color, breaker) { return { id: uid("cc"), name: name || "Линия", color: color || DEFAULTS.circuitColors[0], breaker: breaker || 16, rcd: false }; }
-  function newOpening(type, wallId, offset, width) {
+  // Проёмы: дверь / раздвижная / окно / балконный блок. Размеры настраиваемые.
+  // height — высота проёма (см), sill — низ проёма от пола (окно ~90, дверь 0).
+  const OPENING_KINDS = {
+    door:    { w: 90,  h: 200, sill: 0,  win: false, pfx: "Д" },
+    sliding: { w: 140, h: 200, sill: 0,  win: false, pfx: "РД" },
+    window:  { w: 140, h: 140, sill: 90, win: true,  pfx: "О" },
+    balcony: { w: 180, h: 210, sill: 0,  win: false, pfx: "Б" }
+  };
+  function newOpening(kind, wallId, offset, width) {
     // hinge: у какого края петли ('a' — ближний угол), flip: сторона открывания (±1)
-    return { id: uid("op"), type: type === "window" ? "window" : "door", wallId, offset: offset || 0, width: width || (type === "window" ? 140 : 90), hinge: "a", flip: 1 };
+    const k = OPENING_KINDS[kind] ? kind : (kind === "window" ? "window" : "door");
+    const d = OPENING_KINDS[k];
+    return { id: uid("op"), kind: k, type: d.win ? "window" : "door", wallId, offset: offset || 0, width: width || d.w, height: d.h, sill: d.sill, hinge: "a", flip: 1 };
   }
   function newBeam(a, b, kind, width, material) {
     return { id: uid("bm"), a: a || { x: 0, y: 0 }, b: b || { x: 0, y: 0 }, width: width || DEFAULTS.wallThickness, kind: kind === "lintel" ? "lintel" : "beam", material: material || null };
@@ -157,6 +170,13 @@
     p.openings = p.openings || []; // проекты, сохранённые до появления проёмов
     p.beams = p.beams || [];
     p.circuits = p.circuits || [];
+    // бэкофилл новых полей проёмов (kind/height/sill) для старых проектов
+    p.openings.forEach((o) => {
+      if (!o.kind) o.kind = o.type === "window" ? "window" : "door";
+      const d = OPENING_KINDS[o.kind] || OPENING_KINDS.door;
+      if (o.height == null) o.height = d.h;
+      if (o.sill == null) o.sill = d.sill;
+    });
     S.project = p; S.undo = []; S.redo = [];
     emit("open");
     return p;
@@ -236,7 +256,7 @@
 
   EP.Plan = EP.Plan || {};
   EP.Plan.Core = {
-    DEFAULTS, uid,
+    DEFAULTS, uid, OPENING_KINDS,
     get project() { return S.project; },
     onChange,
     listProjects, createProject, openProject, closeProject, deleteProject, renameProject,

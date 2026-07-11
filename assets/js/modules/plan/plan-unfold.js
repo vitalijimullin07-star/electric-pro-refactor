@@ -27,16 +27,25 @@
   function wallElems(p, wallId) { return p.elements.filter((e) => e.wallId === wallId); }
   function circ(p, el) { return el.circuitId ? (p.circuits || []).find((c) => c.id === el.circuitId) : null; }
 
+  function roomWalls(p, wallId) {
+    const roomId = String(wallId).split(":")[0];
+    const room = (p.rooms || []).find((r) => r.id === roomId);
+    return room ? G().walls(room) : [];
+  }
   function open(wallId) {
     S.wallId = wallId;
     const p = core().project, w = G().wallById(p, wallId);
     if (!w) return;
     const TY = EL().TYPES;
+    const walls = roomWalls(p, wallId);
     rooms().openSheet(`<div class="ep-plan-srow"><b>${T.title} ${w.n}</b>
         <span>· ${G().fmtLen(w.len)} × ${G().fmtLen(wallH(p, wallId))}</span>
         <span class="ep-plan-flex"></span>
         <button type="button" class="ep-plan-mini ep-clickable" data-pu-full aria-label="Во весь экран">⤢</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-pu-close>✕</button></div>
+      <div class="ep-plan-srow ep-plan-unfwalls">Стена:${walls.map((ww) =>
+        `<button type="button" class="ep-plan-chip ep-clickable ${ww.id === wallId ? "on" : ""}" data-pu-wall="${esc(ww.id)}">${ww.n}</button>`).join("")}
+      </div>
       <div class="ep-plan-srow ep-plan-unftypes">${CFG.addTypes.map((k) =>
         `<button type="button" class="ep-plan-chip ep-clickable ${S.addType === k ? "on" : ""}" data-pu-type="${k}">${esc(TY[k].glyph)}</button>`).join("")}
       </div>
@@ -91,6 +100,17 @@
     for (let x = 100; x < L; x += 100) svg.appendChild(svgEl("line", { x1: x, y1: 0, x2: x, y2: H, class: "ep-plan-unfgrid", "stroke-width": kk }));
     for (let y = H - 50; y > 0; y -= 50) svg.appendChild(svgEl("line", { x1: 0, y1: y, x2: L, y2: y, class: "ep-plan-unfgrid", "stroke-width": kk }));
     svg.appendChild(svgEl("line", { x1: 0, y1: H, x2: L, y2: H, class: "ep-plan-unffloor", "stroke-width": 2.5 * kk }));
+
+    // проёмы на этой стене: окно/дверь/балкон — прямоугольник по (offset..+width) × (sill..+height)
+    (p.openings || []).filter((o) => o.wallId === S.wallId).forEach((op) => {
+      const oh = op.height || (op.type === "window" ? 140 : 200);
+      const sill = op.sill || 0;
+      const yTop = H - (sill + oh), hgt = Math.min(oh, H - sill);
+      const isWin = op.type === "window" || op.kind === "window" || op.kind === "balcony";
+      svg.appendChild(svgEl("rect", { x: op.offset, y: yTop, width: op.width, height: hgt, class: "ep-plan-unfopen" + (isWin ? " is-win" : ""), "stroke-width": 1.5 * kk }));
+      const meta = (EL().OPEN_TYPES || {})[op.kind || (isWin ? "window" : "door")] || {};
+      svg.appendChild(svgEl("text", { x: op.offset + op.width / 2, y: yTop + 12 * kk, "font-size": 10 * kk, "text-anchor": "middle", class: "ep-plan-unfopent" }, (EL().openingNum ? EL().openingNum(p, op) : (meta.glyph || ""))));
+    });
 
     const TY = EL().TYPES;
     const els = wallElems(p, S.wallId).slice().sort((a, b) => a.offset - b.offset);
@@ -170,6 +190,7 @@
     const t = e.target; let b;
     if (t.closest("[data-pu-close]")) { close(); rooms().closeSheet(); const sh = $("#ep-plan-sheet"); if (sh) sh.classList.remove("ep-plan-sheet-full"); return; }
     if (t.closest("[data-pu-full]")) return toggleFull();
+    if ((b = t.closest("[data-pu-wall]"))) { open(b.getAttribute("data-pu-wall")); return; }
     if ((b = t.closest("[data-pu-type]"))) {
       S.addType = b.getAttribute("data-pu-type");
       document.querySelectorAll("[data-pu-type]").forEach((x) => x.classList.toggle("on", x === b));

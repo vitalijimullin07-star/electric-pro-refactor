@@ -276,3 +276,29 @@ body[data-visual-mode="day"] .ep-plan-wallband.mat-concrete, body[data-visual-mo
 body[data-visual-mode="day"] .ep-plan-unfwall { fill: rgba(71,85,105,.06); }
 body[data-visual-mode="day"] .ep-plan-unfdimL { stroke: #0284c7; }
 body[data-visual-mode="day"] .ep-plan-unfdimT { fill: #0369a1; }
+
+/* — v5: материалы конструкций, проёмы, номера, аккуратные слои, развёртка-стена — */
+/* аккуратный список слоёв: ровные строки, чекбокс слева */
+.ep-plan-layers .ep-plan-chk { display: flex; width: 100%; justify-content: flex-start; align-items: center; gap: 10px; padding: 3px 2px; }
+.ep-plan-layers .ep-plan-chk input { flex: none; }
+.ep-plan-layers .ep-plan-dot { flex: none; }
+
+/* материалы конструкций */
+.ep-plan-wallband.mat-block { stroke: #9a8f6a; }
+.ep-plan-wallband.mat-gkl { stroke: #86b7c9; stroke-dasharray: 26 8; }
+.ep-plan-wallband.mat-pgp { stroke: #b0a7c9; stroke-dasharray: 20 8; }
+.ep-plan-wallband.mat-wood { stroke: #b5793f; stroke-dasharray: 34 6; }
+.ep-plan-wallcorner.mat-block { fill: #9a8f6a; }
+.ep-plan-wallcorner.mat-gkl { fill: #86b7c9; }
+.ep-plan-wallcorner.mat-pgp { fill: #b0a7c9; }
+.ep-plan-wallcorner.mat-wood { fill: #b5793f; }
+
+/* номера проёмов на плане */
+.ep-plan-opnum { fill: #e2e8f0; font-family: system-ui; font-weight: 700; paint-order: stroke; stroke: rgba(15,23,42,.7); stroke-width: 2px; }
+body[data-visual-mode="day"] .ep-plan-opnum { fill: #0f172a; stroke: rgba(255,255,255,.7); }
+
+/* проёмы на развёртке стены */
+.ep-plan-unfopen { fill: rgba(56,189,248,.10); stroke: #38bdf8; }
+.ep-plan-unfopen.is-win { fill: rgba(56,189,248,.16); }
+.ep-plan-unfopent { fill: #7dd3fc; font-family: system-ui; font-weight: 700; }
+.ep-plan-unfwalls .ep-plan-chip { min-width: 30px; }

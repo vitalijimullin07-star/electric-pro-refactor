@@ -27,7 +27,7 @@
   // Автовыравнивание под 90°: если линия от prev почти вертикальна/горизонтальна — доводим
   G.orthoAdjust = (prev, p, ratio) => {
     if (!prev) return p;
-    const r = ratio == null ? 0.3 : ratio;
+    const r = ratio == null ? 0.36 : ratio;
     const dx = Math.abs(p.x - prev.x), dy = Math.abs(p.y - prev.y);
     if (dx <= dy * r) return { x: prev.x, y: p.y };
     if (dy <= dx * r) return { x: p.x, y: prev.y };
@@ -199,6 +199,18 @@
     return { x: w.a.x + (w.b.x - w.a.x) * t, y: w.a.y + (w.b.y - w.a.y) * t };
   };
   G.openingsOnWall = (project, wallId) => (project.openings || []).filter((o) => o.wallId === wallId);
+
+  // Точка элемента, СДВИНУТАЯ внутрь комнаты от стены (чтобы трасса не шла по стене
+  // и параллельные линии разных QF не ложились друг на друга). extra — доп. отступ (полоса).
+  G.elemInsetPoint = (project, el, extra) => {
+    const pt = G.elemPoint(project, el);
+    if (!pt || !pt.wall) return pt;
+    const fr = G.wallFrame(project, pt.wall);
+    if (!fr) return pt;
+    const th = Math.max(4, (project.settings && project.settings.wallThickness) || 10);
+    const d = th / 2 + (extra == null ? 12 : extra);
+    return { x: pt.x + fr.nrm.x * d, y: pt.y + fr.nrm.y * d, wall: pt.wall };
+  };
 
   // Локальный «репер» стены: направление вдоль (a→b), нормаль ВНУТРЬ комнаты, угол в градусах.
   // Нужно, чтобы точки/блоки отступали от стены внутрь и поворачивались вдоль неё.
