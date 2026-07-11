@@ -14,7 +14,7 @@
       poly: "Ставь точки по контуру. Замкни тапом в первую точку.",
       beam: "Балка/перегородка: тапни начало и конец, потом тяни концы.",
       elem: "Выбери тип в палитре и тапай по стене (свет/ТП — внутрь комнаты).",
-      opening: "Проёмы: выбери дверь/окно/раздвижную/балкон и тапни по стене.",
+      opening: "Проёмы: выбери дверь/окно/раздвижную/балкон и тапни по стене или перегородке.",
       ruler: "Тапни две точки — расстояние.",
       underlay: "Фото-план: загрузка, масштаб по известной длине, перенос."
     },
@@ -458,8 +458,9 @@
     }
     if (t.closest("[data-pr-beamdone]")) { clearBeamSel(); closeSheet(); renderScene(); return; }
     if ((el = t.closest("[data-pr-beamdel]"))) {
-      const c = core(); c.commit();
-      c.project.beams = (c.project.beams || []).filter((b) => b.id !== el.getAttribute("data-pr-beamdel"));
+      const c = core(), bid = el.getAttribute("data-pr-beamdel"); c.commit();
+      c.project.beams = (c.project.beams || []).filter((b) => b.id !== bid);
+      c.project.openings = (c.project.openings || []).filter((o) => o.wallId !== "beam:" + bid); // проёмы перегородки
       c.persist("beam-del"); clearBeamSel(); closeSheet(); renderScene(); return;
     }
   });

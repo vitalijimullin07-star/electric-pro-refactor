@@ -187,8 +187,17 @@
       const bw = Math.max(4, bm.width || wallTh);
       const mc = matClassOf(bm.material || (project.settings && project.settings.wallMaterial) || "Бетон");
       const sel = EP.Plan.Rooms && EP.Plan.Rooms.selectedBeamId && EP.Plan.Rooms.selectedBeamId() === bm.id;
-      // тело балки — полоса-стена; перемычка чуть светлее (штрих)
-      g.appendChild(el("path", { d: "M" + bm.a.x + " " + bm.a.y + " L" + bm.b.x + " " + bm.b.y, class: "ep-plan-wallband" + mc + (bm.kind === "lintel" ? " is-lintel-band" : "") + (sel ? " is-sel" : ""), "stroke-width": bw, fill: "none" }));
+      // тело перегородки — полоса-стена ЗА ВЫЧЕТОМ проёмов (окна/двери в перегородке)
+      const bwWall = G.beamWall(bm);
+      const bOpens = G.openingsOnWall(project, bwWall.id);
+      const spans = G.spansMinusOpenings(bwWall.len, bOpens);
+      const cls = "ep-plan-wallband" + mc + (bm.kind === "lintel" ? " is-lintel-band" : "") + (sel ? " is-sel" : "");
+      if (spans.length) {
+        spans.forEach(([s, e]) => {
+          const p1 = G.pointAtOffset(bwWall, s), p2 = G.pointAtOffset(bwWall, e);
+          g.appendChild(el("path", { d: "M" + p1.x + " " + p1.y + " L" + p2.x + " " + p2.y, class: cls, "stroke-width": bw, fill: "none" }));
+        });
+      }
       [bm.a, bm.b].forEach((v) => g.appendChild(el("circle", { cx: v.x, cy: v.y, r: bw / 2, class: "ep-plan-wallcorner" + mc + (sel ? " is-sel" : "") })));
       // ручки-концы, когда балка выбрана (тянуть пальцем)
       if (sel) [bm.a, bm.b].forEach((v) => g.appendChild(el("circle", { cx: v.x, cy: v.y, r: CFG.pointPx * 1.3 * k, class: "ep-plan-beamhandle" })));

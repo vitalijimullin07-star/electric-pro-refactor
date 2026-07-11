@@ -47,8 +47,19 @@
     }
     return out;
   };
+  // Перегородка/балка как «стена»: синтетический wall-объект (чтобы принимать проёмы)
+  G.beamWall = (beam) => {
+    if (!beam) return null;
+    const len = G.dist(beam.a, beam.b);
+    return { id: "beam:" + beam.id, beamId: beam.id, isBeam: true, roomId: null, i: 0, n: "перег.", a: beam.a, b: beam.b, len, mx: (beam.a.x + beam.b.x) / 2, my: (beam.a.y + beam.b.y) / 2 };
+  };
   G.wallById = (project, wallId) => {
-    const [roomId, iStr] = String(wallId || "").split(":");
+    const s = String(wallId || "");
+    if (s.slice(0, 5) === "beam:") {
+      const beam = (project.beams || []).find((b) => b.id === s.slice(5));
+      return beam ? G.beamWall(beam) : null;
+    }
+    const [roomId, iStr] = s.split(":");
     const room = (project.rooms || []).find((r) => r.id === roomId);
     if (!room) return null;
     return G.walls(room)[Number(iStr)] || null;
@@ -67,6 +78,13 @@
       const c = G.closestOnSeg(p, w.a, w.b);
       if (c.d <= maxD && (!best || c.d < best.hit.d)) best = { wall: w, hit: c, offset: Math.round(c.t * w.len) };
     }));
+    // перегородки/балки тоже принимают проёмы
+    (project.beams || []).forEach((bm) => {
+      const w = G.beamWall(bm);
+      const c = G.closestOnSeg(p, w.a, w.b);
+      const md = Math.max(maxD, (bm.width || 10) / 2);
+      if (c.d <= md && (!best || c.d < best.hit.d)) best = { wall: w, hit: c, offset: Math.round(c.t * w.len) };
+    });
     return best;
   };
   G.pointInPolygon = (p, pts) => {
