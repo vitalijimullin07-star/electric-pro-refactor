@@ -7,11 +7,12 @@
   window.EP = window.EP || {};
 
   const T = {
-    modes: { view: "☝", rect: "▭", poly: "⬠", elem: "🔌", ruler: "📏", underlay: "🖼" },
+    modes: { view: "☝", rect: "▭", poly: "⬠", beam: "▬", elem: "🔌", ruler: "📏", underlay: "🖼" },
     modeHint: {
       view: "Тап: точка — редактор, стена — развёртка, комната — свойства.",
       rect: "Тапни два противоположных угла комнаты.",
       poly: "Ставь точки по контуру. Замкни тапом в первую точку.",
+      beam: "Перемычка/балка на потолке: тапни начало и конец.",
       elem: "Выбери тип в палитре и тапай по стене (свет/ТП — внутрь комнаты).",
       ruler: "Тапни две точки — расстояние.",
       underlay: "Фото-план: загрузка, масштаб по известной длине, перенос."
@@ -37,12 +38,12 @@
   const R = {
     canvas: null, active: false,
     mode: "view", draft: { points: [] }, pendingRect: null, pendingPoly: null,
-    selectedRoomId: null, ruler: { a: null, b: null },
+    selectedRoomId: null, ruler: { a: null, b: null }, beamDraft: { a: null, b: null },
     umove: false, calib: { on: false, a: null, b: null }
   };
 
   // ---------- сцена ----------
-  function ui() { return { selectedRoomId: R.selectedRoomId, draft: R.draft, ruler: R.ruler }; }
+  function ui() { return { selectedRoomId: R.selectedRoomId, draft: R.draft, ruler: R.ruler, beamDraft: R.beamDraft }; }
   function renderScene() {
     if (!R.canvas || !EP.Plan.Render) return;
     EP.Plan.Render.draw(R.canvas, core().project, ui());
@@ -55,7 +56,7 @@
   function setMode(mode) {
     R.mode = mode;
     R.draft = { points: [] }; R.pendingRect = null; R.pendingPoly = null;
-    R.ruler = { a: null, b: null };
+    R.ruler = { a: null, b: null }; R.beamDraft = { a: null, b: null };
     R.calib = { on: false, a: null, b: null };
     setMove(false);
     document.querySelectorAll("[data-plan-mode]").forEach((b) => b.classList.toggle("on", b.getAttribute("data-plan-mode") === mode));
@@ -111,6 +112,19 @@
       renderScaled();
       return;
     }
+    if (R.mode === "beam") {
+      const snapped = G().snapSmart(p, w, step, CFG.cornerSnapCm);
+      if (!R.beamDraft.a) { R.beamDraft = { a: snapped, b: null }; renderScaled(); return; }
+      const end = G().orthoAdjust(R.beamDraft.a, snapped); // прямая балка под 90°
+      const c = core();
+      c.commit();
+      c.project.beams = c.project.beams || [];
+      c.project.beams.push(c.model.newBeam(R.beamDraft.a, end, "beam"));
+      c.persist("beam-add");
+      R.beamDraft = { a: null, b: null };
+      renderScene();
+      return;
+    }
     if (R.mode === "underlay") {
       if (R.calib.on) {
         if (!R.calib.a) R.calib.a = w;
@@ -134,6 +148,9 @@
       }
       EP.Plan.Elements.deselect();
     }
+    // балка/перемычка
+    const beam = beamAt(p, w, CFG.hitWallPx * k);
+    if (beam) { R.selectedRoomId = null; sheetBeam(beam); renderScene(); return; }
     const wallHit = G().wallAt(p, w, CFG.hitWallPx * k);
     if (wallHit && EP.Plan.Unfold) {
       R.selectedRoomId = null;
@@ -219,6 +236,24 @@
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pr-upldel>${U.del}</button>
       </div>
       <input id="ep-pr-uplfile" type="file" accept="image/*" hidden>`);
+  }
+  function beamAt(p, w, maxD) {
+    let best = null;
+    (p.beams || []).forEach((bm) => {
+      const c = G().closestOnSeg(w, bm.a, bm.b);
+      if (c.d <= Math.max(maxD, (bm.width || 20) / 2) && (!best || c.d < best.d)) best = { d: c.d, beam: bm };
+    });
+    return best && best.beam;
+  }
+  function sheetBeam(bm) {
+    openSheet(`<div class="ep-plan-srow"><b>${bm.kind === "lintel" ? "Перемычка" : "Балка"}</b> · ${G().fmtLen(G().dist(bm.a, bm.b))}</div>
+      <div class="ep-plan-srow">
+        <button type="button" class="ep-plan-chip ep-clickable ${bm.kind !== "lintel" ? "on" : ""}" data-pr-beamkind="beam">Балка</button>
+        <button type="button" class="ep-plan-chip ep-clickable ${bm.kind === "lintel" ? "on" : ""}" data-pr-beamkind="lintel">Перемычка</button>
+        <label class="ep-plan-range" style="flex:0 0 120px">Ширина, см<input type="number" inputmode="numeric" min="3" data-pr-beamw="${esc(bm.id)}" value="${Math.round(bm.width || 20)}"></label>
+      </div>
+      <div class="ep-plan-srow ep-plan-sbtns"><button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pr-beamdel="${esc(bm.id)}">✕ Удалить</button></div>`);
+    R.selectedBeam = bm.id;
   }
   function sheetLayers() {
     const p = core().project; if (!p) return;
@@ -360,6 +395,16 @@
     if (t.closest("[data-pr-uplmove]")) { setMove(!R.umove); sheetUnderlay(); return; }
     if (t.closest("[data-pr-calib]")) { R.calib = R.calib.on ? { on: false, a: null, b: null } : { on: true, a: null, b: null }; R.ruler = { a: null, b: null }; setMove(false); sheetUnderlay(); renderScaled(); return; }
     if (t.closest("[data-pr-calib-apply]")) return applyCalib();
+    if ((el = t.closest("[data-pr-beamkind]"))) {
+      const c = core(), bm = (c.project.beams || []).find((b) => b.id === R.selectedBeam);
+      if (bm) { c.commit(); bm.kind = el.getAttribute("data-pr-beamkind"); c.persist("beam-kind"); sheetBeam(bm); }
+      return;
+    }
+    if ((el = t.closest("[data-pr-beamdel]"))) {
+      const c = core(); c.commit();
+      c.project.beams = (c.project.beams || []).filter((b) => b.id !== el.getAttribute("data-pr-beamdel"));
+      c.persist("beam-del"); closeSheet(); renderScene(); return;
+    }
   });
 
   document.addEventListener("change", (e) => {
@@ -374,6 +419,10 @@
   document.addEventListener("input", (e) => {
     if (!R.active) return;
     if (e.target.id === "ep-pr-uplop") { const p = core().project; if (p.underlay) { p.underlay.opacity = Number(e.target.value) / 100; renderScene(); } }
+    if (e.target.getAttribute && e.target.getAttribute("data-pr-beamw")) {
+      const c = core(), bm = (c.project.beams || []).find((b) => b.id === e.target.getAttribute("data-pr-beamw"));
+      if (bm) { bm.width = Math.max(3, Number(e.target.value) || 20); renderScene(); c.persist("beam-w"); }
+    }
   });
 
   // ---------- подключение из plan-mount ----------

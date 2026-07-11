@@ -66,6 +66,7 @@
       underlay: null, // { imageDataUri, scale (см/пиксель), opacity }
       rooms: [], panels: [], elements: [], routes: [], circuits: [],
       openings: [], // двери и окна в стенах
+      beams: [],    // перемычки/балки на потолке (свободные отрезки)
       layers: blankLayers(),
       versions: [], // { at, note } — история версий (заполняется в следующих слоях)
       createdAt: now(), updatedAt: now()
@@ -85,6 +86,9 @@
   function newOpening(type, wallId, offset, width) {
     // hinge: у какого края петли ('a' — ближний угол), flip: сторона открывания (±1)
     return { id: uid("op"), type: type === "window" ? "window" : "door", wallId, offset: offset || 0, width: width || (type === "window" ? 140 : 90), hinge: "a", flip: 1 };
+  }
+  function newBeam(a, b, kind) {
+    return { id: uid("bm"), a: a || { x: 0, y: 0 }, b: b || { x: 0, y: 0 }, width: 20, kind: kind === "lintel" ? "lintel" : "beam" };
   }
 
   // ---------- состояние ----------
@@ -151,6 +155,7 @@
     if (!p) p = await cloudPullProject(id); // проект, созданный на другом устройстве
     if (!p) return null;
     p.openings = p.openings || []; // проекты, сохранённые до появления проёмов
+    p.beams = p.beams || [];
     p.circuits = p.circuits || [];
     S.project = p; S.undo = []; S.redo = [];
     emit("open");
@@ -237,6 +242,6 @@
     listProjects, createProject, openProject, closeProject, deleteProject, renameProject,
     commit, undo, redo, canUndo, canRedo, persist,
     exportJSON, importJSON, cloudPullIndex,
-    model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening }
+    model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening, newBeam }
   };
 })();
