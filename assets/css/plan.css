@@ -308,3 +308,7 @@ body[data-visual-mode="day"] .ep-plan-opnum { fill: #0f172a; stroke: rgba(255,25
 .ep-plan-unfpanelt { fill: #fff; font-family: system-ui; font-weight: 700; }
 .ep-plan-unfopen { cursor: pointer; }
 .ep-plan-unfold.is-full .ep-plan-unfsvg, .ep-plan-sheet-full .ep-plan-unfsvg { height: 80vh; height: 80dvh; }
+
+/* — v7: штробы (вход в подрозетник) — */
+.ep-plan-entrymark { fill: #f59e0b; stroke: #fff; stroke-width: .6px; }
+.ep-plan-unfentry { fill: #f59e0b; stroke: #0b1220; stroke-width: .8px; }

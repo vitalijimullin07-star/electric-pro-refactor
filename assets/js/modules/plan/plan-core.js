@@ -27,6 +27,8 @@
     partitionMaterials: ["Бетон", "Кирпич", "Газоблок", "Пеноблок", "ГКЛ", "ПГП", "Дерево"],
     partitionThickness: { "Бетон": 12, "Кирпич": 12, "Газоблок": 10, "Пеноблок": 10, "ГКЛ": 8, "ПГП": 8, "Дерево": 8 },
     routeType: "ceiling",  // потолок/пол — как ведём трассы
+    chaseW: 25, chaseH: 30,     // мм — сечение штробы под провод (стандарт), редактируется
+    tpChaseW: 50, tpChaseH: 50, // мм — штроба тёплого пола (в пол)
     breakers: [10, 16, 20, 25, 32, 40, 63], // номиналы автоматов, А
     circuitColors: ["#ef4444", "#f59e0b", "#22c55e", "#3b82f6", "#a855f7", "#ec4899", "#14b8a6", "#eab308"],
     layers: [
@@ -64,6 +66,8 @@
         panelHeight: DEFAULTS.panelHeight,
         wallMaterial: DEFAULTS.wallMaterial,
         routeType: DEFAULTS.routeType,
+        chaseW: DEFAULTS.chaseW, chaseH: DEFAULTS.chaseH,
+        tpChaseW: DEFAULTS.tpChaseW, tpChaseH: DEFAULTS.tpChaseH,
         rules: {} // пороги проверок (Слой 6), пусто = дефолты plan-rules
       },
       underlay: null, // { imageDataUri, scale (см/пиксель), opacity }
@@ -80,7 +84,7 @@
   }
   function newPanel(x, y, name) { return { id: uid("pn"), x: x || 0, y: y || 0, name: name || "Щит" }; }
   function newElement(type, wallId, offset, height, layer) {
-    return { id: uid("el"), type, wallId, offset: offset || 0, height: height || 0, layer: layer || "power", status: "planned", circuitId: null, photos: [], params: {} };
+    return { id: uid("el"), type, wallId, offset: offset || 0, height: height || 0, layer: layer || "power", status: "planned", circuitId: null, entryPost: null, photos: [], params: {} };
   }
   function newRoute(layer, routeType, points, fromId, toId) {
     return { id: uid("rt"), layer: layer || "routes", routeType: routeType || "ceiling", points: points || [], fromId: fromId || null, toId: toId || null, throughWalls: [] };

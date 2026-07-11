@@ -143,6 +143,11 @@
         const step2 = 18 * kk, bw = items.length * step2 + 6 * kk, bh = 24 * kk;
         gr.appendChild(svgEl("rect", { x: x - bw / 2, y: y - bh / 2, width: bw, height: bh, rx: 5 * kk, fill: col, class: "ep-plan-unfshape" }));
         items.forEach((it, i) => gr.appendChild(svgEl("text", { x: x - bw / 2 + 3 * kk + step2 * i + step2 / 2, y, "font-size": 9 * kk, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfglyph" }, (TY[it] || {}).glyph || "?")));
+        // прозрачные зоны постов — тап по посту задаёт вход штробы
+        items.forEach((it, i) => gr.appendChild(svgEl("rect", { "data-pu-post": i, x: x - bw / 2 + 3 * kk + step2 * i, y: y - bh / 2, width: step2, height: bh, fill: "transparent" })));
+        // метка входа штробы под выбранным постом
+        const eIdx = G().blockEntryIndex(el);
+        gr.appendChild(svgEl("circle", { cx: x - bw / 2 + 3 * kk + step2 * eIdx + step2 / 2, cy: y + bh / 2 + 5 * kk, r: 3 * kk, class: "ep-plan-unfentry" }));
       } else {
         gr.appendChild(svgEl("circle", { cx: x, cy: y, r: 13 * kk, fill: col, class: "ep-plan-unfshape" }));
         gr.appendChild(svgEl("text", { x, y, "font-size": 10 * kk, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfglyph" }, (TY[el.type] || {}).glyph || "?"));
@@ -176,8 +181,10 @@
       if (g) {
         const el = p.elements.find((x) => x.id === g.getAttribute("data-pu-el"));
         if (!el) return;
+        const pg = e.target.closest && e.target.closest("[data-pu-post]");
+        const postIdx = pg ? Number(pg.getAttribute("data-pu-post")) : null;
         core().commit();
-        S.drag = { el, moved: false };
+        S.drag = { el, moved: false, postIdx };
         svg.setPointerCapture(e.pointerId);
       } else if (pt.x >= 0 && pt.x <= w.len && pt.y >= 0 && pt.y <= H) {
         const c = core(), TY = EL().TYPES[S.addType];
@@ -198,7 +205,14 @@
       S.drag.el.height = G().snap(Math.max(0, Math.min(H, H - pt.y)), step);
       drawStrip(); rooms().renderScene();
     });
-    const done = () => { if (!S.drag) return; if (S.drag.moved) core().persist("elem-move"); S.drag = null; };
+    const done = () => {
+      if (!S.drag) return;
+      if (S.drag.moved) core().persist("elem-move");
+      else if (S.drag.postIdx != null && S.drag.el.type === "block") { // тап по посту — вход штробы
+        S.drag.el.entryPost = S.drag.postIdx; core().persist("block-entry"); drawStrip(); rooms().renderScene();
+      }
+      S.drag = null;
+    };
     svg.addEventListener("pointerup", done);
     svg.addEventListener("pointercancel", done);
   }
