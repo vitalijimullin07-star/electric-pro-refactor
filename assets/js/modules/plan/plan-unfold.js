@@ -241,9 +241,11 @@
         const p = core().project, c = core(), step = p.settings.gridStep, pt = toWorld(svg, e.clientX, e.clientY);
         if (pending.kind === "open") { const op = (p.openings || []).find((o) => o.id === pending.id); if (op && EL().openOpeningEditor) EL().openOpeningEditor(op); }
         else if (pending.kind === "empty" && pt.x >= 0 && pt.x <= w.len) {
-          if (isOpenKind(S.addType)) { // добавить проём
+          if (isOpenKind(S.addType)) { // добавить проём (в пределах стены)
             c.commit();
-            const op = c.model.newOpening(S.addType, S.wallId, G().snap(Math.max(0, pt.x), step), undefined);
+            const dw = (EP.Plan.Core.OPENING_KINDS[S.addType] || {}).w || 90;
+            const off = G().snap(Math.max(0, Math.min(w.len - dw, pt.x - dw / 2)), step);
+            const op = c.model.newOpening(S.addType, S.wallId, Math.max(0, off), undefined);
             p.openings.push(op); c.persist("opening-add"); drawStrip(); rooms().renderScene();
           } else if (pt.y >= 0 && pt.y <= H) { // добавить механизм
             const TYd = EL().TYPES[S.addType];
