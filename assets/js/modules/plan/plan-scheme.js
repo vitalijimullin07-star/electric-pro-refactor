@@ -61,6 +61,36 @@
     };
   }
 
+  // ---- подбор корпуса щита по числу модулей и бренду ----
+  function circuitModules(c) {
+    const p3 = c.poles === 3;
+    if (c.rcd) return p3 ? 4 : 2; // дифавтомат
+    return p3 ? 3 : 1;            // автомат
+  }
+  function neededModules(p) {
+    const s = p.settings;
+    let m = s.phases === 3 ? 3 : 1;         // вводной автомат
+    if (s.mainRcd) m += s.phases === 3 ? 4 : 2;
+    (p.circuits || []).forEach((c) => { m += circuitModules(c); });
+    m += Math.max(0, s.panelReserve || 0);  // запас
+    return m;
+  }
+  function pickEnclosure(brand, needed) {
+    const boxes = EP.Plan.Core.DEFAULTS.panelBoxes;
+    const b = boxes[brand] || boxes.IEK;
+    const keys = Object.keys(b.sizes).map(Number).sort((x, y) => x - y);
+    let cap = keys.find((k) => k >= needed), overflow = false;
+    if (cap == null) { cap = keys[keys.length - 1]; overflow = true; }
+    const d = b.sizes[String(cap)];
+    return { brand: (boxes[brand] ? brand : "IEK"), modules: cap, rows: Math.ceil(cap / b.rowCap), w: d[0], h: d[1], depth: d[2], overflow };
+  }
+  function recomputePanel(p) {
+    const need = neededModules(p);
+    const enc = pickEnclosure(p.settings.panelBrand || "IEK", need);
+    p.settings.panelBox = { wmm: enc.w, hmm: enc.h, dmm: enc.depth, modules: enc.modules, needed: need, rows: enc.rows, brand: enc.brand, overflow: enc.overflow };
+    return p.settings.panelBox;
+  }
+
   // ---- панель ----
   function open() {
     const p = core().project; if (!p) return;
@@ -89,11 +119,16 @@
 
   function draw() {
     const host = $("#ep-psc-scroll"); if (!host || !window.ShieldSchemeSVG) return;
+    const p = core().project;
+    // пересчёт корпуса щита; если изменился — сохраняем и обновляем щит на плане
+    const before = JSON.stringify(p.settings.panelBox);
+    recomputePanel(p);
+    if (JSON.stringify(p.settings.panelBox) !== before) { core().persist("panel-box"); if (rooms().renderScene) rooms().renderScene(); }
     host.innerHTML = "";
     const svg = document.createElementNS(NS, "svg");
     svg.setAttribute("class", "ep-plan-schemesvg");
     host.appendChild(svg);
-    try { window.ShieldSchemeSVG.render(svg, buildTree(core().project)); }
+    try { window.ShieldSchemeSVG.render(svg, buildTree(p)); }
     catch (e) { host.innerHTML = `<div class="ep-plan-modehint">Не удалось нарисовать схему: ${esc(e.message)}</div>`; }
   }
 
@@ -113,6 +148,11 @@
         <span class="ep-plan-flex"></span>
         <button type="button" class="ep-plan-mini ep-plan-danger ep-clickable" data-psc-del="${esc(c.id)}">✕</button>
       </div>`).join("");
+    const brands = Object.keys(EP.Plan.Core.DEFAULTS.panelBoxes);
+    const bx = s.panelBox || {};
+    const boxLine = bx.modules
+      ? `Щит: <b>${bx.brand}</b> · нужно ${bx.needed} мод → корпус <b>${bx.modules} мод</b>${bx.overflow ? " (не хватает — 2 щита)" : ""} · ${bx.wmm}×${bx.hmm}×${bx.dmm} мм · ${bx.rows} ${bx.rows === 1 ? "ряд" : "ряда"}`
+      : "Щит: —";
     box.innerHTML = `<div class="ep-plan-srow"><b>Ввод и группы</b></div>
       <div class="ep-plan-srow">
         <button type="button" class="ep-plan-chip ep-clickable ${s.phases !== 3 ? "on" : ""}" data-psc-ph="1">1 фаза</button>
@@ -121,6 +161,11 @@
         <label class="ep-plan-chk"><input type="checkbox" data-psc-meter ${s.meter ? "checked" : ""}>Счётчик</label>
         <label class="ep-plan-chk"><input type="checkbox" data-psc-mainrcd ${s.mainRcd ? "checked" : ""}>Вводное УЗО</label>
       </div>
+      <div class="ep-plan-srow">Корпус:
+        <select data-psc-brand class="ep-plan-sel">${brands.map((b) => `<option value="${esc(b)}" ${s.panelBrand === b ? "selected" : ""}>${esc(b)}</option>`).join("")}</select>
+        <label class="ep-plan-chk">Запас, мод<input type="number" inputmode="numeric" min="0" data-psc-res value="${Math.round(s.panelReserve || 0)}" style="width:56px"></label>
+      </div>
+      <div class="ep-plan-srow ep-plan-rlens">${boxLine}</div>
       ${rows || `<div class="ep-plan-modehint">Линий (QF) нет. Назначь линии точкам в 🔌 или добавь ниже.</div>`}
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="btn btn-primary ep-clickable" data-psc-add>+ линия</button>
@@ -164,6 +209,8 @@
     const brk = ga("data-psc-brk"); if (brk) { const cc = c.project.circuits.find((x) => x.id === brk); if (cc) { c.commit(); cc.breaker = Number(t.value) || 16; c.persist("scheme-brk"); draw(); } return; }
     const rcd = ga("data-psc-rcd"); if (rcd) { const cc = c.project.circuits.find((x) => x.id === rcd); if (cc) { c.commit(); cc.rcd = !!t.checked; c.persist("scheme-rcd"); draw(); } return; }
     const cab = ga("data-psc-cab"); if (cab) { const cc = c.project.circuits.find((x) => x.id === cab); if (cc) { c.commit(); cc.cable = t.value || null; c.persist("scheme-cab"); draw(); } return; }
+    if (t.hasAttribute && t.hasAttribute("data-psc-brand")) { c.commit(); c.project.settings.panelBrand = t.value; c.persist("scheme-brand"); refresh(); return; }
+    if (t.hasAttribute && t.hasAttribute("data-psc-res")) { c.commit(); c.project.settings.panelReserve = Math.max(0, Number(t.value) || 0); c.persist("scheme-res"); refresh(); return; }
   });
   document.addEventListener("input", (e) => {
     if (!rooms() || !rooms().isActive() || !isOpen()) return;

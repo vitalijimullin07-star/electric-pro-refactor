@@ -307,11 +307,15 @@
       }
       g.appendChild(grp);
     });
+    const pbox = project.settings && project.settings.panelBox;
     (project.panels || []).forEach((pn) => {
-      const s2 = 14 * k;
+      // габарит щита = реальный корпус (мм→см), иначе типовой квадрат
+      const wc = pbox && pbox.wmm ? pbox.wmm / 10 : 28;
+      const hc = pbox && pbox.hmm ? pbox.hmm / 10 : 20;
       const grp = el("g", { class: "ep-plan-panel" + (pn.id === selId ? " is-sel" : "") });
-      grp.appendChild(el("rect", { x: pn.x - s2, y: pn.y - s2, width: s2 * 2, height: s2 * 2, rx: 3 * k, "stroke-width": sw * 0.8 }));
+      grp.appendChild(el("rect", { x: pn.x - wc / 2, y: pn.y - hc / 2, width: wc, height: hc, rx: 2, "stroke-width": sw * 0.8 }));
       grp.appendChild(el("text", { x: pn.x, y: pn.y, "font-size": 12 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph" }, "Щ"));
+      if (pbox && pbox.modules) grp.appendChild(el("text", { x: pn.x, y: pn.y + hc / 2 + 7 * k, "font-size": 8 * k, "text-anchor": "middle", class: "ep-plan-dim" }, pbox.modules + " мод"));
       g.appendChild(grp);
     });
 

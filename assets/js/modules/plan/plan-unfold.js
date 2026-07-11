@@ -117,7 +117,9 @@
     (p.panels || []).forEach((pn) => {
       const c = G().closestOnSeg({ x: pn.x, y: pn.y }, w.a, w.b);
       if (c.d > 60) return; // щит не на этой стене
-      const px = c.t * L, ph = p.settings.panelHeight || 150, pw = 36, phh = 60;
+      const box = p.settings.panelBox;
+      const px = c.t * L, ph = p.settings.panelHeight || 150;
+      const pw = box && box.wmm ? box.wmm / 10 : 36, phh = box && box.hmm ? box.hmm / 10 : 60;
       const py = H - ph;
       svg.appendChild(svgEl("rect", { x: px - pw / 2, y: py - phh / 2, width: pw, height: phh, rx: 3, class: "ep-plan-unfpanel", "stroke-width": 1.5 * kk }));
       svg.appendChild(svgEl("text", { x: px, y: py, "font-size": 12 * kk, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfpanelt" }, "Щ"));
