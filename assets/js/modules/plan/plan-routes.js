@@ -68,24 +68,31 @@
     const juncts = (p.elements || []).filter(isJunction).map((el) => ({ kind: "junction", id: el.id, el, circuitId: el.circuitId, pos: G().elemPoint(p, el) })).filter((n) => n.pos);
     const nodes = panels.concat(juncts);
 
-    // 1) точки -> ближайший узел (той же линии, если есть)
+    // 1) точки -> узел СВОЕЙ линии (QF): дерево QF1 отдельно от QF2.
+    //    точка с линией идёт только к распайке своей линии или к щиту (не к чужой QF);
+    //    точка без линии — к любой распайке или щиту.
     points.forEach((el) => {
       const pos = G().elemPoint(p, el);
       if (!pos) return;
-      let target = null;
-      if (el.circuitId) target = nearest(pos, nodes, (n) => n.circuitId === el.circuitId);
-      if (!target) target = nearest(pos, juncts.length ? nodes : panels); // есть распайки — можно к любой; иначе только к щиту
-      if (!target) target = nearest(pos, panels);
+      let cand;
+      if (el.circuitId) {
+        const sameC = juncts.filter((n) => n.circuitId === el.circuitId);
+        cand = (sameC.length ? sameC : []).concat(panels);
+      } else {
+        cand = (juncts.length ? juncts : []).concat(panels);
+      }
+      const target = nearest(pos, cand);
       if (!target) return;
       addRoute(c, p, el, pos, target.pos, el.circuitId, colorOf(p, el));
     });
 
-    // 2) распайки -> дерево к щиту (каждая к ближайшему узлу строго ближе к щиту)
+    // 2) распайки -> дерево к щиту. Распайка с линией предпочитает узлы своей QF
+    //    (ближе к щиту), иначе — щит. Без цикла: сортировка по расстоянию до щита.
     const panelDist = (pos) => { const n = nearest(pos, panels); return n ? Math.hypot(pos.x - n.pos.x, pos.y - n.pos.y) : Infinity; };
     const js = juncts.map((n) => ({ n, d: panelDist(n.pos) })).sort((a, b) => a.d - b.d);
     js.forEach(({ n, d }) => {
-      const closer = panels.concat(js.filter((x) => x.d < d - 1).map((x) => x.n));
-      const target = nearest(n.pos, closer);
+      const closerJ = js.filter((x) => x.d < d - 1 && (!n.circuitId || x.n.circuitId === n.circuitId)).map((x) => x.n);
+      const target = nearest(n.pos, panels.concat(closerJ));
       if (!target) return;
       addRoute(c, p, n.el, n.pos, target.pos, n.circuitId, colorOf(p, n.el));
     });

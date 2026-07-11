@@ -75,7 +75,8 @@
       const closed = pts.length >= 3;
       const mat = room.material || (project.settings && project.settings.wallMaterial) || "Бетон";
       const matClass = { "Бетон": " mat-concrete", "Кирпич": " mat-brick", "Панель": " mat-panel", "Мягкий": " mat-soft" }[mat] || "";
-      // стены — отрезками, с разрывами под двери/окна
+      // стены — ТОЛСТЫЕ (как на плане): band шириной = толщина стены + скруглённые углы
+      const th = Math.max(4, (project.settings && project.settings.wallThickness) || 10); // см
       const dParts = [];
       G.walls(room).forEach((w) => {
         const opens = G.openingsOnWall(project, w.id);
@@ -84,8 +85,12 @@
           dParts.push("M" + p1.x + " " + p1.y + " L" + p2.x + " " + p2.y);
         });
       });
-      if (dParts.length) g.appendChild(el("path", { d: dParts.join(" "), class: "ep-plan-wall" + matClass + (sel ? " is-sel" : ""), "stroke-width": sw, fill: "none" }));
-      else if (!closed) g.appendChild(el("path", { d: "M" + pts.map((p) => p.x + " " + p.y).join(" L"), class: "ep-plan-wall" + matClass, "stroke-width": sw, fill: "none" }));
+      if (dParts.length) {
+        g.appendChild(el("path", { d: dParts.join(" "), class: "ep-plan-wallband" + matClass + (sel ? " is-sel" : ""), "stroke-width": th, fill: "none" }));
+        if (closed) pts.forEach((v) => g.appendChild(el("circle", { cx: v.x, cy: v.y, r: th / 2, class: "ep-plan-wallcorner" + matClass + (sel ? " is-sel" : "") })));
+      } else if (!closed) {
+        g.appendChild(el("path", { d: "M" + pts.map((p) => p.x + " " + p.y).join(" L"), class: "ep-plan-wallband" + matClass, "stroke-width": th, fill: "none" }));
+      }
 
       if (closed && dimsOn) {
         const c = G.centroid(pts);
@@ -158,6 +163,18 @@
       }
     });
 
+    // балки / перемычки на потолке (свободные отрезки)
+    (project.beams || []).forEach((bm) => {
+      const bw = Math.max(3, bm.width || 20);
+      g.appendChild(el("line", { x1: bm.a.x, y1: bm.a.y, x2: bm.b.x, y2: bm.b.y, class: "ep-plan-beam" + (bm.kind === "lintel" ? " is-lintel" : ""), "stroke-width": bw }));
+    });
+    // черновик балки
+    if (ui && ui.beamDraft && ui.beamDraft.a) {
+      const d2 = ui.beamDraft;
+      if (d2.b) g.appendChild(el("line", { x1: d2.a.x, y1: d2.a.y, x2: d2.b.x, y2: d2.b.y, class: "ep-plan-beam ep-plan-beamdraft", "stroke-width": 20 }));
+      g.appendChild(el("circle", { cx: d2.a.x, cy: d2.a.y, r: CFG.pointPx * k, class: "ep-plan-draftpt is-first" }));
+    }
+
     // размерные цепочки: привязки точек и проёмов к углам стены (слой «Размеры»)
     if (dimsOn) {
       (project.rooms || []).forEach((room) => {
@@ -211,6 +228,7 @@
     const bad = EP.Plan.Rules ? EP.Plan.Rules.badSet() : new Set();
     const selId = EP.Plan.Elements ? EP.Plan.Elements.selectedId() : null;
     const layerColor2 = (id) => (((project.layers || []).find((l) => l.id === id) || {}).color) || "#94a3b8";
+    const circ = (id) => (project.circuits || []).find((c) => c.id === id);
     (project.elements || []).forEach((elem) => {
       if (!layerOn(project, elem.layer)) return;
       const pt = EP.Plan.Geometry.elemPoint(project, elem);
@@ -238,6 +256,11 @@
         grp.appendChild(el("text", { x: pt.x, y: pt.y, "font-size": 10 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph" }, (TY[elem.type] || {}).glyph || "?"));
       }
       if (elem.status === "mounted") grp.appendChild(el("text", { x: pt.x + r0, y: pt.y - r0, "font-size": 10 * k, class: "ep-plan-eldone" }, "✓"));
+      // QF-подпись линии (обозначение автомата) над точкой
+      if (labelsOn && elem.circuitId) {
+        const cc = circ(elem.circuitId);
+        if (cc) grp.appendChild(el("text", { x: pt.x, y: pt.y - r0 - 5 * k, "font-size": 9 * k, "text-anchor": "middle", class: "ep-plan-qf", fill: cc.color }, cc.name));
+      }
       g.appendChild(grp);
     });
     (project.panels || []).forEach((pn) => {

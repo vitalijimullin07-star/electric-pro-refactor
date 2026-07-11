@@ -237,3 +237,38 @@ body[data-visual-mode="day"] .ep-plan-chaintext { fill: #dc2626; }
 .ep-plan-sel { padding: 5px 7px; border-radius: 8px; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.05); color: var(--text,#e8eef7); font: 600 12px system-ui; }
 body[data-visual-mode="day"] .ep-plan-sel { background:#fff; border-color:#cbd5e1; color:#0f172a; }
 body[data-visual-mode="day"] .ep-plan-junction { fill:#0284c7; stroke:#0f172a; }
+
+/* — v3: толстые стены, балки, QF, развёртка-fullscreen — */
+.ep-plan-wallband { stroke: #64748b; stroke-linecap: butt; }
+.ep-plan-wallband.is-sel { stroke: var(--accent, #38bdf8); }
+.ep-plan-wallband.mat-brick { stroke: #b06a3a; }
+.ep-plan-wallband.mat-panel { stroke: #7c8aa0; }
+.ep-plan-wallband.mat-soft { stroke: #8a94a6; }
+.ep-plan-wallcorner { fill: #64748b; }
+.ep-plan-wallcorner.is-sel { fill: var(--accent, #38bdf8); }
+.ep-plan-wallcorner.mat-brick { fill: #b06a3a; }
+.ep-plan-wallcorner.mat-panel { fill: #7c8aa0; }
+.ep-plan-wallcorner.mat-soft { fill: #8a94a6; }
+body[data-visual-mode="day"] .ep-plan-wallband, body[data-visual-mode="day"] .ep-plan-wallcorner { stroke: #64748b; fill: #64748b; }
+
+.ep-plan-beam { stroke: #a78bfa; stroke-dasharray: 14 8; stroke-linecap: round; opacity: .85; }
+.ep-plan-beam.is-lintel { stroke: #f0abfc; stroke-dasharray: 6 6; }
+.ep-plan-beamdraft { opacity: .5; }
+.ep-plan-qf { font-family: system-ui; font-weight: 700; }
+
+/* развёртка v2 */
+.ep-plan-unfsvg { width: 100%; height: 200px; display: block; }
+.ep-plan-unfold.is-full .ep-plan-unfsvg, .ep-plan-sheet-full .ep-plan-unfsvg { height: 62vh; height: 62dvh; }
+.ep-plan-sheet-full { max-height: 92% !important; }
+.ep-plan-unfwall { fill: rgba(148,163,184,.10); stroke: rgba(148,163,184,.5); stroke-width: 1; }
+.ep-plan-unfgrid { stroke: rgba(148,163,184,.16); }
+.ep-plan-unffloor { stroke: #7c8aa0; }
+.ep-plan-unfshape { stroke: rgba(255,255,255,.85); stroke-width: .6; }
+.ep-plan-unfel.is-done .ep-plan-unfshape { stroke: #34d399; stroke-width: 1.4; }
+.ep-plan-unfglyph { fill: #06121f; font-family: system-ui; font-weight: 700; }
+.ep-plan-unfqf { font-family: system-ui; font-weight: 700; }
+.ep-plan-unfdimL { stroke: #38bdf8; opacity: .7; }
+.ep-plan-unfdimT { fill: #7dd3fc; font-family: system-ui; font-weight: 600; }
+body[data-visual-mode="day"] .ep-plan-unfwall { fill: rgba(71,85,105,.06); }
+body[data-visual-mode="day"] .ep-plan-unfdimL { stroke: #0284c7; }
+body[data-visual-mode="day"] .ep-plan-unfdimT { fill: #0369a1; }

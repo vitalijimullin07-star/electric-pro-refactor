@@ -288,7 +288,7 @@
       c.commit();
       const colors = EP.Plan.Core.DEFAULTS.circuitColors;
       const cs = c.project.circuits;
-      const circ = c.model.newCircuit("Линия " + (cs.length + 1), colors[cs.length % colors.length], 16);
+      const circ = c.model.newCircuit("QF" + (cs.length + 1), colors[cs.length % colors.length], 16);
       cs.push(circ); el.circuitId = circ.id;
       c.persist("circuit-add"); openEditor(el); return;
     }
