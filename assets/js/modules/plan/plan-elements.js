@@ -261,6 +261,8 @@
   // «Сборка блока»: рамка с постами (как на бумажных схемах — 1-6 в общей рамке)
   function blockHtml(el) {
     const items = (el.params && el.params.items) || [];
+    const autoIdx = G().blockEntryIndex ? G().blockEntryIndex(el) : 0;
+    const entrySet = el.entryPost != null;
     return `<div class="ep-plan-srow"><b>${T.blockTitle}</b><span class="ep-plan-flex"></span><span>${T.blockPosts(items.length, CFG.blockMax)}</span></div>
       <div class="ep-plan-blockframe">${items.map((k, i) =>
         `<button type="button" class="ep-plan-post ep-clickable" data-pe-bdel="${i}" aria-label="Убрать пост ${esc((TYPES[k] || {}).name || k)}">${esc((TYPES[k] || {}).glyph || "?")}</button>`).join("")}
@@ -268,7 +270,11 @@
       <div class="ep-plan-srow">${T.blockAdd}
         ${BLOCK_TYPES.map((k) => `<button type="button" class="ep-plan-chip ep-clickable" data-pe-badd="${k}">+${esc(TYPES[k].glyph)}</button>`).join("")}
       </div>
-      <div class="ep-plan-modehint">${T.blockTapDel}</div>`;
+      <div class="ep-plan-srow">Штроба к посту:
+        ${items.map((k, i) => `<button type="button" class="ep-plan-chip ep-clickable ${(entrySet ? el.entryPost === i : autoIdx === i) ? "on" : ""}" data-pe-entry="${i}">${i + 1}</button>`).join("")}
+        <button type="button" class="ep-plan-chip ep-clickable ${entrySet ? "" : "on"}" data-pe-entry="auto">Авто</button>
+      </div>
+      <div class="ep-plan-modehint">${T.blockTapDel} · штроба входит в выбранный подрозетник.</div>`;
   }
 
   function photosHtml(el) {
@@ -335,6 +341,11 @@
       const items = (el.params.items = el.params.items || []);
       if (items.length <= 1) return; // пустых рамок не бывает — удаляй сам блок
       c.commit(); items.splice(Number(b.getAttribute("data-pe-bdel")), 1); c.persist("block-del"); openEditor(el); return;
+    }
+    if ((b = t.closest("[data-pe-entry]"))) {
+      const c = core(), el = current(); if (!el || el.type !== "block") return;
+      const v = b.getAttribute("data-pe-entry");
+      c.commit(); el.entryPost = v === "auto" ? null : Number(v); c.persist("block-entry"); openEditor(el); return;
     }
     if ((b = t.closest("[data-pe-circ]"))) {
       const c = core(), el = current(); if (!el) return;

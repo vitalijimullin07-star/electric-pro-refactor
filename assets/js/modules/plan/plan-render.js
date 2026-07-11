@@ -281,6 +281,10 @@
           x: cx - bw / 2 + 4 * k + step2 * i + step2 / 2, y: cy,
           "font-size": 9 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph"
         }, tr ? { transform: tr } : {}), (TY[it] || {}).glyph || "?")));
+        // метка входа штробы (к какому подрозетнику идёт трасса)
+        const eIdx = EP.Plan.Geometry.blockEntryIndex(elem);
+        const ex = cx - bw / 2 + 4 * k + step2 * Math.min(eIdx, items.length - 1) + step2 / 2;
+        grp.appendChild(el("circle", Object.assign({ cx: ex, cy: cy + bh / 2 + 3 * k, r: 2.6 * k, class: "ep-plan-entrymark" }, tr ? { transform: tr } : {})));
       } else {
         if (bad.has(elem.id)) grp.appendChild(el("circle", { cx, cy, r: r0 * 1.55, class: "ep-plan-warnring", "stroke-width": sw * 0.7 }));
         grp.appendChild(el("circle", { cx, cy, r: r0, fill: layerColor2(elem.layer), "stroke-width": sw * 0.7 }));

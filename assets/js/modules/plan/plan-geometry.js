@@ -215,6 +215,31 @@
     return { x: pt.x + fr.nrm.x * d, y: pt.y + fr.nrm.y * d, wall: pt.wall, nrm: fr.nrm, angle: fr.angle };
   };
 
+  // Шаг подрозетников в блоке, см (стандарт межцентрового расстояния ~71 мм)
+  G.POST_SPACING = 7;
+  // Индекс поста, к которому идёт штроба: заданный вручную или АВТО —
+  // для блока из 2+ постов «середина левого», для 1 поста — центр.
+  G.blockEntryIndex = (el) => {
+    const items = (el.params && el.params.items) || [];
+    const n = Math.max(1, items.length);
+    let idx = el.entryPost;
+    if (idx == null || idx < 0 || idx >= n) idx = n >= 2 ? Math.floor((n - 1) / 2) : 0;
+    return idx;
+  };
+  // Мировая точка входа штробы в блок (позиция нужного подрозетника, с отступом от стены).
+  G.blockEntryPoint = (project, el) => {
+    const dp = G.elemDrawPoint(project, el);
+    if (!dp || !dp.wall) return dp;
+    const items = (el.params && el.params.items) || [];
+    const n = Math.max(1, items.length);
+    const idx = G.blockEntryIndex(el);
+    const fr = G.wallFrame(project, dp.wall);
+    const off = (idx - (n - 1) / 2) * G.POST_SPACING;
+    return { x: dp.x + fr.dir.x * off, y: dp.y + fr.dir.y * off, wall: dp.wall };
+  };
+  // Точка подключения трассы к элементу: блок -> вход штробы (нужный пост), иначе -> сам элемент
+  G.routeAnchor = (project, el) => (el.type === "block" ? G.blockEntryPoint(project, el) : G.elemDrawPoint(project, el));
+
   // Точка элемента, СДВИНУТАЯ внутрь комнаты от стены (чтобы трасса не шла по стене
   // и параллельные линии разных QF не ложились друг на друга). extra — доп. отступ (полоса).
   G.elemInsetPoint = (project, el, extra) => {
