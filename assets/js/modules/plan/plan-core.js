@@ -87,8 +87,8 @@
     // hinge: у какого края петли ('a' — ближний угол), flip: сторона открывания (±1)
     return { id: uid("op"), type: type === "window" ? "window" : "door", wallId, offset: offset || 0, width: width || (type === "window" ? 140 : 90), hinge: "a", flip: 1 };
   }
-  function newBeam(a, b, kind) {
-    return { id: uid("bm"), a: a || { x: 0, y: 0 }, b: b || { x: 0, y: 0 }, width: 20, kind: kind === "lintel" ? "lintel" : "beam" };
+  function newBeam(a, b, kind, width, material) {
+    return { id: uid("bm"), a: a || { x: 0, y: 0 }, b: b || { x: 0, y: 0 }, width: width || DEFAULTS.wallThickness, kind: kind === "lintel" ? "lintel" : "beam", material: material || null };
   }
 
   // ---------- состояние ----------

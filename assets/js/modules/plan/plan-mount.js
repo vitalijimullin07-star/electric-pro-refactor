@@ -102,6 +102,7 @@
     </div>`;
     mountCanvas();
     refreshToolbar();
+    armBack(); // ставим «ловушку» для аппаратной кнопки Назад
   }
 
   function mountCanvas() {
@@ -205,6 +206,24 @@
       const box = document.querySelector(".ep-plan.is-full");
       if (box) box.classList.remove("is-full");
     }
+  });
+
+  // Кнопка «Назад» на Android: закрывает функцию ВНУТРИ планировки (вкладку/режим/
+  // полноэкранку), а не выходит из неё. Когда ничего не открыто — уходит к списку проектов.
+  function armBack() { try { history.pushState({ epPlan: true }, ""); } catch (e) {} }
+  window.addEventListener("popstate", () => {
+    if (!V.active || !core().project) return;
+    const r = root();
+    const R2 = EP.Plan.Rooms;
+    const fullBox = document.querySelector(".ep-plan.is-full");
+    const sh = document.getElementById("ep-plan-sheet");
+    const sheetOpen = sh && !sh.hidden;
+    const mode = R2 && R2.currentMode ? R2.currentMode() : "view";
+    if (fullBox) { fullBox.classList.remove("is-full"); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); armBack(); return; }
+    if (EP.Plan.Unfold && EP.Plan.Unfold.isOpen()) { EP.Plan.Unfold.close(); if (R2) R2.closeSheet(); const s2 = document.querySelector("#ep-plan-sheet"); if (s2) s2.classList.remove("ep-plan-sheet-full"); armBack(); return; }
+    if (sheetOpen || mode !== "view") { if (R2) R2.setMode("view"); armBack(); return; }
+    // внутри планировки ничего не открыто — возвращаемся к списку проектов (не выходим)
+    core().closeProject(); if (r) renderList(r);
   });
 
   document.addEventListener("keydown", (e) => {
