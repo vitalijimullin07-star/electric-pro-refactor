@@ -1,7 +1,8 @@
-/* Electric Pro V29 — Проект квартиры: развёртка стены v3 (Слой 3+).
-   Тап по стене -> плоский вид (длина × высота). Полный экран. Пинч-зум/пан пальцами.
-   Добавление механизмов И проёмов (двери/окна) прямо в развёртке. Линейки: от
-   БЛИЖАЙШЕГО угла (по низу, со сдвигом рядов) и от пола (слева) — чтобы не накладывались. */
+/* Electric Pro V29 — Проект квартиры: развёртка стены v4 (Слой 3+).
+   Плоский вид стены (длина × высота). Панель управления всегда на виду: выбор стены,
+   ПАЛИТРА добавления (механизмы + проёмы), ползунок размера символов. Пинч-зум/пан.
+   Размеры — от ВНУТРЕННИХ углов (работаем изнутри квартиры): вертикаль (высота от пола)
+   и размерная ЦЕПЬ по низу (синим), сегменты между точками + общий размер. */
 (() => {
   "use strict";
   window.EP = window.EP || {};
@@ -12,7 +13,7 @@
     addTypes: ["block", "socket", "switch", "tv", "internet", "ac", "camera", "sensor"],
     openTypes: ["door", "window", "sliding", "balcony"]
   };
-  const T = { title: "Стена", hint: "Пальцами — зум/сдвиг · тап по пустому — добавить · тяни точку · размеры от ближайшего угла и пола" };
+  const T = { title: "Стена", hint: "Пальцами — зум/сдвиг · выбери тип и тапни по пустому — добавить · тяни точку" };
 
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const $ = (sel, r) => (r || document).querySelector(sel);
@@ -22,7 +23,7 @@
   const EL = () => EP.Plan.Elements;
   const isOpenKind = (k) => !!(EP.Plan.Core.OPENING_KINDS && EP.Plan.Core.OPENING_KINDS[k]);
 
-  const S = { wallId: null, addType: "socket", drag: null, full: false, view: null };
+  const S = { wallId: null, addType: "socket", drag: null, full: false, view: null, sym: 1 };
 
   function wallH(p, wallId) {
     const roomId = String(wallId).split(":")[0];
@@ -36,8 +37,8 @@
     const room = (p.rooms || []).find((r) => r.id === roomId);
     return room ? G().walls(room) : [];
   }
-  // стартовый viewBox: вся стена + поля под линейки
-  function fitView(H, L) { const pad = CFG.padCm; return { x: -pad, y: -pad * 1.3, w: L + pad * 2, h: H + pad * 1.3 + 96 }; }
+  function wallTh(p) { return Math.max(4, (p.settings && p.settings.wallThickness) || 10); }
+  function fitView(H, L) { const pad = CFG.padCm; return { x: -pad, y: -pad * 1.3, w: L + pad * 2, h: H + pad * 1.3 + 110 }; }
 
   function open(wallId) {
     S.wallId = wallId; S.view = null;
@@ -52,12 +53,15 @@
         <button type="button" class="ep-plan-mini ep-clickable" data-pu-fit aria-label="Показать всё">⛶</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-pu-full aria-label="Во весь экран">⤢</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-pu-close>✕</button></div>
-      <div class="ep-plan-srow ep-plan-unfwalls">Стена:${walls.map((ww) =>
-        `<button type="button" class="ep-plan-chip ep-clickable ${ww.id === wallId ? "on" : ""}" data-pu-wall="${esc(ww.id)}">${ww.n}</button>`).join("")}
+      <div class="ep-plan-unfbar">
+        <span class="ep-plan-unflbl">Стена:</span>${walls.map((ww) => `<button type="button" class="ep-plan-chip ep-clickable ${ww.id === wallId ? "on" : ""}" data-pu-wall="${esc(ww.id)}">${ww.n}</button>`).join("")}
       </div>
-      <div class="ep-plan-srow ep-plan-unftypes">${CFG.addTypes.map((k) => chip(k, TY[k].glyph)).join("")}
+      <div class="ep-plan-unfbar">
+        <span class="ep-plan-unflbl">Добавить:</span>${CFG.addTypes.map((k) => chip(k, TY[k].glyph)).join("")}
         <span class="ep-plan-unfsep"></span>${CFG.openTypes.map((k) => chip(k, (OT[k] || {}).glyph || "?")).join("")}
       </div>
+      <div class="ep-plan-unfbar"><span class="ep-plan-unflbl">Размер значков:</span>
+        <input type="range" min="60" max="220" value="${Math.round(S.sym * 100)}" data-pu-sym class="ep-plan-unfslider"></div>
       <div class="ep-plan-unfold ${S.full ? "is-full" : ""}" id="ep-pu-box"></div>
       <div class="ep-plan-modehint">${T.hint}</div>`);
     drawStrip();
@@ -92,13 +96,16 @@
     const box = $("#ep-pu-box");
     const p = core().project, w = S.wallId && G().wallById(p, S.wallId);
     if (!box || !w) return;
-    const H = wallH(p, S.wallId), L = w.len;
+    const H = wallH(p, S.wallId), L = w.len, th = wallTh(p);
     if (!S.view) S.view = fitView(H, L);
     const v = S.view;
     box.innerHTML = "";
     const svg = svgEl("svg", { viewBox: `${v.x} ${v.y} ${v.w} ${v.h}`, preserveAspectRatio: "xMidYMid meet", class: "ep-plan-unfsvg" });
     svg.style.touchAction = "none";
-    const kk = v.h / (S.full ? 620 : 340); // см в пикселе (толщины/шрифты ~ постоянны на экране)
+    const kk = v.h / (S.full ? 620 : 340);   // базовый масштаб (сетка/линейки)
+    const ks = kk * S.sym;                    // масштаб символов (ползунок)
+    // внутренние углы стены (работаем изнутри — размеры от внутренней грани)
+    const inA = Math.min(th / 2, L / 2), inB = Math.max(L - th / 2, L / 2);
 
     // стена + сетка + пол
     svg.appendChild(svgEl("rect", { x: 0, y: 0, width: L, height: H, class: "ep-plan-unfwall" }));
@@ -106,64 +113,77 @@
     for (let y = H - 50; y > 0; y -= 50) svg.appendChild(svgEl("line", { x1: 0, y1: y, x2: L, y2: y, class: "ep-plan-unfgrid", "stroke-width": kk }));
     svg.appendChild(svgEl("line", { x1: 0, y1: H, x2: L, y2: H, class: "ep-plan-unffloor", "stroke-width": 2.5 * kk }));
 
-    // проёмы (тап — редактор проёма)
+    // проёмы
     (p.openings || []).filter((o) => o.wallId === S.wallId).forEach((op) => {
       const oh = op.height || (op.type === "window" ? 140 : 200), sill = op.sill || 0;
       const yTop = H - (sill + oh), hgt = Math.min(oh, H - sill);
       const isWin = op.type === "window" || op.kind === "window" || op.kind === "balcony";
       svg.appendChild(svgEl("rect", { "data-pu-open": op.id, x: op.offset, y: yTop, width: op.width, height: hgt, class: "ep-plan-unfopen" + (isWin ? " is-win" : ""), "stroke-width": 1.5 * kk }));
       const meta = (EL().OPEN_TYPES || {})[op.kind || (isWin ? "window" : "door")] || {};
-      svg.appendChild(svgEl("text", { "data-pu-open": op.id, x: op.offset + op.width / 2, y: yTop + 12 * kk, "font-size": 10 * kk, "text-anchor": "middle", class: "ep-plan-unfopent" }, (EL().openingNum ? EL().openingNum(p, op) : (meta.glyph || ""))));
+      svg.appendChild(svgEl("text", { "data-pu-open": op.id, x: op.offset + op.width / 2, y: yTop + 12 * ks, "font-size": 10 * ks, "text-anchor": "middle", class: "ep-plan-unfopent" }, (EL().openingNum ? EL().openingNum(p, op) : (meta.glyph || ""))));
     });
 
-    // щит на этой стене
+    // щит
     (p.panels || []).forEach((pn) => {
       const c = G().closestOnSeg({ x: pn.x, y: pn.y }, w.a, w.b);
       if (c.d > 60) return;
       const bx = p.settings.panelBox, px = c.t * L, ph = p.settings.panelHeight || 150;
       const pw = bx && bx.wmm ? bx.wmm / 10 : 36, phh = bx && bx.hmm ? bx.hmm / 10 : 60, py = H - ph;
       svg.appendChild(svgEl("rect", { x: px - pw / 2, y: py - phh / 2, width: pw, height: phh, rx: 3, class: "ep-plan-unfpanel", "stroke-width": 1.5 * kk }));
-      svg.appendChild(svgEl("text", { x: px, y: py, "font-size": 12 * kk, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfpanelt" }, "Щ"));
+      svg.appendChild(svgEl("text", { x: px, y: py, "font-size": 12 * ks, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfpanelt" }, "Щ"));
     });
 
-    const TY = EL().TYPES;
     const els = wallElems(p, S.wallId).slice().sort((a, b) => a.offset - b.offset);
-    els.forEach((el, idx) => {
+    const chY = H + 42 * kk, ovY = chY + 22 * kk; // цепь размеров и общий размер по низу
+
+    // размерная ЦЕПЬ по низу (от внутренних углов, синим)
+    const stations = [];
+    [inA].concat(els.map((e) => Math.max(inA, Math.min(inB, e.offset)))).concat([inB]).sort((a, b) => a - b).forEach((s) => { if (!stations.length || Math.abs(s - stations[stations.length - 1]) > 1) stations.push(s); });
+    svg.appendChild(svgEl("line", { x1: inA, y1: chY, x2: inB, y2: chY, class: "ep-plan-unfdimL", "stroke-width": kk }));
+    stations.forEach((s) => {
+      svg.appendChild(svgEl("line", { x1: s, y1: H, x2: s, y2: chY, class: "ep-plan-unfdimE", "stroke-width": kk * 0.7 })); // выносная
+      svg.appendChild(svgEl("line", { x1: s, y1: chY - 4 * kk, x2: s, y2: chY + 4 * kk, class: "ep-plan-unfdimL", "stroke-width": kk })); // засечка
+    });
+    for (let i = 0; i < stations.length - 1; i++) {
+      const seg = Math.round(stations[i + 1] - stations[i]);
+      if (seg < 2) continue;
+      svg.appendChild(svgEl("text", { x: (stations[i] + stations[i + 1]) / 2, y: chY - 5 * kk, "font-size": 11 * kk, "text-anchor": "middle", class: "ep-plan-unfdimT" }, seg + ""));
+    }
+    // общий размер (внутренняя длина стены)
+    svg.appendChild(svgEl("line", { x1: inA, y1: ovY, x2: inB, y2: ovY, class: "ep-plan-unfdimL", "stroke-width": kk }));
+    [inA, inB].forEach((s) => svg.appendChild(svgEl("line", { x1: s, y1: ovY - 4 * kk, x2: s, y2: ovY + 4 * kk, class: "ep-plan-unfdimL", "stroke-width": kk })));
+    svg.appendChild(svgEl("text", { x: (inA + inB) / 2, y: ovY - 5 * kk, "font-size": 11 * kk, "text-anchor": "middle", class: "ep-plan-unfdimT" }, Math.round(inB - inA) + ""));
+
+    const TY = EL().TYPES;
+    els.forEach((el) => {
       const x = el.offset, y = H - el.height;
       const cc = circ(p, el);
       const col = cc ? cc.color : "var(--accent)";
       const gr = svgEl("g", { "data-pu-el": el.id, class: "ep-plan-unfel" + (el.status === "mounted" ? " is-done" : "") });
 
-      // линейка от пола (вертикальная у точки)
+      // вертикаль: высота от пола до точки (синим), подпись высоты
       svg.appendChild(svgEl("line", { x1: x, y1: H, x2: x, y2: y, class: "ep-plan-unfdimL", "stroke-width": kk }));
       svg.appendChild(svgEl("text", { x: x + 6 * kk, y: (H + y) / 2, "font-size": 11 * kk, "dominant-baseline": "middle", class: "ep-plan-unfdimT" }, Math.round(el.height) + ""));
-      // линейка от БЛИЖАЙШЕГО угла (по низу), ряды через один — чтобы не накладывались
-      const cornerX = x <= L - x ? 0 : L, dist = Math.round(cornerX === 0 ? x : L - x);
-      const yDim = H + (16 + (idx % 2) * 15) * kk;
-      svg.appendChild(svgEl("line", { x1: cornerX, y1: yDim, x2: x, y2: yDim, class: "ep-plan-unfdimL", "stroke-width": kk }));
-      svg.appendChild(svgEl("line", { x1: x, y1: H, x2: x, y2: yDim, class: "ep-plan-unfdimL", "stroke-width": kk * 0.7 }));
-      svg.appendChild(svgEl("text", { x: (cornerX + x) / 2, y: yDim - 3 * kk, "font-size": 11 * kk, "text-anchor": "middle", class: "ep-plan-unfdimT" }, dist + ""));
 
       if (el.type === "block") {
         const items = (el.params && el.params.items) || ["socket"];
-        const step2 = 18 * kk, bw = items.length * step2 + 6 * kk, bh = 24 * kk;
-        gr.appendChild(svgEl("rect", { x: x - bw / 2, y: y - bh / 2, width: bw, height: bh, rx: 5 * kk, fill: col, class: "ep-plan-unfshape" }));
-        items.forEach((it, i) => gr.appendChild(svgEl("text", { x: x - bw / 2 + 3 * kk + step2 * i + step2 / 2, y, "font-size": 9 * kk, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfglyph" }, (TY[it] || {}).glyph || "?")));
-        items.forEach((it, i) => gr.appendChild(svgEl("rect", { "data-pu-post": i, x: x - bw / 2 + 3 * kk + step2 * i, y: y - bh / 2, width: step2, height: bh, fill: "transparent" })));
+        const step2 = 18 * ks, bw = items.length * step2 + 6 * ks, bh = 24 * ks;
+        gr.appendChild(svgEl("rect", { x: x - bw / 2, y: y - bh / 2, width: bw, height: bh, rx: 5 * ks, fill: col, class: "ep-plan-unfshape" }));
+        items.forEach((it, i) => gr.appendChild(svgEl("text", { x: x - bw / 2 + 3 * ks + step2 * i + step2 / 2, y, "font-size": 9 * ks, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfglyph" }, (TY[it] || {}).glyph || "?")));
+        items.forEach((it, i) => gr.appendChild(svgEl("rect", { "data-pu-post": i, x: x - bw / 2 + 3 * ks + step2 * i, y: y - bh / 2, width: step2, height: bh, fill: "transparent" })));
         const eIdx = G().blockEntryIndex(el);
-        gr.appendChild(svgEl("circle", { cx: x - bw / 2 + 3 * kk + step2 * eIdx + step2 / 2, cy: y + bh / 2 + 5 * kk, r: 3 * kk, class: "ep-plan-unfentry" }));
+        gr.appendChild(svgEl("circle", { cx: x - bw / 2 + 3 * ks + step2 * eIdx + step2 / 2, cy: y + bh / 2 + 5 * ks, r: 3 * ks, class: "ep-plan-unfentry" }));
       } else {
-        gr.appendChild(svgEl("circle", { cx: x, cy: y, r: 13 * kk, fill: col, class: "ep-plan-unfshape" }));
-        gr.appendChild(svgEl("text", { x, y, "font-size": 10 * kk, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfglyph" }, (TY[el.type] || {}).glyph || "?"));
+        gr.appendChild(svgEl("circle", { cx: x, cy: y, r: 13 * ks, fill: col, class: "ep-plan-unfshape" }));
+        gr.appendChild(svgEl("text", { x, y, "font-size": 10 * ks, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfglyph" }, (TY[el.type] || {}).glyph || "?"));
       }
-      if (cc) gr.appendChild(svgEl("text", { x, y: y - 18 * kk, "font-size": 8.5 * kk, "text-anchor": "middle", fill: col, class: "ep-plan-unfqf" }, cc.name));
+      if (cc) gr.appendChild(svgEl("text", { x, y: y - 18 * ks, "font-size": 8.5 * ks, "text-anchor": "middle", fill: col, class: "ep-plan-unfqf" }, cc.name));
       svg.appendChild(gr);
     });
     box.appendChild(svg);
     bindStrip(svg, w, H, L);
   }
 
-  // экран -> мир, с учётом текущего viewBox и центрирования meet
   function toWorld(svg, clientX, clientY) {
     const v = S.view, r = svg.getBoundingClientRect();
     const scale = Math.min(r.width / v.w, r.height / v.h);
@@ -196,14 +216,14 @@
         S.drag = { el, moved: false, postIdx: pg ? Number(pg.getAttribute("data-pu-post")) : null };
         return;
       }
-      pending = { kind: "empty" }; // тап по пустому -> добавить; движение -> пан
+      pending = { kind: "empty" };
     });
     svg.addEventListener("pointermove", (e) => {
       if (!pts.has(e.pointerId)) return;
       const prev = pts.get(e.pointerId);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pts.size === 2 && pinch) {
-        const cur = pinchInfo(), k = pinch.d / cur.d;      // >1 — отдаление
+        const cur = pinchInfo(), k = pinch.d / cur.d;
         const wc = toWorld(svg, cur.cx, cur.cy);
         S.view.w = Math.max(40, Math.min((L + 400) * 4, S.view.w * k));
         S.view.h = Math.max(40, Math.min((H + 400) * 4, S.view.h * k));
@@ -221,7 +241,6 @@
         S.drag.el.height = G().snap(Math.max(0, Math.min(H, H - pt.y)), step);
         drawStrip(); rooms().renderScene(); return;
       }
-      // пан по пустому/проёму, если сдвинули палец
       if (downClient && Math.hypot(e.clientX - downClient.x, e.clientY - downClient.y) > 6) {
         moved = true;
         const kpx = pxPerCm();
@@ -241,13 +260,13 @@
         const p = core().project, c = core(), step = p.settings.gridStep, pt = toWorld(svg, e.clientX, e.clientY);
         if (pending.kind === "open") { const op = (p.openings || []).find((o) => o.id === pending.id); if (op && EL().openOpeningEditor) EL().openOpeningEditor(op); }
         else if (pending.kind === "empty" && pt.x >= 0 && pt.x <= w.len) {
-          if (isOpenKind(S.addType)) { // добавить проём (в пределах стены)
+          if (isOpenKind(S.addType)) {
             c.commit();
             const dw = (EP.Plan.Core.OPENING_KINDS[S.addType] || {}).w || 90;
             const off = G().snap(Math.max(0, Math.min(w.len - dw, pt.x - dw / 2)), step);
-            const op = c.model.newOpening(S.addType, S.wallId, Math.max(0, off), undefined);
-            p.openings.push(op); c.persist("opening-add"); drawStrip(); rooms().renderScene();
-          } else if (pt.y >= 0 && pt.y <= H) { // добавить механизм
+            p.openings.push(c.model.newOpening(S.addType, S.wallId, Math.max(0, off), undefined));
+            c.persist("opening-add"); drawStrip(); rooms().renderScene();
+          } else if (pt.y >= 0 && pt.y <= H) {
             const TYd = EL().TYPES[S.addType];
             c.commit();
             const el = c.model.newElement(S.addType, S.wallId, G().snap(pt.x, step), G().snap(Math.max(0, H - pt.y), step), TYd.layer);
@@ -255,9 +274,10 @@
             p.elements.push(el); c.persist("elem-add"); drawStrip(); rooms().renderScene();
           }
         }
+        pending = null; moved = false; return;
       }
       pending = null; moved = false;
-      if (pts.size === 0 && (S.view)) drawStrip(); // перерисовать чётко после жеста
+      if (pts.size === 0 && S.view) drawStrip();
     }
     svg.addEventListener("pointerup", end);
     svg.addEventListener("pointercancel", (e) => { pts.delete(e.pointerId); pinch = null; S.drag = null; pending = null; });
@@ -274,6 +294,10 @@
       S.addType = b.getAttribute("data-pu-type");
       document.querySelectorAll("[data-pu-type]").forEach((x) => x.classList.toggle("on", x === b));
     }
+  });
+  document.addEventListener("input", (e) => {
+    if (!rooms() || !rooms().isActive() || !isOpen()) return;
+    if (e.target.getAttribute && e.target.getAttribute("data-pu-sym") != null) { S.sym = Math.max(0.6, (Number(e.target.value) || 100) / 100); drawStrip(); }
   });
 
   EP.Plan = EP.Plan || {};

@@ -214,10 +214,14 @@
       (project.rooms || []).forEach((room) => {
         if ((room.points || []).length < 3) return;
         const c0 = G.centroid(room.points);
+        // размеры берём от ВНУТРЕННИХ углов (работаем изнутри квартиры)
+        const thR = Math.max(4, (project.settings && project.settings.wallThickness) || 10);
         G.walls(room).forEach((w) => {
-          const stations = new Set([0, Math.round(w.len)]);
-          (project.elements || []).forEach((e2) => { if (e2.wallId === w.id) stations.add(Math.round(e2.offset)); });
-          G.openingsOnWall(project, w.id).forEach((o) => { stations.add(Math.round(o.offset)); stations.add(Math.round(o.offset + o.width)); });
+          const inA = Math.min(thR / 2, w.len / 2), inB = Math.max(w.len - thR / 2, w.len / 2);
+          const clamp = (d) => Math.round(Math.max(inA, Math.min(inB, d)));
+          const stations = new Set([Math.round(inA), Math.round(inB)]);
+          (project.elements || []).forEach((e2) => { if (e2.wallId === w.id) stations.add(clamp(e2.offset)); });
+          G.openingsOnWall(project, w.id).forEach((o) => { stations.add(clamp(o.offset)); stations.add(clamp(o.offset + o.width)); });
           if (stations.size <= 2) return; // нечего привязывать
           let nx = -(w.b.y - w.a.y), ny = w.b.x - w.a.x;
           const nl = Math.hypot(nx, ny) || 1;
