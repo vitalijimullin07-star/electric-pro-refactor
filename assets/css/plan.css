@@ -325,3 +325,22 @@ body[data-visual-mode="day"] .ep-plan-lineRow input[type="text"] { background:#f
 
 /* — v11: развёртка — разделитель палитры проёмов — */
 .ep-plan-unfsep { display: inline-block; width: 1px; align-self: stretch; margin: 0 3px; background: rgba(148,163,184,.4); }
+
+/* — v12: развёртка — панель управления всегда видна, ползунок, синие размеры-цепи — */
+.ep-plan-unfbar { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; overflow-x: auto; flex: none; padding-bottom: 2px; }
+.ep-plan-unflbl { font: 600 12px system-ui; color: var(--muted, #94a3b8); flex: none; }
+.ep-plan-unfbar .ep-plan-chip { flex: none; }
+.ep-plan-unfslider { flex: 1; min-width: 120px; accent-color: #2563eb; }
+.ep-plan-unfsep { display: inline-block; width: 1px; height: 22px; margin: 0 4px; background: rgba(148,163,184,.45); flex: none; }
+/* синие размерные линии как на чертеже */
+.ep-plan-unfdimL { stroke: #2563eb; opacity: 1; }
+.ep-plan-unfdimE { stroke: #60a5fa; opacity: .8; }
+.ep-plan-unfdimT { fill: #2563eb; font-family: system-ui; font-weight: 700; }
+body[data-visual-mode="day"] .ep-plan-unfdimL { stroke: #1d4ed8; }
+body[data-visual-mode="day"] .ep-plan-unfdimE { stroke: #3b82f6; }
+body[data-visual-mode="day"] .ep-plan-unfdimT { fill: #1d4ed8; }
+/* полный экран: панели закреплены сверху, холст тянется на остаток */
+.ep-plan-sheet-full { display: flex; flex-direction: column; }
+.ep-plan-sheet-full .ep-plan-unfold { flex: 1 1 auto; min-height: 0; }
+.ep-plan-sheet-full .ep-plan-unfsvg { height: 100%; }
+.ep-plan-unfsvg { height: 240px; }
