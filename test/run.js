@@ -172,6 +172,31 @@ test("rules: badSet -> Set, ловит точку в проёме", () => {
   ok(bad.has(s.id), "точка в проёме помечена");
 });
 
+// ===== 6b. Проверки ПУЭ по линиям =====
+test("ПУЭ: розетки без УЗО -> предупреждение", () => {
+  const q1 = M.newCircuit("QF1", "#e11", 16); q1.rcd = false;
+  const { P, w } = install({ circuits: [q1] });
+  const s = M.newElement("socket", w(0), 100, 30, "power"); s.circuitId = q1.id; P.elements.push(s);
+  const msgs = EP.Plan.Rules.run(P).issues.map((i) => i.msg).join(" | ");
+  ok(/УЗО/.test(msgs), "нет предупреждения об УЗО");
+});
+test("ПУЭ: мощный потребитель смешан с розетками -> отдельная линия", () => {
+  const q1 = M.newCircuit("QF1", "#e11", 16); q1.rcd = true;
+  const { P, w } = install({ circuits: [q1] });
+  const s = M.newElement("socket", w(0), 100, 30, "power"); s.circuitId = q1.id;
+  const ac = M.newElement("ac", w(0), 200, 220, "ac"); ac.circuitId = q1.id;
+  P.elements.push(s, ac);
+  const msgs = EP.Plan.Rules.run(P).issues.map((i) => i.msg).join(" | ");
+  ok(/отдельн/.test(msgs), "нет предупреждения об отдельной линии");
+});
+test("ПУЭ: тонкий кабель под автомат -> предупреждение", () => {
+  const q1 = M.newCircuit("QF1", "#e11", 25); q1.rcd = true; q1.cable = "3×1.5"; // 1.5 -> макс 10A, а автомат 25A
+  const { P, w } = install({ circuits: [q1] });
+  const s = M.newElement("socket", w(0), 100, 30, "power"); s.circuitId = q1.id; P.elements.push(s);
+  const msgs = EP.Plan.Rules.run(P).issues.map((i) => i.msg).join(" | ");
+  ok(/мал для автомата/.test(msgs), "нет предупреждения о сечении");
+});
+
 // ===== 7. Рендер =====
 test("render: полная сцена без ошибок", () => {
   const q1 = M.newCircuit("QF1", "#e11", 16);
