@@ -77,7 +77,7 @@ test("spansMinusOpenings: окно рвёт стену на 2 участка", (
   const wall = G.wallById(P, w(0));
   eq(G.spansMinusOpenings(wall.len, G.openingsOnWall(P, w(0))).length, 2);
 });
-test("elemDrawPoint: точка вне стены + зазор между QF", () => {
+test("elemDrawPoint: отступ от стены ОДИНАКОВЫЙ (не зависит от QF)", () => {
   const q1 = M.newCircuit("QF1", "#e11", 16), q2 = M.newCircuit("QF2", "#1e1", 16);
   const { P, w } = install({ circuits: [q1, q2] });
   const s1 = M.newElement("socket", w(0), 100, 30, "power"); s1.circuitId = q1.id;
@@ -85,7 +85,20 @@ test("elemDrawPoint: точка вне стены + зазор между QF", (
   P.elements.push(s1, s2);
   const d0 = G.elemPoint(P, s1), d1 = G.elemDrawPoint(P, s1), d2 = G.elemDrawPoint(P, s2);
   ok(Math.hypot(d1.x - d0.x, d1.y - d0.y) > 4, "маркер отступает от стены");
-  ok(Math.hypot(d1.x - d2.x, d1.y - d2.y) >= 4, "QF1 и QF2 разнесены");
+  ok(Math.hypot(d1.x - d2.x, d1.y - d2.y) < 0.5, "точки на разных QF — одинаковый отступ (не расползаются)");
+});
+test("общая стена: проём режет обе полосы (соседние комнаты)", () => {
+  const r1 = M.newRoom(G.rectPoints(0, 0, 400, 300), "R1");
+  const r2 = M.newRoom(G.rectPoints(410, 0, 300, 300), "R2"); // R2 слева граничит с правой стеной R1
+  const proj = Object.assign(M.newProject("T"), { rooms: [r1, r2] });
+  EP.Plan.Core.importJSON(JSON.stringify({ project: proj }));
+  const P = EP.Plan.Core.project;
+  const r1w1 = P.rooms[0].id + ":1"; // правая стена R1 (x=400)
+  const op = M.newOpening("door", r1w1, 100); P.openings.push(op);
+  // левая стена R2 (x=410) — её id :3
+  const r2left = G.wallById(P, P.rooms[1].id + ":3");
+  const spans = G.wallOpeningSpans(P, r2left);
+  ok(spans.length >= 1, "проём с соседней стены спроецирован на общую (" + spans.length + ")");
 });
 test("blockEntry: авто «середина левого» и ручной выбор", () => {
   const blk = M.newElement("block", "x", 0, 30, "power");
