@@ -82,7 +82,7 @@
       const th = Math.max(4, (project.settings && project.settings.wallThickness) || 10); // см
       const dParts = [];
       G.walls(room).forEach((w) => {
-        const opens = G.openingsOnWall(project, w.id);
+        const opens = G.wallOpeningSpans(project, w); // + проёмы общей стены соседней комнаты
         G.spansMinusOpenings(w.len, opens).forEach(([s, e]) => {
           const p1 = G.pointAtOffset(w, s), p2 = G.pointAtOffset(w, e);
           dParts.push("M" + p1.x + " " + p1.y + " L" + p2.x + " " + p2.y);

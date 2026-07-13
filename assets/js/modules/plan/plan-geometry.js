@@ -218,18 +218,43 @@
   };
   G.openingsOnWall = (project, wallId) => (project.openings || []).filter((o) => o.wallId === wallId);
 
-  // ЕДИНАЯ точка отрисовки/трассировки элемента на стене: фиксированный отступ внутрь
-  // комнаты (в СМ, не зависит от зума) + «полоса» по номеру линии QF (зазор между трассами).
-  // И маркер, и трасса берут ОДНУ эту точку — поэтому линия всегда доходит до точки.
+  // Проёмы для ВЫРЕЗА в стене как {offset,width}: свои + спроецированные с близкой
+  // параллельной стены соседней комнаты/перегородки — чтобы проём «резал» обе полосы
+  // общей стены (две комнаты рядом), а не только одну.
+  G.wallOpeningSpans = (project, wall) => {
+    const out = G.openingsOnWall(project, wall.id).map((o) => ({ offset: o.offset, width: o.width }));
+    const len = wall.len || 1;
+    const dir = { x: (wall.b.x - wall.a.x) / len, y: (wall.b.y - wall.a.y) / len };
+    const nx = -dir.y, ny = dir.x;
+    const th = Math.max(4, (project.settings && project.settings.wallThickness) || 10);
+    const others = [];
+    (project.rooms || []).forEach((r) => G.walls(r).forEach((w2) => { if (w2.id !== wall.id) others.push(w2); }));
+    (project.beams || []).forEach((b) => { const bw = G.beamWall(b); if (bw && bw.id !== wall.id) others.push(bw); });
+    others.forEach((w2) => {
+      const l2 = w2.len || 1, d2x = (w2.b.x - w2.a.x) / l2, d2y = (w2.b.y - w2.a.y) / l2;
+      if (Math.abs(dir.x * d2y - dir.y * d2x) > 0.05) return;                 // не параллельна
+      if (Math.abs((w2.mx - wall.a.x) * nx + (w2.my - wall.a.y) * ny) > th * 4) return; // далеко — не общая
+      G.openingsOnWall(project, w2.id).forEach((o) => {
+        const pa = G.pointAtOffset(w2, o.offset), pb = G.pointAtOffset(w2, o.offset + o.width);
+        const ta = (pa.x - wall.a.x) * dir.x + (pa.y - wall.a.y) * dir.y;
+        const tb = (pb.x - wall.a.x) * dir.x + (pb.y - wall.a.y) * dir.y;
+        const s = Math.max(0, Math.min(len, Math.min(ta, tb))), e = Math.max(0, Math.min(len, Math.max(ta, tb)));
+        if (e > s + 1) out.push({ offset: s, width: e - s });
+      });
+    });
+    return out;
+  };
+
+  // ЕДИНАЯ точка отрисовки/трассировки элемента на стене: ОДИНАКОВЫЙ небольшой отступ
+  // внутрь комнаты (в СМ, не зависит ни от зума, ни от линии QF) — точки стоят ровно у
+  // стены, не «расползаются». И маркер, и трасса берут ОДНУ эту точку — линия доходит до точки.
   G.elemDrawPoint = (project, el) => {
     const pt = G.elemPoint(project, el);
     if (!pt || !pt.wall) return pt;
     const fr = G.wallFrame(project, pt.wall);
     if (!fr) return pt;
     const th = Math.max(4, (project.settings && project.settings.wallThickness) || 10);
-    const laneIdx = el.circuitId ? (project.circuits || []).findIndex((c) => c.id === el.circuitId) : -1;
-    const lane = laneIdx < 0 ? 0 : laneIdx;
-    const d = th / 2 + 11 + lane * 5; // фикс. отступ + зазор по линии
+    const d = th / 2 + 8; // фикс. отступ от стены внутрь, одинаковый для всех точек
     return { x: pt.x + fr.nrm.x * d, y: pt.y + fr.nrm.y * d, wall: pt.wall, nrm: fr.nrm, angle: fr.angle };
   };
 
