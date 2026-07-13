@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Electric Pro">
+  <rect width="512" height="512" rx="112" fill="#0f172a"/>
+  <g stroke="#1e293b" stroke-width="4">
+    <path d="M96 176H416M96 256H416M96 336H416" fill="none"/>
+    <path d="M176 96V416M256 96V416M336 96V416" fill="none"/>
+  </g>
+  <path d="M296 84 168 280h72l-24 148 152-208h-80z" fill="#38bdf8" stroke="#0ea5e9" stroke-width="6" stroke-linejoin="round"/>
+</svg>

@@ -24,7 +24,9 @@ jobs:
       - name: Syntax check
         run: |
           node --check functions/index.js
+          node --check sw.js
           find assets/js -name '*.js' -exec node --check {} \;
+          node -e "JSON.parse(require('fs').readFileSync('manifest.webmanifest','utf8'))"
 
       - name: Run tests (gate before deploy)
         run: node test/run.js
