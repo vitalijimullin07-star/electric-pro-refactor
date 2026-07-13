@@ -219,5 +219,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Scheme = { open, close, isOpen, buildTree };
+  EP.Plan.Scheme = { open, close, isOpen, buildTree, recompute: recomputePanel, neededModules };
 })();
