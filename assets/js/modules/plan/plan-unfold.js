@@ -40,13 +40,15 @@
   function wallTh(p) { return Math.max(4, (p.settings && p.settings.wallThickness) || 10); }
   function fitView(H, L) { const pad = CFG.padCm; return { x: -pad, y: -pad * 1.3, w: L + pad * 2, h: H + pad * 1.3 + 110 }; }
 
-  function open(wallId) {
+  function open(wallId, full) {
     S.wallId = wallId; S.view = null;
+    if (full != null) S.full = !!full; // тап по стене на главном → сразу во весь экран
     const p = core().project, w = G().wallById(p, wallId);
     if (!w) return;
     const TY = EL().TYPES, OT = EL().OPEN_TYPES || {};
     const walls = roomWalls(p, wallId);
     const chip = (k, glyph) => `<button type="button" class="ep-plan-chip ep-clickable ${S.addType === k ? "on" : ""}" data-pu-type="${k}">${esc(glyph)}</button>`;
+    const tbtn = (act, glyph, label) => `<button type="button" class="ep-plan-chip ep-clickable" data-pu-act="${act}" aria-label="${esc(label)}" title="${esc(label)}">${glyph}</button>`;
     rooms().openSheet(`<div class="ep-plan-srow ep-plan-unfhead"><b>${T.title} ${w.n}</b>
         <span>· ${G().fmtLen(w.len)} × ${G().fmtLen(wallH(p, wallId))}</span>
         <span class="ep-plan-flex"></span>
@@ -55,6 +57,10 @@
         <button type="button" class="ep-plan-mini ep-clickable" data-pu-close>✕</button></div>
       <div class="ep-plan-unfmain">
         <div class="ep-plan-unfctrls">
+          <div class="ep-plan-unfbar ep-plan-unftools">
+            <span class="ep-plan-unflbl">План:</span>${tbtn("undo", "↶", "Отменить")}${tbtn("redo", "↷", "Вернуть")}
+            <span class="ep-plan-unfsep"></span>${tbtn("trace", "🧵", "Автотрассировка")}${tbtn("checks", "✅", "Проверки норм")}${tbtn("calc", "🧮", "Расчёт и смета")}${tbtn("scheme", "▤", "Однолинейная схема")}${tbtn("pdf", "📄", "Печатный лист (PDF)")}
+          </div>
           <div class="ep-plan-unfbar">
             <span class="ep-plan-unflbl">Стена:</span>${walls.map((ww) => `<button type="button" class="ep-plan-chip ep-clickable ${ww.id === wallId ? "on" : ""}" data-pu-wall="${esc(ww.id)}">${ww.n}</button>`).join("")}
           </div>
@@ -68,25 +74,50 @@
         <div class="ep-plan-unfold ${S.full ? "is-full" : ""}" id="ep-pu-box"></div>
       </div>
       <div class="ep-plan-modehint">${T.hint}</div>`);
+    const sh = $("#ep-plan-sheet"); if (sh) sh.classList.toggle("ep-plan-sheet-full", S.full);
     drawStrip();
+    if (S.full) requestFS();
   }
   const isOpen = () => !!(S.wallId && $("#ep-pu-box"));
   function close() { S.wallId = null; S.full = false; S.view = null; }
-  function toggleFull() {
-    S.full = !S.full;
-    const box = $("#ep-pu-box"), sheet = $("#ep-plan-sheet");
-    if (box) box.classList.toggle("is-full", S.full);
-    if (sheet) sheet.classList.toggle("ep-plan-sheet-full", S.full);
+
+  function requestFS() {
+    const sheet = $("#ep-plan-sheet"), box = $("#ep-pu-box"), target = sheet || box;
     try {
-      if (S.full) {
-        const target = sheet || box;
-        if (target && target.requestFullscreen) target.requestFullscreen().then(() => { if (screen.orientation && screen.orientation.lock) screen.orientation.lock("landscape").catch(() => {}); }).catch(() => {});
-      } else {
-        if (screen.orientation && screen.orientation.unlock) { try { screen.orientation.unlock(); } catch (e) {} }
-        if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-      }
+      if (target && target.requestFullscreen && !document.fullscreenElement)
+        target.requestFullscreen().then(() => { if (screen.orientation && screen.orientation.lock) screen.orientation.lock("landscape").catch(() => {}); }).catch(() => {});
     } catch (e) {}
-    drawStrip();
+  }
+  function enterFS() {
+    S.full = true;
+    const sheet = $("#ep-plan-sheet"), box = $("#ep-pu-box");
+    if (box) box.classList.add("is-full");
+    if (sheet) sheet.classList.add("ep-plan-sheet-full");
+    requestFS(); drawStrip();
+  }
+  function exitFS() {
+    S.full = false;
+    const sheet = $("#ep-plan-sheet"), box = $("#ep-pu-box");
+    if (box) box.classList.remove("is-full");
+    if (sheet) sheet.classList.remove("ep-plan-sheet-full");
+    try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
+    try { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); } catch (e) {}
+  }
+  function toggleFull() { if (S.full) { exitFS(); drawStrip(); } else enterFS(); }
+
+  // проверки норм — плавающая карточка поверх развёртки (не сворачивая её)
+  function showChecks() {
+    const box = $("#ep-pu-box"); if (!box) return;
+    const p = core().project;
+    const res = EP.Plan.Rules ? EP.Plan.Rules.run(p) : { issues: [] };
+    const prev = box.querySelector(".ep-plan-unfover"); if (prev) prev.remove();
+    const ov = document.createElement("div");
+    ov.className = "ep-plan-unfover";
+    const body = (res.issues && res.issues.length)
+      ? `<ul>${res.issues.map((i) => `<li>${esc(i.msg)}</li>`).join("")}</ul>`
+      : `<p class="ep-plan-unfover-ok">Замечаний нет ✓</p>`;
+    ov.innerHTML = `<div class="ep-plan-unfover-h"><b>✅ Проверки норм</b><button type="button" class="ep-plan-mini ep-clickable" data-pu-over-close aria-label="Закрыть">✕</button></div>${body}`;
+    box.appendChild(ov);
   }
 
   function svgEl(tag, attrs, text) {
@@ -106,8 +137,8 @@
     box.innerHTML = "";
     const svg = svgEl("svg", { viewBox: `${v.x} ${v.y} ${v.w} ${v.h}`, preserveAspectRatio: "xMidYMid meet", class: "ep-plan-unfsvg" });
     svg.style.touchAction = "none";
-    const kk = v.h / (S.full ? 620 : 340);   // базовый масштаб (сетка/линейки)
-    const ks = kk * S.sym;                    // масштаб символов (ползунок)
+    const kk = v.h / (S.full ? 620 : 340);   // толщина линий/сетки (тонкие, по экрану)
+    const ks = S.sym * 1.25;                  // размер символов/подписей В СМ — растёт при зуме
     // внутренние углы стены (работаем изнутри — размеры от внутренней грани)
     const inA = Math.min(th / 2, L / 2), inB = Math.max(L - th / 2, L / 2);
 
@@ -138,7 +169,7 @@
     });
 
     const els = wallElems(p, S.wallId).slice().sort((a, b) => a.offset - b.offset);
-    const chY = H + 42 * kk, ovY = chY + 22 * kk; // цепь размеров и общий размер по низу
+    const chY = H + 30 * ks, ovY = chY + 18 * ks; // цепь размеров и общий размер по низу (в см)
 
     // размерная ЦЕПЬ по низу (от внутренних углов, синим)
     const stations = [];
@@ -146,17 +177,17 @@
     svg.appendChild(svgEl("line", { x1: inA, y1: chY, x2: inB, y2: chY, class: "ep-plan-unfdimL", "stroke-width": kk }));
     stations.forEach((s) => {
       svg.appendChild(svgEl("line", { x1: s, y1: H, x2: s, y2: chY, class: "ep-plan-unfdimE", "stroke-width": kk * 0.7 })); // выносная
-      svg.appendChild(svgEl("line", { x1: s, y1: chY - 4 * kk, x2: s, y2: chY + 4 * kk, class: "ep-plan-unfdimL", "stroke-width": kk })); // засечка
+      svg.appendChild(svgEl("line", { x1: s, y1: chY - 4 * ks, x2: s, y2: chY + 4 * ks, class: "ep-plan-unfdimL", "stroke-width": kk })); // засечка
     });
     for (let i = 0; i < stations.length - 1; i++) {
       const seg = Math.round(stations[i + 1] - stations[i]);
       if (seg < 2) continue;
-      svg.appendChild(svgEl("text", { x: (stations[i] + stations[i + 1]) / 2, y: chY - 5 * kk, "font-size": 11 * kk, "text-anchor": "middle", class: "ep-plan-unfdimT" }, seg + ""));
+      svg.appendChild(svgEl("text", { x: (stations[i] + stations[i + 1]) / 2, y: chY - 5 * ks, "font-size": 11 * ks, "text-anchor": "middle", class: "ep-plan-unfdimT" }, seg + ""));
     }
     // общий размер (внутренняя длина стены)
     svg.appendChild(svgEl("line", { x1: inA, y1: ovY, x2: inB, y2: ovY, class: "ep-plan-unfdimL", "stroke-width": kk }));
-    [inA, inB].forEach((s) => svg.appendChild(svgEl("line", { x1: s, y1: ovY - 4 * kk, x2: s, y2: ovY + 4 * kk, class: "ep-plan-unfdimL", "stroke-width": kk })));
-    svg.appendChild(svgEl("text", { x: (inA + inB) / 2, y: ovY - 5 * kk, "font-size": 11 * kk, "text-anchor": "middle", class: "ep-plan-unfdimT" }, Math.round(inB - inA) + ""));
+    [inA, inB].forEach((s) => svg.appendChild(svgEl("line", { x1: s, y1: ovY - 4 * ks, x2: s, y2: ovY + 4 * ks, class: "ep-plan-unfdimL", "stroke-width": kk })));
+    svg.appendChild(svgEl("text", { x: (inA + inB) / 2, y: ovY - 5 * ks, "font-size": 11 * ks, "text-anchor": "middle", class: "ep-plan-unfdimT" }, Math.round(inB - inA) + ""));
 
     const TY = EL().TYPES;
     els.forEach((el) => {
@@ -167,7 +198,7 @@
 
       // вертикаль: высота от пола до точки (синим), подпись высоты
       svg.appendChild(svgEl("line", { x1: x, y1: H, x2: x, y2: y, class: "ep-plan-unfdimL", "stroke-width": kk }));
-      svg.appendChild(svgEl("text", { x: x + 6 * kk, y: (H + y) / 2, "font-size": 11 * kk, "dominant-baseline": "middle", class: "ep-plan-unfdimT" }, Math.round(el.height) + ""));
+      svg.appendChild(svgEl("text", { x: x + 6 * ks, y: (H + y) / 2, "font-size": 11 * ks, "dominant-baseline": "middle", class: "ep-plan-unfdimT" }, Math.round(el.height) + ""));
 
       if (el.type === "block") {
         const items = (el.params && el.params.items) || ["socket"];
@@ -290,13 +321,35 @@
   document.addEventListener("click", (e) => {
     if (!rooms() || !rooms().isActive()) return;
     const t = e.target; let b;
-    if (t.closest("[data-pu-close]")) { close(); rooms().closeSheet(); const sh = $("#ep-plan-sheet"); if (sh) sh.classList.remove("ep-plan-sheet-full"); return; }
+    if (t.closest("[data-pu-close]")) { exitFS(); close(); rooms().closeSheet(); return; } // выходим и из полного экрана — иначе белый экран
+    if (t.closest("[data-pu-over-close]")) { const ov = $("#ep-pu-box .ep-plan-unfover"); if (ov) ov.remove(); return; }
     if (t.closest("[data-pu-full]")) return toggleFull();
     if (t.closest("[data-pu-fit]")) { const p = core().project, w = G().wallById(p, S.wallId); if (w) { S.view = fitView(wallH(p, S.wallId), w.len); drawStrip(); } return; }
+    if ((b = t.closest("[data-pu-act]"))) {
+      const act = b.getAttribute("data-pu-act"), c = core();
+      if (act === "undo") { c.undo(); drawStrip(); rooms().renderScene(); }
+      else if (act === "redo") { c.redo(); drawStrip(); rooms().renderScene(); }
+      else if (act === "trace") { if (EP.Plan.Routes) EP.Plan.Routes.build(); drawStrip(); rooms().renderScene(); }
+      else if (act === "checks") { showChecks(); }
+      else if (act === "pdf") { if (EP.Plan.Export) EP.Plan.Export.print(); }
+      else if (act === "calc") { exitFS(); close(); rooms().closeSheet(); if (EP.Plan.Calc) EP.Plan.Calc.sheet(); }
+      else if (act === "scheme") { exitFS(); close(); rooms().closeSheet(); if (EP.Plan.Scheme) EP.Plan.Scheme.open(); }
+      return;
+    }
     if ((b = t.closest("[data-pu-wall]"))) { open(b.getAttribute("data-pu-wall")); return; }
     if ((b = t.closest("[data-pu-type]"))) {
       S.addType = b.getAttribute("data-pu-type");
       document.querySelectorAll("[data-pu-type]").forEach((x) => x.classList.toggle("on", x === b));
+    }
+  });
+  document.addEventListener("fullscreenchange", () => {
+    if (!document.fullscreenElement && S.full && isOpen()) { // вышли системной кнопкой/Esc — синхронизируем состояние
+      S.full = false;
+      const sheet = $("#ep-plan-sheet"), box = $("#ep-pu-box");
+      if (box) box.classList.remove("is-full");
+      if (sheet) sheet.classList.remove("ep-plan-sheet-full");
+      try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
+      drawStrip();
     }
   });
   document.addEventListener("input", (e) => {
