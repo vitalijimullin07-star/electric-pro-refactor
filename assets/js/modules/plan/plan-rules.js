@@ -11,8 +11,26 @@
     minSocketH: 5,       // см: розетка ниже — подозрительно
     maxDeviceH: 250,     // см: выше — проверь
     needLightPerRoom: 1, // 1 = предупреждать, если в комнате нет света
-    needPanel: 1         // 1 = предупреждать, если есть точки, но нет щита
+    needPanel: 1,        // 1 = предупреждать, если есть точки, но нет щита
+    // — нормы по линиям (ПУЭ, упрощённо) —
+    rcdRequired: 1,           // розеточные/влажные группы должны быть под УЗО
+    maxSocketsPerCircuit: 8,  // макс. розеток на одну линию (16А)
+    separateHeavy: 1,         // мощные (кондиц./тёплый пол) — отдельной линией
+    cableCheck: 1             // сечение кабеля под номинал автомата
   };
+  // макс. автомат (А) под сечение медного кабеля, мм²
+  const CABLE_AMP = { "1.5": 10, "2.5": 16, "4": 25, "6": 32, "10": 50, "16": 63 };
+  const HEAVY_LAYERS = { ac: 1, warm: 1 };
+  function sectionOf(cable) { const m = String(cable || "").match(/[×xX](\d+(?:\.\d+)?)/); return m ? parseFloat(m[1]) : null; }
+  function circuitSockets(p, c) {
+    let n = 0;
+    (p.elements || []).forEach((e) => {
+      if (e.circuitId !== c.id) return;
+      if (e.type === "block") ((e.params && e.params.items) || []).forEach((it) => { if (it === "socket") n++; });
+      else if (e.type === "socket") n++;
+    });
+    return n;
+  }
   const T = {
     title: "Проверки", close: "Закрыть", ok: "Замечаний нет ✓", save: "Сохранить пороги",
     wet: (h, min) => `Розетка во влажной зоне на ${h} см (мин. ${min} см)`,
@@ -22,10 +40,15 @@
     inOpening: "Точка попадает в дверной/оконный проём",
     noLight: (r) => `«${r}»: нет света`,
     noPanel: "Есть точки, но нет щита — трассы не построить",
+    needRcd: (q) => `${q}: розетки без УЗО — по ПУЭ нужна защита 30 мА`,
+    heavySep: (q) => `${q}: мощный потребитель смешан с другими — выдели отдельную линию`,
+    tooMany: (q, n, m) => `${q}: розеток ${n} на одной линии (реком. ≤ ${m})`,
+    thinCable: (q, s, br) => `${q}: кабель ${s} мм² мал для автомата ${br}A`,
     labels: {
       wetMinSocketH: "Мин. высота розетки во влажной зоне, см",
       minSocketH: "Мин. высота точки, см",
-      maxDeviceH: "Макс. высота точки, см"
+      maxDeviceH: "Макс. высота точки, см",
+      maxSocketsPerCircuit: "Макс. розеток на линию"
     }
   };
 
@@ -75,6 +98,22 @@
       });
     }
     if (R.needPanel && (p.elements || []).length && !(p.panels || []).length) issues.push({ msg: T.noPanel });
+
+    // — нормы по линиям (ПУЭ) —
+    (p.circuits || []).forEach((c) => {
+      const els = (p.elements || []).filter((e) => e.circuitId === c.id && e.status !== "existing" && e.type !== "junction");
+      if (!els.length) return;
+      const socketN = circuitSockets(p, c);
+      const hasSocket = socketN > 0;
+      const heavy = els.filter((e) => HEAVY_LAYERS[e.layer] || e.type === "ac" || e.type === "warmfloor");
+      const hasHeavy = heavy.length > 0;
+      const others = els.length - heavy.length;
+      const wet = els.some((e) => { const rid = e.wallId ? String(e.wallId).split(":")[0] : null; return rid && wetRooms.has(rid); });
+      if (R.rcdRequired && (hasSocket || wet) && !c.rcd) issues.push({ circuitId: c.id, msg: T.needRcd(c.name) });
+      if (R.separateHeavy && hasHeavy && others > 0) issues.push({ circuitId: c.id, msg: T.heavySep(c.name) });
+      if (R.maxSocketsPerCircuit && (c.breaker || 16) >= 16 && socketN > R.maxSocketsPerCircuit) issues.push({ circuitId: c.id, msg: T.tooMany(c.name, socketN, R.maxSocketsPerCircuit) });
+      if (R.cableCheck && c.cable) { const s = sectionOf(c.cable), max = CABLE_AMP[String(s)]; if (s && max && (c.breaker || 16) > max) issues.push({ circuitId: c.id, msg: T.thinCable(c.name, s, c.breaker) }); }
+    });
 
     return { issues, badIds };
   }
