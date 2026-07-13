@@ -161,7 +161,7 @@
     const wallHit = G().wallAt(p, w, CFG.hitWallPx * k);
     if (wallHit && EP.Plan.Unfold) {
       R.selectedRoomId = null;
-      EP.Plan.Unfold.open(wallHit.wall.id);
+      EP.Plan.Unfold.open(wallHit.wall.id, true); // сразу во весь экран, без мини-превью
       renderScene();
       return;
     }
