@@ -197,6 +197,19 @@ test("ПУЭ: тонкий кабель под автомат -> предупр�
   ok(/мал для автомата/.test(msgs), "нет предупреждения о сечении");
 });
 
+// ===== 6c. PWA (manifest + service worker) =====
+test("PWA: manifest валиден и содержит нужные поля", () => {
+  const fs = require("fs"), path = require("path");
+  const m = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "manifest.webmanifest"), "utf8"));
+  eq(m.display, "standalone", "display");
+  ok(m.start_url && m.scope, "start_url/scope");
+  ok(Array.isArray(m.icons) && m.icons.length > 0, "иконки");
+});
+test("PWA: sw.js без синтаксических ошибок", () => {
+  const { execSync } = require("child_process"), path = require("path");
+  noThrow(() => execSync("node --check " + path.resolve(__dirname, "..", "sw.js")), "sw.js синтаксис");
+});
+
 // ===== 7. Рендер =====
 test("render: полная сцена без ошибок", () => {
   const q1 = M.newCircuit("QF1", "#e11", 16);
