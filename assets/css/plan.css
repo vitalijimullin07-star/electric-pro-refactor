@@ -344,3 +344,13 @@ body[data-visual-mode="day"] .ep-plan-unfdimT { fill: #1d4ed8; }
 .ep-plan-sheet-full .ep-plan-unfold { flex: 1 1 auto; min-height: 0; }
 .ep-plan-sheet-full .ep-plan-unfsvg { height: 100%; }
 .ep-plan-unfsvg { height: 240px; }
+
+/* — v13: развёртка в полный экран — управление сбоку, холст крупнее — */
+.ep-plan-unfmain { display: flex; flex-direction: column; gap: 8px; }
+.ep-plan-unfctrls { display: flex; flex-direction: column; gap: 8px; }
+/* полный экран: горизонтальная раскладка — слева колонка управления, справа развёртка */
+.ep-plan-sheet-full .ep-plan-unfmain { flex: 1 1 auto; min-height: 0; flex-direction: row; gap: 10px; }
+.ep-plan-sheet-full .ep-plan-unfctrls { flex: 0 0 210px; overflow-y: auto; overflow-x: hidden; }
+.ep-plan-sheet-full .ep-plan-unfctrls .ep-plan-unfbar { flex-wrap: wrap; overflow: visible; }
+.ep-plan-sheet-full .ep-plan-unfold { flex: 1 1 auto; min-width: 0; min-height: 0; }
+.ep-plan-sheet-full .ep-plan-unfsvg { height: 100%; }

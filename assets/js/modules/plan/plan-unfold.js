@@ -47,22 +47,26 @@
     const TY = EL().TYPES, OT = EL().OPEN_TYPES || {};
     const walls = roomWalls(p, wallId);
     const chip = (k, glyph) => `<button type="button" class="ep-plan-chip ep-clickable ${S.addType === k ? "on" : ""}" data-pu-type="${k}">${esc(glyph)}</button>`;
-    rooms().openSheet(`<div class="ep-plan-srow"><b>${T.title} ${w.n}</b>
+    rooms().openSheet(`<div class="ep-plan-srow ep-plan-unfhead"><b>${T.title} ${w.n}</b>
         <span>· ${G().fmtLen(w.len)} × ${G().fmtLen(wallH(p, wallId))}</span>
         <span class="ep-plan-flex"></span>
         <button type="button" class="ep-plan-mini ep-clickable" data-pu-fit aria-label="Показать всё">⛶</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-pu-full aria-label="Во весь экран">⤢</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-pu-close>✕</button></div>
-      <div class="ep-plan-unfbar">
-        <span class="ep-plan-unflbl">Стена:</span>${walls.map((ww) => `<button type="button" class="ep-plan-chip ep-clickable ${ww.id === wallId ? "on" : ""}" data-pu-wall="${esc(ww.id)}">${ww.n}</button>`).join("")}
+      <div class="ep-plan-unfmain">
+        <div class="ep-plan-unfctrls">
+          <div class="ep-plan-unfbar">
+            <span class="ep-plan-unflbl">Стена:</span>${walls.map((ww) => `<button type="button" class="ep-plan-chip ep-clickable ${ww.id === wallId ? "on" : ""}" data-pu-wall="${esc(ww.id)}">${ww.n}</button>`).join("")}
+          </div>
+          <div class="ep-plan-unfbar">
+            <span class="ep-plan-unflbl">Добавить:</span>${CFG.addTypes.map((k) => chip(k, TY[k].glyph)).join("")}
+            <span class="ep-plan-unfsep"></span>${CFG.openTypes.map((k) => chip(k, (OT[k] || {}).glyph || "?")).join("")}
+          </div>
+          <div class="ep-plan-unfbar"><span class="ep-plan-unflbl">Размер значков:</span>
+            <input type="range" min="60" max="220" value="${Math.round(S.sym * 100)}" data-pu-sym class="ep-plan-unfslider"></div>
+        </div>
+        <div class="ep-plan-unfold ${S.full ? "is-full" : ""}" id="ep-pu-box"></div>
       </div>
-      <div class="ep-plan-unfbar">
-        <span class="ep-plan-unflbl">Добавить:</span>${CFG.addTypes.map((k) => chip(k, TY[k].glyph)).join("")}
-        <span class="ep-plan-unfsep"></span>${CFG.openTypes.map((k) => chip(k, (OT[k] || {}).glyph || "?")).join("")}
-      </div>
-      <div class="ep-plan-unfbar"><span class="ep-plan-unflbl">Размер значков:</span>
-        <input type="range" min="60" max="220" value="${Math.round(S.sym * 100)}" data-pu-sym class="ep-plan-unfslider"></div>
-      <div class="ep-plan-unfold ${S.full ? "is-full" : ""}" id="ep-pu-box"></div>
       <div class="ep-plan-modehint">${T.hint}</div>`);
     drawStrip();
   }
