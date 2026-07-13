@@ -73,6 +73,29 @@
     return cards.length ? `<div class="unfsec"><h3>Развёртки стен</h3><div class="unfgrid">${cards.join("")}</div></div>` : "";
   }
 
+  // однолинейная схема в лист (тем же движком, что и в приложении)
+  function buildScheme(p) {
+    if (!window.ShieldSchemeSVG || !EP.Plan.Scheme || !(p.circuits || []).length) return "";
+    try {
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      window.ShieldSchemeSVG.render(svg, EP.Plan.Scheme.buildTree(p));
+      svg.setAttribute("width", "100%");
+      return `<div class="unfsec"><h3>Однолинейная схема</h3><div class="schemebox">${svg.outerHTML}</div></div>`;
+    } catch (e) { return ""; }
+  }
+  // таблица линий (QF) + щит
+  function buildCircuits(p) {
+    const circuits = p.circuits || [];
+    if (!circuits.length) return "";
+    if (EP.Plan.Scheme && EP.Plan.Scheme.recompute) { try { EP.Plan.Scheme.recompute(p); } catch (e) {} }
+    const rl = EP.Plan.Routes ? EP.Plan.Routes.lengths(p) : { byCircuit: {} };
+    const rows = circuits.map((c) => `<tr><td><i class="cd" style="background:${esc(c.color)}"></i>${esc(c.name)}</td><td>${(c.breaker || 16)}A${c.rcd ? " + УЗО" : ""}</td><td>${esc(c.cable || "—")}</td><td>${c.poles === 3 ? "3P" : "1P"}</td><td>${rl.byCircuit && rl.byCircuit[c.id] ? G().fmtLen(rl.byCircuit[c.id]) : "—"}</td></tr>`).join("");
+    const box = p.settings.panelBox;
+    const panelInfo = box && box.modules ? `Щит: <b>${esc(box.brand)}</b> · ${box.modules} мод · ${box.wmm}×${box.hmm}×${box.dmm} мм` : "";
+    return `<div class="unfsec"><h3>Линии и щит</h3>${panelInfo ? `<p style="margin:2px 0 6px">${panelInfo}</p>` : ""}
+      <table><tr><th>Линия</th><th>Автомат</th><th>Кабель</th><th>Полюса</th><th>Длина</th></tr>${rows}</table></div>`;
+  }
+
   function counts(p) {
     const TY = EP.Plan.Elements.TYPES, out = {};
     (p.elements || []).forEach((e) => {
@@ -142,6 +165,10 @@
       .unfshape { stroke: #111; stroke-width: 1; }
       .unfglyph { fill: #fff; font-weight: 700; font-family: system-ui; }
       .unfqf { font-weight: 700; font-family: system-ui; }
+      /* однолинейка + линии */
+      .schemebox { border: 1px solid #999; padding: 6px; overflow: auto; }
+      .schemebox svg { max-width: 100%; height: auto; }
+      .cd { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
     </style></head><body><div class="frame">
       <div class="plan">${buildSvg(p)}</div>
       <div class="cols">
@@ -150,6 +177,8 @@
         <div class="legend"><h3>${T.legend}</h3>${legendRows}</div>
       </div>
       ${buildUnfolds(p)}
+      ${buildCircuits(p)}
+      ${buildScheme(p)}
       <div class="stamp">
         <div><b>${T.obj}</b>${esc(p.name)}</div>
         <div><b>${T.addr}</b>${esc(p.address || "—")}</div>
