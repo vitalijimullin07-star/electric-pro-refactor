@@ -269,6 +269,14 @@ body[data-visual-mode="day"] .ep-plan-wallband.mat-concrete, body[data-visual-mo
 
 .ep-plan-beamdraft { opacity: .5; }
 .ep-plan-beamhandle { fill: #38bdf8; stroke: #fff; stroke-width: 1; }
+
+/* внутренние препятствия: вентшахта (штриховка) / мини-комната (тонкий контур) */
+.ep-plan-void { fill: rgba(100, 116, 139, .18); stroke: #64748b; }
+.ep-plan-void-room { fill: none; stroke-dasharray: 5 4; }
+.ep-plan-void.is-sel { stroke: var(--accent, #38bdf8); stroke-width: 2; }
+.ep-plan-voidhatch { pointer-events: none; opacity: .5; }
+.ep-plan-voidname { fill: #e2e8f0; font-family: system-ui; font-weight: 600; pointer-events: none; }
+body[data-visual-mode="day"] .ep-plan-voidname { fill: #0f172a; }
 .ep-plan-qf { font-family: system-ui; font-weight: 700; }
 /* пунктир: выключатель -> его свет/вывод */
 .ep-plan-swlink { stroke-dasharray: 6 5; opacity: .8; fill: none; pointer-events: none; }

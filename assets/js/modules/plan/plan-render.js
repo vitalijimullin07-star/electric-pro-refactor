@@ -195,7 +195,7 @@
         g.appendChild(el("text", {
           x: c.x, y: c.y, class: "ep-plan-name", "font-size": fsName,
           "text-anchor": "middle", "dominant-baseline": "middle"
-        }, room.name + " · " + G.fmtArea(G.area(pts))));
+        }, room.name + " · " + G.fmtArea(G.roomNetArea(project, room))));
       }
     });
 
@@ -256,6 +256,8 @@
         const winA = op.hinge === "a" ? doorFar : a, winB = op.hinge === "a" ? b : doorFar;
         drawWindow(winA, winB);
         drawSwing(hinge, doorFar, dW);
+      } else if (kind === "opening") {
+        // просто проём — без двери и без окна, только вырез в стене (маска выше)
       } else {
         drawWindow(a, b);
       }
@@ -297,6 +299,25 @@
       const d2 = ui.beamDraft;
       if (d2.b) g.appendChild(el("line", { x1: d2.a.x, y1: d2.a.y, x2: d2.b.x, y2: d2.b.y, class: "ep-plan-wallband ep-plan-beamdraft", "stroke-width": wallTh }));
       g.appendChild(el("circle", { cx: d2.a.x, cy: d2.a.y, r: CFG.pointPx * k, class: "ep-plan-draftpt is-first" }));
+    }
+
+    // внутренние препятствия: вентшахта (штриховка) / мини-комната (тонкий контур)
+    (project.voids || []).forEach((vd) => {
+      const r = G.voidRect(vd);
+      const selV = EP.Plan.Rooms && EP.Plan.Rooms.selectedVoidId && EP.Plan.Rooms.selectedVoidId() === vd.id;
+      const cls = "ep-plan-void ep-plan-void-" + (vd.kind === "room" ? "room" : "shaft") + (selV ? " is-sel" : "");
+      const grp = el("g", { "data-pl-void": vd.id });
+      const rectAttrs = { x: r.x1, y: r.y1, width: r.w, height: r.h, class: cls, "stroke-width": sw * 0.6 };
+      grp.appendChild(el("rect", rectAttrs));
+      if (vd.kind !== "room") grp.appendChild(el("rect", { x: r.x1, y: r.y1, width: r.w, height: r.h, fill: HATCH("Панель"), class: "ep-plan-voidhatch" }));
+      const cx = (r.x1 + r.x2) / 2, cy = (r.y1 + r.y2) / 2;
+      const fsV = Math.max(8, Math.min(13, r.w / 6)) * k;
+      grp.appendChild(el("text", { x: cx, y: cy, class: "ep-plan-voidname", "font-size": fsV, "text-anchor": "middle", "dominant-baseline": "middle" }, vd.name || (vd.kind === "room" ? "Комната" : "Шахта")));
+      g.appendChild(grp);
+    });
+    // черновик внутреннего препятствия (первая точка уже поставлена)
+    if (ui && ui.voidDraft && ui.voidDraft.a) {
+      g.appendChild(el("circle", { cx: ui.voidDraft.a.x, cy: ui.voidDraft.a.y, r: CFG.pointPx * k, class: "ep-plan-draftpt is-first" }));
     }
 
     // светодиодная лента — сегмент ВДОЛЬ стены (offsetA..offsetB), с небольшим отступом

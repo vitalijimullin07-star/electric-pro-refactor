@@ -123,7 +123,7 @@
     const master = (window.EP.state && EP.state.user && EP.state.user.displayName) || "";
     const date = new Date().toLocaleDateString("ru-RU");
     const expl = (p.rooms || []).filter((r) => (r.points || []).length >= 3)
-      .map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.name)}</td><td>${G().fmtArea(G().area(r.points))}</td><td>${esc(r.material || p.settings.wallMaterial)}</td></tr>`).join("");
+      .map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.name)}</td><td>${G().fmtArea(G().roomNetArea(p, r))}</td><td>${esc(r.material || p.settings.wallMaterial)}</td></tr>`).join("");
     const gost = (p.settings && p.settings.symbolStyle) === "gost";
     const spec = counts(p).map((c) => `<tr><td>${iconFor(c.k, c.glyph, gost)}</td><td>${esc(c.name)}</td><td>${c.qty}</td></tr>`).join("");
     const legendRows = counts(p).map((c) => `<div>${iconFor(c.k, c.glyph, gost)}${esc(c.name)}</div>`).join("")

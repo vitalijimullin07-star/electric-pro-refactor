@@ -95,6 +95,7 @@
       rooms: [], panels: [], elements: [], routes: [], circuits: [],
       openings: [], // двери и окна в стенах
       beams: [],    // перемычки/балки на потолке (свободные отрезки)
+      voids: [],    // внутренние препятствия: вентшахта / мини-комната внутри комнаты
       ledStrips: [], // светодиодная лента: сегменты ВДОЛЬ стены (wallId+offsetA/offsetB)
       manualScheme: newManualScheme(), // ручной конструктор однолинейки (Слой 7б)
       layers: blankLayers(),
@@ -151,7 +152,8 @@
     door:    { w: 90,  h: 200, sill: 0,  win: false, pfx: "Д" },
     sliding: { w: 140, h: 200, sill: 0,  win: false, pfx: "РД" },
     window:  { w: 140, h: 140, sill: 90, win: true,  pfx: "О" },
-    balcony: { w: 180, h: 210, sill: 0,  win: false, pfx: "Б" }
+    balcony: { w: 180, h: 210, sill: 0,  win: false, pfx: "Б" },
+    opening: { w: 90,  h: 200, sill: 0,  win: false, pfx: "Пр" } // проём без двери/окна — просто вырез в стене
   };
   function newOpening(kind, wallId, offset, width) {
     // hinge: у какого края петли ('a' — ближний угол), flip: сторона открывания (±1)
@@ -161,6 +163,13 @@
   }
   function newBeam(a, b, kind, width, material) {
     return { id: uid("bm"), a: a || { x: 0, y: 0 }, b: b || { x: 0, y: 0 }, width: width || DEFAULTS.wallThickness, kind: kind === "lintel" ? "lintel" : "beam", material: material || null };
+  }
+  // Внутреннее препятствие (вентшахта / мини-комната внутри комнаты) — прямоугольник
+  // по двум противоположным углам a/b, БЕЗ привязки к конкретной room (комната
+  // определяется геометрически, как и у всех прочих свободных объектов плана).
+  function newVoid(a, b, kind) {
+    const k = kind === "room" ? "room" : "shaft";
+    return { id: uid("vd"), a: a || { x: 0, y: 0 }, b: b || { x: 0, y: 0 }, kind: k, name: k === "room" ? "Комната" : "Шахта" };
   }
 
   // ---------- состояние ----------
@@ -228,6 +237,7 @@
   function backfillProject(p) {
     p.openings = p.openings || [];
     p.beams = p.beams || [];
+    p.voids = p.voids || [];
     p.ledStrips = p.ledStrips || [];
     p.circuits = p.circuits || [];
     p.circuits.forEach((c) => { if (c.phase !== 1 && c.phase !== 2 && c.phase !== 3) c.phase = 1; });
@@ -347,6 +357,6 @@
     listProjects, createProject, openProject, closeProject, deleteProject, renameProject,
     commit, undo, redo, canUndo, canRedo, persist,
     exportJSON, importJSON, cloudPullIndex,
-    model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening, newBeam, newManualScheme, newSchemeGroup, newSchemeLine, newLedStrip }
+    model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening, newBeam, newVoid, newManualScheme, newSchemeGroup, newSchemeLine, newLedStrip }
   };
 })();

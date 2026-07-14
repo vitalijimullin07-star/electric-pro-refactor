@@ -7,12 +7,13 @@
   window.EP = window.EP || {};
 
   const T = {
-    modes: { view: "☝", rect: "▭", poly: "⬠", beam: "▬", elem: "🔌", opening: "🚪", wall: "📐", ruler: "📏", underlay: "🖼" },
+    modes: { view: "☝", rect: "▭", poly: "⬠", beam: "▬", void: "▦", elem: "🔌", opening: "🚪", wall: "📐", ruler: "📏", underlay: "🖼" },
     modeHint: {
       view: "Тап: точка — редактор, стена — развёртка, комната — свойства.",
       rect: "Тапни два противоположных угла комнаты.",
       poly: "Ставь точки по контуру. Замкни тапом в первую точку.",
       beam: "Балка/перегородка: тапни начало и конец, потом тяни концы.",
+      void: "Вентшахта / мини-комната внутри комнаты: тапни два противоположных угла.",
       elem: "Выбери тип в палитре и тапай по стене (свет/ТП — внутрь комнаты).",
       opening: "Проёмы: выбери дверь/окно/раздвижную/балкон и тапни по стене или перегородке.",
       wall: "Тапни по любой стене — сразу откроется её развёртка во весь экран.",
@@ -40,12 +41,12 @@
   const R = {
     canvas: null, active: false,
     mode: "view", draft: { points: [] }, pendingRect: null, pendingPoly: null,
-    selectedRoomId: null, ruler: { a: null, b: null }, beamDraft: { a: null, b: null },
+    selectedRoomId: null, ruler: { a: null, b: null }, beamDraft: { a: null, b: null }, voidDraft: { a: null, b: null },
     umove: false, calib: { on: false, a: null, b: null }
   };
 
   // ---------- сцена ----------
-  function ui() { return { selectedRoomId: R.selectedRoomId, draft: R.draft, ruler: R.ruler, beamDraft: R.beamDraft }; }
+  function ui() { return { selectedRoomId: R.selectedRoomId, draft: R.draft, ruler: R.ruler, beamDraft: R.beamDraft, voidDraft: R.voidDraft }; }
   function renderScene() {
     if (!R.canvas || !EP.Plan.Render) return;
     EP.Plan.Render.draw(R.canvas, core().project, ui());
@@ -64,9 +65,9 @@
   function setMode(mode) {
     R.mode = mode;
     R.draft = { points: [] }; R.pendingRect = null; R.pendingPoly = null;
-    R.ruler = { a: null, b: null }; R.beamDraft = { a: null, b: null };
+    R.ruler = { a: null, b: null }; R.beamDraft = { a: null, b: null }; R.voidDraft = { a: null, b: null };
     R.calib = { on: false, a: null, b: null };
-    R.selectedBeam = null;
+    R.selectedBeam = null; R.selectedVoid = null;
     setMove(false);
     document.querySelectorAll("[data-plan-mode]").forEach((b) => b.classList.toggle("on", b.getAttribute("data-plan-mode") === mode));
     if (mode === "underlay") sheetUnderlay();
@@ -138,6 +139,19 @@
       setMode("view"); sheetBeam(beam); // сразу выделяем — можно тянуть концы
       return;
     }
+    if (R.mode === "void") {
+      const snapped = G().snapSmart(p, w, step, CFG.cornerSnapCm);
+      if (!R.voidDraft.a) { R.voidDraft = { a: snapped, b: null }; renderScaled(); return; }
+      const c = core();
+      c.commit();
+      c.project.voids = c.project.voids || [];
+      const vd = c.model.newVoid(R.voidDraft.a, snapped, "shaft");
+      c.project.voids.push(vd);
+      c.persist("void-add");
+      R.voidDraft = { a: null, b: null };
+      setMode("view"); sheetVoid(vd); // сразу выделяем — можно поправить размер/тип
+      return;
+    }
     if (R.mode === "underlay") {
       if (R.calib.on) {
         if (!R.calib.a) R.calib.a = w;
@@ -158,8 +172,8 @@
       else toast(T.modeHint.wall);
       return;
     }
-    // view: приоритет — элемент/щит > балка > стена (развёртка) > комната
-    clearBeamSel();
+    // view: приоритет — элемент/щит > балка > шахта/мини-комната > стена (развёртка) > комната
+    clearBeamSel(); clearVoidSel();
     const k = R.canvas.cmPerPx();
     if (EP.Plan.Elements) {
       const hit = EP.Plan.Elements.hitAt(w, EP.Plan.Elements.CFG.hitPx * k);
@@ -175,10 +189,15 @@
     // балка/перемычка
     const beam = beamAt(p, w, CFG.hitWallPx * k);
     if (beam) { R.selectedRoomId = null; sheetBeam(beam); renderScene(); return; }
+    // вентшахта / мини-комната
+    const vhit = voidAt(p, w);
+    if (vhit) { R.selectedRoomId = null; sheetVoid(vhit); renderScene(); return; }
     const wallHit = G().wallAt(p, w, CFG.hitWallPx * k);
     if (wallHit && EP.Plan.Unfold) {
       R.selectedRoomId = null;
-      EP.Plan.Unfold.open(wallHit.wall.id, true); // сразу во весь экран, без мини-превью
+      // мини-превью — во весь экран разворачивается ТОЛЬКО явным режимом «Стена»
+      // (см. R.mode==="wall" выше) или кнопкой ⤢ внутри самой развёртки
+      EP.Plan.Unfold.open(wallHit.wall.id, false);
       renderScene();
       return;
     }
@@ -252,7 +271,7 @@
     const p = core().project;
     const isR = G().isRect(room), d = isR ? G().rectDims(room) : null;
     const wet = (room.zones || []).indexOf("wet") >= 0;
-    openSheet(`<div class="ep-plan-srow"><b>${esc(room.name)}</b> · ${G().fmtArea(G().area(room.points))}</div>
+    openSheet(`<div class="ep-plan-srow"><b>${esc(room.name)}</b> · ${G().fmtArea(G().roomNetArea(p, room))}</div>
       <div class="ep-plan-srow"><input id="ep-pr-rname" type="text" value="${esc(room.name)}" maxlength="40" data-pr-room="${esc(room.id)}"></div>
       <div class="ep-plan-srow ep-plan-s2">
         ${isR ? `<label>${T.width}<input id="ep-pr-rw" type="number" inputmode="numeric" min="30" value="${Math.round(d.w)}"></label>
@@ -351,6 +370,73 @@
     });
   }
   function clearBeamSel() { R.selectedBeam = null; if (R.canvas) R.canvas.setDragHandler(null); }
+
+  // ---------- вентшахта / мини-комната внутри комнаты (project.voids) ----------
+  function voidAt(p, w) {
+    return (p.voids || []).find((vd) => {
+      const r = G().voidRect(vd);
+      return w.x >= r.x1 && w.x <= r.x2 && w.y >= r.y1 && w.y <= r.y2;
+    }) || null;
+  }
+  function sheetVoid(vd) {
+    const r = G().voidRect(vd);
+    openSheet(`<div class="ep-plan-srow"><b>${esc(vd.kind === "room" ? "Мини-комната" : "Вент. шахта")}</b></div>
+      <div class="ep-plan-srow">
+        <button type="button" class="ep-plan-chip ep-clickable ${vd.kind !== "room" ? "on" : ""}" data-pr-voidkind="shaft">Шахта</button>
+        <button type="button" class="ep-plan-chip ep-clickable ${vd.kind === "room" ? "on" : ""}" data-pr-voidkind="room">Комната</button>
+      </div>
+      <div class="ep-plan-srow"><input id="ep-pr-vname" type="text" value="${esc(vd.name || "")}" maxlength="30" placeholder="Название"></div>
+      <div class="ep-plan-srow ep-plan-s2">
+        <label>${T.width}<input id="ep-pr-vw" type="number" inputmode="numeric" min="10" value="${Math.round(r.w)}"></label>
+        <label>${T.depth}<input id="ep-pr-vh" type="number" inputmode="numeric" min="10" value="${Math.round(r.h)}"></label>
+      </div>
+      <div class="ep-plan-modehint">Тяни целиком, чтобы переместить.</div>
+      <div class="ep-plan-srow ep-plan-sbtns">
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-voidapply="${esc(vd.id)}">✓</button>
+        <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pr-voiddel="${esc(vd.id)}">${T.del}</button></div>`);
+    R.selectedVoid = vd.id;
+    enableVoidDrag();
+    renderScene();
+  }
+  function applyVoid(id) {
+    const c = core(), vd = (c.project.voids || []).find((v) => v.id === id);
+    if (!vd) return;
+    c.commit();
+    const nm = ($("#ep-pr-vname") || {}).value;
+    vd.name = (nm || "").trim() || (vd.kind === "room" ? "Комната" : "Шахта");
+    const r = G().voidRect(vd);
+    const cx = (r.x1 + r.x2) / 2, cy = (r.y1 + r.y2) / 2;
+    const wv = Math.max(10, Number(($("#ep-pr-vw") || {}).value) || r.w);
+    const hv = Math.max(10, Number(($("#ep-pr-vh") || {}).value) || r.h);
+    vd.a = { x: cx - wv / 2, y: cy - hv / 2 };
+    vd.b = { x: cx + wv / 2, y: cy + hv / 2 };
+    c.persist("void-apply");
+    clearVoidSel(); closeSheet(); renderScene();
+  }
+  // тянуть весь прямоугольник целиком (без ресайза — размер только числом в редакторе)
+  function enableVoidDrag() {
+    if (!R.canvas) return;
+    R.canvas.setDragHandler((dx, dy, phase, start) => {
+      const c = core(), vd = (c.project.voids || []).find((v) => v.id === R.selectedVoid);
+      if (!vd) return;
+      if (phase === "start") {
+        const r = G().voidRect(vd);
+        if (start.x < r.x1 || start.x > r.x2 || start.y < r.y1 || start.y > r.y2) return false; // мимо — пан
+        core().commit();
+        return;
+      }
+      if (phase === "move") {
+        vd.a = { x: vd.a.x + dx, y: vd.a.y + dy };
+        vd.b = { x: vd.b.x + dx, y: vd.b.y + dy };
+        renderSceneSoon();
+      } else if (phase === "end") {
+        const step = c.project.settings.gridStep || 10;
+        vd.a = G().snapPoint(vd.a, step); vd.b = G().snapPoint(vd.b, step);
+        c.persist("void-move"); renderScene();
+      }
+    });
+  }
+  function clearVoidSel() { R.selectedVoid = null; if (R.canvas) R.canvas.setDragHandler(null); }
 
   // тянуть УГЛЫ и СТЕНЫ выбранной комнаты: угол — форма, стена — сдвиг по нормали.
   // Если палец не попал ни в угол, ни в стену — жест панорамирует (return false).
@@ -581,6 +667,23 @@
       c.project.openings = (c.project.openings || []).filter((o) => o.wallId !== "beam:" + bid); // проёмы перегородки
       c.persist("beam-del"); clearBeamSel(); closeSheet(); renderScene(); return;
     }
+    if ((el = t.closest("[data-pr-voidkind]"))) {
+      const c = core(), vd = (c.project.voids || []).find((v) => v.id === R.selectedVoid);
+      if (vd) {
+        c.commit();
+        const nk = el.getAttribute("data-pr-voidkind");
+        if (vd.name === (vd.kind === "room" ? "Комната" : "Шахта")) vd.name = nk === "room" ? "Комната" : "Шахта"; // кастомное имя не трогаем
+        vd.kind = nk;
+        c.persist("void-kind"); sheetVoid(vd);
+      }
+      return;
+    }
+    if ((el = t.closest("[data-pr-voidapply]"))) return applyVoid(el.getAttribute("data-pr-voidapply"));
+    if ((el = t.closest("[data-pr-voiddel]"))) {
+      const c = core(), vid = el.getAttribute("data-pr-voiddel"); c.commit();
+      c.project.voids = (c.project.voids || []).filter((v) => v.id !== vid);
+      c.persist("void-del"); clearVoidSel(); closeSheet(); renderScene(); return;
+    }
   });
 
   document.addEventListener("change", (e) => {
@@ -621,6 +724,7 @@
     isActive: () => R.active,
     currentMode: () => R.mode,
     selectedBeamId: () => R.selectedBeam || null,
+    selectedVoidId: () => R.selectedVoid || null,
     canvasCmPerPx: () => (R.canvas ? R.canvas.cmPerPx() : 1)
   };
 })();

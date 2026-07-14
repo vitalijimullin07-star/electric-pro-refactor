@@ -844,6 +844,36 @@ test("ручная схема: аппараты вводной цепи идут
   eq(tree.children[0].children[0].type, "spd", "ОПН вторым");
 });
 
+test("newVoid: дефолт kind=shaft, имя автоматом", () => {
+  const vd = M.newVoid({ x: 10, y: 10 }, { x: 60, y: 40 });
+  eq(vd.kind, "shaft", "дефолтный тип — шахта");
+  eq(vd.name, "Шахта", "имя по умолчанию");
+});
+test("newVoid: kind=room даёт имя «Комната»", () => {
+  const vd = M.newVoid({ x: 0, y: 0 }, { x: 50, y: 50 }, "room");
+  eq(vd.kind, "room");
+  eq(vd.name, "Комната");
+});
+test("G.roomVoidArea/roomNetArea: шахта внутри комнаты вычитается из площади", () => {
+  const { P, room } = install();
+  const vd = M.newVoid({ x: 50, y: 50 }, { x: 100, y: 100 }, "shaft"); // 50x50 = 2500 см²
+  P.voids = [vd];
+  eq(G.roomVoidArea(P, room), 2500, "площадь шахты 50x50 см");
+  const full = G.area(room.points); // 400*300 = 120000
+  eq(G.roomNetArea(P, room), full - 2500, "чистая площадь за вычетом шахты");
+});
+test("G.roomVoidArea: препятствие ВНЕ комнаты не вычитается", () => {
+  const { P, room } = install();
+  const vd = M.newVoid({ x: 1000, y: 1000 }, { x: 1050, y: 1050 });
+  P.voids = [vd];
+  eq(G.roomVoidArea(P, room), 0, "центр препятствия вне полигона комнаты");
+});
+test("OPENING_KINDS.opening: проём без двери/окна, win=false", () => {
+  const op = M.newOpening("opening", "w:0", 0, undefined);
+  eq(op.kind, "opening");
+  eq(op.type, "door", "type остаётся door (внутреннее поле, win=false)");
+});
+
 (async () => {
   await test("openProject: бэкофилл старых проектов", async () => {}); // placeholder to keep sync
   // п.1 аудита: importJSON теперь ТОЖЕ бэкофиллит (не только openProject) — старые/
@@ -862,6 +892,7 @@ test("ручная схема: аппараты вводной цепи идут
   eq(imp.settings.schemeMode, "auto", "бэкофилл schemeMode");
   ok(imp.manualScheme && Array.isArray(imp.manualScheme.groups), "бэкофилл manualScheme.groups");
   ok(Array.isArray(imp.ledStrips), "бэкофилл ledStrips");
+  ok(Array.isArray(imp.voids), "бэкофилл voids");
   eq(imp.panels[0].transformer, false, "бэкофилл panel.transformer");
 
   console.log("\n" + "=".repeat(48));
