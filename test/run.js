@@ -325,26 +325,36 @@ test("calcByRoutes: штробы/подрозетники/кабель/ниша 
   ok(niche && niche.qty === 24, "вырубка × модули");
   ok(res.items.some((i) => i.name === "Монтаж щита в нишу/стену"), "монтаж щита");
 });
-test("calcByRoutes: слаботочка и ТП — отдельные штробы (не сливаются с силовой)", () => {
+test("calcByRoutes: слаботочка не сливается с силовой", () => {
   const { P, w } = install();
   const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
   const tv1 = M.newElement("tv", w(0), 100, 130, "tv");
-  const tp = M.newElement("warmfloor", w(2), 200, 0, "warm");
-  P.elements.push(tv1, tp);
+  P.elements.push(tv1);
   const r1 = M.newRoute("tv", "ceiling", [{ x: 100, y: 18 }, { x: 50, y: 50 }], tv1.id, pn.id); r1.toPanel = true;
-  const r2 = M.newRoute("warm", "ceiling", [{ x: 200, y: 282 }, { x: 50, y: 50 }], tp.id, pn.id); r2.toPanel = true;
-  P.routes.push(r1, r2);
+  P.routes.push(r1);
   const res = EP.Plan.Calc.calcByRoutes(P);
-  ok(res.items.some((i) => i.name === "Штробление 50x50 бетон"), "ТП 50×50");
   // слаботочка — ОТДЕЛЬНАЯ строка с суффиксом (не совпадает с силовой той же ширины)
   const lv = res.items.find((i) => i.name === "Штробление 25x30 бетон (слаботочка)");
   ok(lv, "слаботочка — своя строка");
   near(lv.qty, 2.6, 0.05, "свой спуск (140см) + спуск у щита (120см)");
-  // силовая (спуск ТП к щиту, 120см) не смешана со слаботочкой — своя строка без суффикса
-  const pw = res.items.find((i) => i.name === "Штробление 25x30 бетон");
-  ok(pw, "силовая штроба у щита — отдельной строкой от слаботочки");
-  near(pw.qty, 1.2, 0.05, "только силовой спуск ТП у щита");
   ok(res.items.some((i) => i.name.indexOf("Слаботочный") >= 0), "марка слаботочки");
+});
+test("calcByRoutes: ТП — подача обычной штробой + ВСЕГДА 50×50 в пол отдельно", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
+  const tp = M.newElement("warmfloor", w(2), 200, 30, "warm"); // термостат на стене, 30см от пола
+  P.elements.push(tp);
+  const r = M.newRoute("warm", "ceiling", [{ x: 200, y: 282 }, { x: 50, y: 50 }], tp.id, pn.id); r.toPanel = true;
+  P.routes.push(r);
+  const res = EP.Plan.Calc.calcByRoutes(P);
+  // подача к термостату: потолок(270)-высота(30)=240см силовой штробой + спуск у щита 120см = 3.6м
+  const pw = res.items.find((i) => i.name === "Штробление 25x30 бетон");
+  ok(pw, "подача к термостату — обычная штроба (не 50×50)");
+  near(pw.qty, 3.6, 0.05, "спуск к термостату 240см + у щита 120см");
+  // от термостата вниз в пол — ВСЕГДА 50×50, равно высоте термостата (30см)
+  const warm = res.items.find((i) => i.name === "Штробление 50x50 бетон");
+  ok(warm, "от термостата в пол — отдельная 50×50 строка");
+  near(warm.qty, 0.3, 0.02, "от термостата (30см) до пола");
 });
 test("calcByRoutes: коннекторы (распайки + разводка выключателей) из графа трасс", () => {
   const { P, w } = install();
@@ -590,6 +600,88 @@ test("тип «Вывод»: layerChoice, силовой по умолчанию
   eq(TY.layer, "power", "по умолчанию силовой");
   ok(TY.free, "можно ставить свободно (потолок/пол) — как и на стену при тапе рядом");
   ok(TY.layerChoice, "есть переключатель силовой/слаботочный в редакторе");
+});
+
+// ===== 13. Провод без распайки ×2, выключатель на всю высоту при полу =====
+test("hopVertMul: хоп точка→точка без распайки — штроба ×2 в длине кабеля", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
+  const s1 = M.newElement("socket", w(0), 100, 30, "power");
+  const s2 = M.newElement("socket", w(0), 150, 30, "power");
+  P.elements.push(s1, s2);
+  const r1 = M.newRoute("power", "ceiling", [{ x: 100, y: 18 }, { x: 50, y: 50 }], s1.id, pn.id); r1.toPanel = true;
+  const r2 = M.newRoute("power", "ceiling", [{ x: 150, y: 18 }, { x: 100, y: 18 }], s2.id, s1.id); // шлейф: s2 -> s1, без распайки
+  P.routes.push(r1, r2);
+  eq(EP.Plan.Routes.hopVertMul(P, r1), 1, "хоп в щит — ×1");
+  eq(EP.Plan.Routes.hopVertMul(P, r2), 2, "хоп в обычную точку (нет распайки) — ×2");
+});
+test("hopVertMul: хоп в распайку (junction) — ×1, не удваиваем", () => {
+  const { P, w } = install();
+  const j = M.newElement("junction", null, 0, 0, "routes"); j.params = { x: 200, y: 150 };
+  const s1 = M.newElement("socket", w(0), 100, 30, "power");
+  P.elements.push(j, s1);
+  const r = M.newRoute("power", "ceiling", [{ x: 100, y: 18 }, { x: 200, y: 150 }], s1.id, j.id);
+  P.routes.push(r);
+  eq(EP.Plan.Routes.hopVertMul(P, r), 1, "распайка принимает горизонталь — штроба не удваивается");
+});
+test("pointVert: выключатель при разводке ПО ПОЛУ — штроба на всю высоту (до потолка, к лампе)", () => {
+  const { P, w } = install();
+  const sw = M.newElement("switch", w(0), 100, 90, "light");
+  P.settings.routeType = "floor";
+  eq(EP.Plan.Routes.pointVert(P, sw), P.settings.ceilingHeight, "не 90см (своя высота), а вся высота до потолка");
+});
+test("pointVert: выключатель при разводке ПО ПОТОЛКУ — обычная формула (без изменений)", () => {
+  const { P, w } = install();
+  const sw = M.newElement("switch", w(0), 100, 90, "light");
+  eq(EP.Plan.Routes.pointVert(P, sw), P.settings.ceilingHeight - 90, "потолок минус высота — как обычно");
+});
+
+// ===== 14. Многоклавишные/проходные/перекрёстные выключатели, цепочка =====
+test("switchTarget: у каждой клавиши своя ручная цель", () => {
+  const { P, w } = install();
+  const sw = M.newElement("switch", w(0), 100, 90, "light");
+  sw.keys = 2;
+  const lampA = M.newElement("light", null, 0, 0, "light"); lampA.params = { x: 50, y: 50 };
+  const lampB = M.newElement("light", null, 0, 0, "light"); lampB.params = { x: 350, y: 250 };
+  sw.targetIds = [lampA.id, lampB.id];
+  P.elements.push(sw, lampA, lampB);
+  eq(G.switchTarget(P, sw, 0).id, lampA.id, "клавиша 1 -> своя лампа");
+  eq(G.switchTarget(P, sw, 1).id, lampB.id, "клавиша 2 -> другая лампа");
+});
+test("switchTarget: targetId (старое поле) читается как клавиша 0", () => {
+  const { P, w } = install();
+  const sw = M.newElement("switch", w(0), 100, 90, "light");
+  const lamp = M.newElement("light", null, 0, 0, "light"); lamp.params = { x: 50, y: 50 };
+  sw.targetId = lamp.id; // без targetIds — старый формат
+  P.elements.push(sw, lamp);
+  eq(G.switchTarget(P, sw, 0).id, lamp.id, "обратная совместимость с targetId");
+});
+test("цепочка проходной->перекрёстный->проходной: chainNext связывает звенья, финал ведёт к лампе", () => {
+  const { P, w } = install();
+  const sw1 = M.newElement("switch", w(0), 50, 90, "light"); sw1.swKind = "pass";
+  const sw2 = M.newElement("switch", w(1), 50, 90, "light"); sw2.swKind = "cross";
+  const sw3 = M.newElement("switch", w(2), 50, 90, "light"); sw3.swKind = "pass"; // последний — к лампе
+  const lamp = M.newElement("light", null, 0, 0, "light"); lamp.params = { x: 200, y: 150 };
+  sw1.chainNext = sw2.id; sw2.chainNext = sw3.id; sw3.chainNext = null;
+  sw3.targetId = lamp.id;
+  P.elements.push(sw1, sw2, sw3, lamp);
+  ok(sw1.chainNext === sw2.id && sw2.chainNext === sw3.id, "звенья связаны по цепочке");
+  ok(!sw3.chainNext, "последнее звено без chainNext");
+  eq(G.switchTarget(P, sw3, 0).id, lamp.id, "финал цепочки ведёт к лампе");
+});
+test("коннекторы: клавишность и тип выключателя выбирают шаблон пула (не всегда switch_1)", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
+  const sw2 = M.newElement("switch", w(0), 60, 90, "light"); sw2.keys = 2; // switch_2: pin2×3, pin4×2
+  const swPass = M.newElement("switch", w(1), 60, 90, "light"); swPass.swKind = "pass"; swPass.keys = 1; // pass_1: pin2×6
+  P.elements.push(sw2, swPass);
+  const rt = M.newRoute("light", "ceiling", [{ x: 60, y: 18 }, { x: 50, y: 50 }], sw2.id, pn.id); rt.toPanel = true;
+  P.routes.push(rt); // calcByRoutes требует хотя бы одну трассу (иначе ранний return null)
+  const res = EP.Plan.Calc.calcByRoutes(P);
+  // pin2 и pin4 оба попадают в типоразмер ГМЛ 4 (sleeveByWires: ≤4 провода)
+  const gml4 = res.items.find((i) => i.name === "ГМЛ 4");
+  ok(gml4, "есть гильзы ГМЛ 4");
+  eq(gml4.qty, 3 + 2 + 6, "switch_2: pin2×3+pin4×2, pass_1: pin2×6 — итого 11 (не как всегда switch_1×2=8)");
 });
 
 (async () => {

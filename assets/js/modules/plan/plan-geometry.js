@@ -282,9 +282,13 @@
   // Куда идёт свет от выключателя: ручное назначение (el.targetId) — приоритет;
   // иначе АВТО — ближайшая лампа/вывод той же ЛИНИИ (QF) в той же комнате
   // (без линии связь не рисуем — слишком много ложных совпадений).
-  G.switchTarget = (project, el) => {
+  // keyIdx — номер клавиши (0-based), для многоклавишных выключателей у каждой
+  // клавиши своя цель; для проходных/перекрёстных клавиши не различаем (keyIdx=0).
+  G.switchTarget = (project, el, keyIdx) => {
     if (!el || el.type !== "switch") return null;
-    if (el.targetId) { const t = (project.elements || []).find((e) => e.id === el.targetId); if (t) return t; }
+    const ki = keyIdx || 0;
+    const manualId = (el.targetIds && el.targetIds[ki]) || (ki === 0 ? el.targetId : null);
+    if (manualId) { const t = (project.elements || []).find((e) => e.id === manualId); if (t) return t; }
     if (!el.circuitId) return null;
     const p0 = G.elemDrawPoint(project, el);
     if (!p0) return null;

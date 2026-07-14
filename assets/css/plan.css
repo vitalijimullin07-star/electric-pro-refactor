@@ -261,6 +261,8 @@ body[data-visual-mode="day"] .ep-plan-wallband.mat-concrete, body[data-visual-mo
 .ep-plan-qf { font-family: system-ui; font-weight: 700; }
 /* пунктир: выключатель -> его свет/вывод */
 .ep-plan-swlink { stroke-dasharray: 6 5; opacity: .8; fill: none; pointer-events: none; }
+/* цепочка проходных/перекрёстных — звено к звену, сплошная (провод-связка) */
+.ep-plan-swchain { stroke-dasharray: 2 3; opacity: .9; fill: none; pointer-events: none; }
 
 /* развёртка v2 */
 .ep-plan-unfsvg { width: 100%; height: 200px; display: block; }
@@ -315,7 +317,9 @@ body[data-visual-mode="day"] .ep-plan-opnum { fill: #0f172a; stroke: rgba(255,25
 .ep-plan-entrymark { fill: #f59e0b; stroke: #fff; stroke-width: .6px; }
 .ep-plan-unfentry { fill: #f59e0b; stroke: #0b1220; stroke-width: .8px; }
 /* — v17: развёртка — визуализация штроб по кнопке «Штробы» — */
-.ep-plan-unfchase { opacity: .75; stroke-linecap: round; pointer-events: none; }
+.ep-plan-unfchase { opacity: .95; stroke-linecap: round; stroke-dasharray: 3 3; pointer-events: none; }
+.ep-plan-unfchasebg { opacity: .18; stroke-linecap: butt; pointer-events: none; }
+.ep-plan-unfchaselbl { font-family: system-ui; font-weight: 700; pointer-events: none; }
 
 /* — v9: однолинейная схема — */
 .ep-plan-scheme { width: 100%; }
@@ -343,7 +347,12 @@ body[data-visual-mode="day"] .ep-plan-lineRow input[type="text"] { background:#f
 body[data-visual-mode="day"] .ep-plan-unfdimL { stroke: #1d4ed8; }
 body[data-visual-mode="day"] .ep-plan-unfdimE { stroke: #3b82f6; }
 body[data-visual-mode="day"] .ep-plan-unfdimT { fill: #1d4ed8; }
-/* цифры размеров кликабельны — тап открывает карточку точки (высота/от угла) */
+/* цифры размеров кликабельны — тап открывает карточку точки (высота/от угла).
+   pointer-events:none ОБЯЗАТЕЛЕН: текст рисуется НАД прозрачным хит-ректом как
+   сосед (не потомок) — без этого тап по самим пикселям цифры не находит
+   [data-pu-heightof]/[data-pu-segof] у соседа и проваливается в "пустой тап"
+   (ставит новую точку) вместо открытия карточки. */
+.ep-plan-unfdimT { pointer-events: none; }
 .ep-plan-unfdimT.is-tap { text-decoration: underline; text-decoration-style: dotted; cursor: pointer; }
 .ep-plan-unftap { cursor: pointer; }
 /* полный экран: панели закреплены сверху, холст тянется на остаток */

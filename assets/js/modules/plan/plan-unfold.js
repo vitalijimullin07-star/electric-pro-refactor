@@ -272,10 +272,26 @@
 
     // ШТРОБЫ (по кнопке 〰): откуда физически идёт кабель (потолок/пол) до поста;
     // вход в блок — раздельно по видам (силовая/свет/слаботочка), см. blockChaseEntries.
+    // Символично: широкая полупрозрачная "канавка" + пунктирный центр + подпись сечения.
     if (S.showChases) {
-      const chaseY0 = p.settings.routeType === "floor" ? H : 0;
+      const floorRoute = p.settings.routeType === "floor";
+      const chaseY0 = floorRoute ? H : 0;
       const CHASE_COL = { power: "#f59e0b", light: "#facc15", lv: "#38bdf8", warm: "#fb7185" };
+      const SIZE_LBL = {
+        power: `${Math.round(p.settings.chaseW || 25)}×${Math.round(p.settings.chaseH || 30)}`,
+        light: `${Math.round(p.settings.chaseW || 25)}×${Math.round(p.settings.chaseH || 30)}`,
+        lv: `${Math.round(p.settings.chaseW || 25)}×${Math.round(p.settings.chaseH || 30)}`,
+        warm: `${Math.round(p.settings.tpChaseW || 50)}×${Math.round(p.settings.tpChaseH || 50)}`
+      };
       const chaseKindOf = (layer) => (layer === "warm" ? "warm" : (layer === "lv" || layer === "tv" || layer === "cctv" ? "lv" : (layer === "light" ? "light" : "power")));
+      const drawChase = (cx, cy0, cy1, kind) => {
+        if (Math.abs(cy1 - cy0) < 1) return;
+        const col = CHASE_COL[kind] || CHASE_COL.power;
+        svg.appendChild(svgEl("line", { x1: cx, y1: cy0, x2: cx, y2: cy1, class: "ep-plan-unfchasebg", stroke: col, "stroke-width": kk * 5 }));
+        svg.appendChild(svgEl("line", { x1: cx, y1: cy0, x2: cx, y2: cy1, class: "ep-plan-unfchase", stroke: col, "stroke-width": kk * 1.6 }));
+        const labelY = cy0 + (cy1 > cy0 ? 12 * ks : -6 * ks);
+        svg.appendChild(svgEl("text", { x: cx + 3 * ks, y: labelY, "font-size": 8 * ks, class: "ep-plan-unfchaselbl", fill: col }, SIZE_LBL[kind] || ""));
+      };
       els.forEach((el2) => {
         const xx = el2.offset, yy = H - el2.height;
         if (el2.type === "block") {
@@ -283,11 +299,18 @@
           const step2 = 18 * ks, bw = items.length * step2 + 6 * ks;
           (G().blockChaseEntries ? G().blockChaseEntries(el2) : []).forEach((en) => {
             const ex = xx - bw / 2 + 3 * ks + step2 * en.idx + step2 / 2;
-            svg.appendChild(svgEl("line", { x1: ex, y1: chaseY0, x2: ex, y2: yy, class: "ep-plan-unfchase", stroke: CHASE_COL[en.kind], "stroke-width": kk * 1.8 }));
+            // выключатель в блоке при разводке по полу — штроба тянется до потолка (дальше к лампе)
+            const y0 = (en.kind === "light" && floorRoute) ? 0 : chaseY0;
+            drawChase(ex, y0, yy, en.kind);
           });
+        } else if (el2.layer === "warm") {
+          // ТП: подача обычной штробой к термостату + ОТДЕЛЬНО всегда 50×50 от термостата в пол
+          drawChase(xx, chaseY0, yy, "power");
+          if (el2.height > 1) drawChase(xx, yy, H, "warm");
         } else {
           const kind = chaseKindOf(el2.layer);
-          svg.appendChild(svgEl("line", { x1: xx, y1: chaseY0, x2: xx, y2: yy, class: "ep-plan-unfchase", stroke: CHASE_COL[kind], "stroke-width": kk * 1.8 }));
+          const y0 = (el2.type === "switch" && floorRoute) ? 0 : chaseY0;
+          drawChase(xx, y0, yy, kind);
         }
       });
     }

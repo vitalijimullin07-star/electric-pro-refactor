@@ -43,9 +43,14 @@
     blockTitle: "Сборка блока", blockPosts: (n, m) => `${n}/${m} постов`,
     blockAdd: "Добавить пост:", blockTapDel: "Тап по посту в рамке — убрать",
     outLayer: "Тип вывода:", outPower: "Силовой", outLv: "Слаботочный",
-    swTarget: "Свет от выключателя:", swAuto: "Авто (по линии)", swNone: "не задан"
+    swTarget: "Свет от выключателя:", swAuto: "Авто (по линии)", swNone: "не задан",
+    swKindLbl: "Тип:", swNormal: "Обычный", swPass: "Проходной", swCross: "Перекрёстный",
+    swKeysLbl: "Клавиш:", swChain: "Цепочка — следующий:", swChainLast: "Это последнее звено → к лампе",
+    swChainNone: "нет других выключателей в комнате для связи"
   };
   const OUT_LAYERS = [["power", "outPower"], ["lv", "outLv"]];
+  const SW_KINDS = [["normal", "swNormal"], ["pass", "swPass"], ["cross", "swCross"]];
+  const SW_KIND_GLYPH = { normal: "В", pass: "ПВ", cross: "ПкВ" };
 
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const $ = (sel, r) => (r || document).querySelector(sel);
@@ -198,7 +203,7 @@
       </div>
       ${circuitRow(el)}
       ${t.layerChoice ? outLayerRow(el) : ""}
-      ${el.type === "switch" ? switchTargetRow(el) : ""}
+      ${el.type === "switch" ? switchKindRow(el) + switchKeysRow(el) + switchChainRow(el) + (el.chainNext ? "" : switchTargetRow(el)) : ""}
       ${el.type === "block" ? blockHtml(el) : ""}
       <div class="ep-plan-srow">${T.status}:
         ${STATUS.map(([v, l]) => `<button type="button" class="ep-plan-chip ep-clickable ${el.status === v ? "on" : ""}" data-pe-status="${v}">${l}</button>`).join("")}
@@ -270,17 +275,50 @@
       ${OUT_LAYERS.map(([v, lk]) => `<button type="button" class="ep-plan-chip ep-clickable ${(el.layer || "power") === v ? "on" : ""}" data-pe-outlayer="${v}">${esc(T[lk])}</button>`).join("")}
     </div>`;
   }
-  // куда идёт свет от выключателя: ручной выбор + авто по линии (пунктир на плане)
+  // выключатель: тип (обычный/проходной/перекрёстный) — влияет на разводку и коннекторы
+  function switchKindRow(el) {
+    return `<div class="ep-plan-srow">${T.swKindLbl}
+      ${SW_KINDS.map(([v, lk]) => `<button type="button" class="ep-plan-chip ep-clickable ${(el.swKind || "normal") === v ? "on" : ""}" data-pe-swkind="${v}">${esc(T[lk])}</button>`).join("")}
+    </div>`;
+  }
+  // клавиши (1-3) — только у обычного (проходной/перекрёстный всегда 1 клавиша цепочки)
+  function switchKeysRow(el) {
+    if ((el.swKind || "normal") !== "normal") return "";
+    return `<div class="ep-plan-srow">${T.swKeysLbl}
+      ${[1, 2, 3].map((n) => `<button type="button" class="ep-plan-chip ep-clickable ${(el.keys || 1) === n ? "on" : ""}" data-pe-swkeys="${n}">${n}</button>`).join("")}
+    </div>`;
+  }
+  // куда идёт свет от каждой клавиши: ручной выбор + авто по линии (пунктир на плане)
   function switchTargetRow(el) {
     const p = core().project;
     const roomId = el.wallId ? String(el.wallId).split(":")[0] : null;
     const pool = roomId ? G().elementsInRoom(p, roomId) : p.elements;
     const opts = pool.filter((e) => e.id !== el.id && (e.type === "light" || e.type === "output"));
-    const auto = G().switchTarget ? G().switchTarget(p, Object.assign({}, el, { targetId: null })) : null;
-    return `<div class="ep-plan-srow">${T.swTarget}
-      <button type="button" class="ep-plan-chip ep-clickable ${!el.targetId ? "on" : ""}" data-pe-target="auto">${T.swAuto}${!el.targetId && auto ? " → " + esc((TYPES[auto.type] || {}).glyph || "") : ""}</button>
-      ${opts.map((e) => `<button type="button" class="ep-plan-chip ep-clickable ${el.targetId === e.id ? "on" : ""}" data-pe-target="${esc(e.id)}">${esc((TYPES[e.type] || {}).glyph || "?")} ${Math.round(e.params ? (e.params.x || 0) : e.offset)}</button>`).join("")}
-      ${!opts.length ? `<span class="ep-plan-modehint">${T.swNone}</span>` : ""}
+    if (!opts.length) return `<div class="ep-plan-modehint">${T.swNone}</div>`;
+    const keys = (el.swKind || "normal") !== "normal" ? 1 : Math.max(1, el.keys || 1);
+    const rows = [];
+    for (let ki = 0; ki < keys; ki++) {
+      const manualId = (el.targetIds && el.targetIds[ki]) || (ki === 0 ? el.targetId : null);
+      const auto = G().switchTarget ? G().switchTarget(p, el, ki) : null; // с учётом текущего manualId
+      const label = keys > 1 ? `${T.swTarget} клавиша ${ki + 1}:` : T.swTarget;
+      rows.push(`<div class="ep-plan-srow">${label}
+        <button type="button" class="ep-plan-chip ep-clickable ${!manualId ? "on" : ""}" data-pe-target="${ki}:auto">${T.swAuto}${!manualId && auto ? " → " + esc((TYPES[auto.type] || {}).glyph || "") : ""}</button>
+        ${opts.map((e) => `<button type="button" class="ep-plan-chip ep-clickable ${manualId === e.id ? "on" : ""}" data-pe-target="${ki}:${esc(e.id)}">${esc((TYPES[e.type] || {}).glyph || "?")} ${Math.round(e.params ? (e.params.x || 0) : e.offset)}</button>`).join("")}
+      </div>`);
+    }
+    return rows.join("");
+  }
+  // цепочка проходных/перекрёстных: провод к СЛЕДУЮЩЕМУ звену; без chainNext — это
+  // последнее звено, оно ведёт к лампе (см. switchTargetRow выше)
+  function switchChainRow(el) {
+    if ((el.swKind || "normal") === "normal") return "";
+    const p = core().project;
+    const roomId = el.wallId ? String(el.wallId).split(":")[0] : null;
+    const pool = (roomId ? G().elementsInRoom(p, roomId) : p.elements).filter((e) => e.id !== el.id && e.type === "switch");
+    return `<div class="ep-plan-srow">${T.swChain}
+      <button type="button" class="ep-plan-chip ep-clickable ${!el.chainNext ? "on" : ""}" data-pe-chain="">${T.swChainLast}</button>
+      ${pool.map((e) => `<button type="button" class="ep-plan-chip ep-clickable ${el.chainNext === e.id ? "on" : ""}" data-pe-chain="${esc(e.id)}">${esc(SW_KIND_GLYPH[e.swKind || "normal"])} ${Math.round(e.offset)}</button>`).join("")}
+      ${!pool.length ? `<span class="ep-plan-modehint">${T.swChainNone}</span>` : ""}
     </div>`;
   }
 
@@ -379,8 +417,28 @@
     }
     if ((b = t.closest("[data-pe-target]"))) {
       const c = core(), el = current(); if (!el || el.type !== "switch") return;
-      const v = b.getAttribute("data-pe-target");
-      c.commit(); el.targetId = v === "auto" ? null : v; c.persist("elem-target"); openEditor(el); rooms().renderScene(); return;
+      const [kiStr, val] = b.getAttribute("data-pe-target").split(":");
+      const ki = Number(kiStr) || 0;
+      c.commit();
+      el.targetIds = el.targetIds || [];
+      el.targetIds[ki] = val === "auto" ? null : val;
+      if (ki === 0) el.targetId = el.targetIds[0]; // старое поле — для обратной совместимости чтения
+      c.persist("elem-target"); openEditor(el); rooms().renderScene(); return;
+    }
+    if ((b = t.closest("[data-pe-swkind]"))) {
+      const c = core(), el = current(); if (!el || el.type !== "switch") return;
+      c.commit();
+      el.swKind = b.getAttribute("data-pe-swkind");
+      if (el.swKind !== "normal") el.keys = 1; // проходной/перекрёстный — одна цепь на клавиатуру
+      c.persist("elem-swkind"); openEditor(el); rooms().renderScene(); return;
+    }
+    if ((b = t.closest("[data-pe-swkeys]"))) {
+      const c = core(), el = current(); if (!el || el.type !== "switch") return;
+      c.commit(); el.keys = Number(b.getAttribute("data-pe-swkeys")) || 1; c.persist("elem-swkeys"); openEditor(el); return;
+    }
+    if ((b = t.closest("[data-pe-chain]"))) {
+      const c = core(), el = current(); if (!el || el.type !== "switch") return;
+      c.commit(); el.chainNext = b.getAttribute("data-pe-chain") || null; c.persist("elem-chain"); openEditor(el); rooms().renderScene(); return;
     }
     if ((b = t.closest("[data-pe-circ]"))) {
       const c = core(), el = current(); if (!el) return;

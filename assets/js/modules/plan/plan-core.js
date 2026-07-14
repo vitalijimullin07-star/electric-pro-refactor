@@ -103,7 +103,13 @@
   }
   function newPanel(x, y, name) { return { id: uid("pn"), x: x || 0, y: y || 0, name: name || "Щит" }; }
   function newElement(type, wallId, offset, height, layer) {
-    return { id: uid("el"), type, wallId, offset: offset || 0, height: height || 0, layer: layer || "power", status: "planned", circuitId: null, entryPost: null, targetId: null, photos: [], params: {} };
+    return {
+      id: uid("el"), type, wallId, offset: offset || 0, height: height || 0, layer: layer || "power", status: "planned",
+      circuitId: null, entryPost: null, targetId: null, photos: [], params: {},
+      // только для type:"switch" — клавиши (1-3), вид (обычный/проходной/перекрёстный),
+      // цель каждой клавиши (свет/вывод) и звено цепочки проходных/перекрёстных
+      keys: 1, swKind: "normal", targetIds: [], chainNext: null
+    };
   }
   function newRoute(layer, routeType, points, fromId, toId) {
     return { id: uid("rt"), layer: layer || "routes", routeType: routeType || "ceiling", points: points || [], fromId: fromId || null, toId: toId || null, throughWalls: [] };

@@ -409,16 +409,28 @@
       }
       g.appendChild(grp);
     });
-    // пунктир: какой выключатель к какой лампе/выводу идёт (по линии QF или назначено вручную)
+    // пунктир: какой выключатель к какой лампе/выводу идёт (по линии QF или назначено вручную).
+    // Цепочка проходных/перекрёстных: провод к СЛЕДУЮЩЕМУ звену (chainNext) —
+    // к лампе идёт только ОТ ПОСЛЕДНЕГО звена (без chainNext), не от каждого.
+    // Многоклавишный обычный выключатель — своя связь на каждую клавишу.
     if (layerOn(project, "light")) {
       (project.elements || []).forEach((elem) => {
         if (elem.type !== "switch") return;
-        const target = G.switchTarget(project, elem);
-        if (!target) return;
-        const a = G.elemDrawPoint(project, elem), b = G.elemDrawPoint(project, target);
-        if (!a || !b) return;
+        const a = G.elemDrawPoint(project, elem);
+        if (!a) return;
         const col = elem.circuitId && circ(elem.circuitId) ? circ(elem.circuitId).color : layerColor2("light");
-        g.appendChild(el("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: "ep-plan-swlink", stroke: col, "stroke-width": sw * 0.5 }));
+        if (elem.chainNext) {
+          const nextEl = (project.elements || []).find((e) => e.id === elem.chainNext);
+          const b = nextEl && G.elemDrawPoint(project, nextEl);
+          if (b) g.appendChild(el("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: "ep-plan-swchain", stroke: col, "stroke-width": sw * 0.6 }));
+          return; // не последнее звено — к лампе не рисуем, это сделает последнее
+        }
+        const keys = elem.swKind && elem.swKind !== "normal" ? 1 : Math.max(1, elem.keys || 1);
+        for (let ki = 0; ki < keys; ki++) {
+          const target = G.switchTarget(project, elem, ki);
+          const b = target && G.elemDrawPoint(project, target);
+          if (b) g.appendChild(el("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: "ep-plan-swlink", stroke: col, "stroke-width": sw * 0.5 }));
+        }
       });
     }
     const pbox = project.settings && project.settings.panelBox;
