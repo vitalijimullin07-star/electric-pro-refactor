@@ -118,7 +118,10 @@
   function newRoute(layer, routeType, points, fromId, toId) {
     return { id: uid("rt"), layer: layer || "routes", routeType: routeType || "ceiling", points: points || [], fromId: fromId || null, toId: toId || null, throughWalls: [] };
   }
-  function newCircuit(name, color, breaker) { return { id: uid("cc"), name: name || "Линия", color: color || DEFAULTS.circuitColors[0], breaker: breaker || 16, rcd: false, poles: 1, cable: null, rcdRating: 30 }; }
+  // phase: 1/2/3 — на какую фазу L1/L2/L3 посажена 1-полюсная линия (в 3-фазном щите,
+  // для баланса нагрузки); у 3-полюсной линии (poles:3) не используется — она сама
+  // висит на всех трёх фазах разом.
+  function newCircuit(name, color, breaker) { return { id: uid("cc"), name: name || "Линия", color: color || DEFAULTS.circuitColors[0], breaker: breaker || 16, rcd: false, poles: 1, phase: 1, cable: null, rcdRating: 30 }; }
   // ручная однолинейка (Слой 7б): группы (УЗО/Диф) -> линии, линия может ссылаться
   // на линию плана (circuitId в p.circuits) — тогда она уходит из «не расставлено» в чек-листе.
   // Вводной автомат/счётчик/вводное УЗО НЕ дублируются здесь — те же settings.mainBreaker/
@@ -227,6 +230,7 @@
     p.beams = p.beams || [];
     p.ledStrips = p.ledStrips || [];
     p.circuits = p.circuits || [];
+    p.circuits.forEach((c) => { if (c.phase !== 1 && c.phase !== 2 && c.phase !== 3) c.phase = 1; });
     p.panels = p.panels || [];
     p.panels.forEach((pn) => { if (pn.transformer == null) pn.transformer = false; });
     p.settings = p.settings || {};
