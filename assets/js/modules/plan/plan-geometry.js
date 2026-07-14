@@ -65,6 +65,59 @@
     return G.walls(room)[Number(iStr)] || null;
   };
 
+  // ---- толщина/материал КОНКРЕТНОЙ стены (переопределение на стену поверх настроек) ----
+  G.wallThOf = (project, wall) => {
+    const def = Math.max(4, (project.settings && project.settings.wallThickness) || 10);
+    if (!wall) return def;
+    if (wall.isBeam) {
+      const bm = (project.beams || []).find((b) => b.id === wall.beamId);
+      return Math.max(4, (bm && bm.width) || def);
+    }
+    const room = (project.rooms || []).find((r) => r.id === wall.roomId);
+    const o = room && room.wallTh && Number(room.wallTh[wall.i]);
+    return o >= 4 ? o : def;
+  };
+  G.wallMatOf = (project, wall) => {
+    const def = (project.settings && project.settings.wallMaterial) || "Бетон";
+    if (!wall) return def;
+    if (wall.isBeam) {
+      const bm = (project.beams || []).find((b) => b.id === wall.beamId);
+      return (bm && bm.material) || def;
+    }
+    const room = (project.rooms || []).find((r) => r.id === wall.roomId);
+    return (room && ((room.wallMat && room.wallMat[wall.i]) || room.material)) || def;
+  };
+
+  // ---- контур стен комнаты со СТЫКАМИ (митра, как на чертеже) ----
+  // Точки комнаты — ОСЬ стены. Грани смещаются на th/2 своей стены,
+  // углы — пересечение соседних граней (митра). Поддерживает разную толщину стен.
+  G.roomBand = (project, room) => {
+    const pts = room.points || [], n = pts.length;
+    if (n < 3) return null;
+    let a2 = 0;
+    for (let i = 0; i < n; i++) { const p1 = pts[i], p2 = pts[(i + 1) % n]; a2 += p1.x * p2.y - p2.x * p1.y; }
+    const s = a2 > 0 ? 1 : -1; // знак обхода: куда смотрит нормаль «внутрь»
+    const edge = G.walls(room).map((w) => {
+      const len = w.len || 1;
+      const d = { x: (w.b.x - w.a.x) / len, y: (w.b.y - w.a.y) / len };
+      return { d, ni: { x: -d.y * s, y: d.x * s }, half: G.wallThOf(project, w) / 2, a: w.a };
+    });
+    const ring = (side) => { // side: +1 внутренняя грань, -1 наружная
+      const out = [];
+      for (let i = 0; i < n; i++) {
+        const e0 = edge[(i - 1 + n) % n], e1 = edge[i];
+        const a0 = { x: e0.a.x + e0.ni.x * e0.half * side, y: e0.a.y + e0.ni.y * e0.half * side };
+        const a1 = { x: e1.a.x + e1.ni.x * e1.half * side, y: e1.a.y + e1.ni.y * e1.half * side };
+        const den = e0.d.x * e1.d.y - e0.d.y * e1.d.x;
+        if (Math.abs(den) < 1e-6) { out.push(a1); continue; } // грани параллельны — берём смещённый угол
+        const t = ((a1.x - a0.x) * e1.d.y - (a1.y - a0.y) * e1.d.x) / den;
+        out.push({ x: a0.x + e0.d.x * t, y: a0.y + e0.d.y * t });
+      }
+      return out;
+    };
+    return { inner: ring(1), outer: ring(-1) };
+  };
+
   // ---- попадания ----
   G.closestOnSeg = (p, a, b) => {
     const dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy;
@@ -226,7 +279,7 @@
     const len = wall.len || 1;
     const dir = { x: (wall.b.x - wall.a.x) / len, y: (wall.b.y - wall.a.y) / len };
     const nx = -dir.y, ny = dir.x;
-    const th = Math.max(4, (project.settings && project.settings.wallThickness) || 10);
+    const th = G.wallThOf(project, wall);
     const others = [];
     (project.rooms || []).forEach((r) => G.walls(r).forEach((w2) => { if (w2.id !== wall.id) others.push(w2); }));
     (project.beams || []).forEach((b) => { const bw = G.beamWall(b); if (bw && bw.id !== wall.id) others.push(bw); });
@@ -253,7 +306,7 @@
     if (!pt || !pt.wall) return pt;
     const fr = G.wallFrame(project, pt.wall);
     if (!fr) return pt;
-    const th = Math.max(4, (project.settings && project.settings.wallThickness) || 10);
+    const th = G.wallThOf(project, pt.wall);
     const d = th / 2 + 8; // фикс. отступ от стены внутрь, одинаковый для всех точек
     return { x: pt.x + fr.nrm.x * d, y: pt.y + fr.nrm.y * d, wall: pt.wall, nrm: fr.nrm, angle: fr.angle };
   };

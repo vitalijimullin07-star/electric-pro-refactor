@@ -263,6 +263,89 @@ test("export/import JSON roundtrip", () => {
   eq(imp.rooms.length, 1); eq(imp.circuits.length, 1); eq(imp.openings.length, 1); eq(imp.beams.length, 1);
 });
 
+// ===== 9. Стены-чертёж + счёт по трассам (пакет А+В) =====
+test("roomBand: митра-стыки, внешняя/внутренняя грань", () => {
+  const { P } = install();
+  const band = G.roomBand(P, P.rooms[0]); // 400×300, th=10
+  ok(band && band.outer.length === 4 && band.inner.length === 4, "две грани по 4 угла");
+  near(band.outer[0].x, -5, 0.01, "outer x"); near(band.outer[0].y, -5, 0.01, "outer y");
+  near(band.outer[2].x, 405, 0.01); near(band.outer[2].y, 305, 0.01);
+  near(band.inner[0].x, 5, 0.01, "inner x"); near(band.inner[0].y, 5, 0.01, "inner y");
+  near(band.inner[2].x, 395, 0.01); near(band.inner[2].y, 295, 0.01);
+});
+test("wallThOf/wallMatOf: переопределение на конкретную стену", () => {
+  const { P, w } = install();
+  P.rooms[0].wallTh = { 0: 20 };
+  P.rooms[0].wallMat = { 1: "ГКЛ" };
+  eq(G.wallThOf(P, G.wallById(P, w(0))), 20, "стена 0 толще");
+  eq(G.wallThOf(P, G.wallById(P, w(1))), 10, "стена 1 по умолчанию");
+  eq(G.wallMatOf(P, G.wallById(P, w(1))), "ГКЛ", "материал стены 1");
+  eq(G.wallMatOf(P, G.wallById(P, w(2))), "Бетон", "материал по умолчанию");
+  // митра учитывает разную толщину: угол 0 = пересечение граней стен 3 (th 10) и 0 (th 20)
+  const band = G.roomBand(P, P.rooms[0]);
+  near(band.outer[0].x, -5, 0.01, "по стене 3");
+  near(band.outer[0].y, -10, 0.01, "по толстой стене 0");
+});
+test("elemDrawPoint: отступ по толщине СВОЕЙ стены", () => {
+  const { P, w } = install();
+  P.rooms[0].wallTh = { 0: 20 };
+  const e1 = M.newElement("socket", w(0), 100, 30, "power");
+  P.elements.push(e1);
+  const dp = G.elemDrawPoint(P, e1);
+  near(dp.y, 18, 0.01, "отступ = 20/2+8");
+});
+test("calcByRoutes: штробы/подрозетники/кабель/ниша по чертежу", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "Щ");
+  P.panels.push(pn);
+  P.settings.panelBox = { brand: "IEK", modules: 24, wmm: 395, hmm: 310, dmm: 120 };
+  const s1 = M.newElement("socket", w(0), 100, 30, "power");
+  const sw1 = M.newElement("switch", w(1), 150, 90, "light");
+  P.elements.push(s1, sw1);
+  const rt = M.newRoute("power", "ceiling", [{ x: 100, y: 18 }, { x: 100, y: 50 }, { x: 50, y: 50 }], s1.id, pn.id);
+  rt.toPanel = true;
+  P.routes.push(rt);
+  const res = EP.Plan.Calc.calcByRoutes(P);
+  ok(res && res.items.length, "есть позиции");
+  // спуск точки: 270-30=240; спуск щита: 270-150=120 → 3.6 м штробы 25x30 по бетону
+  const strb = res.items.find((i) => i.name === "Штробление 25x30 бетон");
+  ok(strb, "есть штробление по материалу");
+  near(strb.qty, 3.6, 0.05, "метры штробы по трассе");
+  // подрозетники: розетка (обычный) — бетон; выключатель (глубокий) — бетон
+  const drillStd = res.items.find((i) => i.name.indexOf("обычных бетон") >= 0);
+  const drillDeep = res.items.find((i) => i.name.indexOf("глубоких бетон") >= 0);
+  ok(drillStd && drillStd.qty === 1, "1 обычный");
+  ok(drillDeep && drillDeep.qty === 1, "1 глубокий");
+  // кабель: (32+50)горизонталь + 240 + 120 = 442 см × 1.1 запас = 4.9 м
+  const cab = res.items.find((i) => i.name.indexOf("3×2.5") >= 0);
+  ok(cab, "кабель по марке");
+  near(cab.qty, 4.9, 0.05, "метры кабеля с запасом");
+  // ниша под щит — как в конфигураторе щита
+  const niche = res.items.find((i) => i.name.indexOf("Вырубка ниши") >= 0);
+  ok(niche && niche.qty === 24, "вырубка × модули");
+  ok(res.items.some((i) => i.name === "Монтаж щита в нишу/стену"), "монтаж щита");
+});
+test("calcByRoutes: слаботочка и ТП — отдельные штробы", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
+  const tv1 = M.newElement("tv", w(0), 100, 130, "tv");
+  const tp = M.newElement("warmfloor", w(2), 200, 0, "warm");
+  P.elements.push(tv1, tp);
+  const r1 = M.newRoute("tv", "ceiling", [{ x: 100, y: 18 }, { x: 50, y: 50 }], tv1.id, pn.id); r1.toPanel = true;
+  const r2 = M.newRoute("warm", "ceiling", [{ x: 200, y: 282 }, { x: 50, y: 50 }], tp.id, pn.id); r2.toPanel = true;
+  P.routes.push(r1, r2);
+  const res = EP.Plan.Calc.calcByRoutes(P);
+  ok(res.items.some((i) => i.name === "Штробление 50x50 бетон"), "ТП 50×50");
+  const lv = res.items.find((i) => i.name === "Штробление 25x30 бетон");
+  ok(lv && lv.qty > 0, "слаботочка своей штробой 25×30");
+  ok(res.items.some((i) => i.name.indexOf("Слаботочный") >= 0), "марка слаботочки");
+});
+test("настройки: ГОСТ-значки и запас кабеля по умолчанию", () => {
+  const p = M.newProject("x");
+  eq(p.settings.symbolStyle, "gost", "значки ГОСТ");
+  eq(p.settings.cableReserve, 10, "запас 10%");
+});
+
 (async () => {
   await test("openProject: бэкофилл старых проектов", async () => {}); // placeholder to keep sync
   // синхронная проверка бэкофилла через importJSON старого формата

@@ -372,3 +372,36 @@ body[data-visual-mode="day"] .ep-plan-unfover { background: rgba(255,255,255,.97
 body[data-visual-mode="day"] .ep-plan-unfover li { color: #b91c1c; }
 .ep-plan-unfover-ok { margin: 0; color: #4ade80; font-weight: 600; }
 body[data-visual-mode="day"] .ep-plan-unfover-ok { color: #15803d; }
+
+/* — v15: стены-чертёж (митра, заливка+штриховка), ГОСТ-значки, тяга углов/стен — */
+.ep-plan-wallfill { fill: #5c6b80; stroke: none; }
+.ep-plan-wallfill.mat-concrete { fill: #5c6b80; }
+.ep-plan-wallfill.mat-brick { fill: #a15a2e; }
+.ep-plan-wallfill.mat-block { fill: #6f7f66; }
+.ep-plan-wallfill.mat-panel { fill: #77879f; }
+.ep-plan-wallfill.mat-wood { fill: #8a6f4d; }
+.ep-plan-wallfill.mat-gkl, .ep-plan-wallfill.mat-pgp, .ep-plan-wallfill.mat-soft { fill: #8d99ab; }
+.ep-plan-wallfill.is-sel { stroke: var(--accent, #38bdf8); stroke-width: 2.5; }
+.ep-plan-wallfill.is-lintel-band { opacity: .7; }
+.ep-plan-wallhatch { pointer-events: none; opacity: .5; }
+.ep-plan-walledge { stroke: rgba(226, 232, 240, .75); }
+.ep-plan-hatchln { stroke: rgba(15, 23, 42, .8); stroke-width: .8; }
+body[data-visual-mode="day"] .ep-plan-wallfill.mat-concrete { fill: #94a3b8; }
+body[data-visual-mode="day"] .ep-plan-wallfill.mat-brick { fill: #d98e5a; }
+body[data-visual-mode="day"] .ep-plan-wallfill.mat-block { fill: #a9bb9a; }
+body[data-visual-mode="day"] .ep-plan-wallfill.mat-panel { fill: #a6b4c8; }
+body[data-visual-mode="day"] .ep-plan-wallfill.mat-wood { fill: #c9a97e; }
+body[data-visual-mode="day"] .ep-plan-wallfill.mat-gkl, body[data-visual-mode="day"] .ep-plan-wallfill.mat-pgp, body[data-visual-mode="day"] .ep-plan-wallfill.mat-soft { fill: #c3ccd8; }
+body[data-visual-mode="day"] .ep-plan-walledge { stroke: rgba(15, 23, 42, .8); }
+body[data-visual-mode="day"] .ep-plan-hatchln { stroke: rgba(15, 23, 42, .55); }
+/* ручки выбранной комнаты: тяни угол — форма, тяни стену — сдвиг */
+.ep-plan-roomhandle { fill: #38bdf8; stroke: #fff; stroke-width: 1; opacity: .95; }
+/* ГОСТ-символы: линии цветом линии/слоя, читаемая толщина */
+.ep-plan-gost { fill: none; }
+.ep-plan-gost text { font-family: system-ui; font-weight: 700; }
+.ep-plan-panelhalf { fill: #38bdf8; opacity: .9; }
+body[data-visual-mode="day"] .ep-plan-panelhalf { fill: #1d4ed8; }
+/* поле числа в развёртке + строка-подсказка в расчёте */
+.ep-plan-unfnum { width: 64px; padding: 6px 8px; border-radius: 9px; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.05); color: var(--text, #e8eef7); font: 600 13px system-ui; }
+body[data-visual-mode="day"] .ep-plan-unfnum { background: #fff; border-color: #cbd5e1; color: #0f172a; }
+.ep-plan-hintrow { font: 500 11.5px system-ui; color: var(--muted, #94a3b8); }

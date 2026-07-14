@@ -107,6 +107,7 @@
       const ortho = G().orthoAdjust(pts[pts.length - 1] || null, w);
       pts.push(G().snapSmart(p, ortho, step, CFG.cornerSnapCm));
       renderScaled();
+      sheetPolyDraft(); // длину следующей стены можно набрать цифрами
       return;
     }
     if (R.mode === "ruler") {
@@ -167,7 +168,8 @@
     }
     const room = G().roomAt(p, w);
     R.selectedRoomId = room ? room.id : null;
-    if (room) sheetRoom(room); else closeSheet();
+    if (room) sheetRoom(room);
+    else { closeSheet(); if (R.canvas) R.canvas.setDragHandler(null); }
     renderScene();
   }
 
@@ -198,6 +200,38 @@
         <button type="button" class="btn btn-ghost ep-clickable" data-pr-cancel>${T.cancel}</button>
       </div>`);
   }
+  // рисование контура с ЦИФРАМИ: набери длину и нажми направление — точка ляжет точно
+  function sheetPolyDraft() {
+    const pts = R.draft.points;
+    if (!pts.length) return;
+    openSheet(`<div class="ep-plan-srow"><b>Контур</b> · точек: ${pts.length}</div>
+      <div class="ep-plan-srow">
+        <label class="ep-plan-range" style="flex:0 0 150px">Длина стены, см<input id="ep-pr-plen" type="number" inputmode="numeric" min="10" placeholder="напр. 320"></label>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-pdir="l" aria-label="Влево">←</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-pdir="u" aria-label="Вверх">↑</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-pdir="d" aria-label="Вниз">↓</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-pdir="r" aria-label="Вправо">→</button>
+      </div>
+      <div class="ep-plan-srow ep-plan-sbtns">
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-pundo>⌫ Точка</button>
+        ${pts.length >= 3 ? `<button type="button" class="btn btn-primary ep-clickable" data-pr-pclosepoly>Замкнуть</button>` : ""}
+        <button type="button" class="btn btn-ghost ep-clickable" data-pr-cancel>${T.cancel}</button>
+      </div>
+      <div class="ep-plan-modehint">Или просто тапай по плану. Замкнуть — тап в первую точку.</div>`);
+  }
+  function polyDirAdd(dir) {
+    const pts = R.draft.points;
+    if (!pts.length) return;
+    const len = Number(($("#ep-pr-plen") || {}).value) || 0;
+    if (len < 10) { toast("Введи длину, см (мин. 10)."); return; }
+    const last = pts[pts.length - 1];
+    const D = { r: [1, 0], l: [-1, 0], d: [0, 1], u: [0, -1] }[dir] || [1, 0];
+    pts.push({ x: last.x + D[0] * len, y: last.y + D[1] * len });
+    renderScaled();
+    sheetPolyDraft();
+    const inp = $("#ep-pr-plen"); if (inp) inp.focus();
+  }
+
   function sheetRoom(room) {
     const p = core().project;
     const isR = G().isRect(room), d = isR ? G().rectDims(room) : null;
@@ -220,6 +254,7 @@
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-mirror="${esc(room.id)}">${T.mirror}</button>
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pr-delroom="${esc(room.id)}">${T.del}</button>
       </div>`);
+    enableRoomDrag(room.id); // тяни углы/стены выбранной комнаты
   }
   function sheetUnderlay() {
     const u = core().project && core().project.underlay;
@@ -285,7 +320,8 @@
         const da = G().dist(start, bm.a), db = G().dist(start, bm.b);
         grabbed = (da <= db ? "a" : "b");
         if (Math.min(da, db) > rr * 2) grabbed = null; // не по концу — не тянем
-        if (grabbed) core().commit();
+        if (!grabbed) return false; // жест остаётся панорамой
+        core().commit();
         return;
       }
       if (phase === "move" && grabbed) {
@@ -299,12 +335,68 @@
     });
   }
   function clearBeamSel() { R.selectedBeam = null; if (R.canvas) R.canvas.setDragHandler(null); }
+
+  // тянуть УГЛЫ и СТЕНЫ выбранной комнаты: угол — форма, стена — сдвиг по нормали.
+  // Если палец не попал ни в угол, ни в стену — жест панорамирует (return false).
+  function enableRoomDrag(roomId) {
+    if (!R.canvas) return;
+    let grab = null; // { kind: 'corner'|'wall', i, n?{x,y} }
+    R.canvas.setDragHandler((dx, dy, phase, start) => {
+      const c = core(), room = (c.project.rooms || []).find((r) => r.id === roomId);
+      if (!room || (room.points || []).length < 3) return false;
+      const pts = room.points;
+      if (phase === "start") {
+        const k = R.canvas.cmPerPx();
+        const rCorner = 18 * k, rWall = 14 * k;
+        grab = null;
+        let bd = rCorner;
+        pts.forEach((v, i) => { const d = G().dist(start, v); if (d <= bd) { bd = d; grab = { kind: "corner", i }; } });
+        if (!grab) {
+          let bw = rWall;
+          G().walls(room).forEach((w) => {
+            const cs = G().closestOnSeg(start, w.a, w.b);
+            if (cs.d <= bw && cs.t > 0.12 && cs.t < 0.88) { // середина стены, не углы
+              const len = w.len || 1;
+              bw = cs.d;
+              grab = { kind: "wall", i: w.i, n: { x: -(w.b.y - w.a.y) / len, y: (w.b.x - w.a.x) / len } };
+            }
+          });
+        }
+        if (!grab) return false;
+        c.commit();
+        return;
+      }
+      if (phase === "move" && grab) {
+        if (grab.kind === "corner") {
+          pts[grab.i] = { x: pts[grab.i].x + dx, y: pts[grab.i].y + dy };
+        } else {
+          const d = dx * grab.n.x + dy * grab.n.y; // проекция на нормаль — стена едет параллельно себе
+          const j = (grab.i + 1) % pts.length;
+          pts[grab.i] = { x: pts[grab.i].x + grab.n.x * d, y: pts[grab.i].y + grab.n.y * d };
+          pts[j] = { x: pts[j].x + grab.n.x * d, y: pts[j].y + grab.n.y * d };
+        }
+        renderScene();
+      } else if (phase === "end" && grab) {
+        const step = c.project.settings.gridStep || 10;
+        if (grab.kind === "corner") pts[grab.i] = G().snapPoint(pts[grab.i], step);
+        else { const j = (grab.i + 1) % pts.length; pts[grab.i] = G().snapPoint(pts[grab.i], step); pts[j] = G().snapPoint(pts[j], step); }
+        c.persist("room-reshape");
+        grab = null;
+        renderScene();
+      }
+    });
+  }
   function sheetLayers() {
     const p = core().project; if (!p) return;
+    const st = p.settings.symbolStyle || "simple";
     openSheet(`<div class="ep-plan-srow"><b>${T.layersTitle}</b></div>
       <div class="ep-plan-layers">${p.layers.map((l) => `
         <label class="ep-plan-chk"><input type="checkbox" data-pr-layer="${esc(l.id)}" ${l.visible !== false ? "checked" : ""}>
         <i class="ep-plan-dot" style="background:${esc(l.color)}"></i> ${esc(l.name)}</label>`).join("")}</div>
+      <div class="ep-plan-srow">Значки:
+        <button type="button" class="ep-plan-chip ep-clickable ${st !== "gost" ? "on" : ""}" data-pr-symst="simple">Простые</button>
+        <button type="button" class="ep-plan-chip ep-clickable ${st === "gost" ? "on" : ""}" data-pr-symst="gost">ГОСТ</button>
+      </div>
       <div class="ep-plan-srow ep-plan-sbtns"><button type="button" class="btn btn-ghost ep-clickable" data-pr-cancel>${T.close}</button></div>`);
   }
 
@@ -348,7 +440,8 @@
     const wet = !!($("#ep-pr-wet") || {}).checked;
     room.zones = wet ? ["wet"] : [];
     c.persist("room-edit");
-    R.selectedRoomId = null; closeSheet(); renderScene(); // ✓ — применить и закрыть вкладку
+    R.selectedRoomId = null; closeSheet(); if (R.canvas) R.canvas.setDragHandler(null);
+    renderScene(); // ✓ — применить и закрыть вкладку
   }
   function dupRoom(id) {
     const c = core(), room = c.project.rooms.find((r) => r.id === id); if (!room) return;
@@ -373,7 +466,7 @@
     c.project.elements = c.project.elements.filter((e) => String(e.wallId || "").split(":")[0] !== id);
     c.persist("room-del");
     R.selectedRoomId = null;
-    closeSheet();
+    closeSheet(); if (R.canvas) R.canvas.setDragHandler(null);
   }
 
   function loadUnderlayFile(file) {
@@ -427,6 +520,15 @@
     if (t.closest("[data-pr-cancel]")) { setMode(R.mode === "underlay" ? "view" : R.mode); return; }
     if (t.closest("[data-pr-create-rect]")) return createRect();
     if (t.closest("[data-pr-create-poly]")) return createPoly();
+    if ((el = t.closest("[data-pr-pdir]"))) return polyDirAdd(el.getAttribute("data-pr-pdir"));
+    if (t.closest("[data-pr-pundo]")) { R.draft.points.pop(); renderScaled(); if (R.draft.points.length) sheetPolyDraft(); else closeSheet(); return; }
+    if (t.closest("[data-pr-pclosepoly]")) { if (R.draft.points.length >= 3) { R.pendingPoly = R.draft.points.slice(); sheetCreatePoly(); } return; }
+    if ((el = t.closest("[data-pr-symst]"))) {
+      const c = core(); c.commit();
+      c.project.settings.symbolStyle = el.getAttribute("data-pr-symst");
+      c.persist("symbol-style"); sheetLayers(); renderScene();
+      return;
+    }
     if ((el = t.closest("[data-pr-mat]"))) {
       const c = core(), room = c.project.rooms.find((r) => r.id === R.selectedRoomId);
       if (room) { c.commit(); room.material = el.getAttribute("data-pr-mat"); c.persist("room-mat"); sheetRoom(room); }

@@ -102,16 +102,32 @@
       if (e.type === "block") ((e.params && e.params.items) || []).forEach((it) => { out[it] = (out[it] || 0) + 1; });
       else out[e.type] = (out[e.type] || 0) + 1;
     });
-    return Object.keys(out).map((k) => ({ name: (TY[k] || { name: k }).name, glyph: (TY[k] || {}).glyph || "?", qty: out[k] }));
+    return Object.keys(out).map((k) => ({ k, name: (TY[k] || { name: k }).name, glyph: (TY[k] || {}).glyph || "?", qty: out[k] }));
   }
+
+  // мини-значки ГОСТ 21.210 для легенды/спецификации листа
+  const gi = (inner) => `<svg class="gsym" viewBox="-14 -15 28 28" width="18" height="18" fill="none" stroke="#111" stroke-width="1.7">${inner}</svg>`;
+  const GOST_ICONS = {
+    socket: gi(`<path d="M-8 3 A8 8 0 0 0 8 3"/><line x1="-8" y1="3" x2="8" y2="3"/><line x1="0" y1="-5" x2="0" y2="-11"/>`),
+    tv: gi(`<path d="M-8 3 A8 8 0 0 0 8 3"/><line x1="-8" y1="3" x2="8" y2="3"/><line x1="0" y1="-5" x2="0" y2="-11"/><text x="0" y="-13" font-size="7" text-anchor="middle" fill="#111" stroke="none">TV</text>`),
+    internet: gi(`<path d="M-8 3 A8 8 0 0 0 8 3"/><line x1="-8" y1="3" x2="8" y2="3"/><line x1="0" y1="-5" x2="0" y2="-11"/><text x="0" y="-13" font-size="7" text-anchor="middle" fill="#111" stroke="none">И</text>`),
+    ac: gi(`<path d="M-8 3 A8 8 0 0 0 8 3"/><line x1="-8" y1="3" x2="8" y2="3"/><line x1="0" y1="-5" x2="0" y2="-11"/><text x="0" y="-13" font-size="7" text-anchor="middle" fill="#111" stroke="none">К</text>`),
+    switch: gi(`<circle cx="0" cy="5" r="2.6" fill="#111"/><line x1="0" y1="5" x2="5" y2="-4"/><line x1="5" y1="-4" x2="8.5" y2="-2"/>`),
+    light: gi(`<circle cx="0" cy="0" r="7"/><line x1="-5" y1="-5" x2="5" y2="5"/><line x1="-5" y1="5" x2="5" y2="-5"/>`),
+    warmfloor: gi(`<rect x="-10" y="-8" width="20" height="16"/><path d="M-7 6 V-6 H-2 V6 H3 V-6 H8 V6" stroke-width="1.2"/>`),
+    junction: gi(`<circle cx="0" cy="0" r="4.5" fill="#111"/>`)
+  };
+  const iconFor = (k, glyph, gost) => (gost && GOST_ICONS[k]) ? GOST_ICONS[k] : `<i class="g">${esc(glyph)}</i>`;
 
   function sheetHtml(p) {
     const master = (window.EP.state && EP.state.user && EP.state.user.displayName) || "";
     const date = new Date().toLocaleDateString("ru-RU");
     const expl = (p.rooms || []).filter((r) => (r.points || []).length >= 3)
       .map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.name)}</td><td>${G().fmtArea(G().area(r.points))}</td><td>${esc(r.material || p.settings.wallMaterial)}</td></tr>`).join("");
-    const spec = counts(p).map((c) => `<tr><td><i class="g">${esc(c.glyph)}</i></td><td>${esc(c.name)}</td><td>${c.qty}</td></tr>`).join("");
-    const legendRows = counts(p).map((c) => `<div><i class="g">${esc(c.glyph)}</i>${esc(c.name)}</div>`).join("")
+    const gost = (p.settings && p.settings.symbolStyle) === "gost";
+    const spec = counts(p).map((c) => `<tr><td>${iconFor(c.k, c.glyph, gost)}</td><td>${esc(c.name)}</td><td>${c.qty}</td></tr>`).join("");
+    const legendRows = counts(p).map((c) => `<div>${iconFor(c.k, c.glyph, gost)}${esc(c.name)}</div>`).join("")
+      + ((p.elements || []).some((e) => e.type === "junction") ? `<div>${iconFor("junction", "◇", gost)}Распаечная коробка</div>` : "")
       + ((p.openings || []).some((o) => o.type === "door") ? `<div><i class="g">Дв</i>${T.door}</div>` : "")
       + ((p.openings || []).some((o) => o.type === "window") ? `<div><i class="g">Ок</i>${T.win}</div>` : "")
       + ((p.panels || []).length ? `<div><i class="g">Щ</i>${T.panel}</div>` : "");
@@ -133,6 +149,20 @@
       .stamp div { border: .6px solid #555; padding: 3px 6px; }
       .stamp b { display: block; font-size: 8.5px; color: #555; font-weight: 600; }
       /* сцена SVG — печатные цвета */
+      .gsym { flex: none; vertical-align: middle; }
+      .legend .gsym { margin-right: 0; }
+      .ep-plan-wallfill { fill: #d8dee7; stroke: none; }
+      .ep-plan-wallfill.mat-brick { fill: #ecd6c2; }
+      .ep-plan-wallfill.mat-block { fill: #e2e9d6; }
+      .ep-plan-wallfill.mat-panel { fill: #dcd8e8; }
+      .ep-plan-wallfill.mat-wood { fill: #ead9c0; }
+      .ep-plan-wallfill.mat-gkl, .ep-plan-wallfill.mat-pgp, .ep-plan-wallfill.mat-soft { fill: #eef1f5; }
+      .ep-plan-walledge { stroke: #111; }
+      .ep-plan-hatchln { stroke: #64748b; stroke-width: .8; }
+      .ep-plan-gost { stroke: #111; }
+      .ep-plan-gosttxt { fill: #111; }
+      .ep-plan-panelhalf { fill: #1d4ed8; }
+      .ep-plan-roomhandle, .ep-plan-beamhandle { display: none; }
       .ep-plan-wallband { stroke: #111; fill: none; }
       .ep-plan-wallband.mat-brick { stroke: #b45309; }
       .ep-plan-wallband.mat-panel { stroke: #555; stroke-dasharray: 40 10; }

@@ -68,6 +68,12 @@
             <span class="ep-plan-unflbl">Добавить:</span>${CFG.addTypes.map((k) => chip(k, TY[k].glyph)).join("")}
             <span class="ep-plan-unfsep"></span>${CFG.openTypes.map((k) => chip(k, (OT[k] || {}).glyph || "?")).join("")}
           </div>
+          <div class="ep-plan-unfbar">
+            <span class="ep-plan-unflbl">Толщина, см:</span>
+            <input type="number" inputmode="numeric" min="4" max="80" value="${Math.round(G().wallThOf(p, w))}" data-pu-wth class="ep-plan-unfnum">
+            <span class="ep-plan-unfsep"></span>
+            ${(EP.Plan.Core.DEFAULTS.partitionMaterials || []).map((m) => `<button type="button" class="ep-plan-chip ep-clickable ${G().wallMatOf(p, w) === m ? "on" : ""}" data-pu-wmat="${esc(m)}">${esc(m)}</button>`).join("")}
+          </div>
           <div class="ep-plan-unfbar"><span class="ep-plan-unflbl">Размер значков:</span>
             <input type="range" min="60" max="220" value="${Math.round(S.sym * 100)}" data-pu-sym class="ep-plan-unfslider"></div>
         </div>
@@ -120,6 +126,28 @@
     box.appendChild(ov);
   }
 
+  // толщина/материал ЭТОЙ стены (для стены комнаты — переопределение, для перегородки — сама перегородка)
+  function setWallTh(v) {
+    v = Math.max(4, Math.min(80, Math.round(Number(v) || 0)));
+    const c = core(), p = c.project, w = G().wallById(p, S.wallId);
+    if (!w || v < 4) return;
+    c.commit();
+    if (w.isBeam) { const bm = (p.beams || []).find((b) => b.id === w.beamId); if (bm) bm.width = v; }
+    else { const room = (p.rooms || []).find((r) => r.id === w.roomId); if (room) { room.wallTh = room.wallTh || {}; room.wallTh[w.i] = v; } }
+    c.persist("wall-th");
+    drawStrip(); rooms().renderScene();
+  }
+  function setWallMat(m) {
+    const c = core(), p = c.project, w = G().wallById(p, S.wallId);
+    if (!w) return;
+    c.commit();
+    if (w.isBeam) { const bm = (p.beams || []).find((b) => b.id === w.beamId); if (bm) bm.material = m; }
+    else { const room = (p.rooms || []).find((r) => r.id === w.roomId); if (room) { room.wallMat = room.wallMat || {}; room.wallMat[w.i] = m; } }
+    c.persist("wall-mat");
+    document.querySelectorAll("[data-pu-wmat]").forEach((x) => x.classList.toggle("on", x.getAttribute("data-pu-wmat") === m));
+    drawStrip(); rooms().renderScene();
+  }
+
   function svgEl(tag, attrs, text) {
     const n = document.createElementNS(NS, tag);
     if (attrs) for (const k in attrs) n.setAttribute(k, attrs[k]);
@@ -131,7 +159,7 @@
     const box = $("#ep-pu-box");
     const p = core().project, w = S.wallId && G().wallById(p, S.wallId);
     if (!box || !w) return;
-    const H = wallH(p, S.wallId), L = w.len, th = wallTh(p);
+    const H = wallH(p, S.wallId), L = w.len, th = G().wallThOf(p, w);
     if (!S.view) S.view = fitView(H, L);
     const v = S.view;
     box.innerHTML = "";
@@ -230,11 +258,14 @@
   function bindStrip(svg, w, H, L) {
     const pts = new Map();
     let pinch = null, moved = false, downClient = null, pending = null;
+    let penOn = false; // стилус (S Pen / Apple Pencil): пока перо на экране — ладонь игнорируем
     const pxPerCm = () => { const r = svg.getBoundingClientRect(); return Math.min(r.width / S.view.w, r.height / S.view.h) || 1; };
     const dist2 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
     function pinchInfo() { const [a, b] = [...pts.values()]; return { d: Math.max(10, dist2(a, b)), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; }
 
     svg.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "pen") penOn = true;
+      else if (e.pointerType === "touch" && penOn) return; // ладонь при работе стилусом
       svg.setPointerCapture(e.pointerId);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pts.size === 2) { pinch = pinchInfo(); S.drag = null; pending = null; return; }
@@ -248,7 +279,7 @@
         if (!el) return;
         const pg = e.target.closest && e.target.closest("[data-pu-post]");
         core().commit();
-        S.drag = { el, moved: false, postIdx: pg ? Number(pg.getAttribute("data-pu-post")) : null };
+        S.drag = { el, moved: false, postIdx: pg ? Number(pg.getAttribute("data-pu-post")) : null, pen: e.pointerType === "pen" };
         return;
       }
       pending = { kind: "empty" };
@@ -270,7 +301,8 @@
       }
       if (pts.size !== 1) return;
       if (S.drag) {
-        const p = core().project, step = p.settings.gridStep, pt = toWorld(svg, e.clientX, e.clientY);
+        const p = core().project, pt = toWorld(svg, e.clientX, e.clientY);
+        const step = S.drag.pen ? 1 : p.settings.gridStep; // стилус — точность до 1 см
         S.drag.moved = true;
         S.drag.el.offset = G().snap(Math.max(0, Math.min(w.len, pt.x)), step);
         S.drag.el.height = G().snap(Math.max(0, Math.min(H, H - pt.y)), step);
@@ -284,6 +316,7 @@
       }
     });
     function end(e) {
+      if (e.pointerType === "pen") penOn = false;
       pts.delete(e.pointerId);
       if (pts.size < 2) pinch = null;
       if (S.drag) {
@@ -315,7 +348,7 @@
       if (pts.size === 0 && S.view) drawStrip();
     }
     svg.addEventListener("pointerup", end);
-    svg.addEventListener("pointercancel", (e) => { pts.delete(e.pointerId); pinch = null; S.drag = null; pending = null; });
+    svg.addEventListener("pointercancel", (e) => { if (e.pointerType === "pen") penOn = false; pts.delete(e.pointerId); pinch = null; S.drag = null; pending = null; });
   }
 
   document.addEventListener("click", (e) => {
@@ -336,6 +369,7 @@
       else if (act === "scheme") { exitFS(); close(); rooms().closeSheet(); if (EP.Plan.Scheme) EP.Plan.Scheme.open(); }
       return;
     }
+    if ((b = t.closest("[data-pu-wmat]"))) { setWallMat(b.getAttribute("data-pu-wmat")); return; }
     if ((b = t.closest("[data-pu-wall]"))) { open(b.getAttribute("data-pu-wall")); return; }
     if ((b = t.closest("[data-pu-type]"))) {
       S.addType = b.getAttribute("data-pu-type");
@@ -355,6 +389,10 @@
   document.addEventListener("input", (e) => {
     if (!rooms() || !rooms().isActive() || !isOpen()) return;
     if (e.target.getAttribute && e.target.getAttribute("data-pu-sym") != null) { S.sym = Math.max(0.6, (Number(e.target.value) || 100) / 100); drawStrip(); }
+  });
+  document.addEventListener("change", (e) => {
+    if (!rooms() || !rooms().isActive() || !isOpen()) return;
+    if (e.target.getAttribute && e.target.getAttribute("data-pu-wth") != null) setWallTh(e.target.value);
   });
 
   EP.Plan = EP.Plan || {};

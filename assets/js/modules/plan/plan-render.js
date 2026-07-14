@@ -25,14 +25,74 @@
   // материал стены/перегородки -> css-класс (цвет/штрих)
   const MATMAP = { "Бетон": " mat-concrete", "Кирпич": " mat-brick", "Панель": " mat-panel", "Мягкий": " mat-soft", "Газоблок": " mat-block", "Пеноблок": " mat-block", "ГКЛ": " mat-gkl", "ПГП": " mat-pgp", "Дерево": " mat-wood" };
   const MATCLASS = (m) => MATMAP[m] || " mat-concrete";
+  // чертёжная штриховка по материалу: бетон/кирпич/блоки — диагональ,
+  // панель/дерево — крест, ГКЛ/ПГП/мягкий — пунктир
+  const HATCHMAP = { "Бетон": "diag", "Кирпич": "diag", "Газоблок": "diag", "Пеноблок": "diag", "Панель": "cross", "Дерево": "cross", "ГКЛ": "dash", "ПГП": "dash", "Мягкий": "dash" };
+  const HATCH = (m) => "url(#ep-hatch-" + (HATCHMAP[m] || "diag") + ")";
+  // паттерны в userSpaceOnUse: штриховка соседних комнат совпадает по фазе —
+  // общая стена (полосы внахлёст) выглядит ОДНОЙ стеной, без двойной толщины
+  function ensureDefs(canvas) {
+    const svg = canvas.svg;
+    if (svg.querySelector("#ep-plan-defs")) return;
+    const defs = el("defs", { id: "ep-plan-defs" });
+    const mk = (id, d) => {
+      const p = el("pattern", { id, patternUnits: "userSpaceOnUse", width: 14, height: 14 });
+      p.appendChild(el("path", { d, class: "ep-plan-hatchln", fill: "none" }));
+      defs.appendChild(p);
+    };
+    mk("ep-hatch-diag", "M-3 17 L17 -3 M-10 10 L10 -10 M4 24 L24 4");
+    mk("ep-hatch-cross", "M-3 17 L17 -3 M-3 -3 L17 17");
+    mk("ep-hatch-dash", "M0 4 L6 4 M8 11 L14 11");
+    svg.insertBefore(defs, svg.firstChild);
+  }
   const layerOn = (project, id) => {
     const l = (project.layers || []).find((x) => x.id === id);
     return !l || l.visible !== false;
   };
 
+  // ---------- условные обозначения по ГОСТ 21.210 ----------
+  // розетка — полукруг со штрихом; выключатель — кружок с «крючком»; светильник —
+  // круг с крестом; ТП — змейка в рамке. Возвращает false, если для типа нет
+  // ГОСТ-символа (тогда рисуется базовый кружок с буквой).
+  function drawGostEl(grp, elem, cx, cy, rot, dp, k, sw, col) {
+    const t = elem.type;
+    if (t !== "socket" && t !== "tv" && t !== "internet" && t !== "ac" && t !== "switch" && t !== "light" && t !== "warmfloor") return false;
+    const sub = el("g", { class: "ep-plan-gost", stroke: col, transform: `translate(${cx} ${cy})` + (rot ? ` rotate(${rot})` : "") });
+    const lw = sw * 0.85;
+    // локальный знак «внутрь комнаты» после поворота вдоль стены
+    let sgn = 1;
+    if (dp && dp.nrm) {
+      const rad = (rot || 0) * Math.PI / 180;
+      sgn = (-Math.sin(rad) * dp.nrm.x + Math.cos(rad) * dp.nrm.y) >= 0 ? 1 : -1;
+    }
+    const ln = (x0, y0, x1, y1, w2) => sub.appendChild(el("line", { x1: x0, y1: y0, x2: x1, y2: y1, "stroke-width": w2 || lw }));
+    if (t === "socket" || t === "tv" || t === "internet" || t === "ac") {
+      const r = 8 * k;
+      sub.appendChild(el("path", { d: `M ${-r} 0 A ${r} ${r} 0 0 ${sgn > 0 ? 1 : 0} ${r} 0`, fill: "none", "stroke-width": lw }));
+      ln(-r, 0, r, 0);
+      ln(0, sgn * r, 0, sgn * (r + 6 * k)); // штрих от вершины внутрь комнаты
+      if (t !== "socket") sub.appendChild(el("text", { x: 0, y: sgn * (r + 11 * k), "font-size": 7 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-gosttxt", fill: col, stroke: "none" }, t === "tv" ? "TV" : t === "internet" ? "И" : "К"));
+    } else if (t === "switch") {
+      sub.appendChild(el("circle", { cx: 0, cy: 0, r: 3 * k, fill: col, "stroke-width": lw }));
+      ln(0, 0, 5 * k, sgn * 9 * k);
+      ln(5 * k, sgn * 9 * k, 8.5 * k, sgn * 7 * k); // «крючок» — клавиша
+    } else if (t === "light") {
+      const r = 7 * k, c = r * Math.SQRT1_2;
+      sub.appendChild(el("circle", { cx: 0, cy: 0, r, fill: "none", "stroke-width": lw }));
+      ln(-c, -c, c, c); ln(-c, c, c, -c); // ⊗
+    } else if (t === "warmfloor") {
+      const wv = 10 * k, hv = 8 * k;
+      sub.appendChild(el("rect", { x: -wv, y: -hv, width: wv * 2, height: hv * 2, fill: "none", "stroke-width": lw }));
+      sub.appendChild(el("path", { d: `M ${-wv + 3 * k} ${hv - 2 * k} V ${-hv + 2 * k} H ${-wv + 8 * k} V ${hv - 2 * k} H ${-wv + 13 * k} V ${-hv + 2 * k} H ${-wv + 18 * k} V ${hv - 2 * k}`, fill: "none", "stroke-width": lw * 0.8 }));
+    }
+    grp.appendChild(sub);
+    return true;
+  }
+
   // ---------- статичная часть: подложка + заливки комнат ----------
   function draw(canvas, project, ui) {
     const G = EP.Plan.Geometry;
+    ensureDefs(canvas);
     clear(canvas.layers.underlay);
     clear(canvas.layers.rooms);
     if (!project) { drawScaled(canvas, project, ui); return; }
@@ -78,20 +138,40 @@
       const closed = pts.length >= 3;
       const mat = room.material || (project.settings && project.settings.wallMaterial) || "Бетон";
       const matClass = MATCLASS(mat);
-      // стены — ТОЛСТЫЕ (как на плане): band шириной = толщина стены + скруглённые углы
-      const th = Math.max(4, (project.settings && project.settings.wallThickness) || 10); // см
-      const dParts = [];
-      G.walls(room).forEach((w) => {
-        const opens = G.wallOpeningSpans(project, w); // + проёмы общей стены соседней комнаты
-        G.spansMinusOpenings(w.len, opens).forEach(([s, e]) => {
-          const p1 = G.pointAtOffset(w, s), p2 = G.pointAtOffset(w, e);
-          dParts.push("M" + p1.x + " " + p1.y + " L" + p2.x + " " + p2.y);
+      // стены — как на чертеже: митра-стыки (без кружков), заливка + штриховка
+      // материала, проёмы вырезаются маской (в т.ч. проёмы общей стены соседа)
+      const band = closed ? G.roomBand(project, room) : null;
+      if (band) {
+        const quads = [];
+        G.walls(room).forEach((w) => {
+          const th2 = G.wallThOf(project, w) / 2 + 0.6;
+          const len = w.len || 1, ddx = (w.b.x - w.a.x) / len, ddy = (w.b.y - w.a.y) / len;
+          const nx = -ddy, ny = ddx;
+          G.wallOpeningSpans(project, w).forEach((o) => {
+            const s0 = Math.max(0, o.offset), e0 = Math.min(w.len, o.offset + o.width);
+            if (e0 - s0 < 1) return;
+            const pa = G.pointAtOffset(w, s0), pb = G.pointAtOffset(w, e0);
+            quads.push(`M${pa.x + nx * th2} ${pa.y + ny * th2} L${pb.x + nx * th2} ${pb.y + ny * th2} L${pb.x - nx * th2} ${pb.y - ny * th2} L${pa.x - nx * th2} ${pa.y - ny * th2} Z`);
+          });
         });
-      });
-      if (dParts.length) {
-        g.appendChild(el("path", { d: dParts.join(" "), class: "ep-plan-wallband" + matClass + (sel ? " is-sel" : ""), "stroke-width": th, fill: "none" }));
-        if (closed) pts.forEach((v) => g.appendChild(el("circle", { cx: v.x, cy: v.y, r: th / 2, class: "ep-plan-wallcorner" + matClass + (sel ? " is-sel" : "") })));
-      } else if (!closed) {
+        let maskAttr = {};
+        if (quads.length) {
+          const bb = G.bbox(band.outer);
+          const m = el("mask", { id: "ep-cut-" + room.id, maskUnits: "userSpaceOnUse", x: bb.x - 60, y: bb.y - 60, width: bb.w + 120, height: bb.h + 120 });
+          m.appendChild(el("rect", { x: bb.x - 60, y: bb.y - 60, width: bb.w + 120, height: bb.h + 120, fill: "#fff" }));
+          m.appendChild(el("path", { d: quads.join(" "), fill: "#000" }));
+          g.appendChild(m);
+          maskAttr = { mask: "url(#ep-cut-" + room.id + ")" };
+        }
+        const ringD = (r2) => "M" + r2.map((p) => p.x + " " + p.y).join(" L") + " Z";
+        const dBand = ringD(band.outer) + " " + ringD(band.inner);
+        g.appendChild(el("path", Object.assign({ d: dBand, "fill-rule": "evenodd", class: "ep-plan-wallfill" + matClass + (sel ? " is-sel" : "") }, maskAttr)));
+        g.appendChild(el("path", Object.assign({ d: dBand, "fill-rule": "evenodd", fill: HATCH(mat), class: "ep-plan-wallhatch" }, maskAttr)));
+        g.appendChild(el("path", Object.assign({ d: dBand, "fill-rule": "evenodd", class: "ep-plan-walledge", fill: "none", "stroke-width": Math.min(1, sw * 0.3) }, maskAttr)));
+        // ручки углов выбранной комнаты: тяни угол — форма, тяни стену — сдвиг стены
+        if (sel) pts.forEach((v) => g.appendChild(el("circle", { cx: v.x, cy: v.y, r: CFG.pointPx * 1.25 * k, class: "ep-plan-roomhandle" })));
+      } else if (pts.length >= 2) {
+        const th = Math.max(4, (project.settings && project.settings.wallThickness) || 10);
         g.appendChild(el("path", { d: "M" + pts.map((p) => p.x + " " + p.y).join(" L"), class: "ep-plan-wallband" + matClass, "stroke-width": th, fill: "none" }));
       }
 
@@ -128,6 +208,12 @@
           points: dp.map((p) => p.x + "," + p.y).join(" "),
           class: "ep-plan-draft", "stroke-width": sw, fill: "none"
         }));
+        // живые длины сегментов при рисовании — видно, что получается
+        for (let i = 0; i < dp.length - 1; i++) {
+          const a = dp[i], b = dp[i + 1], L = G.dist(a, b);
+          if (L < 5) continue;
+          g.appendChild(el("text", { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - 8 * k, class: "ep-plan-rulertext", "font-size": 10 * k, "text-anchor": "middle" }, G.fmtLen(L)));
+        }
       }
       dp.forEach((p, i) => g.appendChild(el("circle", {
         cx: p.x, cy: p.y, r: CFG.pointPx * k,
@@ -185,20 +271,24 @@
     const wallTh = Math.max(4, (project.settings && project.settings.wallThickness) || 10);
     (project.beams || []).forEach((bm) => {
       const bw = Math.max(4, bm.width || wallTh);
-      const mc = matClassOf(bm.material || (project.settings && project.settings.wallMaterial) || "Бетон");
+      const matB = bm.material || (project.settings && project.settings.wallMaterial) || "Бетон";
+      const mc = matClassOf(matB);
       const sel = EP.Plan.Rooms && EP.Plan.Rooms.selectedBeamId && EP.Plan.Rooms.selectedBeamId() === bm.id;
-      // тело перегородки — полоса-стена ЗА ВЫЧЕТОМ проёмов (окна/двери в перегородке)
+      // тело перегородки — заливка + штриховка материала, ЗА ВЫЧЕТОМ проёмов
       const bwWall = G.beamWall(bm);
       const bOpens = G.openingsOnWall(project, bwWall.id);
       const spans = G.spansMinusOpenings(bwWall.len, bOpens);
-      const cls = "ep-plan-wallband" + mc + (bm.kind === "lintel" ? " is-lintel-band" : "") + (sel ? " is-sel" : "");
-      if (spans.length) {
-        spans.forEach(([s, e]) => {
-          const p1 = G.pointAtOffset(bwWall, s), p2 = G.pointAtOffset(bwWall, e);
-          g.appendChild(el("path", { d: "M" + p1.x + " " + p1.y + " L" + p2.x + " " + p2.y, class: cls, "stroke-width": bw, fill: "none" }));
-        });
-      }
-      [bm.a, bm.b].forEach((v) => g.appendChild(el("circle", { cx: v.x, cy: v.y, r: bw / 2, class: "ep-plan-wallcorner" + mc + (sel ? " is-sel" : "") })));
+      const lenB = bwWall.len || 1;
+      const ddx = (bwWall.b.x - bwWall.a.x) / lenB, ddy = (bwWall.b.y - bwWall.a.y) / lenB;
+      const nx = -ddy, ny = ddx, h2 = bw / 2;
+      const clsF = "ep-plan-wallfill" + mc + (bm.kind === "lintel" ? " is-lintel-band" : "") + (sel ? " is-sel" : "");
+      spans.forEach(([s, e]) => {
+        const p1 = G.pointAtOffset(bwWall, s), p2 = G.pointAtOffset(bwWall, e);
+        const d = `M${p1.x + nx * h2} ${p1.y + ny * h2} L${p2.x + nx * h2} ${p2.y + ny * h2} L${p2.x - nx * h2} ${p2.y - ny * h2} L${p1.x - nx * h2} ${p1.y - ny * h2} Z`;
+        g.appendChild(el("path", { d, class: clsF }));
+        g.appendChild(el("path", { d, fill: HATCH(matB), class: "ep-plan-wallhatch" }));
+        g.appendChild(el("path", { d, class: "ep-plan-walledge", fill: "none", "stroke-width": Math.min(1, sw * 0.3) }));
+      });
       // ручки-концы, когда балка выбрана (тянуть пальцем)
       if (sel) [bm.a, bm.b].forEach((v) => g.appendChild(el("circle", { cx: v.x, cy: v.y, r: CFG.pointPx * 1.3 * k, class: "ep-plan-beamhandle" })));
     });
@@ -215,8 +305,8 @@
         if ((room.points || []).length < 3) return;
         const c0 = G.centroid(room.points);
         // размеры берём от ВНУТРЕННИХ углов (работаем изнутри квартиры)
-        const thR = Math.max(4, (project.settings && project.settings.wallThickness) || 10);
         G.walls(room).forEach((w) => {
+          const thR = G.wallThOf(project, w);
           const inA = Math.min(thR / 2, w.len / 2), inB = Math.max(w.len - thR / 2, w.len / 2);
           const clamp = (d) => Math.round(Math.max(inA, Math.min(inB, d)));
           const stations = new Set([Math.round(inA), Math.round(inB)]);
@@ -267,7 +357,7 @@
     const selId = EP.Plan.Elements ? EP.Plan.Elements.selectedId() : null;
     const layerColor2 = (id) => (((project.layers || []).find((l) => l.id === id) || {}).color) || "#94a3b8";
     const circ = (id) => (project.circuits || []).find((c) => c.id === id);
-    const wallThEl = Math.max(4, (project.settings && project.settings.wallThickness) || 10);
+    const gost = (project.settings && project.settings.symbolStyle) === "gost";
     (project.elements || []).forEach((elem) => {
       if (!layerOn(project, elem.layer)) return;
       const pt = EP.Plan.Geometry.elemPoint(project, elem);
@@ -279,9 +369,14 @@
       const rot = dp.angle || 0;
       const grp = el("g", { class: "ep-plan-el" + (elem.status === "mounted" ? " is-done" : "") + (elem.status === "existing" ? " is-exist" : "") + (elem.id === selId ? " is-sel" : "") });
       if (elem.type === "junction") {
-        // распайка: ромб (повёрнутый квадрат) на слое трасс — на самой стене, без отступа
-        const s2 = 12 * k;
-        grp.appendChild(el("rect", { x: pt.x - s2, y: pt.y - s2, width: s2 * 2, height: s2 * 2, transform: `rotate(45 ${pt.x} ${pt.y})`, class: "ep-plan-junction", "stroke-width": sw * 0.7 }));
+        if (gost) {
+          // ГОСТ: соединительная коробка — закрашенный кружок
+          grp.appendChild(el("circle", { cx: pt.x, cy: pt.y, r: 5.5 * k, class: "ep-plan-junction is-gost", "stroke-width": sw * 0.7 }));
+        } else {
+          // распайка: ромб (повёрнутый квадрат) на слое трасс — на самой стене, без отступа
+          const s2 = 12 * k;
+          grp.appendChild(el("rect", { x: pt.x - s2, y: pt.y - s2, width: s2 * 2, height: s2 * 2, transform: `rotate(45 ${pt.x} ${pt.y})`, class: "ep-plan-junction", "stroke-width": sw * 0.7 }));
+        }
         if (bad.has(elem.id)) grp.appendChild(el("circle", { cx: pt.x, cy: pt.y, r: r0 * 1.7, class: "ep-plan-warnring", "stroke-width": sw * 0.7 }));
       } else if (elem.type === "block") {
         // рамка постов: поворачивается ВДОЛЬ стены, отступ внутрь
@@ -300,8 +395,11 @@
         grp.appendChild(el("circle", Object.assign({ cx: ex, cy: cy + bh / 2 + 3 * k, r: 2.6 * k, class: "ep-plan-entrymark" }, tr ? { transform: tr } : {})));
       } else {
         if (bad.has(elem.id)) grp.appendChild(el("circle", { cx, cy, r: r0 * 1.55, class: "ep-plan-warnring", "stroke-width": sw * 0.7 }));
-        grp.appendChild(el("circle", { cx, cy, r: r0, fill: layerColor2(elem.layer), "stroke-width": sw * 0.7 }));
-        grp.appendChild(el("text", { x: cx, y: cy, "font-size": 10 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph" }, (TY[elem.type] || {}).glyph || "?"));
+        const colEl = elem.circuitId && circ(elem.circuitId) ? circ(elem.circuitId).color : layerColor2(elem.layer);
+        if (!(gost && drawGostEl(grp, elem, cx, cy, rot, dp, k, sw, colEl))) {
+          grp.appendChild(el("circle", { cx, cy, r: r0, fill: layerColor2(elem.layer), "stroke-width": sw * 0.7 }));
+          grp.appendChild(el("text", { x: cx, y: cy, "font-size": 10 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph" }, (TY[elem.type] || {}).glyph || "?"));
+        }
       }
       if (elem.status === "mounted") grp.appendChild(el("text", { x: cx + r0, y: cy - r0, "font-size": 10 * k, class: "ep-plan-eldone" }, "✓"));
       // QF-подпись линии (обозначение автомата) над точкой
@@ -318,7 +416,12 @@
       const hc = pbox && pbox.hmm ? pbox.hmm / 10 : 20;
       const grp = el("g", { class: "ep-plan-panel" + (pn.id === selId ? " is-sel" : "") });
       grp.appendChild(el("rect", { x: pn.x - wc / 2, y: pn.y - hc / 2, width: wc, height: hc, rx: 2, "stroke-width": sw * 0.8 }));
-      grp.appendChild(el("text", { x: pn.x, y: pn.y, "font-size": 12 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph" }, "Щ"));
+      if (gost) {
+        // ГОСТ: щиток — прямоугольник, половина закрашена (по диагонали)
+        grp.appendChild(el("path", { d: `M${pn.x - wc / 2} ${pn.y + hc / 2} L${pn.x + wc / 2} ${pn.y + hc / 2} L${pn.x + wc / 2} ${pn.y - hc / 2} Z`, class: "ep-plan-panelhalf" }));
+      } else {
+        grp.appendChild(el("text", { x: pn.x, y: pn.y, "font-size": 12 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph" }, "Щ"));
+      }
       if (pbox && pbox.modules) grp.appendChild(el("text", { x: pn.x, y: pn.y + hc / 2 + 7 * k, "font-size": 8 * k, "text-anchor": "middle", class: "ep-plan-dim" }, pbox.modules + " мод"));
       g.appendChild(grp);
     });
