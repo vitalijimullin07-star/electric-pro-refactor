@@ -23,7 +23,7 @@
   const EL = () => EP.Plan.Elements;
   const isOpenKind = (k) => !!(EP.Plan.Core.OPENING_KINDS && EP.Plan.Core.OPENING_KINDS[k]);
 
-  const S = { wallId: null, addType: "socket", drag: null, full: false, view: null, sym: 1 };
+  const S = { wallId: null, addType: "socket", drag: null, full: false, view: null, sym: 1, lastTap: null, ptPanel: null };
 
   function wallH(p, wallId) {
     const roomId = String(wallId).split(":")[0];
@@ -41,7 +41,7 @@
   function fitView(H, L) { const pad = CFG.padCm; return { x: -pad, y: -pad * 1.3, w: L + pad * 2, h: H + pad * 1.3 + 110 }; }
 
   function open(wallId, full) {
-    S.wallId = wallId; S.view = null;
+    S.wallId = wallId; S.view = null; S.ptPanel = null; S.lastTap = null;
     if (full != null) S.full = !!full; // тап по стене на главном → сразу во весь экран
     const p = core().project, w = G().wallById(p, wallId);
     if (!w) return;
@@ -85,7 +85,7 @@
     if (S.full) requestFS();
   }
   const isOpen = () => !!(S.wallId && $("#ep-pu-box"));
-  function close() { S.wallId = null; S.full = false; S.view = null; }
+  function close() { S.wallId = null; S.full = false; S.view = null; S.ptPanel = null; S.lastTap = null; }
 
   function requestFS() {
     const sheet = $("#ep-plan-sheet"), box = $("#ep-pu-box"), target = sheet || box;
@@ -110,6 +110,48 @@
     try { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); } catch (e) {}
   }
   function toggleFull() { if (S.full) { exitFS(); drawStrip(); } else enterFS(); }
+
+  // карточка ТОЧКИ (двойной тап): справа, под большой палец — высота, от угла, посты рамки
+  function ptEl() { const p = core().project; return S.ptPanel ? (p.elements || []).find((e) => e.id === S.ptPanel) : null; }
+  function renderPtPanel() {
+    const box = $("#ep-pu-box"); if (!box) return;
+    const prev = box.querySelector(".ep-plan-unfpt"); if (prev) prev.remove();
+    const el = ptEl(); if (!el) { S.ptPanel = null; return; }
+    const p = core().project, w = G().wallById(p, S.wallId);
+    const TY = EL().TYPES, meta = TY[el.type] || { name: el.type, glyph: "?" };
+    const cc = circ(p, el);
+    const isBlock = el.type === "block";
+    const items = isBlock ? ((el.params && el.params.items) || ["socket"]) : null;
+    const stepBtns = (key) => `
+      <button type="button" class="ep-plan-unfpt-b ep-clickable" data-pu-pt="${key}-5">−5</button>
+      <button type="button" class="ep-plan-unfpt-b ep-clickable" data-pu-pt="${key}-1">−1</button>
+      <button type="button" class="ep-plan-unfpt-b ep-clickable" data-pu-pt="${key}+1">+1</button>
+      <button type="button" class="ep-plan-unfpt-b ep-clickable" data-pu-pt="${key}+5">+5</button>`;
+    const d = document.createElement("div");
+    d.className = "ep-plan-unfpt";
+    d.innerHTML = `<div class="ep-plan-unfpt-h"><b>${esc(meta.glyph)} ${esc(meta.name)}</b>${cc ? `<span style="color:${esc(cc.color)}">${esc(cc.name)}</span>` : ""}
+        <span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-pu-pt-close aria-label="Закрыть">✕</button></div>
+      <label class="ep-plan-unfpt-l">Высота от пола, см</label>
+      <div class="ep-plan-unfpt-row"><input type="number" inputmode="numeric" min="0" data-pu-pt-h value="${Math.round(el.height || 0)}" class="ep-plan-unfnum">${stepBtns("h")}</div>
+      <label class="ep-plan-unfpt-l">От угла, см</label>
+      <div class="ep-plan-unfpt-row"><input type="number" inputmode="numeric" min="0" ${w ? `max="${Math.round(w.len)}"` : ""} data-pu-pt-o value="${Math.round(el.offset || 0)}" class="ep-plan-unfnum">${stepBtns("o")}</div>
+      ${isBlock ? `<label class="ep-plan-unfpt-l">Постов в рамке: <b>${items.length}</b> (до 6)</label>
+      <div class="ep-plan-unfpt-row">
+        <button type="button" class="ep-plan-unfpt-b is-wide ep-clickable" data-pu-pt="p-">− пост</button>
+        <button type="button" class="ep-plan-unfpt-b is-wide ep-clickable" data-pu-pt="p+">+ пост</button>
+      </div>` : ""}
+      <div class="ep-plan-unfpt-row"><button type="button" class="ep-plan-unfpt-b is-wide ep-clickable" data-pu-pt-edit>⚙ Полный редактор</button></div>`;
+    box.appendChild(d);
+  }
+  function ptChange(fn, what) {
+    const el = ptEl(); if (!el) return;
+    const c = core(), p = c.project, w = G().wallById(p, S.wallId);
+    const H = wallH(p, S.wallId);
+    c.commit();
+    fn(el, { H, L: w ? w.len : 10000 });
+    c.persist(what || "elem-edit");
+    drawStrip(); rooms().renderScene();
+  }
 
   // проверки норм — плавающая карточка поверх развёртки (не сворачивая её)
   function showChecks() {
@@ -245,6 +287,7 @@
     });
     box.appendChild(svg);
     bindStrip(svg, w, H, L);
+    if (S.ptPanel) renderPtPanel(); // карточка точки живёт поверх перерисовок
   }
 
   function toWorld(svg, clientX, clientY) {
@@ -302,7 +345,7 @@
       if (pts.size !== 1) return;
       if (S.drag) {
         const p = core().project, pt = toWorld(svg, e.clientX, e.clientY);
-        const step = S.drag.pen ? 1 : p.settings.gridStep; // стилус — точность до 1 см
+        const step = 1; // ПЛАВНО, с точностью 1 см — без прыжков по сетке
         S.drag.moved = true;
         S.drag.el.offset = G().snap(Math.max(0, Math.min(w.len, pt.x)), step);
         S.drag.el.height = G().snap(Math.max(0, Math.min(H, H - pt.y)), step);
@@ -321,7 +364,16 @@
       if (pts.size < 2) pinch = null;
       if (S.drag) {
         if (S.drag.moved) core().persist("elem-move");
-        else if (S.drag.postIdx != null && S.drag.el.type === "block") { S.drag.el.entryPost = S.drag.postIdx; core().persist("block-entry"); drawStrip(); rooms().renderScene(); }
+        else {
+          // двойной тап по точке — карточка параметров (высота / от угла / посты)
+          const now = Date.now();
+          if (S.lastTap && S.lastTap.id === S.drag.el.id && now - S.lastTap.t < 400) {
+            S.ptPanel = S.drag.el.id; S.lastTap = null; renderPtPanel();
+          } else {
+            S.lastTap = { id: S.drag.el.id, t: now };
+            if (S.drag.postIdx != null && S.drag.el.type === "block") { S.drag.el.entryPost = S.drag.postIdx; core().persist("block-entry"); drawStrip(); rooms().renderScene(); }
+          }
+        }
         S.drag = null; return;
       }
       if (pts.size === 0 && pending && !moved) {
@@ -356,6 +408,26 @@
     const t = e.target; let b;
     if (t.closest("[data-pu-close]")) { exitFS(); close(); rooms().closeSheet(); return; } // выходим и из полного экрана — иначе белый экран
     if (t.closest("[data-pu-over-close]")) { const ov = $("#ep-pu-box .ep-plan-unfover"); if (ov) ov.remove(); return; }
+    if (t.closest("[data-pu-pt-close]")) { S.ptPanel = null; const pt = $("#ep-pu-box .ep-plan-unfpt"); if (pt) pt.remove(); return; }
+    if (t.closest("[data-pu-pt-edit]")) { const el2 = ptEl(); S.ptPanel = null; if (el2 && EL().openEditor) { close(); EL().openEditor(el2); } return; }
+    if ((b = t.closest("[data-pu-pt]"))) {
+      const k = b.getAttribute("data-pu-pt"); // h±N | o±N | p+ | p-
+      if (k[0] === "p") {
+        ptChange((el2) => {
+          if (el2.type !== "block") return;
+          el2.params = el2.params || {}; el2.params.items = el2.params.items || ["socket"];
+          if (k === "p+" && el2.params.items.length < 6) el2.params.items.push("socket");
+          if (k === "p-" && el2.params.items.length > 1) el2.params.items.pop();
+        }, "block-posts");
+      } else {
+        const dv = Number(k.slice(1)) || 0;
+        ptChange((el2, lim) => {
+          if (k[0] === "h") el2.height = Math.max(0, Math.min(lim.H, Math.round((el2.height || 0) + dv)));
+          else el2.offset = Math.max(0, Math.min(lim.L, Math.round((el2.offset || 0) + dv)));
+        }, "elem-edit");
+      }
+      return;
+    }
     if (t.closest("[data-pu-full]")) return toggleFull();
     if (t.closest("[data-pu-fit]")) { const p = core().project, w = G().wallById(p, S.wallId); if (w) { S.view = fitView(wallH(p, S.wallId), w.len); drawStrip(); } return; }
     if ((b = t.closest("[data-pu-act]"))) {
@@ -393,6 +465,14 @@
   document.addEventListener("change", (e) => {
     if (!rooms() || !rooms().isActive() || !isOpen()) return;
     if (e.target.getAttribute && e.target.getAttribute("data-pu-wth") != null) setWallTh(e.target.value);
+    if (e.target.getAttribute && e.target.getAttribute("data-pu-pt-h") != null) {
+      const v = Number(e.target.value) || 0;
+      ptChange((el2, lim) => { el2.height = Math.max(0, Math.min(lim.H, Math.round(v))); }, "elem-edit");
+    }
+    if (e.target.getAttribute && e.target.getAttribute("data-pu-pt-o") != null) {
+      const v = Number(e.target.value) || 0;
+      ptChange((el2, lim) => { el2.offset = Math.max(0, Math.min(lim.L, Math.round(v))); }, "elem-edit");
+    }
   });
 
   EP.Plan = EP.Plan || {};
