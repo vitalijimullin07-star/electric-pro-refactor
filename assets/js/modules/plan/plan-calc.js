@@ -16,7 +16,8 @@
     exactHead: "Работы и материалы — ПО ТРАССАМ (точный счёт)",
     exactHint: "Штробы, подрозетники и кабель посчитаны по фактическому чертежу: длина спуска × материал стены, ёмкость штробы — из движка пула.",
     approxHint: "⚠ Приближённый счёт по комнатам. Построй трассы (🧵) — расчёт станет точным по чертежу.",
-    reserve: "Запас кабеля, %"
+    reserve: "Запас кабеля, %",
+    noPrice: "нет цены в БД", total: "Итого по ценам БД"
   };
   const COLS = [["sockets", "Р"], ["sw", "В"], ["light", "С"], ["tv", "ТВ"], ["internet", "И"], ["warm", "ТП"]];
 
@@ -316,9 +317,19 @@
       headHtml = `<div class="ep-plan-srow"><b>${T.workHead}</b></div>
         <div class="ep-plan-srow ep-plan-hintrow">${T.approxHint}</div>`;
     }
-    const itemsHtml = items
-      ? `${headHtml}<div class="ep-plan-items">${items.map((it) => `<div class="ep-plan-irow"><span>${esc(it.name)}</span><b>${it.qty} ${esc(it.unit)}</b></div>`).join("")}</div>`
-      : `<div class="ep-plan-srow">${T.engineMissing}</div>`;
+    // цены — из EP.Database (по совпадению названия, priceFor); строка «нет цены»,
+    // если для позиции нет подходящей записи в БД, и общий итог по найденным ценам
+    const fmtRub = (n) => (window.EP.Currency && EP.Currency.format) ? EP.Currency.format(n) : (Math.round(n * 100) / 100) + " ₽";
+    let itemsHtml;
+    if (items) {
+      const priced = items.map((it) => { const price = priceFor(it.name, it.type); return { it, price, lineSum: price * it.qty }; });
+      const total = priced.reduce((s, x) => s + (x.price > 0 ? x.lineSum : 0), 0);
+      const noPriceN = priced.filter((x) => !(x.price > 0)).length;
+      itemsHtml = `${headHtml}<div class="ep-plan-items">${priced.map(({ it, price, lineSum }) => `<div class="ep-plan-irow"><span>${esc(it.name)}</span><span class="ep-plan-irow-r"><b>${it.qty} ${esc(it.unit)}</b><span class="ep-plan-iprice${price > 0 ? "" : " is-noprice"}">${price > 0 ? esc(fmtRub(lineSum)) : esc(T.noPrice)}</span></span></div>`).join("")}</div>
+        <div class="ep-plan-srow ep-plan-total"><b>${esc(T.total)}</b><b>${esc(fmtRub(total))}</b>${noPriceN ? `<span class="ep-plan-mshint">(${noPriceN} без цены в БД)</span>` : ""}</div>`;
+    } else {
+      itemsHtml = `<div class="ep-plan-srow">${T.engineMissing}</div>`;
+    }
 
     rooms().openSheet(`<div class="ep-plan-srow"><b>🧮 ${T.title}</b>
         <span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-pc-close>✕</button></div>
