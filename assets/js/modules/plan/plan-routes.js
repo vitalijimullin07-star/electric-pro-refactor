@@ -63,7 +63,15 @@
   // Путь = перпендикуляр от точки к контуру отступа (по умолчанию 15 см от
   // грани стены) → по контуру → перпендикуляр к цели (лампа/распайка/щит).
   // В другую комнату — ПЕРПЕНДИКУЛЯРНАЯ проходка через стену (гильза Ø20).
-  const routeOff = (p) => Math.max(5, Math.min(40, Number(p.settings.routeOffset) || 15));
+  // базовый отступ + по 2 см на каждую следующую линию (QF) — чтобы параллельные
+  // трассы разных линий визуально не сливались в одну (просил пользователь:
+  // QF1 15см, QF2 17см…). «Без линии» и первая QF — базовый отступ.
+  function circuitIdx(p, circuitId) { return circuitId ? (p.circuits || []).findIndex((c) => c.id === circuitId) : -1; }
+  const routeOff = (p, circuitId) => {
+    const base = Math.max(5, Math.min(40, Number(p.settings.routeOffset) || 15));
+    const idx = circuitIdx(p, circuitId);
+    return idx > 0 ? base + Math.min(idx, 10) * 2 : base;
+  };
 
   // Комната для точки: строгий point-in-polygon, а если мимо (щит/точка стоит
   // ПРЯМО на стене — центр щита может лежать чуть за осью стены) — берём
@@ -80,11 +88,11 @@
     const q = (el && el.params) || {};
     return q.x != null ? roomNear(p, q) : null;
   }
-  function contourOf(p, room) { return room ? G().insetContour(p, room, routeOff(p)) : null; }
+  function contourOf(p, room, circuitId) { return room ? G().insetContour(p, room, routeOff(p, circuitId)) : null; }
 
   // путь внутри ОДНОЙ комнаты: a → контур → по контуру → b
-  function pathInRoom(p, room, a, b) {
-    const ct = contourOf(p, room);
+  function pathInRoom(p, room, a, b, circuitId) {
+    const ct = contourOf(p, room, circuitId);
     if (!ct) return null;
     const ca = G().closestOnPoly(ct, a), cb = G().closestOnPoly(ct, b);
     if (!ca || !cb) return null;
@@ -94,13 +102,14 @@
   }
 
   // общий построитель: та же комната — по контуру; другая — через перпендикулярные проходки
-  function buildPath(p, fromEl, a, target, depth) {
+  function buildPath(p, fromEl, a, target, depth, circuitId) {
     depth = depth || 0;
+    circuitId = circuitId || (fromEl && fromEl.circuitId) || null;
     const b = target.pos;
     const ra = fromEl ? roomOfEl(p, fromEl) : roomNear(p, a);
     const rb = (target.el ? roomOfEl(p, target.el) : null) || roomNear(p, b);
     if (ra && rb && ra.id === rb.id) {
-      const path = pathInRoom(p, ra, a, b);
+      const path = pathInRoom(p, ra, a, b, circuitId);
       if (path) return path;
     } else if (ra && rb && depth < 4) {
       // первая стена на прямой a→b — точка проходки, переход строго перпендикулярно стене
@@ -112,11 +121,11 @@
         const len = w.len || 1;
         let nx = -(w.b.y - w.a.y) / len, ny = (w.b.x - w.a.x) / len;
         if ((b.x - a.x) * nx + (b.y - a.y) * ny < 0) { nx = -nx; ny = -ny; } // нормаль в сторону цели
-        const jump = G().wallThOf(p, w) / 2 + routeOff(p);
+        const jump = G().wallThOf(p, w) / 2 + routeOff(p, circuitId);
         const c1 = { x: c.x - nx * jump, y: c.y - ny * jump }; // по нашу сторону стены
         const c2 = { x: c.x + nx * jump, y: c.y + ny * jump }; // за стеной
-        const legA = (G().roomAt(p, c1) === ra ? pathInRoom(p, ra, a, c1) : null) || [a, c1];
-        const legB = buildPath(p, null, c2, target, depth + 1);
+        const legA = (G().roomAt(p, c1) === ra ? pathInRoom(p, ra, a, c1, circuitId) : null) || [a, c1];
+        const legB = buildPath(p, null, c2, target, depth + 1, circuitId);
         const path = legA.concat(legB);
         return path.filter((q, j) => j === 0 || G().dist(q, path[j - 1]) > 0.5);
       }
@@ -214,7 +223,7 @@
   }
 
   function addRoute(c, p, fromEl, a, target, circuitId, color) {
-    const pts = buildPath(p, fromEl, a, target);
+    const pts = buildPath(p, fromEl, a, target, 0, circuitId);
     const rt = c.model.newRoute(fromEl.layer, p.settings.routeType, pts, fromEl.id, target.id || null);
     rt.circuitId = circuitId || null;
     rt.color = color;

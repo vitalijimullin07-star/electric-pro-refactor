@@ -486,6 +486,19 @@ test("трасса в одной комнате: по контуру, стены
   // выход на контур отступа: есть точка на y=20 (контур верхней стены)
   ok(path.some((q) => Math.abs(q.y - 20) < 0.5), "идёт по отступу 15 см от стены");
 });
+test("routeOff: у разных линий (QF) отступ от стены разный — трассы визуально не сливаются", () => {
+  const { P, w } = install();
+  const cc1 = M.newCircuit("QF1", "#ef4444", 16); P.circuits.push(cc1);
+  const cc2 = M.newCircuit("QF2", "#f59e0b", 16); P.circuits.push(cc2);
+  const pn = M.newPanel(200, 150, "Щ"); P.panels.push(pn);
+  const s1 = M.newElement("socket", w(0), 100, 30, "power"); s1.circuitId = cc1.id; P.elements.push(s1);
+  const s2 = M.newElement("socket", w(0), 200, 30, "power"); s2.circuitId = cc2.id; P.elements.push(s2);
+  const target = { kind: "panel", pos: { x: pn.x, y: pn.y } };
+  const path1 = EP.Plan.Routes.buildPath(P, s1, G.routeAnchor(P, s1), target);
+  const path2 = EP.Plan.Routes.buildPath(P, s2, G.routeAnchor(P, s2), target);
+  ok(path1.some((q) => Math.abs(q.y - 20) < 0.5), "QF1 (первая линия) — база 15 см (контур y=20)");
+  ok(path2.some((q) => Math.abs(q.y - 22) < 0.5), "QF2 (вторая линия) — +2 см, 17 см (контур y=22)");
+});
 test("лампа: подход по контуру и под прямым углом", () => {
   const { P } = install();
   const pn = M.newPanel(60, 60, "Щ"); P.panels.push(pn);
