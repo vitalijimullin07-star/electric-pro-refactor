@@ -29,8 +29,14 @@
   const $ = (sel, r) => (r || document).querySelector(sel);
   const fmtDate = (ms) => { try { return new Date(ms).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); } catch (e) { return "—"; } };
 
-  const V = { active: false, canvas: null, unsub: null, saveNote: "" };
+  const V = { active: false, canvas: null, unsub: null, saveNote: "", ctrlsOn: true };
   const core = () => EP.Plan && EP.Plan.Core;
+
+  // общая шапка «← Plan» (nav-header.js) в редакторе проекта дублирует «‹ Проекты» — прячем
+  function setNavHidden(hide) {
+    const bar = document.querySelector(".ep-navbar");
+    if (bar) bar.style.display = hide ? "none" : "";
+  }
 
   // ---------- список проектов ----------
   function renderList(root) {
@@ -49,6 +55,7 @@
       </div>
       <div class="ep-plan-list">${rows.length ? rows.map(rowHtml).join("") : `<div class="card ep-plan-empty">${esc(T.empty)}</div>`}</div>
     </div>`;
+    setNavHidden(false); // список проектов — общая шапка «← Plan» нужна для навигации назад
   }
   function rowHtml(r) {
     return `<div class="card ep-plan-item">
@@ -64,13 +71,14 @@
   function renderEditor(root) {
     const p = core().project;
     if (!p) return renderList(root);
-    root.innerHTML = `<div class="ep-plan">
+    root.innerHTML = `<div class="ep-plan${V.ctrlsOn ? "" : " is-ctrls-collapsed"}">
       <div class="ep-plan-top">
         <button type="button" class="btn btn-ghost ep-clickable" data-plan-back>${T.back}</button>
         <div class="ep-plan-title">
           <b id="ep-plan-title-text">${esc(p.name)}</b>
           <button type="button" class="ep-plan-mini ep-clickable" data-plan-rename aria-label="Переименовать проект">${T.rename}</button>
         </div>
+        <button type="button" class="ep-plan-mini ep-clickable" data-plan-ctrls aria-label="${V.ctrlsOn ? "Свернуть панель" : "Развернуть панель"}" title="Свернуть/развернуть панель инструментов">${V.ctrlsOn ? "︿" : "﹀"}</button>
       </div>
       <div class="ep-plan-toolbar">
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-undo aria-label="Отменить">${T.undo}</button>
@@ -106,6 +114,21 @@
     mountCanvas();
     refreshToolbar();
     armBack(); // ставим «ловушку» для аппаратной кнопки Назад
+    setNavHidden(true); // редактор уже имеет свою «‹ Проекты» — общая шапка не нужна
+  }
+
+  // свернуть/развернуть панель инструментов редактора — холст занимает освободившееся место
+  function toggleTopCtrls(root) {
+    V.ctrlsOn = !V.ctrlsOn;
+    const box = root.querySelector(".ep-plan");
+    if (box) box.classList.toggle("is-ctrls-collapsed", !V.ctrlsOn);
+    const btn = root.querySelector("[data-plan-ctrls]");
+    if (btn) {
+      btn.textContent = V.ctrlsOn ? "︿" : "﹀";
+      const lbl = V.ctrlsOn ? "Свернуть панель" : "Развернуть панель";
+      btn.setAttribute("aria-label", lbl); btn.setAttribute("title", lbl);
+    }
+    if (V.canvas && V.canvas.redraw) V.canvas.redraw();
   }
 
   function mountCanvas() {
@@ -185,6 +208,7 @@
     if ((el = t.closest("[data-plan-open]"))) return void doOpen(r, el.getAttribute("data-plan-open"));
     if ((el = t.closest("[data-plan-del]"))) return doDelete(r, el.getAttribute("data-plan-del"));
     if (t.closest("[data-plan-back]")) { core().closeProject(); return renderList(r); }
+    if (t.closest("[data-plan-ctrls]")) return toggleTopCtrls(r);
     if (t.closest("[data-plan-rename]")) return doRename();
     if (t.closest("[data-plan-undo]")) { core().undo(); return; }
     if (t.closest("[data-plan-redo]")) { core().redo(); return; }
