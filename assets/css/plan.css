@@ -364,6 +364,7 @@ body[data-visual-mode="day"] .ep-plan-unfdimT { fill: #1d4ed8; }
 /* — v13: развёртка в полный экран — управление сбоку, холст крупнее — */
 .ep-plan-unfmain { display: flex; flex-direction: column; gap: 8px; }
 .ep-plan-unfctrls { display: flex; flex-direction: column; gap: 8px; }
+.ep-plan-unfctrls.is-collapsed { display: none; }
 /* полный экран: горизонтальная раскладка — слева колонка управления, справа развёртка */
 .ep-plan-sheet-full .ep-plan-unfmain { flex: 1 1 auto; min-height: 0; flex-direction: row; gap: 10px; }
 .ep-plan-sheet-full .ep-plan-unfctrls { flex: 0 0 210px; overflow-y: auto; overflow-x: hidden; }

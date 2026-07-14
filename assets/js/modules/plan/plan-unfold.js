@@ -23,7 +23,7 @@
   const EL = () => EP.Plan.Elements;
   const isOpenKind = (k) => !!(EP.Plan.Core.OPENING_KINDS && EP.Plan.Core.OPENING_KINDS[k]);
 
-  const S = { wallId: null, addType: "socket", drag: null, full: false, view: null, sym: 1, lastTap: null, ptPanel: null, showChases: false };
+  const S = { wallId: null, addType: "socket", drag: null, full: false, view: null, sym: 1, lastTap: null, ptPanel: null, showChases: false, ctrlsOn: true };
 
   function wallH(p, wallId) {
     const roomId = String(wallId).split(":")[0];
@@ -51,11 +51,12 @@
     rooms().openSheet(`<div class="ep-plan-srow ep-plan-unfhead"><b>${T.title} ${w.n}</b>
         <span>· ${G().fmtLen(w.len)} × ${G().fmtLen(wallH(p, wallId))}</span>
         <span class="ep-plan-flex"></span>
+        <button type="button" class="ep-plan-mini ep-clickable" data-pu-ctrls aria-label="${S.ctrlsOn ? "Свернуть функции" : "Развернуть функции"}" title="Свернуть/развернуть функции">${S.ctrlsOn ? "︿" : "﹀"}</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-pu-fit aria-label="Показать всё">⛶</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-pu-full aria-label="Во весь экран">⤢</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-pu-close>✕</button></div>
       <div class="ep-plan-unfmain">
-        <div class="ep-plan-unfctrls">
+        <div class="ep-plan-unfctrls${S.ctrlsOn ? "" : " is-collapsed"}">
           <div class="ep-plan-unfbar ep-plan-unftools">
             <span class="ep-plan-unflbl">План:</span>${tbtn("undo", "↶", "Отменить")}${tbtn("redo", "↷", "Вернуть")}
             <span class="ep-plan-unfsep"></span>${tbtn("trace", "🧵", "Автотрассировка")}${tbtn("checks", "✅", "Проверки норм")}${tbtn("calc", "🧮", "Расчёт и смета")}${tbtn("scheme", "▤", "Однолинейная схема")}${tbtn("pdf", "📄", "Печатный лист (PDF)")}
@@ -111,6 +112,20 @@
     try { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); } catch (e) {}
   }
   function toggleFull() { if (S.full) { exitFS(); drawStrip(); } else enterFS(); }
+
+  // свернуть/развернуть панель функций — не трогая S.view (зум/пан остаются как есть)
+  function toggleCtrls() {
+    S.ctrlsOn = !S.ctrlsOn;
+    const ctrls = $(".ep-plan-unfctrls");
+    if (ctrls) ctrls.classList.toggle("is-collapsed", !S.ctrlsOn);
+    const btn = $("[data-pu-ctrls]");
+    if (btn) {
+      btn.textContent = S.ctrlsOn ? "︿" : "﹀";
+      const lbl = S.ctrlsOn ? "Свернуть функции" : "Развернуть функции";
+      btn.setAttribute("aria-label", lbl); btn.setAttribute("title", lbl);
+    }
+    drawStrip(); // размер бокса поменялся — пересчитать масштаб символов на экране
+  }
 
   // карточка ТОЧКИ (двойной тап): справа, под большой палец — высота, от угла, посты рамки
   function ptEl() { const p = core().project; return S.ptPanel ? (p.elements || []).find((e) => e.id === S.ptPanel) : null; }
@@ -517,6 +532,7 @@
       }
       return;
     }
+    if (t.closest("[data-pu-ctrls]")) return toggleCtrls();
     if (t.closest("[data-pu-full]")) return toggleFull();
     if (t.closest("[data-pu-fit]")) { const p = core().project, w = G().wallById(p, S.wallId); if (w) { S.view = fitView(wallH(p, S.wallId), w.len); drawStrip(); } return; }
     if (t.closest("[data-pu-chases]")) { S.showChases = !S.showChases; drawStrip(); return; }
