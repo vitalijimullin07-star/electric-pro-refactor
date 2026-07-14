@@ -370,6 +370,13 @@ body[data-visual-mode="day"] .ep-plan-lineRow input[type="number"] { background:
 body[data-visual-mode="day"] .ep-plan-msgroup { background: #f8fafc; border-color: #dbe3ee; }
 body[data-visual-mode="day"] .ep-plan-mschip { background: #e0f2fe; border-color: #7dd3fc; color: #0f172a; }
 
+/* — v20: баланс фаз 3ф — сегмент L1/L2/L3 на линии, сводка + автобаланс — */
+.ep-plan-seg { display: inline-flex; border: 1px solid rgba(255,255,255,.16); border-radius: 9px; overflow: hidden; flex: none; }
+.ep-plan-seg button { border: 0; background: rgba(255,255,255,.05); color: var(--text,#e8eef7); padding: 6px 9px; font: 700 11px system-ui; cursor: pointer; }
+.ep-plan-seg button.on { background: var(--accent, #38bdf8); color: #06121f; }
+body[data-visual-mode="day"] .ep-plan-seg button { background:#fff; color:#0f172a; }
+.ep-plan-balancerow.is-warn b { color: #fbbf24; }
+
 /* — v11: развёртка — разделитель палитры проёмов — */
 .ep-plan-unfsep { display: inline-block; width: 1px; align-self: stretch; margin: 0 3px; background: rgba(148,163,184,.4); }
 

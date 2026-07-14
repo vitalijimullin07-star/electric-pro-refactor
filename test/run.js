@@ -182,6 +182,31 @@ test("scheme: рисуется валидный SVG", () => {
   noThrow(() => sandbox.ShieldSchemeSVG.render(svg, EP.Plan.Scheme.buildTree(P)), "render схемы");
   ok(svg.innerHTML.length > 300, "svg непустой");
 });
+test("phaseBalance: 1-полюсные линии считаются по своей фазе, 3-полюсная — во все три", () => {
+  const q1 = M.newCircuit("QF1", "#e11", 16); q1.phase = 1;
+  const q2 = M.newCircuit("QF2", "#1e1", 25); q2.phase = 2;
+  const q3 = M.newCircuit("QF3-плита", "#11e", 32); q3.poles = 3; // висит на всех трёх фазах
+  const { P } = install({ circuits: [q1, q2, q3] });
+  const b = EP.Plan.Scheme.phaseBalance(P);
+  eq(b.t[1], 16 + 32, "L1 = QF1 + база от 3P");
+  eq(b.t[2], 25 + 32, "L2 = QF2 + база от 3P");
+  eq(b.t[3], 32, "L3 = только база от 3P (нет 1P-линий на ней)");
+});
+test("phaseBalance: сильный перекос помечается warn", () => {
+  const q1 = M.newCircuit("QF1", "#e11", 63); q1.phase = 1;
+  const q2 = M.newCircuit("QF2", "#1e1", 6); q2.phase = 2;
+  const q3 = M.newCircuit("QF3", "#11e", 6); q3.phase = 3;
+  const { P } = install({ circuits: [q1, q2, q3] });
+  ok(EP.Plan.Scheme.phaseBalance(P).warn, "63А на одной фазе против 6А на других — перекос");
+});
+test("autoBalancePhases: жадно раскидывает линии, разбаланс не растёт", () => {
+  const cs = [16, 16, 16, 16, 16, 16].map((a, i) => M.newCircuit("QF" + (i + 1), "#e11", a));
+  const { P } = install({ circuits: cs });
+  EP.Plan.Scheme.autoBalancePhases(P);
+  const b = EP.Plan.Scheme.phaseBalance(P);
+  eq(b.t[1], 32, "6×16А поровну по 2 на фазу"); eq(b.t[2], 32); eq(b.t[3], 32);
+  ok(!b.warn, "после автобаланса перекоса нет");
+});
 
 // ===== 5. Проёмы =====
 test("openingNum: нумерация по видам О1/Дв1", () => {

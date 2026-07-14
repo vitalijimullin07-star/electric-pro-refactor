@@ -91,6 +91,36 @@
     return p.settings.panelBox;
   }
 
+  // ---- баланс фаз (3-фазный ввод): ток по номиналу автомата — ЯВНАЯ упрощённая
+  // прикидка (реальную мощность точек модуль не считает), но для равномерной
+  // расстановки линий по L1/L2/L3 этого достаточно. 3-полюсная линия висит на
+  // всех трёх фазах разом (её ток идёт в каждую), 1-полюсная — на своей c.phase.
+  function phaseBalance(p) {
+    const t = { 1: 0, 2: 0, 3: 0 };
+    (p.circuits || []).forEach((c) => {
+      const a = Number(c.breaker) || 0;
+      if (c.poles === 3) { t[1] += a; t[2] += a; t[3] += a; }
+      else { const ph = (c.phase === 2 || c.phase === 3) ? c.phase : 1; t[ph] += a; }
+    });
+    const vals = [t[1], t[2], t[3]], max = Math.max(...vals), min = Math.min(...vals);
+    const avg = (t[1] + t[2] + t[3]) / 3;
+    return { t, max, min, spread: max - min, warn: avg > 0 && (max - min) / avg > 0.3 };
+  }
+  // жадный автобаланс: сначала база от 3-полюсных линий, затем 1-полюсные —
+  // от большего номинала к меньшему, каждую на текущую самую лёгкую фазу
+  function autoBalancePhases(p) {
+    const t = { 1: 0, 2: 0, 3: 0 };
+    const cs = p.circuits || [];
+    cs.filter((c) => c.poles === 3).forEach((c) => { const a = Number(c.breaker) || 0; t[1] += a; t[2] += a; t[3] += a; });
+    cs.filter((c) => c.poles !== 3).sort((a, b) => (Number(b.breaker) || 0) - (Number(a.breaker) || 0)).forEach((c) => {
+      let best = 1;
+      if (t[2] < t[best]) best = 2;
+      if (t[3] < t[best]) best = 3;
+      c.phase = best;
+      t[best] += Number(c.breaker) || 0;
+    });
+  }
+
   // ---- панель ----
   function open() {
     const p = core().project; if (!p) return;
@@ -151,16 +181,29 @@
     const breakers = EP.Plan.Core.DEFAULTS.breakers, cables = EP.Plan.Core.DEFAULTS.cables;
     const brkSel = (val, attr) => `<select ${attr} class="ep-plan-sel">${breakers.map((b) => `<option value="${b}" ${Number(val) === b ? "selected" : ""}>${b}A</option>`).join("")}</select>`;
     const cabSel = (val, id) => `<select data-psc-cab="${esc(id)}" class="ep-plan-sel"><option value="">авто</option>${cables.map((cb) => `<option value="${cb}" ${val === cb ? "selected" : ""}>${cb}</option>`).join("")}</select>`;
+    const phaseChip = (c) => (s.phases === 3 && c.poles !== 3)
+      ? `<span class="ep-plan-seg ep-plan-phaseseg">${[1, 2, 3].map((n) => `<button type="button" class="${(c.phase || 1) === n ? "on" : ""}" data-psc-phase="${esc(c.id)}:${n}">L${n}</button>`).join("")}</span>`
+      : "";
     const rows = (p.circuits || []).map((c) => `<div class="ep-plan-lineRow">
         <span class="ep-plan-cdot" style="background:${esc(c.color)}"></span>
         <input type="text" data-psc-name="${esc(c.id)}" value="${esc(c.name)}" maxlength="24" style="flex:0 0 92px">
         ${brkSel(c.breaker, `data-psc-brk="${esc(c.id)}"`)}
         <button type="button" class="ep-plan-chip ep-clickable ${c.poles === 3 ? "on" : ""}" data-psc-poles="${esc(c.id)}">${c.poles === 3 ? "3P" : "1P"}</button>
+        ${phaseChip(c)}
         <label class="ep-plan-chk"><input type="checkbox" data-psc-rcd="${esc(c.id)}" ${c.rcd ? "checked" : ""}>УЗО</label>
         ${cabSel(c.cable, c.id)}
         <span class="ep-plan-flex"></span>
         <button type="button" class="ep-plan-mini ep-plan-danger ep-clickable" data-psc-del="${esc(c.id)}">✕</button>
       </div>`).join("");
+    const balanceHtml = s.phases === 3 ? (() => {
+      const b = phaseBalance(p);
+      return `<div class="ep-plan-srow"><b>Баланс фаз</b><span class="ep-plan-flex"></span>
+          <button type="button" class="ep-plan-chip ep-clickable" data-psc-autobalance">⚖ Автобаланс</button></div>
+        <div class="ep-plan-srow ep-plan-rlens ep-plan-balancerow${b.warn ? " is-warn" : ""}">
+          <span>L1: <b>${b.t[1]}А</b></span><span>L2: <b>${b.t[2]}А</b></span><span>L3: <b>${b.t[3]}А</b></span>
+          ${b.warn ? `<span class="ep-plan-warnrow">разбаланс ${Math.round(b.spread)}А — распредели линии равномернее</span>` : ""}
+        </div>`;
+    })() : "";
     const brands = Object.keys(EP.Plan.Core.DEFAULTS.panelBoxes);
     const bx = s.panelBox || {};
     const boxLine = bx.modules
@@ -179,6 +222,7 @@
         <label class="ep-plan-chk">Запас, мод<input type="number" inputmode="numeric" min="0" data-psc-res value="${Math.round(s.panelReserve || 0)}" style="width:56px"></label>
       </div>
       <div class="ep-plan-srow ep-plan-rlens">${boxLine}</div>
+      ${balanceHtml}
       ${rows || `<div class="ep-plan-modehint">Линий (QF) нет. Назначь линии точкам в 🔌 или добавь ниже.</div>`}
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="btn btn-primary ep-clickable" data-psc-add>+ линия</button>
@@ -198,6 +242,15 @@
     if ((b = t.closest("[data-psc-mode]"))) { const c = core(); c.commit(); c.project.settings.schemeMode = b.getAttribute("data-psc-mode") === "manual" ? "manual" : "auto"; c.persist("scheme-mode"); refresh(); return; }
     if ((b = t.closest("[data-psc-ph]"))) { const c = core(); c.commit(); c.project.settings.phases = Number(b.getAttribute("data-psc-ph")) === 3 ? 3 : 1; c.persist("scheme-ph"); refresh(); return; }
     if ((b = t.closest("[data-psc-poles]"))) { const c = core(), cc = c.project.circuits.find((x) => x.id === b.getAttribute("data-psc-poles")); if (cc) { c.commit(); cc.poles = cc.poles === 3 ? 1 : 3; c.persist("scheme-poles"); refresh(); } return; }
+    if ((b = t.closest("[data-psc-phase]"))) {
+      const [id, ph] = b.getAttribute("data-psc-phase").split(":");
+      const c = core(), cc = c.project.circuits.find((x) => x.id === id);
+      if (cc) { c.commit(); cc.phase = Number(ph) || 1; c.persist("scheme-phase"); refresh(); }
+      return;
+    }
+    if (t.closest("[data-psc-autobalance]")) {
+      const c = core(); c.commit(); autoBalancePhases(c.project); c.persist("scheme-autobalance"); refresh(); return;
+    }
     if ((b = t.closest("[data-psc-del]"))) {
       const c = core(), id = b.getAttribute("data-psc-del");
       c.commit();
@@ -233,5 +286,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Scheme = { open, close, isOpen, buildTree, recompute: recomputePanel, neededModules, draw, refresh, loadEls, autoCable, loadSummary, loadKindLabel };
+  EP.Plan.Scheme = { open, close, isOpen, buildTree, recompute: recomputePanel, neededModules, draw, refresh, loadEls, autoCable, loadSummary, loadKindLabel, phaseBalance, autoBalancePhases };
 })();
