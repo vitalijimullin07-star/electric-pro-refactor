@@ -87,6 +87,7 @@
     let pinch = null;      // { dist, cx, cy } на старте пинча
     let tapStart = null;   // { x, y, t, id }
     let dragHandler = null, dragMoved = false; // перехват одиночного перетаскивания (подложка/элементы)
+    let dragVeto = false; // хендлер вернул false на "start" — жест остаётся панорамой
     let penActive = false; // стилус (S Pen / Apple Pencil): пока он на экране — касания ладони игнорируем
 
     function dist2(a, b) { const dx = a.x - b.x, dy = a.y - b.y; return Math.hypot(dx, dy); }
@@ -101,7 +102,7 @@
       else if (e.pointerType === "touch" && penActive) return; // ладонь при работе стилусом
       svg.setPointerCapture(e.pointerId);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (pts.size === 1) { tapStart = { x: e.clientX, y: e.clientY, t: Date.now(), id: e.pointerId }; downClient = { x: e.clientX, y: e.clientY }; }
+      if (pts.size === 1) { tapStart = { x: e.clientX, y: e.clientY, t: Date.now(), id: e.pointerId }; downClient = { x: e.clientX, y: e.clientY }; dragVeto = false; }
       if (pts.size === 2) { pinch = pinchInfo(); tapStart = null; }
     });
     svg.addEventListener("pointermove", (e) => {
@@ -123,9 +124,13 @@
       } else if (pts.size === 1) {
         const k = pxToCm();
         const dx = (e.clientX - prev.x) * k, dy = (e.clientY - prev.y) * k;
-        if (dragHandler) {
-          if (!dragMoved) dragHandler(0, 0, "start", toWorld((downClient || e).x, (downClient || e).y));
-          dragMoved = true; dragHandler(dx, dy, "move");
+        if (dragHandler && !dragVeto) {
+          if (!dragMoved) {
+            // хендлер может отказаться (вернуть false) — тогда жест панорамирует
+            const res = dragHandler(0, 0, "start", toWorld((downClient || e).x, (downClient || e).y));
+            if (res === false) { dragVeto = true; view.x -= dx; view.y -= dy; apply(); }
+            else { dragMoved = true; dragHandler(dx, dy, "move"); }
+          } else dragHandler(dx, dy, "move");
         }
         else { view.x -= dx; view.y -= dy; apply(); }
         if (tapStart && Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y) > CFG.tapMaxPx) tapStart = null;

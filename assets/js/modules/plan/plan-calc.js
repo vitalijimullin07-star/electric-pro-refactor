@@ -12,7 +12,11 @@
     cable: "Кабель по трассам", noRoutes: "трассы не построены (🧵)",
     room: "Комната", added: (n) => `В смету добавлено позиций: ${n}`,
     engineMissing: "Движок расчёта недоступен.",
-    workHead: "Работы и материалы (по движку пула)"
+    workHead: "Работы и материалы (по движку пула)",
+    exactHead: "Работы и материалы — ПО ТРАССАМ (точный счёт)",
+    exactHint: "Штробы, подрозетники и кабель посчитаны по фактическому чертежу: длина спуска × материал стены, ёмкость штробы — из движка пула.",
+    approxHint: "⚠ Приближённый счёт по комнатам. Построй трассы (🧵) — расчёт станет точным по чертежу.",
+    reserve: "Запас кабеля, %"
   };
   const COLS = [["sockets", "Р"], ["sw", "В"], ["light", "С"], ["tv", "ТВ"], ["internet", "И"], ["warm", "ТП"]];
 
@@ -67,6 +71,109 @@
     } catch (e) { return null; }
   }
 
+  // ---------- ТОЧНЫЙ счёт по фактическим трассам ----------
+  // Логика штробы — из движка пула (ёмкость 25×30 по вместимости кабелей),
+  // но применённая к реальному чертежу: спуск каждой точки по СВОЕЙ стене и
+  // ЕЁ материалу; ТП — 50×50 в пол; слаботочка — отдельной штробой.
+  // Ниша под щит — как в конфигураторе щита: вырубка × модули + монтаж.
+  const LV_LAYERS = { lv: 1, tv: 1, cctv: 1 };
+  function calcByRoutes(p) {
+    const routes = p.routes || [];
+    if (!routes.length) return null;
+    const s = p.settings, G2 = G(), RT = EP.Plan.Routes;
+    const PE = window.EP.PoolEngine;
+    const capTbl = (PE && PE.DEFAULTS && PE.DEFAULTS.capacity) || { "25x30": { round: { "2.5": 2 } } };
+    const sizeKey = (w, h) => w + "x" + h; // мм
+    const capOf = (key) => {
+      const t = capTbl[key], byShape = (t && (t.round || t.flat)) || { "2.5": 2 };
+      return Math.max(1, Number(byShape["2.5"]) || 2);
+    };
+    const elById = (id) => (p.elements || []).find((e) => e.id === id);
+    const inCnt = {}, outCnt = {};
+    routes.forEach((r) => { outCnt[r.fromId] = (outCnt[r.fromId] || 0) + 1; if (r.toId) inCnt[r.toId] = (inCnt[r.toId] || 0) + 1; });
+
+    const strobe = {}; // "размер|материал" -> метры
+    const addStrobe = (sizeK, mat, cm) => { if (cm > 1) { const k = sizeK + "|" + mat; strobe[k] = (strobe[k] || 0) + cm / 100; } };
+    const matOfEl = (e2) => { const w = e2.wallId && G2.wallById(p, e2.wallId); return w ? G2.wallMatOf(p, w) : ((s && s.wallMaterial) || "Бетон"); };
+
+    const podroz = {}; // материал -> { std, deep }
+    const P = (m) => (podroz[m] = podroz[m] || { std: 0, deep: 0 });
+    let junctBoxes = 0;
+    const keyStd = sizeKey(s.chaseW || 25, s.chaseH || 30);
+    (p.elements || []).forEach((e2) => {
+      if (e2.status === "existing") return;
+      if (e2.type === "junction") { junctBoxes++; return; }
+      const mat = matOfEl(e2);
+      // подрозетники по материалу СВОЕЙ стены (выключатели/ТП — глубокие, как в пуле)
+      const addPost = (t) => {
+        if (t === "switch" || t === "warmfloor") P(mat).deep++;
+        else if (t === "socket" || t === "tv" || t === "internet" || t === "ac" || t === "sensor") P(mat).std++;
+      };
+      if (e2.type === "block") ((e2.params && e2.params.items) || []).forEach(addPost);
+      else addPost(e2.type);
+      // штроба-спуск: только у точек, к которым построена трасса
+      if (!(outCnt[e2.id] || inCnt[e2.id])) return;
+      const vert = RT.pointVert(p, e2);
+      if (vert < 1) return;
+      if (e2.layer === "warm") { addStrobe(sizeKey(s.tpChaseW || 50, s.tpChaseH || 50), mat, vert); return; }
+      if (LV_LAYERS[e2.layer]) { addStrobe(keyStd, mat, vert); return; } // слаботочка — своя штроба
+      const cables = (outCnt[e2.id] || 0) + (inCnt[e2.id] || 0); // вход+выход шлейфа в одном спуске
+      addStrobe(keyStd, mat, Math.max(1, Math.ceil(cables / capOf(keyStd))) * vert);
+    });
+    // спуск у щита: все линии приходят в одну точку — ёмкость из пула
+    const panelMat = () => {
+      const pn = (p.panels || [])[0];
+      const hit = pn && G2.wallAt(p, { x: pn.x, y: pn.y }, 60);
+      return hit ? G2.wallMatOf(p, hit.wall) : ((s && s.wallMaterial) || "Бетон");
+    };
+    const panelCables = routes.filter((r) => r.toPanel).length;
+    if ((p.panels || []).length && panelCables > 0)
+      addStrobe(keyStd, panelMat(), Math.ceil(panelCables / capOf(keyStd)) * RT.panelVert(p));
+
+    // кабель по МАРКАМ: марка линии (QF) или по слою; с настраиваемым запасом
+    const cableBy = {};
+    const reserve = 1 + (Number(s.cableReserve == null ? 10 : s.cableReserve) || 0) / 100;
+    routes.forEach((r) => {
+      const e2 = elById(r.fromId);
+      const L = G2.polylineLen(r.points || []) + (e2 ? RT.pointVert(p, e2) : 0) + (r.toPanel ? RT.panelVert(p) : 0);
+      const cc = (p.circuits || []).find((c) => c.id === r.circuitId);
+      let mark = (cc && cc.cable) || null;
+      if (!mark) {
+        if (r.layer === "light") mark = "ВВГнг(А)-LS 3×1.5";
+        else if (r.layer === "warm") mark = "Кабель тёплого пола";
+        else if (LV_LAYERS[r.layer]) mark = "Слаботочный (UTP/RG-6)";
+        else mark = "ВВГнг(А)-LS 3×2.5";
+      }
+      cableBy[mark] = (cableBy[mark] || 0) + L;
+    });
+    Object.keys(cableBy).forEach((m) => { cableBy[m] = Math.round((cableBy[m] / 100) * reserve * 10) / 10; });
+
+    // позиции для сметы
+    const items = [];
+    const add = (type, name, qty, unit) => { qty = Math.round(qty * 10) / 10; if (qty > 0) items.push({ type, name, qty, unit }); };
+    const low = (m) => String(m || "").toLowerCase();
+    Object.keys(strobe).sort().forEach((k) => { const [size, mat] = k.split("|"); add("work", `Штробление ${size} ${low(mat)}`, strobe[k], "м"); });
+    Object.keys(podroz).forEach((mat) => {
+      const d = podroz[mat];
+      if (d.std) add("work", `Высверливание подрозетников обычных ${low(mat)}`, d.std, "шт");
+      if (d.deep) add("work", `Высверливание подрозетников глубоких ${low(mat)}`, d.deep, "шт");
+    });
+    let pStd = 0, pDeep = 0;
+    Object.keys(podroz).forEach((m) => { pStd += podroz[m].std; pDeep += podroz[m].deep; });
+    if (pStd) add("material", "Подрозетник Ø68 40-50 мм", pStd, "шт");
+    if (pDeep) add("material", "Подрозетник Ø68 65 мм глубокий", pDeep, "шт");
+    if (junctBoxes) add("material", "Распаечная коробка (потолок)", junctBoxes, "шт");
+    Object.keys(cableBy).forEach((m) => add("material", `Кабель ${m}`, cableBy[m], "м"));
+    // ниша под щит — как в конфигураторе щита (вырубка × модули + монтаж)
+    if ((p.panels || []).length) {
+      const modules = (s.panelBox && s.panelBox.modules) ||
+        (EP.Plan.Scheme && EP.Plan.Scheme.neededModules ? EP.Plan.Scheme.neededModules(p) : 0);
+      if (modules > 0) add("work", `Вырубка ниши под щит (${low(panelMat())})`, modules, "мод");
+      add("work", "Монтаж щита в нишу/стену", 1, "шт");
+    }
+    return { items, cableBy, strobe };
+  }
+
   // ---------- цены из БД ----------
   function priceFor(name, type) {
     try {
@@ -85,7 +192,6 @@
     if (!(p.rooms || []).length) { rooms().toast(T.noRooms); return; }
     const stats = buildBlocks(p);
     if (!stats.length) { rooms().toast(T.noElems); return; }
-    const res = runEngine(p, stats);
     const rl = EP.Plan.Routes ? EP.Plan.Routes.lengths(p) : { byLayer: {}, total: 0 };
     const layerName = (id) => ((p.layers || []).find((l) => l.id === id) || { name: id }).name;
 
@@ -97,10 +203,23 @@
          <span><b>${G().fmtLen(rl.total)}</b> всего</span></div>`
       : `<div class="ep-plan-srow">${T.cable}: ${T.noRoutes}</div>`;
 
-    const items = res && res.draftItems ? res.draftItems : null;
+    // приоритет — ТОЧНЫЙ счёт по построенным трассам; иначе — движок пула по комнатам
+    const exact = calcByRoutes(p);
+    let items, headHtml;
+    if (exact && exact.items.length) {
+      items = exact.items;
+      headHtml = `<div class="ep-plan-srow"><b>${T.exactHead}</b></div>
+        <div class="ep-plan-srow ep-plan-hintrow">${T.exactHint}</div>
+        <div class="ep-plan-srow"><label class="ep-plan-range" style="flex:0 0 150px">${T.reserve}
+          <input type="number" inputmode="numeric" min="0" max="50" value="${Math.round(p.settings.cableReserve == null ? 10 : p.settings.cableReserve)}" data-pc-reserve></label></div>`;
+    } else {
+      const res = runEngine(p, stats);
+      items = res && res.draftItems ? res.draftItems : null;
+      headHtml = `<div class="ep-plan-srow"><b>${T.workHead}</b></div>
+        <div class="ep-plan-srow ep-plan-hintrow">${T.approxHint}</div>`;
+    }
     const itemsHtml = items
-      ? `<div class="ep-plan-srow"><b>${T.workHead}</b></div>
-         <div class="ep-plan-items">${items.map((it) => `<div class="ep-plan-irow"><span>${esc(it.name)}</span><b>${it.qty} ${esc(it.unit)}</b></div>`).join("")}</div>`
+      ? `${headHtml}<div class="ep-plan-items">${items.map((it) => `<div class="ep-plan-irow"><span>${esc(it.name)}</span><b>${it.qty} ${esc(it.unit)}</b></div>`).join("")}</div>`
       : `<div class="ep-plan-srow">${T.engineMissing}</div>`;
 
     rooms().openSheet(`<div class="ep-plan-srow"><b>🧮 ${T.title}</b>
@@ -130,7 +249,15 @@
     if (t.closest("[data-pc-close]")) { rooms().closeSheet(); return; }
     if (t.closest("[data-pc-estimate]")) return toEstimate();
   });
+  document.addEventListener("change", (e) => {
+    if (!rooms() || !rooms().isActive()) return;
+    if (e.target.getAttribute && e.target.getAttribute("data-pc-reserve") != null) {
+      const c = core(); c.commit();
+      c.project.settings.cableReserve = Math.max(0, Math.min(50, Number(e.target.value) || 0));
+      c.persist("cable-reserve"); sheet();
+    }
+  });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Calc = { sheet, buildBlocks, runEngine, priceFor };
+  EP.Plan.Calc = { sheet, buildBlocks, runEngine, priceFor, calcByRoutes };
 })();

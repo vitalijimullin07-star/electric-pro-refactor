@@ -29,6 +29,8 @@
     routeType: "ceiling",  // потолок/пол — как ведём трассы
     chaseW: 25, chaseH: 30,     // мм — сечение штробы под провод (стандарт), редактируется
     tpChaseW: 50, tpChaseH: 50, // мм — штроба тёплого пола (в пол)
+    symbolStyle: "gost",   // значки на плане: "simple" (кружки с буквами) | "gost" (ГОСТ 21.210)
+    cableReserve: 10,      // % запаса кабеля при расчёте по трассам
     mainBreaker: 40, phases: 1, // вводной автомат (А) и число фаз (1/3) для однолинейки
     panelBrand: "IEK", panelReserve: 6, // бренд корпуса щита и запас модулей
     cables: ["3×1.5", "3×2.5", "3×4", "3×6", "5×2.5", "5×4", "5×6", "5×10"], // сечения кабеля
@@ -80,6 +82,7 @@
         tpChaseW: DEFAULTS.tpChaseW, tpChaseH: DEFAULTS.tpChaseH,
         mainBreaker: DEFAULTS.mainBreaker, phases: DEFAULTS.phases, meter: false, mainRcd: false,
         panelBrand: DEFAULTS.panelBrand, panelReserve: DEFAULTS.panelReserve, panelBox: null,
+        symbolStyle: DEFAULTS.symbolStyle, cableReserve: DEFAULTS.cableReserve,
         rules: {} // пороги проверок (Слой 6), пусто = дефолты plan-rules
       },
       underlay: null, // { imageDataUri, scale (см/пиксель), opacity }
@@ -186,6 +189,9 @@
     p.openings = p.openings || []; // проекты, сохранённые до появления проёмов
     p.beams = p.beams || [];
     p.circuits = p.circuits || [];
+    // бэкофилл новых настроек (старые проекты)
+    if (!p.settings.symbolStyle) p.settings.symbolStyle = DEFAULTS.symbolStyle;
+    if (p.settings.cableReserve == null) p.settings.cableReserve = DEFAULTS.cableReserve;
     // бэкофилл новых полей проёмов (kind/height/sill) для старых проектов
     p.openings.forEach((o) => {
       if (!o.kind) o.kind = o.type === "window" ? "window" : "door";

@@ -20,7 +20,7 @@ const noop = () => {};
 function fakeNode() {
   const n = {
     _html: "", setAttribute: noop, getAttribute: () => null, hasAttribute: () => false,
-    appendChild: noop, removeChild: noop, firstChild: null, style: {}, textContent: "",
+    appendChild: noop, removeChild: noop, insertBefore: noop, firstChild: null, style: {}, textContent: "",
     classList: { add: noop, remove: noop, toggle: noop, contains: () => false },
     setPointerCapture: noop, addEventListener: noop, removeEventListener: noop,
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 400 }),
@@ -69,6 +69,7 @@ function runFile(ctx, file) {
 function fakeCanvas() {
   const layer = () => fakeNode();
   return {
+    svg: fakeNode(),
     layers: { underlay: layer(), rooms: layer(), routes: layer(), elements: layer(), overlay: layer(), grid: layer() },
     cmPerPx: () => 0.5
   };
