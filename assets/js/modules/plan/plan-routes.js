@@ -114,12 +114,13 @@
     return ortho(p, a, b, fromEl && fromEl.wallId || null); // запасной вариант
   }
 
-  function build() {
+  function build(opts) {
+    const silent = !!(opts && opts.silent); // тихая автоперестройка: без тостов/шторки
     const c = core(), p = c.project;
     p.circuits = p.circuits || [];
-    if (!(p.panels || []).length) { rooms().toast(T.noPanel); return; }
+    if (!(p.panels || []).length) { if (!silent) rooms().toast(T.noPanel); return; }
     const points = (p.elements || []).filter(isPoint);
-    if (!points.length) { rooms().toast(T.noElems); return; }
+    if (!points.length) { if (!silent) rooms().toast(T.noElems); return; }
     c.commit();
     p.routes = [];
 
@@ -165,7 +166,22 @@
     });
 
     c.persist("routes-build");
-    sheet();
+    if (!silent) sheet();
+  }
+
+  // ---- автоперестройка: геометрия сдвинулась (точка/стена/перегородка) —
+  // ранее построенные трассы устарели бы молча (кривые длины/штробы в Расчёте).
+  // Перестраиваем тихо, только если трассы уже были построены.
+  const AUTOREBUILD_ON = { "elem-move": 1, "room-reshape": 1, "wall-th": 1, "wall-mat": 1, "beam-move": 1, "beam-w": 1 };
+  let rebuilding = false;
+  if (core().onChange) {
+    core().onChange((what) => {
+      if (rebuilding || !AUTOREBUILD_ON[what]) return;
+      const p = core().project;
+      if (!p || !(p.routes || []).length) return;
+      rebuilding = true;
+      try { build({ silent: true }); } finally { rebuilding = false; }
+    });
   }
 
   // шлейф от щита: каждая точка подключается к ближайшему уже подключённому узлу
@@ -266,6 +282,9 @@
         <label>Штроба В, мм<input type="number" inputmode="numeric" min="10" data-prt-chh value="${Math.round(p.settings.chaseH || 30)}"></label>
         <label>Отступ от стены, см<input type="number" inputmode="numeric" min="5" max="40" data-prt-off value="${Math.round(p.settings.routeOffset || 15)}"></label>
       </div>
+      <div class="ep-plan-srow">Соединители:
+        ${[["gml", "Гильзы"], ["wago", "ВАГО"], ["siz", "СИЗ"]].map(([k, l]) => `<button type="button" class="ep-plan-chip ep-clickable ${(p.settings.connectorMode || "gml") === k ? "on" : ""}" data-prt-conn="${k}">${l}</button>`).join("")}
+      </div>
       <div class="ep-plan-modehint">Линии идут по контуру комнаты с отступом, стены не пересекают — только перпендикулярной проходкой Ø${p.settings.sleeveD || 20} (макс. 2 кабеля в гильзу).</div>
       <div class="ep-plan-modehint">Тёплый пол — штроба в пол ${p.settings.tpChaseW || 50}×${p.settings.tpChaseH || 50} мм. Штроба к посту блока — в редакторе точки.</div>
       ${!juncN ? `<div class="ep-plan-modehint">${T.hintJ}</div>` : ""}
@@ -284,6 +303,9 @@
     if (t.closest("[data-prt-build]")) return build();
     if (t.closest("[data-prt-clear]")) return clearRoutes();
     if (t.closest("[data-prt-close]")) { rooms().closeSheet(); return; }
+    if ((b = t.closest("[data-prt-conn]"))) {
+      const c = core(); c.commit(); c.project.settings.connectorMode = b.getAttribute("data-prt-conn"); c.persist("routes-conn"); sheet(); return;
+    }
     if ((b = t.closest("[data-prt-rt]"))) {
       const c = core(); c.commit(); c.project.settings.routeType = b.getAttribute("data-prt-rt"); c.persist("routes-rt"); sheet(); return;
     }

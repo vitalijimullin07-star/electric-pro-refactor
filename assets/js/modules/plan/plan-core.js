@@ -33,6 +33,7 @@
     cableReserve: 10,      // % запаса кабеля при расчёте по трассам
     routeOffset: 15,       // см — отступ трассы от грани стены (линии идут по контуру комнаты)
     sleeveD: 20,           // мм — диаметр проходки (гильзы) через стену, макс. 2 кабеля
+    connectorMode: "gml",  // соединители в распайках: "wago" | "gml" (гильзы) | "siz"
     mainBreaker: 40, phases: 1, // вводной автомат (А) и число фаз (1/3) для однолинейки
     panelBrand: "IEK", panelReserve: 6, // бренд корпуса щита и запас модулей
     cables: ["3×1.5", "3×2.5", "3×4", "3×6", "5×2.5", "5×4", "5×6", "5×10"], // сечения кабеля
@@ -85,7 +86,7 @@
         mainBreaker: DEFAULTS.mainBreaker, phases: DEFAULTS.phases, meter: false, mainRcd: false,
         panelBrand: DEFAULTS.panelBrand, panelReserve: DEFAULTS.panelReserve, panelBox: null,
         symbolStyle: DEFAULTS.symbolStyle, cableReserve: DEFAULTS.cableReserve,
-        routeOffset: DEFAULTS.routeOffset, sleeveD: DEFAULTS.sleeveD,
+        routeOffset: DEFAULTS.routeOffset, sleeveD: DEFAULTS.sleeveD, connectorMode: DEFAULTS.connectorMode,
         rules: {} // пороги проверок (Слой 6), пусто = дефолты plan-rules
       },
       underlay: null, // { imageDataUri, scale (см/пиксель), opacity }
@@ -185,18 +186,19 @@
     persist("create");
     return p;
   }
-  async function openProject(id) {
-    let p = lsGet(LS_PROJECT + id, null);
-    if (!p) p = await cloudPullProject(id); // проект, созданный на другом устройстве
-    if (!p) return null;
-    p.openings = p.openings || []; // проекты, сохранённые до появления проёмов
+  // Бэкофилл проектов, сохранённых/экспортированных до появления новых полей —
+  // применяется и при открытии (openProject), и при импорте JSON (importJSON),
+  // чтобы старые/сторонние проекты не теряли настройки молча.
+  function backfillProject(p) {
+    p.openings = p.openings || [];
     p.beams = p.beams || [];
     p.circuits = p.circuits || [];
-    // бэкофилл новых настроек (старые проекты)
+    p.settings = p.settings || {};
     if (!p.settings.symbolStyle) p.settings.symbolStyle = DEFAULTS.symbolStyle;
     if (p.settings.cableReserve == null) p.settings.cableReserve = DEFAULTS.cableReserve;
     if (p.settings.routeOffset == null) p.settings.routeOffset = DEFAULTS.routeOffset;
     if (p.settings.sleeveD == null) p.settings.sleeveD = DEFAULTS.sleeveD;
+    if (!p.settings.connectorMode) p.settings.connectorMode = DEFAULTS.connectorMode;
     // бэкофилл новых полей проёмов (kind/height/sill) для старых проектов
     p.openings.forEach((o) => {
       if (!o.kind) o.kind = o.type === "window" ? "window" : "door";
@@ -204,6 +206,14 @@
       if (o.height == null) o.height = d.h;
       if (o.sill == null) o.sill = d.sill;
     });
+    return p;
+  }
+
+  async function openProject(id) {
+    let p = lsGet(LS_PROJECT + id, null);
+    if (!p) p = await cloudPullProject(id); // проект, созданный на другом устройстве
+    if (!p) return null;
+    backfillProject(p);
     S.project = p; S.undo = []; S.redo = [];
     emit("open");
     return p;
@@ -271,6 +281,7 @@
       const src = d && d.project ? d.project : d;
       if (!src || !Array.isArray(src.rooms) || !Array.isArray(src.elements)) return null;
       const p = Object.assign(newProject(src.name), src, { id: uid("prj"), updatedAt: now() }); // копия, свой id
+      backfillProject(p); // старые/сторонние экспорты не теряют новые настройки молча
       S.project = p; S.undo = []; S.redo = [];
       persist("import");
       return p;

@@ -325,7 +325,7 @@ test("calcByRoutes: штробы/подрозетники/кабель/ниша 
   ok(niche && niche.qty === 24, "вырубка × модули");
   ok(res.items.some((i) => i.name === "Монтаж щита в нишу/стену"), "монтаж щита");
 });
-test("calcByRoutes: слаботочка и ТП — отдельные штробы", () => {
+test("calcByRoutes: слаботочка и ТП — отдельные штробы (не сливаются с силовой)", () => {
   const { P, w } = install();
   const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
   const tv1 = M.newElement("tv", w(0), 100, 130, "tv");
@@ -336,9 +336,81 @@ test("calcByRoutes: слаботочка и ТП — отдельные штро
   P.routes.push(r1, r2);
   const res = EP.Plan.Calc.calcByRoutes(P);
   ok(res.items.some((i) => i.name === "Штробление 50x50 бетон"), "ТП 50×50");
-  const lv = res.items.find((i) => i.name === "Штробление 25x30 бетон");
-  ok(lv && lv.qty > 0, "слаботочка своей штробой 25×30");
+  // слаботочка — ОТДЕЛЬНАЯ строка с суффиксом (не совпадает с силовой той же ширины)
+  const lv = res.items.find((i) => i.name === "Штробление 25x30 бетон (слаботочка)");
+  ok(lv, "слаботочка — своя строка");
+  near(lv.qty, 2.6, 0.05, "свой спуск (140см) + спуск у щита (120см)");
+  // силовая (спуск ТП к щиту, 120см) не смешана со слаботочкой — своя строка без суффикса
+  const pw = res.items.find((i) => i.name === "Штробление 25x30 бетон");
+  ok(pw, "силовая штроба у щита — отдельной строкой от слаботочки");
+  near(pw.qty, 1.2, 0.05, "только силовой спуск ТП у щита");
   ok(res.items.some((i) => i.name.indexOf("Слаботочный") >= 0), "марка слаботочки");
+});
+test("calcByRoutes: коннекторы (распайки + разводка выключателей) из графа трасс", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
+  const j = M.newElement("junction", w(0), 100, 0, "routes");
+  P.elements.push(j);
+  // 3 точки заходят в распайку + 1 выход к щиту = 4 конца сходятся в коробке
+  for (let i = 0; i < 3; i++) {
+    const e2 = M.newElement("socket", w(0), 50 + i * 10, 30, "power");
+    P.elements.push(e2);
+    P.routes.push(M.newRoute("power", "ceiling", [{ x: 50 + i * 10, y: 20 }, { x: 100, y: 0 }], e2.id, j.id));
+  }
+  const rj = M.newRoute("power", "ceiling", [{ x: 100, y: 0 }, { x: 50, y: 50 }], j.id, pn.id);
+  rj.toPanel = true;
+  P.routes.push(rj);
+  const sw1 = M.newElement("switch", w(1), 60, 90, "light");
+  const sw2 = M.newElement("switch", w(1), 120, 90, "light");
+  P.elements.push(sw1, sw2);
+  const res = EP.Plan.Calc.calcByRoutes(P);
+  eq(P.settings.connectorMode, "gml", "режим по умолчанию — гильзы");
+  const gml4 = res.items.find((i) => i.name === "ГМЛ 4");
+  ok(gml4, "распайка (pin4×3) и выключатели (pin2×8) — обе группы в типоразмер ГМЛ 4 (≤4 провода)");
+  eq(gml4.qty, 11, "3(коробка: 3 входа+1 выход) + 8(2 выключателя × шаблон pin2×4)");
+  const shrink = res.items.find((i) => i.name === "Термоусадка 12/4");
+  ok(shrink && shrink.qty > 0, "термоусадка на стыки гильз");
+});
+test("calcByRoutes: коннекторы в режиме ВАГО — без термоусадки", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
+  P.settings.connectorMode = "wago";
+  const sw1 = M.newElement("switch", w(1), 60, 90, "light");
+  P.elements.push(sw1);
+  const s1 = M.newElement("socket", w(0), 100, 30, "power");
+  P.elements.push(s1);
+  const rt = M.newRoute("power", "ceiling", [{ x: 100, y: 18 }, { x: 50, y: 50 }], s1.id, pn.id);
+  rt.toPanel = true;
+  P.routes.push(rt);
+  const res = EP.Plan.Calc.calcByRoutes(P);
+  const wago = res.items.find((i) => i.name === "ВАГО 2-пин");
+  ok(wago && wago.qty === 4, "1 выключатель → pin2×4 (шаблон switch_1)");
+  ok(!res.items.some((i) => i.name.indexOf("Термоусадка") >= 0), "ВАГО — без термоусадки");
+});
+test("автоперестройка трасс: elem-move тихо перестраивает построенные трассы", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
+  const s1 = M.newElement("socket", w(0), 100, 30, "power");
+  P.elements.push(s1);
+  EP.Plan.Routes.build();
+  ok(P.routes.length > 0, "трассы построены");
+  const before = JSON.stringify(P.routes[0].points);
+  const c = EP.Plan.Core;
+  c.commit();
+  s1.offset = 250; // геометрия сдвинулась
+  c.persist("elem-move");
+  ok(P.routes.length > 0, "трассы остались (тихо перестроены, не пропали)");
+  ok(JSON.stringify(P.routes[0].points) !== before, "путь пересчитан под новую позицию точки");
+});
+test("автоперестройка НЕ срабатывает, если трассы ещё не строились", () => {
+  const { P, w } = install();
+  const s1 = M.newElement("socket", w(0), 100, 30, "power");
+  P.elements.push(s1);
+  const c = EP.Plan.Core;
+  c.commit();
+  s1.offset = 200;
+  c.persist("elem-move"); // нет щита/трасс — build() тихо не найдёт что строить
+  eq(P.routes.length, 0, "трассы не появились сами по себе");
 });
 test("настройки: ГОСТ-значки и запас кабеля по умолчанию", () => {
   const p = M.newProject("x");
@@ -419,11 +491,19 @@ test("проходки Ø20: макс. 2 кабеля в гильзу", () => {
 
 (async () => {
   await test("openProject: бэкофилл старых проектов", async () => {}); // placeholder to keep sync
-  // синхронная проверка бэкофилла через importJSON старого формата
+  // п.1 аудита: importJSON теперь ТОЖЕ бэкофиллит (не только openProject) — старые/
+  // сторонние экспорты не должны молча терять новые настройки и поля проёмов.
   const old = { name: "old", settings: { ceilingHeight: 270 }, rooms: [], elements: [], routes: [], openings: [{ id: "o", type: "window", wallId: "x:0", offset: 0, width: 140 }] };
   const imp = EP.Plan.Core.importJSON(JSON.stringify({ project: old }));
-  // importJSON не делает бэкофилл проёмов (это делает openProject); проверим что не падает и проёмы на месте
   ok(imp && imp.openings.length === 1, "импорт старого формата");
+  eq(imp.openings[0].kind, "window", "бэкофилл kind проёма");
+  eq(imp.openings[0].height, 140, "бэкофилл height проёма");
+  eq(imp.openings[0].sill, 90, "бэкофилл sill проёма");
+  eq(imp.settings.symbolStyle, "gost", "бэкофилл symbolStyle");
+  eq(imp.settings.cableReserve, 10, "бэкофилл cableReserve");
+  eq(imp.settings.routeOffset, 15, "бэкофилл routeOffset");
+  eq(imp.settings.sleeveD, 20, "бэкофилл sleeveD");
+  eq(imp.settings.connectorMode, "gml", "бэкофилл connectorMode");
 
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
