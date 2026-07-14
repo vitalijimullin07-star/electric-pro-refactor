@@ -34,6 +34,7 @@
     routeOffset: 15,       // см — отступ трассы от грани стены (линии идут по контуру комнаты)
     sleeveD: 20,           // мм — диаметр проходки (гильзы) через стену, макс. 2 кабеля
     connectorMode: "gml",  // соединители в распайках: "wago" | "gml" (гильзы) | "siz"
+    schemeMode: "auto",    // однолинейка: "auto" (из p.circuits) | "manual" (ручной конструктор)
     mainBreaker: 40, phases: 1, // вводной автомат (А) и число фаз (1/3) для однолинейки
     panelBrand: "IEK", panelReserve: 6, // бренд корпуса щита и запас модулей
     cables: ["3×1.5", "3×2.5", "3×4", "3×6", "5×2.5", "5×4", "5×6", "5×10"], // сечения кабеля
@@ -87,12 +88,14 @@
         panelBrand: DEFAULTS.panelBrand, panelReserve: DEFAULTS.panelReserve, panelBox: null,
         symbolStyle: DEFAULTS.symbolStyle, cableReserve: DEFAULTS.cableReserve,
         routeOffset: DEFAULTS.routeOffset, sleeveD: DEFAULTS.sleeveD, connectorMode: DEFAULTS.connectorMode,
+        schemeMode: DEFAULTS.schemeMode,
         rules: {} // пороги проверок (Слой 6), пусто = дефолты plan-rules
       },
       underlay: null, // { imageDataUri, scale (см/пиксель), opacity }
       rooms: [], panels: [], elements: [], routes: [], circuits: [],
       openings: [], // двери и окна в стенах
       beams: [],    // перемычки/балки на потолке (свободные отрезки)
+      manualScheme: newManualScheme(), // ручной конструктор однолинейки (Слой 7б)
       layers: blankLayers(),
       versions: [], // { at, note } — история версий (заполняется в следующих слоях)
       createdAt: now(), updatedAt: now()
@@ -115,6 +118,24 @@
     return { id: uid("rt"), layer: layer || "routes", routeType: routeType || "ceiling", points: points || [], fromId: fromId || null, toId: toId || null, throughWalls: [] };
   }
   function newCircuit(name, color, breaker) { return { id: uid("cc"), name: name || "Линия", color: color || DEFAULTS.circuitColors[0], breaker: breaker || 16, rcd: false, poles: 1, cable: null, rcdRating: 30 }; }
+  // ручная однолинейка (Слой 7б): группы (УЗО/Диф) -> линии, линия может ссылаться
+  // на линию плана (circuitId в p.circuits) — тогда она уходит из «не расставлено» в чек-листе.
+  // Вводной автомат/счётчик/вводное УЗО НЕ дублируются здесь — те же settings.mainBreaker/
+  // meter/mainRcd, что и в авто-режиме (единый источник, влияет и на подбор корпуса щита).
+  function newManualScheme() {
+    return {
+      apparatus: { rubilnik: false, opn: false, uzm: false, avr: false, phaseSwitch: false, priority: false, contactor: false, uzdp: false, bell: false, serviceSocket: false },
+      apparatusOrder: [],
+      busbarCable: null, busbarCableLen: null,
+      groups: []
+    };
+  }
+  function newSchemeGroup(title) {
+    return { id: uid("mg"), title: title || "Группа", kind: "uzo", leak: 30, rcdType: "A", curve: "C", amp: 40, phase: "1", phaseSel: "1", apps: [], appsAfter: [], lines: [] };
+  }
+  function newSchemeLine(name) {
+    return { id: uid("ml"), circuitId: null, name: name || "", curve: "C", amp: 16, phase: "1", cable: null, cableLen: null, apps: [] };
+  }
   // Проёмы: дверь / раздвижная / окно / балконный блок. Размеры настраиваемые.
   // height — высота проёма (см), sill — низ проёма от пола (окно ~90, дверь 0).
   const OPENING_KINDS = {
@@ -205,6 +226,13 @@
     if (p.settings.routeOffset == null) p.settings.routeOffset = DEFAULTS.routeOffset;
     if (p.settings.sleeveD == null) p.settings.sleeveD = DEFAULTS.sleeveD;
     if (!p.settings.connectorMode) p.settings.connectorMode = DEFAULTS.connectorMode;
+    if (!p.settings.schemeMode) p.settings.schemeMode = DEFAULTS.schemeMode;
+    if (!p.manualScheme || typeof p.manualScheme !== "object") p.manualScheme = newManualScheme();
+    else {
+      p.manualScheme.apparatus = p.manualScheme.apparatus || newManualScheme().apparatus;
+      p.manualScheme.apparatusOrder = Array.isArray(p.manualScheme.apparatusOrder) ? p.manualScheme.apparatusOrder : [];
+      p.manualScheme.groups = Array.isArray(p.manualScheme.groups) ? p.manualScheme.groups : [];
+    }
     // бэкофилл новых полей проёмов (kind/height/sill) для старых проектов
     p.openings.forEach((o) => {
       if (!o.kind) o.kind = o.type === "window" ? "window" : "door";
@@ -306,6 +334,6 @@
     listProjects, createProject, openProject, closeProject, deleteProject, renameProject,
     commit, undo, redo, canUndo, canRedo, persist,
     exportJSON, importJSON, cloudPullIndex,
-    model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening, newBeam }
+    model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening, newBeam, newManualScheme, newSchemeGroup, newSchemeLine }
   };
 })();
