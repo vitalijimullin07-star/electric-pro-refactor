@@ -14,7 +14,7 @@ push в `main` → GitHub Actions (`firebase-deploy.yml`) → синтакс-ч�
 - После squash-merge ветка расходится с main. Паттерн:
   `git fetch origin main && git reset --hard origin/main && git cherry-pick <commit> && git push --force-with-lease`.
   ВСЕГДА коммитить до reset --hard. Ветка: `claude/full-audit-security-visualization-1fbjfm`.
-- Тесты: `node test/run.js` (65 шт., без зависимостей; харнесс test/harness.js — vm-sandbox,
+- Тесты: `node test/run.js` (66 шт., без зависимостей; харнесс test/harness.js — vm-sandbox,
   cross-realm `instanceof` не работает — проверять утиными типами; DOM-атрибуты в
   fakeNode НЕ хранятся — UI-only правки в plan-unfold.js (клики/карточки) тестами
   не покрываются, только синтаксис-чек).
@@ -97,6 +97,15 @@ plan-unfold (развёртка: fullscreen, карточка точки по д
   термостата вниз в пол (el.height). Выключатель при routeType="floor" —
   pointVert на всю высоту до потолка (линия идёт дальше к лампе), не только
   до своей точки.
+- routeOff(p, circuitId) в plan-routes.js — отступ трассы от стены НЕ одно
+  число на весь проект: база settings.routeOffset (QF1/без линии) + 2 см на
+  каждую следующую линию по её индексу в p.circuits (QF2 +2, QF3 +4…, кап
+  ×10 лэйнов), чтобы параллельные трассы разных линий вдоль одного коридора
+  визуально не сливались в одну. Прокинут через contourOf/pathInRoom/
+  buildPath (5-й параметр circuitId, с фолбэком на fromEl.circuitId).
+  Намеренно НЕ делали отдельную логику обхода пересечений (доп. проходки
+  ради одной точки налегания линий) — просил не усложнять, разный отступ
+  уже снимает почти все случаи.
 
 ## Бэклог (подтверждён пользователем)
 Аудит-патч 1-5 — СДЕЛАН. Пакет клик-по-размерам/общая-стена/щит-у-стены — СДЕЛАН.
