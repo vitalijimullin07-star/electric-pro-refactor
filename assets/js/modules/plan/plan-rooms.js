@@ -52,6 +52,12 @@
     if (hint) hint.textContent = T.modeHint[R.mode] || "";
   }
   function renderScaled() { if (R.canvas && EP.Plan.Render) EP.Plan.Render.drawScaled(R.canvas, core().project, ui()); }
+  // перерисовка не чаще кадра — тяга пальцем остаётся плавной
+  let sceneRaf = 0;
+  function renderSceneSoon() {
+    if (sceneRaf) return;
+    sceneRaf = (window.requestAnimationFrame || ((f) => setTimeout(f, 16)))(() => { sceneRaf = 0; renderScene(); });
+  }
 
   // ---------- режимы ----------
   function setMode(mode) {
@@ -74,7 +80,7 @@
     if (on) {
       R.canvas.setDragHandler((dx, dy, phase) => {
         const p = core().project; if (!p || !p.underlay) return;
-        if (phase === "move") { p.underlay.x = (p.underlay.x || 0) + dx; p.underlay.y = (p.underlay.y || 0) + dy; renderScene(); }
+        if (phase === "move") { p.underlay.x = (p.underlay.x || 0) + dx; p.underlay.y = (p.underlay.y || 0) + dy; renderSceneSoon(); }
         else if (phase === "end") core().persist("underlay-move");
       });
     } else R.canvas.setDragHandler(null);
@@ -326,7 +332,7 @@
       }
       if (phase === "move" && grabbed) {
         bm[grabbed] = { x: bm[grabbed].x + dx, y: bm[grabbed].y + dy };
-        renderScene();
+        renderSceneSoon();
       } else if (phase === "end" && grabbed) {
         const step = c.project.settings.gridStep || 10;
         bm[grabbed] = G().snapPoint(bm[grabbed], step);
@@ -375,7 +381,7 @@
           pts[grab.i] = { x: pts[grab.i].x + grab.n.x * d, y: pts[grab.i].y + grab.n.y * d };
           pts[j] = { x: pts[j].x + grab.n.x * d, y: pts[j].y + grab.n.y * d };
         }
-        renderScene();
+        renderSceneSoon();
       } else if (phase === "end" && grab) {
         const step = c.project.settings.gridStep || 10;
         if (grab.kind === "corner") pts[grab.i] = G().snapPoint(pts[grab.i], step);

@@ -267,8 +267,8 @@
       const gr = svgEl("g", { "data-pu-el": el.id, class: "ep-plan-unfel" + (el.status === "mounted" ? " is-done" : "") });
 
       // вертикаль: высота от пола до точки (синим), подпись высоты
-      svg.appendChild(svgEl("line", { x1: x, y1: H, x2: x, y2: y, class: "ep-plan-unfdimL", "stroke-width": kk }));
-      svg.appendChild(svgEl("text", { x: x + 6 * ks, y: (H + y) / 2, "font-size": 11 * ks, "dominant-baseline": "middle", class: "ep-plan-unfdimT" }, Math.round(el.height) + ""));
+      svg.appendChild(svgEl("line", { "data-pu-diml": el.id, x1: x, y1: H, x2: x, y2: y, class: "ep-plan-unfdimL", "stroke-width": kk }));
+      svg.appendChild(svgEl("text", { "data-pu-dimt": el.id, x: x + 6 * ks, y: (H + y) / 2, "font-size": 11 * ks, "dominant-baseline": "middle", class: "ep-plan-unfdimT" }, Math.round(el.height) + ""));
 
       if (el.type === "block") {
         const items = (el.params && el.params.items) || ["socket"];
@@ -306,6 +306,19 @@
     const dist2 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
     function pinchInfo() { const [a, b] = [...pts.values()]; return { d: Math.max(10, dist2(a, b)), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; }
 
+    // плавная тяга: обновляем позицию узлов без пересборки всего SVG
+    function updateDragVisual() {
+      const d = S.drag; if (!d) return;
+      const x = d.el.offset, y = H - d.el.height;
+      if (d.g) d.g.setAttribute("transform", `translate(${x - d.x0} ${y - d.y0})`);
+      if (d.dimL) { d.dimL.setAttribute("x1", x); d.dimL.setAttribute("x2", x); d.dimL.setAttribute("y2", y); }
+      if (d.dimT) {
+        if (d.dimTx == null) d.dimTx = (Number(d.dimT.getAttribute("x")) || d.x0) - d.x0;
+        d.dimT.setAttribute("x", d.dimTx + x); d.dimT.setAttribute("y", (H + y) / 2);
+        d.dimT.textContent = Math.round(d.el.height) + "";
+      }
+    }
+
     svg.addEventListener("pointerdown", (e) => {
       if (e.pointerType === "pen") penOn = true;
       else if (e.pointerType === "touch" && penOn) return; // ладонь при работе стилусом
@@ -322,7 +335,13 @@
         if (!el) return;
         const pg = e.target.closest && e.target.closest("[data-pu-post]");
         core().commit();
-        S.drag = { el, moved: false, postIdx: pg ? Number(pg.getAttribute("data-pu-post")) : null, pen: e.pointerType === "pen" };
+        // узлы для ПЛАВНОЙ тяги на месте (без пересборки SVG во время движения)
+        S.drag = {
+          el, moved: false, postIdx: pg ? Number(pg.getAttribute("data-pu-post")) : null,
+          g, x0: el.offset, y0: (wallH(p, S.wallId)) - el.height, dimTx: null,
+          dimL: svg.querySelector(`[data-pu-diml="${el.id}"]`),
+          dimT: svg.querySelector(`[data-pu-dimt="${el.id}"]`)
+        };
         return;
       }
       pending = { kind: "empty" };
@@ -344,12 +363,14 @@
       }
       if (pts.size !== 1) return;
       if (S.drag) {
-        const p = core().project, pt = toWorld(svg, e.clientX, e.clientY);
-        const step = 1; // ПЛАВНО, с точностью 1 см — без прыжков по сетке
+        // мёртвая зона тапа: палец всегда дрожит на пару пикселей — это ещё не тяга
+        if (!S.drag.moved && downClient && Math.hypot(e.clientX - downClient.x, e.clientY - downClient.y) < 7) return;
+        const pt = toWorld(svg, e.clientX, e.clientY);
         S.drag.moved = true;
-        S.drag.el.offset = G().snap(Math.max(0, Math.min(w.len, pt.x)), step);
-        S.drag.el.height = G().snap(Math.max(0, Math.min(H, H - pt.y)), step);
-        drawStrip(); rooms().renderScene(); return;
+        S.drag.el.offset = Math.round(Math.max(0, Math.min(w.len, pt.x))); // плавно, 1 см
+        S.drag.el.height = Math.round(Math.max(0, Math.min(H, H - pt.y)));
+        updateDragVisual(); // двигаем узлы на месте — БЕЗ пересборки SVG (плавно)
+        return;
       }
       if (downClient && Math.hypot(e.clientX - downClient.x, e.clientY - downClient.y) > 6) {
         moved = true;
@@ -363,7 +384,12 @@
       pts.delete(e.pointerId);
       if (pts.size < 2) pinch = null;
       if (S.drag) {
-        if (S.drag.moved) core().persist("elem-move");
+        if (S.drag.moved) {
+          core().persist("elem-move");
+          S.drag = null;
+          drawStrip(); rooms().renderScene(); // полная перерисовка ОДИН раз, на отпускании
+          return;
+        }
         else {
           // двойной тап по точке — карточка параметров (высота / от угла / посты)
           const now = Date.now();
