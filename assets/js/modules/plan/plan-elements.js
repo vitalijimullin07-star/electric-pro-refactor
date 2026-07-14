@@ -30,7 +30,8 @@
     door:    { name: "Дверь",      glyph: "Дв" },
     sliding: { name: "Раздвижная", glyph: "РД" },
     window:  { name: "Окно",       glyph: "Ок" },
-    balcony: { name: "Балкон",     glyph: "Бл" }
+    balcony: { name: "Балкон",     glyph: "Бл" },
+    opening: { name: "Проём",      glyph: "Пр" }
   };
   const STATUS = [["planned", "План"], ["mounted", "Готово ✓"], ["existing", "Было"]];
   const CFG = { hitPx: 22, wallSnapPx: 26, photoMax: 4, photoSide: 640, blockMax: 6 };

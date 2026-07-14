@@ -256,6 +256,20 @@
     for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) s += (pts[j].x + pts[i].x) * (pts[j].y - pts[i].y);
     return Math.abs(s / 2);
   };
+  // Внутренние препятствия (вентшахта / мини-комната) — свободные прямоугольники
+  // без привязки к room.id, комната определяется по центру препятствия (как у
+  // элементов без wallId). Площадь вычитается из площади помещения в Расчёте/на плане.
+  G.voidRect = (vd) => {
+    const x1 = Math.min(vd.a.x, vd.b.x), x2 = Math.max(vd.a.x, vd.b.x);
+    const y1 = Math.min(vd.a.y, vd.b.y), y2 = Math.max(vd.a.y, vd.b.y);
+    return { x1, y1, x2, y2, w: x2 - x1, h: y2 - y1 };
+  };
+  G.roomVoidArea = (project, room) => (project.voids || []).reduce((sum, vd) => {
+    const r = G.voidRect(vd);
+    const c = { x: (r.x1 + r.x2) / 2, y: (r.y1 + r.y2) / 2 };
+    return sum + (G.pointInPolygon(c, room.points) ? r.w * r.h : 0);
+  }, 0);
+  G.roomNetArea = (project, room) => Math.max(0, G.area(room.points) - G.roomVoidArea(project, room));
 
   // ---- позиции элементов и пересечения (Слои 2-4) ----
   G.pointOnWall = (project, wallId, offset) => {

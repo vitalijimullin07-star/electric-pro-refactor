@@ -11,7 +11,7 @@
   const CFG = {
     hitPx: 24, padCm: 40,
     addTypes: ["block", "socket", "switch", "bra", "tv", "internet", "ac", "camera", "sensor"],
-    openTypes: ["door", "window", "sliding", "balcony"]
+    openTypes: ["door", "window", "sliding", "balcony", "opening"]
   };
   const T = { title: "Стена", hint: "Пальцами — зум/сдвиг · выбери тип и тапни по пустому — добавить · тяни точку" };
 
@@ -41,7 +41,7 @@
 
   function open(wallId, full) {
     S.wallId = wallId; S.view = null; S.ptPanel = null; S.lastTap = null; S.ledDraft = null;
-    if (full != null) S.full = !!full; // тап по стене на главном → сразу во весь экран
+    if (full != null) S.full = !!full; // full=true — только из явного режима «Стена»; обычный тап по стене открывает мини-превью
     const p = core().project, w = G().wallById(p, wallId);
     if (!w) return;
     const TY = EL().TYPES, OT = EL().OPEN_TYPES || {};
