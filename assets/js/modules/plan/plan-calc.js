@@ -164,6 +164,25 @@
     if (pDeep) add("material", "Подрозетник Ø68 65 мм глубокий", pDeep, "шт");
     if (junctBoxes) add("material", "Распаечная коробка (потолок)", junctBoxes, "шт");
     Object.keys(cableBy).forEach((m) => add("material", `Кабель ${m}`, cableBy[m], "м"));
+    // проходки через стены: Ø20, макс. 2 кабеля в гильзу; группируем по месту (~20 см)
+    const sleeves = {}; // "x|y" -> { n: кабелей, wallId }
+    routes.forEach((r) => {
+      const seen = {};
+      (r.throughWalls || []).forEach((c) => {
+        const key = Math.round(c.x / 20) + "|" + Math.round(c.y / 20);
+        if (seen[key]) return; // общая стена двух комнат — одно место, одна гильза
+        seen[key] = 1;
+        if (!sleeves[key]) sleeves[key] = { n: 0, wallId: c.wallId };
+        sleeves[key].n++;
+      });
+    });
+    const sleeveByMat = {};
+    Object.keys(sleeves).forEach((k) => {
+      const w = G2.wallById(p, sleeves[k].wallId);
+      const mat = w ? G2.wallMatOf(p, w) : ((s && s.wallMaterial) || "Бетон");
+      sleeveByMat[mat] = (sleeveByMat[mat] || 0) + Math.ceil(sleeves[k].n / 2);
+    });
+    Object.keys(sleeveByMat).forEach((m) => add("work", `Проходка Ø${s.sleeveD || 20} ${low(m)}`, sleeveByMat[m], "шт"));
     // ниша под щит — как в конфигураторе щита (вырубка × модули + монтаж)
     if ((p.panels || []).length) {
       const modules = (s.panelBox && s.panelBox.modules) ||

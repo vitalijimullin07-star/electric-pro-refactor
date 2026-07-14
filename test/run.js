@@ -344,6 +344,77 @@ test("настройки: ГОСТ-значки и запас кабеля по 
   const p = M.newProject("x");
   eq(p.settings.symbolStyle, "gost", "значки ГОСТ");
   eq(p.settings.cableReserve, 10, "запас 10%");
+  eq(p.settings.routeOffset, 15, "отступ трассы 15 см");
+  eq(p.settings.sleeveD, 20, "гильза Ø20");
+});
+
+// ===== 10. Трассировка v4: контур с отступом, проходки =====
+test("insetContour: отступ th/2+15 от оси стены", () => {
+  const { P } = install();
+  const ct = G.insetContour(P, P.rooms[0], 15); // th=10 → 5+15=20
+  ok(ct && ct.length === 4, "4 угла");
+  near(ct[0].x, 20, 0.01); near(ct[0].y, 20, 0.01);
+  near(ct[2].x, 380, 0.01); near(ct[2].y, 280, 0.01);
+});
+test("трасса в одной комнате: по контуру, стены не пересекает", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(200, 150, "Щ"); P.panels.push(pn);
+  const s1 = M.newElement("socket", w(0), 100, 30, "power");
+  P.elements.push(s1);
+  const a = G.routeAnchor(P, s1);
+  const path = EP.Plan.Routes.buildPath(P, s1, a, { kind: "panel", pos: { x: pn.x, y: pn.y } });
+  ok(path.length >= 3, "путь через контур");
+  eq(G.polylineCrossings(P, path, s1.wallId).length, 0, "стен не пересекает");
+  // выход на контур отступа: есть точка на y=20 (контур верхней стены)
+  ok(path.some((q) => Math.abs(q.y - 20) < 0.5), "идёт по отступу 15 см от стены");
+});
+test("лампа: подход по контуру и под прямым углом", () => {
+  const { P } = install();
+  const pn = M.newPanel(60, 60, "Щ"); P.panels.push(pn);
+  const lamp = M.newElement("light", null, 0, 0, "light");
+  lamp.params = { x: 200, y: 150 };
+  P.elements.push(lamp);
+  const a = G.routeAnchor(P, lamp);
+  const path = EP.Plan.Routes.buildPath(P, lamp, a, { kind: "panel", pos: { x: pn.x, y: pn.y } });
+  ok(path.length >= 2, "путь есть");
+  const q = path[1]; // первый излом от лампы — перпендикуляр к контуру (оси комнаты)
+  ok(Math.abs(q.x - 200) < 0.5 || Math.abs(q.y - 150) < 0.5, "прямой угол от лампы");
+});
+test("другая комната: перпендикулярная проходка через стену", () => {
+  const { P } = install();
+  const roomB = M.newRoom(G.rectPoints(400, 0, 400, 300), "B");
+  P.rooms.push(roomB);
+  const pn = M.newPanel(100, 150, "Щ"); P.panels.push(pn); // в комнате A
+  const s1 = M.newElement("socket", roomB.id + ":1", 150, 30, "power"); // правая стена B
+  P.elements.push(s1);
+  const a = G.routeAnchor(P, s1);
+  const path = EP.Plan.Routes.buildPath(P, s1, a, { kind: "panel", pos: { x: pn.x, y: pn.y } });
+  const hits = G.polylineCrossings(P, path, s1.wallId);
+  ok(hits.length >= 1, "есть проходка");
+  // сегмент через стену x=400 — строго горизонтальный (перпендикуляр к вертикальной стене)
+  let perp = false;
+  for (let i = 0; i < path.length - 1; i++) {
+    const p1 = path[i], p2 = path[i + 1];
+    if ((p1.x - 400) * (p2.x - 400) < 0) { if (Math.abs(p1.y - p2.y) < 0.5) perp = true; }
+  }
+  ok(perp, "проходка перпендикулярна стене");
+});
+test("проходки Ø20: макс. 2 кабеля в гильзу", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
+  // 3 кабеля через одно место стены → 2 гильзы
+  for (let i = 0; i < 3; i++) {
+    const e2 = M.newElement("socket", w(0), 100 + i * 5, 30, "power");
+    P.elements.push(e2);
+    const rt = M.newRoute("power", "ceiling", [{ x: 100, y: 20 }, { x: 200, y: 150 }], e2.id, pn.id);
+    rt.toPanel = true;
+    rt.throughWalls = [{ x: 400, y: 150, wallId: w(1) }];
+    P.routes.push(rt);
+  }
+  const res = EP.Plan.Calc.calcByRoutes(P);
+  const sl = res.items.find((i) => i.name.indexOf("Проходка Ø20") >= 0);
+  ok(sl, "есть проходки");
+  eq(sl.qty, 2, "3 кабеля → 2 гильзы");
 });
 
 (async () => {
