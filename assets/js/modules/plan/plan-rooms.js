@@ -7,7 +7,7 @@
   window.EP = window.EP || {};
 
   const T = {
-    modes: { view: "☝", rect: "▭", poly: "⬠", beam: "▬", elem: "🔌", opening: "🚪", ruler: "📏", underlay: "🖼" },
+    modes: { view: "☝", rect: "▭", poly: "⬠", beam: "▬", elem: "🔌", opening: "🚪", wall: "📐", ruler: "📏", underlay: "🖼" },
     modeHint: {
       view: "Тап: точка — редактор, стена — развёртка, комната — свойства.",
       rect: "Тапни два противоположных угла комнаты.",
@@ -15,6 +15,7 @@
       beam: "Балка/перегородка: тапни начало и конец, потом тяни концы.",
       elem: "Выбери тип в палитре и тапай по стене (свет/ТП — внутрь комнаты).",
       opening: "Проёмы: выбери дверь/окно/раздвижную/балкон и тапни по стене или перегородке.",
+      wall: "Тапни по любой стене — сразу откроется её развёртка во весь экран.",
       ruler: "Тапни две точки — расстояние.",
       underlay: "Фото-план: загрузка, масштаб по известной длине, перенос."
     },
@@ -148,6 +149,15 @@
     }
     if (R.mode === "elem") { if (EP.Plan.Elements) { EP.Plan.Elements.placeAt(w); renderScene(); } return; }
     if (R.mode === "opening") { if (EP.Plan.Elements) { EP.Plan.Elements.placeOpening(w); renderScene(); } return; }
+    if (R.mode === "wall") {
+      // выделенный режим: любой тап сразу открывает развёртку СТЕНЫ (без приоритета
+      // элементов/балок/комнат, как в "view") — надёжнее, чем ловить нужную стену обычным тапом
+      const k = R.canvas.cmPerPx();
+      const hit = G().wallAt(p, w, CFG.hitWallPx * 1.6 * k);
+      if (hit && EP.Plan.Unfold) EP.Plan.Unfold.open(hit.wall.id, true);
+      else toast(T.modeHint.wall);
+      return;
+    }
     // view: приоритет — элемент/щит > балка > стена (развёртка) > комната
     clearBeamSel();
     const k = R.canvas.cmPerPx();

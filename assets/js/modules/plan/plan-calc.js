@@ -92,8 +92,21 @@
   function sleeveByWires(w) { if (w <= 4) return "gml4"; if (w <= 6) return "gml6"; if (w <= 8) return "gml8"; return "gml10"; }
   // распаечные коробки: pin-count = ТОЧНОЕ число сходящихся кабелей (вход+выход,
   // берём из построенного графа трасс), ×3 разъёма (L/N/PE) на коробку.
-  // выключатели: внутренняя разводка одноклавишного мех-ма (шаблон пула switch_1);
-  // в модели пока нет клавишности/проходных — считаем как 1-клавишные (минимум, не завышаем).
+  // выключатели: внутренняя разводка ПО ФАКТИЧЕСКОМУ виду (клавиши/проходной/
+  // перекрёстный) — шаблоны пула; проходной/перекрёстный максимум 2-клавишные
+  // (у pool-engine нет шаблона на 3 — берём _2 как верхнюю границу).
+  const SW_TEMPLATES = {
+    switch_1: { pin2: 4 }, switch_2: { pin2: 3, pin4: 2 }, switch_3: { pin2: 4, pin4: 2 },
+    pass_1: { pin2: 6 }, pass_2: { pin2: 8, pin4: 1 },
+    cross_1: { pin2: 9 }, cross_2: { pin2: 15, pin3: 1 }
+  };
+  function switchTemplateKey(el) {
+    const kind = el.swKind || "normal";
+    const keys = Math.max(1, Math.min(3, el.keys || 1));
+    if (kind === "pass") return "pass_" + Math.min(2, keys);
+    if (kind === "cross") return "cross_" + Math.min(2, keys);
+    return "switch_" + keys;
+  }
   function connectorsByRoutes(p, inCnt, outCnt) {
     const mode = (p.settings && p.settings.connectorMode) || "gml";
     const pinMap = {};
@@ -102,13 +115,16 @@
       if (e2.status === "existing" || e2.type !== "junction") return;
       addPin((inCnt[e2.id] || 0) + (outCnt[e2.id] || 0), 3);
     });
-    let swCount = 0;
     (p.elements || []).forEach((e2) => {
       if (e2.status === "existing") return;
-      const items = e2.type === "block" ? ((e2.params && e2.params.items) || []) : [e2.type];
-      items.forEach((it) => { if (it === "switch") swCount++; });
+      if (e2.type === "switch") {
+        const t = SW_TEMPLATES[switchTemplateKey(e2)] || SW_TEMPLATES.switch_1;
+        Object.keys(t).forEach((pin) => addPin(Number(pin.replace("pin", "")), t[pin]));
+      } else if (e2.type === "block") {
+        // пост "switch" внутри блока — в блоке нет данных о клавишности, считаем простым 1-клавишным
+        ((e2.params && e2.params.items) || []).forEach((it) => { if (it === "switch") addPin(2, 4); });
+      }
     });
-    addPin(2, swCount * 4); // switch_1: pin2 × 4
     const materials = {}; let shrinkCount = 0;
     Object.keys(pinMap).forEach((pin) => {
       const w = Number(pin.replace("pin", "")), q = pinMap[pin];
@@ -156,7 +172,14 @@
       if (!(outCnt[e2.id] || inCnt[e2.id])) return;
       const vert = RT.pointVert(p, e2);
       if (vert < 1) return;
-      if (e2.layer === "warm") { addStrobe(sizeKey(s.tpChaseW || 50, s.tpChaseH || 50), mat, vert, "warm"); return; }
+      if (e2.layer === "warm") {
+        // ТП: подача к термостату — обычная штроба (потолок/пол, куда бы ни шла трасса);
+        // от термостата ВНИЗ в пол, к самому греющему кабелю — ВСЕГДА 50×50, отдельно
+        addStrobe(keyStd, mat, vert, "power");
+        const toFloor = Math.max(0, e2.height || 0);
+        if (toFloor > 1) addStrobe(sizeKey(s.tpChaseW || 50, s.tpChaseH || 50), mat, toFloor, "warm");
+        return;
+      }
       if (LV_LAYERS[e2.layer]) { addStrobe(keyStd, mat, vert, "lv"); return; } // слаботочка — своя штроба и своя строка
       const cables = (outCnt[e2.id] || 0) + (inCnt[e2.id] || 0); // вход+выход шлейфа в одном спуске
       addStrobe(keyStd, mat, Math.max(1, Math.ceil(cables / capOf(keyStd))) * vert, "power");
@@ -182,7 +205,9 @@
     const reserve = 1 + (Number(s.cableReserve == null ? 10 : s.cableReserve) || 0) / 100;
     routes.forEach((r) => {
       const e2 = elById(r.fromId);
-      const L = G2.polylineLen(r.points || []) + (e2 ? RT.pointVert(p, e2) : 0) + (r.toPanel ? RT.panelVert(p) : 0);
+      // без распайки на конце кабель проходит штробу туда-обратно (нет коробки,
+      // принимающей горизонталь на месте) — hopVertMul=2 для такого хопа
+      const L = G2.polylineLen(r.points || []) + (e2 ? RT.pointVert(p, e2) * RT.hopVertMul(p, r) : 0) + (r.toPanel ? RT.panelVert(p) : 0);
       const cc = (p.circuits || []).find((c) => c.id === r.circuitId);
       let mark = (cc && cc.cable) || null;
       if (!mark) {

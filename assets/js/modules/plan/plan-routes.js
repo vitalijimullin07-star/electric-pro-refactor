@@ -236,6 +236,9 @@
   // вертикали: спуск у точки (потолок/пол -> точка) и спуск у щита (считается один раз)
   function pointVert(p, el) {
     if (!el || el.type === "junction") return 0;
+    // выключатель при разводке ПО ПОЛУ: линия идёт дальше на потолок (к лампе),
+    // штроба у выключателя — на всю высоту, а не только до его собственной точки
+    if (el.type === "switch" && p.settings.routeType === "floor") return p.settings.ceilingHeight;
     if (p.settings.routeType === "floor") return el.height || 0;
     return Math.max(0, p.settings.ceilingHeight - (el.height || 0));
   }
@@ -243,12 +246,20 @@
     const ph = p.settings.panelHeight;
     return p.settings.routeType === "floor" ? ph : Math.max(0, p.settings.ceilingHeight - ph);
   }
+  // Без распайки на конце (обычная точка, не щит/распайка) кабель у ЭТОЙ точки
+  // проходит штробу ДВАЖДЫ — вниз к посту и обратно вверх продолжать шлейф
+  // дальше (нет коробки, которая приняла бы горизонтальную линию на месте).
+  function hopVertMul(p, r) {
+    if (r.toPanel) return 1;
+    const target = (p.elements || []).find((e) => e.id === r.toId);
+    return (target && target.type !== "junction") ? 2 : 1;
+  }
   function lengths(p) {
     const byLayer = {}, byCircuit = {};
     let crossings = 0, total = 0;
     (p.routes || []).forEach((r) => {
       const el = (p.elements || []).find((e) => e.id === r.fromId);
-      const L = G().polylineLen(r.points) + pointVert(p, el) + (r.toPanel ? panelVert(p) : 0);
+      const L = G().polylineLen(r.points) + pointVert(p, el) * hopVertMul(p, r) + (r.toPanel ? panelVert(p) : 0);
       byLayer[r.layer] = (byLayer[r.layer] || 0) + L;
       const cid = r.circuitId || "_none";
       byCircuit[cid] = (byCircuit[cid] || 0) + L;
@@ -357,5 +368,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { build, clearRoutes, lengths, sheet, pointVert, panelVert, buildPath, roomNear };
+  EP.Plan.Routes = { build, clearRoutes, lengths, sheet, pointVert, panelVert, hopVertMul, buildPath, roomNear };
 })();
