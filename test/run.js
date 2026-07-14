@@ -147,6 +147,23 @@ test("routing: блок — трасса ко входу штробы, не в �
   const a = G.routeAnchor(P, blk), c = G.elemDrawPoint(P, blk);
   ok(Math.hypot(a.x - c.x, a.y - c.y) > 1, "вход штробы смещён от центра");
 });
+test("build(): тёплый пол (ТП) тоже получает трассу (раньше исключался из isPoint)", () => {
+  const q1 = M.newCircuit("QF1", "#e11", 16);
+  const { P } = install({ circuits: [q1], panels: [M.newPanel(50, 50)] });
+  const wf = M.newElement("warmfloor", null, 0, 0, "warm"); wf.params = { x: 200, y: 150 }; wf.circuitId = q1.id;
+  P.elements.push(wf);
+  EP.Plan.Routes.build();
+  ok(P.routes.some((r) => r.fromId === wf.id), "у тёплого пола есть построенная трасса");
+});
+test("hitAt: тап попадает по ВИДИМОМУ маркеру (elemDrawPoint), а не по оси стены", () => {
+  const { P, w } = install();
+  const s1 = M.newElement("socket", w(0), 100, 30, "power");
+  P.elements.push(s1);
+  const drawPt = G.elemDrawPoint(P, s1);
+  ok(G.dist(drawPt, G.elemPoint(P, s1)) > 5, "маркер реально смещён от оси стены (th/2+8)");
+  const hit = EP.Plan.Elements.hitAt(drawPt, 5); // маленький радиус — по оси стены не попал бы
+  ok(hit && hit.el && hit.el.id === s1.id, "тап по маркеру находит элемент, а не стену");
+});
 
 // ===== 4. Однолинейка + щит =====
 test("scheme: линия с УЗО -> дифавтомат, без -> автомат", () => {

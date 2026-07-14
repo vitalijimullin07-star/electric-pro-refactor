@@ -13,6 +13,8 @@
     socket:    { name: "Розетка",     glyph: "Р",  layer: "power", h: 30 },
     switch:    { name: "Выключатель", glyph: "В",  layer: "light", h: 90 },
     light:     { name: "Свет",        glyph: "С",  layer: "light", h: null, free: true },
+    bra:       { name: "Бра",         glyph: "Бра", layer: "light", h: 170 },
+    track:     { name: "Трек",        glyph: "Трек", layer: "light", h: null, free: true },
     ac:        { name: "Кондиционер", glyph: "КД", layer: "ac",    h: 220 },
     warmfloor: { name: "Тёплый пол",  glyph: "ТП", layer: "warm",  h: 0, free: true },
     internet:  { name: "Интернет",    glyph: "И",  layer: "lv",    h: 30 },
@@ -165,7 +167,7 @@
     const p = core().project;
     let best = null;
     p.elements.forEach((el) => {
-      const pt = G().elemPoint(p, el);
+      const pt = G().elemDrawPoint(p, el); // тап должен попадать по ВИДИМОМУ маркеру, а не по оси стены
       if (!pt) return;
       const d = G().dist(w, pt);
       if (d <= maxCm && (!best || d < best.d)) best = { d, el };
