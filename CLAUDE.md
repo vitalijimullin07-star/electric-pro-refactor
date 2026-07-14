@@ -14,8 +14,10 @@ push в `main` → GitHub Actions (`firebase-deploy.yml`) → синтакс-ч�
 - После squash-merge ветка расходится с main. Паттерн:
   `git fetch origin main && git reset --hard origin/main && git cherry-pick <commit> && git push --force-with-lease`.
   ВСЕГДА коммитить до reset --hard. Ветка: `claude/full-audit-security-visualization-1fbjfm`.
-- Тесты: `node test/run.js` (44 шт., без зависимостей; харнесс test/harness.js — vm-sandbox,
-  cross-realm `instanceof` не работает — проверять утиными типами).
+- Тесты: `node test/run.js` (48 шт., без зависимостей; харнесс test/harness.js — vm-sandbox,
+  cross-realm `instanceof` не работает — проверять утиными типами; DOM-атрибуты в
+  fakeNode НЕ хранятся — UI-only правки в plan-unfold.js (клики/карточки) тестами
+  не покрываются, только синтаксис-чек).
 - Не планировать напоминания/wakeup'ы — пользователь просил без них.
 
 ## Модуль «Проект квартиры» (assets/js/modules/plan/)
@@ -47,6 +49,14 @@ plan-unfold (развёртка: fullscreen, карточка точки по д
   геометрии НЕ обязаны сами дёргать Routes.build(), это сделает подписка.
 - Коннекторы (ВАГО/ГМЛ/СИЗ): pin-count распайки = ТОЧНОЕ число сходящихся
   кабелей (inCnt+outCnt по графу трасс) — точнее, чем в pool-engine.
+- wallAt: у ОБЩЕЙ стены двух комнат centerline совпадает — раньше побеждала
+  всегда первая комната. Теперь через wallFrame.nrm сравниваем, В СТОРОНУ
+  какой комнаты физически смещён тап (side>-0.5 = "внутри"), иначе вторая
+  комната необратимо недостижима для простановки точек на своей стене.
+- roomNear (plan-routes.js) — фолбэк для щита/точки НЕ строго внутри полигона
+  комнаты (round-off у самой стены): G.roomAt → иначе комната ближайшей стены
+  через G.wallAt. Без него buildPath получал ra/rb=null и падал на кривой
+  ortho()-фолбэк вместо контура/перпендикулярной проходки.
 
 ## Бэклог (подтверждён пользователем)
 Аудит-патч 1-5 — СДЕЛАН (см. коммит «Аудит-патч 1-5»).

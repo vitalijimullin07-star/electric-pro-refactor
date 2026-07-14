@@ -339,6 +339,9 @@ body[data-visual-mode="day"] .ep-plan-lineRow input[type="text"] { background:#f
 body[data-visual-mode="day"] .ep-plan-unfdimL { stroke: #1d4ed8; }
 body[data-visual-mode="day"] .ep-plan-unfdimE { stroke: #3b82f6; }
 body[data-visual-mode="day"] .ep-plan-unfdimT { fill: #1d4ed8; }
+/* цифры размеров кликабельны — тап открывает карточку точки (высота/от угла) */
+.ep-plan-unfdimT.is-tap { text-decoration: underline; text-decoration-style: dotted; cursor: pointer; }
+.ep-plan-unftap { cursor: pointer; }
 /* полный экран: панели закреплены сверху, холст тянется на остаток */
 .ep-plan-sheet-full { display: flex; flex-direction: column; }
 .ep-plan-sheet-full .ep-plan-unfold { flex: 1 1 auto; min-height: 0; }

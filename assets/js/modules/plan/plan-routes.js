@@ -65,10 +65,20 @@
   // В другую комнату — ПЕРПЕНДИКУЛЯРНАЯ проходка через стену (гильза Ø20).
   const routeOff = (p) => Math.max(5, Math.min(40, Number(p.settings.routeOffset) || 15));
 
+  // Комната для точки: строгий point-in-polygon, а если мимо (щит/точка стоит
+  // ПРЯМО на стене — центр щита может лежать чуть за осью стены) — берём
+  // комнату ближайшей стены. Без этого щит у стены иногда не находил свою
+  // комнату, buildPath получал ra/rb=null и падал на кривой ortho()-фолбэк.
+  function roomNear(p, pos) {
+    return G().roomAt(p, pos) || (() => {
+      const hit = G().wallAt(p, pos, 60);
+      return hit && hit.wall && hit.wall.roomId ? (p.rooms || []).find((r) => r.id === hit.wall.roomId) : null;
+    })();
+  }
   function roomOfEl(p, el) {
     if (el && el.wallId) { const rid = String(el.wallId).split(":")[0]; return (p.rooms || []).find((r) => r.id === rid) || null; }
     const q = (el && el.params) || {};
-    return q.x != null ? G().roomAt(p, q) : null;
+    return q.x != null ? roomNear(p, q) : null;
   }
   function contourOf(p, room) { return room ? G().insetContour(p, room, routeOff(p)) : null; }
 
@@ -87,8 +97,8 @@
   function buildPath(p, fromEl, a, target, depth) {
     depth = depth || 0;
     const b = target.pos;
-    const ra = fromEl ? roomOfEl(p, fromEl) : G().roomAt(p, a);
-    const rb = (target.el ? roomOfEl(p, target.el) : null) || G().roomAt(p, b);
+    const ra = fromEl ? roomOfEl(p, fromEl) : roomNear(p, a);
+    const rb = (target.el ? roomOfEl(p, target.el) : null) || roomNear(p, b);
     if (ra && rb && ra.id === rb.id) {
       const path = pathInRoom(p, ra, a, b);
       if (path) return path;
@@ -347,5 +357,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { build, clearRoutes, lengths, sheet, pointVert, panelVert, buildPath };
+  EP.Plan.Routes = { build, clearRoutes, lengths, sheet, pointVert, panelVert, buildPath, roomNear };
 })();

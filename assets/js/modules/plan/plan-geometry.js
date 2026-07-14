@@ -165,19 +165,30 @@
     return { x, y, t, d: Math.hypot(p.x - x, p.y - y) };
   };
   G.wallAt = (project, p, maxD) => {
-    let best = null;
+    const cands = [];
     (project.rooms || []).forEach((r) => G.walls(r).forEach((w) => {
       const c = G.closestOnSeg(p, w.a, w.b);
-      if (c.d <= maxD && (!best || c.d < best.hit.d)) best = { wall: w, hit: c, offset: Math.round(c.t * w.len) };
+      if (c.d <= maxD) cands.push({ wall: w, hit: c, offset: Math.round(c.t * w.len) });
     }));
     // перегородки/балки тоже принимают проёмы
     (project.beams || []).forEach((bm) => {
       const w = G.beamWall(bm);
       const c = G.closestOnSeg(p, w.a, w.b);
       const md = Math.max(maxD, (bm.width || 10) / 2);
-      if (c.d <= md && (!best || c.d < best.hit.d)) best = { wall: w, hit: c, offset: Math.round(c.t * w.len) };
+      if (c.d <= md) cands.push({ wall: w, hit: c, offset: Math.round(c.t * w.len) });
     });
-    return best;
+    if (!cands.length) return null;
+    // ОБЩАЯ стена двух соседних комнат: у обеих centerline совпадает, дистанция
+    // до неё одинаковая — раньше побеждала всегда первая построенная комната,
+    // вторая становилась недостижимой для простановки точек на этой стене.
+    // Отдаём предпочтение той комнате, В СТОРОНУ КОТОРОЙ тап физически смещён.
+    const side = (cand) => {
+      const fr = G.wallFrame(project, cand.wall);
+      return fr ? (p.x - cand.hit.x) * fr.nrm.x + (p.y - cand.hit.y) * fr.nrm.y : 0; // >0 — тап внутри ЭТОЙ комнаты
+    };
+    const inside = cands.filter((c) => side(c) > -0.5);
+    const pool = inside.length ? inside : cands;
+    return pool.reduce((best, c) => (!best || c.hit.d < best.hit.d ? c : best), null);
   };
   G.pointInPolygon = (p, pts) => {
     let inside = false;
