@@ -85,7 +85,14 @@ EP.AppShell = {
     document.querySelector("#hardReloadBtn")?.addEventListener("click", () => {
       location.href = location.pathname + "?fresh=" + Date.now() + location.hash;
     });
-    document.querySelector("#installAppBtn")?.addEventListener("click", () => EP.PWA?.install?.());
+    document.querySelector("#installAppBtn")?.addEventListener("click", async () => {
+      if (EP.PWA?.canInstall?.()) {
+        EP.PWA.install();
+        return;
+      }
+      const text = EP.PWA?.diag ? await EP.PWA.diag() : "Диагностика недоступна.";
+      alert("Установка пока недоступна. Диагностика (пришлите скриншот):\n\n" + text);
+    });
 
     window.addEventListener("ep:route-loaded", () => this.syncAccess());
     window.addEventListener("ep:auth-changed", () => this.syncAccess());
@@ -98,7 +105,10 @@ EP.AppShell = {
 
   syncInstallBtn(canInstall) {
     const btn = document.querySelector("#installAppBtn");
-    if (btn) btn.style.display = canInstall ? "" : "none";
+    if (!btn) return;
+    const standalone = EP.PWA?.isStandalone?.();
+    btn.style.display = standalone ? "none" : "";
+    btn.textContent = canInstall ? "📲 Установить приложение" : "📲 Установить приложение (проверить)";
   },
 
   openDrawer() {
