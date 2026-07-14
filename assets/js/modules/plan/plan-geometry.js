@@ -279,6 +279,27 @@
     const room = (project.rooms || []).find((r) => r.id === roomId);
     return !!(room && G.pointInPolygon(q, room.points));
   });
+  // Куда идёт свет от выключателя: ручное назначение (el.targetId) — приоритет;
+  // иначе АВТО — ближайшая лампа/вывод той же ЛИНИИ (QF) в той же комнате
+  // (без линии связь не рисуем — слишком много ложных совпадений).
+  G.switchTarget = (project, el) => {
+    if (!el || el.type !== "switch") return null;
+    if (el.targetId) { const t = (project.elements || []).find((e) => e.id === el.targetId); if (t) return t; }
+    if (!el.circuitId) return null;
+    const p0 = G.elemDrawPoint(project, el);
+    if (!p0) return null;
+    const roomId = el.wallId ? String(el.wallId).split(":")[0] : null;
+    const pool = roomId ? G.elementsInRoom(project, roomId) : (project.elements || []);
+    let best = null;
+    pool.forEach((e) => {
+      if (e.id === el.id || e.circuitId !== el.circuitId || (e.type !== "light" && e.type !== "output")) return;
+      const pe = G.elemDrawPoint(project, e);
+      if (!pe) return;
+      const d = G.dist(p0, pe);
+      if (!best || d < best.d) best = { d, el: e };
+    });
+    return best ? best.el : null;
+  };
   // Пересечение отрезков (для проходок); касания концов не считаются
   G.segIntersect = (a, b, c, d) => {
     const r = { x: b.x - a.x, y: b.y - a.y }, s = { x: d.x - c.x, y: d.y - c.y };
@@ -385,6 +406,32 @@
   };
   // Точка подключения трассы к элементу: блок -> вход штробы (нужный пост), иначе -> сам элемент
   G.routeAnchor = (project, el) => (el.type === "block" ? G.blockEntryPoint(project, el) : G.elemDrawPoint(project, el));
+
+  // ВИЗУАЛИЗАЦИЯ штроб В БЛОК (логика как в Пуле розеток, но по видам раздельно —
+  // это НЕ единая точка подключения трассы (та — G.blockEntryIndex/routeAnchor),
+  // а отдельные штробы на каждый вид тока):
+  //  · силовая (розетка) — крайний ЛЕВЫЙ пост розетки;
+  //  · выключатель + розетка вместе в блоке — штроба входит МЕЖДУ ними;
+  //  · выключатель один (без розетки рядом) — штроба прямо к нему;
+  //  · интернет/ТВ (слаботочка) — КАЖДЫЙ отдельной штробой прямо к своему посту.
+  // Возвращает [{ idx: дробный индекс поста 0..n-1, kind: 'power'|'light'|'lv' }].
+  G.blockChaseEntries = (el) => {
+    const items = (el && el.params && el.params.items) || [];
+    const power = [], light = [], lv = [];
+    items.forEach((it, i) => {
+      if (it === "socket") power.push(i);
+      else if (it === "switch") light.push(i);
+      else if (it === "internet" || it === "tv") lv.push(i);
+    });
+    const out = [];
+    if (power.length) out.push({ idx: Math.min(...power), kind: "power" });
+    if (light.length) {
+      if (power.length) out.push({ idx: (Math.min(...light) + Math.min(...power)) / 2, kind: "light" });
+      else light.forEach((i) => out.push({ idx: i, kind: "light" }));
+    }
+    lv.forEach((i) => out.push({ idx: i, kind: "lv" }));
+    return out;
+  };
 
   // Локальный «репер» стены: направление вдоль (a→b), нормаль ВНУТРЬ комнаты, угол в градусах.
   // Нужно, чтобы точки/блоки отступали от стены внутрь и поворачивались вдоль неё.

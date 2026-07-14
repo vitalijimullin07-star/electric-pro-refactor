@@ -409,6 +409,18 @@
       }
       g.appendChild(grp);
     });
+    // пунктир: какой выключатель к какой лампе/выводу идёт (по линии QF или назначено вручную)
+    if (layerOn(project, "light")) {
+      (project.elements || []).forEach((elem) => {
+        if (elem.type !== "switch") return;
+        const target = G.switchTarget(project, elem);
+        if (!target) return;
+        const a = G.elemDrawPoint(project, elem), b = G.elemDrawPoint(project, target);
+        if (!a || !b) return;
+        const col = elem.circuitId && circ(elem.circuitId) ? circ(elem.circuitId).color : layerColor2("light");
+        g.appendChild(el("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: "ep-plan-swlink", stroke: col, "stroke-width": sw * 0.5 }));
+      });
+    }
     const pbox = project.settings && project.settings.panelBox;
     (project.panels || []).forEach((pn) => {
       // габарит щита = реальный корпус (мм→см), иначе типовой квадрат

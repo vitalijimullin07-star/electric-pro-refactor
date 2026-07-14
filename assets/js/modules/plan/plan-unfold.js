@@ -23,7 +23,7 @@
   const EL = () => EP.Plan.Elements;
   const isOpenKind = (k) => !!(EP.Plan.Core.OPENING_KINDS && EP.Plan.Core.OPENING_KINDS[k]);
 
-  const S = { wallId: null, addType: "socket", drag: null, full: false, view: null, sym: 1, lastTap: null, ptPanel: null };
+  const S = { wallId: null, addType: "socket", drag: null, full: false, view: null, sym: 1, lastTap: null, ptPanel: null, showChases: false };
 
   function wallH(p, wallId) {
     const roomId = String(wallId).split(":")[0];
@@ -59,6 +59,8 @@
           <div class="ep-plan-unfbar ep-plan-unftools">
             <span class="ep-plan-unflbl">План:</span>${tbtn("undo", "↶", "Отменить")}${tbtn("redo", "↷", "Вернуть")}
             <span class="ep-plan-unfsep"></span>${tbtn("trace", "🧵", "Автотрассировка")}${tbtn("checks", "✅", "Проверки норм")}${tbtn("calc", "🧮", "Расчёт и смета")}${tbtn("scheme", "▤", "Однолинейная схема")}${tbtn("pdf", "📄", "Печатный лист (PDF)")}
+            <span class="ep-plan-unfsep"></span>
+            <button type="button" class="ep-plan-chip ep-clickable ${S.showChases ? "on" : ""}" data-pu-chases aria-label="Показать штробы" title="Как идут штробы">〰 Штробы</button>
           </div>
           <div class="ep-plan-unfbar">
             <span class="ep-plan-unflbl">Стена:</span>${walls.map((ww) => `<button type="button" class="ep-plan-chip ep-clickable ${ww.id === wallId ? "on" : ""}" data-pu-wall="${esc(ww.id)}">${ww.n}</button>`).join("")}
@@ -268,6 +270,28 @@
     [inA, inB].forEach((s) => svg.appendChild(svgEl("line", { x1: s, y1: ovY - 4 * ks, x2: s, y2: ovY + 4 * ks, class: "ep-plan-unfdimL", "stroke-width": kk })));
     svg.appendChild(svgEl("text", { x: (inA + inB) / 2, y: ovY - 5 * ks, "font-size": 11 * ks, "text-anchor": "middle", class: "ep-plan-unfdimT" }, Math.round(inB - inA) + ""));
 
+    // ШТРОБЫ (по кнопке 〰): откуда физически идёт кабель (потолок/пол) до поста;
+    // вход в блок — раздельно по видам (силовая/свет/слаботочка), см. blockChaseEntries.
+    if (S.showChases) {
+      const chaseY0 = p.settings.routeType === "floor" ? H : 0;
+      const CHASE_COL = { power: "#f59e0b", light: "#facc15", lv: "#38bdf8", warm: "#fb7185" };
+      const chaseKindOf = (layer) => (layer === "warm" ? "warm" : (layer === "lv" || layer === "tv" || layer === "cctv" ? "lv" : (layer === "light" ? "light" : "power")));
+      els.forEach((el2) => {
+        const xx = el2.offset, yy = H - el2.height;
+        if (el2.type === "block") {
+          const items = (el2.params && el2.params.items) || [];
+          const step2 = 18 * ks, bw = items.length * step2 + 6 * ks;
+          (G().blockChaseEntries ? G().blockChaseEntries(el2) : []).forEach((en) => {
+            const ex = xx - bw / 2 + 3 * ks + step2 * en.idx + step2 / 2;
+            svg.appendChild(svgEl("line", { x1: ex, y1: chaseY0, x2: ex, y2: yy, class: "ep-plan-unfchase", stroke: CHASE_COL[en.kind], "stroke-width": kk * 1.8 }));
+          });
+        } else {
+          const kind = chaseKindOf(el2.layer);
+          svg.appendChild(svgEl("line", { x1: xx, y1: chaseY0, x2: xx, y2: yy, class: "ep-plan-unfchase", stroke: CHASE_COL[kind], "stroke-width": kk * 1.8 }));
+        }
+      });
+    }
+
     const TY = EL().TYPES;
     els.forEach((el) => {
       const x = el.offset, y = H - el.height;
@@ -472,11 +496,12 @@
     }
     if (t.closest("[data-pu-full]")) return toggleFull();
     if (t.closest("[data-pu-fit]")) { const p = core().project, w = G().wallById(p, S.wallId); if (w) { S.view = fitView(wallH(p, S.wallId), w.len); drawStrip(); } return; }
+    if (t.closest("[data-pu-chases]")) { S.showChases = !S.showChases; drawStrip(); return; }
     if ((b = t.closest("[data-pu-act]"))) {
       const act = b.getAttribute("data-pu-act"), c = core();
       if (act === "undo") { c.undo(); drawStrip(); rooms().renderScene(); }
       else if (act === "redo") { c.redo(); drawStrip(); rooms().renderScene(); }
-      else if (act === "trace") { if (EP.Plan.Routes) EP.Plan.Routes.build(); drawStrip(); rooms().renderScene(); }
+      else if (act === "trace") { if (EP.Plan.Routes) EP.Plan.Routes.build({ silent: true }); drawStrip(); rooms().renderScene(); } // silent — иначе build() зовёт sheet() и стирает DOM развёртки поверх неё
       else if (act === "checks") { showChecks(); }
       else if (act === "pdf") { if (EP.Plan.Export) EP.Plan.Export.print(); }
       else if (act === "calc") { exitFS(); close(); rooms().closeSheet(); if (EP.Plan.Calc) EP.Plan.Calc.sheet(); }

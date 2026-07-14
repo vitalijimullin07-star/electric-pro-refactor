@@ -19,6 +19,7 @@
     tv:        { name: "ТВ",          glyph: "ТВ", layer: "tv",    h: 130 },
     camera:    { name: "Камера",      glyph: "ВК", layer: "cctv",  h: 230 },
     sensor:    { name: "Датчик",      glyph: "Д",  layer: "lv",    h: 220 },
+    output:    { name: "Вывод",       glyph: "Вых", layer: "power", h: null, free: true, layerChoice: true },
     panel:     { name: "Щит",         glyph: "Щ",  layer: "power", h: 150, panel: true }
   };
   // Проёмы — под ОТДЕЛЬНОЙ кнопкой (🚪): дверь / раздвижная / окно / балкон.
@@ -40,8 +41,11 @@
     confirmDel: "Удалить точку?", tapWall: "Тапни ближе к стене — элемент сядет на неё.",
     presets: "Пресеты:",
     blockTitle: "Сборка блока", blockPosts: (n, m) => `${n}/${m} постов`,
-    blockAdd: "Добавить пост:", blockTapDel: "Тап по посту в рамке — убрать"
+    blockAdd: "Добавить пост:", blockTapDel: "Тап по посту в рамке — убрать",
+    outLayer: "Тип вывода:", outPower: "Силовой", outLv: "Слаботочный",
+    swTarget: "Свет от выключателя:", swAuto: "Авто (по линии)", swNone: "не задан"
   };
+  const OUT_LAYERS = [["power", "outPower"], ["lv", "outLv"]];
 
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const $ = (sel, r) => (r || document).querySelector(sel);
@@ -193,6 +197,8 @@
         ${[hp.socket, hp.switch, hp.kitchen].map((v) => `<button type="button" class="ep-plan-chip ep-clickable" data-pe-preset="${v}">${v}</button>`).join("")}
       </div>
       ${circuitRow(el)}
+      ${t.layerChoice ? outLayerRow(el) : ""}
+      ${el.type === "switch" ? switchTargetRow(el) : ""}
       ${el.type === "block" ? blockHtml(el) : ""}
       <div class="ep-plan-srow">${T.status}:
         ${STATUS.map(([v, l]) => `<button type="button" class="ep-plan-chip ep-clickable ${el.status === v ? "on" : ""}" data-pe-status="${v}">${l}</button>`).join("")}
@@ -255,6 +261,26 @@
     return `<div class="ep-plan-srow">Линия:
       ${cs.map((c) => `<button type="button" class="ep-plan-chip ep-clickable ${el.circuitId === c.id ? "on" : ""}" data-pe-circ="${esc(c.id)}" style="border-color:${esc(c.color)}"><i class="ep-plan-cdot" style="background:${esc(c.color)}"></i>${esc(c.name)}·${c.breaker}A</button>`).join("")}
       <button type="button" class="ep-plan-chip ep-clickable" data-pe-circ-new>+ линия</button>
+    </div>`;
+  }
+
+  // тип вывода (силовой/слаботочный) — для "Вывода" из стены/потолка/пола
+  function outLayerRow(el) {
+    return `<div class="ep-plan-srow">${T.outLayer}
+      ${OUT_LAYERS.map(([v, lk]) => `<button type="button" class="ep-plan-chip ep-clickable ${(el.layer || "power") === v ? "on" : ""}" data-pe-outlayer="${v}">${esc(T[lk])}</button>`).join("")}
+    </div>`;
+  }
+  // куда идёт свет от выключателя: ручной выбор + авто по линии (пунктир на плане)
+  function switchTargetRow(el) {
+    const p = core().project;
+    const roomId = el.wallId ? String(el.wallId).split(":")[0] : null;
+    const pool = roomId ? G().elementsInRoom(p, roomId) : p.elements;
+    const opts = pool.filter((e) => e.id !== el.id && (e.type === "light" || e.type === "output"));
+    const auto = G().switchTarget ? G().switchTarget(p, Object.assign({}, el, { targetId: null })) : null;
+    return `<div class="ep-plan-srow">${T.swTarget}
+      <button type="button" class="ep-plan-chip ep-clickable ${!el.targetId ? "on" : ""}" data-pe-target="auto">${T.swAuto}${!el.targetId && auto ? " → " + esc((TYPES[auto.type] || {}).glyph || "") : ""}</button>
+      ${opts.map((e) => `<button type="button" class="ep-plan-chip ep-clickable ${el.targetId === e.id ? "on" : ""}" data-pe-target="${esc(e.id)}">${esc((TYPES[e.type] || {}).glyph || "?")} ${Math.round(e.params ? (e.params.x || 0) : e.offset)}</button>`).join("")}
+      ${!opts.length ? `<span class="ep-plan-modehint">${T.swNone}</span>` : ""}
     </div>`;
   }
 
@@ -346,6 +372,15 @@
       const c = core(), el = current(); if (!el || el.type !== "block") return;
       const v = b.getAttribute("data-pe-entry");
       c.commit(); el.entryPost = v === "auto" ? null : Number(v); c.persist("block-entry"); openEditor(el); return;
+    }
+    if ((b = t.closest("[data-pe-outlayer]"))) {
+      const c = core(), el = current(); if (!el) return;
+      c.commit(); el.layer = b.getAttribute("data-pe-outlayer"); c.persist("elem-outlayer"); openEditor(el); return;
+    }
+    if ((b = t.closest("[data-pe-target]"))) {
+      const c = core(), el = current(); if (!el || el.type !== "switch") return;
+      const v = b.getAttribute("data-pe-target");
+      c.commit(); el.targetId = v === "auto" ? null : v; c.persist("elem-target"); openEditor(el); rooms().renderScene(); return;
     }
     if ((b = t.closest("[data-pe-circ]"))) {
       const c = core(), el = current(); if (!el) return;
