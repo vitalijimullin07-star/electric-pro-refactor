@@ -58,6 +58,62 @@
     return c2 < c1 ? e2 : e1;
   }
 
+  // ---- трассировка v4: линии по КОНТУРУ комнаты с отступом от стены ----
+  // Стена — физический объект: линия не идёт по стене и не пересекает её.
+  // Путь = перпендикуляр от точки к контуру отступа (по умолчанию 15 см от
+  // грани стены) → по контуру → перпендикуляр к цели (лампа/распайка/щит).
+  // В другую комнату — ПЕРПЕНДИКУЛЯРНАЯ проходка через стену (гильза Ø20).
+  const routeOff = (p) => Math.max(5, Math.min(40, Number(p.settings.routeOffset) || 15));
+
+  function roomOfEl(p, el) {
+    if (el && el.wallId) { const rid = String(el.wallId).split(":")[0]; return (p.rooms || []).find((r) => r.id === rid) || null; }
+    const q = (el && el.params) || {};
+    return q.x != null ? G().roomAt(p, q) : null;
+  }
+  function contourOf(p, room) { return room ? G().insetContour(p, room, routeOff(p)) : null; }
+
+  // путь внутри ОДНОЙ комнаты: a → контур → по контуру → b
+  function pathInRoom(p, room, a, b) {
+    const ct = contourOf(p, room);
+    if (!ct) return null;
+    const ca = G().closestOnPoly(ct, a), cb = G().closestOnPoly(ct, b);
+    if (!ca || !cb) return null;
+    const walk = G().polyWalk(ct, ca, cb);
+    const path = [{ x: a.x, y: a.y }].concat(walk, [{ x: b.x, y: b.y }]);
+    return path.filter((q, j) => j === 0 || G().dist(q, path[j - 1]) > 0.5);
+  }
+
+  // общий построитель: та же комната — по контуру; другая — через перпендикулярные проходки
+  function buildPath(p, fromEl, a, target, depth) {
+    depth = depth || 0;
+    const b = target.pos;
+    const ra = fromEl ? roomOfEl(p, fromEl) : G().roomAt(p, a);
+    const rb = (target.el ? roomOfEl(p, target.el) : null) || G().roomAt(p, b);
+    if (ra && rb && ra.id === rb.id) {
+      const path = pathInRoom(p, ra, a, b);
+      if (path) return path;
+    } else if (ra && rb && depth < 4) {
+      // первая стена на прямой a→b — точка проходки, переход строго перпендикулярно стене
+      const hits = G().polylineCrossings(p, [a, b], fromEl && fromEl.wallId || null)
+        .map((c) => ({ c, w: G().wallById(p, c.wallId), d: G().dist(a, c) }))
+        .filter((h) => h.w).sort((x, y) => x.d - y.d);
+      if (hits.length) {
+        const { c, w } = hits[0];
+        const len = w.len || 1;
+        let nx = -(w.b.y - w.a.y) / len, ny = (w.b.x - w.a.x) / len;
+        if ((b.x - a.x) * nx + (b.y - a.y) * ny < 0) { nx = -nx; ny = -ny; } // нормаль в сторону цели
+        const jump = G().wallThOf(p, w) / 2 + routeOff(p);
+        const c1 = { x: c.x - nx * jump, y: c.y - ny * jump }; // по нашу сторону стены
+        const c2 = { x: c.x + nx * jump, y: c.y + ny * jump }; // за стеной
+        const legA = (G().roomAt(p, c1) === ra ? pathInRoom(p, ra, a, c1) : null) || [a, c1];
+        const legB = buildPath(p, null, c2, target, depth + 1);
+        const path = legA.concat(legB);
+        return path.filter((q, j) => j === 0 || G().dist(q, path[j - 1]) > 0.5);
+      }
+    }
+    return ortho(p, a, b, fromEl && fromEl.wallId || null); // запасной вариант
+  }
+
   function build() {
     const c = core(), p = c.project;
     p.circuits = p.circuits || [];
@@ -132,7 +188,7 @@
   }
 
   function addRoute(c, p, fromEl, a, target, circuitId, color) {
-    const pts = ortho(p, a, target.pos, fromEl.wallId || null);
+    const pts = buildPath(p, fromEl, a, target);
     const rt = c.model.newRoute(fromEl.layer, p.settings.routeType, pts, fromEl.id, target.id || null);
     rt.circuitId = circuitId || null;
     rt.color = color;
@@ -208,7 +264,9 @@
       <div class="ep-plan-srow ep-plan-s2">
         <label>Штроба Ш, мм<input type="number" inputmode="numeric" min="10" data-prt-chw value="${Math.round(p.settings.chaseW || 25)}"></label>
         <label>Штроба В, мм<input type="number" inputmode="numeric" min="10" data-prt-chh value="${Math.round(p.settings.chaseH || 30)}"></label>
+        <label>Отступ от стены, см<input type="number" inputmode="numeric" min="5" max="40" data-prt-off value="${Math.round(p.settings.routeOffset || 15)}"></label>
       </div>
+      <div class="ep-plan-modehint">Линии идут по контуру комнаты с отступом, стены не пересекают — только перпендикулярной проходкой Ø${p.settings.sleeveD || 20} (макс. 2 кабеля в гильзу).</div>
       <div class="ep-plan-modehint">Тёплый пол — штроба в пол ${p.settings.tpChaseW || 50}×${p.settings.tpChaseH || 50} мм. Штроба к посту блока — в редакторе точки.</div>
       ${!juncN ? `<div class="ep-plan-modehint">${T.hintJ}</div>` : ""}
       ${p.routes.length ? `<div class="ep-plan-srow ep-plan-rlens"><span>${T.total}: <b>${G().fmtLen(st.total)}</b></span><span>${st.crossings} ${T.crossings}</span></div>` : ""}
@@ -248,6 +306,14 @@
       const c = core(), circ = c.project.circuits.find((x) => x.id === t.getAttribute("data-prt-rcd"));
       if (circ) { c.commit(); circ.rcd = !!t.checked; c.persist("circuit-rcd"); }
     }
+    if (t.getAttribute && t.hasAttribute("data-prt-off")) {
+      const c = core();
+      c.commit();
+      c.project.settings.routeOffset = Math.max(5, Math.min(40, Number(t.value) || 15));
+      c.persist("route-offset");
+      if ((c.project.routes || []).length) build(); // перестраиваем с новым отступом
+      return;
+    }
     if (t.getAttribute && (t.hasAttribute("data-prt-chw") || t.hasAttribute("data-prt-chh"))) {
       const c = core(), v = Math.max(10, Number(t.value) || 0);
       c.commit();
@@ -259,5 +325,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { build, clearRoutes, lengths, sheet, pointVert, panelVert };
+  EP.Plan.Routes = { build, clearRoutes, lengths, sheet, pointVert, panelVert, buildPath };
 })();

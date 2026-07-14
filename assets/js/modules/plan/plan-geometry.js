@@ -88,10 +88,9 @@
     return (room && ((room.wallMat && room.wallMat[wall.i]) || room.material)) || def;
   };
 
-  // ---- контур стен комнаты со СТЫКАМИ (митра, как на чертеже) ----
-  // Точки комнаты — ОСЬ стены. Грани смещаются на th/2 своей стены,
-  // углы — пересечение соседних граней (митра). Поддерживает разную толщину стен.
-  G.roomBand = (project, room) => {
+  // ---- смещённые кольца полигона комнаты (митра-пересечения граней) ----
+  // side: +1 внутрь, -1 наружу; extra — доп. отступ ЗА грань стены (для трасс)
+  function offsetRing(project, room, side, extra) {
     const pts = room.points || [], n = pts.length;
     if (n < 3) return null;
     let a2 = 0;
@@ -100,22 +99,62 @@
     const edge = G.walls(room).map((w) => {
       const len = w.len || 1;
       const d = { x: (w.b.x - w.a.x) / len, y: (w.b.y - w.a.y) / len };
-      return { d, ni: { x: -d.y * s, y: d.x * s }, half: G.wallThOf(project, w) / 2, a: w.a };
+      return { d, ni: { x: -d.y * s, y: d.x * s }, half: G.wallThOf(project, w) / 2 + (extra || 0), a: w.a };
     });
-    const ring = (side) => { // side: +1 внутренняя грань, -1 наружная
-      const out = [];
-      for (let i = 0; i < n; i++) {
-        const e0 = edge[(i - 1 + n) % n], e1 = edge[i];
-        const a0 = { x: e0.a.x + e0.ni.x * e0.half * side, y: e0.a.y + e0.ni.y * e0.half * side };
-        const a1 = { x: e1.a.x + e1.ni.x * e1.half * side, y: e1.a.y + e1.ni.y * e1.half * side };
-        const den = e0.d.x * e1.d.y - e0.d.y * e1.d.x;
-        if (Math.abs(den) < 1e-6) { out.push(a1); continue; } // грани параллельны — берём смещённый угол
-        const t = ((a1.x - a0.x) * e1.d.y - (a1.y - a0.y) * e1.d.x) / den;
-        out.push({ x: a0.x + e0.d.x * t, y: a0.y + e0.d.y * t });
-      }
-      return out;
-    };
-    return { inner: ring(1), outer: ring(-1) };
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const e0 = edge[(i - 1 + n) % n], e1 = edge[i];
+      const a0 = { x: e0.a.x + e0.ni.x * e0.half * side, y: e0.a.y + e0.ni.y * e0.half * side };
+      const a1 = { x: e1.a.x + e1.ni.x * e1.half * side, y: e1.a.y + e1.ni.y * e1.half * side };
+      const den = e0.d.x * e1.d.y - e0.d.y * e1.d.x;
+      if (Math.abs(den) < 1e-6) { out.push(a1); continue; } // грани параллельны — берём смещённый угол
+      const t = ((a1.x - a0.x) * e1.d.y - (a1.y - a0.y) * e1.d.x) / den;
+      out.push({ x: a0.x + e0.d.x * t, y: a0.y + e0.d.y * t });
+    }
+    return out;
+  }
+
+  // ---- контур стен комнаты со СТЫКАМИ (митра, как на чертеже) ----
+  // Точки комнаты — ОСЬ стены. Грани смещаются на th/2 своей стены,
+  // углы — пересечение соседних граней (митра). Поддерживает разную толщину стен.
+  G.roomBand = (project, room) => {
+    const inner = offsetRing(project, room, 1, 0);
+    if (!inner) return null;
+    return { inner, outer: offsetRing(project, room, -1, 0) };
+  };
+
+  // ---- контур ТРАССИРОВКИ: отступ от внутренней грани стены на extra см ----
+  // Линии кабеля идут по этому контуру — параллельно стенам, не по стене.
+  G.insetContour = (project, room, extra) => {
+    const ring = offsetRing(project, room, 1, Math.max(0, extra || 0));
+    if (!ring) return null;
+    // выродившийся контур (отступ больше комнаты) — не годится
+    return G.area(ring) > 100 ? ring : null;
+  };
+  // ближайшая точка на замкнутом контуре: {x,y,seg,t,d}
+  G.closestOnPoly = (pts, p) => {
+    let best = null;
+    for (let i = 0; i < pts.length; i++) {
+      const c = G.closestOnSeg(p, pts[i], pts[(i + 1) % pts.length]);
+      if (!best || c.d < best.d) best = { x: c.x, y: c.y, seg: i, t: c.t, d: c.d };
+    }
+    return best;
+  };
+  // путь ПО контуру между двумя его точками — короткой стороной
+  G.polyWalk = (pts, from, to) => {
+    const n = pts.length;
+    const segLen = (i) => G.dist(pts[i], pts[(i + 1) % n]);
+    let per = 0; for (let i = 0; i < n; i++) per += segLen(i);
+    const posOf = (q) => { let s = 0; for (let i = 0; i < q.seg; i++) s += segLen(i); return s + segLen(q.seg) * q.t; };
+    const pa = posOf(from), pb = posOf(to);
+    const fwd = (pb - pa + per) % per, back = per - fwd;
+    const path = [{ x: from.x, y: from.y }];
+    let i = from.seg, guard = 0;
+    if (fwd <= back) { while (i !== to.seg && guard++ <= n) { i = (i + 1) % n; path.push({ x: pts[i].x, y: pts[i].y }); } }
+    else { while (i !== to.seg && guard++ <= n) { path.push({ x: pts[i].x, y: pts[i].y }); i = (i - 1 + n) % n; } }
+    path.push({ x: to.x, y: to.y });
+    // выкидываем совпадающие соседние точки
+    return path.filter((q, j) => j === 0 || G.dist(q, path[j - 1]) > 0.5);
   };
 
   // ---- попадания ----
