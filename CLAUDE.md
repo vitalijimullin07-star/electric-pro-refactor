@@ -14,7 +14,7 @@ push в `main` → GitHub Actions (`firebase-deploy.yml`) → синтакс-ч�
 - После squash-merge ветка расходится с main. Паттерн:
   `git fetch origin main && git reset --hard origin/main && git cherry-pick <commit> && git push --force-with-lease`.
   ВСЕГДА коммитить до reset --hard. Ветка: `claude/full-audit-security-visualization-1fbjfm`.
-- Тесты: `node test/run.js` (48 шт., без зависимостей; харнесс test/harness.js — vm-sandbox,
+- Тесты: `node test/run.js` (56 шт., без зависимостей; харнесс test/harness.js — vm-sandbox,
   cross-realm `instanceof` не работает — проверять утиными типами; DOM-атрибуты в
   fakeNode НЕ хранятся — UI-only правки в plan-unfold.js (клики/карточки) тестами
   не покрываются, только синтаксис-чек).
@@ -57,6 +57,22 @@ plan-unfold (развёртка: fullscreen, карточка точки по д
   комнаты (round-off у самой стены): G.roomAt → иначе комната ближайшей стены
   через G.wallAt. Без него buildPath получал ra/rb=null и падал на кривой
   ortho()-фолбэк вместо контура/перпендикулярной проходки.
+- Unfold silent-build: любой вызов EP.Plan.Routes.build() из-под развёртки
+  (fullscreen тулбар и т.п.) ОБЯЗАН идти с {silent:true} — иначе build()
+  зовёт sheet(), который перезаписывает innerHTML #ep-plan-sheet и стирает
+  DOM самой развёртки (выглядит как самопроизвольный выход из fullscreen).
+- G.blockChaseEntries(el) — визуализация штроб В БЛОК по видам (силовая:
+  крайний левый пост; свет+розетка вместе: штроба между ними; свет один:
+  прямо к нему; интернет/ТВ: каждый отдельно к своему посту) — ОТДЕЛЬНАЯ
+  от G.blockEntryIndex/routeAnchor (та точка одна на блок и используется
+  для реальной трассы, эту НЕ трогать заново без явного запроса).
+- G.switchTarget(project, el) — куда идёт свет от выключателя: el.targetId
+  (ручной выбор) → иначе ближайшая лампа/«Вывод» ТОЙ ЖЕ линии (circuitId)
+  в той же комнате; без линии связь не строим. Рисуется пунктиром в
+  plan-render.js (класс .ep-plan-swlink), цвет — по линии.
+- Тип «Вывод» (output) — free:true (стена ИЛИ потолок/пол, как light/warmfloor:
+  hit-стена в приоритете, иначе свободная точка), layerChoice:true — в
+  редакторе точки чип «Силовой/Слаботочный» переключает el.layer.
 
 ## Бэклог (подтверждён пользователем)
 Аудит-патч 1-5 — СДЕЛАН (см. коммит «Аудит-патч 1-5»).

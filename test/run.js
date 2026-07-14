@@ -525,6 +525,73 @@ test("проходки Ø20: макс. 2 кабеля в гильзу", () => {
   eq(sl.qty, 2, "3 кабеля → 2 гильзы");
 });
 
+// ===== 12. Штробы в блок по видам, связь выключатель→свет, тип «Вывод» =====
+test("blockChaseEntries: только розетки — крайний левый пост", () => {
+  const el = { params: { items: ["socket", "socket", "socket"] } };
+  const entries = G.blockChaseEntries(el);
+  eq(entries.length, 1, "одна силовая штроба");
+  eq(entries[0].kind, "power");
+  eq(entries[0].idx, 0, "крайний левый пост розетки");
+});
+test("blockChaseEntries: выключатель+розетка вместе — штроба между ними", () => {
+  const el = { params: { items: ["switch", "socket", "socket"] } }; // switch=0, sockets=1,2
+  const entries = G.blockChaseEntries(el);
+  const power = entries.find((e) => e.kind === "power"), light = entries.find((e) => e.kind === "light");
+  eq(power.idx, 1, "розетка — крайний левый её пост (индекс 1)");
+  near(light.idx, 0.5, 0.01, "выключатель — между ним (0) и розеткой (1)");
+});
+test("blockChaseEntries: выключатель один (без розетки) — штроба прямо к нему", () => {
+  const el = { params: { items: ["switch", "switch"] } };
+  const entries = G.blockChaseEntries(el);
+  eq(entries.length, 2, "оба выключателя — свои штробы");
+  ok(entries.every((e) => e.kind === "light"), "оба — свет");
+  eq(entries[0].idx, 0); eq(entries[1].idx, 1);
+});
+test("blockChaseEntries: интернет/ТВ — каждый отдельной штробой к своему посту", () => {
+  const el = { params: { items: ["socket", "internet", "tv"] } };
+  const entries = G.blockChaseEntries(el);
+  const lv = entries.filter((e) => e.kind === "lv");
+  eq(lv.length, 2, "интернет и ТВ — раздельно");
+  ok(lv.some((e) => e.idx === 1) && lv.some((e) => e.idx === 2), "каждый к своему посту (1 и 2)");
+});
+test("switchTarget: авто — ближайший свет своей линии в комнате", () => {
+  const { P, w } = install();
+  const q1 = M.newCircuit("QF1", "#e11", 16);
+  P.circuits.push(q1);
+  const sw = M.newElement("switch", w(0), 100, 90, "light"); sw.circuitId = q1.id;
+  const lampNear = M.newElement("light", null, 0, 0, "light"); lampNear.circuitId = q1.id; lampNear.params = { x: 150, y: 150 };
+  const lampFar = M.newElement("light", null, 0, 0, "light"); lampFar.circuitId = q1.id; lampFar.params = { x: 380, y: 280 };
+  P.elements.push(sw, lampNear, lampFar);
+  const t = G.switchTarget(P, sw);
+  ok(t && t.id === lampNear.id, "выбрана ближайшая лампа своей линии");
+});
+test("switchTarget: без линии — связь не строим", () => {
+  const { P, w } = install();
+  const sw = M.newElement("switch", w(0), 100, 90, "light");
+  const lamp = M.newElement("light", null, 0, 0, "light"); lamp.params = { x: 150, y: 150 };
+  P.elements.push(sw, lamp);
+  ok(!G.switchTarget(P, sw), "нет circuitId — нет авто-связи");
+});
+test("switchTarget: ручное targetId — приоритет над авто", () => {
+  const { P, w } = install();
+  const q1 = M.newCircuit("QF1", "#e11", 16);
+  P.circuits.push(q1);
+  const sw = M.newElement("switch", w(0), 100, 90, "light"); sw.circuitId = q1.id;
+  const lampNear = M.newElement("light", null, 0, 0, "light"); lampNear.circuitId = q1.id; lampNear.params = { x: 150, y: 150 };
+  const outFar = M.newElement("output", null, 0, 0, "light"); outFar.circuitId = q1.id; outFar.params = { x: 380, y: 280 };
+  sw.targetId = outFar.id;
+  P.elements.push(sw, lampNear, outFar);
+  const t = G.switchTarget(P, sw);
+  ok(t && t.id === outFar.id, "ручное назначение побеждает авто-ближайшую");
+});
+test("тип «Вывод»: layerChoice, силовой по умолчанию, free-размещение", () => {
+  const TY = EP.Plan.Elements.TYPES.output;
+  ok(TY, "тип зарегистрирован");
+  eq(TY.layer, "power", "по умолчанию силовой");
+  ok(TY.free, "можно ставить свободно (потолок/пол) — как и на стену при тапе рядом");
+  ok(TY.layerChoice, "есть переключатель силовой/слаботочный в редакторе");
+});
+
 (async () => {
   await test("openProject: бэкофилл старых проектов", async () => {}); // placeholder to keep sync
   // п.1 аудита: importJSON теперь ТОЖЕ бэкофиллит (не только openProject) — старые/

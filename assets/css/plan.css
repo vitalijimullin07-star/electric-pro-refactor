@@ -259,6 +259,8 @@ body[data-visual-mode="day"] .ep-plan-wallband.mat-concrete, body[data-visual-mo
 .ep-plan-beamdraft { opacity: .5; }
 .ep-plan-beamhandle { fill: #38bdf8; stroke: #fff; stroke-width: 1; }
 .ep-plan-qf { font-family: system-ui; font-weight: 700; }
+/* пунктир: выключатель -> его свет/вывод */
+.ep-plan-swlink { stroke-dasharray: 6 5; opacity: .8; fill: none; pointer-events: none; }
 
 /* развёртка v2 */
 .ep-plan-unfsvg { width: 100%; height: 200px; display: block; }
@@ -312,6 +314,8 @@ body[data-visual-mode="day"] .ep-plan-opnum { fill: #0f172a; stroke: rgba(255,25
 /* — v7: штробы (вход в подрозетник) — */
 .ep-plan-entrymark { fill: #f59e0b; stroke: #fff; stroke-width: .6px; }
 .ep-plan-unfentry { fill: #f59e0b; stroke: #0b1220; stroke-width: .8px; }
+/* — v17: развёртка — визуализация штроб по кнопке «Штробы» — */
+.ep-plan-unfchase { opacity: .75; stroke-linecap: round; pointer-events: none; }
 
 /* — v9: однолинейная схема — */
 .ep-plan-scheme { width: 100%; }
