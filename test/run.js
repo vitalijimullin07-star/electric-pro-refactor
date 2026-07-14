@@ -437,6 +437,29 @@ test("calcByRoutes: коннекторы в режиме ВАГО — без т�
   ok(wago && wago.qty === 4, "1 выключатель → pin2×4 (шаблон switch_1)");
   ok(!res.items.some((i) => i.name.indexOf("Термоусадка") >= 0), "ВАГО — без термоусадки");
 });
+test("priceFor: цена из EP.Database по совпадению названия (точное и по подстроке)", () => {
+  const savedDb = EP.Database;
+  EP.Database = { getItemsByType: (type) => type === "material" ? [{ name: "Кабель ВВГнг(А)-LS 3×2.5", price: 55, type: "material" }] : [] };
+  try {
+    eq(EP.Plan.Calc.priceFor("Кабель ВВГнг(А)-LS 3×2.5", "material"), 55, "точное совпадение");
+    eq(EP.Plan.Calc.priceFor("Кабель ВВГнг(А)-LS 3×2.5 (доп)", "material"), 55, "совпадение по подстроке");
+    eq(EP.Plan.Calc.priceFor("Совсем другое", "material"), 0, "нет совпадения — 0");
+  } finally { EP.Database = savedDb; }
+});
+test("Расчёт: цены из БД показаны в шторке — есть строка «Итого» и найденная цена", () => {
+  const q1 = M.newCircuit("QF1", "#e11", 16);
+  const { P, w } = install({ circuits: [q1], panels: [M.newPanel(200, 295)] });
+  const s1 = M.newElement("socket", w(0), 80, 30, "power"); s1.circuitId = q1.id;
+  P.elements.push(s1);
+  EP.Plan.Routes.build();
+  const savedDb = EP.Database, savedOpen = EP.Plan.Rooms.openSheet;
+  EP.Database = { getItemsByType: (type) => type === "material" ? [{ name: "Кабель ВВГнг(А)-LS 3×2.5", price: 55, type: "material" }] : [] };
+  let captured = "";
+  EP.Plan.Rooms.openSheet = (html) => { captured = html; };
+  try { EP.Plan.Calc.sheet(); } finally { EP.Plan.Rooms.openSheet = savedOpen; EP.Database = savedDb; }
+  ok(captured.indexOf("Итого по ценам БД") >= 0, "строка итога есть");
+  ok(captured.indexOf("₽") >= 0, "хотя бы одна цена подтянулась и показана");
+});
 test("автоперестройка трасс: elem-move тихо перестраивает построенные трассы", () => {
   const { P, w } = install();
   const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
