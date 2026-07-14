@@ -216,6 +216,12 @@ body[data-visual-mode="day"] .ep-plan-wall.mat-soft { stroke: #94a3b8; }
 .ep-plan.is-full .ep-plan-canvas { height: calc(100vh - 215px); height: calc(100dvh - 215px); }
 body[data-visual-mode="day"] .ep-plan.is-full { background: #eef1f6; }
 
+/* свернуть панель инструментов редактора — холст занимает освободившееся место */
+.ep-plan.is-ctrls-collapsed .ep-plan-toolbar,
+.ep-plan.is-ctrls-collapsed .ep-plan-modehint { display: none; }
+.ep-plan.is-ctrls-collapsed .ep-plan-canvas { height: calc(100vh - 110px); height: calc(100dvh - 110px); }
+.ep-plan.is-full.is-ctrls-collapsed .ep-plan-canvas { height: calc(100vh - 75px); height: calc(100dvh - 75px); }
+
 /* — Remplanner-пакет: двери/окна, размерные цепочки — */
 .ep-plan-doorarc { stroke: #94a3b8; fill: none; }
 .ep-plan-doorleaf { stroke: #e2e8f0; }
