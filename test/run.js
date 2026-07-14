@@ -412,6 +412,42 @@ test("автоперестройка НЕ срабатывает, если тр�
   c.persist("elem-move"); // нет щита/трасс — build() тихо не найдёт что строить
   eq(P.routes.length, 0, "трассы не появились сами по себе");
 });
+
+// ===== 11. Общая стена соседних комнат + маршрут через щит у стены =====
+test("wallAt: общая стена двух комнат — приоритет той, куда физически смещён тап", () => {
+  const { P } = install(); // room A: rect(0,0,400,300)
+  const roomB = M.newRoom(G.rectPoints(400, 0, 400, 300), "B"); // общая стена x=400
+  P.rooms.push(roomB);
+  const hitA = G.wallAt(P, { x: 395, y: 150 }, 20);
+  ok(hitA && hitA.wall.roomId === P.rooms[0].id, "тап у комнаты A (слева от границы) — её стена");
+  const hitB = G.wallAt(P, { x: 405, y: 150 }, 20);
+  ok(hitB && hitB.wall.roomId === P.rooms[1].id, "тап у комнаты B (справа) — её стена, а не всегда A");
+});
+test("wallAt: тап точно на границе — не падает, возвращает какую-то из двух", () => {
+  const { P } = install();
+  const roomB = M.newRoom(G.rectPoints(400, 0, 400, 300), "B");
+  P.rooms.push(roomB);
+  const hit = G.wallAt(P, { x: 400, y: 150 }, 20);
+  ok(hit && (hit.wall.roomId === P.rooms[0].id || hit.wall.roomId === P.rooms[1].id), "не роняется на точной границе");
+});
+test("roomNear: щит формально вне полигона (у стены) всё равно находит комнату", () => {
+  const { P } = install();
+  const pn = { x: -5, y: 150 }; // 5см за левой стеной — щит физически у стены
+  ok(!G.roomAt(P, pn), "контроль: строгий point-in-polygon не находит комнату");
+  const room = EP.Plan.Routes.roomNear(P, pn);
+  ok(room && room.id === P.rooms[0].id, "roomNear находит комнату через ближайшую стену (fallback)");
+});
+test("buildPath: щит у стены не строго внутри полигона — путь всё равно строится по контуру", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(-5, 150, "Щ");
+  P.panels.push(pn);
+  const s1 = M.newElement("socket", w(0), 100, 30, "power");
+  P.elements.push(s1);
+  const a = G.routeAnchor(P, s1);
+  const path = EP.Plan.Routes.buildPath(P, s1, a, { kind: "panel", pos: { x: pn.x, y: pn.y } });
+  ok(path && path.length >= 3, "путь не голая прямая в никуда — есть промежуточные точки контура");
+});
+
 test("настройки: ГОСТ-значки и запас кабеля по умолчанию", () => {
   const p = M.newProject("x");
   eq(p.settings.symbolStyle, "gost", "значки ГОСТ");

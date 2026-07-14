@@ -240,18 +240,28 @@
     const els = wallElems(p, S.wallId).slice().sort((a, b) => a.offset - b.offset);
     const chY = H + 30 * ks, ovY = chY + 18 * ks; // цепь размеров и общий размер по низу (в см)
 
-    // размерная ЦЕПЬ по низу (от внутренних углов, синим)
+    // прозрачный хит-рект под текстом — цифра на пальце маленькая, area больше
+    const hitRect = (cx, cy, w2, h2, attrs) => svgEl("rect", Object.assign({ x: cx - w2 / 2, y: cy - h2 / 2, width: w2, height: h2, fill: "transparent" }, attrs));
+
+    // размерная ЦЕПЬ по низу (от внутренних углов, синим); станции хранят
+    // ЭЛЕМЕНТ (если это не угол стены) — клик по сегменту откроет карточку
+    // ПРАВОЙ точки цепочки: «хотелось бы кликать по размерам и вводить вручную».
     const stations = [];
-    [inA].concat(els.map((e) => Math.max(inA, Math.min(inB, e.offset)))).concat([inB]).sort((a, b) => a - b).forEach((s) => { if (!stations.length || Math.abs(s - stations[stations.length - 1]) > 1) stations.push(s); });
+    [{ v: inA, el: null }].concat(els.map((e) => ({ v: Math.max(inA, Math.min(inB, e.offset)), el: e }))).concat([{ v: inB, el: null }])
+      .sort((a, b) => a.v - b.v)
+      .forEach((s) => { if (!stations.length || Math.abs(s.v - stations[stations.length - 1].v) > 1) stations.push(s); else if (s.el) stations[stations.length - 1].el = s.el; });
     svg.appendChild(svgEl("line", { x1: inA, y1: chY, x2: inB, y2: chY, class: "ep-plan-unfdimL", "stroke-width": kk }));
     stations.forEach((s) => {
-      svg.appendChild(svgEl("line", { x1: s, y1: H, x2: s, y2: chY, class: "ep-plan-unfdimE", "stroke-width": kk * 0.7 })); // выносная
-      svg.appendChild(svgEl("line", { x1: s, y1: chY - 4 * ks, x2: s, y2: chY + 4 * ks, class: "ep-plan-unfdimL", "stroke-width": kk })); // засечка
+      svg.appendChild(svgEl("line", { x1: s.v, y1: H, x2: s.v, y2: chY, class: "ep-plan-unfdimE", "stroke-width": kk * 0.7 })); // выносная
+      svg.appendChild(svgEl("line", { x1: s.v, y1: chY - 4 * ks, x2: s.v, y2: chY + 4 * ks, class: "ep-plan-unfdimL", "stroke-width": kk })); // засечка
     });
     for (let i = 0; i < stations.length - 1; i++) {
-      const seg = Math.round(stations[i + 1] - stations[i]);
+      const seg = Math.round(stations[i + 1].v - stations[i].v);
       if (seg < 2) continue;
-      svg.appendChild(svgEl("text", { x: (stations[i] + stations[i + 1]) / 2, y: chY - 5 * ks, "font-size": 11 * ks, "text-anchor": "middle", class: "ep-plan-unfdimT" }, seg + ""));
+      const mx = (stations[i].v + stations[i + 1].v) / 2;
+      const editEl = stations[i + 1].el; // двигаем правую точку цепочки
+      if (editEl) svg.appendChild(hitRect(mx, chY - 5 * ks, 22 * ks, 16 * ks, { "data-pu-segof": editEl.id, class: "ep-plan-unftap" }));
+      svg.appendChild(svgEl("text", { x: mx, y: chY - 5 * ks, "font-size": 11 * ks, "text-anchor": "middle", class: "ep-plan-unfdimT" + (editEl ? " is-tap" : "") }, seg + ""));
     }
     // общий размер (внутренняя длина стены)
     svg.appendChild(svgEl("line", { x1: inA, y1: ovY, x2: inB, y2: ovY, class: "ep-plan-unfdimL", "stroke-width": kk }));
@@ -265,9 +275,10 @@
       const col = cc ? cc.color : "var(--accent)";
       const gr = svgEl("g", { "data-pu-el": el.id, class: "ep-plan-unfel" + (el.status === "mounted" ? " is-done" : "") });
 
-      // вертикаль: высота от пола до точки (синим), подпись высоты
+      // вертикаль: высота от пола до точки (синим), подпись высоты (тап — карточка точки)
       svg.appendChild(svgEl("line", { "data-pu-diml": el.id, x1: x, y1: H, x2: x, y2: y, class: "ep-plan-unfdimL", "stroke-width": kk }));
-      svg.appendChild(svgEl("text", { "data-pu-dimt": el.id, x: x + 6 * ks, y: (H + y) / 2, "font-size": 11 * ks, "dominant-baseline": "middle", class: "ep-plan-unfdimT" }, Math.round(el.height) + ""));
+      svg.appendChild(hitRect(x + 16 * ks, (H + y) / 2, 26 * ks, 16 * ks, { "data-pu-heightof": el.id, class: "ep-plan-unftap" }));
+      svg.appendChild(svgEl("text", { "data-pu-dimt": el.id, x: x + 6 * ks, y: (H + y) / 2, "font-size": 11 * ks, "dominant-baseline": "middle", class: "ep-plan-unfdimT is-tap" }, Math.round(el.height) + ""));
 
       if (el.type === "block") {
         const items = (el.params && el.params.items) || ["socket"];
@@ -328,6 +339,11 @@
       downClient = { x: e.clientX, y: e.clientY }; moved = false; pending = null;
       const og = e.target.closest && e.target.closest("[data-pu-open]");
       if (og) { pending = { kind: "open", id: og.getAttribute("data-pu-open") }; return; }
+      // тап по цифре размера — сразу карточка точки с полями (не тяга, не добавление)
+      const hof = e.target.closest && e.target.closest("[data-pu-heightof]");
+      if (hof) { pending = { kind: "dimof", id: hof.getAttribute("data-pu-heightof") }; return; }
+      const sof = e.target.closest && e.target.closest("[data-pu-segof]");
+      if (sof) { pending = { kind: "dimof", id: sof.getAttribute("data-pu-segof") }; return; }
       const g = e.target.closest && e.target.closest("[data-pu-el]");
       if (g) {
         const el = p.elements.find((x) => x.id === g.getAttribute("data-pu-el"));
@@ -404,6 +420,7 @@
       if (pts.size === 0 && pending && !moved) {
         const p = core().project, c = core(), step = p.settings.gridStep, pt = toWorld(svg, e.clientX, e.clientY);
         if (pending.kind === "open") { const op = (p.openings || []).find((o) => o.id === pending.id); if (op && EL().openOpeningEditor) EL().openOpeningEditor(op); }
+        else if (pending.kind === "dimof") { const el2 = p.elements.find((x) => x.id === pending.id); if (el2) { S.ptPanel = el2.id; renderPtPanel(); } }
         else if (pending.kind === "empty" && pt.x >= 0 && pt.x <= w.len) {
           if (isOpenKind(S.addType)) {
             c.commit();
