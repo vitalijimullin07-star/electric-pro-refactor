@@ -37,7 +37,6 @@
     const room = (p.rooms || []).find((r) => r.id === roomId);
     return room ? G().walls(room) : [];
   }
-  function wallTh(p) { return Math.max(4, (p.settings && p.settings.wallThickness) || 10); }
   function fitView(H, L) { const pad = CFG.padCm; return { x: -pad, y: -pad * 1.3, w: L + pad * 2, h: H + pad * 1.3 + 110 }; }
 
   function open(wallId, full) {

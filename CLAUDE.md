@@ -14,7 +14,7 @@ push в `main` → GitHub Actions (`firebase-deploy.yml`) → синтакс-ч�
 - После squash-merge ветка расходится с main. Паттерн:
   `git fetch origin main && git reset --hard origin/main && git cherry-pick <commit> && git push --force-with-lease`.
   ВСЕГДА коммитить до reset --hard. Ветка: `claude/full-audit-security-visualization-1fbjfm`.
-- Тесты: `node test/run.js` (40 шт., без зависимостей; харнесс test/harness.js — vm-sandbox,
+- Тесты: `node test/run.js` (44 шт., без зависимостей; харнесс test/harness.js — vm-sandbox,
   cross-realm `instanceof` не работает — проверять утиными типами).
 - Не планировать напоминания/wakeup'ы — пользователь просил без них.
 
@@ -39,14 +39,17 @@ plan-unfold (развёртка: fullscreen, карточка точки по д
 - Перф: во время drag НИКОГДА не звать полный drawStrip/renderScene на каждое
   движение — только transform/атрибуты + rAF (renderSceneSoon), полный рендер на отпускании.
 - Мёртвая зона тапа 7 px (иначе двойной тап не работает).
+- backfillProject() в plan-core.js — ЕДИНАЯ точка бэкофилла настроек/проёмов,
+  вызывается и из openProject, и из importJSON (не дублировать логику).
+- Автоперестройка трасс: core().onChange слушает AUTOREBUILD_ON (elem-move/
+  room-reshape/wall-th/wall-mat/beam-move/beam-w) в plan-routes.js и тихо
+  зовёт build({silent:true}), если p.routes уже не пуст — новые хендлеры
+  геометрии НЕ обязаны сами дёргать Routes.build(), это сделает подписка.
+- Коннекторы (ВАГО/ГМЛ/СИЗ): pin-count распайки = ТОЧНОЕ число сходящихся
+  кабелей (inCnt+outCnt по графу трасс) — точнее, чем в pool-engine.
 
 ## Бэклог (подтверждён пользователем)
-Аудит-патч (согласован, «взять 1-5 одним патчем»):
-1. importJSON: бэкофилл новых настроек (symbolStyle и др.) как в openProject.
-2. Точный расчёт: добавить коннекторы (ВАГО/ГМЛ/СИЗ + термоусадка) — логика из pool-engine.
-3. Автоперестройка трасс после elem-move/room-reshape/wall-th (если p.routes не пуст).
-4. Слаботочная штроба — отдельной строкой в позициях (сейчас сливается с силовой).
-5. Убрать мёртвую wallTh() в plan-unfold.js.
+Аудит-патч 1-5 — СДЕЛАН (см. коммит «Аудит-патч 1-5»).
 Крупное (пользователь выбирает цифрами): 1 PDF-альбом (титул/планы по слоям/
 развёртки/ведомость), 2 экспорт DXF (AutoCAD), 3 ручное редактирование трасс,
 4 цены ₽ прямо в Расчёте, 5 фотофиксация точек, 6 обход проёмов при полу,

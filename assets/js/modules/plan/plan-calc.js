@@ -74,9 +74,50 @@
   // ---------- ТОЧНЫЙ счёт по фактическим трассам ----------
   // Логика штробы — из движка пула (ёмкость 25×30 по вместимости кабелей),
   // но применённая к реальному чертежу: спуск каждой точки по СВОЕЙ стене и
-  // ЕЁ материалу; ТП — 50×50 в пол; слаботочка — отдельной штробой.
+  // ЕЁ материалу; ТП — 50×50 в пол; слаботочка — ОТДЕЛЬНАЯ штроба и строка
+  // (не смешивается с силовой, даже когда физический размер сечения совпадает).
   // Ниша под щит — как в конфигураторе щита: вырубка × модули + монтаж.
   const LV_LAYERS = { lv: 1, tv: 1, cctv: 1 };
+  const STROBE_KIND_SUFFIX = { lv: " (слаботочка)" }; // power/warm — без суффикса (размер их обычно и так различает)
+
+  // ---------- коннекторы (ВАГО/ГМЛ/СИЗ + термоусадка) — логика из EP.PoolEngine ----------
+  const CONN_NAME = {
+    pin2: "ВАГО 2-пин", pin3: "ВАГО 3-пин", pin4: "ВАГО 4-пин", pin5: "ВАГО 5-пин",
+    pin6: "ВАГО 6-пин", pin8: "ВАГО 8-пин", pin10: "ВАГО 10-пин",
+    gml4: "ГМЛ 4", gml6: "ГМЛ 6", gml8: "ГМЛ 8", gml10: "ГМЛ 10",
+    siz2: "СИЗ на 2 провода", siz3: "СИЗ на 3 провода", siz4: "СИЗ на 4 провода",
+    siz5: "СИЗ на 5 проводов", siz6: "СИЗ на 6 проводов", siz8: "СИЗ на 8 проводов", siz10: "СИЗ на 10 проводов"
+  };
+  function connName(key) { return CONN_NAME[key] || key; }
+  function sleeveByWires(w) { if (w <= 4) return "gml4"; if (w <= 6) return "gml6"; if (w <= 8) return "gml8"; return "gml10"; }
+  // распаечные коробки: pin-count = ТОЧНОЕ число сходящихся кабелей (вход+выход,
+  // берём из построенного графа трасс), ×3 разъёма (L/N/PE) на коробку.
+  // выключатели: внутренняя разводка одноклавишного мех-ма (шаблон пула switch_1);
+  // в модели пока нет клавишности/проходных — считаем как 1-клавишные (минимум, не завышаем).
+  function connectorsByRoutes(p, inCnt, outCnt) {
+    const mode = (p.settings && p.settings.connectorMode) || "gml";
+    const pinMap = {};
+    const addPin = (pins, q) => { if (pins >= 2 && q > 0) pinMap["pin" + pins] = (pinMap["pin" + pins] || 0) + q; };
+    (p.elements || []).forEach((e2) => {
+      if (e2.status === "existing" || e2.type !== "junction") return;
+      addPin((inCnt[e2.id] || 0) + (outCnt[e2.id] || 0), 3);
+    });
+    let swCount = 0;
+    (p.elements || []).forEach((e2) => {
+      if (e2.status === "existing") return;
+      const items = e2.type === "block" ? ((e2.params && e2.params.items) || []) : [e2.type];
+      items.forEach((it) => { if (it === "switch") swCount++; });
+    });
+    addPin(2, swCount * 4); // switch_1: pin2 × 4
+    const materials = {}; let shrinkCount = 0;
+    Object.keys(pinMap).forEach((pin) => {
+      const w = Number(pin.replace("pin", "")), q = pinMap[pin];
+      if (mode === "wago") materials[pin] = (materials[pin] || 0) + q;
+      else if (mode === "siz") { const k = "siz" + w; materials[k] = (materials[k] || 0) + q; shrinkCount += q; }
+      else { const k = sleeveByWires(w); materials[k] = (materials[k] || 0) + q; shrinkCount += q; }
+    });
+    return { materials, shrinkM: Math.round((shrinkCount * 5 / 100) * 100) / 100 }; // 5 см термоусадки на стык
+  }
   function calcByRoutes(p) {
     const routes = p.routes || [];
     if (!routes.length) return null;
@@ -92,8 +133,8 @@
     const inCnt = {}, outCnt = {};
     routes.forEach((r) => { outCnt[r.fromId] = (outCnt[r.fromId] || 0) + 1; if (r.toId) inCnt[r.toId] = (inCnt[r.toId] || 0) + 1; });
 
-    const strobe = {}; // "размер|материал" -> метры
-    const addStrobe = (sizeK, mat, cm) => { if (cm > 1) { const k = sizeK + "|" + mat; strobe[k] = (strobe[k] || 0) + cm / 100; } };
+    const strobe = {}; // "размер|материал|вид" -> метры (вид: power/lv/warm — не смешиваем в одну строку)
+    const addStrobe = (sizeK, mat, cm, kind) => { if (cm > 1) { const k = sizeK + "|" + mat + "|" + (kind || "power"); strobe[k] = (strobe[k] || 0) + cm / 100; } };
     const matOfEl = (e2) => { const w = e2.wallId && G2.wallById(p, e2.wallId); return w ? G2.wallMatOf(p, w) : ((s && s.wallMaterial) || "Бетон"); };
 
     const podroz = {}; // материал -> { std, deep }
@@ -115,20 +156,26 @@
       if (!(outCnt[e2.id] || inCnt[e2.id])) return;
       const vert = RT.pointVert(p, e2);
       if (vert < 1) return;
-      if (e2.layer === "warm") { addStrobe(sizeKey(s.tpChaseW || 50, s.tpChaseH || 50), mat, vert); return; }
-      if (LV_LAYERS[e2.layer]) { addStrobe(keyStd, mat, vert); return; } // слаботочка — своя штроба
+      if (e2.layer === "warm") { addStrobe(sizeKey(s.tpChaseW || 50, s.tpChaseH || 50), mat, vert, "warm"); return; }
+      if (LV_LAYERS[e2.layer]) { addStrobe(keyStd, mat, vert, "lv"); return; } // слаботочка — своя штроба и своя строка
       const cables = (outCnt[e2.id] || 0) + (inCnt[e2.id] || 0); // вход+выход шлейфа в одном спуске
-      addStrobe(keyStd, mat, Math.max(1, Math.ceil(cables / capOf(keyStd))) * vert);
+      addStrobe(keyStd, mat, Math.max(1, Math.ceil(cables / capOf(keyStd))) * vert, "power");
     });
-    // спуск у щита: все линии приходят в одну точку — ёмкость из пула
+    // спуск у щита: линии приходят в одну точку — ёмкость из пула; слаботочку
+    // считаем ОТДЕЛЬНОЙ штробой у щита (не мешаем её с силовой и там)
     const panelMat = () => {
       const pn = (p.panels || [])[0];
       const hit = pn && G2.wallAt(p, { x: pn.x, y: pn.y }, 60);
       return hit ? G2.wallMatOf(p, hit.wall) : ((s && s.wallMaterial) || "Бетон");
     };
-    const panelCables = routes.filter((r) => r.toPanel).length;
-    if ((p.panels || []).length && panelCables > 0)
-      addStrobe(keyStd, panelMat(), Math.ceil(panelCables / capOf(keyStd)) * RT.panelVert(p));
+    const panelRoutes = routes.filter((r) => r.toPanel);
+    if ((p.panels || []).length && panelRoutes.length) {
+      const lvPanelCables = panelRoutes.filter((r) => LV_LAYERS[r.layer]).length;
+      const powPanelCables = panelRoutes.length - lvPanelCables;
+      const pm = panelMat();
+      if (powPanelCables > 0) addStrobe(keyStd, pm, Math.ceil(powPanelCables / capOf(keyStd)) * RT.panelVert(p), "power");
+      if (lvPanelCables > 0) addStrobe(keyStd, pm, Math.ceil(lvPanelCables / capOf(keyStd)) * RT.panelVert(p), "lv");
+    }
 
     // кабель по МАРКАМ: марка линии (QF) или по слою; с настраиваемым запасом
     const cableBy = {};
@@ -152,7 +199,10 @@
     const items = [];
     const add = (type, name, qty, unit) => { qty = Math.round(qty * 10) / 10; if (qty > 0) items.push({ type, name, qty, unit }); };
     const low = (m) => String(m || "").toLowerCase();
-    Object.keys(strobe).sort().forEach((k) => { const [size, mat] = k.split("|"); add("work", `Штробление ${size} ${low(mat)}`, strobe[k], "м"); });
+    Object.keys(strobe).sort().forEach((k) => {
+      const [size, mat, kind] = k.split("|");
+      add("work", `Штробление ${size} ${low(mat)}${STROBE_KIND_SUFFIX[kind] || ""}`, strobe[k], "м");
+    });
     Object.keys(podroz).forEach((mat) => {
       const d = podroz[mat];
       if (d.std) add("work", `Высверливание подрозетников обычных ${low(mat)}`, d.std, "шт");
@@ -190,7 +240,11 @@
       if (modules > 0) add("work", `Вырубка ниши под щит (${low(panelMat())})`, modules, "мод");
       add("work", "Монтаж щита в нишу/стену", 1, "шт");
     }
-    return { items, cableBy, strobe };
+    // коннекторы: точное число сходящихся кабелей в распайках + разводка выключателей
+    const conn = connectorsByRoutes(p, inCnt, outCnt);
+    Object.keys(conn.materials).forEach((k) => add("material", connName(k), conn.materials[k], "шт"));
+    if (conn.shrinkM > 0) add("material", "Термоусадка 12/4", conn.shrinkM, "м");
+    return { items, cableBy, strobe, conn };
   }
 
   // ---------- цены из БД ----------
