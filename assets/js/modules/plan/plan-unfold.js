@@ -23,7 +23,7 @@
   const EL = () => EP.Plan.Elements;
   const isOpenKind = (k) => !!(EP.Plan.Core.OPENING_KINDS && EP.Plan.Core.OPENING_KINDS[k]);
 
-  const S = { wallId: null, addType: "socket", drag: null, full: false, view: null, sym: 1, lastTap: null, ptPanel: null, showChases: false, ctrlsOn: true };
+  const S = { wallId: null, addType: "socket", drag: null, full: false, view: null, sym: 1, lastTap: null, ptPanel: null, showChases: false, ctrlsOn: true, ledDraft: null };
 
   function wallH(p, wallId) {
     const roomId = String(wallId).split(":")[0];
@@ -40,7 +40,7 @@
   function fitView(H, L) { const pad = CFG.padCm; return { x: -pad, y: -pad * 1.3, w: L + pad * 2, h: H + pad * 1.3 + 110 }; }
 
   function open(wallId, full) {
-    S.wallId = wallId; S.view = null; S.ptPanel = null; S.lastTap = null;
+    S.wallId = wallId; S.view = null; S.ptPanel = null; S.lastTap = null; S.ledDraft = null;
     if (full != null) S.full = !!full; // тап по стене на главном → сразу во весь экран
     const p = core().project, w = G().wallById(p, wallId);
     if (!w) return;
@@ -69,6 +69,7 @@
           <div class="ep-plan-unfbar">
             <span class="ep-plan-unflbl">Добавить:</span>${CFG.addTypes.map((k) => chip(k, TY[k].glyph)).join("")}
             <span class="ep-plan-unfsep"></span>${CFG.openTypes.map((k) => chip(k, (OT[k] || {}).glyph || "?")).join("")}
+            <span class="ep-plan-unfsep"></span>${chip("led", "💡 Лента")}
           </div>
           <div class="ep-plan-unfbar">
             <span class="ep-plan-unflbl">Толщина, см:</span>
@@ -87,7 +88,7 @@
     if (S.full) requestFS();
   }
   const isOpen = () => !!(S.wallId && $("#ep-pu-box"));
-  function close() { S.wallId = null; S.full = false; S.view = null; S.ptPanel = null; S.lastTap = null; }
+  function close() { S.wallId = null; S.full = false; S.view = null; S.ptPanel = null; S.lastTap = null; S.ledDraft = null; }
 
   function requestFS() {
     const sheet = $("#ep-plan-sheet"), box = $("#ep-pu-box"), target = sheet || box;
@@ -258,6 +259,20 @@
       svg.appendChild(grp);
     });
 
+    // светодиодная лента: сегмент вдоль ЭТОЙ стены (offsetA..offsetB), тянется целиком
+    (p.ledStrips || []).filter((ls) => ls.wallId === S.wallId).forEach((ls) => {
+      const x1 = Math.min(ls.offsetA, ls.offsetB), x2 = Math.max(ls.offsetA, ls.offsetB), ly = H - ls.height;
+      const grp = svgEl("g", { "data-pu-led": ls.id });
+      grp.appendChild(svgEl("line", { x1, y1: ly, x2: x2, y2: ly, class: "ep-plan-unfled", "stroke-width": kk * 3 }));
+      grp.appendChild(svgEl("text", { x: (x1 + x2) / 2, y: ly - 6 * ks, "font-size": 9 * ks, "text-anchor": "middle", class: "ep-plan-unfledt" }, "Лента " + Math.round(x2 - x1) + "см"));
+      svg.appendChild(grp);
+    });
+    // черновик ленты: первая точка уже поставлена, ждём вторую
+    if (S.ledDraft && S.ledDraft.wallId === S.wallId) {
+      const dy = H - S.ledDraft.height;
+      svg.appendChild(svgEl("circle", { cx: S.ledDraft.offset, cy: dy, r: 4 * ks, class: "ep-plan-unfleddraft" }));
+    }
+
     const els = wallElems(p, S.wallId).slice().sort((a, b) => a.offset - b.offset);
     const chY = H + 30 * ks, ovY = chY + 18 * ks; // цепь размеров и общий размер по низу (в см)
 
@@ -387,6 +402,7 @@
       const d = S.drag; if (!d) return;
       if (d.kind === "open") { if (d.g) d.g.setAttribute("transform", `translate(${d.op.offset - d.x0} 0)`); return; }
       if (d.kind === "panel") { if (d.g) d.g.setAttribute("transform", `translate(${d.curPx - d.x0} 0)`); return; }
+      if (d.kind === "led") { if (d.g) d.g.setAttribute("transform", `translate(${Math.min(d.ls.offsetA, d.ls.offsetB) - d.x0} 0)`); return; }
       const x = d.el.offset, y = H - d.el.height;
       if (d.g) d.g.setAttribute("transform", `translate(${x - d.x0} ${y - d.y0})`);
       if (d.dimL) { d.dimL.setAttribute("x1", x); d.dimL.setAttribute("x2", x); d.dimL.setAttribute("y2", y); }
@@ -426,6 +442,15 @@
         if (!op) return;
         core().commit();
         S.drag = { kind: "open", op, moved: false, g: og, x0: op.offset };
+        return;
+      }
+      const lg = e.target.closest && e.target.closest("[data-pu-led]");
+      if (lg) {
+        const ls = (p.ledStrips || []).find((x) => x.id === lg.getAttribute("data-pu-led"));
+        if (!ls) return;
+        core().commit();
+        // тянем сегмент ЦЕЛИКОМ вдоль стены (длина сохраняется)
+        S.drag = { kind: "led", ls, moved: false, g: lg, x0: Math.min(ls.offsetA, ls.offsetB), len: Math.abs(ls.offsetB - ls.offsetA) };
         return;
       }
       const g = e.target.closest && e.target.closest("[data-pu-el]");
@@ -476,6 +501,9 @@
           const nearest = { x: w.a.x + (w.b.x - w.a.x) * t, y: w.a.y + (w.b.y - w.a.y) * t };
           S.drag.pn.x = nearest.x + S.drag.perp.x; // сохраняем перпендикулярный отступ от стены
           S.drag.pn.y = nearest.y + S.drag.perp.y;
+        } else if (S.drag.kind === "led") {
+          const x0 = Math.round(Math.max(0, Math.min(w.len - S.drag.len, pt.x - S.drag.len / 2)));
+          S.drag.ls.offsetA = x0; S.drag.ls.offsetB = x0 + S.drag.len;
         } else {
           S.drag.el.offset = Math.round(Math.max(0, Math.min(w.len, pt.x))); // плавно, 1 см
           S.drag.el.height = Math.round(Math.max(0, Math.min(H, H - pt.y)));
@@ -496,7 +524,7 @@
       if (pts.size < 2) pinch = null;
       if (S.drag) {
         if (S.drag.moved) {
-          const what = S.drag.kind === "open" ? "opening-move" : S.drag.kind === "panel" ? "panel-move" : "elem-move";
+          const what = S.drag.kind === "open" ? "opening-move" : S.drag.kind === "panel" ? "panel-move" : S.drag.kind === "led" ? "led-move" : "elem-move";
           core().persist(what);
           S.drag = null;
           drawStrip(); rooms().renderScene(); // полная перерисовка ОДИН раз, на отпускании
@@ -507,6 +535,13 @@
         }
         else if (S.drag.kind === "panel") {
           // тап без тяги по щиту — своего редактора тут нет, просто ничего не делаем
+        }
+        else if (S.drag.kind === "led") {
+          if (confirm("Удалить ленту?")) {
+            const p2 = core().project;
+            p2.ledStrips = (p2.ledStrips || []).filter((x) => x.id !== S.drag.ls.id);
+            core().persist("led-del"); drawStrip(); rooms().renderScene();
+          }
         }
         else {
           // двойной тап по точке — карточка параметров (высота / от угла / посты)
@@ -523,6 +558,17 @@
       if (pts.size === 0 && pending && !moved) {
         const p = core().project, c = core(), step = p.settings.gridStep, pt = toWorld(svg, e.clientX, e.clientY);
         if (pending.kind === "dimof") { const el2 = p.elements.find((x) => x.id === pending.id); if (el2) { S.ptPanel = el2.id; renderPtPanel(); } }
+        else if (pending.kind === "empty" && S.addType === "led" && pt.x >= 0 && pt.x <= w.len && pt.y >= 0 && pt.y <= H) {
+          const off = G().snap(pt.x, step), height = G().snap(Math.max(0, H - pt.y), step);
+          if (!S.ledDraft) { S.ledDraft = { wallId: S.wallId, offset: off, height }; drawStrip(); }
+          else {
+            c.commit();
+            p.ledStrips = p.ledStrips || [];
+            p.ledStrips.push(c.model.newLedStrip(S.wallId, S.ledDraft.offset, off, S.ledDraft.height));
+            S.ledDraft = null;
+            c.persist("led-add"); drawStrip(); rooms().renderScene();
+          }
+        }
         else if (pending.kind === "empty" && pt.x >= 0 && pt.x <= w.len) {
           if (isOpenKind(S.addType)) {
             c.commit();
@@ -591,6 +637,7 @@
     if ((b = t.closest("[data-pu-wall]"))) { open(b.getAttribute("data-pu-wall")); return; }
     if ((b = t.closest("[data-pu-type]"))) {
       S.addType = b.getAttribute("data-pu-type");
+      if (S.addType !== "led" && S.ledDraft) { S.ledDraft = null; drawStrip(); } // сменили тип посреди расстановки ленты — бросаем первую точку
       document.querySelectorAll("[data-pu-type]").forEach((x) => x.classList.toggle("on", x === b));
     }
   });
