@@ -10,7 +10,7 @@
 
   const CFG = {
     hitPx: 24, padCm: 40,
-    addTypes: ["block", "socket", "switch", "tv", "internet", "ac", "camera", "sensor"],
+    addTypes: ["block", "socket", "switch", "bra", "tv", "internet", "ac", "camera", "sensor"],
     openTypes: ["door", "window", "sliding", "balcony"]
   };
   const T = { title: "Стена", hint: "Пальцами — зум/сдвиг · выбери тип и тапни по пустому — добавить · тяни точку" };
@@ -234,24 +234,28 @@
     for (let y = H - 50; y > 0; y -= 50) svg.appendChild(svgEl("line", { x1: 0, y1: y, x2: L, y2: y, class: "ep-plan-unfgrid", "stroke-width": kk }));
     svg.appendChild(svgEl("line", { x1: 0, y1: H, x2: L, y2: H, class: "ep-plan-unffloor", "stroke-width": 2.5 * kk }));
 
-    // проёмы
+    // проёмы (в <g data-pu-open> — общий узел для рендера И тяги, как у элементов)
     (p.openings || []).filter((o) => o.wallId === S.wallId).forEach((op) => {
       const oh = op.height || (op.type === "window" ? 140 : 200), sill = op.sill || 0;
       const yTop = H - (sill + oh), hgt = Math.min(oh, H - sill);
       const isWin = op.type === "window" || op.kind === "window" || op.kind === "balcony";
-      svg.appendChild(svgEl("rect", { "data-pu-open": op.id, x: op.offset, y: yTop, width: op.width, height: hgt, class: "ep-plan-unfopen" + (isWin ? " is-win" : ""), "stroke-width": 1.5 * kk }));
+      const grp = svgEl("g", { "data-pu-open": op.id });
+      grp.appendChild(svgEl("rect", { x: op.offset, y: yTop, width: op.width, height: hgt, class: "ep-plan-unfopen" + (isWin ? " is-win" : ""), "stroke-width": 1.5 * kk }));
       const meta = (EL().OPEN_TYPES || {})[op.kind || (isWin ? "window" : "door")] || {};
-      svg.appendChild(svgEl("text", { "data-pu-open": op.id, x: op.offset + op.width / 2, y: yTop + 12 * ks, "font-size": 10 * ks, "text-anchor": "middle", class: "ep-plan-unfopent" }, (EL().openingNum ? EL().openingNum(p, op) : (meta.glyph || ""))));
+      grp.appendChild(svgEl("text", { x: op.offset + op.width / 2, y: yTop + 12 * ks, "font-size": 10 * ks, "text-anchor": "middle", class: "ep-plan-unfopent" }, (EL().openingNum ? EL().openingNum(p, op) : (meta.glyph || ""))));
+      svg.appendChild(grp);
     });
 
-    // щит
+    // щит (тоже в <g data-pu-panel> — тянется вдоль стены, сохраняя отступ от неё)
     (p.panels || []).forEach((pn) => {
       const c = G().closestOnSeg({ x: pn.x, y: pn.y }, w.a, w.b);
       if (c.d > 60) return;
       const bx = p.settings.panelBox, px = c.t * L, ph = p.settings.panelHeight || 150;
       const pw = bx && bx.wmm ? bx.wmm / 10 : 36, phh = bx && bx.hmm ? bx.hmm / 10 : 60, py = H - ph;
-      svg.appendChild(svgEl("rect", { x: px - pw / 2, y: py - phh / 2, width: pw, height: phh, rx: 3, class: "ep-plan-unfpanel", "stroke-width": 1.5 * kk }));
-      svg.appendChild(svgEl("text", { x: px, y: py, "font-size": 12 * ks, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfpanelt" }, "Щ"));
+      const grp = svgEl("g", { "data-pu-panel": pn.id });
+      grp.appendChild(svgEl("rect", { x: px - pw / 2, y: py - phh / 2, width: pw, height: phh, rx: 3, class: "ep-plan-unfpanel", "stroke-width": 1.5 * kk }));
+      grp.appendChild(svgEl("text", { x: px, y: py, "font-size": 12 * ks, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfpanelt" }, "Щ"));
+      svg.appendChild(grp);
     });
 
     const els = wallElems(p, S.wallId).slice().sort((a, b) => a.offset - b.offset);
@@ -381,6 +385,8 @@
     // плавная тяга: обновляем позицию узлов без пересборки всего SVG
     function updateDragVisual() {
       const d = S.drag; if (!d) return;
+      if (d.kind === "open") { if (d.g) d.g.setAttribute("transform", `translate(${d.op.offset - d.x0} 0)`); return; }
+      if (d.kind === "panel") { if (d.g) d.g.setAttribute("transform", `translate(${d.curPx - d.x0} 0)`); return; }
       const x = d.el.offset, y = H - d.el.height;
       if (d.g) d.g.setAttribute("transform", `translate(${x - d.x0} ${y - d.y0})`);
       if (d.dimL) { d.dimL.setAttribute("x1", x); d.dimL.setAttribute("x2", x); d.dimL.setAttribute("y2", y); }
@@ -399,13 +405,29 @@
       if (pts.size === 2) { pinch = pinchInfo(); S.drag = null; pending = null; return; }
       const p = core().project;
       downClient = { x: e.clientX, y: e.clientY }; moved = false; pending = null;
-      const og = e.target.closest && e.target.closest("[data-pu-open]");
-      if (og) { pending = { kind: "open", id: og.getAttribute("data-pu-open") }; return; }
       // тап по цифре размера — сразу карточка точки с полями (не тяга, не добавление)
       const hof = e.target.closest && e.target.closest("[data-pu-heightof]");
       if (hof) { pending = { kind: "dimof", id: hof.getAttribute("data-pu-heightof") }; return; }
       const sof = e.target.closest && e.target.closest("[data-pu-segof]");
       if (sof) { pending = { kind: "dimof", id: sof.getAttribute("data-pu-segof") }; return; }
+      const pg2 = e.target.closest && e.target.closest("[data-pu-panel]");
+      if (pg2) {
+        const pn = (p.panels || []).find((x) => x.id === pg2.getAttribute("data-pu-panel"));
+        if (!pn) return;
+        const c0 = G().closestOnSeg({ x: pn.x, y: pn.y }, w.a, w.b);
+        core().commit();
+        // тянем щит ВДОЛЬ стены, сохраняя перпендикулярный отступ от неё (perp)
+        S.drag = { kind: "panel", pn, moved: false, g: pg2, x0: c0.t * w.len, curPx: c0.t * w.len, perp: { x: pn.x - c0.x, y: pn.y - c0.y } };
+        return;
+      }
+      const og = e.target.closest && e.target.closest("[data-pu-open]");
+      if (og) {
+        const op = (p.openings || []).find((x) => x.id === og.getAttribute("data-pu-open"));
+        if (!op) return;
+        core().commit();
+        S.drag = { kind: "open", op, moved: false, g: og, x0: op.offset };
+        return;
+      }
       const g = e.target.closest && e.target.closest("[data-pu-el]");
       if (g) {
         const el = p.elements.find((x) => x.id === g.getAttribute("data-pu-el"));
@@ -414,7 +436,7 @@
         core().commit();
         // узлы для ПЛАВНОЙ тяги на месте (без пересборки SVG во время движения)
         S.drag = {
-          el, moved: false, postIdx: pg ? Number(pg.getAttribute("data-pu-post")) : null,
+          kind: "el", el, moved: false, postIdx: pg ? Number(pg.getAttribute("data-pu-post")) : null,
           g, x0: el.offset, y0: (wallH(p, S.wallId)) - el.height, dimTx: null,
           dimL: svg.querySelector(`[data-pu-diml="${el.id}"]`),
           dimT: svg.querySelector(`[data-pu-dimt="${el.id}"]`)
@@ -444,8 +466,20 @@
         if (!S.drag.moved && downClient && Math.hypot(e.clientX - downClient.x, e.clientY - downClient.y) < 7) return;
         const pt = toWorld(svg, e.clientX, e.clientY);
         S.drag.moved = true;
-        S.drag.el.offset = Math.round(Math.max(0, Math.min(w.len, pt.x))); // плавно, 1 см
-        S.drag.el.height = Math.round(Math.max(0, Math.min(H, H - pt.y)));
+        if (S.drag.kind === "open") {
+          const maxOff = Math.max(0, w.len - S.drag.op.width);
+          S.drag.op.offset = Math.round(Math.max(0, Math.min(maxOff, pt.x - S.drag.op.width / 2))); // тянем за центр проёма
+        } else if (S.drag.kind === "panel") {
+          const px = Math.round(Math.max(0, Math.min(w.len, pt.x)));
+          S.drag.curPx = px;
+          const t = w.len ? px / w.len : 0;
+          const nearest = { x: w.a.x + (w.b.x - w.a.x) * t, y: w.a.y + (w.b.y - w.a.y) * t };
+          S.drag.pn.x = nearest.x + S.drag.perp.x; // сохраняем перпендикулярный отступ от стены
+          S.drag.pn.y = nearest.y + S.drag.perp.y;
+        } else {
+          S.drag.el.offset = Math.round(Math.max(0, Math.min(w.len, pt.x))); // плавно, 1 см
+          S.drag.el.height = Math.round(Math.max(0, Math.min(H, H - pt.y)));
+        }
         updateDragVisual(); // двигаем узлы на месте — БЕЗ пересборки SVG (плавно)
         return;
       }
@@ -462,10 +496,17 @@
       if (pts.size < 2) pinch = null;
       if (S.drag) {
         if (S.drag.moved) {
-          core().persist("elem-move");
+          const what = S.drag.kind === "open" ? "opening-move" : S.drag.kind === "panel" ? "panel-move" : "elem-move";
+          core().persist(what);
           S.drag = null;
           drawStrip(); rooms().renderScene(); // полная перерисовка ОДИН раз, на отпускании
           return;
+        }
+        else if (S.drag.kind === "open") {
+          if (EL().openOpeningEditor) EL().openOpeningEditor(S.drag.op);
+        }
+        else if (S.drag.kind === "panel") {
+          // тап без тяги по щиту — своего редактора тут нет, просто ничего не делаем
         }
         else {
           // двойной тап по точке — карточка параметров (высота / от угла / посты)
@@ -481,8 +522,7 @@
       }
       if (pts.size === 0 && pending && !moved) {
         const p = core().project, c = core(), step = p.settings.gridStep, pt = toWorld(svg, e.clientX, e.clientY);
-        if (pending.kind === "open") { const op = (p.openings || []).find((o) => o.id === pending.id); if (op && EL().openOpeningEditor) EL().openOpeningEditor(op); }
-        else if (pending.kind === "dimof") { const el2 = p.elements.find((x) => x.id === pending.id); if (el2) { S.ptPanel = el2.id; renderPtPanel(); } }
+        if (pending.kind === "dimof") { const el2 = p.elements.find((x) => x.id === pending.id); if (el2) { S.ptPanel = el2.id; renderPtPanel(); } }
         else if (pending.kind === "empty" && pt.x >= 0 && pt.x <= w.len) {
           if (isOpenKind(S.addType)) {
             c.commit();
