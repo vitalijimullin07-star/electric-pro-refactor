@@ -121,6 +121,7 @@
     const host = $("#ep-psc-scroll"); if (!host || !window.ShieldSchemeSVG) return;
     const p = core().project;
     // пересчёт корпуса щита; если изменился — сохраняем и обновляем щит на плане
+    // (считаем от p.circuits независимо от режима схемы — тот же физический набор линий)
     const before = JSON.stringify(p.settings.panelBox);
     recomputePanel(p);
     if (JSON.stringify(p.settings.panelBox) !== before) { core().persist("panel-box"); if (rooms().renderScene) rooms().renderScene(); }
@@ -128,13 +129,25 @@
     const svg = document.createElementNS(NS, "svg");
     svg.setAttribute("class", "ep-plan-schemesvg");
     host.appendChild(svg);
-    try { window.ShieldSchemeSVG.render(svg, buildTree(p)); }
-    catch (e) { host.innerHTML = `<div class="ep-plan-modehint">Не удалось нарисовать схему: ${esc(e.message)}</div>`; }
+    try {
+      if (p.settings.schemeMode === "manual" && EP.Plan.ManualScheme) EP.Plan.ManualScheme.render(svg, p);
+      else window.ShieldSchemeSVG.render(svg, buildTree(p));
+    } catch (e) { host.innerHTML = `<div class="ep-plan-modehint">Не удалось нарисовать схему: ${esc(e.message)}</div>`; }
   }
 
+  function modeRow(s) {
+    return `<div class="ep-plan-srow ep-plan-schememode">
+      <button type="button" class="ep-plan-chip ep-clickable ${s.schemeMode !== "manual" ? "on" : ""}" data-psc-mode="auto">Авто (из линий плана)</button>
+      <button type="button" class="ep-plan-chip ep-clickable ${s.schemeMode === "manual" ? "on" : ""}" data-psc-mode="manual">Ручная</button>
+    </div>`;
+  }
   function editor() {
     const box = $("#ep-psc-edit"); if (!box) return;
     const p = core().project, s = p.settings;
+    if (s.schemeMode === "manual") {
+      box.innerHTML = modeRow(s) + (EP.Plan.ManualScheme ? EP.Plan.ManualScheme.editorHtml(p) : "");
+      return;
+    }
     const breakers = EP.Plan.Core.DEFAULTS.breakers, cables = EP.Plan.Core.DEFAULTS.cables;
     const brkSel = (val, attr) => `<select ${attr} class="ep-plan-sel">${breakers.map((b) => `<option value="${b}" ${Number(val) === b ? "selected" : ""}>${b}A</option>`).join("")}</select>`;
     const cabSel = (val, id) => `<select data-psc-cab="${esc(id)}" class="ep-plan-sel"><option value="">авто</option>${cables.map((cb) => `<option value="${cb}" ${val === cb ? "selected" : ""}>${cb}</option>`).join("")}</select>`;
@@ -153,7 +166,7 @@
     const boxLine = bx.modules
       ? `Щит: <b>${bx.brand}</b> · нужно ${bx.needed} мод → корпус <b>${bx.modules} мод</b>${bx.overflow ? " (не хватает — 2 щита)" : ""} · ${bx.wmm}×${bx.hmm}×${bx.dmm} мм · ${bx.rows} ${bx.rows === 1 ? "ряд" : "ряда"}`
       : "Щит: —";
-    box.innerHTML = `<div class="ep-plan-srow"><b>Ввод и группы</b></div>
+    box.innerHTML = modeRow(s) + `<div class="ep-plan-srow"><b>Ввод и группы</b></div>
       <div class="ep-plan-srow">
         <button type="button" class="ep-plan-chip ep-clickable ${s.phases !== 3 ? "on" : ""}" data-psc-ph="1">1 фаза</button>
         <button type="button" class="ep-plan-chip ep-clickable ${s.phases === 3 ? "on" : ""}" data-psc-ph="3">3 фазы</button>
@@ -182,6 +195,7 @@
     if (t.closest("[data-psc-close]")) { close(); rooms().closeSheet(); const sh = $("#ep-plan-sheet"); if (sh) sh.classList.remove("ep-plan-sheet-full"); return; }
     if (t.closest("[data-psc-full]")) return toggleFull();
     if (!isOpen()) return;
+    if ((b = t.closest("[data-psc-mode]"))) { const c = core(); c.commit(); c.project.settings.schemeMode = b.getAttribute("data-psc-mode") === "manual" ? "manual" : "auto"; c.persist("scheme-mode"); refresh(); return; }
     if ((b = t.closest("[data-psc-ph]"))) { const c = core(); c.commit(); c.project.settings.phases = Number(b.getAttribute("data-psc-ph")) === 3 ? 3 : 1; c.persist("scheme-ph"); refresh(); return; }
     if ((b = t.closest("[data-psc-poles]"))) { const c = core(), cc = c.project.circuits.find((x) => x.id === b.getAttribute("data-psc-poles")); if (cc) { c.commit(); cc.poles = cc.poles === 3 ? 1 : 3; c.persist("scheme-poles"); refresh(); } return; }
     if ((b = t.closest("[data-psc-del]"))) {
@@ -219,5 +233,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Scheme = { open, close, isOpen, buildTree, recompute: recomputePanel, neededModules };
+  EP.Plan.Scheme = { open, close, isOpen, buildTree, recompute: recomputePanel, neededModules, draw, refresh, loadEls, autoCable, loadSummary, loadKindLabel };
 })();

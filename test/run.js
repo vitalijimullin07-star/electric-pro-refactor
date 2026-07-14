@@ -697,6 +697,65 @@ test("коннекторы: клавишность и тип выключате�
   eq(gml4.qty, 3 + 2 + 6, "switch_2: pin2×3+pin4×2, pass_1: pin2×6 — итого 11 (не как всегда switch_1×2=8)");
 });
 
+// ===== 15. Ручная однолинейка (Слой 7б): группы/линии, чек-лист линий с плана =====
+test("ручная схема: buildTree null без групп", () => {
+  const { P } = install();
+  eq(EP.Plan.ManualScheme.buildTree(P), null, "нет групп — дерева нет");
+});
+test("ручная схема: чек-лист — линия с плана без группы «не расставлена»", () => {
+  const { P } = install();
+  P.circuits.push(M.newCircuit("QF1", "#ef4444", 16));
+  const html = EP.Plan.ManualScheme.checklistHtml(P);
+  ok(html.indexOf("0/1 расставлено") >= 0, "0 из 1 линий расставлено");
+  ok(html.indexOf("is-done") < 0, "нет отметки «расставлено»");
+});
+test("ручная схема: линия, привязанная к circuitId, помечается в чек-листе ✓", () => {
+  const { P } = install();
+  const cc = M.newCircuit("QF1 Розетки", "#ef4444", 16); P.circuits.push(cc);
+  const g = M.newSchemeGroup("Розетки"); P.manualScheme.groups.push(g);
+  const ln = M.newSchemeLine("QF1 Розетки"); ln.circuitId = cc.id; ln.amp = cc.breaker;
+  g.lines.push(ln);
+  const html = EP.Plan.ManualScheme.checklistHtml(P);
+  ok(html.indexOf("1/1 расставлено") >= 0, "1 из 1 линий расставлено");
+  ok(html.indexOf("is-done") >= 0, "строка линии плана помечена расставленной");
+});
+test("ручная схема: дерево — группа/линия строятся, номинал и имя видны", () => {
+  const { P } = install();
+  const cc = M.newCircuit("Розетки кухня", "#ef4444", 16); P.circuits.push(cc);
+  const g = M.newSchemeGroup("Кухня"); P.manualScheme.groups.push(g);
+  const ln = M.newSchemeLine("Розетки кухня"); ln.circuitId = cc.id; ln.amp = 16; ln.curve = "C";
+  g.lines.push(ln);
+  const tree = EP.Plan.ManualScheme.buildTree(P);
+  ok(tree && tree.children.length === 1, "один узел группы под вводом");
+  const rcdNode = tree.children[0];
+  eq(rcdNode.type, "rcd", "УЗО по умолчанию (kind не dif)");
+  eq(rcdNode.children.length, 1, "одна линия в группе");
+  const lineNode = rcdNode.children[0];
+  eq(lineNode.label, "Розетки кухня", "имя линии в дереве");
+  eq(lineNode.rating, "C16А", "номинал линии в дереве");
+});
+test("ручная схема: счётчик и вводное УЗО берутся из settings, не дублируются как отдельные тумблеры", () => {
+  const { P } = install();
+  P.settings.meter = true; P.settings.mainRcd = true;
+  const g = M.newSchemeGroup("Г"); P.manualScheme.groups.push(g);
+  g.lines.push(M.newSchemeLine("Л"));
+  const tree = EP.Plan.ManualScheme.buildTree(P);
+  eq(tree.type, "mcb", "корень — вводной автомат");
+  eq(tree.children[0].type, "meter", "следующий узел — счётчик (settings.meter)");
+  eq(tree.children[0].children[0].type, "rcd", "затем вводное УЗО (settings.mainRcd)");
+});
+test("ручная схема: аппараты вводной цепи идут в порядке apparatusOrder", () => {
+  const { P } = install();
+  P.manualScheme.apparatus.rubilnik = true;
+  P.manualScheme.apparatus.opn = true;
+  P.manualScheme.apparatusOrder = ["rubilnik", "opn"];
+  const g = M.newSchemeGroup("Г"); P.manualScheme.groups.push(g);
+  g.lines.push(M.newSchemeLine("Л"));
+  const tree = EP.Plan.ManualScheme.buildTree(P);
+  eq(tree.children[0].type, "switch", "рубильник первым");
+  eq(tree.children[0].children[0].type, "spd", "ОПН вторым");
+});
+
 (async () => {
   await test("openProject: бэкофилл старых проектов", async () => {}); // placeholder to keep sync
   // п.1 аудита: importJSON теперь ТОЖЕ бэкофиллит (не только openProject) — старые/
@@ -712,6 +771,8 @@ test("коннекторы: клавишность и тип выключате�
   eq(imp.settings.routeOffset, 15, "бэкофилл routeOffset");
   eq(imp.settings.sleeveD, 20, "бэкофилл sleeveD");
   eq(imp.settings.connectorMode, "gml", "бэкофилл connectorMode");
+  eq(imp.settings.schemeMode, "auto", "бэкофилл schemeMode");
+  ok(imp.manualScheme && Array.isArray(imp.manualScheme.groups), "бэкофилл manualScheme.groups");
 
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
