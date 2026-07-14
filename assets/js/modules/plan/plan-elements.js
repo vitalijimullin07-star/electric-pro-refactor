@@ -22,6 +22,7 @@
     camera:    { name: "Камера",      glyph: "ВК", layer: "cctv",  h: 230 },
     sensor:    { name: "Датчик",      glyph: "Д",  layer: "lv",    h: 220 },
     output:    { name: "Вывод",       glyph: "Вых", layer: "power", h: null, free: true, layerChoice: true },
+    output24:  { name: "Вывод 24В",   glyph: "24В", layer: "lv",    h: null, free: true },
     panel:     { name: "Щит",         glyph: "Щ",  layer: "power", h: 150, panel: true }
   };
   // Проёмы — под ОТДЕЛЬНОЙ кнопкой (🚪): дверь / раздвижная / окно / балкон.
@@ -256,6 +257,7 @@
     S.selId = pn.id;
     rooms().openSheet(`<div class="ep-plan-srow"><b>${esc(pn.name || "Щит")}</b></div>
       <div class="ep-plan-srow"><input id="ep-pe-pname" type="text" value="${esc(pn.name || "Щит")}" maxlength="30"></div>
+      <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-ptrafo="${esc(pn.id)}" ${pn.transformer ? "checked" : ""}>Трансформатор в слаботочном щите (24В для ленты)</label></div>
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pe-papply="${esc(pn.id)}">${T.apply}</button>
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pe-pdel="${esc(pn.id)}">${T.del}</button>
@@ -514,7 +516,11 @@
     }
     if ((b = t.closest("[data-pe-papply]"))) {
       const c = core(), pn = c.project.panels.find((x) => x.id === b.getAttribute("data-pe-papply")); if (!pn) return;
-      c.commit(); pn.name = (($("#ep-pe-pname") || {}).value || "Щит").trim() || "Щит"; c.persist("panel-edit");
+      c.commit();
+      pn.name = (($("#ep-pe-pname") || {}).value || "Щит").trim() || "Щит";
+      const trafo = $(`[data-pe-ptrafo="${pn.id}"]`);
+      pn.transformer = !!(trafo && trafo.checked);
+      c.persist("panel-edit");
       S.selId = null; rooms().closeSheet(); rooms().renderScene(); return; // ✓ применить и закрыть
     }
     if ((b = t.closest("[data-pe-pdel]"))) {

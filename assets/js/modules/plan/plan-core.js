@@ -95,6 +95,7 @@
       rooms: [], panels: [], elements: [], routes: [], circuits: [],
       openings: [], // двери и окна в стенах
       beams: [],    // перемычки/балки на потолке (свободные отрезки)
+      ledStrips: [], // светодиодная лента: сегменты ВДОЛЬ стены (wallId+offsetA/offsetB)
       manualScheme: newManualScheme(), // ручной конструктор однолинейки (Слой 7б)
       layers: blankLayers(),
       versions: [], // { at, note } — история версий (заполняется в следующих слоях)
@@ -104,7 +105,7 @@
   function newRoom(points, name) {
     return { id: uid("rm"), name: name || "Комната", points: points || [], height: null /* null = settings.ceilingHeight */, zones: [], material: null /* null = settings.wallMaterial */ };
   }
-  function newPanel(x, y, name) { return { id: uid("pn"), x: x || 0, y: y || 0, name: name || "Щит" }; }
+  function newPanel(x, y, name) { return { id: uid("pn"), x: x || 0, y: y || 0, name: name || "Щит", transformer: false }; }
   function newElement(type, wallId, offset, height, layer) {
     return {
       id: uid("el"), type, wallId, offset: offset || 0, height: height || 0, layer: layer || "power", status: "planned",
@@ -135,6 +136,11 @@
   }
   function newSchemeLine(name) {
     return { id: uid("ml"), circuitId: null, name: name || "", curve: "C", amp: 16, phase: "1", cable: null, cableLen: null, apps: [] };
+  }
+  // светодиодная лента: сегмент ВДОЛЬ конкретной стены между двумя офсетами (см. wall).
+  // Привязка к стене (как у элементов) — тривиальный рендер и на плане, и в развёртке.
+  function newLedStrip(wallId, offsetA, offsetB, height, circuitId) {
+    return { id: uid("ls"), wallId, offsetA: offsetA || 0, offsetB: offsetB || 0, height: height || 0, circuitId: circuitId || null, status: "planned" };
   }
   // Проёмы: дверь / раздвижная / окно / балконный блок. Размеры настраиваемые.
   // height — высота проёма (см), sill — низ проёма от пола (окно ~90, дверь 0).
@@ -219,7 +225,10 @@
   function backfillProject(p) {
     p.openings = p.openings || [];
     p.beams = p.beams || [];
+    p.ledStrips = p.ledStrips || [];
     p.circuits = p.circuits || [];
+    p.panels = p.panels || [];
+    p.panels.forEach((pn) => { if (pn.transformer == null) pn.transformer = false; });
     p.settings = p.settings || {};
     if (!p.settings.symbolStyle) p.settings.symbolStyle = DEFAULTS.symbolStyle;
     if (p.settings.cableReserve == null) p.settings.cableReserve = DEFAULTS.cableReserve;
@@ -334,6 +343,6 @@
     listProjects, createProject, openProject, closeProject, deleteProject, renameProject,
     commit, undo, redo, canUndo, canRedo, persist,
     exportJSON, importJSON, cloudPullIndex,
-    model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening, newBeam, newManualScheme, newSchemeGroup, newSchemeLine }
+    model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening, newBeam, newManualScheme, newSchemeGroup, newSchemeLine, newLedStrip }
   };
 })();

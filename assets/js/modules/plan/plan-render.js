@@ -299,6 +299,17 @@
       g.appendChild(el("circle", { cx: d2.a.x, cy: d2.a.y, r: CFG.pointPx * k, class: "ep-plan-draftpt is-first" }));
     }
 
+    // светодиодная лента — сегмент ВДОЛЬ стены (offsetA..offsetB), с небольшим отступом
+    // внутрь комнаты, чтобы не сливаться с самой стеной
+    (project.ledStrips || []).forEach((ls) => {
+      const lw = G.wallById(project, ls.wallId); if (!lw) return;
+      const fr = G.wallFrame(project, lw);
+      const d3 = 4; // см, чисто визуальный отступ от грани стены
+      const a2 = G.pointAtOffset(lw, Math.min(ls.offsetA, ls.offsetB)), b2 = G.pointAtOffset(lw, Math.max(ls.offsetA, ls.offsetB));
+      const nx = fr ? fr.nrm.x * d3 : 0, ny = fr ? fr.nrm.y * d3 : 0;
+      g.appendChild(el("line", { x1: a2.x + nx, y1: a2.y + ny, x2: b2.x + nx, y2: b2.y + ny, class: "ep-plan-ledstrip", "stroke-width": sw * 1.4 }));
+    });
+
     // размерные цепочки: привязки точек и проёмов к углам стены (слой «Размеры»)
     if (dimsOn) {
       (project.rooms || []).forEach((room) => {
@@ -429,7 +440,22 @@
         for (let ki = 0; ki < keys; ki++) {
           const target = G.switchTarget(project, elem, ki);
           const b = target && G.elemDrawPoint(project, target);
-          if (b) g.appendChild(el("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: "ep-plan-swlink", stroke: col, "stroke-width": sw * 0.5 }));
+          if (b) { g.appendChild(el("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: "ep-plan-swlink", stroke: col, "stroke-width": sw * 0.5 })); continue; }
+          // нет лампы/вывода той же линии — пробуем светодиодную ленту. Если в проекте
+          // есть щит с трансформатором (panel.transformer) — ведём ДВУМЯ отрезками
+          // (выключатель→щит, щит→лента), иначе прямой линией (нет отдельного щита слаботочки).
+          const ledT = G.switchLedTarget(project, elem, ki);
+          if (!ledT) continue;
+          const lw = G.wallById(project, ledT.wallId);
+          const mid = lw && G.pointAtOffset(lw, (ledT.offsetA + ledT.offsetB) / 2);
+          if (!mid) continue;
+          const txPanel = (project.panels || []).find((pn) => pn.transformer);
+          if (txPanel) {
+            g.appendChild(el("line", { x1: a.x, y1: a.y, x2: txPanel.x, y2: txPanel.y, class: "ep-plan-swlink", stroke: col, "stroke-width": sw * 0.5 }));
+            g.appendChild(el("line", { x1: txPanel.x, y1: txPanel.y, x2: mid.x, y2: mid.y, class: "ep-plan-swlink", stroke: col, "stroke-width": sw * 0.5 }));
+          } else {
+            g.appendChild(el("line", { x1: a.x, y1: a.y, x2: mid.x, y2: mid.y, class: "ep-plan-swlink", stroke: col, "stroke-width": sw * 0.5 }));
+          }
         }
       });
     }

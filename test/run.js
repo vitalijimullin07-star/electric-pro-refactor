@@ -247,7 +247,30 @@ test("render: полная сцена без ошибок", () => {
   const blk = M.newElement("block", w(3), 150, 30, "power"); blk.params = { items: ["socket", "switch"] }; blk.circuitId = q1.id;
   const op = M.newOpening("door", w(0), 150);
   P.elements.push(blk); P.openings.push(op);
+  const sw = M.newElement("switch", w(0), 60, 90, "light"); sw.circuitId = q1.id;
+  P.elements.push(sw);
+  P.ledStrips.push(M.newLedStrip(w(0), 200, 300, 220, q1.id));
+  P.panels[0].transformer = true;
   noThrow(() => EP.Plan.Render.draw(fakeCanvas(), P, { selectedRoomId: P.rooms[0].id, draft: { points: [] }, ruler: {}, beamDraft: {} }), "Render.draw");
+});
+test("switchLedTarget: находит ленту той же линии в той же комнате", () => {
+  const { P, w } = install();
+  const cc = M.newCircuit("QF1 LED", "#fbbf24", 6); P.circuits.push(cc);
+  const sw = M.newElement("switch", w(0), 100, 90, "light"); sw.circuitId = cc.id;
+  P.elements.push(sw);
+  const ls = M.newLedStrip(w(0), 150, 250, 220, cc.id);
+  P.ledStrips.push(ls);
+  const target = G.switchLedTarget(P, sw, 0);
+  ok(target && target.id === ls.id, "нашёл ленту той же линии");
+});
+test("switchLedTarget: без общей линии (circuitId) связь не строим", () => {
+  const { P, w } = install();
+  const cc1 = M.newCircuit("QF1", "#e11", 16), cc2 = M.newCircuit("QF2 LED", "#fbbf24", 6);
+  P.circuits.push(cc1, cc2);
+  const sw = M.newElement("switch", w(0), 100, 90, "light"); sw.circuitId = cc1.id;
+  P.elements.push(sw);
+  P.ledStrips.push(M.newLedStrip(w(0), 150, 250, 220, cc2.id));
+  eq(G.switchLedTarget(P, sw, 0), null, "разные линии — связи нет");
 });
 test("panelBox: подбор корпуса по числу модулей (сцена → IEK)", () => {
   const cs = []; for (let i = 1; i <= 8; i++) { const c = M.newCircuit("QF" + i, "#e11", 16); if (i > 6) c.rcd = true; cs.push(c); }
@@ -777,7 +800,7 @@ test("ручная схема: аппараты вводной цепи идут
   await test("openProject: бэкофилл старых проектов", async () => {}); // placeholder to keep sync
   // п.1 аудита: importJSON теперь ТОЖЕ бэкофиллит (не только openProject) — старые/
   // сторонние экспорты не должны молча терять новые настройки и поля проёмов.
-  const old = { name: "old", settings: { ceilingHeight: 270 }, rooms: [], elements: [], routes: [], openings: [{ id: "o", type: "window", wallId: "x:0", offset: 0, width: 140 }] };
+  const old = { name: "old", settings: { ceilingHeight: 270 }, rooms: [], elements: [], routes: [], openings: [{ id: "o", type: "window", wallId: "x:0", offset: 0, width: 140 }], panels: [{ id: "p1", x: 0, y: 0, name: "Щ" }] };
   const imp = EP.Plan.Core.importJSON(JSON.stringify({ project: old }));
   ok(imp && imp.openings.length === 1, "импорт старого формата");
   eq(imp.openings[0].kind, "window", "бэкофилл kind проёма");
@@ -790,6 +813,8 @@ test("ручная схема: аппараты вводной цепи идут
   eq(imp.settings.connectorMode, "gml", "бэкофилл connectorMode");
   eq(imp.settings.schemeMode, "auto", "бэкофилл schemeMode");
   ok(imp.manualScheme && Array.isArray(imp.manualScheme.groups), "бэкофилл manualScheme.groups");
+  ok(Array.isArray(imp.ledStrips), "бэкофилл ledStrips");
+  eq(imp.panels[0].transformer, false, "бэкофилл panel.transformer");
 
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }

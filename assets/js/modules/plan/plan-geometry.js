@@ -304,6 +304,25 @@
     });
     return best ? best.el : null;
   };
+  // Куда идёт свет от выключателя, если это НЕ обычная лампа/вывод, а светодиодная
+  // лента той же линии (QF) в той же комнате — отдельно от switchTarget, т.к. лента
+  // не элемент (project.elements), а самостоятельная сущность (project.ledStrips).
+  G.switchLedTarget = (project, el, keyIdx) => {
+    if (!el || el.type !== "switch" || !el.circuitId || !el.wallId) return null;
+    const p0 = G.elemDrawPoint(project, el);
+    if (!p0) return null;
+    const roomId = String(el.wallId).split(":")[0];
+    let best = null;
+    (project.ledStrips || []).forEach((ls) => {
+      if (ls.circuitId !== el.circuitId || String(ls.wallId).split(":")[0] !== roomId) return;
+      const w = G.wallById(project, ls.wallId);
+      if (!w) return;
+      const mid = G.pointAtOffset(w, (ls.offsetA + ls.offsetB) / 2);
+      const d = G.dist(p0, mid);
+      if (!best || d < best.d) best = { d, ls };
+    });
+    return best ? best.ls : null;
+  };
   // Пересечение отрезков (для проходок); касания концов не считаются
   G.segIntersect = (a, b, c, d) => {
     const r = { x: b.x - a.x, y: b.y - a.y }, s = { x: d.x - c.x, y: d.y - c.y };

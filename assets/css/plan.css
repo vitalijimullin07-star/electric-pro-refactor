@@ -233,6 +233,7 @@ body[data-visual-mode="day"] .ep-plan-doorleaf { stroke: #334155; }
 body[data-visual-mode="day"] .ep-plan-window { stroke: #334155; }
 body[data-visual-mode="day"] .ep-plan-chain { stroke: #dc2626; }
 body[data-visual-mode="day"] .ep-plan-chaintext { fill: #dc2626; }
+.ep-plan-ledstrip { stroke: #fbbf24; stroke-linecap: round; opacity: .9; filter: drop-shadow(0 0 1.5px rgba(251,191,36,.6)); }
 
 /* — Трассы v2: распайки, линии на автоматах — */
 .ep-plan-junction { fill: #0ea5e9; stroke: #e0f2fe; }
@@ -318,6 +319,11 @@ body[data-visual-mode="day"] .ep-plan-opnum { fill: #0f172a; stroke: rgba(255,25
 .ep-plan-unfpanelt { fill: #fff; font-family: system-ui; font-weight: 700; }
 .ep-plan-unfopen { cursor: pointer; }
 .ep-plan-unfold.is-full .ep-plan-unfsvg, .ep-plan-sheet-full .ep-plan-unfsvg { height: 80vh; height: 80dvh; }
+
+/* — v19: светодиодная лента в развёртке (сегмент вдоль стены) — */
+.ep-plan-unfled { stroke: #fbbf24; stroke-linecap: round; cursor: pointer; filter: drop-shadow(0 0 2px rgba(251,191,36,.7)); }
+.ep-plan-unfledt { fill: #fbbf24; font-family: system-ui; font-weight: 700; }
+.ep-plan-unfleddraft { fill: #fbbf24; stroke: #fff; stroke-width: 1.5; }
 
 /* — v7: штробы (вход в подрозетник) — */
 .ep-plan-entrymark { fill: #f59e0b; stroke: #fff; stroke-width: .6px; }
