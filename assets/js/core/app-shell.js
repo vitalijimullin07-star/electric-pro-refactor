@@ -53,6 +53,7 @@ EP.AppShell = {
             <button class="ep-clickable" type="button" data-route="ai" id="aiMenuBtn" style="display:none">🤖 ИИ-ассистент</button>
             <button class="ep-clickable" type="button" data-route="admin" id="adminMenuBtn" style="display:none">👑 Админка</button>
           </nav>
+          <button class="btn btn-ghost btn-wide ep-clickable" id="installAppBtn" type="button" style="display:none">📲 Установить приложение</button>
           <button class="btn btn-ghost btn-wide ep-clickable" id="logoutBtn" type="button" style="display:none">Выйти</button>
           <button class="btn btn-ghost btn-wide ep-clickable" id="hardReloadBtn" type="button">Обновить без кэша</button>
         </aside>
@@ -84,12 +85,20 @@ EP.AppShell = {
     document.querySelector("#hardReloadBtn")?.addEventListener("click", () => {
       location.href = location.pathname + "?fresh=" + Date.now() + location.hash;
     });
+    document.querySelector("#installAppBtn")?.addEventListener("click", () => EP.PWA?.install?.());
 
     window.addEventListener("ep:route-loaded", () => this.syncAccess());
     window.addEventListener("ep:auth-changed", () => this.syncAccess());
+    window.addEventListener("ep:pwa-installable-changed", (e) => this.syncInstallBtn(e.detail && e.detail.canInstall));
 
     this.closeDrawer();
     this.syncAccess();
+    this.syncInstallBtn(EP.PWA?.canInstall?.());
+  },
+
+  syncInstallBtn(canInstall) {
+    const btn = document.querySelector("#installAppBtn");
+    if (btn) btn.style.display = canInstall ? "" : "none";
   },
 
   openDrawer() {
