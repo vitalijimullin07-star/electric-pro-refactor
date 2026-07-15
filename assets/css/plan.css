@@ -152,8 +152,8 @@ body[data-visual-mode="day"] .ep-plan-item-main { color: #0f172a; }
 .ep-plan-room.is-sel { fill: rgba(56, 189, 248, .16); }
 .ep-plan-wall { stroke: #cbd5e1; stroke-linejoin: round; }
 .ep-plan-wall.is-sel { stroke: var(--accent, #38bdf8); }
-.ep-plan-dim { fill: #94a3b8; font-family: system-ui; }
-.ep-plan-name { fill: #e2e8f0; font-family: system-ui; font-weight: 600; }
+.ep-plan-dim { fill: #94a3b8; font-family: system-ui; pointer-events: none; }
+.ep-plan-name { fill: #e2e8f0; font-family: system-ui; font-weight: 600; pointer-events: none; }
 .ep-plan-draft { stroke: var(--accent, #38bdf8); stroke-dasharray: 6 5; }
 .ep-plan-draftpt { fill: var(--accent, #38bdf8); }
 .ep-plan-draftpt.is-first { fill: #34d399; }

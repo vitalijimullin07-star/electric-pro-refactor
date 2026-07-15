@@ -500,8 +500,12 @@
     let nrm = { x: -dir.y, y: dir.x };
     const room = (project.rooms || []).find((r) => r.id === wall.roomId);
     if (room && (room.points || []).length >= 3) {
-      const c = G.centroid(room.points);
-      if ((c.x - wall.mx) * nrm.x + (c.y - wall.my) * nrm.y < 0) { nrm = { x: -nrm.x, y: -nrm.y }; }
+      // проба ТОЧКОЙ РЯДОМ со стеной, а не центроидом всей комнаты — у вогнутых
+      // контуров (Г-образная комната с вырезом под кладовку/нишу) общий центроид
+      // может физически оказаться С ДРУГОЙ стороны конкретного локального сегмента
+      // стены у вогнутого угла, разворачивая нормаль наружу вместо внутрь.
+      const probe = { x: wall.mx + nrm.x * 2, y: wall.my + nrm.y * 2 };
+      if (!G.pointInPolygon(probe, room.points)) { nrm = { x: -nrm.x, y: -nrm.y }; }
     }
     let angle = Math.atan2(dir.y, dir.x) * 180 / Math.PI;
     // держим подписи/глифы «не вверх ногами»
