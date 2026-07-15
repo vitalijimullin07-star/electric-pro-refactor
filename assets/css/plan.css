@@ -126,7 +126,8 @@ body[data-visual-mode="day"] .ep-plan-item-main { color: #0f172a; }
   position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 5;
   display: flex; flex-direction: column; gap: 8px;
   padding: 12px; border-radius: 14px; max-height: 60%; overflow: auto;
-  background: rgba(10, 16, 28, .92); border: 1px solid rgba(255, 255, 255, .12);
+  background: rgba(var(--card-bg-rgb, 15, 23, 42), var(--card-opacity, .92));
+  border: 1px solid rgba(255, 255, 255, .12);
   backdrop-filter: blur(8px); color: var(--text, #e8eef7);
 }
 .ep-plan-srow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font: 500 13.5px system-ui; }
@@ -142,6 +143,9 @@ body[data-visual-mode="day"] .ep-plan-item-main { color: #0f172a; }
 .ep-plan-sbtns .ep-plan-tbtn, .ep-plan-sbtns .btn { flex: 1 1 auto; }
 .ep-plan-danger { color: #f87171; border-color: rgba(248, 113, 113, .35); }
 .ep-plan-chk { display: inline-flex; align-items: center; gap: 8px; font: 500 13.5px system-ui; }
+/* глобальный input{width:100%} из base.css иначе растягивает чекбокс на всю строку
+   (флекс-сосед — имя слоя — не помещается совсем) */
+.ep-plan-chk input[type="checkbox"] { width: auto; flex: none; }
 .ep-plan-range { display: flex; flex-direction: column; gap: 4px; flex: 1; font: 600 11.5px system-ui; color: var(--muted, #94a3b8); }
 .ep-plan-layers { display: flex; flex-direction: column; gap: 9px; }
 .ep-plan-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: none; }
@@ -161,7 +165,7 @@ body[data-visual-mode="day"] .ep-plan-item-main { color: #0f172a; }
 .ep-plan-rulerpt { fill: #fbbf24; }
 .ep-plan-rulertext { fill: #fbbf24; font-family: system-ui; font-weight: 700; }
 
-body[data-visual-mode="day"] .ep-plan-sheet { background: rgba(255, 255, 255, .95); border-color: #dbe3ee; color: #0f172a; }
+body[data-visual-mode="day"] .ep-plan-sheet { border-color: #dbe3ee; }
 body[data-visual-mode="day"] .ep-plan-srow input[type="text"],
 body[data-visual-mode="day"] .ep-plan-srow input[type="number"] { background: #fff; border-color: #cbd5e1; color: #0f172a; }
 body[data-visual-mode="day"] .ep-plan-wall { stroke: #334155; }
@@ -260,10 +264,9 @@ body[data-visual-mode="day"] .ep-plan-wall.mat-soft { stroke: #94a3b8; }
 /* полный экран */
 .ep-plan.is-full {
   position: fixed; inset: 0; z-index: 9999; margin: 0; padding: 10px;
-  overflow: auto; background: #0b1220;
+  overflow: auto; background: var(--bg-a, #0b1220);
 }
 .ep-plan.is-full .ep-plan-canvas { height: calc(100vh - 215px); height: calc(100dvh - 215px); }
-body[data-visual-mode="day"] .ep-plan.is-full { background: #eef1f6; }
 
 /* свернуть панель инструментов редактора — холст занимает освободившееся место */
 .ep-plan.is-ctrls-collapsed .ep-plan-toolbar,
