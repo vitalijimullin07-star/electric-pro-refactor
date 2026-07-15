@@ -54,8 +54,9 @@ function loadPlan() {
   };
 
   const ctx = vm.createContext(sandbox);
-  // ShieldSchemeSVG нужен для однолинейки
+  // ShieldSchemeSVG нужен для однолинейки, CableConsum — для расходников по трассам (plan-calc)
   runFile(ctx, path.join(ROOT, "assets/js/modules/shield/shield-scheme-svg-v28.js"));
+  runFile(ctx, path.join(ROOT, "assets/js/modules/consumables/cable-consum.js"));
   PLAN_ORDER.forEach((n) => runFile(ctx, path.join(PLAN_DIR, n + ".js")));
   return { EP: sandbox.EP, sandbox, store };
 }

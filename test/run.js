@@ -551,6 +551,41 @@ test("calcByRoutes: штробы/подрозетники/кабель/ниша 
   ok(niche && niche.qty === 24, "вырубка × модули");
   ok(res.items.some((i) => i.name === "Монтаж щита в нишу/стену"), "монтаж щита");
 });
+test("calcByRoutes: расходники по кабелю/штробам (крепёж/буры/коронки/диски/мешки) из EP.CableConsum", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "Щ");
+  P.panels.push(pn);
+  const s1 = M.newElement("socket", w(0), 100, 30, "power");
+  const sw1 = M.newElement("switch", w(1), 150, 90, "light");
+  P.elements.push(s1, sw1);
+  const rt = M.newRoute("power", "ceiling", [{ x: 100, y: 18 }, { x: 100, y: 50 }, { x: 50, y: 50 }], s1.id, pn.id);
+  rt.toPanel = true;
+  P.routes.push(rt);
+  const res = EP.Plan.Calc.calcByRoutes(P);
+  ok(res.items.some((i) => i.name === "Бур 6 мм"), "буры — есть подрозетники");
+  ok(res.items.some((i) => i.name === "Бур 8 мм"), "буры — есть подрозетники");
+  ok(res.items.some((i) => i.name === "Пика"), "пика — есть подрозетники и штроба");
+  ok(res.items.some((i) => i.name === "Карандаш"), "карандаш — есть подрозетники и штроба");
+  ok(res.items.some((i) => i.name.indexOf("Коронка") >= 0), "коронка по подрозетникам (Бетон)");
+  ok(res.items.some((i) => i.name.indexOf("Диск") >= 0), "диск по штробе (Бетон)");
+  ok(res.items.some((i) => i.name.indexOf("Мешки") >= 0), "мешки мусора/пылесоса");
+});
+test("calcByRoutes: без EP.CableConsum — обычные позиции есть, расходники просто не добавляются", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
+  const s1 = M.newElement("socket", w(0), 100, 30, "power");
+  P.elements.push(s1);
+  const rt = M.newRoute("power", "ceiling", [{ x: 100, y: 18 }, { x: 50, y: 50 }], s1.id, pn.id);
+  rt.toPanel = true;
+  P.routes.push(rt);
+  const saved = EP.CableConsum;
+  delete EP.CableConsum;
+  let res;
+  noThrow(() => { res = EP.Plan.Calc.calcByRoutes(P); }, "не падает без CableConsum");
+  ok(res && res.items.length, "обычные позиции всё равно есть");
+  ok(!res.items.some((i) => i.name === "Пика"), "расходников CableConsum нет без модуля");
+  EP.CableConsum = saved;
+});
 test("calcByRoutes: слаботочка не сливается с силовой", () => {
   const { P, w } = install();
   const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
