@@ -332,6 +332,20 @@ body[data-visual-mode="day"] .ep-plan-voidname { fill: #0f172a; }
 .ep-plan-unfsvg { width: 100%; height: 200px; display: block; }
 .ep-plan-unfold.is-full .ep-plan-unfsvg, .ep-plan-sheet-full .ep-plan-unfsvg { height: 62vh; height: 62dvh; }
 .ep-plan-sheet-full { max-height: 92% !important; }
+/* «Во весь экран горизонтально» без физического поворота телефона — screen.orientation.lock()
+   требует реально повернуть устройство (и не работает в iOS Safari вовсе). Классический
+   CSS-приём: элемент фиксируется на весь вьюпорт и разворачивается на 90° — ширина/высота
+   вьюпорта меняются местами, разворот виден сразу, телефон остаётся в руке как держали. */
+.ep-plan-sheet.is-landscape-forced {
+  position: fixed !important; top: 0 !important; left: 100% !important; right: auto !important; bottom: auto !important;
+  width: 100vh; width: 100dvh;
+  height: 100vw; height: 100dvw;
+  max-height: none !important; max-width: none !important;
+  margin: 0; border-radius: 0;
+  transform-origin: 0 0;
+  transform: rotate(90deg);
+  z-index: 10000;
+}
 .ep-plan-unfwall { fill: rgba(148,163,184,.10); stroke: rgba(148,163,184,.5); stroke-width: 1; }
 .ep-plan-unfgrid { stroke: rgba(148,163,184,.16); }
 .ep-plan-unffloor { stroke: #7c8aa0; }

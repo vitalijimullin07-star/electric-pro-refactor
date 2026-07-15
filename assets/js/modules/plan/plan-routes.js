@@ -323,8 +323,11 @@
     if (p.settings.routeType === "floor") return el.height || 0;
     return Math.max(0, p.settings.ceilingHeight - (el.height || 0));
   }
-  function panelVert(p) {
-    const ph = p.settings.panelHeight;
+  // pn — необязательный конкретный щит (у него может быть своя высота, если её
+  // подвинули в развёртке); без pn или если у него height не задан — общая
+  // settings.panelHeight на проект (как раньше, обратная совместимость)
+  function panelVert(p, pn) {
+    const ph = (pn && pn.height != null) ? pn.height : p.settings.panelHeight;
     return p.settings.routeType === "floor" ? ph : Math.max(0, p.settings.ceilingHeight - ph);
   }
   // Без распайки на конце (обычная точка, не щит/распайка) кабель у ЭТОЙ точки
@@ -340,7 +343,8 @@
     let crossings = 0, total = 0;
     (p.routes || []).forEach((r) => {
       const el = (p.elements || []).find((e) => e.id === r.fromId);
-      const L = G().polylineLen(r.points) + pointVert(p, el) * hopVertMul(p, r) + (r.toPanel ? panelVert(p) : 0);
+      const pn = r.toPanel ? (p.panels || []).find((x) => x.id === r.toId) : null;
+      const L = G().polylineLen(r.points) + pointVert(p, el) * hopVertMul(p, r) + (r.toPanel ? panelVert(p, pn) : 0);
       byLayer[r.layer] = (byLayer[r.layer] || 0) + L;
       const cid = r.circuitId || "_none";
       byCircuit[cid] = (byCircuit[cid] || 0) + L;
