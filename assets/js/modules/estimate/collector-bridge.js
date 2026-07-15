@@ -1,5 +1,7 @@
-/* Electric Pro V29 — Этап 1. Мост: щит и пул → общий сборник EP.EstimateDraft (кнопка «В смету»).
-   Щит даёт цены из БД сам; у пула цена — из его подбора, иначе дозаполняем из каталога по имени.
+/* Electric Pro V29 — Этап 1. Мост: щит, пул и проект квартиры → общий сборник
+   EP.EstimateDraft (кнопка «В смету»).
+   Щит даёт цены из БД сам; у пула цена — из его подбора, план — через свой
+   priceFor (EP.Plan.Calc), иначе дозаполняем из каталога по имени.
    Повторное «В смету» из модуля заменяет его прежний вклад (setSourceItems), без дублей. */
 (() => {
   "use strict";
@@ -73,6 +75,21 @@
     return aggregate(mats).concat(aggregate(works));
   }
 
+  /* ---------- ПРОЕКТ КВАРТИРЫ → позиции ---------- */
+  function planItems() {
+    const Plan = window.EP && window.EP.Plan;
+    if (!Plan || !Plan.Core || !Plan.Calc) return null;
+    const p = Plan.Core.project;
+    if (!p || !(p.rooms || []).length) return null;
+    const raw = Plan.Calc.estimateItems(p);
+    if (!raw) return null;
+    const items = raw.map((it) => ({
+      type: it.type === "work" ? "work" : "material",
+      name: it.name, price: Plan.Calc.priceFor(it.name, it.type), qty: Number(it.qty) || 0, unit: it.unit || ""
+    }));
+    return aggregate(items);
+  }
+
   /* ---------- ПУЛ → позиции ---------- */
   function poolItems() {
     const P = window.PoolV22CleanMonolith;
@@ -113,16 +130,25 @@
     d.setSourceItems("pool", items);
     flash("Пул в смете: " + items.length + " позиц.");
   }
+  function pushPlan() {
+    const d = D(); if (!d) return;
+    const items = planItems();
+    if (items === null) { flash("Сначала нарисуй план и добавь точки"); return; }
+    if (!items.length) { flash("В проекте нет позиций"); return; }
+    d.setSourceItems("plan", items);
+    flash("План в смете: " + items.length + " позиц. Открой «Смета» или главную — оттуда перенесёшь в основную.");
+  }
   // экспорт на случай прямого вызова
   function fillPrices(items) { (items || []).forEach((it) => { if (!(Number(it.price) > 0)) it.price = priceByName(it.name); }); return items; }
   window.EP = window.EP || {};
-  window.EP.Collector = { pushShield, pushPool, shieldItems, poolItems, priceByName, fillPrices };
+  window.EP.Collector = { pushShield, pushPool, pushPlan, shieldItems, poolItems, planItems, priceByName, fillPrices };
 
   /* ---------- кнопки ---------- */
   document.addEventListener("click", (e) => {
     const t = e.target;
     if (t.closest && t.closest("[data-shield-to-estimate]")) { e.preventDefault(); pushShield(); return; }
     if (t.closest && t.closest("[data-pool-to-estimate]")) { e.preventDefault(); pushPool(); return; }
+    if (t.closest && t.closest("[data-plan-to-estimate]")) { e.preventDefault(); pushPlan(); return; }
   });
 
 })();

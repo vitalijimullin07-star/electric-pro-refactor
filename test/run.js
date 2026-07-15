@@ -945,6 +945,33 @@ test("floorOpeningAt: находит проём и со стороны СОСЕ�
   ok(hitOther, "находит и через wall-id соседней комнаты (проекция wallOpeningSpans)");
 });
 
+// ===== 17. estimateItems: единая точка входа для сметы (Расчёт + мост в EstimateDraft) =====
+test("estimateItems: нет точек — null (нечего класть в смету)", () => {
+  const { P } = install();
+  eq(EP.Plan.Calc.estimateItems(P), null, "пустой проект — null");
+});
+test("estimateItems: с построенными трассами — тот же набор, что и calcByRoutes (точный счёт)", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
+  const s1 = M.newElement("socket", w(0), 100, 30, "power");
+  P.elements.push(s1);
+  const rt = M.newRoute("power", "ceiling", [{ x: 100, y: 18 }, { x: 50, y: 50 }], s1.id, pn.id);
+  rt.toPanel = true;
+  P.routes.push(rt);
+  const exact = EP.Plan.Calc.calcByRoutes(P);
+  const items = EP.Plan.Calc.estimateItems(P);
+  ok(items && items.length, "позиции есть");
+  eq(JSON.stringify(items), JSON.stringify(exact.items), "тот же точный счёт по трассам, что в шторке Расчёта");
+});
+test("estimateItems: без движка пула (PoolEngine не подключён) и без трасс — null, не падает", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
+  const s1 = M.newElement("socket", w(0), 100, 30, "power");
+  P.elements.push(s1);
+  noThrow(() => EP.Plan.Calc.estimateItems(P), "не бросает без EP.PoolEngine");
+  eq(EP.Plan.Calc.estimateItems(P), null, "нет ни точного счёта, ни движка — null (как и runEngine напрямую)");
+});
+
 (async () => {
   await test("openProject: бэкофилл старых проектов", async () => {}); // placeholder to keep sync
   // п.1 аудита: importJSON теперь ТОЖЕ бэкофиллит (не только openProject) — старые/
