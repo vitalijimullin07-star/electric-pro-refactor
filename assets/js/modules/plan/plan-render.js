@@ -52,11 +52,11 @@
 
   // ---------- условные обозначения по ГОСТ 21.210 ----------
   // розетка — полукруг со штрихом; выключатель — кружок с «крючком»; светильник —
-  // круг с крестом; ТП — змейка в рамке. Возвращает false, если для типа нет
-  // ГОСТ-символа (тогда рисуется базовый кружок с буквой).
+  // круг с крестом; ТП — змейка в рамке; вывод — точка с волнистым хвостиком провода.
+  // Возвращает false, если для типа нет ГОСТ-символа (тогда рисуется базовый кружок с буквой).
   function drawGostEl(grp, elem, cx, cy, rot, dp, k, sw, col) {
     const t = elem.type;
-    if (t !== "socket" && t !== "tv" && t !== "internet" && t !== "ac" && t !== "switch" && t !== "light" && t !== "warmfloor") return false;
+    if (t !== "socket" && t !== "tv" && t !== "internet" && t !== "ac" && t !== "switch" && t !== "light" && t !== "warmfloor" && t !== "output" && t !== "output24") return false;
     const sub = el("g", { class: "ep-plan-gost", stroke: col, transform: `translate(${cx} ${cy})` + (rot ? ` rotate(${rot})` : "") });
     const lw = sw * 0.85;
     // локальный знак «внутрь комнаты» после поворота вдоль стены
@@ -84,6 +84,14 @@
       const wv = 10 * k, hv = 8 * k;
       sub.appendChild(el("rect", { x: -wv, y: -hv, width: wv * 2, height: hv * 2, fill: "none", "stroke-width": lw }));
       sub.appendChild(el("path", { d: `M ${-wv + 3 * k} ${hv - 2 * k} V ${-hv + 2 * k} H ${-wv + 8 * k} V ${hv - 2 * k} H ${-wv + 13 * k} V ${-hv + 2 * k} H ${-wv + 18 * k} V ${hv - 2 * k}`, fill: "none", "stroke-width": lw * 0.8 }));
+    } else if (t === "output" || t === "output24") {
+      // просто точка + короткий волнистый хвостик (свободный конец провода) — без рамки
+      const rd = 2.2 * k, len = 10 * k, amp = 2.6 * k;
+      sub.appendChild(el("circle", { cx: 0, cy: 0, r: rd, fill: col, "stroke-width": 0 }));
+      sub.appendChild(el("path", {
+        d: `M 0 ${sgn * rd} Q ${amp} ${sgn * (rd + len * 0.28)} 0 ${sgn * (rd + len * 0.55)} Q ${-amp} ${sgn * (rd + len * 0.82)} 0 ${sgn * (rd + len)}`,
+        fill: "none", "stroke-width": lw * 0.85
+      }));
     }
     grp.appendChild(sub);
     return true;
@@ -426,16 +434,42 @@
         const items = (elem.params && elem.params.items) || ["socket"];
         const step2 = 16 * k, bw = items.length * step2 + 8 * k, bh = 22 * k;
         const tr = rot ? `rotate(${rot} ${cx} ${cy})` : null;
-        if (bad.has(elem.id)) grp.appendChild(el("rect", Object.assign({ x: cx - bw / 2 - 4 * k, y: cy - bh / 2 - 4 * k, width: bw + 8 * k, height: bh + 8 * k, rx: 6 * k, class: "ep-plan-warnring", fill: "none", "stroke-width": sw * 0.7 }, tr ? { transform: tr } : {})));
-        grp.appendChild(el("rect", Object.assign({ x: cx - bw / 2, y: cy - bh / 2, width: bw, height: bh, rx: 5 * k, fill: layerColor2(elem.layer), class: "ep-plan-blockrect", "stroke-width": sw * 0.7 }, tr ? { transform: tr } : {})));
-        items.forEach((it, i) => grp.appendChild(el("text", Object.assign({
-          x: cx - bw / 2 + 4 * k + step2 * i + step2 / 2, y: cy,
-          "font-size": 9 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph"
-        }, tr ? { transform: tr } : {}), (TY[it] || {}).glyph || "?")));
-        // метка входа штробы (к какому подрозетнику идёт трасса)
-        const eIdx = EP.Plan.Geometry.blockEntryIndex(elem);
-        const ex = cx - bw / 2 + 4 * k + step2 * Math.min(eIdx, items.length - 1) + step2 / 2;
-        grp.appendChild(el("circle", Object.assign({ cx: ex, cy: cy + bh / 2 + 3 * k, r: 2.6 * k, class: "ep-plan-entrymark" }, tr ? { transform: tr } : {})));
+        // ГОСТ: групповая розетка (все посты блока — розетки) — концентрические полукруги
+        // по числу постов вместо прямоугольника с буквами, максимум 6 колец (тот же предел,
+        // что уже есть у самой возможности добавить пост в блок, см. plan-unfold.js p+/p-)
+        const gostGroup = gost && items.length > 1 && items.every((it) => it === "socket");
+        if (gostGroup) {
+          const sub = el("g", { class: "ep-plan-gost", stroke: layerColor2(elem.layer), transform: `translate(${cx} ${cy})` + (rot ? ` rotate(${rot})` : "") });
+          let sgn = 1;
+          if (dp && dp.nrm) {
+            const rad = (rot || 0) * Math.PI / 180;
+            sgn = (-Math.sin(rad) * dp.nrm.x + Math.cos(rad) * dp.nrm.y) >= 0 ? 1 : -1;
+          }
+          const lw = sw * 0.85, r0g = 8 * k, ringGap = 3.4 * k;
+          const rings = Math.min(items.length, 6);
+          for (let i = 0; i < rings; i++) {
+            const r = r0g + i * ringGap;
+            sub.appendChild(el("path", { d: `M ${-r} 0 A ${r} ${r} 0 0 ${sgn > 0 ? 1 : 0} ${r} 0`, fill: "none", "stroke-width": lw }));
+          }
+          const rMax = r0g + (rings - 1) * ringGap;
+          sub.appendChild(el("line", { x1: -rMax, y1: 0, x2: rMax, y2: 0, "stroke-width": lw }));
+          sub.appendChild(el("line", { x1: 0, y1: sgn * rMax, x2: 0, y2: sgn * (rMax + 6 * k), "stroke-width": lw }));
+          if (items.length > 6) sub.appendChild(el("text", { x: 0, y: sgn * (rMax + 13 * k), "font-size": 8 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-gosttxt", fill: layerColor2(elem.layer), stroke: "none" }, "×" + items.length));
+          grp.appendChild(sub);
+          if (bad.has(elem.id)) grp.appendChild(el("circle", Object.assign({ cx: 0, cy: 0, r: rMax * 1.4, class: "ep-plan-warnring", fill: "none", "stroke-width": sw * 0.7 }, { transform: `translate(${cx} ${cy})` + (rot ? ` rotate(${rot})` : "") })));
+          grp.appendChild(el("circle", Object.assign({ cx: 0, cy: sgn * (rMax + 6 * k), r: 2.6 * k, class: "ep-plan-entrymark" }, { transform: `translate(${cx} ${cy})` + (rot ? ` rotate(${rot})` : "") })));
+        } else {
+          if (bad.has(elem.id)) grp.appendChild(el("rect", Object.assign({ x: cx - bw / 2 - 4 * k, y: cy - bh / 2 - 4 * k, width: bw + 8 * k, height: bh + 8 * k, rx: 6 * k, class: "ep-plan-warnring", fill: "none", "stroke-width": sw * 0.7 }, tr ? { transform: tr } : {})));
+          grp.appendChild(el("rect", Object.assign({ x: cx - bw / 2, y: cy - bh / 2, width: bw, height: bh, rx: 5 * k, fill: layerColor2(elem.layer), class: "ep-plan-blockrect", "stroke-width": sw * 0.7 }, tr ? { transform: tr } : {})));
+          items.forEach((it, i) => grp.appendChild(el("text", Object.assign({
+            x: cx - bw / 2 + 4 * k + step2 * i + step2 / 2, y: cy,
+            "font-size": 9 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph"
+          }, tr ? { transform: tr } : {}), (TY[it] || {}).glyph || "?")));
+          // метка входа штробы (к какому подрозетнику идёт трасса)
+          const eIdx = EP.Plan.Geometry.blockEntryIndex(elem);
+          const ex = cx - bw / 2 + 4 * k + step2 * Math.min(eIdx, items.length - 1) + step2 / 2;
+          grp.appendChild(el("circle", Object.assign({ cx: ex, cy: cy + bh / 2 + 3 * k, r: 2.6 * k, class: "ep-plan-entrymark" }, tr ? { transform: tr } : {})));
+        }
       } else {
         if (bad.has(elem.id)) grp.appendChild(el("circle", { cx, cy, r: r0 * 1.55, class: "ep-plan-warnring", "stroke-width": sw * 0.7 }));
         const colEl = elem.circuitId && circ(elem.circuitId) ? circ(elem.circuitId).color : layerColor2(elem.layer);

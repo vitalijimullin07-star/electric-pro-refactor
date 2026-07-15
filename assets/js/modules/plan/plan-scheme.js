@@ -127,7 +127,8 @@
     p.circuits = p.circuits || [];
     rooms().openSheet(`<div class="ep-plan-srow"><b>▤ Однолинейная схема</b>
         <span class="ep-plan-flex"></span>
-        <button type="button" class="ep-plan-mini ep-clickable" data-psc-full aria-label="Во весь экран">⤢</button>
+        <button type="button" class="ep-plan-mini ep-clickable" data-psc-fullplain aria-label="Во весь экран">⛶</button>
+        <button type="button" class="ep-plan-mini ep-clickable" data-psc-full aria-label="Во весь экран горизонтально" title="Во весь экран горизонтально (попытка принудительного разворота)">⤢</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-psc-close>✕</button></div>
       <div class="ep-plan-scheme ${S.full ? "is-full" : ""}" id="ep-psc-box"><div class="ep-plan-schemescroll" id="ep-psc-scroll"></div></div>
       <div id="ep-psc-edit"></div>`);
@@ -136,13 +137,16 @@
   }
   const isOpen = () => !!$("#ep-psc-box");
   function close() { S.full = false; }
-  function toggleFull() {
+  // lock=true — как раньше (пробуем принудительно развернуть в горизонталь через
+  // screen.orientation.lock, работает не везде — на iOS Safari тихо не срабатывает);
+  // lock=false — просто fullscreen, ориентация экрана как физически держит телефон
+  function toggleFull(lock) {
     S.full = !S.full;
     const box = $("#ep-psc-box"); const sheet = $("#ep-plan-sheet");
     if (box) box.classList.toggle("is-full", S.full);
     if (sheet) sheet.classList.toggle("ep-plan-sheet-full", S.full);
     try {
-      if (S.full && sheet && sheet.requestFullscreen) sheet.requestFullscreen().then(() => { if (screen.orientation && screen.orientation.lock) screen.orientation.lock("landscape").catch(() => {}); }).catch(() => {});
+      if (S.full && sheet && sheet.requestFullscreen) sheet.requestFullscreen().then(() => { if (lock && screen.orientation && screen.orientation.lock) screen.orientation.lock("landscape").catch(() => {}); }).catch(() => {});
       else if (!S.full && document.fullscreenElement) document.exitFullscreen().catch(() => {});
     } catch (e) {}
   }
@@ -237,7 +241,8 @@
     const t = e.target; let b;
     if (t.closest("[data-plan-scheme]")) return open();
     if (t.closest("[data-psc-close]")) { close(); rooms().closeSheet(); const sh = $("#ep-plan-sheet"); if (sh) sh.classList.remove("ep-plan-sheet-full"); return; }
-    if (t.closest("[data-psc-full]")) return toggleFull();
+    if (t.closest("[data-psc-fullplain]")) return toggleFull(false);
+    if (t.closest("[data-psc-full]")) return toggleFull(true);
     if (!isOpen()) return;
     if ((b = t.closest("[data-psc-mode]"))) { const c = core(); c.commit(); c.project.settings.schemeMode = b.getAttribute("data-psc-mode") === "manual" ? "manual" : "auto"; c.persist("scheme-mode"); refresh(); return; }
     if ((b = t.closest("[data-psc-ph]"))) { const c = core(); c.commit(); c.project.settings.phases = Number(b.getAttribute("data-psc-ph")) === 3 ? 3 : 1; c.persist("scheme-ph"); refresh(); return; }

@@ -412,7 +412,7 @@
     const consumBtn = (window.EP && window.EP.ConsumablesUI && EP.ConsumablesUI.renderLogic)
       ? `<button type="button" class="ep-plan-mini ep-clickable" data-pc-consumcfg>${T.consumCfg}</button>` : "";
     rooms().openSheet(`<div class="ep-plan-srow"><b>🧮 ${T.title}</b>
-        <span class="ep-plan-flex"></span>${consumBtn}<button type="button" class="ep-plan-mini ep-clickable" data-pc-close>✕</button></div>
+        <span class="ep-plan-flex"></span>${consumBtn}<button type="button" class="ep-plan-mini ep-clickable" data-sheet-fs aria-label="Во весь экран">⛶</button><button type="button" class="ep-plan-mini ep-clickable" data-pc-close>✕</button></div>
       ${table}
       <div class="ep-plan-srow"><b>${T.cable}</b></div>${cable}
       ${itemsHtml}
