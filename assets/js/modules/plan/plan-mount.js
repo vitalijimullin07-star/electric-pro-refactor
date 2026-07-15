@@ -78,6 +78,7 @@
           <b id="ep-plan-title-text">${esc(p.name)}</b>
           <button type="button" class="ep-plan-mini ep-clickable" data-plan-rename aria-label="Переименовать проект">${T.rename}</button>
         </div>
+        <button type="button" class="ep-plan-mini ep-clickable" data-plan-full aria-label="Во весь экран">⤢</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-plan-ctrls aria-label="${V.ctrlsOn ? "Свернуть панель" : "Развернуть панель"}" title="Свернуть/развернуть панель инструментов">${V.ctrlsOn ? "︿" : "﹀"}</button>
       </div>
       <div class="ep-plan-toolbar">
@@ -109,7 +110,6 @@
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-scheme aria-label="Однолинейная схема">▤</button>
         <span class="ep-plan-modesep" aria-hidden="true"></span>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-fit aria-label="Показать всё">⛶</button>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-full aria-label="Во весь экран">⤢</button>
       </div>
       <div class="ep-plan-modehint" id="ep-plan-modehint"></div>
       <div class="ep-plan-canvas" id="ep-plan-canvas">
@@ -236,7 +236,9 @@
     box.classList.toggle("is-full", on);
     try {
       if (on && box.requestFullscreen) box.requestFullscreen().catch(() => {});
-      else if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      // гасим браузерный fullscreen, только если он принадлежит РЕДАКТОРУ (не
+      // развёртке стены поверх него — та гасит себя сама, см. exitFS в plan-unfold.js)
+      else if (!on && document.fullscreenElement === box) document.exitFullscreen().catch(() => {});
     } catch (e) {}
   }
   document.addEventListener("fullscreenchange", () => {

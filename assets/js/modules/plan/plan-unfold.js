@@ -110,7 +110,14 @@
     if (box) box.classList.remove("is-full");
     if (sheet) sheet.classList.remove("ep-plan-sheet-full");
     try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
-    try { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); } catch (e) {}
+    // Гасим браузерный Fullscreen API, ТОЛЬКО если он реально принадлежит развёртке
+    // (её собственный sheet/box) — иначе закрытие/сворачивание развёртки поверх
+    // отдельного «Во весь экран» редактора плана (data-plan-full, plan-mount.js)
+    // нечаянно гасило бы фуллскрин всего редактора, а не только развёртки.
+    try {
+      const fe = document.fullscreenElement;
+      if (fe && (fe === sheet || fe === box)) document.exitFullscreen().catch(() => {});
+    } catch (e) {}
   }
   function toggleFull() { if (S.full) { exitFS(); drawStrip(); } else enterFS(); }
 
