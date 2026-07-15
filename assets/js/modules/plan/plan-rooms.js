@@ -32,9 +32,10 @@
     mergeCancelled: "Объединение отменено.",
     mergeDone: "Комнаты объединены.",
     mergeAskTitle: "Как объединить?",
-    mergeAskHint: "«Полностью» — общая стена исчезает совсем. «С перемычкой» — на её месте останется балка (можно потом подвинуть/удалить, как обычную).",
+    mergeAskHint: "«Полностью» — общая стена исчезает совсем. «Перегородка» — останется сплошная стена (как обычная перегородка). «Перемычка» — останется только балка сверху, низ свободен (проём/арка). Оставленное можно потом подвинуть/сменить материал/удалить, как любую балку.",
     mergeFullBtn: "Полностью",
-    mergeLintelBtn: "С перемычкой",
+    mergeBeamBtn: "Перегородка",
+    mergeLintelBtn: "Перемычка",
     upl: { load: "📷 Загрузить фото плана", calib: "📏 Калибровка масштаба", move: "✋ Перенос",
            moveOn: "✋ Перенос: тяни подложку", del: "✕ Убрать подложку", opacity: "Прозрачность",
            calibHint: "Тапни 2 точки на подложке с известным расстоянием.",
@@ -693,13 +694,15 @@
     if (room.id === R.mergeFirst) { R.mergeFirst = null; R.selectedRoomId = null; toast(T.mergeCancelled); renderScene(); return; }
     sheetMergeConfirm(R.mergeFirst, room.id);
   }
-  // спрашивает — стереть общую стену совсем или оставить перемычкой (балкой) на её месте
+  // спрашивает — стереть общую стену совсем, оставить сплошной перегородкой
+  // или перемычкой (балкой сверху проёма) на её месте
   function sheetMergeConfirm(aId, bId) {
     R.mergeFirst = null;
     R.mergePending = { a: aId, b: bId };
     openSheet(`<div class="ep-plan-srow"><b>${esc(T.mergeAskTitle)}</b></div>
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-mergemode="full">${esc(T.mergeFullBtn)}</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-mergemode="beam">${esc(T.mergeBeamBtn)}</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-mergemode="lintel">${esc(T.mergeLintelBtn)}</button>
       </div>
       <div class="ep-plan-modehint">${esc(T.mergeAskHint)}</div>
@@ -730,13 +733,14 @@
     }
     return { wallTh, wallMat };
   }
-  // ставит балку kind:"lintel" на месте каждого куска стены, погашенного слиянием —
-  // толщину/материал берёт с той исходной стены (A или B), что там физически была.
+  // ставит балку kind:kind ("beam" — сплошная перегородка, "lintel" — перемычка)
+  // на месте каждого куска стены, погашенного слиянием — толщину/материал берёт
+  // с той исходной стены (A или B), что там физически была.
   // ВАЖНО: roomA/roomB к этому моменту уже могут быть удалены из project.rooms
   // (см. вызов ниже) — поэтому переопределение читаем напрямую из room.wallTh/wallMat
   // по индексу стены (как inheritWallOverrides), а не через G.wallThOf/wallMatOf,
   // которые ищут владеющую комнату ЧЕРЕЗ project.rooms и не найдут её там.
-  function addMergeLintels(project, goneSegs, roomA, roomB) {
+  function addMergeLintels(project, goneSegs, roomA, roomB, kind) {
     if (!goneSegs || !goneSegs.length) return;
     const defTh = Math.max(4, (project.settings && project.settings.wallThickness) || 10);
     const defMat = (project.settings && project.settings.wallMaterial) || "Бетон";
@@ -752,12 +756,13 @@
       }));
       const th = best && best.room.wallTh && Number(best.room.wallTh[best.wi]);
       const mat = best && best.room.wallMat && best.room.wallMat[best.wi];
-      project.beams.push(core().model.newBeam(a, b, "lintel", th >= 4 ? th : defTh, mat || defMat));
+      project.beams.push(core().model.newBeam(a, b, kind, th >= 4 ? th : defTh, mat || defMat));
     });
   }
   // возвращает объединённую комнату при успехе, иначе null (с тостом причины);
-  // opts.lintel:true — на месте погашенной общей стены ставится перемычка (балка),
-  // а не полностью открытый проём
+  // opts.remnant: "beam" — на месте погашенной общей стены остаётся сплошная
+  // перегородка, "lintel" — только перемычка (балка) сверху проёма, иначе
+  // (null/undefined) — прежнее поведение: стена исчезает совсем
   function mergeRooms(idA, idB, opts) {
     const c = core(), p = c.project;
     const roomA = (p.rooms || []).find((r) => r.id === idA);
@@ -801,7 +806,7 @@
     c.project.rooms.push(newRoom);
     els.forEach((el, i) => { const hit = findNearWall(elPos[i]); el.wallId = newRoom.id + ":" + hit.wall.i; el.offset = Math.round(hit.cl.t * hit.wall.len); });
     ops.forEach((op, i) => { const hit = findNearWall(opPos[i]); op.wallId = newRoom.id + ":" + hit.wall.i; op.offset = Math.max(0, Math.round(hit.cl.t * hit.wall.len - op.width / 2)); });
-    if (opts && opts.lintel) addMergeLintels(c.project, goneInfo.gone, roomA, roomB);
+    if (opts && (opts.remnant === "beam" || opts.remnant === "lintel")) addMergeLintels(c.project, goneInfo.gone, roomA, roomB, opts.remnant);
     c.persist("room-merge");
     return newRoom;
   }
@@ -899,7 +904,8 @@
     if ((el = t.closest("[data-pr-mergemode]"))) {
       const mp = R.mergePending; R.mergePending = null; closeSheet();
       if (!mp) return;
-      const merged = mergeRooms(mp.a, mp.b, { lintel: el.getAttribute("data-pr-mergemode") === "lintel" });
+      const mode = el.getAttribute("data-pr-mergemode");
+      const merged = mergeRooms(mp.a, mp.b, { remnant: mode === "beam" || mode === "lintel" ? mode : null });
       if (!merged) return; // тост с причиной уже показан внутри mergeRooms
       toast(T.mergeDone);
       setMode("view");
