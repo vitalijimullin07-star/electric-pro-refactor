@@ -269,9 +269,10 @@
     const reserve = 1 + (Number(s.cableReserve == null ? 10 : s.cableReserve) || 0) / 100;
     routes.forEach((r) => {
       const e2 = elById(r.fromId);
+      const pn = r.toPanel ? (p.panels || []).find((x) => x.id === r.toId) : null;
       // без распайки на конце кабель проходит штробу туда-обратно (нет коробки,
       // принимающей горизонталь на месте) — hopVertMul=2 для такого хопа
-      const L = G2.polylineLen(r.points || []) + (e2 ? RT.pointVert(p, e2) * RT.hopVertMul(p, r) : 0) + (r.toPanel ? RT.panelVert(p) : 0);
+      const L = G2.polylineLen(r.points || []) + (e2 ? RT.pointVert(p, e2) * RT.hopVertMul(p, r) : 0) + (r.toPanel ? RT.panelVert(p, pn) : 0);
       const cc = (p.circuits || []).find((c) => c.id === r.circuitId);
       let mark = (cc && cc.cable) || null;
       if (!mark) {

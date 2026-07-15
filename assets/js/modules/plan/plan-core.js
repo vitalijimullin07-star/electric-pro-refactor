@@ -106,7 +106,7 @@
   function newRoom(points, name) {
     return { id: uid("rm"), name: name || "Комната", points: points || [], height: null /* null = settings.ceilingHeight */, zones: [], material: null /* null = settings.wallMaterial */ };
   }
-  function newPanel(x, y, name) { return { id: uid("pn"), x: x || 0, y: y || 0, name: name || "Щит", transformer: false }; }
+  function newPanel(x, y, name) { return { id: uid("pn"), x: x || 0, y: y || 0, name: name || "Щит", transformer: false, height: null /* null = settings.panelHeight (общая на проект) */ }; }
   function newElement(type, wallId, offset, height, layer) {
     return {
       id: uid("el"), type, wallId, offset: offset || 0, height: height || 0, layer: layer || "power", status: "planned",

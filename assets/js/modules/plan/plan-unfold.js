@@ -23,7 +23,7 @@
   const EL = () => EP.Plan.Elements;
   const isOpenKind = (k) => !!(EP.Plan.Core.OPENING_KINDS && EP.Plan.Core.OPENING_KINDS[k]);
 
-  const S = { wallId: null, addType: "socket", drag: null, full: false, view: null, sym: 1, lastTap: null, ptPanel: null, showChases: false, ctrlsOn: true, ledDraft: null };
+  const S = { wallId: null, addType: "socket", drag: null, full: false, landscapeForced: false, view: null, sym: 1, lastTap: null, ptPanel: null, showChases: false, ctrlsOn: true, ledDraft: null };
 
   function wallH(p, wallId) {
     const roomId = String(wallId).split(":")[0];
@@ -54,6 +54,7 @@
         <button type="button" class="ep-plan-mini ep-clickable" data-pu-ctrls aria-label="${S.ctrlsOn ? "Свернуть функции" : "Развернуть функции"}" title="Свернуть/развернуть функции">${S.ctrlsOn ? "︿" : "﹀"}</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-pu-fit aria-label="Показать всё">⛶</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-pu-full aria-label="Во весь экран">⤢</button>
+        <button type="button" class="ep-plan-mini ep-clickable ${S.landscapeForced ? "on" : ""}" data-pu-fulllandscape aria-label="Во весь экран горизонтально (без поворота телефона)" title="Во весь экран горизонтально">🔄</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-pu-close>✕</button></div>
       <div class="ep-plan-unfmain">
         <div class="ep-plan-unfctrls${S.ctrlsOn ? "" : " is-collapsed"}">
@@ -106,9 +107,10 @@
   }
   function exitFS() {
     S.full = false;
+    S.landscapeForced = false;
     const sheet = $("#ep-plan-sheet"), box = $("#ep-pu-box");
     if (box) box.classList.remove("is-full");
-    if (sheet) sheet.classList.remove("ep-plan-sheet-full");
+    if (sheet) { sheet.classList.remove("ep-plan-sheet-full"); sheet.classList.remove("is-landscape-forced"); }
     try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
     // Гасим браузерный Fullscreen API, ТОЛЬКО если он реально принадлежит развёртке
     // (её собственный sheet/box) — иначе закрытие/сворачивание развёртки поверх
@@ -120,6 +122,26 @@
     } catch (e) {}
   }
   function toggleFull() { if (S.full) { exitFS(); drawStrip(); } else enterFS(); }
+  // «Во весь экран горизонтально» — ОТДЕЛЬНАЯ от toggleFull кнопка: screen.orientation.lock()
+  // требует ФИЗИЧЕСКИ повернуть телефон (и вовсе не поддерживается в iOS Safari — тихо
+  // ничего не делает) — здесь вместо этого CSS-трюк: элемент фиксируется на весь вьюпорт
+  // и разворачивается transform:rotate(90deg), горизонталь получается БЕЗ поворота
+  // телефона в руке. Нативный orientation.lock() здесь намеренно НЕ вызываем — если бы
+  // он всё-таки сработал одновременно с CSS-поворотом, экран после физического поворота
+  // повернулся бы дважды (получилось бы вверх ногами).
+  function enterFSLandscape() {
+    S.full = true;
+    S.landscapeForced = true;
+    const sheet = $("#ep-plan-sheet"), box = $("#ep-pu-box");
+    if (box) box.classList.add("is-full");
+    if (sheet) sheet.classList.add("ep-plan-sheet-full", "is-landscape-forced");
+    try {
+      const target = sheet || box;
+      if (target && target.requestFullscreen && !document.fullscreenElement) target.requestFullscreen().catch(() => {});
+    } catch (e) {}
+    drawStrip();
+  }
+  function toggleFullLandscape() { if (S.full) { exitFS(); drawStrip(); } else enterFSLandscape(); }
 
   // свернуть/развернуть панель функций — не трогая S.view (зум/пан остаются как есть)
   function toggleCtrls() {
@@ -258,7 +280,7 @@
     (p.panels || []).forEach((pn) => {
       const c = G().closestOnSeg({ x: pn.x, y: pn.y }, w.a, w.b);
       if (c.d > 60) return;
-      const bx = p.settings.panelBox, px = c.t * L, ph = p.settings.panelHeight || 150;
+      const bx = p.settings.panelBox, px = c.t * L, ph = (pn.height != null ? pn.height : p.settings.panelHeight) || 150;
       const pw = bx && bx.wmm ? bx.wmm / 10 : 36, phh = bx && bx.hmm ? bx.hmm / 10 : 60, py = H - ph;
       const grp = svgEl("g", { "data-pu-panel": pn.id });
       grp.appendChild(svgEl("rect", { x: px - pw / 2, y: py - phh / 2, width: pw, height: phh, rx: 3, class: "ep-plan-unfpanel", "stroke-width": 1.5 * kk }));
@@ -413,7 +435,7 @@
     function updateDragVisual() {
       const d = S.drag; if (!d) return;
       if (d.kind === "open") { if (d.g) d.g.setAttribute("transform", `translate(${d.op.offset - d.x0} 0)`); return; }
-      if (d.kind === "panel") { if (d.g) d.g.setAttribute("transform", `translate(${d.curPx - d.x0} 0)`); return; }
+      if (d.kind === "panel") { if (d.g) d.g.setAttribute("transform", `translate(${d.curPx - d.x0} ${(H - d.curHeight) - d.y0})`); return; }
       if (d.kind === "led") { if (d.g) d.g.setAttribute("transform", `translate(${Math.min(d.ls.offsetA, d.ls.offsetB) - d.x0} 0)`); return; }
       const x = d.el.offset, yTrue = H - d.el.height;
       // палец закрывает саму точку под собой — на время тяги ПАЛЬЦЕМ (не пером/мышью,
@@ -449,9 +471,14 @@
         const pn = (p.panels || []).find((x) => x.id === pg2.getAttribute("data-pu-panel"));
         if (!pn) return;
         const c0 = G().closestOnSeg({ x: pn.x, y: pn.y }, w.a, w.b);
+        const ph0 = (pn.height != null ? pn.height : p.settings.panelHeight) || 150;
         core().commit();
-        // тянем щит ВДОЛЬ стены, сохраняя перпендикулярный отступ от неё (perp)
-        S.drag = { kind: "panel", pn, moved: false, g: pg2, x0: c0.t * w.len, curPx: c0.t * w.len, perp: { x: pn.x - c0.x, y: pn.y - c0.y } };
+        // тянем щит ВДОЛЬ стены (сохраняя перпендикулярный отступ от неё, perp) И ПО
+        // ВЫСОТЕ (pn.height — своя высота щита, изначально null = общая settings.panelHeight)
+        S.drag = {
+          kind: "panel", pn, moved: false, g: pg2, x0: c0.t * w.len, curPx: c0.t * w.len,
+          perp: { x: pn.x - c0.x, y: pn.y - c0.y }, y0: wallH(p, S.wallId) - ph0, curHeight: ph0
+        };
         return;
       }
       const og = e.target.closest && e.target.closest("[data-pu-open]");
@@ -521,6 +548,8 @@
           const nearest = { x: w.a.x + (w.b.x - w.a.x) * t, y: w.a.y + (w.b.y - w.a.y) * t };
           S.drag.pn.x = nearest.x + S.drag.perp.x; // сохраняем перпендикулярный отступ от стены
           S.drag.pn.y = nearest.y + S.drag.perp.y;
+          S.drag.curHeight = Math.round(Math.max(0, Math.min(H, H - pt.y))); // и по высоте
+          S.drag.pn.height = S.drag.curHeight;
         } else if (S.drag.kind === "led") {
           const x0 = Math.round(Math.max(0, Math.min(w.len - S.drag.len, pt.x - S.drag.len / 2)));
           S.drag.ls.offsetA = x0; S.drag.ls.offsetB = x0 + S.drag.len;
@@ -640,6 +669,7 @@
     }
     if (t.closest("[data-pu-ctrls]")) return toggleCtrls();
     if (t.closest("[data-pu-full]")) return toggleFull();
+    if (t.closest("[data-pu-fulllandscape]")) return toggleFullLandscape();
     if (t.closest("[data-pu-fit]")) { const p = core().project, w = G().wallById(p, S.wallId); if (w) { S.view = fitView(wallH(p, S.wallId), w.len); drawStrip(); } return; }
     if (t.closest("[data-pu-chases]")) { S.showChases = !S.showChases; drawStrip(); return; }
     if ((b = t.closest("[data-pu-act]"))) {

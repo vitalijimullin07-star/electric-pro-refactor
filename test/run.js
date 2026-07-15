@@ -611,6 +611,21 @@ test("calcByRoutes: штробы/подрозетники/кабель/ниша 
   ok(niche && niche.qty === 24, "вырубка × модули");
   ok(res.items.some((i) => i.name === "Монтаж щита в нишу/стену"), "монтаж щита");
 });
+test("calcByRoutes: своя высота щита (pn.height) меняет метраж кабеля до него", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "Щ"); pn.height = 250; // щит высоко — спуск короче (270-250=20, не 120)
+  P.panels.push(pn);
+  const s1 = M.newElement("socket", w(0), 100, 30, "power");
+  P.elements.push(s1);
+  const rt = M.newRoute("power", "ceiling", [{ x: 100, y: 18 }, { x: 100, y: 50 }, { x: 50, y: 50 }], s1.id, pn.id);
+  rt.toPanel = true;
+  P.routes.push(rt);
+  const res = EP.Plan.Calc.calcByRoutes(P);
+  // (32+50)горизонталь + 240(точка) + 20(щит, 270-250) = 342 см × 1.1 запас = 3.76 м
+  const cab = res.items.find((i) => i.name.indexOf("3×2.5") >= 0);
+  ok(cab, "кабель по марке");
+  near(cab.qty, 3.76, 0.05, "метры кабеля со своей (высокой) высотой щита, не с общей 150см");
+});
 test("calcByRoutes: расходники по кабелю/штробам (крепёж/буры/коронки/диски/мешки) из EP.CableConsum", () => {
   const { P, w } = install();
   const pn = M.newPanel(50, 50, "Щ");
@@ -991,6 +1006,31 @@ test("pointVert: выключатель при разводке ПО ПОТОЛ�
   const { P, w } = install();
   const sw = M.newElement("switch", w(0), 100, 90, "light");
   eq(EP.Plan.Routes.pointVert(P, sw), P.settings.ceilingHeight - 90, "потолок минус высота — как обычно");
+});
+test("panelVert: своя высота щита (pn.height) используется вместо общей settings.panelHeight", () => {
+  const { P } = install();
+  const pn = M.newPanel(50, 50, "Щ"); pn.height = 30; // низкий щит
+  P.panels.push(pn);
+  eq(EP.Plan.Routes.panelVert(P, pn), P.settings.ceilingHeight - 30, "своя высота, не общая");
+  eq(EP.Plan.Routes.panelVert(P, null), P.settings.ceilingHeight - P.settings.panelHeight, "без щита — общая settings.panelHeight, как раньше");
+});
+test("panelVert: у старого щита (без поля height, undefined) — общая settings.panelHeight (обратная совместимость)", () => {
+  const { P } = install();
+  const pn = M.newPanel(50, 50, "Щ"); delete pn.height; // как в проектах, сохранённых до этой правки
+  P.panels.push(pn);
+  eq(EP.Plan.Routes.panelVert(P, pn), P.settings.ceilingHeight - P.settings.panelHeight, "undefined трактуется как «нет своей высоты»");
+});
+test("lengths: своя высота щита меняет метраж спуска у щита для трасс, приходящих именно в него", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(390, 10, "Щ"); pn.height = 30; P.panels.push(pn);
+  const s1 = M.newElement("socket", w(0), 100, 30, "power"); P.elements.push(s1);
+  const rt = M.newRoute("power", "ceiling", [{ x: 100, y: 18 }, { x: 390, y: 10 }], s1.id, pn.id);
+  rt.toPanel = true;
+  P.routes.push(rt);
+  const withCustom = EP.Plan.Routes.lengths(P).total;
+  pn.height = P.settings.panelHeight; // подвинули обратно на общую высоту
+  const withDefault = EP.Plan.Routes.lengths(P).total;
+  ok(Math.abs(withCustom - withDefault) > 1, "разная высота щита даёт разный суммарный метраж трассы");
 });
 
 // ===== 14. Многоклавишные/проходные/перекрёстные выключатели, цепочка =====
