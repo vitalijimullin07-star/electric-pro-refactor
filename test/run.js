@@ -93,6 +93,16 @@ test("mergeRoomPolygons: простое соприкосновение одно�
   ok(m, "слияние удалось");
   near(G.area(m), G.area(r1) + G.area(r2), 1, "площадь = сумма исходных");
 });
+test("mergeRoomPolygons: с out.gone возвращает координаты исчезнувшей общей стены", () => {
+  const r1 = G.rectPoints(0, 0, 300, 300), r2 = G.rectPoints(300, 0, 200, 300);
+  const out = {};
+  const m = G.mergeRoomPolygons(r1, r2, out);
+  ok(m, "слияние удалось");
+  ok(out.gone && out.gone.length === 1, "один погашенный отрезок");
+  const [a, b] = out.gone[0];
+  near(a.x, 300, 1, "погашенный отрезок на линии стыка x=300"); near(b.x, 300, 1, "погашенный отрезок на линии стыка x=300");
+  near(Math.abs(a.y - b.y), 300, 1, "длина погашенного отрезка = длине общей стены");
+});
 test("mergeRoomPolygons: стена соседа короче/частично перекрывает стену первой комнаты", () => {
   const r1 = G.rectPoints(0, 0, 390, 300), r2 = G.rectPoints(160, 300, 230, 480);
   const m = G.mergeRoomPolygons(r1, r2);
@@ -173,6 +183,30 @@ test("mergeRooms: толщина/материал СОХРАНИВШЕЙСЯ (н
   ok(w, "верхняя стена никуда не делась после слияния");
   eq(G.wallThOf(P, w), 25, "толщина унаследована на новом индексе стены");
   eq(G.wallMatOf(P, w), "Кирпич", "материал унаследован на новом индексе стены");
+});
+test("mergeRooms: opts.lintel:true — на месте погашенной стены появляется балка kind:lintel", () => {
+  const { P } = install();
+  P.rooms[0].wallTh = [null, 18, null, null]; // правая (общая с B) стена A потолще обычной
+  P.rooms[0].wallMat = [null, "Кирпич", null, null];
+  const roomB = M.newRoom(G.rectPoints(400, 0, 200, 300), "B");
+  P.rooms.push(roomB);
+  eq((P.beams || []).length, 0, "балок изначально нет");
+  const merged = EP.Plan.Rooms.mergeRooms(P.rooms[0].id, roomB.id, { lintel: true });
+  ok(merged, "слияние прошло");
+  eq(P.beams.length, 1, "появилась одна балка-перемычка");
+  const bm = P.beams[0];
+  eq(bm.kind, "lintel", "тип — перемычка");
+  near(bm.a.x, 400, 1, "балка на линии исчезнувшей стены x=400"); near(bm.b.x, 400, 1, "балка на линии исчезнувшей стены x=400");
+  eq(bm.width, 18, "толщина унаследована от исчезнувшей стены");
+  eq(bm.material, "Кирпич", "материал унаследован от исчезнувшей стены");
+});
+test("mergeRooms: без opts.lintel — балка не добавляется (поведение по умолчанию не меняется)", () => {
+  const { P } = install();
+  const roomB = M.newRoom(G.rectPoints(400, 0, 200, 300), "B");
+  P.rooms.push(roomB);
+  const merged = EP.Plan.Rooms.mergeRooms(P.rooms[0].id, roomB.id);
+  ok(merged, "слияние прошло");
+  eq((P.beams || []).length, 0, "без lintel балка не создаётся");
 });
 test("mergeRooms: несоприкасающиеся комнаты — null, ничего не меняется", () => {
   const { P } = install();
