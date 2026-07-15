@@ -135,6 +135,68 @@
     });
     return { materials, shrinkM: Math.round((shrinkCount * 5 / 100) * 100) / 100 }; // 5 см термоусадки на стык
   }
+
+  // ---------- расходники по кабелю/штробам (крепёж, буры, коронки/диски, мешки) — из
+  // EP.CableConsum, на ТОЧНЫХ метрах/подрозетниках/коробках/кабеле, уже посчитанных по
+  // трассам выше. EP.CableConsum знает только 4 материала пула (Бетон/Кирпич/Панель/
+  // Мягкий) — стены перегородок/балок допускают более широкий список
+  // (Газоблок/Пеноблок/ГКЛ/ПГП/Дерево, см. DEFAULTS.partitionMaterials в plan-core.js),
+  // поэтому всё, что не входит в 4 базовых, отображаем на "Мягкий" (физически они все
+  // мягче бетона/кирпича для реза/сверления — тот же принцип, что и у
+  // DEFAULTS.partitionThickness, где эта группа тоньше несущих стен).
+  const CONSUM_MAT_MAP = {
+    "Бетон": "Бетон", "Кирпич": "Кирпич", "Панель": "Панель", "Мягкий": "Мягкий",
+    "Газоблок": "Мягкий", "Пеноблок": "Мягкий", "ГКЛ": "Мягкий", "ПГП": "Мягкий", "Дерево": "Мягкий"
+  };
+  const consumMat = (m) => CONSUM_MAT_MAP[m] || "Бетон";
+  // диски штробы подбираются по глубине ("small"/"big") ОДНИМ вызовом CableConsum на
+  // глубину — штроба тёплого пола (50×50, kind:"warm") режется диском "big", силовая и
+  // слаботочная (kind power/lv, обычный размер settings.chaseW/H) — "small"; подрозетники
+  // (коронка) и крепёж кабеля/буры от глубины НЕ зависят — считаются один раз в "small".
+  function addConsumItems(add, p, strobe, podroz, junctBoxes, cableBy) {
+    const CC = window.EP && window.EP.CableConsum;
+    if (!CC) return; // модуль расходников не подключен на странице — тихо пропускаем
+    const smallByMat = {}, bigByMat = {}, sockByMat = {};
+    Object.keys(strobe).forEach((k) => {
+      const [, mat, kind] = k.split("|");
+      const m = consumMat(mat);
+      const bucket = kind === "warm" ? bigByMat : smallByMat;
+      bucket[m] = (bucket[m] || 0) + strobe[k];
+    });
+    Object.keys(podroz).forEach((mat) => {
+      const m = consumMat(mat), d = podroz[mat];
+      sockByMat[m] = (sockByMat[m] || 0) + (d.std || 0) + (d.deep || 0);
+    });
+    const sum = (o) => Object.keys(o).reduce((s, k) => s + o[k], 0);
+    const totalStrobeSmall = sum(smallByMat), totalStrobeBig = sum(bigByMat);
+    const totalSockets = sum(sockByMat), totalCable = sum(cableBy);
+    if (!totalStrobeSmall && !totalStrobeBig && !totalSockets && !totalCable) return;
+
+    const merged = {}; // имя -> { qty, unit }
+    const collect = (list) => (list || []).forEach((it) => {
+      const e = merged[it.name] || (merged[it.name] = { qty: 0, unit: it.unit });
+      e.qty += it.qty;
+    });
+
+    const surface = p.settings.routeType === "floor" ? "floor" : "ceil";
+    collect(CC.calc({
+      mode: "mount", cableM: totalCable, boxes: junctBoxes,
+      sockets: totalSockets, strobeM: totalStrobeSmall + totalStrobeBig,
+      surface, gofra: surface !== "floor"
+    }));
+
+    const matNames = Array.from(new Set(Object.keys(smallByMat).concat(Object.keys(bigByMat), Object.keys(sockByMat))));
+    if (matNames.length) {
+      const rowsSmall = matNames.map((m) => ({ material: m, sockets: sockByMat[m] || 0, strobeM: smallByMat[m] || 0 }));
+      collect(CC.calc({ mode: "materials", matRows: rowsSmall, depth: "small", boxes: junctBoxes }));
+      if (totalStrobeBig > 0) {
+        const rowsBig = matNames.map((m) => ({ material: m, sockets: 0, strobeM: bigByMat[m] || 0 }));
+        collect(CC.calc({ mode: "materials", matRows: rowsBig, depth: "big", boxes: 0 }));
+      }
+    }
+    Object.keys(merged).forEach((name) => add("material", name, merged[name].qty, merged[name].unit));
+  }
+
   function calcByRoutes(p) {
     const routes = p.routes || [];
     if (!routes.length) return null;
@@ -270,7 +332,10 @@
     const conn = connectorsByRoutes(p, inCnt, outCnt);
     Object.keys(conn.materials).forEach((k) => add("material", connName(k), conn.materials[k], "шт"));
     if (conn.shrinkM > 0) add("material", "Термоусадка 12/4", conn.shrinkM, "м");
-    return { items, cableBy, strobe, conn };
+    // расходники (крепёж/буры/коронки/диски/мешки) — по уже посчитанным точным метрам/
+    // подрозетникам/коробкам/кабелю выше; молча пропускается, если EP.CableConsum не подключен
+    addConsumItems(add, p, strobe, podroz, junctBoxes, cableBy);
+    return { items, cableBy, strobe, conn, podroz, junctBoxes };
   }
 
   // ---------- позиции для сметы: тот же приоритет, что и в sheet() —
