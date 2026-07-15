@@ -10,7 +10,7 @@
     title: "Расчёт", close: "Закрыть", toEstimate: "📋 В смету",
     noRooms: "Нет комнат — нарисуй план.", noElems: "Нет точек — добавь в режиме 🔌.",
     cable: "Кабель по трассам", noRoutes: "трассы не построены (🧵)",
-    room: "Комната", added: (n) => `В смету добавлено позиций: ${n}`,
+    room: "Комната",
     engineMissing: "Движок расчёта недоступен.",
     workHead: "Работы и материалы (по движку пула)",
     exactHead: "Работы и материалы — ПО ТРАССАМ (точный счёт)",
@@ -273,6 +273,17 @@
     return { items, cableBy, strobe, conn };
   }
 
+  // ---------- позиции для сметы: тот же приоритет, что и в sheet() —
+  // точный счёт по построенным трассам, иначе приближённый по движку пула ----------
+  function estimateItems(p) {
+    const stats = buildBlocks(p);
+    if (!stats.length) return null;
+    const exact = calcByRoutes(p);
+    if (exact && exact.items.length) return exact.items;
+    const res = runEngine(p, stats);
+    return (res && res.draftItems) || null;
+  }
+
   // ---------- цены из БД ----------
   function priceFor(name, type) {
     try {
@@ -336,19 +347,7 @@
       ${table}
       <div class="ep-plan-srow"><b>${T.cable}</b></div>${cable}
       ${itemsHtml}
-      ${items ? `<div class="ep-plan-srow ep-plan-sbtns"><button type="button" class="btn btn-primary ep-clickable" data-pc-estimate>${T.toEstimate}</button></div>` : ""}`);
-    S.lastItems = items;
-  }
-  const S = { lastItems: null };
-
-  function toEstimate() {
-    if (!S.lastItems || !window.EP.Estimate) return;
-    let n = 0;
-    S.lastItems.forEach((it) => {
-      EP.Estimate.addItem({ name: it.name, qty: it.qty, unit: it.unit, type: it.type, price: priceFor(it.name, it.type) });
-      n++;
-    });
-    rooms().toast(T.added(n));
+      ${items ? `<div class="ep-plan-srow ep-plan-sbtns"><button type="button" class="btn btn-primary ep-clickable" data-plan-to-estimate>${T.toEstimate}</button></div>` : ""}`);
   }
 
   document.addEventListener("click", (e) => {
@@ -356,7 +355,6 @@
     const t = e.target;
     if (t.closest("[data-plan-calc]")) return sheet();
     if (t.closest("[data-pc-close]")) { rooms().closeSheet(); return; }
-    if (t.closest("[data-pc-estimate]")) return toEstimate();
   });
   document.addEventListener("change", (e) => {
     if (!rooms() || !rooms().isActive()) return;
@@ -368,5 +366,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Calc = { sheet, buildBlocks, runEngine, priceFor, calcByRoutes };
+  EP.Plan.Calc = { sheet, buildBlocks, runEngine, priceFor, calcByRoutes, estimateItems };
 })();

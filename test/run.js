@@ -66,6 +66,121 @@ test("wallFrame: внутренняя нормаль по всем 4 стена�
     ok((c.x - w.mx) * f.nrm.x + (c.y - w.my) * f.nrm.y > 0, "нормаль внутрь у стены " + w.n);
   });
 });
+test("wallFrame: вогнутая (Г-образная) комната — нормаль у стены выреза не переворачивается наружу", () => {
+  // Комната 2 — Г-образная, с вырезом под кладовку (0..160, 300..780); Комната 3 —
+  // отдельная соседняя комната, заполняющая вырез. Общий центроид Г-формы у самого
+  // выреза может оказаться "не с той" стороны локального сегмента стены — раньше
+  // это переворачивало нормаль наружу (в Комнату 3) вместо внутрь (в Комнату 2).
+  const L = [{ x: 0, y: 0 }, { x: 390, y: 0 }, { x: 390, y: 780 }, { x: 160, y: 780 }, { x: 160, y: 300 }, { x: 0, y: 300 }];
+  const room2 = M.newRoom(L, "Комната 2");
+  const room3 = M.newRoom(G.rectPoints(0, 300, 160, 480), "Комната 3");
+  const proj = Object.assign(M.newProject("T"), { rooms: [room2, room3] });
+  EP.Plan.Core.importJSON(JSON.stringify({ project: proj }));
+  const P = EP.Plan.Core.project;
+  const w2 = G.walls(P.rooms[0])[4]; // стена выреза со стороны Комнаты 2, (160,300)-(0,300)
+  eq(G.wallFrame(P, w2).nrm.y, -1, "нормаль стены Комнаты 2 у выреза смотрит внутрь Комнаты 2 (вверх), не наружу");
+  const w3 = G.walls(P.rooms[1])[0]; // та же стена со стороны Комнаты 3
+  eq(G.wallFrame(P, w3).nrm.y, 1, "нормаль той же стены со стороны Комнаты 3 смотрит внутрь Комнаты 3 (вниз)");
+  // тап с любой стороны общей стены попадает в СВОЮ комнату, а не всегда в одну
+  const hitA = G.wallAt(P, { x: 80, y: 295 }, 20);
+  eq(hitA.wall.roomId, room2.id, "тап снаружи выреза (в Комнате 2) — стена Комнаты 2");
+  const hitB = G.wallAt(P, { x: 80, y: 305 }, 20);
+  eq(hitB.wall.roomId, room3.id, "тап внутри кладовки (в Комнате 3) — стена Комнаты 3");
+});
+test("mergeRoomPolygons: простое соприкосновение одной прямой стеной", () => {
+  const r1 = G.rectPoints(0, 0, 300, 300), r2 = G.rectPoints(300, 0, 200, 300);
+  const m = G.mergeRoomPolygons(r1, r2);
+  ok(m, "слияние удалось");
+  near(G.area(m), G.area(r1) + G.area(r2), 1, "площадь = сумма исходных");
+});
+test("mergeRoomPolygons: стена соседа короче/частично перекрывает стену первой комнаты", () => {
+  const r1 = G.rectPoints(0, 0, 390, 300), r2 = G.rectPoints(160, 300, 230, 480);
+  const m = G.mergeRoomPolygons(r1, r2);
+  ok(m, "слияние удалось при частичном перекрытии стены");
+  near(G.area(m), G.area(r1) + G.area(r2), 1, "площадь = сумма исходных");
+});
+test("mergeRoomPolygons: угловой стык (соседняя комната ровно в угловой вырез — 2 отрезка стены)", () => {
+  const L = [{ x: 0, y: 0 }, { x: 390, y: 0 }, { x: 390, y: 780 }, { x: 160, y: 780 }, { x: 160, y: 300 }, { x: 0, y: 300 }];
+  const cladovka = G.rectPoints(0, 300, 160, 480);
+  const m = G.mergeRoomPolygons(L, cladovka);
+  ok(m, "слияние через угол удалось");
+  near(G.area(m), 390 * 780, 1, "площадь = полный прямоугольник (вырез заполнен)");
+  eq(m.length, 4, "результат — чистый прямоугольник без мусорных точек на стыке");
+});
+test("mergeRoomPolygons: цепочка слияний — угловой стык может возникнуть НЕ на первом шаге", () => {
+  const topStrip = G.rectPoints(0, 0, 390, 300), rightPart = G.rectPoints(160, 300, 230, 480), cladovka = G.rectPoints(0, 300, 160, 480);
+  const m1 = G.mergeRoomPolygons(topStrip, rightPart);
+  ok(m1, "1й шаг (одна стена) удался");
+  const m2 = G.mergeRoomPolygons(m1, cladovka);
+  ok(m2, "2й шаг (угловой стык) тоже удался");
+  near(G.area(m2), 390 * 780, 1, "после обоих слияний — полный прямоугольник");
+});
+test("mergeRoomPolygons: не соприкасаются — null, без порчи данных", () => {
+  const far1 = G.rectPoints(0, 0, 100, 100), far2 = G.rectPoints(500, 500, 100, 100);
+  eq(G.mergeRoomPolygons(far1, far2), null, "далёкие комнаты — null");
+});
+test("mergeRoomPolygons: комнаты НАКЛАДЫВАЮТСЯ площадью (не просто соприкасаются) — null", () => {
+  const ov1 = G.rectPoints(0, 0, 200, 200), ov2 = G.rectPoints(100, 100, 200, 200);
+  eq(G.mergeRoomPolygons(ov1, ov2), null, "наложение — безопасный отказ, не мусорный полигон");
+});
+
+// ===== EP.Plan.Rooms.mergeRooms: слияние комнат уровня проекта (стены/точки/проёмы) =====
+test("mergeRooms: успешное слияние — 2 комнаты становятся 1, площадь верна", () => {
+  const { P } = install();
+  const roomB = M.newRoom(G.rectPoints(400, 0, 200, 300), "B");
+  P.rooms.push(roomB);
+  const before = G.area(P.rooms[0].points) + G.area(P.rooms[1].points);
+  const merged = EP.Plan.Rooms.mergeRooms(P.rooms[0].id, P.rooms[1].id);
+  ok(merged, "слияние прошло");
+  eq(P.rooms.length, 1, "осталась одна комната");
+  near(G.area(P.rooms[0].points), before, 1, "площадь объединённой = сумме исходных");
+});
+test("mergeRooms: точка на НЕ общей стене переносится на новую комнату с сохранением мировой позиции", () => {
+  const { P, w } = install();
+  const roomB = M.newRoom(G.rectPoints(400, 0, 200, 300), "B");
+  P.rooms.push(roomB);
+  const s1 = M.newElement("socket", w(0), 100, 30, "power"); // верхняя стена комнаты A — НЕ общая с B
+  P.elements.push(s1);
+  const before = G.elemPoint(P, s1);
+  const merged = EP.Plan.Rooms.mergeRooms(P.rooms[0].id, roomB.id);
+  ok(merged, "слияние прошло");
+  const after = G.elemPoint(P, s1);
+  ok(after, "точка не потеряна (осталась на стене)");
+  near(after.x, before.x, 1, "мировая позиция X сохранена"); near(after.y, before.y, 1, "мировая позиция Y сохранена");
+  eq(String(s1.wallId).split(":")[0], merged.id, "wallId точки указывает на объединённую комнату");
+});
+test("mergeRooms: точка РОВНО на общей (исчезающей) стене — слияние блокируется, ничего не портится", () => {
+  const { P } = install();
+  const roomB = M.newRoom(G.rectPoints(400, 0, 200, 300), "B");
+  P.rooms.push(roomB);
+  const s1 = M.newElement("socket", P.rooms[0].id + ":1", 100, 30, "power"); // общая стена A/B (x=400)
+  P.elements.push(s1);
+  const merged = EP.Plan.Rooms.mergeRooms(P.rooms[0].id, roomB.id);
+  eq(merged, null, "слияние отклонено");
+  eq(P.rooms.length, 2, "комнаты не тронуты");
+  eq(s1.wallId, P.rooms[0].id + ":1", "wallId точки не тронут");
+});
+test("mergeRooms: толщина/материал СОХРАНИВШЕЙСЯ (не общей) стены наследуются от исходной комнаты", () => {
+  const { P } = install();
+  P.rooms[0].wallTh = [25, null, null, null]; // верхняя стена комнаты A (i=0) потолще — НЕ общая с B
+  P.rooms[0].wallMat = ["Кирпич", null, null, null];
+  const roomB = M.newRoom(G.rectPoints(0, 300, 400, 200), "B"); // снизу, общая стена — i=2 (нижняя A)
+  P.rooms.push(roomB);
+  const merged = EP.Plan.Rooms.mergeRooms(P.rooms[0].id, roomB.id);
+  ok(merged, "слияние прошло");
+  // верхняя стена (0,0)-(400,0) должна пережить слияние — ищем её в объединённой комнате
+  const w = G.walls(merged).find((ww) => G.dist(ww.a, { x: 0, y: 0 }) < 1 && G.dist(ww.b, { x: 400, y: 0 }) < 1);
+  ok(w, "верхняя стена никуда не делась после слияния");
+  eq(G.wallThOf(P, w), 25, "толщина унаследована на новом индексе стены");
+  eq(G.wallMatOf(P, w), "Кирпич", "материал унаследован на новом индексе стены");
+});
+test("mergeRooms: несоприкасающиеся комнаты — null, ничего не меняется", () => {
+  const { P } = install();
+  const roomB = M.newRoom(G.rectPoints(1000, 1000, 200, 300), "B");
+  P.rooms.push(roomB);
+  eq(EP.Plan.Rooms.mergeRooms(P.rooms[0].id, roomB.id), null, "не соприкасаются — null");
+  eq(P.rooms.length, 2, "комнаты не тронуты");
+});
 test("beamWall: перегородка резолвится как стена", () => {
   const { P } = install({ beams: [M.newBeam({ x: 0, y: 150 }, { x: 300, y: 150 }, "beam", 8, "ГКЛ")] });
   const bw = G.wallById(P, "beam:" + P.beams[0].id);
@@ -868,10 +983,108 @@ test("G.roomVoidArea: препятствие ВНЕ комнаты не вычи
   P.voids = [vd];
   eq(G.roomVoidArea(P, room), 0, "центр препятствия вне полигона комнаты");
 });
+test("G.snapSmart: возле угла комнаты — snapped=true, координаты угла", () => {
+  const { P, room } = install(); // комната rectPoints(0,0,400,300) — угол (0,0)
+  const r = G.snapSmart(P, { x: 3, y: 4 }, 10, 20);
+  eq(r.x, 0, "притянуло к X угла");
+  eq(r.y, 0, "притянуло к Y угла");
+  eq(r.snapped, true, "угол — значимый снап");
+});
+test("G.snapSmart: далеко от углов/осей — обычное округление по сетке, snapped=false", () => {
+  const { P } = install();
+  const r = G.snapSmart(P, { x: 1234, y: 1234 }, 10, 20);
+  eq(r.x, 1230, "округлено по шагу сетки 10");
+  eq(r.y, 1230, "округлено по шагу сетки 10");
+  eq(r.snapped, false, "простое округление по сетке — не значимый снап");
+});
 test("OPENING_KINDS.opening: проём без двери/окна, win=false", () => {
   const op = M.newOpening("opening", "w:0", 0, undefined);
   eq(op.kind, "opening");
   eq(op.type, "door", "type остаётся door (внутреннее поле, win=false)");
+});
+
+// ===== 16. Обход проёмов при полу: приоритет двери над новой гильзой =====
+function twoRoomsWithLamp(routeType, withDoor) {
+  const { P } = install(); // room A: rect(0,0,400,300)
+  const roomB = M.newRoom(G.rectPoints(400, 0, 400, 300), "B"); // общая стена x=400
+  P.rooms.push(roomB);
+  P.settings.routeType = routeType;
+  if (withDoor) P.openings.push(M.newOpening("door", P.rooms[0].id + ":1", 220, 60)); // дверь y=220..280
+  const pn = M.newPanel(100, 150, "Щ"); P.panels.push(pn); // комната A
+  const lamp = M.newElement("light", null, 0, 0, "light");
+  lamp.params = { x: 600, y: 150 }; // комната B; прямая к щиту идёт по y=150 (мимо двери)
+  P.elements.push(lamp);
+  return { P, pn, lamp };
+}
+test("buildPath (пол): дверь на общей стене — переход через неё, а не в произвольном месте", () => {
+  const { P, pn, lamp } = twoRoomsWithLamp("floor", true);
+  const a = G.routeAnchor(P, lamp);
+  const path = EP.Plan.Routes.buildPath(P, lamp, a, { kind: "panel", pos: { x: pn.x, y: pn.y } });
+  ok(path.some((q) => Math.abs(q.x - 400) < 25 && Math.abs(q.y - 250) < 10), "путь проходит через дверь (y≈250)");
+  ok(!path.some((q) => Math.abs(q.x - 400) < 25 && Math.abs(q.y - 150) < 10), "НЕ идёт через прямую точку пересечения — там нет проёма");
+});
+test("buildPath (пол): без двери на стене — прежнее поведение, проходка на прямой", () => {
+  const { P, pn, lamp } = twoRoomsWithLamp("floor", false);
+  const a = G.routeAnchor(P, lamp);
+  const path = EP.Plan.Routes.buildPath(P, lamp, a, { kind: "panel", pos: { x: pn.x, y: pn.y } });
+  ok(path.some((q) => Math.abs(q.x - 400) < 25 && Math.abs(q.y - 150) < 10), "без проёма — обычная перпендикулярная проходка на прямой");
+});
+test("buildPath (потолок): дверь есть, но обход применяется только к трассировке по полу", () => {
+  const { P, pn, lamp } = twoRoomsWithLamp("ceiling", true);
+  const a = G.routeAnchor(P, lamp);
+  const path = EP.Plan.Routes.buildPath(P, lamp, a, { kind: "panel", pos: { x: pn.x, y: pn.y } });
+  ok(path.some((q) => Math.abs(q.x - 400) < 25 && Math.abs(q.y - 150) < 10), "потолок — дверь не влияет, проходка на прямой");
+});
+test("build (пол): переход через дверь не считается гильзой-проходкой Ø20", () => {
+  const { P } = twoRoomsWithLamp("floor", true);
+  EP.Plan.Routes.build();
+  ok(P.routes.length > 0, "трасса построена");
+  eq((P.routes[0].throughWalls || []).length, 0, "через дверь — без гильзы");
+});
+test("build (пол): без двери — переход через стену по-прежнему считается гильзой Ø20", () => {
+  const { P } = twoRoomsWithLamp("floor", false);
+  EP.Plan.Routes.build();
+  ok(P.routes.length > 0, "трасса построена");
+  ok((P.routes[0].throughWalls || []).length > 0, "без проёма — обычная гильза требуется");
+});
+test("floorOpeningAt: находит проём и со стороны СОСЕДНЕЙ комнаты (другой wall-id того же шва)", () => {
+  const { P } = install();
+  const roomB = M.newRoom(G.rectPoints(400, 0, 400, 300), "B");
+  P.rooms.push(roomB);
+  const wallAId = P.rooms[0].id + ":1"; // A: стена x=400 (0..300)
+  P.openings.push(M.newOpening("door", wallAId, 220, 60));
+  const hitOwn = G.floorOpeningAt(P, wallAId, { x: 400, y: 250 });
+  ok(hitOwn, "находит на своей же стене");
+  const wallBId = roomB.id + ":3"; // B: та же физическая стена, другой id/направление
+  const hitOther = G.floorOpeningAt(P, wallBId, { x: 400, y: 250 });
+  ok(hitOther, "находит и через wall-id соседней комнаты (проекция wallOpeningSpans)");
+});
+
+// ===== 17. estimateItems: единая точка входа для сметы (Расчёт + мост в EstimateDraft) =====
+test("estimateItems: нет точек — null (нечего класть в смету)", () => {
+  const { P } = install();
+  eq(EP.Plan.Calc.estimateItems(P), null, "пустой проект — null");
+});
+test("estimateItems: с построенными трассами — тот же набор, что и calcByRoutes (точный счёт)", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
+  const s1 = M.newElement("socket", w(0), 100, 30, "power");
+  P.elements.push(s1);
+  const rt = M.newRoute("power", "ceiling", [{ x: 100, y: 18 }, { x: 50, y: 50 }], s1.id, pn.id);
+  rt.toPanel = true;
+  P.routes.push(rt);
+  const exact = EP.Plan.Calc.calcByRoutes(P);
+  const items = EP.Plan.Calc.estimateItems(P);
+  ok(items && items.length, "позиции есть");
+  eq(JSON.stringify(items), JSON.stringify(exact.items), "тот же точный счёт по трассам, что в шторке Расчёта");
+});
+test("estimateItems: без движка пула (PoolEngine не подключён) и без трасс — null, не падает", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
+  const s1 = M.newElement("socket", w(0), 100, 30, "power");
+  P.elements.push(s1);
+  noThrow(() => EP.Plan.Calc.estimateItems(P), "не бросает без EP.PoolEngine");
+  eq(EP.Plan.Calc.estimateItems(P), null, "нет ни точного счёта, ни движка — null (как и runEngine напрямую)");
 });
 
 (async () => {

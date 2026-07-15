@@ -34,7 +34,7 @@
 }
 .ep-plan-mini {
   border: 0; background: rgba(255, 255, 255, .07); color: var(--muted, #cbd5e1);
-  width: 32px; height: 32px; border-radius: 9px; cursor: pointer; flex: none;
+  width: 40px; height: 40px; border-radius: 10px; cursor: pointer; flex: none;
 }
 .ep-plan-toolbar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .ep-plan-flex { flex: 1; }
@@ -63,6 +63,48 @@
   color: var(--muted, #94a3b8); font: 600 14px system-ui;
 }
 .ep-plan-hint2 { font: 500 12.5px system-ui; opacity: .8; }
+
+/* живой предпросмотр снапа при наведении (мышь/S Pen до касания) в режимах
+   рисования комнаты/балки/шахты — направляющая через весь вид + прицел */
+.ep-plan-snapguide { stroke: var(--accent, #38bdf8); stroke-dasharray: 6 5; opacity: .55; pointer-events: none; }
+.ep-plan-hovercross { fill: none; stroke: rgba(226, 232, 240, .55); stroke-width: 1; pointer-events: none; }
+.ep-plan-hovercross.is-snapped { stroke: var(--accent, #38bdf8); stroke-width: 1.6; }
+
+/* быстрое меню по долгому нажатию на точку (удалить/копия) */
+.ep-plan-qmenu {
+  position: absolute; z-index: 8; display: flex; gap: 4px; padding: 4px; border-radius: 12px;
+  background: rgba(10, 16, 28, .95); border: 1px solid rgba(255, 255, 255, .16);
+  backdrop-filter: blur(8px); box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
+}
+.ep-plan-qmbtn {
+  border: 0; border-radius: 9px; padding: 9px 11px; font: 600 12.5px system-ui; cursor: pointer;
+  background: rgba(255, 255, 255, .08); color: var(--text, #e8eef7); white-space: nowrap;
+}
+.ep-plan-qmbtn-del { color: #f87171; }
+body[data-visual-mode="day"] .ep-plan-qmenu { background: rgba(255, 255, 255, .96); border-color: #dbe3ee; }
+body[data-visual-mode="day"] .ep-plan-qmbtn { background: #f1f5f9; color: #0f172a; }
+
+/* разделители между смысловыми группами кнопок в тулбаре режимов —
+   17 иконок подряд без них не читаются как группы */
+.ep-plan-modesep { width: 1px; align-self: stretch; margin: 2px 2px; background: rgba(255, 255, 255, .12); flex: none; }
+body[data-visual-mode="day"] .ep-plan-modesep { background: rgba(15, 23, 42, .12); }
+
+/* плавающая quickbar — отмена/просмотр/вписать под большой палец, снизу холста,
+   видна только в активных режимах рисования (не в «Просмотре») и прячется,
+   пока открыта шторка редактора (см. syncQuickbarForSheet) */
+.ep-plan-quickbar {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 6;
+  display: flex; gap: 8px; padding: 6px; border-radius: 16px;
+  background: rgba(10, 16, 28, .85); border: 1px solid rgba(255, 255, 255, .14);
+  backdrop-filter: blur(8px);
+}
+.ep-plan-qbtn {
+  width: 44px; height: 44px; border: 0; border-radius: 12px; cursor: pointer;
+  background: rgba(255, 255, 255, .08); color: var(--text, #e8eef7); font-size: 19px;
+}
+.ep-plan-qbtn:active { background: var(--accent, #38bdf8); color: #06121f; }
+body[data-visual-mode="day"] .ep-plan-quickbar { background: rgba(255, 255, 255, .92); border-color: #dbe3ee; }
+body[data-visual-mode="day"] .ep-plan-qbtn { background: #f1f5f9; color: #0f172a; }
 
 /* — дневная тема — */
 body[data-visual-mode="day"] .ep-plan-canvas { background: #fff; border-color: #dbe3ee; }
@@ -110,8 +152,8 @@ body[data-visual-mode="day"] .ep-plan-item-main { color: #0f172a; }
 .ep-plan-room.is-sel { fill: rgba(56, 189, 248, .16); }
 .ep-plan-wall { stroke: #cbd5e1; stroke-linejoin: round; }
 .ep-plan-wall.is-sel { stroke: var(--accent, #38bdf8); }
-.ep-plan-dim { fill: #94a3b8; font-family: system-ui; }
-.ep-plan-name { fill: #e2e8f0; font-family: system-ui; font-weight: 600; }
+.ep-plan-dim { fill: #94a3b8; font-family: system-ui; pointer-events: none; }
+.ep-plan-name { fill: #e2e8f0; font-family: system-ui; font-weight: 600; pointer-events: none; }
 .ep-plan-draft { stroke: var(--accent, #38bdf8); stroke-dasharray: 6 5; }
 .ep-plan-draftpt { fill: var(--accent, #38bdf8); }
 .ep-plan-draftpt.is-first { fill: #34d399; }
@@ -427,7 +469,7 @@ body[data-visual-mode="day"] .ep-plan-unfdimT { fill: #1d4ed8; }
 .ep-plan-sheet-full .ep-plan-unfsvg { height: 100%; }
 
 /* — v14: функции главного плана внутри развёртки — панель действий + карточка проверок — */
-.ep-plan-unftools .ep-plan-chip { font-size: 15px; padding: 4px 9px; }
+.ep-plan-unftools .ep-plan-chip { font-size: 15px; padding: 9px 12px; }
 .ep-plan-unfold { position: relative; }
 .ep-plan-unfover {
   position: absolute; top: 8px; right: 8px; z-index: 5; max-width: min(320px, 82%);

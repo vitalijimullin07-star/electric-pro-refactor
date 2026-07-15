@@ -110,7 +110,14 @@
     if (box) box.classList.remove("is-full");
     if (sheet) sheet.classList.remove("ep-plan-sheet-full");
     try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
-    try { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); } catch (e) {}
+    // Гасим браузерный Fullscreen API, ТОЛЬКО если он реально принадлежит развёртке
+    // (её собственный sheet/box) — иначе закрытие/сворачивание развёртки поверх
+    // отдельного «Во весь экран» редактора плана (data-plan-full, plan-mount.js)
+    // нечаянно гасило бы фуллскрин всего редактора, а не только развёртки.
+    try {
+      const fe = document.fullscreenElement;
+      if (fe && (fe === sheet || fe === box)) document.exitFullscreen().catch(() => {});
+    } catch (e) {}
   }
   function toggleFull() { if (S.full) { exitFS(); drawStrip(); } else enterFS(); }
 
@@ -392,7 +399,12 @@
   function bindStrip(svg, w, H, L) {
     const pts = new Map();
     let pinch = null, moved = false, downClient = null, pending = null;
-    let penOn = false; // стилус (S Pen / Apple Pencil): пока перо на экране — ладонь игнорируем
+    // стилус: взводим уже на ховере (перо шлёт pointermove с pointerType="pen" до
+    // касания), снимаем с задержкой после ухода из зоны (pointerleave) — см. plan-canvas.js
+    let penOn = false;
+    let penDisarmTimer = null;
+    function armPen() { penOn = true; if (penDisarmTimer) { clearTimeout(penDisarmTimer); penDisarmTimer = null; } }
+    function disarmPenSoon() { if (penDisarmTimer) clearTimeout(penDisarmTimer); penDisarmTimer = setTimeout(() => { penOn = false; penDisarmTimer = null; }, 500); }
     const pxPerCm = () => { const r = svg.getBoundingClientRect(); return Math.min(r.width / S.view.w, r.height / S.view.h) || 1; };
     const dist2 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
     function pinchInfo() { const [a, b] = [...pts.values()]; return { d: Math.max(10, dist2(a, b)), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; }
@@ -403,7 +415,13 @@
       if (d.kind === "open") { if (d.g) d.g.setAttribute("transform", `translate(${d.op.offset - d.x0} 0)`); return; }
       if (d.kind === "panel") { if (d.g) d.g.setAttribute("transform", `translate(${d.curPx - d.x0} 0)`); return; }
       if (d.kind === "led") { if (d.g) d.g.setAttribute("transform", `translate(${Math.min(d.ls.offsetA, d.ls.offsetB) - d.x0} 0)`); return; }
-      const x = d.el.offset, y = H - d.el.height;
+      const x = d.el.offset, yTrue = H - d.el.height;
+      // палец закрывает саму точку под собой — на время тяги ПАЛЬЦЕМ (не пером/мышью,
+      // у них точность и так достаточная) визуально приподнимаем маркер и его
+      // размерную цепочку над пальцем; d.el.offset/height — настоящие значения, не
+      // трогаем, это чисто отрисовка, полный рендер на отпускании вернёт всё на место
+      const ghostCm = d.pointerType === "touch" ? 40 / Math.max(0.01, pxPerCm()) : 0;
+      const y = yTrue - ghostCm;
       if (d.g) d.g.setAttribute("transform", `translate(${x - d.x0} ${y - d.y0})`);
       if (d.dimL) { d.dimL.setAttribute("x1", x); d.dimL.setAttribute("x2", x); d.dimL.setAttribute("y2", y); }
       if (d.dimT) {
@@ -414,7 +432,7 @@
     }
 
     svg.addEventListener("pointerdown", (e) => {
-      if (e.pointerType === "pen") penOn = true;
+      if (e.pointerType === "pen") armPen();
       else if (e.pointerType === "touch" && penOn) return; // ладонь при работе стилусом
       svg.setPointerCapture(e.pointerId);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -463,6 +481,7 @@
         S.drag = {
           kind: "el", el, moved: false, postIdx: pg ? Number(pg.getAttribute("data-pu-post")) : null,
           g, x0: el.offset, y0: (wallH(p, S.wallId)) - el.height, dimTx: null,
+          pointerType: e.pointerType, // тач — приподнимаем маркер над пальцем, см. updateDragVisual
           dimL: svg.querySelector(`[data-pu-diml="${el.id}"]`),
           dimT: svg.querySelector(`[data-pu-dimt="${el.id}"]`)
         };
@@ -471,6 +490,7 @@
       pending = { kind: "empty" };
     });
     svg.addEventListener("pointermove", (e) => {
+      if (e.pointerType === "pen") armPen(); // в т.ч. ховер без касания
       if (!pts.has(e.pointerId)) return;
       const prev = pts.get(e.pointerId);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -518,8 +538,8 @@
         applyView(svg);
       }
     });
+    svg.addEventListener("pointerleave", (e) => { if (e.pointerType === "pen") disarmPenSoon(); });
     function end(e) {
-      if (e.pointerType === "pen") penOn = false;
       pts.delete(e.pointerId);
       if (pts.size < 2) pinch = null;
       if (S.drag) {

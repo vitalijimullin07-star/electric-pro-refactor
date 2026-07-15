@@ -13,7 +13,9 @@
     gridSteps: [5, 10, 25, 50, 100, 250, 500, 1000], // см
     gridMinPx: 26,       // не рисуем сетку чаще, чем раз в 26px
     gridMajorEvery: 100, // жирная линия каждый метр
-    tapMaxPx: 9, tapMaxMs: 450
+    tapMaxPx: 9, tapMaxMs: 450, dragStartPx: 6,
+    dblTapMs: 300, dblTapPx: 34, dblTapZoomK: 1 / 1.6, // двойной тап — зум ×1.6 к точке касания
+    longPressMs: 550 // держим палец на месте дольше — быстрое меню объекта
   };
 
   function el(tag, attrs) {
@@ -37,7 +39,7 @@
     host.appendChild(svg);
 
     const view = { ...CFG.startView };
-    const cb = { tap: null, viewChanged: null };
+    const cb = { tap: null, viewChanged: null, hover: null, hoverEnd: null, longPress: null };
 
     function clampView() {
       if (view.w < CFG.minSpanCm) scaleTo(CFG.minSpanCm);
@@ -88,7 +90,18 @@
     let tapStart = null;   // { x, y, t, id }
     let dragHandler = null, dragMoved = false; // перехват одиночного перетаскивания (подложка/элементы)
     let dragVeto = false; // хендлер вернул false на "start" — жест остаётся панорамой
-    let penActive = false; // стилус (S Pen / Apple Pencil): пока он на экране — касания ладони игнорируем
+    // стилус (S Pen / Apple Pencil): пока он рядом с экраном — касания ладони игнорируем.
+    // Взводим уже на ХОВЕРЕ (перо репортит pointermove с pointerType="pen" ДО касания) —
+    // иначе ладонь успевает лечь на экран за 100-300мс до касания пером и словить жест
+    // раньше него. Снимаем не сразу на отрыве, а с задержкой после ухода зоны ховера
+    // (pointerleave) — между мазками перо часто приподнимается, но остаётся рядом.
+    let penActive = false;
+    let penDisarmTimer = null;
+    function armPen() { penActive = true; if (penDisarmTimer) { clearTimeout(penDisarmTimer); penDisarmTimer = null; } }
+    function disarmPenSoon() {
+      if (penDisarmTimer) clearTimeout(penDisarmTimer);
+      penDisarmTimer = setTimeout(() => { penActive = false; penDisarmTimer = null; }, 500);
+    }
 
     function dist2(a, b) { const dx = a.x - b.x, dy = a.y - b.y; return Math.hypot(dx, dy); }
     function pinchInfo() {
@@ -97,15 +110,41 @@
     }
 
     let downClient = null; // экранная точка начала одиночного жеста (для drag-старта)
+    let lastTapInfo = null; // { x, y, t } — экранные координаты последнего одиночного тапа, для двойного
+    let longPressTimer = null;
+    function clearLongPress() { if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; } }
     svg.addEventListener("pointerdown", (e) => {
-      if (e.pointerType === "pen") penActive = true;
+      if (e.pointerType === "pen") armPen();
       else if (e.pointerType === "touch" && penActive) return; // ладонь при работе стилусом
       svg.setPointerCapture(e.pointerId);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (pts.size === 1) { tapStart = { x: e.clientX, y: e.clientY, t: Date.now(), id: e.pointerId }; downClient = { x: e.clientX, y: e.clientY }; dragVeto = false; }
-      if (pts.size === 2) { pinch = pinchInfo(); tapStart = null; }
+      if (pts.size === 1) {
+        downClient = { x: e.clientX, y: e.clientY };
+        // боковая кнопка пера (S Pen/Wacom, приходит как button=2) — всегда чистая
+        // панорама этим же пером, без тапа/тяги под наконечником
+        const barrelBtn = e.pointerType === "pen" && e.button === 2;
+        dragVeto = barrelBtn;
+        tapStart = barrelBtn ? null : { x: e.clientX, y: e.clientY, t: Date.now(), id: e.pointerId };
+        clearLongPress();
+        if (!barrelBtn && cb.longPress) {
+          const pid = e.pointerId, cx = e.clientX, cy = e.clientY;
+          longPressTimer = setTimeout(() => {
+            longPressTimer = null;
+            // палец всё ещё на месте, тяга не началась — длинное нажатие, а не тап/пан
+            if (tapStart && tapStart.id === pid && !dragMoved) {
+              cb.longPress(toWorld(cx, cy), { clientX: cx, clientY: cy, pointerId: pid });
+              tapStart = null; // подавляем обычный тап на отпускании
+            }
+          }, CFG.longPressMs);
+        }
+      }
+      if (pts.size === 2) { pinch = pinchInfo(); tapStart = null; clearLongPress(); }
     });
     svg.addEventListener("pointermove", (e) => {
+      if (e.pointerType === "pen") armPen(); // в т.ч. ховер без касания — pts его не содержит
+      // живой предпросмотр (снап-направляющие, прицел пера) — пока НЕ идёт активная
+      // тяга/пинч этим указателем: чистый ховер пера (не в pts) или ещё не начатая тяга
+      if (cb.hover && (!pts.has(e.pointerId) || (pts.size === 1 && !dragMoved))) cb.hover(toWorld(e.clientX, e.clientY), e);
       if (!pts.has(e.pointerId)) return;
       const prev = pts.get(e.pointerId);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -126,29 +165,55 @@
         const dx = (e.clientX - prev.x) * k, dy = (e.clientY - prev.y) * k;
         if (dragHandler && !dragVeto) {
           if (!dragMoved) {
+            // не начинаем тягу, пока смещение от точки касания не превысит порог —
+            // лёгкое дрожание пальца при тапе по уже выбранному объекту иначе создаёт
+            // мусорный микро-шаг в истории отмены (commit() на "start" уже необратим)
+            if (downClient && Math.hypot(e.clientX - downClient.x, e.clientY - downClient.y) < CFG.dragStartPx) return;
             // хендлер может отказаться (вернуть false) — тогда жест панорамирует
             const res = dragHandler(0, 0, "start", toWorld((downClient || e).x, (downClient || e).y));
             if (res === false) { dragVeto = true; view.x -= dx; view.y -= dy; apply(); }
-            else { dragMoved = true; dragHandler(dx, dy, "move"); }
+            else { dragMoved = true; clearLongPress(); dragHandler(dx, dy, "move"); }
           } else dragHandler(dx, dy, "move");
         }
         else { view.x -= dx; view.y -= dy; apply(); }
-        if (tapStart && Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y) > CFG.tapMaxPx) tapStart = null;
+        if (tapStart && Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y) > CFG.tapMaxPx) { tapStart = null; clearLongPress(); }
       }
     });
+    svg.addEventListener("pointerleave", (e) => {
+      if (e.pointerType === "pen") disarmPenSoon();
+      if (cb.hoverEnd) cb.hoverEnd();
+    });
     function endPointer(e) {
-      if (e.pointerType === "pen") penActive = false;
+      clearLongPress();
       pts.delete(e.pointerId);
       if (pts.size < 2) pinch = null;
       if (dragHandler && dragMoved && pts.size === 0) { dragMoved = false; dragHandler(0, 0, "end"); }
       if (tapStart && tapStart.id === e.pointerId) {
         const dt = Date.now() - tapStart.t;
-        if (dt <= CFG.tapMaxMs && cb.tap) cb.tap(toWorld(e.clientX, e.clientY), e);
+        if (dt <= CFG.tapMaxMs) {
+          const now = Date.now();
+          const isDbl = lastTapInfo && (now - lastTapInfo.t) <= CFG.dblTapMs &&
+            Math.hypot(e.clientX - lastTapInfo.x, e.clientY - lastTapInfo.y) <= CFG.dblTapPx;
+          if (isDbl) {
+            // двойной тап — зум к точке касания (первый тап уже отработал как обычно,
+            // задержки на распознавание двойного тапа НЕТ — второй просто переосмыслен)
+            const wc = toWorld(e.clientX, e.clientY);
+            view.w *= CFG.dblTapZoomK; view.h *= CFG.dblTapZoomK;
+            clampView();
+            const wc2 = toWorld(e.clientX, e.clientY);
+            view.x += wc.x - wc2.x; view.y += wc.y - wc2.y;
+            apply();
+            lastTapInfo = null;
+          } else {
+            if (cb.tap) cb.tap(toWorld(e.clientX, e.clientY), e);
+            lastTapInfo = { x: e.clientX, y: e.clientY, t: now };
+          }
+        }
         tapStart = null;
       }
     }
     svg.addEventListener("pointerup", endPointer);
-    svg.addEventListener("pointercancel", (e) => { pts.delete(e.pointerId); pinch = null; tapStart = null; });
+    svg.addEventListener("pointercancel", (e) => { clearLongPress(); pts.delete(e.pointerId); pinch = null; tapStart = null; });
 
     svg.addEventListener("wheel", (e) => {
       e.preventDefault();
@@ -189,8 +254,12 @@
       getView: () => ({ ...view }),
       cmPerPx: pxToCm,
       toWorld, fit, redraw: apply,
+      panBy: (dx, dy) => { view.x += dx; view.y += dy; apply(); }, // сдвиг вида в мировых см (программный, не жестом)
       onTap: (fn) => { cb.tap = fn; },
       onViewChanged: (fn) => { cb.viewChanged = fn; },
+      onHover: (fn) => { cb.hover = fn; },     // (worldPt, e) — живой предпросмотр снапа/прицела пера
+      onHoverEnd: (fn) => { cb.hoverEnd = fn; }, // указатель ушёл с холста — убрать предпросмотр
+      onLongPress: (fn) => { cb.longPress = fn; }, // (worldPt, e) — держали палец на месте, e.clientX/Y для позиционирования UI
       setDragHandler: (fn) => { dragHandler = fn || null; dragMoved = false; },
       destroy: () => { if (ro) ro.disconnect(); if (svg.parentNode) svg.parentNode.removeChild(svg); }
     };

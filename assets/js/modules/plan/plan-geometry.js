@@ -11,7 +11,10 @@
   G.snapPoint = (p, step) => ({ x: G.snap(p.x, step), y: G.snap(p.y, step) });
   G.dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
-  // Привязка: угол комнаты -> выравнивание по осям чужих углов -> сетка
+  // Привязка: угол комнаты -> выравнивание по осям чужих углов -> сетка.
+  // snapped=true только для угла/оси (значимая привязка) — НЕ для рядового
+  // округления по сетке, чтобы вызывающий код мог дать тактильный отклик
+  // только на реальный снап, а не на каждый тап.
   G.snapSmart = (project, p, step, cornerRadius) => {
     let best = null, ax = null, ay = null;
     (project.rooms || []).forEach((r) => (r.points || []).forEach((c) => {
@@ -20,8 +23,8 @@
       if (Math.abs(p.x - c.x) <= cornerRadius && (ax == null || Math.abs(p.x - c.x) < Math.abs(p.x - ax))) ax = c.x;
       if (Math.abs(p.y - c.y) <= cornerRadius && (ay == null || Math.abs(p.y - c.y) < Math.abs(p.y - ay))) ay = c.y;
     }));
-    if (best) return { x: best.x, y: best.y };
-    return { x: ax != null ? ax : G.snap(p.x, step), y: ay != null ? ay : G.snap(p.y, step) };
+    if (best) return { x: best.x, y: best.y, snapped: true };
+    return { x: ax != null ? ax : G.snap(p.x, step), y: ay != null ? ay : G.snap(p.y, step), snapped: ax != null || ay != null };
   };
 
   // Автовыравнивание под 90°: если линия от prev почти вертикальна/горизонтальна — доводим
@@ -256,6 +259,111 @@
     for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) s += (pts[j].x + pts[i].x) * (pts[j].y - pts[i].y);
     return Math.abs(s / 2);
   };
+  // площадь СО ЗНАКОМ (shoelace) — знак говорит про направление обхода контура
+  G.signedArea = (pts) => {
+    let s = 0;
+    for (let i = 0; i < pts.length; i++) { const p1 = pts[i], p2 = pts[(i + 1) % pts.length]; s += p1.x * p2.y - p2.x * p1.y; }
+    return s / 2;
+  };
+
+  // ---- слияние двух соприкасающихся комнат в одну (Г/Ш-образная без ручного контура) ----
+  // Требование: комнаты не накладываются площадью, а соприкасаются по границе — ОДНОЙ
+  // прямой стеной ИЛИ цепочкой стен через угол (Г/Ш-стык — соседняя комната ровно
+  // заполняет угловой вырез). Возвращает точки объединённого контура или null,
+  // если общей границы не нашли (либо она рвётся на несколько несвязанных мест).
+  //
+  // Алгоритм: рёбра A и B, что совпадают (коллинеарны, перекрываются, обход навстречу
+  // друг другу) — "гасятся" (это стала внутренняя стена, которой больше нет снаружи).
+  // Остаток рёбер (у обеих фигур) сшивается по общим концам в один замкнутый контур —
+  // не важно, была общая граница одним отрезком или цепочкой через угол(ы).
+  G.mergeRoomPolygons = (ptsA, ptsB) => {
+    if (!ptsA || !ptsB || ptsA.length < 3 || ptsB.length < 3) return null;
+    const EPS = 1; // см — допуск на неточность рисования от руки
+    const a = G.signedArea(ptsA) < 0 ? ptsA.slice().reverse() : ptsA.slice();
+    const b = G.signedArea(ptsB) < 0 ? ptsB.slice().reverse() : ptsB.slice();
+    const remA = remainingPieces(a, b, EPS);
+    const remB = remainingPieces(b, a, EPS);
+    const perim = (pts) => { let s = 0; for (let i = 0; i < pts.length; i++) s += G.dist(pts[i], pts[(i + 1) % pts.length]); return s; };
+    const remLen = (segs) => segs.reduce((s, [p, q]) => s + G.dist(p, q), 0);
+    if (perim(a) - remLen(remA) < EPS) return null; // ничего не погасили — не соприкасаются общей стеной
+    const stitched = stitchPieces(remA.concat(remB));
+    if (!stitched) return null;
+    return dropCollinear(stitched);
+  };
+  // рёбра `from`, минус части, совпадающие с рёбрами `other` (навстречу, на одной прямой)
+  function remainingPieces(from, other, EPS) {
+    const out = [], n = from.length, m = other.length;
+    for (let i = 0; i < n; i++) {
+      const a0 = from[i], a1 = from[(i + 1) % n];
+      const alen = G.dist(a0, a1);
+      if (alen < EPS) continue;
+      const adir = { x: (a1.x - a0.x) / alen, y: (a1.y - a0.y) / alen };
+      const covered = [];
+      for (let j = 0; j < m; j++) {
+        const b0 = other[j], b1 = other[(j + 1) % m];
+        const blen = G.dist(b0, b1);
+        if (blen < EPS) continue;
+        const bdir = { x: (b1.x - b0.x) / blen, y: (b1.y - b0.y) / blen };
+        if (Math.abs(adir.x * bdir.y - adir.y * bdir.x) > 0.02) continue; // не параллельны (~1°)
+        const perp = (b0.x - a0.x) * -adir.y + (b0.y - a0.y) * adir.x;
+        if (Math.abs(perp) > EPS) continue; // не на одной прямой
+        if (adir.x * bdir.x + adir.y * bdir.y > -0.98) continue; // общая стена — всегда навстречу
+        const tb0 = (b0.x - a0.x) * adir.x + (b0.y - a0.y) * adir.y;
+        const tb1 = (b1.x - a0.x) * adir.x + (b1.y - a0.y) * adir.y;
+        const lo = Math.max(0, Math.min(tb0, tb1)), hi = Math.min(alen, Math.max(tb0, tb1));
+        if (hi - lo > EPS) covered.push([lo, hi]);
+      }
+      if (!covered.length) { out.push([a0, a1]); continue; }
+      covered.sort((x, y) => x[0] - y[0]);
+      const merged = [covered[0].slice()];
+      for (let k = 1; k < covered.length; k++) {
+        const last = merged[merged.length - 1];
+        if (covered[k][0] <= last[1] + EPS) last[1] = Math.max(last[1], covered[k][1]);
+        else merged.push(covered[k].slice());
+      }
+      const pt = (t) => ({ x: a0.x + adir.x * t, y: a0.y + adir.y * t });
+      let cur = 0;
+      merged.forEach(([lo, hi]) => { if (lo - cur > EPS) out.push([pt(cur), pt(lo)]); cur = hi; });
+      if (alen - cur > EPS) out.push([pt(cur), pt(alen)]);
+    }
+    return out;
+  }
+  // сшивает несвязанные отрезки [a,b] в один замкнутый контур по совпадающим концам;
+  // null, если контур рвётся (общая граница не одна связная цепь) или остались лишние куски
+  function stitchPieces(segs) {
+    if (!segs.length) return null;
+    const used = new Array(segs.length).fill(false);
+    const start = segs[0][0];
+    const poly = [start];
+    let next = segs[0][1];
+    used[0] = true;
+    let guard = 0;
+    while (G.dist(next, start) > 0.5 && guard++ <= segs.length + 2) {
+      poly.push(next);
+      let found = -1;
+      for (let k = 0; k < segs.length; k++) { if (!used[k] && G.dist(segs[k][0], next) < 1) { found = k; break; } }
+      if (found < 0) return null; // разрыв цепочки — соприкосновение не одной связной границей
+      used[found] = true;
+      next = segs[found][1];
+    }
+    if (used.some((u) => !u)) return null; // остались несвязанные куски — области не соединились в одну
+    const cleaned = poly.filter((q, i) => i === 0 || G.dist(q, poly[i - 1]) > 0.5);
+    if (cleaned.length > 1 && G.dist(cleaned[0], cleaned[cleaned.length - 1]) < 0.5) cleaned.pop();
+    return cleaned.length >= 3 ? cleaned : null;
+  }
+  // убирает почти-прямые углы (170°+) — стык прямоугольников часто даёт лишнюю точку
+  // ровно посередине прямого участка внешней границы
+  function dropCollinear(pts) {
+    const n = pts.length, out = [];
+    for (let i = 0; i < n; i++) {
+      const prev = pts[(i - 1 + n) % n], cur = pts[i], next = pts[(i + 1) % n];
+      const d1x = cur.x - prev.x, d1y = cur.y - prev.y, l1 = Math.hypot(d1x, d1y) || 1;
+      const d2x = next.x - cur.x, d2y = next.y - cur.y, l2 = Math.hypot(d2x, d2y) || 1;
+      const cross = (d1x / l1) * (d2y / l2) - (d1y / l1) * (d2x / l2);
+      if (Math.abs(cross) > 0.02) out.push(cur); // не почти прямая линия — сохраняем угол
+    }
+    return out.length >= 3 ? out : pts;
+  }
   // Внутренние препятствия (вентшахта / мини-комната) — свободные прямоугольники
   // без привязки к room.id, комната определяется по центру препятствия (как у
   // элементов без wallId). Площадь вычитается из площади помещения в Расчёте/на плане.
@@ -378,12 +486,30 @@
     return { x: w.a.x + (w.b.x - w.a.x) * t, y: w.a.y + (w.b.y - w.a.y) * t };
   };
   G.openingsOnWall = (project, wallId) => (project.openings || []).filter((o) => o.wallId === wallId);
+  // Проекция точки на прямую стены -> смещение в см от угла a (для поиска "в каком
+  // проёме" лежит точка трассировки).
+  G.offsetOnWall = (w, pt) => {
+    const len = w.len || 1;
+    return ((pt.x - w.a.x) * (w.b.x - w.a.x) + (pt.y - w.a.y) * (w.b.y - w.a.y)) / len;
+  };
+  // Проём ДО ПОЛА (дверь/раздвижная/балконная/проём — sill=0, НЕ окно) на стене
+  // рядом с точкой — трассировка по полу ведёт кабель прямо через такой проём
+  // (там уже физический разрыв стены), без новой гильзы-проходки. Через
+  // wallOpeningSpans (не сырой openingsOnWall), т.к. общая стена двух комнат —
+  // ДВА разных wall-объекта с разными id, а проём определён только на одном из
+  // них; wallOpeningSpans уже умеет проецировать его на соседнюю сторону шва.
+  G.floorOpeningAt = (project, wallId, pt) => {
+    const w = G.wallById(project, wallId);
+    if (!w) return null;
+    const t = G.offsetOnWall(w, pt);
+    return G.wallOpeningSpans(project, w).find((o) => o.sill === 0 && t >= o.offset - 1 && t <= o.offset + o.width + 1) || null;
+  };
 
-  // Проёмы для ВЫРЕЗА в стене как {offset,width}: свои + спроецированные с близкой
-  // параллельной стены соседней комнаты/перегородки — чтобы проём «резал» обе полосы
-  // общей стены (две комнаты рядом), а не только одну.
+  // Проёмы для ВЫРЕЗА в стене как {offset,width,sill}: свои + спроецированные с
+  // близкой параллельной стены соседней комнаты/перегородки — чтобы проём «резал»
+  // обе полосы общей стены (две комнаты рядом), а не только одну.
   G.wallOpeningSpans = (project, wall) => {
-    const out = G.openingsOnWall(project, wall.id).map((o) => ({ offset: o.offset, width: o.width }));
+    const out = G.openingsOnWall(project, wall.id).map((o) => ({ offset: o.offset, width: o.width, sill: o.sill }));
     const len = wall.len || 1;
     const dir = { x: (wall.b.x - wall.a.x) / len, y: (wall.b.y - wall.a.y) / len };
     const nx = -dir.y, ny = dir.x;
@@ -400,7 +526,7 @@
         const ta = (pa.x - wall.a.x) * dir.x + (pa.y - wall.a.y) * dir.y;
         const tb = (pb.x - wall.a.x) * dir.x + (pb.y - wall.a.y) * dir.y;
         const s = Math.max(0, Math.min(len, Math.min(ta, tb))), e = Math.max(0, Math.min(len, Math.max(ta, tb)));
-        if (e > s + 1) out.push({ offset: s, width: e - s });
+        if (e > s + 1) out.push({ offset: s, width: e - s, sill: o.sill });
       });
     });
     return out;
@@ -479,8 +605,12 @@
     let nrm = { x: -dir.y, y: dir.x };
     const room = (project.rooms || []).find((r) => r.id === wall.roomId);
     if (room && (room.points || []).length >= 3) {
-      const c = G.centroid(room.points);
-      if ((c.x - wall.mx) * nrm.x + (c.y - wall.my) * nrm.y < 0) { nrm = { x: -nrm.x, y: -nrm.y }; }
+      // проба ТОЧКОЙ РЯДОМ со стеной, а не центроидом всей комнаты — у вогнутых
+      // контуров (Г-образная комната с вырезом под кладовку/нишу) общий центроид
+      // может физически оказаться С ДРУГОЙ стороны конкретного локального сегмента
+      // стены у вогнутого угла, разворачивая нормаль наружу вместо внутрь.
+      const probe = { x: wall.mx + nrm.x * 2, y: wall.my + nrm.y * 2 };
+      if (!G.pointInPolygon(probe, room.points)) { nrm = { x: -nrm.x, y: -nrm.y }; }
     }
     let angle = Math.atan2(dir.y, dir.x) * 180 / Math.PI;
     // держим подписи/глифы «не вверх ногами»

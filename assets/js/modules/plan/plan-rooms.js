@@ -7,7 +7,7 @@
   window.EP = window.EP || {};
 
   const T = {
-    modes: { view: "☝", rect: "▭", poly: "⬠", beam: "▬", void: "▦", elem: "🔌", opening: "🚪", wall: "📐", ruler: "📏", underlay: "🖼" },
+    modes: { view: "☝", rect: "▭", poly: "⬠", beam: "▬", void: "▦", elem: "🔌", opening: "🚪", wall: "📐", ruler: "📏", underlay: "🖼", merge: "🔗" },
     modeHint: {
       view: "Тап: точка — редактор, стена — развёртка, комната — свойства.",
       rect: "Тапни два противоположных угла комнаты.",
@@ -18,12 +18,19 @@
       opening: "Проёмы: выбери дверь/окно/раздвижную/балкон и тапни по стене или перегородке.",
       wall: "Тапни по любой стене — сразу откроется её развёртка во весь экран.",
       ruler: "Тапни две точки — расстояние.",
-      underlay: "Фото-план: загрузка, масштаб по известной длине, перенос."
+      underlay: "Фото-план: загрузка, масштаб по известной длине, перенос.",
+      merge: "Тапни первую комнату, потом соседнюю — объединятся в одну.",
+      mergeSecond: "Тапни соседнюю комнату (или ту же — отменить)."
     },
     room: "Комната", create: "Создать", cancel: "Отмена", close: "Закрыть",
     name: "Название", width: "Ширина, см", depth: "Глубина, см", ceil: "Потолок, см",
     wet: "Влажная зона (санузел/кухня)", dup: "⧉ Копия", mirror: "⇋ Зеркало", del: "✕ Удалить",
     confirmDelRoom: "Удалить комнату?",
+    mergeTapRoom: "Тапни по комнате.",
+    mergeFail: "Эти комнаты не соприкасаются одной общей границей — объединить нельзя.",
+    mergeBlocked: "На общей стене есть точки/проёмы — перенеси или удали их и повтори.",
+    mergeCancelled: "Объединение отменено.",
+    mergeDone: "Комнаты объединены.",
     upl: { load: "📷 Загрузить фото плана", calib: "📏 Калибровка масштаба", move: "✋ Перенос",
            moveOn: "✋ Перенос: тяни подложку", del: "✕ Убрать подложку", opacity: "Прозрачность",
            calibHint: "Тапни 2 точки на подложке с известным расстоянием.",
@@ -35,6 +42,9 @@
 
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const $ = (sel, r) => (r || document).querySelector(sel);
+  // тактильный отклик на значимый снап (угол/ось) и замыкание контура — молча
+  // не срабатывает, если Vibration API недоступен (iOS Safari и т.п.)
+  const vibrate = (pattern) => { try { navigator.vibrate && navigator.vibrate(pattern); } catch (e) {} };
   const core = () => EP.Plan.Core;
   const G = () => EP.Plan.Geometry;
 
@@ -42,7 +52,7 @@
     canvas: null, active: false,
     mode: "view", draft: { points: [] }, pendingRect: null, pendingPoly: null,
     selectedRoomId: null, ruler: { a: null, b: null }, beamDraft: { a: null, b: null }, voidDraft: { a: null, b: null },
-    umove: false, calib: { on: false, a: null, b: null }
+    umove: false, calib: { on: false, a: null, b: null }, mergeFirst: null
   };
 
   // ---------- сцена ----------
@@ -67,9 +77,13 @@
     R.draft = { points: [] }; R.pendingRect = null; R.pendingPoly = null;
     R.ruler = { a: null, b: null }; R.beamDraft = { a: null, b: null }; R.voidDraft = { a: null, b: null };
     R.calib = { on: false, a: null, b: null };
-    R.selectedBeam = null; R.selectedVoid = null;
+    R.selectedBeam = null; R.selectedVoid = null; R.mergeFirst = null;
     setMove(false);
     document.querySelectorAll("[data-plan-mode]").forEach((b) => b.classList.toggle("on", b.getAttribute("data-plan-mode") === mode));
+    // плавающая quickbar (отмена/просмотр/вписать) снизу холста — только в активных
+    // режимах рисования/расстановки, где тулбар сверху далеко от пальца
+    const qb = document.querySelector("#ep-plan-quickbar");
+    if (qb) qb.hidden = mode === "view";
     if (mode === "underlay") sheetUnderlay();
     else if (mode === "elem" && EP.Plan.Elements) EP.Plan.Elements.onModeEnter();
     else if (mode === "opening" && EP.Plan.Elements) EP.Plan.Elements.onOpeningModeEnter();
@@ -89,11 +103,19 @@
   }
 
   // ---------- тапы ----------
-  function onTap(w) {
+  function onTap(w, e) {
     const p = core().project; if (!p) return;
+    // ластик стилуса (Apple Pencil/Wacom, pointerType="eraser") — удаляет точку
+    // под собой в любом режиме, если под ним реально что-то есть; иначе — обычный тап
+    if (e && e.pointerType === "eraser" && R.canvas && EP.Plan.Elements) {
+      const k = R.canvas.cmPerPx();
+      const hit = EP.Plan.Elements.hitAt(w, EP.Plan.Elements.CFG.hitPx * k);
+      if (hit && hit.el) { EP.Plan.Elements.deleteElement(hit.el); return; }
+    }
     const step = p.settings.gridStep || 10;
     if (R.mode === "rect") {
       const pt = G().snapSmart(p, w, step, CFG.cornerSnapCm);
+      if (pt.snapped) vibrate(10);
       if (!R.draft.points.length) { R.draft.points = [pt]; renderScaled(); return; }
       const a = R.draft.points[0];
       const wcm = Math.abs(pt.x - a.x), hcm = Math.abs(pt.y - a.y);
@@ -107,13 +129,16 @@
     if (R.mode === "poly") {
       const pts = R.draft.points;
       if (pts.length >= 3 && G().dist(w, pts[0]) <= CFG.closePolyPx * R.canvas.cmPerPx()) {
+        vibrate([10, 30, 10]); // замкнули контур — отклик заметнее обычного снапа
         R.pendingPoly = pts.slice();
         sheetCreatePoly();
         return;
       }
       // автовыравнивание: линия от предыдущей точки доводится до 90°
       const ortho = G().orthoAdjust(pts[pts.length - 1] || null, w);
-      pts.push(G().snapSmart(p, ortho, step, CFG.cornerSnapCm));
+      const sp = G().snapSmart(p, ortho, step, CFG.cornerSnapCm);
+      if (sp.snapped) vibrate(10);
+      pts.push({ x: sp.x, y: sp.y }); // без snapped — эти точки уходят в room.points как есть
       renderScaled();
       sheetPolyDraft(); // длину следующей стены можно набрать цифрами
       return;
@@ -125,7 +150,9 @@
       return;
     }
     if (R.mode === "beam") {
-      const snapped = G().snapSmart(p, w, step, CFG.cornerSnapCm);
+      const sp = G().snapSmart(p, w, step, CFG.cornerSnapCm);
+      if (sp.snapped) vibrate(10);
+      const snapped = { x: sp.x, y: sp.y }; // без snapped — уходит в beam.a/b как есть
       if (!R.beamDraft.a) { R.beamDraft = { a: snapped, b: null }; renderScaled(); return; }
       const end = G().orthoAdjust(R.beamDraft.a, snapped); // прямая балка/перегородка под 90°
       const c = core();
@@ -140,7 +167,9 @@
       return;
     }
     if (R.mode === "void") {
-      const snapped = G().snapSmart(p, w, step, CFG.cornerSnapCm);
+      const sp = G().snapSmart(p, w, step, CFG.cornerSnapCm);
+      if (sp.snapped) vibrate(10);
+      const snapped = { x: sp.x, y: sp.y }; // без snapped — уходит в void.a/b как есть
       if (!R.voidDraft.a) { R.voidDraft = { a: snapped, b: null }; renderScaled(); return; }
       const c = core();
       c.commit();
@@ -172,6 +201,7 @@
       else toast(T.modeHint.wall);
       return;
     }
+    if (R.mode === "merge") { onMergeTap(p, w); return; }
     // view: приоритет — элемент/щит > балка > шахта/мини-комната > стена (развёртка) > комната
     clearBeamSel(); clearVoidSel();
     const k = R.canvas.cmPerPx();
@@ -210,9 +240,80 @@
 
   // ---------- шторка (нижняя панель) ----------
   function sheet() { return $("#ep-plan-sheet"); }
-  function openSheet(html) { const s = sheet(); if (s) { s.innerHTML = html; s.hidden = false; } }
-  function closeSheet() { const s = sheet(); if (s) { s.hidden = true; s.innerHTML = ""; } }
+  // quickbar прячется, пока открыта шторка — они бы перекрывались снизу, а у
+  // шторки обычно есть свои ✓/✕ рядом с тем же местом
+  function syncQuickbarForSheet(sheetOpen) {
+    const qb = $("#ep-plan-quickbar");
+    if (qb) qb.style.display = sheetOpen ? "none" : "";
+  }
+  function openSheet(html) { const s = sheet(); if (s) { s.innerHTML = html; s.hidden = false; } syncQuickbarForSheet(true); }
+  function closeSheet() { const s = sheet(); if (s) { s.hidden = true; s.innerHTML = ""; } syncQuickbarForSheet(false); }
   function toast(msg) { openSheet(`<div class="ep-plan-srow ep-plan-toast">${esc(msg)}</div>`); setTimeout(() => { if (sheet() && sheet().querySelector(".ep-plan-toast")) closeSheet(); }, 1800); }
+
+  // редактируемый объект может оказаться под шторкой (она до 60% высоты холста
+  // снизу) — сдвигаем вид вверх, чтобы точку/комнату было видно, пока её правишь.
+  // Вызывается ПОСЛЕ openSheet(...) с мировой точкой объекта.
+  function ensureVisibleAboveSheet(worldPt) {
+    if (!R.canvas || !worldPt) return;
+    const host = document.querySelector("#ep-plan-canvas"); if (!host) return;
+    const hb = host.getBoundingClientRect();
+    const r = R.canvas.svg.getBoundingClientRect();
+    const v = R.canvas.getView();
+    if (!v.h || !r.height) return;
+    const sy = r.top + ((worldPt.y - v.y) / v.h) * r.height; // экранный Y точки
+    const sheetTopScreen = hb.top + hb.height * 0.4; // шторка занимает нижние ~60%
+    const margin = 40; // px запаса над шторкой
+    if (sy < sheetTopScreen - margin) return; // и так видно — не дёргаем вид
+    const dyPx = sy - (sheetTopScreen - margin);
+    R.canvas.panBy(0, dyPx * R.canvas.cmPerPx());
+  }
+
+  // ---------- живой предпросмотр снапа при наведении (мышь/перо до тапа) ----------
+  // Только в режимах, где вообще идёт снап на тапе (rect/poly/beam/void) — рисует
+  // направляющие + прицел через plan-render.js, без полного renderScaled на каждое
+  // движение (см. CLAUDE.md про перф во время жеста).
+  const HOVER_SNAP_MODES = { rect: 1, poly: 1, beam: 1, void: 1 };
+  function clearHoverPreview() { if (R.canvas && EP.Plan.Render) EP.Plan.Render.clearHoverPreview(R.canvas); }
+  function onCanvasHover(w) {
+    if (!R.canvas || !EP.Plan.Render || !HOVER_SNAP_MODES[R.mode]) { clearHoverPreview(); return; }
+    const p = core().project; if (!p) { clearHoverPreview(); return; }
+    const step = p.settings.gridStep || 10;
+    // поли-режим доводит линию от прошлой точки до 90° ПЕРЕД снапом — так же,
+    // как на реальном тапе (иначе предпросмотр не совпадёт с тем, что реально ляжет)
+    const sp = (R.mode === "poly" && R.draft.points.length)
+      ? G().snapSmart(p, G().orthoAdjust(R.draft.points[R.draft.points.length - 1], w), step, CFG.cornerSnapCm)
+      : G().snapSmart(p, w, step, CFG.cornerSnapCm);
+    EP.Plan.Render.hoverPreview(R.canvas, sp, R.canvas.cmPerPx());
+  }
+
+  // ---------- быстрое меню по долгому нажатию на точку (режим «Просмотр») ----------
+  // Только удалить/копия — смену линии и так удобно делать в редакторе по обычному тапу.
+  function closeQuickMenu() { const m = document.querySelector("#ep-plan-qmenu"); if (m) m.remove(); }
+  function onCanvasLongPress(w, e) {
+    if (R.mode !== "view" || !EP.Plan.Elements || !R.canvas) return;
+    const k = R.canvas.cmPerPx();
+    const hit = EP.Plan.Elements.hitAt(w, EP.Plan.Elements.CFG.hitPx * k);
+    if (!hit || !hit.el) return;
+    vibrate(15);
+    closeQuickMenu();
+    const host = document.querySelector("#ep-plan-canvas"); if (!host) return;
+    const hb = host.getBoundingClientRect();
+    const menu = document.createElement("div");
+    menu.id = "ep-plan-qmenu";
+    menu.className = "ep-plan-qmenu";
+    menu.style.left = Math.max(6, Math.min(hb.width - 130, e.clientX - hb.left - 60)) + "px";
+    menu.style.top = Math.max(6, Math.min(hb.height - 50, e.clientY - hb.top - 56)) + "px";
+    menu.innerHTML = `<button type="button" class="ep-plan-qmbtn ep-clickable" data-qm-dup>⧉ Копия</button><button type="button" class="ep-plan-qmbtn ep-plan-qmbtn-del ep-clickable" data-qm-del>✕ Удалить</button>`;
+    host.appendChild(menu);
+    const elId = hit.el.id;
+    menu.addEventListener("click", (ev) => {
+      const t = ev.target;
+      const el2 = (core().project.elements || []).find((x) => x.id === elId);
+      if (t.closest("[data-qm-del]")) { closeQuickMenu(); EP.Plan.Elements.deleteElement(el2); }
+      else if (t.closest("[data-qm-dup]")) { closeQuickMenu(); EP.Plan.Elements.duplicateElement(el2); }
+    });
+    setTimeout(() => { document.addEventListener("pointerdown", closeQuickMenu, { once: true, capture: true }); }, 0);
+  }
 
   function sheetCreateRect() {
     const r = R.pendingRect;
@@ -290,6 +391,7 @@
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pr-delroom="${esc(room.id)}">${T.del}</button>
       </div>`);
     enableRoomDrag(room.id); // тяни углы/стены выбранной комнаты
+    ensureVisibleAboveSheet(G().centroid(room.points));
   }
   function sheetUnderlay() {
     const u = core().project && core().project.underlay;
@@ -342,6 +444,7 @@
     R.selectedBeam = bm.id;
     enableBeamDrag();
     renderScene();
+    ensureVisibleAboveSheet({ x: (bm.a.x + bm.b.x) / 2, y: (bm.a.y + bm.b.y) / 2 });
   }
   // тянуть концы выбранной балки/перегородки пальцем
   function enableBeamDrag() {
@@ -397,6 +500,7 @@
     R.selectedVoid = vd.id;
     enableVoidDrag();
     renderScene();
+    ensureVisibleAboveSheet({ x: (r.x1 + r.x2) / 2, y: (r.y1 + r.y2) / 2 });
   }
   function applyVoid(id) {
     const c = core(), vd = (c.project.voids || []).find((v) => v.id === id);
@@ -571,6 +675,97 @@
     closeSheet(); if (R.canvas) R.canvas.setDragHandler(null);
   }
 
+  // ---- объединение двух соприкасающихся комнат в одну (Г/Ш-образная без ручного контура) ----
+  function onMergeTap(p, w) {
+    const room = G().roomAt(p, w);
+    if (!room) { toast(T.mergeTapRoom); return; }
+    if (!R.mergeFirst) {
+      R.mergeFirst = room.id;
+      R.selectedRoomId = room.id;
+      renderScene(); // ПЕРЕД правкой подсказки — иначе renderScene() сама сбросит текст на T.modeHint[R.mode]
+      const hint = $("#ep-plan-modehint"); if (hint) hint.textContent = T.modeHint.mergeSecond;
+      return;
+    }
+    if (room.id === R.mergeFirst) { R.mergeFirst = null; R.selectedRoomId = null; toast(T.mergeCancelled); renderScene(); return; }
+    const merged = mergeRooms(R.mergeFirst, room.id);
+    R.mergeFirst = null;
+    if (!merged) return; // тост с причиной уже показан внутри mergeRooms
+    toast(T.mergeDone);
+    setMode("view");
+    R.selectedRoomId = merged.id;
+    sheetRoom(merged);
+  }
+  // переносит переопределения толщины/материала на стену объединённой комнаты от той
+  // исходной комнаты (A или B), чья стена физически там была — иначе после слияния
+  // все стены тихо съезжали бы на настройки проекта по умолчанию
+  function inheritWallOverrides(mergedPts, roomA, roomB) {
+    const wallTh = [], wallMat = [];
+    const sources = [roomA, roomB].map((room) => ({ room, walls: G().walls(room) }));
+    const n = mergedPts.length;
+    for (let i = 0; i < n; i++) {
+      const a = mergedPts[i], b = mergedPts[(i + 1) % n];
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      let best = null;
+      sources.forEach(({ room, walls }) => walls.forEach((ww) => {
+        const cl = G().closestOnSeg(mid, ww.a, ww.b);
+        if (cl.d < 1 && (!best || cl.d < best.d)) best = { room, wi: ww.i, d: cl.d };
+      }));
+      if (best) {
+        const th = best.room.wallTh && best.room.wallTh[best.wi];
+        const mat = best.room.wallMat && best.room.wallMat[best.wi];
+        if (th != null) wallTh[i] = th;
+        if (mat != null) wallMat[i] = mat;
+      }
+    }
+    return { wallTh, wallMat };
+  }
+  // возвращает объединённую комнату при успехе, иначе null (с тостом причины)
+  function mergeRooms(idA, idB) {
+    const c = core(), p = c.project;
+    const roomA = (p.rooms || []).find((r) => r.id === idA);
+    const roomB = (p.rooms || []).find((r) => r.id === idB);
+    if (!roomA || !roomB || roomA.id === roomB.id) return null;
+    const mergedPts = G().mergeRoomPolygons(roomA.points, roomB.points);
+    if (!mergedPts) { toast(T.mergeFail); return null; }
+
+    // мировые позиции точек/проёмов на стенах A и B — считаем ДО перестройки геометрии,
+    // пока старые стены ещё существуют в project
+    const belongsToPair = (wallId) => { const rid = String(wallId || "").split(":")[0]; return rid === roomA.id || rid === roomB.id; };
+    const els = (p.elements || []).filter((el) => el.wallId && belongsToPair(el.wallId));
+    const ops = (p.openings || []).filter((op) => op.wallId && belongsToPair(op.wallId));
+    const elPos = els.map((el) => G().elemPoint(p, el));
+    const opPos = ops.map((op) => { const ww = G().wallById(p, op.wallId); return ww ? G().pointAtOffset(ww, op.offset + op.width / 2) : null; });
+
+    const newRoom = c.model.newRoom(mergedPts, roomA.name);
+    newRoom.material = roomA.material || roomB.material || null;
+    newRoom.height = roomA.height || roomB.height || null;
+    if ((roomA.zones || []).indexOf("wet") >= 0 || (roomB.zones || []).indexOf("wet") >= 0) newRoom.zones = ["wet"];
+    const inh = inheritWallOverrides(mergedPts, roomA, roomB);
+    if (inh.wallTh.length) newRoom.wallTh = inh.wallTh;
+    if (inh.wallMat.length) newRoom.wallMat = inh.wallMat;
+
+    // если точка/проём стояли РОВНО на исчезающей общей стене — им больше некуда
+    // приткнуться на новой комнате; сливать в таком виде небезопасно (потеряли бы
+    // привязку), просим сначала убрать их с этого места
+    const newWalls = G().walls(newRoom);
+    const findNearWall = (pos) => {
+      if (!pos) return null;
+      let best = null;
+      newWalls.forEach((ww) => { const cl = G().closestOnSeg(pos, ww.a, ww.b); if (cl.d < 5 && (!best || cl.d < best.d)) best = { wall: ww, cl }; });
+      return best;
+    };
+    for (let i = 0; i < elPos.length; i++) if (!findNearWall(elPos[i])) { toast(T.mergeBlocked); return null; }
+    for (let i = 0; i < opPos.length; i++) if (!findNearWall(opPos[i])) { toast(T.mergeBlocked); return null; }
+
+    c.commit();
+    c.project.rooms = c.project.rooms.filter((r) => r.id !== roomA.id && r.id !== roomB.id);
+    c.project.rooms.push(newRoom);
+    els.forEach((el, i) => { const hit = findNearWall(elPos[i]); el.wallId = newRoom.id + ":" + hit.wall.i; el.offset = Math.round(hit.cl.t * hit.wall.len); });
+    ops.forEach((op, i) => { const hit = findNearWall(opPos[i]); op.wallId = newRoom.id + ":" + hit.wall.i; op.offset = Math.max(0, Math.round(hit.cl.t * hit.wall.len - op.width / 2)); });
+    c.persist("room-merge");
+    return newRoom;
+  }
+
   function loadUnderlayFile(file) {
     const rd = new FileReader();
     rd.onload = () => {
@@ -709,22 +904,26 @@
     R.canvas = canvas;
     canvas.onTap(onTap);
     canvas.onViewChanged(() => renderScaled());
+    canvas.onHover(onCanvasHover);
+    canvas.onHoverEnd(clearHoverPreview);
+    canvas.onLongPress(onCanvasLongPress);
     setMode("view");
     R.selectedRoomId = null;
     renderScene();
   }
-  function detach() { R.canvas = null; if (EP.Plan.Unfold) EP.Plan.Unfold.close(); }
+  function detach() { R.canvas = null; closeQuickMenu(); if (EP.Plan.Unfold) EP.Plan.Unfold.close(); }
   function setActive(on) { R.active = on; }
 
   EP.Plan = EP.Plan || {};
   EP.Plan.Rooms = {
     attach, detach, setActive, setMode, renderScene, T, CFG,
     // общий доступ для модулей слоёв 2-6
-    openSheet, closeSheet, toast,
+    openSheet, closeSheet, toast, ensureVisibleAboveSheet,
     isActive: () => R.active,
     currentMode: () => R.mode,
     selectedBeamId: () => R.selectedBeam || null,
     selectedVoidId: () => R.selectedVoid || null,
-    canvasCmPerPx: () => (R.canvas ? R.canvas.cmPerPx() : 1)
+    canvasCmPerPx: () => (R.canvas ? R.canvas.cmPerPx() : 1),
+    mergeRooms
   };
 })();

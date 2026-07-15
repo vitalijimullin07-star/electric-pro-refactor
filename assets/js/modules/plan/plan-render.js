@@ -512,6 +512,28 @@
     }
   }
 
+  // ---------- живой предпросмотр снапа (наведение мышью/пером до тапа) ----------
+  // Отдельный узел в overlay, обновляется атрибутами БЕЗ полного renderScaled —
+  // тот же принцип, что и тяга (см. CLAUDE.md: во время движения — только
+  // transform/атрибуты, полный рендер только на дискретных событиях).
+  // drawScaled() чистит весь overlay — узел сам пересоздаётся при следующем hover.
+  function hoverPreview(canvas, sp, k) {
+    const g = canvas.layers.overlay;
+    let hg = g.querySelector("#ep-plan-hoverprev");
+    if (!hg) { hg = el("g", { id: "ep-plan-hoverprev" }); g.appendChild(hg); }
+    clear(hg);
+    if (sp.snapped) {
+      const v = canvas.getView();
+      hg.appendChild(el("line", { x1: sp.x, y1: v.y, x2: sp.x, y2: v.y + v.h, class: "ep-plan-snapguide", "stroke-width": k }));
+      hg.appendChild(el("line", { x1: v.x, y1: sp.y, x2: v.x + v.w, y2: sp.y, class: "ep-plan-snapguide", "stroke-width": k }));
+    }
+    hg.appendChild(el("circle", { cx: sp.x, cy: sp.y, r: (sp.snapped ? 7 : 5) * k, class: "ep-plan-hovercross" + (sp.snapped ? " is-snapped" : "") }));
+  }
+  function clearHoverPreview(canvas) {
+    const hg = canvas.layers.overlay.querySelector("#ep-plan-hoverprev");
+    if (hg && hg.parentNode) hg.parentNode.removeChild(hg);
+  }
+
   EP.Plan = EP.Plan || {};
-  EP.Plan.Render = { draw, drawScaled, CFG };
+  EP.Plan.Render = { draw, drawScaled, CFG, hoverPreview, clearHoverPreview };
 })();

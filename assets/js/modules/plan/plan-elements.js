@@ -220,6 +220,8 @@
       </div>
       <input id="ep-pe-file" type="file" accept="image/*" capture="environment" hidden>`);
     rooms().renderScene();
+    const pt = G().elemPoint(p, el);
+    if (pt && rooms().ensureVisibleAboveSheet) rooms().ensureVisibleAboveSheet(pt);
   }
   function openOpeningEditor(op) {
     S.selId = op.id;
@@ -251,6 +253,7 @@
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-po-del>${T.del}</button>
       </div>`);
     rooms().renderScene();
+    if (wall && rooms().ensureVisibleAboveSheet) rooms().ensureVisibleAboveSheet(G().pointAtOffset(wall, op.offset + op.width / 2));
   }
   function currentOpening() { return (core().project.openings || []).find((o) => o.id === S.selId) || null; }
 
@@ -264,6 +267,7 @@
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pe-pdel="${esc(pn.id)}">${T.del}</button>
       </div>`);
     rooms().renderScene();
+    if (rooms().ensureVisibleAboveSheet) rooms().ensureVisibleAboveSheet({ x: pn.x, y: pn.y });
   }
   // Назначение линии (автомата): чипы существующих линий + «новая»
   function circuitRow(el) {
@@ -465,15 +469,7 @@
       c.persist("circuit-add"); openEditor(el); return;
     }
     if (t.closest("[data-pe-apply]")) return applyEditor();
-    if (t.closest("[data-pe-del]")) {
-      const c = core(), el = current(); if (!el) return;
-      if (!confirm(T.confirmDel)) return;
-      c.commit();
-      c.project.elements = c.project.elements.filter((x) => x.id !== el.id);
-      c.project.routes = c.project.routes.filter((r) => r.fromId !== el.id);
-      c.persist("elem-del");
-      S.selId = null; rooms().closeSheet(); rooms().renderScene(); return;
-    }
+    if (t.closest("[data-pe-del]")) { deleteElement(current()); return; }
     if (t.closest("[data-pe-photo]")) { const f = $("#ep-pe-file"); if (f) { f.onchange = () => { if (f.files && f.files[0]) addPhoto(f.files[0]); }; f.click(); } return; }
     if ((b = t.closest("[data-pe-phdel]"))) {
       const c = core(), el = current(); if (!el) return;
@@ -536,6 +532,41 @@
 
   function deselect() { S.selId = null; }
 
+  // копия точки со сдвигом на 30см (вдоль стены — по offset, свободная — по x/y);
+  // для быстрого меню по долгому нажатию (см. plan-rooms.js onCanvasLongPress)
+  function duplicateElement(el) {
+    if (!el) return null;
+    const c = core(), p = c.project;
+    c.commit();
+    const copy = JSON.parse(JSON.stringify(el));
+    copy.id = EP.Plan.Core.uid("el");
+    copy.status = "planned";
+    if (copy.wallId) {
+      const w = G().wallById(p, copy.wallId);
+      copy.offset = Math.min(w ? Math.max(0, w.len - 1) : copy.offset, copy.offset + 30);
+    } else if (copy.params && copy.params.x != null) {
+      copy.params = Object.assign({}, copy.params, { x: copy.params.x + 30, y: copy.params.y + 30 });
+    }
+    p.elements.push(copy);
+    c.persist("elem-dup");
+    rooms().renderScene();
+    return copy;
+  }
+
+  // с подтверждением — вызывается и кнопкой ✕ в редакторе, и ластиком стилуса
+  // (S Pen/Apple Pencil, pointerType "eraser") прямо по точке на плане
+  function deleteElement(el) {
+    if (!el) return;
+    if (!confirm(T.confirmDel)) return;
+    const c = core();
+    c.commit();
+    c.project.elements = c.project.elements.filter((x) => x.id !== el.id);
+    c.project.routes = c.project.routes.filter((r) => r.fromId !== el.id);
+    c.persist("elem-del");
+    if (S.selId === el.id) S.selId = null;
+    rooms().closeSheet(); rooms().renderScene();
+  }
+
   EP.Plan = EP.Plan || {};
-  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, onModeEnter, onOpeningModeEnter, placeAt, placeOpening, openingNum, hitAt, openEditor, openPanelEditor, openOpeningEditor, selectedId, deselect };
+  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, onModeEnter, onOpeningModeEnter, placeAt, placeOpening, openingNum, hitAt, openEditor, openPanelEditor, openOpeningEditor, selectedId, deselect, deleteElement, duplicateElement };
 })();
