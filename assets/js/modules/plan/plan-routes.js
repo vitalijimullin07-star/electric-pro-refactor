@@ -144,6 +144,35 @@
     return ortho(p, a, b, fromEl && fromEl.wallId || null); // запасной вариант
   }
 
+  // ---- ручное редактирование трасс: тяга опорных точек / разворот угла (Слой 4.1) ----
+  // Трасса с route.manual:true была подправлена рукой (enableRouteDrag/flipNearestCorner
+  // в plan-rooms.js) — build() ниже НЕ перестраивает её заново, а сохраняет и
+  // восстанавливает после полной перестройки, ЕСЛИ оба её конца (точка-источник и цель —
+  // щит/распайка/следующее звено шлейфа) физически не сдвинулись с прошлого раза
+  // (>1см — уже не совпадение округления). Если конец сдвинулся — ручная правка
+  // считается устаревшей и точка просто перестраивается заново, как обычно (localized
+  // инвалидация, а не полный сброс всех ручных трасс проекта).
+  function anchorPos(p, id) {
+    if (!id) return null;
+    const pn = (p.panels || []).find((x) => x.id === id);
+    if (pn) return { x: pn.x, y: pn.y };
+    const el = (p.elements || []).find((x) => x.id === id);
+    return el ? G().routeAnchor(p, el) : null;
+  }
+  function restoreManualRoutes(p, saved) {
+    saved.forEach((old) => {
+      if (!old.points || old.points.length < 2) return;
+      const a = anchorPos(p, old.fromId);
+      if (!a || dist(a, old.points[0]) > 1) return;
+      if (old.toId) {
+        const b = anchorPos(p, old.toId);
+        if (!b || dist(b, old.points[old.points.length - 1]) > 1) return;
+      }
+      const idx = p.routes.findIndex((r) => r.fromId === old.fromId);
+      if (idx >= 0) p.routes[idx] = old;
+    });
+  }
+
   function build(opts) {
     const silent = !!(opts && opts.silent); // тихая автоперестройка: без тостов/шторки
     const c = core(), p = c.project;
@@ -152,6 +181,7 @@
     const points = (p.elements || []).filter(isPoint);
     if (!points.length) { if (!silent) rooms().toast(T.noElems); return; }
     c.commit();
+    const savedManual = (p.routes || []).filter((r) => r.manual);
     p.routes = [];
 
     // узлы: щиты + распайки
@@ -195,8 +225,35 @@
       if (target) addRoute(c, p, n.el, n.pos, target, n.circuitId, colorOf(p, n.el));
     });
 
+    if (savedManual.length) restoreManualRoutes(p, savedManual);
     c.persist("routes-build");
     if (!silent) sheet();
+  }
+
+  // сброс конкретной трассы к авто-варианту (кнопка "↺ Авто" в sheetRoute) — снимает
+  // флаг и полная перестройка сама подставит свежий путь; остальные ручные трассы
+  // сохраняются (build() трогает только те, чей manual уже снят)
+  function resetRouteToAuto(routeId) {
+    const c = core(), p = c.project;
+    const rt = (p.routes || []).find((r) => r.id === routeId);
+    if (!rt) return;
+    c.commit();
+    rt.manual = false;
+    c.persist("route-reset");
+    build({ silent: true });
+  }
+
+  // хит-тест по уже построенным трассам (для ручного редактирования, plan-rooms.js)
+  function routeAt(p, w, maxD) {
+    let best = null;
+    (p.routes || []).forEach((rt) => {
+      const pts = rt.points || [];
+      for (let i = 0; i < pts.length - 1; i++) {
+        const cl = G().closestOnSeg(w, pts[i], pts[i + 1]);
+        if (cl.d <= maxD && (!best || cl.d < best.d)) best = { d: cl.d, route: rt, pt: { x: cl.x, y: cl.y } };
+      }
+    });
+    return best;
   }
 
   // ---- автоперестройка: геометрия сдвинулась (точка/стена/перегородка) —
@@ -392,5 +449,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { build, clearRoutes, lengths, sheet, pointVert, panelVert, hopVertMul, buildPath, roomNear };
+  EP.Plan.Routes = { build, clearRoutes, lengths, sheet, pointVert, panelVert, hopVertMul, buildPath, roomNear, routeAt, resetRouteToAuto };
 })();

@@ -135,6 +135,18 @@
     return G.area(ring) > 100 ? ring : null;
   };
   // ближайшая точка на замкнутом контуре: {x,y,seg,t,d}
+  // угол ломаной (для ручного редактирования трасс): если prev->corner->next — прямой
+  // угол по осям (сначала по одной оси, потом по другой), возвращает АЛЬТЕРНАТИВНУЮ
+  // вершину того же прямоугольника (свернуть "сначала вертикаль" в "сначала
+  // горизонталь" и наоборот). null, если это не прямой угол по осям (нечего разворачивать).
+  G.flipOrthoCorner = (prev, corner, next) => {
+    const EPS = 1;
+    const vertFirst = Math.abs(corner.x - prev.x) < EPS && Math.abs(corner.y - next.y) < EPS;
+    const horizFirst = Math.abs(corner.y - prev.y) < EPS && Math.abs(corner.x - next.x) < EPS;
+    if (vertFirst) return { x: next.x, y: prev.y };
+    if (horizFirst) return { x: prev.x, y: next.y };
+    return null;
+  };
   G.closestOnPoly = (pts, p) => {
     let best = null;
     for (let i = 0; i < pts.length; i++) {

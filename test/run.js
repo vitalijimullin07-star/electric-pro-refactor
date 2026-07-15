@@ -316,6 +316,66 @@ test("build(): тёплый пол (ТП) тоже получает трассу
   EP.Plan.Routes.build();
   ok(P.routes.some((r) => r.fromId === wf.id), "у тёплого пола есть построенная трасса");
 });
+test("flipOrthoCorner: разворачивает прямой угол (P->C->N) в альтернативную вершину прямоугольника", () => {
+  // сначала по Y (100,50)->(100,150), потом по X (100,150)->(200,150) — разворот: сначала по X, потом по Y
+  const flipped = G.flipOrthoCorner({ x: 100, y: 50 }, { x: 100, y: 150 }, { x: 200, y: 150 });
+  ok(flipped, "нашли альтернативную вершину");
+  near(flipped.x, 200, 0.5); near(flipped.y, 50, 0.5);
+  // не прямой угол по осям — нечего разворачивать
+  eq(G.flipOrthoCorner({ x: 0, y: 0 }, { x: 50, y: 50 }, { x: 100, y: 0 }), null, "диагональ — null");
+});
+test("routeAt: хит-тест находит построенную трассу рядом с сегментом", () => {
+  const { P } = scene(false);
+  EP.Plan.Routes.build();
+  ok(P.routes.length > 0, "трасса построена");
+  const rt = P.routes[0];
+  const mid = { x: (rt.points[0].x + rt.points[1].x) / 2, y: (rt.points[0].y + rt.points[1].y) / 2 };
+  const hit = EP.Plan.Routes.routeAt(P, mid, 5);
+  ok(hit && hit.route.id === rt.id, "нашли ту же трассу рядом с её сегментом");
+  const far = EP.Plan.Routes.routeAt(P, { x: mid.x + 1000, y: mid.y + 1000 }, 5);
+  eq(far, null, "далеко от всех трасс — null");
+});
+test("build(): ручная трасса (manual:true) сохраняется при перестройке, если её концы не сдвинулись", () => {
+  const { P } = scene(false);
+  EP.Plan.Routes.build();
+  const rt = P.routes[0];
+  const before = rt.points.length;
+  rt.points.splice(1, 0, { x: rt.points[0].x + 5, y: rt.points[0].y + 5 }); // ручная правка — лишняя точка
+  rt.manual = true;
+  EP.Plan.Routes.build(); // полная перестройка — концы точки/цели не двигались
+  const after = P.routes.find((r) => r.fromId === rt.fromId);
+  ok(after, "трасса на месте после перестройки");
+  eq(after.points.length, before + 1, "ручная точка излома сохранилась (не потёрлась авто-перестройкой)");
+  ok(after.manual, "флаг manual сохранён");
+});
+test("build(): ручная трасса СБРАСЫВАЕТСЯ в авто, если её точка-источник физически сдвинулась", () => {
+  const { P } = scene(false);
+  EP.Plan.Routes.build();
+  const rt = P.routes[0];
+  rt.points.splice(1, 0, { x: rt.points[0].x + 5, y: rt.points[0].y + 5 });
+  rt.manual = true;
+  const el = P.elements.find((e) => e.id === rt.fromId);
+  el.offset += 40; // точка физически переехала по стене
+  EP.Plan.Routes.build();
+  const after = P.routes.find((r) => r.fromId === rt.fromId);
+  ok(after, "трасса всё ещё есть (перестроена заново)");
+  ok(!after.manual, "manual снят — анкор устарел, трасса пересчитана как обычная");
+});
+test("resetRouteToAuto: снимает manual и пересчитывает конкретную трассу, не трогая остальные ручные", () => {
+  const { P } = scene(true); // с распайкой — минимум 2 трассы
+  EP.Plan.Routes.build();
+  ok(P.routes.length >= 2, "минимум 2 трассы в сцене с распайкой");
+  P.routes.forEach((r) => { r.manual = true; r.points.splice(1, 0, { x: r.points[0].x + 3, y: r.points[0].y + 3 }); });
+  const target = P.routes[0];
+  const untouchedId = P.routes[1].fromId;
+  const untouchedLenBefore = P.routes[1].points.length;
+  EP.Plan.Routes.resetRouteToAuto(target.id);
+  const resetRt = P.routes.find((r) => r.fromId === target.fromId);
+  ok(resetRt && !resetRt.manual, "выбранная трасса сброшена в авто");
+  const other = P.routes.find((r) => r.fromId === untouchedId);
+  ok(other && other.manual, "остальные ручные трассы не тронуты");
+  eq(other.points.length, untouchedLenBefore, "точки нетронутой ручной трассы не изменились");
+});
 test("hitAt: тап попадает по ВИДИМОМУ маркеру (elemDrawPoint), а не по оси стены", () => {
   const { P, w } = install();
   const s1 = M.newElement("socket", w(0), 100, 30, "power");
