@@ -276,7 +276,10 @@
   // друг другу) — "гасятся" (это стала внутренняя стена, которой больше нет снаружи).
   // Остаток рёбер (у обеих фигур) сшивается по общим концам в один замкнутый контур —
   // не важно, была общая граница одним отрезком или цепочкой через угол(ы).
-  G.mergeRoomPolygons = (ptsA, ptsB) => {
+  // третий параметр `out` — необязательный: если передан объект, в out.gone
+  // кладётся список [p,q]-отрезков ИСЧЕЗНУВШЕЙ (погашенной) общей стены —
+  // используется, чтобы опционально поставить на её месте перемычку (балку)
+  G.mergeRoomPolygons = (ptsA, ptsB, out) => {
     if (!ptsA || !ptsB || ptsA.length < 3 || ptsB.length < 3) return null;
     const EPS = 1; // см — допуск на неточность рисования от руки
     const a = G.signedArea(ptsA) < 0 ? ptsA.slice().reverse() : ptsA.slice();
@@ -285,14 +288,16 @@
     const remB = remainingPieces(b, a, EPS);
     const perim = (pts) => { let s = 0; for (let i = 0; i < pts.length; i++) s += G.dist(pts[i], pts[(i + 1) % pts.length]); return s; };
     const remLen = (segs) => segs.reduce((s, [p, q]) => s + G.dist(p, q), 0);
-    if (perim(a) - remLen(remA) < EPS) return null; // ничего не погасили — не соприкасаются общей стеной
-    const stitched = stitchPieces(remA.concat(remB));
+    if (perim(a) - remLen(remA.out) < EPS) return null; // ничего не погасили — не соприкасаются общей стеной
+    const stitched = stitchPieces(remA.out.concat(remB.out));
     if (!stitched) return null;
+    if (out) out.gone = remA.gone;
     return dropCollinear(stitched);
   };
-  // рёбра `from`, минус части, совпадающие с рёбрами `other` (навстречу, на одной прямой)
+  // рёбра `from`, минус части, совпадающие с рёбрами `other` (навстречу, на одной прямой);
+  // возвращает { out: оставшиеся куски, gone: погашенные (общая стена) куски — от `from` }
   function remainingPieces(from, other, EPS) {
-    const out = [], n = from.length, m = other.length;
+    const out = [], gone = [], n = from.length, m = other.length;
     for (let i = 0; i < n; i++) {
       const a0 = from[i], a1 = from[(i + 1) % n];
       const alen = G.dist(a0, a1);
@@ -323,10 +328,10 @@
       }
       const pt = (t) => ({ x: a0.x + adir.x * t, y: a0.y + adir.y * t });
       let cur = 0;
-      merged.forEach(([lo, hi]) => { if (lo - cur > EPS) out.push([pt(cur), pt(lo)]); cur = hi; });
+      merged.forEach(([lo, hi]) => { gone.push([pt(lo), pt(hi)]); if (lo - cur > EPS) out.push([pt(cur), pt(lo)]); cur = hi; });
       if (alen - cur > EPS) out.push([pt(cur), pt(alen)]);
     }
-    return out;
+    return { out, gone };
   }
   // сшивает несвязанные отрезки [a,b] в один замкнутый контур по совпадающим концам;
   // null, если контур рвётся (общая граница не одна связная цепь) или остались лишние куски
