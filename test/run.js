@@ -87,6 +87,100 @@ test("wallFrame: вогнутая (Г-образная) комната — но�
   const hitB = G.wallAt(P, { x: 80, y: 305 }, 20);
   eq(hitB.wall.roomId, room3.id, "тап внутри кладовки (в Комнате 3) — стена Комнаты 3");
 });
+test("mergeRoomPolygons: простое соприкосновение одной прямой стеной", () => {
+  const r1 = G.rectPoints(0, 0, 300, 300), r2 = G.rectPoints(300, 0, 200, 300);
+  const m = G.mergeRoomPolygons(r1, r2);
+  ok(m, "слияние удалось");
+  near(G.area(m), G.area(r1) + G.area(r2), 1, "площадь = сумма исходных");
+});
+test("mergeRoomPolygons: стена соседа короче/частично перекрывает стену первой комнаты", () => {
+  const r1 = G.rectPoints(0, 0, 390, 300), r2 = G.rectPoints(160, 300, 230, 480);
+  const m = G.mergeRoomPolygons(r1, r2);
+  ok(m, "слияние удалось при частичном перекрытии стены");
+  near(G.area(m), G.area(r1) + G.area(r2), 1, "площадь = сумма исходных");
+});
+test("mergeRoomPolygons: угловой стык (соседняя комната ровно в угловой вырез — 2 отрезка стены)", () => {
+  const L = [{ x: 0, y: 0 }, { x: 390, y: 0 }, { x: 390, y: 780 }, { x: 160, y: 780 }, { x: 160, y: 300 }, { x: 0, y: 300 }];
+  const cladovka = G.rectPoints(0, 300, 160, 480);
+  const m = G.mergeRoomPolygons(L, cladovka);
+  ok(m, "слияние через угол удалось");
+  near(G.area(m), 390 * 780, 1, "площадь = полный прямоугольник (вырез заполнен)");
+  eq(m.length, 4, "результат — чистый прямоугольник без мусорных точек на стыке");
+});
+test("mergeRoomPolygons: цепочка слияний — угловой стык может возникнуть НЕ на первом шаге", () => {
+  const topStrip = G.rectPoints(0, 0, 390, 300), rightPart = G.rectPoints(160, 300, 230, 480), cladovka = G.rectPoints(0, 300, 160, 480);
+  const m1 = G.mergeRoomPolygons(topStrip, rightPart);
+  ok(m1, "1й шаг (одна стена) удался");
+  const m2 = G.mergeRoomPolygons(m1, cladovka);
+  ok(m2, "2й шаг (угловой стык) тоже удался");
+  near(G.area(m2), 390 * 780, 1, "после обоих слияний — полный прямоугольник");
+});
+test("mergeRoomPolygons: не соприкасаются — null, без порчи данных", () => {
+  const far1 = G.rectPoints(0, 0, 100, 100), far2 = G.rectPoints(500, 500, 100, 100);
+  eq(G.mergeRoomPolygons(far1, far2), null, "далёкие комнаты — null");
+});
+test("mergeRoomPolygons: комнаты НАКЛАДЫВАЮТСЯ площадью (не просто соприкасаются) — null", () => {
+  const ov1 = G.rectPoints(0, 0, 200, 200), ov2 = G.rectPoints(100, 100, 200, 200);
+  eq(G.mergeRoomPolygons(ov1, ov2), null, "наложение — безопасный отказ, не мусорный полигон");
+});
+
+// ===== EP.Plan.Rooms.mergeRooms: слияние комнат уровня проекта (стены/точки/проёмы) =====
+test("mergeRooms: успешное слияние — 2 комнаты становятся 1, площадь верна", () => {
+  const { P } = install();
+  const roomB = M.newRoom(G.rectPoints(400, 0, 200, 300), "B");
+  P.rooms.push(roomB);
+  const before = G.area(P.rooms[0].points) + G.area(P.rooms[1].points);
+  const merged = EP.Plan.Rooms.mergeRooms(P.rooms[0].id, P.rooms[1].id);
+  ok(merged, "слияние прошло");
+  eq(P.rooms.length, 1, "осталась одна комната");
+  near(G.area(P.rooms[0].points), before, 1, "площадь объединённой = сумме исходных");
+});
+test("mergeRooms: точка на НЕ общей стене переносится на новую комнату с сохранением мировой позиции", () => {
+  const { P, w } = install();
+  const roomB = M.newRoom(G.rectPoints(400, 0, 200, 300), "B");
+  P.rooms.push(roomB);
+  const s1 = M.newElement("socket", w(0), 100, 30, "power"); // верхняя стена комнаты A — НЕ общая с B
+  P.elements.push(s1);
+  const before = G.elemPoint(P, s1);
+  const merged = EP.Plan.Rooms.mergeRooms(P.rooms[0].id, roomB.id);
+  ok(merged, "слияние прошло");
+  const after = G.elemPoint(P, s1);
+  ok(after, "точка не потеряна (осталась на стене)");
+  near(after.x, before.x, 1, "мировая позиция X сохранена"); near(after.y, before.y, 1, "мировая позиция Y сохранена");
+  eq(String(s1.wallId).split(":")[0], merged.id, "wallId точки указывает на объединённую комнату");
+});
+test("mergeRooms: точка РОВНО на общей (исчезающей) стене — слияние блокируется, ничего не портится", () => {
+  const { P } = install();
+  const roomB = M.newRoom(G.rectPoints(400, 0, 200, 300), "B");
+  P.rooms.push(roomB);
+  const s1 = M.newElement("socket", P.rooms[0].id + ":1", 100, 30, "power"); // общая стена A/B (x=400)
+  P.elements.push(s1);
+  const merged = EP.Plan.Rooms.mergeRooms(P.rooms[0].id, roomB.id);
+  eq(merged, null, "слияние отклонено");
+  eq(P.rooms.length, 2, "комнаты не тронуты");
+  eq(s1.wallId, P.rooms[0].id + ":1", "wallId точки не тронут");
+});
+test("mergeRooms: толщина/материал СОХРАНИВШЕЙСЯ (не общей) стены наследуются от исходной комнаты", () => {
+  const { P } = install();
+  P.rooms[0].wallTh = [25, null, null, null]; // верхняя стена комнаты A (i=0) потолще — НЕ общая с B
+  P.rooms[0].wallMat = ["Кирпич", null, null, null];
+  const roomB = M.newRoom(G.rectPoints(0, 300, 400, 200), "B"); // снизу, общая стена — i=2 (нижняя A)
+  P.rooms.push(roomB);
+  const merged = EP.Plan.Rooms.mergeRooms(P.rooms[0].id, roomB.id);
+  ok(merged, "слияние прошло");
+  // верхняя стена (0,0)-(400,0) должна пережить слияние — ищем её в объединённой комнате
+  const w = G.walls(merged).find((ww) => G.dist(ww.a, { x: 0, y: 0 }) < 1 && G.dist(ww.b, { x: 400, y: 0 }) < 1);
+  ok(w, "верхняя стена никуда не делась после слияния");
+  eq(G.wallThOf(P, w), 25, "толщина унаследована на новом индексе стены");
+  eq(G.wallMatOf(P, w), "Кирпич", "материал унаследован на новом индексе стены");
+});
+test("mergeRooms: несоприкасающиеся комнаты — null, ничего не меняется", () => {
+  const { P } = install();
+  const roomB = M.newRoom(G.rectPoints(1000, 1000, 200, 300), "B");
+  P.rooms.push(roomB);
+  eq(EP.Plan.Rooms.mergeRooms(P.rooms[0].id, roomB.id), null, "не соприкасаются — null");
+  eq(P.rooms.length, 2, "комнаты не тронуты");
+});
 test("beamWall: перегородка резолвится как стена", () => {
   const { P } = install({ beams: [M.newBeam({ x: 0, y: 150 }, { x: 300, y: 150 }, "beam", 8, "ГКЛ")] });
   const bw = G.wallById(P, "beam:" + P.beams[0].id);

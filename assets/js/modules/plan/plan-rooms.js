@@ -7,7 +7,7 @@
   window.EP = window.EP || {};
 
   const T = {
-    modes: { view: "☝", rect: "▭", poly: "⬠", beam: "▬", void: "▦", elem: "🔌", opening: "🚪", wall: "📐", ruler: "📏", underlay: "🖼" },
+    modes: { view: "☝", rect: "▭", poly: "⬠", beam: "▬", void: "▦", elem: "🔌", opening: "🚪", wall: "📐", ruler: "📏", underlay: "🖼", merge: "🔗" },
     modeHint: {
       view: "Тап: точка — редактор, стена — развёртка, комната — свойства.",
       rect: "Тапни два противоположных угла комнаты.",
@@ -18,12 +18,19 @@
       opening: "Проёмы: выбери дверь/окно/раздвижную/балкон и тапни по стене или перегородке.",
       wall: "Тапни по любой стене — сразу откроется её развёртка во весь экран.",
       ruler: "Тапни две точки — расстояние.",
-      underlay: "Фото-план: загрузка, масштаб по известной длине, перенос."
+      underlay: "Фото-план: загрузка, масштаб по известной длине, перенос.",
+      merge: "Тапни первую комнату, потом соседнюю — объединятся в одну.",
+      mergeSecond: "Тапни соседнюю комнату (или ту же — отменить)."
     },
     room: "Комната", create: "Создать", cancel: "Отмена", close: "Закрыть",
     name: "Название", width: "Ширина, см", depth: "Глубина, см", ceil: "Потолок, см",
     wet: "Влажная зона (санузел/кухня)", dup: "⧉ Копия", mirror: "⇋ Зеркало", del: "✕ Удалить",
     confirmDelRoom: "Удалить комнату?",
+    mergeTapRoom: "Тапни по комнате.",
+    mergeFail: "Эти комнаты не соприкасаются одной общей границей — объединить нельзя.",
+    mergeBlocked: "На общей стене есть точки/проёмы — перенеси или удали их и повтори.",
+    mergeCancelled: "Объединение отменено.",
+    mergeDone: "Комнаты объединены.",
     upl: { load: "📷 Загрузить фото плана", calib: "📏 Калибровка масштаба", move: "✋ Перенос",
            moveOn: "✋ Перенос: тяни подложку", del: "✕ Убрать подложку", opacity: "Прозрачность",
            calibHint: "Тапни 2 точки на подложке с известным расстоянием.",
@@ -45,7 +52,7 @@
     canvas: null, active: false,
     mode: "view", draft: { points: [] }, pendingRect: null, pendingPoly: null,
     selectedRoomId: null, ruler: { a: null, b: null }, beamDraft: { a: null, b: null }, voidDraft: { a: null, b: null },
-    umove: false, calib: { on: false, a: null, b: null }
+    umove: false, calib: { on: false, a: null, b: null }, mergeFirst: null
   };
 
   // ---------- сцена ----------
@@ -70,7 +77,7 @@
     R.draft = { points: [] }; R.pendingRect = null; R.pendingPoly = null;
     R.ruler = { a: null, b: null }; R.beamDraft = { a: null, b: null }; R.voidDraft = { a: null, b: null };
     R.calib = { on: false, a: null, b: null };
-    R.selectedBeam = null; R.selectedVoid = null;
+    R.selectedBeam = null; R.selectedVoid = null; R.mergeFirst = null;
     setMove(false);
     document.querySelectorAll("[data-plan-mode]").forEach((b) => b.classList.toggle("on", b.getAttribute("data-plan-mode") === mode));
     // плавающая quickbar (отмена/просмотр/вписать) снизу холста — только в активных
@@ -194,6 +201,7 @@
       else toast(T.modeHint.wall);
       return;
     }
+    if (R.mode === "merge") { onMergeTap(p, w); return; }
     // view: приоритет — элемент/щит > балка > шахта/мини-комната > стена (развёртка) > комната
     clearBeamSel(); clearVoidSel();
     const k = R.canvas.cmPerPx();
@@ -667,6 +675,97 @@
     closeSheet(); if (R.canvas) R.canvas.setDragHandler(null);
   }
 
+  // ---- объединение двух соприкасающихся комнат в одну (Г/Ш-образная без ручного контура) ----
+  function onMergeTap(p, w) {
+    const room = G().roomAt(p, w);
+    if (!room) { toast(T.mergeTapRoom); return; }
+    if (!R.mergeFirst) {
+      R.mergeFirst = room.id;
+      R.selectedRoomId = room.id;
+      renderScene(); // ПЕРЕД правкой подсказки — иначе renderScene() сама сбросит текст на T.modeHint[R.mode]
+      const hint = $("#ep-plan-modehint"); if (hint) hint.textContent = T.modeHint.mergeSecond;
+      return;
+    }
+    if (room.id === R.mergeFirst) { R.mergeFirst = null; R.selectedRoomId = null; toast(T.mergeCancelled); renderScene(); return; }
+    const merged = mergeRooms(R.mergeFirst, room.id);
+    R.mergeFirst = null;
+    if (!merged) return; // тост с причиной уже показан внутри mergeRooms
+    toast(T.mergeDone);
+    setMode("view");
+    R.selectedRoomId = merged.id;
+    sheetRoom(merged);
+  }
+  // переносит переопределения толщины/материала на стену объединённой комнаты от той
+  // исходной комнаты (A или B), чья стена физически там была — иначе после слияния
+  // все стены тихо съезжали бы на настройки проекта по умолчанию
+  function inheritWallOverrides(mergedPts, roomA, roomB) {
+    const wallTh = [], wallMat = [];
+    const sources = [roomA, roomB].map((room) => ({ room, walls: G().walls(room) }));
+    const n = mergedPts.length;
+    for (let i = 0; i < n; i++) {
+      const a = mergedPts[i], b = mergedPts[(i + 1) % n];
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      let best = null;
+      sources.forEach(({ room, walls }) => walls.forEach((ww) => {
+        const cl = G().closestOnSeg(mid, ww.a, ww.b);
+        if (cl.d < 1 && (!best || cl.d < best.d)) best = { room, wi: ww.i, d: cl.d };
+      }));
+      if (best) {
+        const th = best.room.wallTh && best.room.wallTh[best.wi];
+        const mat = best.room.wallMat && best.room.wallMat[best.wi];
+        if (th != null) wallTh[i] = th;
+        if (mat != null) wallMat[i] = mat;
+      }
+    }
+    return { wallTh, wallMat };
+  }
+  // возвращает объединённую комнату при успехе, иначе null (с тостом причины)
+  function mergeRooms(idA, idB) {
+    const c = core(), p = c.project;
+    const roomA = (p.rooms || []).find((r) => r.id === idA);
+    const roomB = (p.rooms || []).find((r) => r.id === idB);
+    if (!roomA || !roomB || roomA.id === roomB.id) return null;
+    const mergedPts = G().mergeRoomPolygons(roomA.points, roomB.points);
+    if (!mergedPts) { toast(T.mergeFail); return null; }
+
+    // мировые позиции точек/проёмов на стенах A и B — считаем ДО перестройки геометрии,
+    // пока старые стены ещё существуют в project
+    const belongsToPair = (wallId) => { const rid = String(wallId || "").split(":")[0]; return rid === roomA.id || rid === roomB.id; };
+    const els = (p.elements || []).filter((el) => el.wallId && belongsToPair(el.wallId));
+    const ops = (p.openings || []).filter((op) => op.wallId && belongsToPair(op.wallId));
+    const elPos = els.map((el) => G().elemPoint(p, el));
+    const opPos = ops.map((op) => { const ww = G().wallById(p, op.wallId); return ww ? G().pointAtOffset(ww, op.offset + op.width / 2) : null; });
+
+    const newRoom = c.model.newRoom(mergedPts, roomA.name);
+    newRoom.material = roomA.material || roomB.material || null;
+    newRoom.height = roomA.height || roomB.height || null;
+    if ((roomA.zones || []).indexOf("wet") >= 0 || (roomB.zones || []).indexOf("wet") >= 0) newRoom.zones = ["wet"];
+    const inh = inheritWallOverrides(mergedPts, roomA, roomB);
+    if (inh.wallTh.length) newRoom.wallTh = inh.wallTh;
+    if (inh.wallMat.length) newRoom.wallMat = inh.wallMat;
+
+    // если точка/проём стояли РОВНО на исчезающей общей стене — им больше некуда
+    // приткнуться на новой комнате; сливать в таком виде небезопасно (потеряли бы
+    // привязку), просим сначала убрать их с этого места
+    const newWalls = G().walls(newRoom);
+    const findNearWall = (pos) => {
+      if (!pos) return null;
+      let best = null;
+      newWalls.forEach((ww) => { const cl = G().closestOnSeg(pos, ww.a, ww.b); if (cl.d < 5 && (!best || cl.d < best.d)) best = { wall: ww, cl }; });
+      return best;
+    };
+    for (let i = 0; i < elPos.length; i++) if (!findNearWall(elPos[i])) { toast(T.mergeBlocked); return null; }
+    for (let i = 0; i < opPos.length; i++) if (!findNearWall(opPos[i])) { toast(T.mergeBlocked); return null; }
+
+    c.commit();
+    c.project.rooms = c.project.rooms.filter((r) => r.id !== roomA.id && r.id !== roomB.id);
+    c.project.rooms.push(newRoom);
+    els.forEach((el, i) => { const hit = findNearWall(elPos[i]); el.wallId = newRoom.id + ":" + hit.wall.i; el.offset = Math.round(hit.cl.t * hit.wall.len); });
+    ops.forEach((op, i) => { const hit = findNearWall(opPos[i]); op.wallId = newRoom.id + ":" + hit.wall.i; op.offset = Math.max(0, Math.round(hit.cl.t * hit.wall.len - op.width / 2)); });
+    c.persist("room-merge");
+    return newRoom;
+  }
+
   function loadUnderlayFile(file) {
     const rd = new FileReader();
     rd.onload = () => {
@@ -824,6 +923,7 @@
     currentMode: () => R.mode,
     selectedBeamId: () => R.selectedBeam || null,
     selectedVoidId: () => R.selectedVoid || null,
-    canvasCmPerPx: () => (R.canvas ? R.canvas.cmPerPx() : 1)
+    canvasCmPerPx: () => (R.canvas ? R.canvas.cmPerPx() : 1),
+    mergeRooms
   };
 })();
