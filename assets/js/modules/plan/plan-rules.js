@@ -128,7 +128,7 @@
     const p = core().project, R = rules(p);
     const { issues } = run(p);
     rooms().openSheet(`<div class="ep-plan-srow"><b>✅ ${T.title}</b>
-        <span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-pl-close>✕</button></div>
+        <span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-sheet-fs aria-label="Во весь экран">⛶</button><button type="button" class="ep-plan-mini ep-clickable" data-pl-close>✕</button></div>
       ${issues.length
         ? `<div class="ep-plan-items">${issues.map((i) => `<div class="ep-plan-irow ep-plan-warnrow"><span>⚠ ${esc(i.msg)}</span></div>`).join("")}</div>`
         : `<div class="ep-plan-srow">${T.ok}</div>`}

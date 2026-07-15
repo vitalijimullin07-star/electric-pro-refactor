@@ -43,6 +43,7 @@
     routeFlipNone: "Рядом нет прямого угла — разворачивать нечего.",
     routeAuto: "↺ Авто",
     routeCalc: "🧮 Пересчитать",
+    sheetFs: "Во весь экран",
     upl: { load: "📷 Загрузить фото плана", calib: "📏 Калибровка масштаба", move: "✋ Перенос",
            moveOn: "✋ Перенос: тяни подложку", del: "✕ Убрать подложку", opacity: "Прозрачность",
            calibHint: "Тапни 2 точки на подложке с известным расстоянием.",
@@ -262,7 +263,25 @@
     if (qb) qb.style.display = sheetOpen ? "none" : "";
   }
   function openSheet(html) { const s = sheet(); if (s) { s.innerHTML = html; s.hidden = false; } syncQuickbarForSheet(true); }
-  function closeSheet() { const s = sheet(); if (s) { s.hidden = true; s.innerHTML = ""; } syncQuickbarForSheet(false); }
+  function closeSheet() {
+    const s = sheet();
+    // если шторку закрыли, пока сама она (не Развёртка/Схема поверх нёё —
+    // те гасят себя сами через свой exitFS ДО этого вызова) стоит в нативном
+    // fullscreen — гасим его тоже, иначе браузер завис бы в fullscreen с пустой шторкой
+    try { if (s && document.fullscreenElement === s) document.exitFullscreen().catch(() => {}); } catch (e) {}
+    if (s) { s.hidden = true; s.innerHTML = ""; s.classList.remove("ep-plan-sheet-full"); }
+    syncQuickbarForSheet(false);
+  }
+  // общая кнопка «во весь экран» для шторок БЕЗ своего fullscreen-состояния
+  // (Расчёт/Трассы/Проверки/Слои) — просто нативный Fullscreen без принудительного
+  // разворота (screen.orientation.lock), в отличие от ⤢ у Схемы/Развёртки, которые
+  // держат СВОЁ состояние S.full и умеют это же самое + опциональный лок отдельно.
+  function toggleSheetFullscreen() {
+    const s = sheet(); if (!s) return;
+    if (document.fullscreenElement === s) { document.exitFullscreen().catch(() => {}); return; }
+    s.classList.add("ep-plan-sheet-full");
+    try { if (s.requestFullscreen) s.requestFullscreen().catch(() => {}); } catch (e) {}
+  }
   function toast(msg) { openSheet(`<div class="ep-plan-srow ep-plan-toast">${esc(msg)}</div>`); setTimeout(() => { if (sheet() && sheet().querySelector(".ep-plan-toast")) closeSheet(); }, 1800); }
 
   // редактируемый объект может оказаться под шторкой (она до 60% высоты холста
@@ -701,7 +720,8 @@
   function sheetLayers() {
     const p = core().project; if (!p) return;
     const st = p.settings.symbolStyle || "simple";
-    openSheet(`<div class="ep-plan-srow"><b>${T.layersTitle}</b></div>
+    openSheet(`<div class="ep-plan-srow"><b>${T.layersTitle}</b>
+        <span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-sheet-fs aria-label="${T.sheetFs}">⛶</button></div>
       <div class="ep-plan-layers">${p.layers.map((l) => `
         <label class="ep-plan-chk"><input type="checkbox" data-pr-layer="${esc(l.id)}" ${l.visible !== false ? "checked" : ""}>
         <i class="ep-plan-dot" style="background:${esc(l.color)}"></i> ${esc(l.name)}</label>`).join("")}</div>
@@ -953,12 +973,22 @@
     sheetUnderlay();
   }
 
+  // системный выход из fullscreen (жест "назад", ESC, смена вкладки) — синхронизируем
+  // класс шторки, а не только явные exitFS()/toggleSheetFullscreen() в самих модулях
+  document.addEventListener("fullscreenchange", () => {
+    const s = sheet();
+    if (s && document.fullscreenElement !== s) s.classList.remove("ep-plan-sheet-full");
+  });
+
   // ---------- события ----------
   document.addEventListener("click", (e) => {
     if (!R.active) return;
     const t = e.target; let el;
     if ((el = t.closest("[data-plan-mode]"))) return setMode(el.getAttribute("data-plan-mode"));
     if (t.closest("[data-plan-layers]")) return sheetLayers();
+    // общая кнопка «во весь экран» шторки — используется ЛЮБЫМ модулем слоёв 2-6
+    // (Расчёт/Трассы/Проверки/Слои и т.п.), поэтому обработчик один здесь, а не в каждом
+    if (t.closest("[data-sheet-fs]")) return toggleSheetFullscreen();
     if (t.closest("[data-plan-fit]")) { if (R.canvas) R.canvas.fit(G().projectBBox(core().project)); return; }
     if (t.closest("[data-pr-cancel]")) { setMode(R.mode === "underlay" ? "view" : R.mode); return; }
     if (t.closest("[data-pr-create-rect]")) return createRect();
@@ -1088,7 +1118,7 @@
   EP.Plan.Rooms = {
     attach, detach, setActive, setMode, renderScene, T, CFG,
     // общий доступ для модулей слоёв 2-6
-    openSheet, closeSheet, toast, ensureVisibleAboveSheet,
+    openSheet, closeSheet, toast, ensureVisibleAboveSheet, toggleSheetFullscreen,
     isActive: () => R.active,
     currentMode: () => R.mode,
     selectedBeamId: () => R.selectedBeam || null,

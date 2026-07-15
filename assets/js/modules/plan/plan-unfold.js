@@ -53,7 +53,8 @@
         <span class="ep-plan-flex"></span>
         <button type="button" class="ep-plan-mini ep-clickable" data-pu-ctrls aria-label="${S.ctrlsOn ? "Свернуть функции" : "Развернуть функции"}" title="Свернуть/развернуть функции">${S.ctrlsOn ? "︿" : "﹀"}</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-pu-fit aria-label="Показать всё">⛶</button>
-        <button type="button" class="ep-plan-mini ep-clickable" data-pu-full aria-label="Во весь экран">⤢</button>
+        <button type="button" class="ep-plan-mini ep-clickable" data-pu-fullplain aria-label="Во весь экран">⛶</button>
+        <button type="button" class="ep-plan-mini ep-clickable" data-pu-full aria-label="Во весь экран горизонтально" title="Во весь экран горизонтально (попытка принудительного разворота)">⤢</button>
         <button type="button" class="ep-plan-mini ep-clickable ${S.landscapeForced ? "on" : ""}" data-pu-fulllandscape aria-label="Во весь экран горизонтально (без поворота телефона)" title="Во весь экран горизонтально">🔄</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-pu-close>✕</button></div>
       <div class="ep-plan-unfmain">
@@ -86,24 +87,28 @@
       <div class="ep-plan-modehint">${T.hint}</div>`);
     const sh = $("#ep-plan-sheet"); if (sh) sh.classList.toggle("ep-plan-sheet-full", S.full);
     drawStrip();
-    if (S.full) requestFS();
+    if (S.full) requestFS(S.fullLock);
   }
   const isOpen = () => !!(S.wallId && $("#ep-pu-box"));
   function close() { S.wallId = null; S.full = false; S.view = null; S.ptPanel = null; S.lastTap = null; S.ledDraft = null; }
 
-  function requestFS() {
+  // lock=true — пробуем принудительно развернуть в горизонталь через
+  // screen.orientation.lock (работает не везде, тихо не срабатывает на iOS Safari);
+  // lock=false — просто fullscreen, ориентация как физически держит телефон
+  function requestFS(lock) {
     const sheet = $("#ep-plan-sheet"), box = $("#ep-pu-box"), target = sheet || box;
     try {
       if (target && target.requestFullscreen && !document.fullscreenElement)
-        target.requestFullscreen().then(() => { if (screen.orientation && screen.orientation.lock) screen.orientation.lock("landscape").catch(() => {}); }).catch(() => {});
+        target.requestFullscreen().then(() => { if (lock && screen.orientation && screen.orientation.lock) screen.orientation.lock("landscape").catch(() => {}); }).catch(() => {});
     } catch (e) {}
   }
-  function enterFS() {
+  function enterFS(lock) {
     S.full = true;
+    S.fullLock = !!lock;
     const sheet = $("#ep-plan-sheet"), box = $("#ep-pu-box");
     if (box) box.classList.add("is-full");
     if (sheet) sheet.classList.add("ep-plan-sheet-full");
-    requestFS(); drawStrip();
+    requestFS(lock); drawStrip();
   }
   function exitFS() {
     S.full = false;
@@ -121,7 +126,8 @@
       if (fe && (fe === sheet || fe === box)) document.exitFullscreen().catch(() => {});
     } catch (e) {}
   }
-  function toggleFull() { if (S.full) { exitFS(); drawStrip(); } else enterFS(); }
+  function toggleFull() { if (S.full) { exitFS(); drawStrip(); } else enterFS(true); }
+  function toggleFullPlain() { if (S.full) { exitFS(); drawStrip(); } else enterFS(false); }
   // «Во весь экран горизонтально» — ОТДЕЛЬНАЯ от toggleFull кнопка: screen.orientation.lock()
   // требует ФИЗИЧЕСКИ повернуть телефон (и вовсе не поддерживается в iOS Safari — тихо
   // ничего не делает) — здесь вместо этого CSS-трюк: элемент фиксируется на весь вьюпорт
@@ -131,6 +137,7 @@
   // повернулся бы дважды (получилось бы вверх ногами).
   function enterFSLandscape() {
     S.full = true;
+    S.fullLock = false;
     S.landscapeForced = true;
     const sheet = $("#ep-plan-sheet"), box = $("#ep-pu-box");
     if (box) box.classList.add("is-full");
@@ -668,6 +675,7 @@
       return;
     }
     if (t.closest("[data-pu-ctrls]")) return toggleCtrls();
+    if (t.closest("[data-pu-fullplain]")) return toggleFullPlain();
     if (t.closest("[data-pu-full]")) return toggleFull();
     if (t.closest("[data-pu-fulllandscape]")) return toggleFullLandscape();
     if (t.closest("[data-pu-fit]")) { const p = core().project, w = G().wallById(p, S.wallId); if (w) { S.view = fitView(wallH(p, S.wallId), w.len); drawStrip(); } return; }
