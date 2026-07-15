@@ -392,7 +392,12 @@
   function bindStrip(svg, w, H, L) {
     const pts = new Map();
     let pinch = null, moved = false, downClient = null, pending = null;
-    let penOn = false; // стилус (S Pen / Apple Pencil): пока перо на экране — ладонь игнорируем
+    // стилус: взводим уже на ховере (перо шлёт pointermove с pointerType="pen" до
+    // касания), снимаем с задержкой после ухода из зоны (pointerleave) — см. plan-canvas.js
+    let penOn = false;
+    let penDisarmTimer = null;
+    function armPen() { penOn = true; if (penDisarmTimer) { clearTimeout(penDisarmTimer); penDisarmTimer = null; } }
+    function disarmPenSoon() { if (penDisarmTimer) clearTimeout(penDisarmTimer); penDisarmTimer = setTimeout(() => { penOn = false; penDisarmTimer = null; }, 500); }
     const pxPerCm = () => { const r = svg.getBoundingClientRect(); return Math.min(r.width / S.view.w, r.height / S.view.h) || 1; };
     const dist2 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
     function pinchInfo() { const [a, b] = [...pts.values()]; return { d: Math.max(10, dist2(a, b)), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; }
@@ -414,7 +419,7 @@
     }
 
     svg.addEventListener("pointerdown", (e) => {
-      if (e.pointerType === "pen") penOn = true;
+      if (e.pointerType === "pen") armPen();
       else if (e.pointerType === "touch" && penOn) return; // ладонь при работе стилусом
       svg.setPointerCapture(e.pointerId);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -471,6 +476,7 @@
       pending = { kind: "empty" };
     });
     svg.addEventListener("pointermove", (e) => {
+      if (e.pointerType === "pen") armPen(); // в т.ч. ховер без касания
       if (!pts.has(e.pointerId)) return;
       const prev = pts.get(e.pointerId);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -518,8 +524,8 @@
         applyView(svg);
       }
     });
+    svg.addEventListener("pointerleave", (e) => { if (e.pointerType === "pen") disarmPenSoon(); });
     function end(e) {
-      if (e.pointerType === "pen") penOn = false;
       pts.delete(e.pointerId);
       if (pts.size < 2) pinch = null;
       if (S.drag) {

@@ -11,7 +11,10 @@
   G.snapPoint = (p, step) => ({ x: G.snap(p.x, step), y: G.snap(p.y, step) });
   G.dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
-  // Привязка: угол комнаты -> выравнивание по осям чужих углов -> сетка
+  // Привязка: угол комнаты -> выравнивание по осям чужих углов -> сетка.
+  // snapped=true только для угла/оси (значимая привязка) — НЕ для рядового
+  // округления по сетке, чтобы вызывающий код мог дать тактильный отклик
+  // только на реальный снап, а не на каждый тап.
   G.snapSmart = (project, p, step, cornerRadius) => {
     let best = null, ax = null, ay = null;
     (project.rooms || []).forEach((r) => (r.points || []).forEach((c) => {
@@ -20,8 +23,8 @@
       if (Math.abs(p.x - c.x) <= cornerRadius && (ax == null || Math.abs(p.x - c.x) < Math.abs(p.x - ax))) ax = c.x;
       if (Math.abs(p.y - c.y) <= cornerRadius && (ay == null || Math.abs(p.y - c.y) < Math.abs(p.y - ay))) ay = c.y;
     }));
-    if (best) return { x: best.x, y: best.y };
-    return { x: ax != null ? ax : G.snap(p.x, step), y: ay != null ? ay : G.snap(p.y, step) };
+    if (best) return { x: best.x, y: best.y, snapped: true };
+    return { x: ax != null ? ax : G.snap(p.x, step), y: ay != null ? ay : G.snap(p.y, step), snapped: ax != null || ay != null };
   };
 
   // Автовыравнивание под 90°: если линия от prev почти вертикальна/горизонтальна — доводим

@@ -35,6 +35,9 @@
 
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const $ = (sel, r) => (r || document).querySelector(sel);
+  // тактильный отклик на значимый снап (угол/ось) и замыкание контура — молча
+  // не срабатывает, если Vibration API недоступен (iOS Safari и т.п.)
+  const vibrate = (pattern) => { try { navigator.vibrate && navigator.vibrate(pattern); } catch (e) {} };
   const core = () => EP.Plan.Core;
   const G = () => EP.Plan.Geometry;
 
@@ -94,6 +97,7 @@
     const step = p.settings.gridStep || 10;
     if (R.mode === "rect") {
       const pt = G().snapSmart(p, w, step, CFG.cornerSnapCm);
+      if (pt.snapped) vibrate(10);
       if (!R.draft.points.length) { R.draft.points = [pt]; renderScaled(); return; }
       const a = R.draft.points[0];
       const wcm = Math.abs(pt.x - a.x), hcm = Math.abs(pt.y - a.y);
@@ -107,13 +111,16 @@
     if (R.mode === "poly") {
       const pts = R.draft.points;
       if (pts.length >= 3 && G().dist(w, pts[0]) <= CFG.closePolyPx * R.canvas.cmPerPx()) {
+        vibrate([10, 30, 10]); // замкнули контур — отклик заметнее обычного снапа
         R.pendingPoly = pts.slice();
         sheetCreatePoly();
         return;
       }
       // автовыравнивание: линия от предыдущей точки доводится до 90°
       const ortho = G().orthoAdjust(pts[pts.length - 1] || null, w);
-      pts.push(G().snapSmart(p, ortho, step, CFG.cornerSnapCm));
+      const sp = G().snapSmart(p, ortho, step, CFG.cornerSnapCm);
+      if (sp.snapped) vibrate(10);
+      pts.push({ x: sp.x, y: sp.y }); // без snapped — эти точки уходят в room.points как есть
       renderScaled();
       sheetPolyDraft(); // длину следующей стены можно набрать цифрами
       return;
@@ -125,7 +132,9 @@
       return;
     }
     if (R.mode === "beam") {
-      const snapped = G().snapSmart(p, w, step, CFG.cornerSnapCm);
+      const sp = G().snapSmart(p, w, step, CFG.cornerSnapCm);
+      if (sp.snapped) vibrate(10);
+      const snapped = { x: sp.x, y: sp.y }; // без snapped — уходит в beam.a/b как есть
       if (!R.beamDraft.a) { R.beamDraft = { a: snapped, b: null }; renderScaled(); return; }
       const end = G().orthoAdjust(R.beamDraft.a, snapped); // прямая балка/перегородка под 90°
       const c = core();
@@ -140,7 +149,9 @@
       return;
     }
     if (R.mode === "void") {
-      const snapped = G().snapSmart(p, w, step, CFG.cornerSnapCm);
+      const sp = G().snapSmart(p, w, step, CFG.cornerSnapCm);
+      if (sp.snapped) vibrate(10);
+      const snapped = { x: sp.x, y: sp.y }; // без snapped — уходит в void.a/b как есть
       if (!R.voidDraft.a) { R.voidDraft = { a: snapped, b: null }; renderScaled(); return; }
       const c = core();
       c.commit();

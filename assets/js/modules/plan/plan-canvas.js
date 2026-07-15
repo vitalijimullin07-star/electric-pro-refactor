@@ -13,7 +13,7 @@
     gridSteps: [5, 10, 25, 50, 100, 250, 500, 1000], // см
     gridMinPx: 26,       // не рисуем сетку чаще, чем раз в 26px
     gridMajorEvery: 100, // жирная линия каждый метр
-    tapMaxPx: 9, tapMaxMs: 450
+    tapMaxPx: 9, tapMaxMs: 450, dragStartPx: 6
   };
 
   function el(tag, attrs) {
@@ -88,7 +88,18 @@
     let tapStart = null;   // { x, y, t, id }
     let dragHandler = null, dragMoved = false; // перехват одиночного перетаскивания (подложка/элементы)
     let dragVeto = false; // хендлер вернул false на "start" — жест остаётся панорамой
-    let penActive = false; // стилус (S Pen / Apple Pencil): пока он на экране — касания ладони игнорируем
+    // стилус (S Pen / Apple Pencil): пока он рядом с экраном — касания ладони игнорируем.
+    // Взводим уже на ХОВЕРЕ (перо репортит pointermove с pointerType="pen" ДО касания) —
+    // иначе ладонь успевает лечь на экран за 100-300мс до касания пером и словить жест
+    // раньше него. Снимаем не сразу на отрыве, а с задержкой после ухода зоны ховера
+    // (pointerleave) — между мазками перо часто приподнимается, но остаётся рядом.
+    let penActive = false;
+    let penDisarmTimer = null;
+    function armPen() { penActive = true; if (penDisarmTimer) { clearTimeout(penDisarmTimer); penDisarmTimer = null; } }
+    function disarmPenSoon() {
+      if (penDisarmTimer) clearTimeout(penDisarmTimer);
+      penDisarmTimer = setTimeout(() => { penActive = false; penDisarmTimer = null; }, 500);
+    }
 
     function dist2(a, b) { const dx = a.x - b.x, dy = a.y - b.y; return Math.hypot(dx, dy); }
     function pinchInfo() {
@@ -98,7 +109,7 @@
 
     let downClient = null; // экранная точка начала одиночного жеста (для drag-старта)
     svg.addEventListener("pointerdown", (e) => {
-      if (e.pointerType === "pen") penActive = true;
+      if (e.pointerType === "pen") armPen();
       else if (e.pointerType === "touch" && penActive) return; // ладонь при работе стилусом
       svg.setPointerCapture(e.pointerId);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -106,6 +117,7 @@
       if (pts.size === 2) { pinch = pinchInfo(); tapStart = null; }
     });
     svg.addEventListener("pointermove", (e) => {
+      if (e.pointerType === "pen") armPen(); // в т.ч. ховер без касания — pts его не содержит
       if (!pts.has(e.pointerId)) return;
       const prev = pts.get(e.pointerId);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -126,6 +138,10 @@
         const dx = (e.clientX - prev.x) * k, dy = (e.clientY - prev.y) * k;
         if (dragHandler && !dragVeto) {
           if (!dragMoved) {
+            // не начинаем тягу, пока смещение от точки касания не превысит порог —
+            // лёгкое дрожание пальца при тапе по уже выбранному объекту иначе создаёт
+            // мусорный микро-шаг в истории отмены (commit() на "start" уже необратим)
+            if (downClient && Math.hypot(e.clientX - downClient.x, e.clientY - downClient.y) < CFG.dragStartPx) return;
             // хендлер может отказаться (вернуть false) — тогда жест панорамирует
             const res = dragHandler(0, 0, "start", toWorld((downClient || e).x, (downClient || e).y));
             if (res === false) { dragVeto = true; view.x -= dx; view.y -= dy; apply(); }
@@ -136,8 +152,8 @@
         if (tapStart && Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y) > CFG.tapMaxPx) tapStart = null;
       }
     });
+    svg.addEventListener("pointerleave", (e) => { if (e.pointerType === "pen") disarmPenSoon(); });
     function endPointer(e) {
-      if (e.pointerType === "pen") penActive = false;
       pts.delete(e.pointerId);
       if (pts.size < 2) pinch = null;
       if (dragHandler && dragMoved && pts.size === 0) { dragMoved = false; dragHandler(0, 0, "end"); }

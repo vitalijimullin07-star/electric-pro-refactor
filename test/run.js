@@ -868,6 +868,20 @@ test("G.roomVoidArea: препятствие ВНЕ комнаты не вычи
   P.voids = [vd];
   eq(G.roomVoidArea(P, room), 0, "центр препятствия вне полигона комнаты");
 });
+test("G.snapSmart: возле угла комнаты — snapped=true, координаты угла", () => {
+  const { P, room } = install(); // комната rectPoints(0,0,400,300) — угол (0,0)
+  const r = G.snapSmart(P, { x: 3, y: 4 }, 10, 20);
+  eq(r.x, 0, "притянуло к X угла");
+  eq(r.y, 0, "притянуло к Y угла");
+  eq(r.snapped, true, "угол — значимый снап");
+});
+test("G.snapSmart: далеко от углов/осей — обычное округление по сетке, snapped=false", () => {
+  const { P } = install();
+  const r = G.snapSmart(P, { x: 1234, y: 1234 }, 10, 20);
+  eq(r.x, 1230, "округлено по шагу сетки 10");
+  eq(r.y, 1230, "округлено по шагу сетки 10");
+  eq(r.snapped, false, "простое округление по сетке — не значимый снап");
+});
 test("OPENING_KINDS.opening: проём без двери/окна, win=false", () => {
   const op = M.newOpening("opening", "w:0", 0, undefined);
   eq(op.kind, "opening");
