@@ -888,6 +888,63 @@ test("OPENING_KINDS.opening: проём без двери/окна, win=false", 
   eq(op.type, "door", "type остаётся door (внутреннее поле, win=false)");
 });
 
+// ===== 16. Обход проёмов при полу: приоритет двери над новой гильзой =====
+function twoRoomsWithLamp(routeType, withDoor) {
+  const { P } = install(); // room A: rect(0,0,400,300)
+  const roomB = M.newRoom(G.rectPoints(400, 0, 400, 300), "B"); // общая стена x=400
+  P.rooms.push(roomB);
+  P.settings.routeType = routeType;
+  if (withDoor) P.openings.push(M.newOpening("door", P.rooms[0].id + ":1", 220, 60)); // дверь y=220..280
+  const pn = M.newPanel(100, 150, "Щ"); P.panels.push(pn); // комната A
+  const lamp = M.newElement("light", null, 0, 0, "light");
+  lamp.params = { x: 600, y: 150 }; // комната B; прямая к щиту идёт по y=150 (мимо двери)
+  P.elements.push(lamp);
+  return { P, pn, lamp };
+}
+test("buildPath (пол): дверь на общей стене — переход через неё, а не в произвольном месте", () => {
+  const { P, pn, lamp } = twoRoomsWithLamp("floor", true);
+  const a = G.routeAnchor(P, lamp);
+  const path = EP.Plan.Routes.buildPath(P, lamp, a, { kind: "panel", pos: { x: pn.x, y: pn.y } });
+  ok(path.some((q) => Math.abs(q.x - 400) < 25 && Math.abs(q.y - 250) < 10), "путь проходит через дверь (y≈250)");
+  ok(!path.some((q) => Math.abs(q.x - 400) < 25 && Math.abs(q.y - 150) < 10), "НЕ идёт через прямую точку пересечения — там нет проёма");
+});
+test("buildPath (пол): без двери на стене — прежнее поведение, проходка на прямой", () => {
+  const { P, pn, lamp } = twoRoomsWithLamp("floor", false);
+  const a = G.routeAnchor(P, lamp);
+  const path = EP.Plan.Routes.buildPath(P, lamp, a, { kind: "panel", pos: { x: pn.x, y: pn.y } });
+  ok(path.some((q) => Math.abs(q.x - 400) < 25 && Math.abs(q.y - 150) < 10), "без проёма — обычная перпендикулярная проходка на прямой");
+});
+test("buildPath (потолок): дверь есть, но обход применяется только к трассировке по полу", () => {
+  const { P, pn, lamp } = twoRoomsWithLamp("ceiling", true);
+  const a = G.routeAnchor(P, lamp);
+  const path = EP.Plan.Routes.buildPath(P, lamp, a, { kind: "panel", pos: { x: pn.x, y: pn.y } });
+  ok(path.some((q) => Math.abs(q.x - 400) < 25 && Math.abs(q.y - 150) < 10), "потолок — дверь не влияет, проходка на прямой");
+});
+test("build (пол): переход через дверь не считается гильзой-проходкой Ø20", () => {
+  const { P } = twoRoomsWithLamp("floor", true);
+  EP.Plan.Routes.build();
+  ok(P.routes.length > 0, "трасса построена");
+  eq((P.routes[0].throughWalls || []).length, 0, "через дверь — без гильзы");
+});
+test("build (пол): без двери — переход через стену по-прежнему считается гильзой Ø20", () => {
+  const { P } = twoRoomsWithLamp("floor", false);
+  EP.Plan.Routes.build();
+  ok(P.routes.length > 0, "трасса построена");
+  ok((P.routes[0].throughWalls || []).length > 0, "без проёма — обычная гильза требуется");
+});
+test("floorOpeningAt: находит проём и со стороны СОСЕДНЕЙ комнаты (другой wall-id того же шва)", () => {
+  const { P } = install();
+  const roomB = M.newRoom(G.rectPoints(400, 0, 400, 300), "B");
+  P.rooms.push(roomB);
+  const wallAId = P.rooms[0].id + ":1"; // A: стена x=400 (0..300)
+  P.openings.push(M.newOpening("door", wallAId, 220, 60));
+  const hitOwn = G.floorOpeningAt(P, wallAId, { x: 400, y: 250 });
+  ok(hitOwn, "находит на своей же стене");
+  const wallBId = roomB.id + ":3"; // B: та же физическая стена, другой id/направление
+  const hitOther = G.floorOpeningAt(P, wallBId, { x: 400, y: 250 });
+  ok(hitOther, "находит и через wall-id соседней комнаты (проекция wallOpeningSpans)");
+});
+
 (async () => {
   await test("openProject: бэкофилл старых проектов", async () => {}); // placeholder to keep sync
   // п.1 аудита: importJSON теперь ТОЖЕ бэкофиллит (не только openProject) — старые/

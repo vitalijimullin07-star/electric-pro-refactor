@@ -117,11 +117,22 @@
         .map((c) => ({ c, w: G().wallById(p, c.wallId), d: G().dist(a, c) }))
         .filter((h) => h.w).sort((x, y) => x.d - y.d);
       if (hits.length) {
-        const { c, w } = hits[0];
+        const { w } = hits[0];
+        let c = hits[0].c, viaOpening = false;
+        // Пол: приоритет — если на этой стене есть проём до пола (дверь/раздвижная/
+        // балконная/проём, sill=0 — НЕ окно), ведём кабель прямо через него вместо
+        // сверления новой гильзы (там уже физический разрыв стены). Берём ближайший
+        // к «a» такой проём на найденной стене.
+        if (p.settings.routeType === "floor") {
+          const door = G().wallOpeningSpans(p, w).filter((o) => o.sill === 0)
+            .map((o) => G().pointAtOffset(w, o.offset + o.width / 2))
+            .sort((x, y) => G().dist(a, x) - G().dist(a, y))[0];
+          if (door) { c = door; viaOpening = true; }
+        }
         const len = w.len || 1;
         let nx = -(w.b.y - w.a.y) / len, ny = (w.b.x - w.a.x) / len;
         if ((b.x - a.x) * nx + (b.y - a.y) * ny < 0) { nx = -nx; ny = -ny; } // нормаль в сторону цели
-        const jump = G().wallThOf(p, w) / 2 + routeOff(p, circuitId);
+        const jump = viaOpening ? (G().wallThOf(p, w) / 2 + 2) : (G().wallThOf(p, w) / 2 + routeOff(p, circuitId));
         const c1 = { x: c.x - nx * jump, y: c.y - ny * jump }; // по нашу сторону стены
         const c2 = { x: c.x + nx * jump, y: c.y + ny * jump }; // за стеной
         const legA = (G().roomAt(p, c1) === ra ? pathInRoom(p, ra, a, c1, circuitId) : null) || [a, c1];
@@ -232,7 +243,11 @@
     const s = p.settings;
     if (fromEl.layer === "warm") { rt.chaseW = s.tpChaseW || 50; rt.chaseH = s.tpChaseH || 50; rt.chaseFloor = true; }
     else { rt.chaseW = s.chaseW || 25; rt.chaseH = s.chaseH || 30; rt.chaseFloor = (s.routeType === "floor"); }
-    rt.throughWalls = G().polylineCrossings(p, pts, fromEl.wallId || null);
+    let throughWalls = G().polylineCrossings(p, pts, fromEl.wallId || null);
+    // Пол: крест пути с проёмом до пола (дверь и т.п.) — уже не «сверление», гильза
+    // Ø20 туда не считается (см. приоритет проёмов в buildPath выше).
+    if (s.routeType === "floor") throughWalls = throughWalls.filter((cr) => !G().floorOpeningAt(p, cr.wallId, cr));
+    rt.throughWalls = throughWalls;
     p.routes.push(rt);
   }
 

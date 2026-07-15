@@ -381,12 +381,30 @@
     return { x: w.a.x + (w.b.x - w.a.x) * t, y: w.a.y + (w.b.y - w.a.y) * t };
   };
   G.openingsOnWall = (project, wallId) => (project.openings || []).filter((o) => o.wallId === wallId);
+  // Проекция точки на прямую стены -> смещение в см от угла a (для поиска "в каком
+  // проёме" лежит точка трассировки).
+  G.offsetOnWall = (w, pt) => {
+    const len = w.len || 1;
+    return ((pt.x - w.a.x) * (w.b.x - w.a.x) + (pt.y - w.a.y) * (w.b.y - w.a.y)) / len;
+  };
+  // Проём ДО ПОЛА (дверь/раздвижная/балконная/проём — sill=0, НЕ окно) на стене
+  // рядом с точкой — трассировка по полу ведёт кабель прямо через такой проём
+  // (там уже физический разрыв стены), без новой гильзы-проходки. Через
+  // wallOpeningSpans (не сырой openingsOnWall), т.к. общая стена двух комнат —
+  // ДВА разных wall-объекта с разными id, а проём определён только на одном из
+  // них; wallOpeningSpans уже умеет проецировать его на соседнюю сторону шва.
+  G.floorOpeningAt = (project, wallId, pt) => {
+    const w = G.wallById(project, wallId);
+    if (!w) return null;
+    const t = G.offsetOnWall(w, pt);
+    return G.wallOpeningSpans(project, w).find((o) => o.sill === 0 && t >= o.offset - 1 && t <= o.offset + o.width + 1) || null;
+  };
 
-  // Проёмы для ВЫРЕЗА в стене как {offset,width}: свои + спроецированные с близкой
-  // параллельной стены соседней комнаты/перегородки — чтобы проём «резал» обе полосы
-  // общей стены (две комнаты рядом), а не только одну.
+  // Проёмы для ВЫРЕЗА в стене как {offset,width,sill}: свои + спроецированные с
+  // близкой параллельной стены соседней комнаты/перегородки — чтобы проём «резал»
+  // обе полосы общей стены (две комнаты рядом), а не только одну.
   G.wallOpeningSpans = (project, wall) => {
-    const out = G.openingsOnWall(project, wall.id).map((o) => ({ offset: o.offset, width: o.width }));
+    const out = G.openingsOnWall(project, wall.id).map((o) => ({ offset: o.offset, width: o.width, sill: o.sill }));
     const len = wall.len || 1;
     const dir = { x: (wall.b.x - wall.a.x) / len, y: (wall.b.y - wall.a.y) / len };
     const nx = -dir.y, ny = dir.x;
@@ -403,7 +421,7 @@
         const ta = (pa.x - wall.a.x) * dir.x + (pa.y - wall.a.y) * dir.y;
         const tb = (pb.x - wall.a.x) * dir.x + (pb.y - wall.a.y) * dir.y;
         const s = Math.max(0, Math.min(len, Math.min(ta, tb))), e = Math.max(0, Math.min(len, Math.max(ta, tb)));
-        if (e > s + 1) out.push({ offset: s, width: e - s });
+        if (e > s + 1) out.push({ offset: s, width: e - s, sill: o.sill });
       });
     });
     return out;
