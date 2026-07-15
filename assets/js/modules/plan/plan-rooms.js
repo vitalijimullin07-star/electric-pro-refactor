@@ -42,6 +42,7 @@
     routeFlip: "🔄 Развернуть",
     routeFlipNone: "Рядом нет прямого угла — разворачивать нечего.",
     routeAuto: "↺ Авто",
+    routeCalc: "🧮 Пересчитать",
     upl: { load: "📷 Загрузить фото плана", calib: "📏 Калибровка масштаба", move: "✋ Перенос",
            moveOn: "✋ Перенос: тяни подложку", del: "✕ Убрать подложку", opacity: "Прозрачность",
            calibHint: "Тапни 2 точки на подложке с известным расстоянием.",
@@ -571,6 +572,7 @@
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="ep-plan-tbtn ep-clickable" data-prt2-flip>${T.routeFlip}</button>
         ${rt.manual ? `<button type="button" class="ep-plan-tbtn ep-clickable" data-prt2-auto="${esc(rt.id)}">${T.routeAuto}</button>` : ""}
+        ${EP.Plan.Calc ? `<button type="button" class="ep-plan-tbtn ep-clickable" data-prt2-calc>${T.routeCalc}</button>` : ""}
         <button type="button" class="ep-plan-tbtn ep-clickable" data-prt2-done>✓</button>
       </div>`);
     R.selectedRoute = rt.id;
@@ -634,7 +636,11 @@
         renderSceneSoon();
       } else if (phase === "end" && grabbed >= 0) {
         const step = c.project.settings.gridStep || 10;
-        rt.points[grabbed] = G().snapPoint(rt.points[grabbed], step);
+        const oj = G().orthoJoint(rt.points[grabbed - 1], rt.points[grabbed], rt.points[grabbed + 1]);
+        rt.points[grabbed] = {
+          x: oj.lockedX ? oj.x : G().snap(oj.x, step),
+          y: oj.lockedY ? oj.y : G().snap(oj.y, step)
+        };
         rt.manual = true;
         R.selectedRouteTap = rt.points[grabbed];
         c.persist("route-drag"); grabbed = -1; renderScene();
@@ -1013,6 +1019,11 @@
     if ((el = t.closest("[data-prt2-auto]"))) {
       if (EP.Plan.Routes && EP.Plan.Routes.resetRouteToAuto) EP.Plan.Routes.resetRouteToAuto(el.getAttribute("data-prt2-auto"));
       clearRouteSel(); closeSheet(); renderScene(); return;
+    }
+    if (t.closest("[data-prt2-calc]")) {
+      clearRouteSel(); closeSheet(); renderScene();
+      if (EP.Plan.Calc) EP.Plan.Calc.sheet();
+      return;
     }
     if (t.closest("[data-prt2-done]")) { clearRouteSel(); closeSheet(); renderScene(); return; }
     if ((el = t.closest("[data-pr-beamdel]"))) {
