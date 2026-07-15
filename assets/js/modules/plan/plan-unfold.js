@@ -408,7 +408,13 @@
       if (d.kind === "open") { if (d.g) d.g.setAttribute("transform", `translate(${d.op.offset - d.x0} 0)`); return; }
       if (d.kind === "panel") { if (d.g) d.g.setAttribute("transform", `translate(${d.curPx - d.x0} 0)`); return; }
       if (d.kind === "led") { if (d.g) d.g.setAttribute("transform", `translate(${Math.min(d.ls.offsetA, d.ls.offsetB) - d.x0} 0)`); return; }
-      const x = d.el.offset, y = H - d.el.height;
+      const x = d.el.offset, yTrue = H - d.el.height;
+      // палец закрывает саму точку под собой — на время тяги ПАЛЬЦЕМ (не пером/мышью,
+      // у них точность и так достаточная) визуально приподнимаем маркер и его
+      // размерную цепочку над пальцем; d.el.offset/height — настоящие значения, не
+      // трогаем, это чисто отрисовка, полный рендер на отпускании вернёт всё на место
+      const ghostCm = d.pointerType === "touch" ? 40 / Math.max(0.01, pxPerCm()) : 0;
+      const y = yTrue - ghostCm;
       if (d.g) d.g.setAttribute("transform", `translate(${x - d.x0} ${y - d.y0})`);
       if (d.dimL) { d.dimL.setAttribute("x1", x); d.dimL.setAttribute("x2", x); d.dimL.setAttribute("y2", y); }
       if (d.dimT) {
@@ -468,6 +474,7 @@
         S.drag = {
           kind: "el", el, moved: false, postIdx: pg ? Number(pg.getAttribute("data-pu-post")) : null,
           g, x0: el.offset, y0: (wallH(p, S.wallId)) - el.height, dimTx: null,
+          pointerType: e.pointerType, // тач — приподнимаем маркер над пальцем, см. updateDragVisual
           dimL: svg.querySelector(`[data-pu-diml="${el.id}"]`),
           dimT: svg.querySelector(`[data-pu-dimt="${el.id}"]`)
         };

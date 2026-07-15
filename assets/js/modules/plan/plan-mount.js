@@ -94,21 +94,30 @@
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="poly" aria-label="Комната по точкам">⬠</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="beam" aria-label="Балка/перемычка на потолке">▬</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="void" aria-label="Вентшахта / мини-комната внутри комнаты">▦</button>
+        <span class="ep-plan-modesep" aria-hidden="true"></span>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="elem" aria-label="Точки: розетки, свет">🔌</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="opening" aria-label="Проёмы: двери, окна, балкон">🚪</button>
+        <span class="ep-plan-modesep" aria-hidden="true"></span>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="wall" aria-label="Открыть развёртку стены">📐</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="ruler" aria-label="Рулетка">📏</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="underlay" aria-label="Подложка-фото">🖼</button>
+        <span class="ep-plan-modesep" aria-hidden="true"></span>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-layers aria-label="Слои">🗂</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-routes aria-label="Трассы">🧵</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-calc aria-label="Расчёт и смета">🧮</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-checks aria-label="Проверки норм">✅</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-scheme aria-label="Однолинейная схема">▤</button>
+        <span class="ep-plan-modesep" aria-hidden="true"></span>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-fit aria-label="Показать всё">⛶</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-full aria-label="Во весь экран">⤢</button>
       </div>
       <div class="ep-plan-modehint" id="ep-plan-modehint"></div>
       <div class="ep-plan-canvas" id="ep-plan-canvas">
+        <div class="ep-plan-quickbar" id="ep-plan-quickbar" hidden>
+          <button type="button" class="ep-plan-qbtn ep-clickable" data-plan-undo aria-label="Отменить">↶</button>
+          <button type="button" class="ep-plan-qbtn ep-clickable" data-plan-mode="view" aria-label="Выйти в просмотр">☝</button>
+          <button type="button" class="ep-plan-qbtn ep-clickable" data-plan-fit aria-label="Показать всё">⛶</button>
+        </div>
         <div class="ep-plan-sheet" id="ep-plan-sheet" hidden></div>
       </div>
     </div>`;
@@ -147,8 +156,9 @@
 
   function refreshToolbar() {
     const c = core();
-    const u = $("[data-plan-undo]"), r = $("[data-plan-redo]"), note = $("#ep-plan-savenote");
-    if (u) u.disabled = !c.canUndo();
+    // querySelectorAll — undo дублируется в плавающей quickbar-панели, оба должны гаснуть вместе
+    document.querySelectorAll("[data-plan-undo]").forEach((b) => { b.disabled = !c.canUndo(); });
+    const r = $("[data-plan-redo]"), note = $("#ep-plan-savenote");
     if (r) r.disabled = !c.canRedo();
     if (note) note.textContent = V.saveNote;
   }

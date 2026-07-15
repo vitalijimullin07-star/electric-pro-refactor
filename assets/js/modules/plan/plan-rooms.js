@@ -73,6 +73,10 @@
     R.selectedBeam = null; R.selectedVoid = null;
     setMove(false);
     document.querySelectorAll("[data-plan-mode]").forEach((b) => b.classList.toggle("on", b.getAttribute("data-plan-mode") === mode));
+    // плавающая quickbar (отмена/просмотр/вписать) снизу холста — только в активных
+    // режимах рисования/расстановки, где тулбар сверху далеко от пальца
+    const qb = document.querySelector("#ep-plan-quickbar");
+    if (qb) qb.hidden = mode === "view";
     if (mode === "underlay") sheetUnderlay();
     else if (mode === "elem" && EP.Plan.Elements) EP.Plan.Elements.onModeEnter();
     else if (mode === "opening" && EP.Plan.Elements) EP.Plan.Elements.onOpeningModeEnter();
@@ -92,8 +96,15 @@
   }
 
   // ---------- тапы ----------
-  function onTap(w) {
+  function onTap(w, e) {
     const p = core().project; if (!p) return;
+    // ластик стилуса (Apple Pencil/Wacom, pointerType="eraser") — удаляет точку
+    // под собой в любом режиме, если под ним реально что-то есть; иначе — обычный тап
+    if (e && e.pointerType === "eraser" && R.canvas && EP.Plan.Elements) {
+      const k = R.canvas.cmPerPx();
+      const hit = EP.Plan.Elements.hitAt(w, EP.Plan.Elements.CFG.hitPx * k);
+      if (hit && hit.el) { EP.Plan.Elements.deleteElement(hit.el); return; }
+    }
     const step = p.settings.gridStep || 10;
     if (R.mode === "rect") {
       const pt = G().snapSmart(p, w, step, CFG.cornerSnapCm);
@@ -221,9 +232,80 @@
 
   // ---------- шторка (нижняя панель) ----------
   function sheet() { return $("#ep-plan-sheet"); }
-  function openSheet(html) { const s = sheet(); if (s) { s.innerHTML = html; s.hidden = false; } }
-  function closeSheet() { const s = sheet(); if (s) { s.hidden = true; s.innerHTML = ""; } }
+  // quickbar прячется, пока открыта шторка — они бы перекрывались снизу, а у
+  // шторки обычно есть свои ✓/✕ рядом с тем же местом
+  function syncQuickbarForSheet(sheetOpen) {
+    const qb = $("#ep-plan-quickbar");
+    if (qb) qb.style.display = sheetOpen ? "none" : "";
+  }
+  function openSheet(html) { const s = sheet(); if (s) { s.innerHTML = html; s.hidden = false; } syncQuickbarForSheet(true); }
+  function closeSheet() { const s = sheet(); if (s) { s.hidden = true; s.innerHTML = ""; } syncQuickbarForSheet(false); }
   function toast(msg) { openSheet(`<div class="ep-plan-srow ep-plan-toast">${esc(msg)}</div>`); setTimeout(() => { if (sheet() && sheet().querySelector(".ep-plan-toast")) closeSheet(); }, 1800); }
+
+  // редактируемый объект может оказаться под шторкой (она до 60% высоты холста
+  // снизу) — сдвигаем вид вверх, чтобы точку/комнату было видно, пока её правишь.
+  // Вызывается ПОСЛЕ openSheet(...) с мировой точкой объекта.
+  function ensureVisibleAboveSheet(worldPt) {
+    if (!R.canvas || !worldPt) return;
+    const host = document.querySelector("#ep-plan-canvas"); if (!host) return;
+    const hb = host.getBoundingClientRect();
+    const r = R.canvas.svg.getBoundingClientRect();
+    const v = R.canvas.getView();
+    if (!v.h || !r.height) return;
+    const sy = r.top + ((worldPt.y - v.y) / v.h) * r.height; // экранный Y точки
+    const sheetTopScreen = hb.top + hb.height * 0.4; // шторка занимает нижние ~60%
+    const margin = 40; // px запаса над шторкой
+    if (sy < sheetTopScreen - margin) return; // и так видно — не дёргаем вид
+    const dyPx = sy - (sheetTopScreen - margin);
+    R.canvas.panBy(0, dyPx * R.canvas.cmPerPx());
+  }
+
+  // ---------- живой предпросмотр снапа при наведении (мышь/перо до тапа) ----------
+  // Только в режимах, где вообще идёт снап на тапе (rect/poly/beam/void) — рисует
+  // направляющие + прицел через plan-render.js, без полного renderScaled на каждое
+  // движение (см. CLAUDE.md про перф во время жеста).
+  const HOVER_SNAP_MODES = { rect: 1, poly: 1, beam: 1, void: 1 };
+  function clearHoverPreview() { if (R.canvas && EP.Plan.Render) EP.Plan.Render.clearHoverPreview(R.canvas); }
+  function onCanvasHover(w) {
+    if (!R.canvas || !EP.Plan.Render || !HOVER_SNAP_MODES[R.mode]) { clearHoverPreview(); return; }
+    const p = core().project; if (!p) { clearHoverPreview(); return; }
+    const step = p.settings.gridStep || 10;
+    // поли-режим доводит линию от прошлой точки до 90° ПЕРЕД снапом — так же,
+    // как на реальном тапе (иначе предпросмотр не совпадёт с тем, что реально ляжет)
+    const sp = (R.mode === "poly" && R.draft.points.length)
+      ? G().snapSmart(p, G().orthoAdjust(R.draft.points[R.draft.points.length - 1], w), step, CFG.cornerSnapCm)
+      : G().snapSmart(p, w, step, CFG.cornerSnapCm);
+    EP.Plan.Render.hoverPreview(R.canvas, sp, R.canvas.cmPerPx());
+  }
+
+  // ---------- быстрое меню по долгому нажатию на точку (режим «Просмотр») ----------
+  // Только удалить/копия — смену линии и так удобно делать в редакторе по обычному тапу.
+  function closeQuickMenu() { const m = document.querySelector("#ep-plan-qmenu"); if (m) m.remove(); }
+  function onCanvasLongPress(w, e) {
+    if (R.mode !== "view" || !EP.Plan.Elements || !R.canvas) return;
+    const k = R.canvas.cmPerPx();
+    const hit = EP.Plan.Elements.hitAt(w, EP.Plan.Elements.CFG.hitPx * k);
+    if (!hit || !hit.el) return;
+    vibrate(15);
+    closeQuickMenu();
+    const host = document.querySelector("#ep-plan-canvas"); if (!host) return;
+    const hb = host.getBoundingClientRect();
+    const menu = document.createElement("div");
+    menu.id = "ep-plan-qmenu";
+    menu.className = "ep-plan-qmenu";
+    menu.style.left = Math.max(6, Math.min(hb.width - 130, e.clientX - hb.left - 60)) + "px";
+    menu.style.top = Math.max(6, Math.min(hb.height - 50, e.clientY - hb.top - 56)) + "px";
+    menu.innerHTML = `<button type="button" class="ep-plan-qmbtn ep-clickable" data-qm-dup>⧉ Копия</button><button type="button" class="ep-plan-qmbtn ep-plan-qmbtn-del ep-clickable" data-qm-del>✕ Удалить</button>`;
+    host.appendChild(menu);
+    const elId = hit.el.id;
+    menu.addEventListener("click", (ev) => {
+      const t = ev.target;
+      const el2 = (core().project.elements || []).find((x) => x.id === elId);
+      if (t.closest("[data-qm-del]")) { closeQuickMenu(); EP.Plan.Elements.deleteElement(el2); }
+      else if (t.closest("[data-qm-dup]")) { closeQuickMenu(); EP.Plan.Elements.duplicateElement(el2); }
+    });
+    setTimeout(() => { document.addEventListener("pointerdown", closeQuickMenu, { once: true, capture: true }); }, 0);
+  }
 
   function sheetCreateRect() {
     const r = R.pendingRect;
@@ -301,6 +383,7 @@
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pr-delroom="${esc(room.id)}">${T.del}</button>
       </div>`);
     enableRoomDrag(room.id); // тяни углы/стены выбранной комнаты
+    ensureVisibleAboveSheet(G().centroid(room.points));
   }
   function sheetUnderlay() {
     const u = core().project && core().project.underlay;
@@ -353,6 +436,7 @@
     R.selectedBeam = bm.id;
     enableBeamDrag();
     renderScene();
+    ensureVisibleAboveSheet({ x: (bm.a.x + bm.b.x) / 2, y: (bm.a.y + bm.b.y) / 2 });
   }
   // тянуть концы выбранной балки/перегородки пальцем
   function enableBeamDrag() {
@@ -408,6 +492,7 @@
     R.selectedVoid = vd.id;
     enableVoidDrag();
     renderScene();
+    ensureVisibleAboveSheet({ x: (r.x1 + r.x2) / 2, y: (r.y1 + r.y2) / 2 });
   }
   function applyVoid(id) {
     const c = core(), vd = (c.project.voids || []).find((v) => v.id === id);
@@ -720,18 +805,21 @@
     R.canvas = canvas;
     canvas.onTap(onTap);
     canvas.onViewChanged(() => renderScaled());
+    canvas.onHover(onCanvasHover);
+    canvas.onHoverEnd(clearHoverPreview);
+    canvas.onLongPress(onCanvasLongPress);
     setMode("view");
     R.selectedRoomId = null;
     renderScene();
   }
-  function detach() { R.canvas = null; if (EP.Plan.Unfold) EP.Plan.Unfold.close(); }
+  function detach() { R.canvas = null; closeQuickMenu(); if (EP.Plan.Unfold) EP.Plan.Unfold.close(); }
   function setActive(on) { R.active = on; }
 
   EP.Plan = EP.Plan || {};
   EP.Plan.Rooms = {
     attach, detach, setActive, setMode, renderScene, T, CFG,
     // общий доступ для модулей слоёв 2-6
-    openSheet, closeSheet, toast,
+    openSheet, closeSheet, toast, ensureVisibleAboveSheet,
     isActive: () => R.active,
     currentMode: () => R.mode,
     selectedBeamId: () => R.selectedBeam || null,
