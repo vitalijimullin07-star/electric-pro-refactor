@@ -228,6 +228,9 @@ body[data-visual-mode="day"] .ep-plan-room.is-sel { fill: rgba(2, 132, 199, .17)
 .ep-plan-eldone { fill: #34d399; font-family: system-ui; font-weight: 700; }
 .ep-plan-panel rect { fill: #0ea5e9; stroke: #e0f2fe; }
 .ep-plan-route { fill: none; opacity: .85; }
+.ep-plan-route.is-manual { stroke-dasharray: 6 3; }
+.ep-plan-route.is-sel { opacity: 1; filter: drop-shadow(0 0 2px #fff); }
+.ep-plan-routehandle { fill: #38bdf8; stroke: #fff; stroke-width: 1; }
 .ep-plan-cross { fill: none; stroke: #fbbf24; }
 .ep-plan-warnring { fill: none; stroke: #fbbf24; stroke-dasharray: 4 3; }
 

@@ -371,15 +371,26 @@
     // трассы (Слой 4): полилинии цветом слоя + проходки
     if (layerOn(project, "routes")) {
       const layerColor = (id) => (((project.layers || []).find((l) => l.id === id) || {}).color) || "#94a3b8";
+      const selRoute = EP.Plan.Rooms && EP.Plan.Rooms.selectedRouteId && EP.Plan.Rooms.selectedRouteId();
       (project.routes || []).forEach((rt) => {
         if (!layerOn(project, rt.layer)) return;
+        const selR = selRoute === rt.id;
         g.appendChild(el("polyline", {
           points: (rt.points || []).map((p) => p.x + "," + p.y).join(" "),
-          class: "ep-plan-route", stroke: rt.color || layerColor(rt.layer), "stroke-width": sw * 0.8
+          class: "ep-plan-route" + (rt.manual ? " is-manual" : "") + (selR ? " is-sel" : ""),
+          stroke: rt.color || layerColor(rt.layer), "stroke-width": sw * 0.8
         }));
         (rt.throughWalls || []).forEach((c) => g.appendChild(el("circle", {
           cx: c.x, cy: c.y, r: 5 * k, class: "ep-plan-cross", "stroke-width": sw * 0.6
         })));
+        // ручки тяги — только у выбранной трассы, только на промежуточных изломах
+        // (концы 0 и last завязаны на позицию элемента/щита/распайки, не тянутся здесь)
+        if (selR) {
+          const pts = rt.points || [];
+          for (let i = 1; i < pts.length - 1; i++) {
+            g.appendChild(el("circle", { cx: pts[i].x, cy: pts[i].y, r: CFG.pointPx * 1.1 * k, class: "ep-plan-routehandle" }));
+          }
+        }
       });
     }
 

@@ -36,6 +36,12 @@
     mergeFullBtn: "Полностью",
     mergeBeamBtn: "Перегородка",
     mergeLintelBtn: "Перемычка",
+    routeTitle: "Трасса",
+    routeManual: "· правлено вручную",
+    routeHint: "Тяни точку излома, чтобы подвинуть путь. Тяни середину прямого участка — добавит новый излом. Концы (у точки/щита/распайки) не двигаются.",
+    routeFlip: "🔄 Развернуть",
+    routeFlipNone: "Рядом нет прямого угла — разворачивать нечего.",
+    routeAuto: "↺ Авто",
     upl: { load: "📷 Загрузить фото плана", calib: "📏 Калибровка масштаба", move: "✋ Перенос",
            moveOn: "✋ Перенос: тяни подложку", del: "✕ Убрать подложку", opacity: "Прозрачность",
            calibHint: "Тапни 2 точки на подложке с известным расстоянием.",
@@ -82,7 +88,7 @@
     R.draft = { points: [] }; R.pendingRect = null; R.pendingPoly = null;
     R.ruler = { a: null, b: null }; R.beamDraft = { a: null, b: null }; R.voidDraft = { a: null, b: null };
     R.calib = { on: false, a: null, b: null };
-    R.selectedBeam = null; R.selectedVoid = null; R.mergeFirst = null; R.mergePending = null;
+    R.selectedBeam = null; R.selectedVoid = null; R.selectedRoute = null; R.selectedRouteTap = null; R.mergeFirst = null; R.mergePending = null;
     setMove(false);
     document.querySelectorAll("[data-plan-mode]").forEach((b) => b.classList.toggle("on", b.getAttribute("data-plan-mode") === mode));
     // плавающая quickbar (отмена/просмотр/вписать) снизу холста — только в активных
@@ -207,8 +213,8 @@
       return;
     }
     if (R.mode === "merge") { onMergeTap(p, w); return; }
-    // view: приоритет — элемент/щит > балка > шахта/мини-комната > стена (развёртка) > комната
-    clearBeamSel(); clearVoidSel();
+    // view: приоритет — элемент/щит > балка > шахта/мини-комната > трасса > стена (развёртка) > комната
+    clearBeamSel(); clearVoidSel(); clearRouteSel();
     const k = R.canvas.cmPerPx();
     if (EP.Plan.Elements) {
       const hit = EP.Plan.Elements.hitAt(w, EP.Plan.Elements.CFG.hitPx * k);
@@ -227,6 +233,9 @@
     // вентшахта / мини-комната
     const vhit = voidAt(p, w);
     if (vhit) { R.selectedRoomId = null; sheetVoid(vhit); renderScene(); return; }
+    // трасса (ручное редактирование)
+    const rHit = routeAt(p, w, CFG.hitWallPx * k);
+    if (rHit) { R.selectedRoomId = null; sheetRoute(rHit.route, rHit.pt); renderScene(); return; }
     const wallHit = G().wallAt(p, w, CFG.hitWallPx * k);
     if (wallHit && EP.Plan.Unfold) {
       R.selectedRoomId = null;
@@ -546,6 +555,92 @@
     });
   }
   function clearVoidSel() { R.selectedVoid = null; if (R.canvas) R.canvas.setDragHandler(null); }
+
+  // ---------- ручное редактирование трасс (Слой 4.1): тяга опорных точек / разворот угла ----------
+  // Данные и хит-тест — в plan-routes.js (владелец p.routes); здесь — только выделение/тяга/UI,
+  // тем же способом, что и у балки/пустоты (единственное место, где есть доступ к R.canvas).
+  function routeAt(p, w, maxD) {
+    return EP.Plan.Routes && EP.Plan.Routes.routeAt ? EP.Plan.Routes.routeAt(p, w, maxD) : null;
+  }
+  function sheetRoute(rt, tapPos) {
+    const p = core().project;
+    const circ = rt.circuitId ? (p.circuits || []).find((c) => c.id === rt.circuitId) : null;
+    const len = G().polylineLen(rt.points || []);
+    openSheet(`<div class="ep-plan-srow"><b>${T.routeTitle}</b>${circ ? ` · ${esc(circ.name)}` : ""} · ${G().fmtLen(len)}${rt.manual ? ` <span class="ep-plan-mshint">${T.routeManual}</span>` : ""}</div>
+      <div class="ep-plan-modehint">${T.routeHint}</div>
+      <div class="ep-plan-srow ep-plan-sbtns">
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-prt2-flip>${T.routeFlip}</button>
+        ${rt.manual ? `<button type="button" class="ep-plan-tbtn ep-clickable" data-prt2-auto="${esc(rt.id)}">${T.routeAuto}</button>` : ""}
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-prt2-done>✓</button>
+      </div>`);
+    R.selectedRoute = rt.id;
+    R.selectedRouteTap = tapPos || (rt.points && rt.points[Math.floor((rt.points.length - 1) / 2)]) || null;
+    enableRouteDrag();
+    renderScene();
+    if (tapPos) ensureVisibleAboveSheet(tapPos);
+  }
+  function clearRouteSel() { R.selectedRoute = null; R.selectedRouteTap = null; if (R.canvas) R.canvas.setDragHandler(null); }
+  // разворачивает ближайший к последнему тапу прямой угол трассы (P->C->N сначала по
+  // одной оси, потом по другой) в альтернативную вершину того же прямоугольника
+  function flipNearestCorner() {
+    const c = core(), rt = (c.project.routes || []).find((r) => r.id === R.selectedRoute);
+    if (!rt || !R.selectedRouteTap || !rt.points || rt.points.length < 3) { toast(T.routeFlipNone); return; }
+    let best = -1, bestD = Infinity;
+    for (let i = 1; i < rt.points.length - 1; i++) {
+      const d = G().dist(R.selectedRouteTap, rt.points[i]);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    if (best < 0) { toast(T.routeFlipNone); return; }
+    const flipped = G().flipOrthoCorner(rt.points[best - 1], rt.points[best], rt.points[best + 1]);
+    if (!flipped) { toast(T.routeFlipNone); return; }
+    c.commit();
+    rt.points[best] = flipped;
+    rt.manual = true;
+    c.persist("route-flip");
+    R.selectedRouteTap = flipped;
+    sheetRoute(rt, flipped);
+  }
+  // тяга: существующий излом (не концевые точки — те завязаны на позицию элемента/
+  // щита/распайки) — двигаем; середина прямого участка — вставляем новый излом и
+  // сразу тянем его. Мимо — жест остаётся паном (return false из "start").
+  function enableRouteDrag() {
+    if (!R.canvas) return;
+    let grabbed = -1;
+    R.canvas.setDragHandler((dx, dy, phase, start) => {
+      const c = core(), rt = (c.project.routes || []).find((r) => r.id === R.selectedRoute);
+      if (!rt || !rt.points) return false;
+      if (phase === "start") {
+        const k = R.canvas.cmPerPx();
+        const rr = Math.max(18 * k, 14);
+        let best = -1, bestD = rr;
+        for (let i = 1; i < rt.points.length - 1; i++) {
+          const d = G().dist(start, rt.points[i]);
+          if (d <= bestD) { bestD = d; best = i; }
+        }
+        if (best >= 0) { grabbed = best; core().commit(); return; }
+        let segI = -1, segD = rr, segPt = null;
+        for (let i = 0; i < rt.points.length - 1; i++) {
+          const cl = G().closestOnSeg(start, rt.points[i], rt.points[i + 1]);
+          if (cl.d <= segD) { segD = cl.d; segI = i; segPt = cl; }
+        }
+        if (segI < 0) return false; // мимо — пан
+        core().commit();
+        rt.points.splice(segI + 1, 0, { x: segPt.x, y: segPt.y });
+        grabbed = segI + 1;
+        return;
+      }
+      if (phase === "move" && grabbed >= 0) {
+        rt.points[grabbed] = { x: rt.points[grabbed].x + dx, y: rt.points[grabbed].y + dy };
+        renderSceneSoon();
+      } else if (phase === "end" && grabbed >= 0) {
+        const step = c.project.settings.gridStep || 10;
+        rt.points[grabbed] = G().snapPoint(rt.points[grabbed], step);
+        rt.manual = true;
+        R.selectedRouteTap = rt.points[grabbed];
+        c.persist("route-drag"); grabbed = -1; renderScene();
+      }
+    });
+  }
 
   // тянуть УГЛЫ и СТЕНЫ выбранной комнаты: угол — форма, стена — сдвиг по нормали.
   // Если палец не попал ни в угол, ни в стену — жест панорамирует (return false).
@@ -914,6 +1009,12 @@
       return;
     }
     if (t.closest("[data-pr-mergecancel]")) { R.mergePending = null; R.selectedRoomId = null; closeSheet(); toast(T.mergeCancelled); renderScene(); return; }
+    if (t.closest("[data-prt2-flip]")) { flipNearestCorner(); return; }
+    if ((el = t.closest("[data-prt2-auto]"))) {
+      if (EP.Plan.Routes && EP.Plan.Routes.resetRouteToAuto) EP.Plan.Routes.resetRouteToAuto(el.getAttribute("data-prt2-auto"));
+      clearRouteSel(); closeSheet(); renderScene(); return;
+    }
+    if (t.closest("[data-prt2-done]")) { clearRouteSel(); closeSheet(); renderScene(); return; }
     if ((el = t.closest("[data-pr-beamdel]"))) {
       const c = core(), bid = el.getAttribute("data-pr-beamdel"); c.commit();
       c.project.beams = (c.project.beams || []).filter((b) => b.id !== bid);
@@ -981,6 +1082,7 @@
     currentMode: () => R.mode,
     selectedBeamId: () => R.selectedBeam || null,
     selectedVoidId: () => R.selectedVoid || null,
+    selectedRouteId: () => R.selectedRoute || null,
     canvasCmPerPx: () => (R.canvas ? R.canvas.cmPerPx() : 1),
     mergeRooms
   };
