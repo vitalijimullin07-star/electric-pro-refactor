@@ -105,25 +105,6 @@
         lastItems.map(it => `<div class="ep-cs-row"><span>${esc(it.name)}${it.wear != null ? ` <i class="ep-cs-wear">износ ~${Math.round(it.wear * 100)}%${it.wear <= 1 ? ", хватает" : ""}</i>` : ""}</span><b>${it.qty} ${esc(it.unit)}</b></div>`).join("") + `</div>`
       : `<div class="ep-cs-hint">Параметры подтянуты из пула. Нажми «Рассчитать и добавить».</div>`;
 
-    // редактор инструментов
-    const fnOpts = (cur) => Object.keys(FN).map(k => `<option value="${k}" ${cur === k ? "selected" : ""}>${esc(FN[k])}</option>`).join("");
-    const toolRows = (L.tools || []).map(t => {
-      const lifeInputs = mats.map(m => `<label>${esc(m).slice(0, 4)}<input type="number" min="0" data-tool-life="${t.id}|${m}" value="${n(t.life && t.life[m])}" /></label>`).join("");
-      return `<div class="ep-cs-tool">
-        <div class="ep-cs-ttop">
-          <b>${t.kind === "disc" ? "Диск" : "Коронка"}</b>
-          <input class="ep-cs-tsize" type="number" min="0" data-tool-size="${t.id}" value="${n(t.size)}" /><span class="ep-cs-mm">мм</span>
-          <select class="ep-cs-tfn" data-tool-fn="${t.id}">${fnOpts(t.fn)}</select>
-          ${t.kind === "disc" ? `<select class="ep-cs-tdepth" data-tool-depth="${t.id}"><option value="small" ${t.depth === "small" ? "selected" : ""}>≤30</option><option value="big" ${t.depth === "big" ? "selected" : ""}>30–55</option></select>` : ""}
-          <button type="button" class="ep-cs-tdel" data-tool-del="${t.id}">✕</button>
-        </div>
-        ${t.fn === "other" ? `<div class="ep-cs-twork"><span>работа:</span><input list="ep-cs-works" data-tool-work="${t.id}" value="${esc(t.work || "")}" placeholder="выбери или впиши" /></div>` : ""}
-        <div class="ep-cs-tlife"><span>ресурс${t.kind === "disc" ? " (м/шт, ×2)" : " (отв/шт)"}:</span>${lifeInputs}</div>
-      </div>`;
-    }).join("");
-
-    const matHard = mats.map(m => { const o = (L.materials && L.materials[m]) || {}; return `<button type="button" class="ep-cs-hard ${o.hard ? "active" : ""}" data-cs-hard="${esc(m)}">${esc(m)}: ${o.hard ? "твёрдый" : "мягкий"}</button>`; }).join("");
-
     root.innerHTML = `
       <div class="ep-cs-shell">
         <datalist id="ep-cs-works">${worksOpts}</datalist>
@@ -153,46 +134,96 @@
 
         ${result}
 
-        <section class="card ep-cs-card">
-          <button type="button" class="ep-cs-logic-toggle" data-cs-logic-toggle>${ui.logicOpen ? "▾" : "▸"} ⚙ Логика расходников</button>
-          <div class="ep-cs-logic ${ui.logicOpen ? "" : "hidden"}">
-            <div class="ep-cs-sub">Инструмент — коронки и диски (привязка к функции)</div>
-            ${toolRows}
-            <div class="ep-cs-tadd"><button type="button" data-tool-add="crown">+ коронка</button><button type="button" data-tool-add="disc">+ диск</button></div>
-
-            <div class="ep-cs-sub">Материалы — мешки (твёрдый/мягкий)</div>
-            <div class="ep-cs-hardrow">${matHard}</div>
-
-            <div class="ep-cs-sub">Крепёж (на метр кабеля)</div>
-            <div class="ep-cs-grid">
-              ${cfg(L, "Площадки/м", "direct.pads")}${cfg(L, "Стяжки/м", "direct.ties")}
-              ${cfg(L, "Прямой: гв+выстр /м", "direct.perM")}${cfg(L, "Гофра: клипсы /м", "gofraCeil.clips")}
-              ${cfg(L, "Пол: гв+выстр /м", "floor.perM")}${cfg(L, "Пол: лента /м", "floor.tapePerM", "м")}
-              ${cfg(L, "Лента: рулон", "floor.tapeRollM", "м")}${cfg(L, "Распайка: гв+выстр", "junction.perBox")}
-            </div>
-            <div class="ep-cs-sub">Упаковки</div>
-            <div class="ep-cs-grid">
-              ${cfg(L, "Гвозди: пачка", "packs.nails")}${cfg(L, "Гвозди: допуск", "packs.nailsTol")}
-              ${cfg(L, "Выстрелы: баллон", "packs.shots")}${cfg(L, "Выстрелы: допуск", "packs.shotsTol")}
-              ${cfg(L, "Стяжки: пачка", "packs.ties")}${cfg(L, "Площадки: пачка", "packs.pads")}
-              ${cfg(L, "Гофра: округл.", "gofraRoundM", "м")}${cfg(L, "Рез с водой: ресурс ×", "wetFactor")}
-            </div>
-            <div class="ep-cs-sub">Мешки</div>
-            <div class="ep-cs-grid">
-              ${cfg(L, "Мусор: штроба тв.", "trashBags.hardStrobeM", "м")}${cfg(L, "Мусор: штроба мягк.", "trashBags.softStrobeM", "м")}
-              ${cfg(L, "Мусор: подроз. тв.", "trashBags.hardBox", "шт")}${cfg(L, "Мусор: подроз. мягк.", "trashBags.softBox", "шт")}
-              ${cfg(L, "Пылесос: штроба", "vacBags.strobeM", "м")}${cfg(L, "Пылесос: подроз.", "vacBags.box", "шт")}
-            </div>
-            <div class="ep-cs-sub">Прочее (фикс на объект)</div>
-            <div class="ep-cs-grid">
-              ${cfg(L, "Бур 6 мм", "drills.d6")}${cfg(L, "Бур 8 мм", "drills.d8")}
-              ${cfg(L, "Пика", "pikes")}${cfg(L, "Карандаш", "pencil")}
-            </div>
-            <div class="ep-cs-logic-actions"><button type="button" class="ep-cs-reset" data-cs-reset>Сбросить все нормы к стандарту</button></div>
-          </div>
-        </section>
+        <section class="card ep-cs-card">${logicSectionHtml(true)}</section>
       </div>`;
   }
+
+  // «Логика расходников» (инструмент/материалы/крепёж/упаковки/мешки/прочее) — общая
+  // разметка для двух мест: внутри экрана «Расходники» (collapsible:true, за тумблером
+  // ▸/▾) и встроенной панели настроек внутри «Проект квартиры → Расчёт» (collapsible:
+  // false, всегда развёрнута, вызывается через renderLogic()). Один источник разметки
+  // и обработчиков (data-cfg/data-tool-*/data-cs-hard/data-cs-reset уже слушаются
+  // document-level onClick/onChange ниже — им всё равно, какая страница их вызвала).
+  function logicSectionHtml(collapsible) {
+    const cc = CC();
+    if (!cc) return `<div class="ep-cs-hint">Движок расходников не загружен.</div>`;
+    const mats = cc.materials();
+    const FN = cc.functions();
+    const L = cc.get();
+    const worksOpts = worksList().map(w => `<option value="${esc(w)}">`).join("");
+    const fnOpts = (cur) => Object.keys(FN).map(k => `<option value="${k}" ${cur === k ? "selected" : ""}>${esc(FN[k])}</option>`).join("");
+    const toolRows = (L.tools || []).map(t => {
+      const lifeInputs = mats.map(m => `<label>${esc(m).slice(0, 4)}<input type="number" min="0" data-tool-life="${t.id}|${m}" value="${n(t.life && t.life[m])}" /></label>`).join("");
+      return `<div class="ep-cs-tool">
+        <div class="ep-cs-ttop">
+          <b>${t.kind === "disc" ? "Диск" : "Коронка"}</b>
+          <input class="ep-cs-tsize" type="number" min="0" data-tool-size="${t.id}" value="${n(t.size)}" /><span class="ep-cs-mm">мм</span>
+          <select class="ep-cs-tfn" data-tool-fn="${t.id}">${fnOpts(t.fn)}</select>
+          ${t.kind === "disc" ? `<select class="ep-cs-tdepth" data-tool-depth="${t.id}"><option value="small" ${t.depth === "small" ? "selected" : ""}>≤30</option><option value="big" ${t.depth === "big" ? "selected" : ""}>30–55</option></select>` : ""}
+          <button type="button" class="ep-cs-tdel" data-tool-del="${t.id}">✕</button>
+        </div>
+        ${t.fn === "other" ? `<div class="ep-cs-twork"><span>работа:</span><input list="ep-cs-works" data-tool-work="${t.id}" value="${esc(t.work || "")}" placeholder="выбери или впиши" /></div>` : ""}
+        <div class="ep-cs-tlife"><span>ресурс${t.kind === "disc" ? " (м/шт, ×2)" : " (отв/шт)"}:</span>${lifeInputs}</div>
+      </div>`;
+    }).join("");
+    const matHard = mats.map(m => { const o = (L.materials && L.materials[m]) || {}; return `<button type="button" class="ep-cs-hard ${o.hard ? "active" : ""}" data-cs-hard="${esc(m)}">${esc(m)}: ${o.hard ? "твёрдый" : "мягкий"}</button>`; }).join("");
+    const body = `
+      <div class="ep-cs-sub">Инструмент — коронки и диски (привязка к функции)</div>
+      ${toolRows}
+      <div class="ep-cs-tadd"><button type="button" data-tool-add="crown">+ коронка</button><button type="button" data-tool-add="disc">+ диск</button></div>
+
+      <div class="ep-cs-sub">Материалы — мешки (твёрдый/мягкий)</div>
+      <div class="ep-cs-hardrow">${matHard}</div>
+
+      <div class="ep-cs-sub">Крепёж (на метр кабеля)</div>
+      <div class="ep-cs-grid">
+        ${cfg(L, "Площадки/м", "direct.pads")}${cfg(L, "Стяжки/м", "direct.ties")}
+        ${cfg(L, "Прямой: гв+выстр /м", "direct.perM")}${cfg(L, "Гофра: клипсы /м", "gofraCeil.clips")}
+        ${cfg(L, "Пол: гв+выстр /м", "floor.perM")}${cfg(L, "Пол: лента /м", "floor.tapePerM", "м")}
+        ${cfg(L, "Лента: рулон", "floor.tapeRollM", "м")}${cfg(L, "Распайка: гв+выстр", "junction.perBox")}
+      </div>
+      <div class="ep-cs-sub">Упаковки</div>
+      <div class="ep-cs-grid">
+        ${cfg(L, "Гвозди: пачка", "packs.nails")}${cfg(L, "Гвозди: допуск", "packs.nailsTol")}
+        ${cfg(L, "Выстрелы: баллон", "packs.shots")}${cfg(L, "Выстрелы: допуск", "packs.shotsTol")}
+        ${cfg(L, "Стяжки: пачка", "packs.ties")}${cfg(L, "Площадки: пачка", "packs.pads")}
+        ${cfg(L, "Гофра: округл.", "gofraRoundM", "м")}${cfg(L, "Рез с водой: ресурс ×", "wetFactor")}
+      </div>
+      <div class="ep-cs-sub">Мешки</div>
+      <div class="ep-cs-grid">
+        ${cfg(L, "Мусор: штроба тв.", "trashBags.hardStrobeM", "м")}${cfg(L, "Мусор: штроба мягк.", "trashBags.softStrobeM", "м")}
+        ${cfg(L, "Мусор: подроз. тв.", "trashBags.hardBox", "шт")}${cfg(L, "Мусор: подроз. мягк.", "trashBags.softBox", "шт")}
+        ${cfg(L, "Пылесос: штроба", "vacBags.strobeM", "м")}${cfg(L, "Пылесос: подроз.", "vacBags.box", "шт")}
+      </div>
+      <div class="ep-cs-sub">Прочее (фикс на объект)</div>
+      <div class="ep-cs-grid">
+        ${cfg(L, "Бур 6 мм", "drills.d6")}${cfg(L, "Бур 8 мм", "drills.d8")}
+        ${cfg(L, "Пика", "pikes")}${cfg(L, "Карандаш", "pencil")}
+      </div>
+      <div class="ep-cs-logic-actions"><button type="button" class="ep-cs-reset" data-cs-reset>Сбросить все нормы к стандарту</button></div>`;
+    const datalist = `<datalist id="ep-cs-works">${worksOpts}</datalist>`;
+    if (!collapsible) return `${datalist}${body}`;
+    return `${datalist}<button type="button" class="ep-cs-logic-toggle" data-cs-logic-toggle>${ui.logicOpen ? "▾" : "▸"} ⚙ Логика расходников</button>
+      <div class="ep-cs-logic ${ui.logicOpen ? "" : "hidden"}">${body}</div>`;
+  }
+
+  // встраиваемая версия панели «Логика расходников» — для «Проект квартиры → Расчёт»
+  // (см. plan-calc.js sheetConsumSettings()): та же разметка/обработчики, что и на
+  // экране «Расходники», но без переключателя/шапки со сметой — только сами нормы.
+  // ВАЖНО: id контейнера ДОЛЖЕН быть "ep-consum-root" — на нём завязаны document-level
+  // onClick/onChange ниже (t.closest("#ep-consum-root")), другой id их не найдёт.
+  function renderLogic(rootId) {
+    mountMode = "logic"; mountRoot = rootId || "ep-consum-root";
+    const root = document.getElementById(mountRoot);
+    if (!root) return;
+    root.innerHTML = `<div class="ep-cs-shell"><section class="card ep-cs-card">${logicSectionHtml(false)}</section></div>`;
+  }
+  // после действий, которые раньше жёстко звали полный render() экрана «Расходники»
+  // (добавить/удалить инструмент, твёрдый/мягкий, сброс норм) — перерисовываем ТУ
+  // панель, что сейчас реально смонтирована, а не всегда полную страницу; иначе вызов
+  // из встроенной панели плана подменял бы её версткой калькулятора кабеля/матрёшек.
+  let mountMode = "page", mountRoot = "ep-consum-root";
+  function rerender() { if (mountMode === "logic") renderLogic(mountRoot); else render(); }
 
   // Ø коронки подрозетников из пула (парсим "Подрозетник Ø82 ...")
   function poolCrownSize() { let sz = 0; poolDraft().forEach(r => { if (/подрозетник/i.test(r.name || "")) { const m = String(r.name).match(/Ø\s*(\d{2,3})/); if (m) sz = n(m[1]); } }); return sz; }
@@ -226,7 +257,7 @@
     return lastItems.length;
   }
   function saveCfg(path, value) { const cc = CC(); if (!cc) return; const L = cc.get(); setP(L, path, Math.max(0, n(value))); cc.set(L); }
-  function toggleHard(name) { const cc = CC(); if (!cc) return; const L = cc.get(); if (!L.materials[name]) L.materials[name] = {}; L.materials[name].hard = !L.materials[name].hard; cc.set(L); render(); }
+  function toggleHard(name) { const cc = CC(); if (!cc) return; const L = cc.get(); if (!L.materials[name]) L.materials[name] = {}; L.materials[name].hard = !L.materials[name].hard; cc.set(L); rerender(); }
 
   function tools() { const cc = CC(); return cc ? (cc.get().tools || []) : []; }
   function saveTools(arr) { const cc = CC(); if (!cc) return; const L = cc.get(); L.tools = arr; cc.set(L); }
@@ -236,9 +267,9 @@
     const id = (kind === "disc" ? "d" : "t") + Date.now().toString(36);
     const life = {}; CC().materials().forEach(m => life[m] = kind === "disc" ? 60 : 15);
     arr.push(kind === "disc" ? { id, kind: "disc", size: 125, depth: "small", fn: "strobe", life } : { id, kind: "crown", size: 68, fn: "podroz", life });
-    saveTools(arr); render();
+    saveTools(arr); rerender();
   }
-  function delTool(id) { saveTools(tools().filter(t => t && t.id !== id)); render(); }
+  function delTool(id) { saveTools(tools().filter(t => t && t.id !== id)); rerender(); }
 
   function onClick(e) {
     const t = e.target; if (!t || !t.closest) return;
@@ -260,7 +291,7 @@
     if (el = t.closest("[data-cs-hard]")) { toggleHard(el.dataset.csHard); return; }
     if (el = t.closest("[data-tool-add]")) { addTool(el.dataset.toolAdd); return; }
     if (el = t.closest("[data-tool-del]")) { delTool(el.dataset.toolDel); return; }
-    if (t.closest("[data-cs-reset]")) { const cc = CC(); if (cc) { cc.reset(); render(); } return; }
+    if (t.closest("[data-cs-reset]")) { const cc = CC(); if (cc) { cc.reset(); rerender(); } return; }
   }
   function onChange(e) {
     const t = e.target; if (!t || !t.closest || !t.closest("#ep-consum-root")) return;
@@ -272,7 +303,7 @@
     if (d.mrowStrobe != null) { const i = n(d.mrowStrobe); if (ui.matRows[i]) ui.matRows[i].strobeM = Math.max(0, n(t.value)); saveUI(); return; }
     if (d.cfg) { saveCfg(d.cfg, t.value); return; }
     if (d.toolSize) { patchTool(d.toolSize, tt => tt.size = Math.max(0, n(t.value))); return; }
-    if (d.toolFn) { patchTool(d.toolFn, tt => tt.fn = t.value); render(); return; }
+    if (d.toolFn) { patchTool(d.toolFn, tt => tt.fn = t.value); rerender(); return; }
     if (d.toolDepth) { patchTool(d.toolDepth, tt => tt.depth = t.value); return; }
     if (d.toolWork) { patchTool(d.toolWork, tt => tt.work = t.value); return; }
     if (d.toolLife) { const [id, m] = d.toolLife.split("|"); patchTool(id, tt => { tt.life = Object.assign({}, tt.life); tt.life[m] = Math.max(0, n(t.value)); }); return; }
@@ -282,6 +313,7 @@
   document.addEventListener("change", onChange);
   window.addEventListener("ep:route-loaded", (e) => {
     if (!e || !e.detail || e.detail.route !== "consumables") return;
+    mountMode = "page"; mountRoot = "ep-consum-root";
     loadUI();
     if (!ui.matRows.length) pullFromPool();
     if (!ui.boxes) ui.boxes = poolBoxes();
@@ -298,5 +330,5 @@
     computeItems(); pushToEstimate();
     if (document.getElementById("ep-consum-root")) render();
   }
-  window.EP.ConsumablesUI = { render, calc: doCalcAdd, quickCalc, getReserve, setReserve };
+  window.EP.ConsumablesUI = { render, calc: doCalcAdd, quickCalc, getReserve, setReserve, renderLogic };
 })();

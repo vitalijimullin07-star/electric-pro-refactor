@@ -17,7 +17,8 @@
     exactHint: "Штробы, подрозетники и кабель посчитаны по фактическому чертежу: длина спуска × материал стены, ёмкость штробы — из движка пула.",
     approxHint: "⚠ Приближённый счёт по комнатам. Построй трассы (🧵) — расчёт станет точным по чертежу.",
     reserve: "Запас кабеля, %",
-    noPrice: "нет цены в БД", total: "Итого по ценам БД"
+    noPrice: "нет цены в БД", total: "Итого по ценам БД",
+    consumCfg: "⚙ Настроить расходники", consumTitle: "⚙ Логика расходников", back: "‹ Назад"
   };
   const COLS = [["sockets", "Р"], ["sw", "В"], ["light", "С"], ["tv", "ТВ"], ["internet", "И"], ["warm", "ТП"]];
 
@@ -407,12 +408,25 @@
       itemsHtml = `<div class="ep-plan-srow">${T.engineMissing}</div>`;
     }
 
+    const consumBtn = (window.EP && window.EP.ConsumablesUI && EP.ConsumablesUI.renderLogic)
+      ? `<button type="button" class="ep-plan-mini ep-clickable" data-pc-consumcfg>${T.consumCfg}</button>` : "";
     rooms().openSheet(`<div class="ep-plan-srow"><b>🧮 ${T.title}</b>
-        <span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-pc-close>✕</button></div>
+        <span class="ep-plan-flex"></span>${consumBtn}<button type="button" class="ep-plan-mini ep-clickable" data-pc-close>✕</button></div>
       ${table}
       <div class="ep-plan-srow"><b>${T.cable}</b></div>${cable}
       ${itemsHtml}
       ${items ? `<div class="ep-plan-srow ep-plan-sbtns"><button type="button" class="btn btn-primary ep-clickable" data-plan-to-estimate>${T.toEstimate}</button></div>` : ""}`);
+  }
+
+  // редактор норм расходников (крепёж/буры/коронки/диски/мешки) ПРЯМО внутри плана —
+  // та же панель, что и в «Логике расходников» на экране «Расходники» (общий движок
+  // EP.CableConsum, изменения сразу видны в обоих местах); открывается поверх шторки
+  // «Расчёт», ‹ Назад возвращает к ней.
+  function sheetConsumSettings() {
+    rooms().openSheet(`<div class="ep-plan-srow"><b>${T.consumTitle}</b>
+        <span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-pc-consumback>${T.back}</button></div>
+      <div id="ep-consum-root"></div>`);
+    if (window.EP && window.EP.ConsumablesUI && EP.ConsumablesUI.renderLogic) EP.ConsumablesUI.renderLogic("ep-consum-root");
   }
 
   document.addEventListener("click", (e) => {
@@ -420,6 +434,8 @@
     const t = e.target;
     if (t.closest("[data-plan-calc]")) return sheet();
     if (t.closest("[data-pc-close]")) { rooms().closeSheet(); return; }
+    if (t.closest("[data-pc-consumcfg]")) return sheetConsumSettings();
+    if (t.closest("[data-pc-consumback]")) return sheet();
   });
   document.addEventListener("change", (e) => {
     if (!rooms() || !rooms().isActive()) return;
@@ -431,5 +447,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Calc = { sheet, buildBlocks, runEngine, priceFor, calcByRoutes, estimateItems };
+  EP.Plan.Calc = { sheet, buildBlocks, runEngine, priceFor, calcByRoutes, estimateItems, sheetConsumSettings };
 })();
