@@ -37,6 +37,29 @@
     return p;
   };
 
+  // Магнит для тяги ВНУТРЕННЕЙ точки излома трассы (два соседа prev/next): каждый сосед
+  // независимо пытается довести СВОЙ отрезок до вертикали/горизонтали (тот же ratio-порог,
+  // что и orthoAdjust) — если оба соседа сработали на РАЗНЫЕ оси, результат авто прямой угол
+  // (x от prev, y от next или наоборот); если сработал только один — просто выравнивается
+  // одна сторона ("иногда полезно", не жёсткий constraint). lockedX/lockedY сообщают
+  // вызывающему коду, какие оси уже выровнены под соседа (их нельзя дальше округлять по сетке
+  // — иначе округление снова собьёт точное совпадение координаты с соседом).
+  G.orthoJoint = (prev, p, next, ratio) => {
+    const r = ratio == null ? 0.36 : ratio;
+    let x = p.x, y = p.y, lockedX = false, lockedY = false;
+    if (prev) {
+      const dx = Math.abs(x - prev.x), dy = Math.abs(y - prev.y);
+      if (dx <= dy * r) { x = prev.x; lockedX = true; }
+      else if (dy <= dx * r) { y = prev.y; lockedY = true; }
+    }
+    if (next) {
+      const dx = Math.abs(x - next.x), dy = Math.abs(y - next.y);
+      if (!lockedX && dx <= dy * r) { x = next.x; lockedX = true; }
+      else if (!lockedY && dy <= dx * r) { y = next.y; lockedY = true; }
+    }
+    return { x, y, lockedX, lockedY };
+  };
+
   // ---- стены комнаты (производные от точек полигона) ----
   G.walls = (room) => {
     const pts = room.points || [], out = [];
