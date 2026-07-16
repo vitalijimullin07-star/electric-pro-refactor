@@ -29,12 +29,27 @@
     const parts = Object.keys(by).map((k) => `${(TY[k] || { name: k }).name} ×${by[k]}`);
     return parts.join(", ") || "—";
   }
-  // подсказка кабеля по составу нагрузки, если не задан вручную
+  // мин. сечение (мм²) под номинал автомата — та же таблица, что и в проверках
+  // норм (plan-rules.js CABLE_AMP: макс. автомат под сечение меди), сформулирована
+  // тут в обратную сторону (по автомату ищем сечение), чтобы «авто»-кабель никогда
+  // не оказывался тоньше, чем допускает уже выставленный номинал линии.
+  const SECTION_BY_AMP = [{ amp: 10, sec: 1.5 }, { amp: 16, sec: 2.5 }, { amp: 25, sec: 4 }, { amp: 32, sec: 6 }, { amp: 50, sec: 10 }, { amp: 63, sec: 16 }];
+  // подсказка кабеля, если не задан вручную — ПОДБОР ПО АВТОМАТУ (просьба
+  // пользователя: «кабель можно подбирать исходя из аппарата защиты»), число жил —
+  // по полюсам линии (1п — 3 жилы, 3п — 5 жил), сечение — ближайшее большее в
+  // каталоге проекта (DEFAULTS.cables) под номинал автомата этой линии.
   function autoCable(p, c) {
+    const found = SECTION_BY_AMP.find((x) => (c.breaker || 16) <= x.amp);
+    const needSec = (found || SECTION_BY_AMP[SECTION_BY_AMP.length - 1]).sec;
+    const prefix = c.poles === 3 ? "5×" : "3×";
+    const cat = (core().DEFAULTS.cables || [])
+      .filter((cb) => cb.indexOf(prefix) === 0)
+      .map((cb) => ({ cb, sec: parseFloat(cb.split("×")[1]) }))
+      .sort((a, b) => a.sec - b.sec);
+    if (cat.length) return (cat.find((o) => o.sec >= needSec) || cat[cat.length - 1]).cb;
+    // в каталоге нет кабелей нужного числа жил — старое поведение по типу нагрузки
     const layers = loadEls(p, c).map((e) => e.layer);
-    if (layers.length && layers.every((l) => l === "light")) return "3×1.5";
-    if (layers.some((l) => l === "ac" || l === "warm")) return "3×2.5";
-    return "3×2.5";
+    return (layers.length && layers.every((l) => l === "light")) ? "3×1.5" : "3×2.5";
   }
   // короткая метка нагрузки для символа группы (по первому типу)
   function loadKindLabel(p, c) {
