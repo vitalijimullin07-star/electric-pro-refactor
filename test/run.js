@@ -443,6 +443,62 @@ test("resetRouteToAuto: НЕ трогает геометрию других (н�
   ok(otherAfter, "другая трасса всё ещё на месте");
   eq(JSON.stringify(otherAfter.points), stalePts, "точки другой авто-трассы не пересчитаны — их не должно было коснуться");
 });
+test("buildIncremental: не трогает уже существующие трассы, строит только новые точки", () => {
+  // баг: «⚡ Построить» звала полный build() — расставил новые точки в одной комнате,
+  // нажал «Построить», и уже готовые трассы в СОВСЕМ других местах незаметно меняли
+  // форму (пойман экспортом реального проекта пользователя до/после клика). Теперь
+  // кнопка достраивает ТОЛЬКО точки без трассы, старые не трогает вообще.
+  const { P } = scene(false);
+  EP.Plan.Routes.build();
+  const before = P.routes.length;
+  ok(before >= 2, "минимум 2 трассы построены изначально");
+  const s1rt = P.routes[0];
+  // симулируем «устаревшую» геометрию — если buildIncremental трогает старые трассы,
+  // эта лишняя точка исчезнет при пересчёте
+  s1rt.points.splice(1, 0, { x: s1rt.points[0].x + 4, y: s1rt.points[0].y + 6 });
+  const stalePts = JSON.stringify(s1rt.points);
+
+  const q3 = M.newCircuit("QF3", "#33f", 16);
+  P.circuits.push(q3);
+  const s3 = M.newElement("socket", P.rooms[0].id + ":1", 60, 30, "power");
+  s3.circuitId = q3.id;
+  P.elements.push(s3);
+
+  EP.Plan.Routes.buildIncremental();
+  eq(P.routes.length, before + 1, "добавилась ровно одна новая трасса — для новой точки");
+  const s1rtAfter = P.routes.find((r) => r.fromId === s1rt.fromId);
+  eq(JSON.stringify(s1rtAfter.points), stalePts, "старая трасса не пересчитана — точки как были (включая «устаревшую»)");
+  const s3rt = P.routes.find((r) => r.fromId === s3.id);
+  ok(s3rt, "у новой точки появилась трасса");
+});
+test("buildIncremental: у ручной трассы проходки актуализируются, путь не трогается", () => {
+  const { P, w } = install({ panels: [M.newPanel(600, 150)] });
+  const el = M.newElement("socket", w(0), 50, 30, "power");
+  P.elements.push(el);
+  const rt = M.newRoute(el.layer, "ceiling", [{ x: 350, y: 50 }, { x: 450, y: 50 }], el.id, null);
+  rt.manual = true;
+  P.routes.push(rt);
+  EP.Plan.Routes.buildIncremental();
+  eq(rt.points.length, 2, "путь ручной трассы не тронут");
+  eq(rt.throughWalls.length, 1, "проходка пересчитана по текущим точкам — трасса пересекает правую стену");
+  eq(rt.throughWalls[0].wallId, w(1), "проходка именно на правой стене");
+});
+test("buildIncremental: новая точка шлейфом подключается к уже проведённой точке, а не только к щиту", () => {
+  const { P, w } = install({ panels: [M.newPanel(600, 150)] }); // щит далеко от комнаты
+  const a = M.newElement("socket", w(0), 50, 30, "power");
+  P.elements.push(a);
+  EP.Plan.Routes.build();
+  const aRoute = P.routes.find((r) => r.fromId === a.id);
+  ok(aRoute && aRoute.toPanel, "A изначально ведёт прямо к щиту (единственная точка)");
+
+  const b = M.newElement("socket", w(0), 55, 30, "power"); // рядом с A, далеко от щита
+  P.elements.push(b);
+  EP.Plan.Routes.buildIncremental();
+  const bRoute = P.routes.find((r) => r.fromId === b.id);
+  ok(bRoute, "у B появилась трасса");
+  eq(bRoute.toId, a.id, "B подключилась к уже проведённой A (ближе), а не напрямую к щиту");
+  eq(JSON.stringify(aRoute.points), JSON.stringify(P.routes.find((r) => r.fromId === a.id).points), "трасса A не изменилась");
+});
 test("hitAt: тап попадает по ВИДИМОМУ маркеру (elemDrawPoint), а не по оси стены", () => {
   const { P, w } = install();
   const s1 = M.newElement("socket", w(0), 100, 30, "power");
