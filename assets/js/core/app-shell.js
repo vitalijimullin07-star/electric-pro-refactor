@@ -49,6 +49,7 @@ EP.AppShell = {
             <button class="ep-clickable" type="button" data-route="tools">🛠 Инструмент</button>
             <button class="ep-clickable" type="button" data-route="profile">👤 Профиль и реквизиты</button>
             <button class="ep-clickable" type="button" data-route="settings">🎨 Настройки визуала</button>
+            <button class="ep-clickable" type="button" data-route="privacy">🔒 Приватность</button>
             <button class="ep-clickable" type="button" data-route="subscription">💳 Подписка</button>
             <button class="ep-clickable" type="button" data-route="ai" id="aiMenuBtn" style="display:none">🤖 ИИ-ассистент</button>
             <button class="ep-clickable" type="button" data-route="admin" id="adminMenuBtn" style="display:none">👑 Админка</button>

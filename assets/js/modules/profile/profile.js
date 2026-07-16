@@ -96,6 +96,14 @@
           <button type="button" class="btn btn-ghost ep-clickable" data-route="main">На главный</button>
         </div>
         <div class="ep-prof-status" data-prof-status></div>
+        <div class="ep-prof-sec">
+          <div class="ep-prof-h">Приватность и данные</div>
+          <p class="ep-prof-note">Мы получаем от Google ваш email и имя — только для работы в приложении.
+            <button type="button" class="ep-linklike ep-clickable" data-route="privacy">Политика конфиденциальности</button></p>
+          <p class="ep-prof-note">Удаление стирает все ваши данные на устройстве и в облаке и выполняет выход из аккаунта. Отменить нельзя.</p>
+          <button type="button" class="btn btn-ghost ep-danger ep-clickable" data-prof-delete-all>🗑 Удалить все мои данные</button>
+          <div class="ep-prof-status" data-prof-del-status></div>
+        </div>
       </div>`;
   }
   function readForm() {
@@ -118,6 +126,27 @@
     } catch (e) {}
   }
 
+  // удаление всех данных пользователя: облако (drafts/{uid}/v29/*) + устройство
+  // (localStorage целиком) + выход из аккаунта. Best-effort по облаку (не роняем, если
+  // Firestore недоступен), устройство чистим всегда, затем signOut и перезагрузка.
+  async function deleteAllData() {
+    try {
+      const d = window.EP && EP.Firebase && EP.Firebase.db;
+      const uid = window.EP && EP.Cloud && EP.Cloud.authUid && EP.Cloud.authUid();
+      if (d && uid) {
+        const snap = await d.collection("drafts").doc(uid).collection("v29").get();
+        const batch = d.batch();
+        snap.forEach((doc) => batch.delete(doc.ref));
+        await batch.commit();
+      }
+    } catch (e) { /* облако best-effort */ }
+    try { localStorage.clear(); } catch (e) {}
+    try { if (EP.Auth && EP.Auth.signOut) await EP.Auth.signOut(); else if (EP.Firebase && EP.Firebase.auth) await EP.Firebase.auth.signOut(); } catch (e) {}
+    try { location.reload(); } catch (e) {}
+  }
+
+  let delArmed = false, delTimer = null;
+
   document.addEventListener("click", (e) => {
     const t = e.target; if (!t || !t.closest) return;
     if (t.closest("[data-prof-save]")) {
@@ -126,6 +155,24 @@
       if (st) st.textContent = "Сохранено на устройстве.";
       flash("Сохранено");
       pushProfile().then((ok) => { if (st) st.textContent = ok ? "Сохранено и синхронизировано по аккаунту." : "Сохранено на устройстве (синк по аккаунту — после входа)."; });
+    }
+    const del = t.closest("[data-prof-delete-all]");
+    if (del) {
+      const st = document.querySelector("[data-prof-del-status]");
+      if (!delArmed) {
+        // первый тап — вооружаем подтверждение (второй тап в течение 6с реально удаляет)
+        delArmed = true;
+        del.textContent = "⚠ Нажмите ещё раз, чтобы удалить безвозвратно";
+        del.classList.add("ep-danger-armed");
+        if (st) st.textContent = "";
+        clearTimeout(delTimer);
+        delTimer = setTimeout(() => { delArmed = false; del.textContent = "🗑 Удалить все мои данные"; del.classList.remove("ep-danger-armed"); }, 6000);
+        return;
+      }
+      clearTimeout(delTimer); delArmed = false;
+      del.disabled = true; del.textContent = "Удаляю…";
+      if (st) st.textContent = "Удаляю данные и выхожу из аккаунта…";
+      deleteAllData();
     }
   });
   window.addEventListener("ep:route-loaded", (e) => {

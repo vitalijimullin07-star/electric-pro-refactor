@@ -24,11 +24,12 @@ EP.routes = {
   tools: "pages/tools.html",
   guide: "pages/guide.html",
   whatsnew: "pages/whatsnew.html",
+  privacy: "pages/privacy.html",
   ai: "pages/ai.html"
 };
 
 EP.Router = {
-  publicRoutes: new Set(["login"]),
+  publicRoutes: new Set(["login", "privacy"]),
 
   normalize(route) {
     return EP.routes[route] ? route : "main";
@@ -72,7 +73,7 @@ EP.Router = {
     window.dispatchEvent(new CustomEvent("ep:route-loading", { detail: { route } }));
 
     try {
-      const res = await fetch(EP.routes[route] + "?v=3105", { cache: "no-store" });
+      const res = await fetch(EP.routes[route] + "?v=3106", { cache: "no-store" });
       target.innerHTML = await res.text();
       try { window.scrollTo(0, 0); if (document.scrollingElement) document.scrollingElement.scrollTop = 0; } catch (e) {}
       window.dispatchEvent(new CustomEvent("ep:route-loaded", { detail: { route } }));
