@@ -447,16 +447,19 @@
         }
         if (bad.has(elem.id)) grp.appendChild(el("circle", { cx: pt.x, cy: pt.y, r: r0 * 1.7, class: "ep-plan-warnring", "stroke-width": sw * 0.7 }));
       } else if (elem.type === "block") {
-        // рамка постов: поворачивается ВДОЛЬ стены, отступ внутрь
+        // рамка постов: поворачивается ВДОЛЬ стены, отступ внутрь. Вертикальный блок
+        // (elem.blockVert) — та же рамка, повёрнутая ещё на 90° (посты «столбиком»
+        // на плане), просил пользователь: «кнопку развернуть на 90°».
         const items = (elem.params && elem.params.items) || ["socket"];
         const step2 = 16 * k, bw = items.length * step2 + 8 * k, bh = 22 * k;
-        const tr = rot ? `rotate(${rot} ${cx} ${cy})` : null;
+        const rotB = (rot || 0) + (elem.blockVert ? 90 : 0);
+        const tr = rotB ? `rotate(${rotB} ${cx} ${cy})` : null;
         // ГОСТ: групповая розетка (все посты блока — розетки) — концентрические полукруги
         // по числу постов вместо прямоугольника с буквами, максимум 6 колец (тот же предел,
         // что уже есть у самой возможности добавить пост в блок, см. plan-unfold.js p+/p-)
         const gostGroup = gost && items.length > 1 && items.every((it) => it === "socket");
         if (gostGroup) {
-          const sub = el("g", { class: "ep-plan-gost", stroke: elemColor(elem), transform: `translate(${cx} ${cy})` + (rot ? ` rotate(${rot})` : "") });
+          const sub = el("g", { class: "ep-plan-gost", stroke: elemColor(elem), transform: `translate(${cx} ${cy})` + (rotB ? ` rotate(${rotB})` : "") });
           let sgn = 1;
           if (dp && dp.nrm) {
             const rad = (rot || 0) * Math.PI / 180;
@@ -473,8 +476,8 @@
           sub.appendChild(el("line", { x1: 0, y1: sgn * rMax, x2: 0, y2: sgn * (rMax + 6 * k), "stroke-width": lw }));
           if (items.length > 6) sub.appendChild(el("text", { x: 0, y: sgn * (rMax + 13 * k), "font-size": 8 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-gosttxt", fill: elemColor(elem), stroke: "none" }, "×" + items.length));
           grp.appendChild(sub);
-          if (bad.has(elem.id)) grp.appendChild(el("circle", Object.assign({ cx: 0, cy: 0, r: rMax * 1.4, class: "ep-plan-warnring", fill: "none", "stroke-width": sw * 0.7 }, { transform: `translate(${cx} ${cy})` + (rot ? ` rotate(${rot})` : "") })));
-          grp.appendChild(el("circle", Object.assign({ cx: 0, cy: sgn * (rMax + 6 * k), r: 2.6 * k, class: "ep-plan-entrymark" }, { transform: `translate(${cx} ${cy})` + (rot ? ` rotate(${rot})` : "") })));
+          if (bad.has(elem.id)) grp.appendChild(el("circle", Object.assign({ cx: 0, cy: 0, r: rMax * 1.4, class: "ep-plan-warnring", fill: "none", "stroke-width": sw * 0.7 }, { transform: `translate(${cx} ${cy})` + (rotB ? ` rotate(${rotB})` : "") })));
+          grp.appendChild(el("circle", Object.assign({ cx: 0, cy: sgn * (rMax + 6 * k), r: 2.6 * k, class: "ep-plan-entrymark" }, { transform: `translate(${cx} ${cy})` + (rotB ? ` rotate(${rotB})` : "") })));
         } else {
           // стиль «Дизайн»: выноска от блока к точке-«плагу» на стене
           if (design && pt && pt.wall && (Math.abs(pt.x - cx) > 0.5 || Math.abs(pt.y - cy) > 0.5)) {
