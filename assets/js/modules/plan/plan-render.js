@@ -409,6 +409,10 @@
     const layerColor2 = (id) => (((project.layers || []).find((l) => l.id === id) || {}).color) || "#94a3b8";
     const circ = (id) => (project.circuits || []).find((c) => c.id === id);
     const gost = (project.settings && project.settings.symbolStyle) === "gost";
+    // цвет элемента = цвет линии (QF), если она назначена; иначе цвет слоя. Блоки/посты
+    // и одиночные точки красятся по линии, как на профессиональном чертеже (просил
+    // пользователь: «цвет естественно должен зависеть от линии QF»).
+    const elemColor = (elem) => (elem.circuitId && circ(elem.circuitId) ? circ(elem.circuitId).color : layerColor2(elem.layer));
     (project.elements || []).forEach((elem) => {
       if (!layerOn(project, elem.layer)) return;
       const pt = EP.Plan.Geometry.elemPoint(project, elem);
@@ -439,7 +443,7 @@
         // что уже есть у самой возможности добавить пост в блок, см. plan-unfold.js p+/p-)
         const gostGroup = gost && items.length > 1 && items.every((it) => it === "socket");
         if (gostGroup) {
-          const sub = el("g", { class: "ep-plan-gost", stroke: layerColor2(elem.layer), transform: `translate(${cx} ${cy})` + (rot ? ` rotate(${rot})` : "") });
+          const sub = el("g", { class: "ep-plan-gost", stroke: elemColor(elem), transform: `translate(${cx} ${cy})` + (rot ? ` rotate(${rot})` : "") });
           let sgn = 1;
           if (dp && dp.nrm) {
             const rad = (rot || 0) * Math.PI / 180;
@@ -454,13 +458,13 @@
           const rMax = r0g + (rings - 1) * ringGap;
           sub.appendChild(el("line", { x1: -rMax, y1: 0, x2: rMax, y2: 0, "stroke-width": lw }));
           sub.appendChild(el("line", { x1: 0, y1: sgn * rMax, x2: 0, y2: sgn * (rMax + 6 * k), "stroke-width": lw }));
-          if (items.length > 6) sub.appendChild(el("text", { x: 0, y: sgn * (rMax + 13 * k), "font-size": 8 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-gosttxt", fill: layerColor2(elem.layer), stroke: "none" }, "×" + items.length));
+          if (items.length > 6) sub.appendChild(el("text", { x: 0, y: sgn * (rMax + 13 * k), "font-size": 8 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-gosttxt", fill: elemColor(elem), stroke: "none" }, "×" + items.length));
           grp.appendChild(sub);
           if (bad.has(elem.id)) grp.appendChild(el("circle", Object.assign({ cx: 0, cy: 0, r: rMax * 1.4, class: "ep-plan-warnring", fill: "none", "stroke-width": sw * 0.7 }, { transform: `translate(${cx} ${cy})` + (rot ? ` rotate(${rot})` : "") })));
           grp.appendChild(el("circle", Object.assign({ cx: 0, cy: sgn * (rMax + 6 * k), r: 2.6 * k, class: "ep-plan-entrymark" }, { transform: `translate(${cx} ${cy})` + (rot ? ` rotate(${rot})` : "") })));
         } else {
           if (bad.has(elem.id)) grp.appendChild(el("rect", Object.assign({ x: cx - bw / 2 - 4 * k, y: cy - bh / 2 - 4 * k, width: bw + 8 * k, height: bh + 8 * k, rx: 6 * k, class: "ep-plan-warnring", fill: "none", "stroke-width": sw * 0.7 }, tr ? { transform: tr } : {})));
-          grp.appendChild(el("rect", Object.assign({ x: cx - bw / 2, y: cy - bh / 2, width: bw, height: bh, rx: 5 * k, fill: layerColor2(elem.layer), class: "ep-plan-blockrect", "stroke-width": sw * 0.7 }, tr ? { transform: tr } : {})));
+          grp.appendChild(el("rect", Object.assign({ x: cx - bw / 2, y: cy - bh / 2, width: bw, height: bh, rx: 5 * k, fill: elemColor(elem), class: "ep-plan-blockrect", "stroke-width": sw * 0.7 }, tr ? { transform: tr } : {})));
           items.forEach((it, i) => grp.appendChild(el("text", Object.assign({
             x: cx - bw / 2 + 4 * k + step2 * i + step2 / 2, y: cy,
             "font-size": 9 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph"
@@ -474,7 +478,7 @@
         if (bad.has(elem.id)) grp.appendChild(el("circle", { cx, cy, r: r0 * 1.55, class: "ep-plan-warnring", "stroke-width": sw * 0.7 }));
         const colEl = elem.circuitId && circ(elem.circuitId) ? circ(elem.circuitId).color : layerColor2(elem.layer);
         if (!(gost && drawGostEl(grp, elem, cx, cy, rot, dp, k, sw, colEl))) {
-          grp.appendChild(el("circle", { cx, cy, r: r0, fill: layerColor2(elem.layer), "stroke-width": sw * 0.7 }));
+          grp.appendChild(el("circle", { cx, cy, r: r0, fill: colEl, "stroke-width": sw * 0.7 }));
           grp.appendChild(el("text", { x: cx, y: cy, "font-size": 10 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph" }, (TY[elem.type] || {}).glyph || "?"));
         }
       }
@@ -483,6 +487,13 @@
       if (labelsOn && elem.circuitId) {
         const cc = circ(elem.circuitId);
         if (cc) grp.appendChild(el("text", { x: cx, y: cy - r0 - 5 * k, "font-size": 9 * k, "text-anchor": "middle", class: "ep-plan-qf", fill: cc.color }, cc.name));
+      }
+      // подпись высоты установки (h=NNN, см) под маркером — только у настенных точек
+      // (у свободного света/ТП/распайки высота = потолок, подпись не нужна). Текст НЕ
+      // повёрнут (всегда читается), опущен ниже маркера, как на проф. чертеже.
+      if (elem.wallId && elem.type !== "junction" && elem.height != null) {
+        const below = (elem.type === "block" ? 15 * k : r0 + 2 * k);
+        grp.appendChild(el("text", { x: cx, y: cy + below + 7 * k, "font-size": 8.5 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-hlabel" }, "h=" + Math.round(elem.height)));
       }
       g.appendChild(grp);
     });
