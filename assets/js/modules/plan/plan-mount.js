@@ -251,17 +251,33 @@
 
   // Кнопка «Назад» на Android: закрывает функцию ВНУТРИ планировки (вкладку/режим/
   // полноэкранку), а не выходит из неё. Когда ничего не открыто — уходит к списку проектов.
+  // ВАЖНО: этот листенер регистрируется раньше EP.Router.init() (тот вызывается из
+  // app.js на DOMContentLoaded, а этот файл — обычный deferred-скрипт, отрабатывает
+  // раньше) — значит на popstate он срабатывает ПЕРВЫМ. Раньше он не звал
+  // stopImmediatePropagation(), и следом ВСЕГДА срабатывал ОБЩИЙ роутерный обработчик
+  // (router.js), который безусловно уводил на предыдущий РОУТ приложения (EP.Router.back())
+  // — то есть каждый Android-«назад» внутри «Проекта квартиры» не просто закрывал текущий
+  // слой (полноэкран/развёртку/шторку), а следом ЕЩЁ и выкидывал из всего модуля целиком.
+  // Останавливаем всплытие до роутера, если мы сами обработали нажатие.
   function armBack() { try { history.pushState({ epPlan: true }, ""); } catch (e) {} }
-  window.addEventListener("popstate", () => {
+  window.addEventListener("popstate", (event) => {
     if (!V.active || !core().project) return;
+    if (event && event.stopImmediatePropagation) event.stopImmediatePropagation();
     const r = root();
     const R2 = EP.Plan.Rooms;
     const fullBox = document.querySelector(".ep-plan.is-full");
+    // ЛЮБОЙ нативный fullscreen (главный редактор, развёртка, схема, любая шторка через
+    // ⛶/⤢/🔄) гасим первым делом, независимо от того, что именно его включило — иначе
+    // на Android «назад» мог сначала молча погасить только сам fullscreen (браузер
+    // перехватывает жест на выход из Fullscreen API раньше, чем событие доходит до
+    // popstate), а следующий "назад" уже закрывал бы другой, неожиданный слой.
+    if (document.fullscreenElement) { try { document.exitFullscreen(); } catch (e) {} }
     const sh = document.getElementById("ep-plan-sheet");
     const sheetOpen = sh && !sh.hidden;
     const mode = R2 && R2.currentMode ? R2.currentMode() : "view";
-    if (fullBox) { fullBox.classList.remove("is-full"); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); armBack(); return; }
-    if (EP.Plan.Unfold && EP.Plan.Unfold.isOpen()) { EP.Plan.Unfold.close(); if (R2) R2.closeSheet(); const s2 = document.querySelector("#ep-plan-sheet"); if (s2) s2.classList.remove("ep-plan-sheet-full"); armBack(); return; }
+    if (fullBox) { fullBox.classList.remove("is-full"); armBack(); return; }
+    if (sh) sh.classList.remove("ep-plan-sheet-full");
+    if (EP.Plan.Unfold && EP.Plan.Unfold.isOpen()) { EP.Plan.Unfold.close(); if (R2) R2.closeSheet(); armBack(); return; }
     if (sheetOpen || mode !== "view") { if (R2) R2.setMode("view"); armBack(); return; }
     // внутри планировки ничего не открыто — возвращаемся к списку проектов (не выходим)
     core().closeProject(); if (r) renderList(r);
