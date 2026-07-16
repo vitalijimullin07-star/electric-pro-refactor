@@ -351,7 +351,24 @@ body[data-visual-mode="day"] .ep-plan-hlabel { fill: #475569; }
 /* развёртка v2 */
 .ep-plan-unfsvg { width: 100%; height: 200px; display: block; }
 .ep-plan-unfold.is-full .ep-plan-unfsvg, .ep-plan-sheet-full .ep-plan-unfsvg { height: 62vh; height: 62dvh; }
-.ep-plan-sheet-full { max-height: 92% !important; }
+/* ⛶ «Во весь экран» шторки — ЧИСТЫЙ CSS, НЕ полагается на успех нативного
+   requestFullscreen() (тот тоже вызывается — для реального fullscreen c системным
+   выходом по «назад»/жесту, — но на части реальных устройств/встроенных браузеров
+   тихо ничего не делает без ошибки: старые WebView, встроенный браузер мессенджера
+   без allow="fullscreen" и т.п.). Раньше .ep-plan-sheet-full только чуть увеличивал
+   max-height, а сама шторка оставалась в обычном потоке страницы (position:absolute
+   внутри .ep-plan-canvas, НИЖЕ шапки/тулбара редактора) — если requestFullscreen()
+   не срабатывал, «весь экран» выглядел как обычная нижняя шторка поверх шапки плана
+   (баг с реального устройства пользователя, скриншот). Тот же приём, что уже
+   используется у .is-landscape-forced ниже: position:fixed на весь вьюпорт —
+   гарантированно перекрывает экран независимо от Fullscreen API. */
+.ep-plan-sheet-full {
+  position: fixed !important; inset: 0 !important;
+  width: 100vw !important; width: 100dvw !important;
+  height: 100vh !important; height: 100dvh !important;
+  max-height: 100vh !important; max-height: 100dvh !important;
+  margin: 0 !important; border-radius: 0 !important; z-index: 10000;
+}
 /* «Во весь экран горизонтально» без физического поворота телефона — screen.orientation.lock()
    требует реально повернуть устройство (и не работает в iOS Safari вовсе). Классический
    CSS-приём: элемент фиксируется на весь вьюпорт и разворачивается на 90° — ширина/высота
