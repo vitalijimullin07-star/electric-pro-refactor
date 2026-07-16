@@ -308,6 +308,17 @@
     p.routes.push(rt);
   }
 
+  // Пересчитывает ТОЛЬКО проходки (throughWalls) уже существующей трассы по её ТЕКУЩИМ
+  // points — вызывается после ручной правки (тяга излома / разворот угла в plan-rooms.js),
+  // САМИ points НЕ трогает (иначе стёрла бы ручную правку) — только пересчитывает, где
+  // путь теперь пересекает стены, той же логикой (G.polylineCrossings), что и авто-сборка.
+  function recomputeThroughWalls(p, rt) {
+    const fromEl = (p.elements || []).find((e) => e.id === rt.fromId);
+    let throughWalls = G().polylineCrossings(p, rt.points, (fromEl && fromEl.wallId) || null);
+    if (p.settings.routeType === "floor") throughWalls = throughWalls.filter((cr) => !G().floorOpeningAt(p, cr.wallId, cr));
+    rt.throughWalls = throughWalls;
+  }
+
   function clearRoutes() {
     const c = core();
     c.commit(); c.project.routes = []; c.persist("routes-clear");
@@ -453,5 +464,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { build, clearRoutes, lengths, sheet, pointVert, panelVert, hopVertMul, buildPath, roomNear, routeAt, resetRouteToAuto };
+  EP.Plan.Routes = { build, clearRoutes, lengths, sheet, pointVert, panelVert, hopVertMul, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls };
 })();

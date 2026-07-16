@@ -339,6 +339,20 @@ test("orthoJoint: диагональ без намёка на ось — точ�
   near(r.x, 70, 0.5); near(r.y, 130, 0.5);
   ok(!r.lockedX && !r.lockedY, "ни одна ось не зафиксирована");
 });
+test("recomputeThroughWalls: пересчитывает проходки по ТЕКУЩИМ points трассы (после ручной правки)", () => {
+  const { P, w } = install({});
+  const el = M.newElement("socket", w(0), 50, 30, "power");
+  P.elements.push(el);
+  const rt = M.newRoute(el.layer, "ceiling", [{ x: 350, y: 50 }, { x: 450, y: 50 }], el.id, null);
+  P.routes.push(rt);
+  EP.Plan.Routes.recomputeThroughWalls(P, rt);
+  eq(rt.throughWalls.length, 1, "трасса пересекает правую стену — 1 проходка");
+  eq(rt.throughWalls[0].wallId, w(1), "проходка именно на правой стене (индекс 1)");
+  // "ручная правка" увела путь так, что он больше НЕ пересекает стену
+  rt.points = [{ x: 350, y: 50 }, { x: 380, y: 50 }];
+  EP.Plan.Routes.recomputeThroughWalls(P, rt);
+  eq(rt.throughWalls.length, 0, "путь больше не пересекает стену — проходка снята");
+});
 test("routeAt: хит-тест находит построенную трассу рядом с сегментом", () => {
   const { P } = scene(false);
   EP.Plan.Routes.build();
