@@ -736,8 +736,9 @@
         <label class="ep-plan-chk"><input type="checkbox" data-pr-layer="${esc(l.id)}" ${l.visible !== false ? "checked" : ""}>
         <i class="ep-plan-dot" style="background:${esc(l.color)}"></i> ${esc(l.name)}</label>`).join("")}</div>
       <div class="ep-plan-srow">Значки:
-        <button type="button" class="ep-plan-chip ep-clickable ${st !== "gost" ? "on" : ""}" data-pr-symst="simple">Простые</button>
+        <button type="button" class="ep-plan-chip ep-clickable ${st === "simple" ? "on" : ""}" data-pr-symst="simple">Простые</button>
         <button type="button" class="ep-plan-chip ep-clickable ${st === "gost" ? "on" : ""}" data-pr-symst="gost">ГОСТ</button>
+        <button type="button" class="ep-plan-chip ep-clickable ${st === "design" ? "on" : ""}" data-pr-symst="design">Дизайн</button>
       </div>
       <div class="ep-plan-srow ep-plan-sbtns"><button type="button" class="btn btn-ghost ep-clickable" data-pr-cancel>${T.close}</button></div>`);
   }
