@@ -424,6 +424,25 @@ test("resetRouteToAuto: снимает manual и пересчитывает ко
   ok(other && other.manual, "остальные ручные трассы не тронуты");
   eq(other.points.length, untouchedLenBefore, "точки нетронутой ручной трассы не изменились");
 });
+test("resetRouteToAuto: НЕ трогает геометрию других (не-ручных, автоматических) трасс", () => {
+  // баг: раньше resetRouteToAuto() звал полный build({silent:true}), а он ВСЕГДА
+  // пересчитывает С НУЛЯ все НЕ-ручные трассы проекта — клик по «↺ Авто» одной линии
+  // незаметно перетрассировывал и все остальные уже построенные авто-трассы.
+  const { P } = scene(true); // с распайкой — минимум 2 трассы на QF1
+  EP.Plan.Routes.build();
+  ok(P.routes.length >= 2, "минимум 2 трассы в сцене с распайкой");
+  const target = P.routes[0], other = P.routes[1];
+  ok(!target.manual && !other.manual, "обе трассы автоматические (не ручные)");
+  // симулируем «устаревшую» геометрию другой трассы (как будто она была построена
+  // раньше при другом состоянии) — если resetRouteToAuto зовёт полный build(),
+  // эта «устаревшая» точка исчезнет, пересчитавшись заново
+  other.points.splice(1, 0, { x: other.points[0].x + 3, y: other.points[0].y + 7 });
+  const stalePts = JSON.stringify(other.points);
+  EP.Plan.Routes.resetRouteToAuto(target.id);
+  const otherAfter = P.routes.find((r) => r.fromId === other.fromId);
+  ok(otherAfter, "другая трасса всё ещё на месте");
+  eq(JSON.stringify(otherAfter.points), stalePts, "точки другой авто-трассы не пересчитаны — их не должно было коснуться");
+});
 test("hitAt: тап попадает по ВИДИМОМУ маркеру (elemDrawPoint), а не по оси стены", () => {
   const { P, w } = install();
   const s1 = M.newElement("socket", w(0), 100, 30, "power");
