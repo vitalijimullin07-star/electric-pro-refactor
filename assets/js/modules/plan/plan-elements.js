@@ -247,13 +247,27 @@
         <button type="button" class="ep-plan-chip ep-clickable" data-po-hinge>Петли: ${op.hinge === "a" ? "слева" : "справа"}</button>
         <button type="button" class="ep-plan-chip ep-clickable" data-po-flip>Открывание: ${op.flip > 0 ? "внутрь" : "наружу"}</button>
       </div>` : ""}
-      <div class="ep-plan-modehint">Номера проёмов вкл/выкл — слой «Подписи» (🗂).</div>
+      <div class="ep-plan-srow">Розетки в откосе:
+        <button type="button" class="ep-plan-chip ep-clickable" data-po-reveal="a">＋ слева</button>
+        <button type="button" class="ep-plan-chip ep-clickable" data-po-reveal="b">＋ справа</button>
+      </div>
+      ${revealListHtml(p, op)}
+      <div class="ep-plan-modehint">Розетка в откосе стоит на кромке проёма (слева/справа), тапни её на плане для редактирования. Номера проёмов вкл/выкл — слой «Подписи» (🗂).</div>
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="ep-plan-tbtn ep-clickable" data-po-apply>${T.apply}</button>
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-po-del>${T.del}</button>
       </div>`);
     rooms().renderScene();
     if (wall && rooms().ensureVisibleAboveSheet) rooms().ensureVisibleAboveSheet(G().pointAtOffset(wall, op.offset + op.width / 2));
+  }
+  // розетки, привязанные к откосу этого проёма (el.reveal.openingId === op.id)
+  function revealSockets(p, op) { return (p.elements || []).filter((e) => e.reveal && e.reveal.openingId === op.id); }
+  function revealListHtml(p, op) {
+    const rs = revealSockets(p, op);
+    if (!rs.length) return "";
+    return `<div class="ep-plan-srow ep-plan-sbtns">${rs.map((e) =>
+      `<button type="button" class="ep-plan-chip ep-clickable" data-po-revedit="${esc(e.id)}">${e.reveal.side === "b" ? "справа" : "слева"} · h=${Math.round(e.height)}</button>` +
+      `<button type="button" class="ep-plan-chip ep-plan-danger ep-clickable" data-po-revdel="${esc(e.id)}">✕</button>`).join("")}</div>`;
   }
   function currentOpening() { return (core().project.openings || []).find((o) => o.id === S.selId) || null; }
 
@@ -524,9 +538,36 @@
       const c = core(), op = currentOpening(); if (!op) return;
       c.commit(); op.flip = -op.flip; c.persist("opening-flip"); openOpeningEditor(op); return;
     }
+    if ((b = t.closest("[data-po-reveal]"))) {
+      // розетка в откосе проёма: обычная точка на стене проёма у его кромки (слева/
+      // справа), с меткой el.reveal — маркер стоит на кромке (см. elemDrawPoint), а
+      // трасса/расчёт видят её как обычную настенную розетку (wallId+offset+circuit).
+      const c = core(), op = currentOpening(); if (!op) return;
+      const wall = G().wallById(c.project, op.wallId); if (!wall) return;
+      const side = b.getAttribute("data-po-reveal");
+      const edge = side === "b" ? op.offset + op.width : op.offset;
+      c.commit();
+      const el = c.model.newElement("socket", op.wallId, Math.max(0, Math.min(wall.len, edge)), defaultHeight("socket"), "power");
+      el.reveal = { openingId: op.id, side };
+      c.project.elements.push(el);
+      c.persist("reveal-add"); openOpeningEditor(op); return;
+    }
+    if ((b = t.closest("[data-po-revedit]"))) {
+      const el = (core().project.elements || []).find((e) => e.id === b.getAttribute("data-po-revedit"));
+      if (el) openEditor(el); return;
+    }
+    if ((b = t.closest("[data-po-revdel]"))) {
+      const c = core(), op = currentOpening(), id = b.getAttribute("data-po-revdel");
+      c.commit(); c.project.elements = (c.project.elements || []).filter((e) => e.id !== id); c.persist("reveal-del");
+      if (op) openOpeningEditor(op); return;
+    }
     if (t.closest("[data-po-del]")) {
       const c = core(), op = currentOpening(); if (!op) return;
-      c.commit(); c.project.openings = c.project.openings.filter((o) => o.id !== op.id); c.persist("opening-del");
+      c.commit();
+      c.project.openings = c.project.openings.filter((o) => o.id !== op.id);
+      // откосные розетки этого проёма удаляем вместе с ним (иначе повиснут без якоря)
+      c.project.elements = (c.project.elements || []).filter((e) => !(e.reveal && e.reveal.openingId === op.id));
+      c.persist("opening-del");
       S.selId = null; rooms().closeSheet(); rooms().renderScene(); return;
     }
     if ((b = t.closest("[data-pe-papply]"))) {
