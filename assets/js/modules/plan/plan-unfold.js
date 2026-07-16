@@ -403,12 +403,25 @@
 
       if (el.type === "block") {
         const items = (el.params && el.params.items) || ["socket"];
-        const step2 = 18 * ks, bw = items.length * step2 + 6 * ks, bh = 24 * ks;
+        // вертикальный блок (el.blockVert) — посты «столбиком» по высоте (вдоль y),
+        // горизонтальный — в ряд (вдоль x); просил пользователь. Развёртка — вид фасада,
+        // так что вертикальный блок здесь именно по высоте, а не поворот графики.
+        const vert = !!el.blockVert;
+        const step2 = 18 * ks, along = items.length * step2 + 6 * ks, across = 24 * ks;
+        const bw = vert ? across : along, bh = vert ? along : across;
+        const cellC = (i) => vert
+          ? { cx: x, cy: y - bh / 2 + 3 * ks + step2 * i + step2 / 2 }
+          : { cx: x - bw / 2 + 3 * ks + step2 * i + step2 / 2, cy: y };
+        const cellR = (i) => vert
+          ? { x: x - bw / 2, y: y - bh / 2 + 3 * ks + step2 * i, width: bw, height: step2 }
+          : { x: x - bw / 2 + 3 * ks + step2 * i, y: y - bh / 2, width: step2, height: bh };
         gr.appendChild(svgEl("rect", { x: x - bw / 2, y: y - bh / 2, width: bw, height: bh, rx: 5 * ks, fill: col, class: "ep-plan-unfshape" }));
-        items.forEach((it, i) => gr.appendChild(svgEl("text", { x: x - bw / 2 + 3 * ks + step2 * i + step2 / 2, y, "font-size": 9 * ks, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfglyph" }, (TY[it] || {}).glyph || "?")));
-        items.forEach((it, i) => gr.appendChild(svgEl("rect", { "data-pu-post": i, x: x - bw / 2 + 3 * ks + step2 * i, y: y - bh / 2, width: step2, height: bh, fill: "transparent" })));
-        const eIdx = G().blockEntryIndex(el);
-        gr.appendChild(svgEl("circle", { cx: x - bw / 2 + 3 * ks + step2 * eIdx + step2 / 2, cy: y + bh / 2 + 5 * ks, r: 3 * ks, class: "ep-plan-unfentry" }));
+        items.forEach((it, i) => { const c = cellC(i); gr.appendChild(svgEl("text", { x: c.cx, y: c.cy, "font-size": 9 * ks, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfglyph" }, (TY[it] || {}).glyph || "?")); });
+        items.forEach((it, i) => gr.appendChild(svgEl("rect", Object.assign({ "data-pu-post": i, fill: "transparent" }, cellR(i)))));
+        const eIdx = G().blockEntryIndex(el), ec = cellC(eIdx);
+        gr.appendChild(svgEl("circle", vert
+          ? { cx: x + bw / 2 + 5 * ks, cy: ec.cy, r: 3 * ks, class: "ep-plan-unfentry" }
+          : { cx: ec.cx, cy: y + bh / 2 + 5 * ks, r: 3 * ks, class: "ep-plan-unfentry" }));
       } else {
         gr.appendChild(svgEl("circle", { cx: x, cy: y, r: 13 * ks, fill: col, class: "ep-plan-unfshape" }));
         gr.appendChild(svgEl("text", { x, y, "font-size": 10 * ks, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfglyph" }, (TY[el.type] || {}).glyph || "?"));

@@ -366,6 +366,9 @@
         ${items.map((k, i) => `<button type="button" class="ep-plan-chip ep-clickable ${(entrySet ? el.entryPost === i : autoIdx === i) ? "on" : ""}" data-pe-entry="${i}">${i + 1}</button>`).join("")}
         <button type="button" class="ep-plan-chip ep-clickable ${entrySet ? "" : "on"}" data-pe-entry="auto">Авто</button>
       </div>
+      <div class="ep-plan-srow">Ориентация:
+        <button type="button" class="ep-plan-chip ep-clickable" data-pe-brot="1">⟳ ${el.blockVert ? "Вертикальный" : "Горизонтальный"} · развернуть 90°</button>
+      </div>
       <div class="ep-plan-modehint">${T.blockTapDel} · штроба входит в выбранный подрозетник.</div>`;
   }
 
@@ -438,6 +441,12 @@
       const c = core(), el = current(); if (!el || el.type !== "block") return;
       const v = b.getAttribute("data-pe-entry");
       c.commit(); el.entryPost = v === "auto" ? null : Number(v); c.persist("block-entry"); openEditor(el); return;
+    }
+    if ((b = t.closest("[data-pe-brot]"))) {
+      const c = core(), el = current(); if (!el || el.type !== "block") return;
+      c.commit(); el.blockVert = !el.blockVert; c.persist("block-rot"); openEditor(el);
+      if (rooms().renderScene) rooms().renderScene();
+      return;
     }
     if ((b = t.closest("[data-pe-outlayer]"))) {
       const c = core(), el = current(); if (!el) return;
