@@ -55,7 +55,7 @@
         <span>· ${G().fmtLen(w.len)} × ${G().fmtLen(wallH(p, wallId))}</span>
         <span class="ep-plan-flex"></span>
         <button type="button" class="ep-plan-mini ep-clickable" data-pu-ctrls aria-label="${S.ctrlsOn ? "Свернуть функции" : "Развернуть функции"}" title="Свернуть/развернуть функции">${S.ctrlsOn ? "︿" : "﹀"}</button>
-        <button type="button" class="ep-plan-mini ep-clickable" data-pu-fit aria-label="Показать всё">⛶</button>
+        <button type="button" class="ep-plan-mini ep-clickable" data-pu-fit aria-label="Показать всё">🔍</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-pu-fullplain aria-label="Во весь экран">⛶</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-pu-full aria-label="Во весь экран горизонтально" title="Во весь экран горизонтально (попытка принудительного разворота)">⤢</button>
         <button type="button" class="ep-plan-mini ep-clickable ${S.landscapeForced ? "on" : ""}" data-pu-fulllandscape aria-label="Во весь экран горизонтально (без поворота телефона)" title="Во весь экран горизонтально">🔄</button>
