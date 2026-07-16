@@ -234,5 +234,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Export = { print, sheetHtml };
+  EP.Plan.Export = { print, sheetHtml, counts };
 })();

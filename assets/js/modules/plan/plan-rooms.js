@@ -50,7 +50,8 @@
            moveOn: "✋ Перенос: тяни подложку", del: "✕ Убрать подложку", opacity: "Прозрачность",
            calibHint: "Тапни 2 точки на подложке с известным расстоянием.",
            calibDist: "Реальное расстояние, см", apply: "Применить" },
-    layersTitle: "Слои", tooSmall: "Комната слишком маленькая (мин. 30 см).",
+    layersTitle: "Слои", legendTitle: "Условные обозначения", legendEmpty: "Пока пусто — добавь точки на план.",
+    tooSmall: "Комната слишком маленькая (мин. 30 см).",
     polyNeed: "Нужно минимум 3 точки."
   };
   const CFG = { cornerSnapCm: 20, closePolyPx: 22, minRoomCm: 30, dupShiftCm: 40, hitWallPx: 18 };
@@ -740,7 +741,37 @@
         <button type="button" class="ep-plan-chip ep-clickable ${st === "gost" ? "on" : ""}" data-pr-symst="gost">ГОСТ</button>
         <button type="button" class="ep-plan-chip ep-clickable ${st === "design" ? "on" : ""}" data-pr-symst="design">Дизайн</button>
       </div>
-      <div class="ep-plan-srow ep-plan-sbtns"><button type="button" class="btn btn-ghost ep-clickable" data-pr-cancel>${T.close}</button></div>`);
+      <div class="ep-plan-srow ep-plan-sbtns">
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-legend>📋 ${T.legendTitle}</button>
+        <button type="button" class="btn btn-ghost ep-clickable" data-pr-cancel>${T.close}</button>
+      </div>`);
+  }
+
+  // живая легенда «Условные обозначения» — те же типы точек, что использованы в проекте,
+  // с подсчётом штук (переиспользует EP.Plan.Export.counts). В отличие от легенды в PDF
+  // (чёрные ГОСТ-значки для печати) — здесь значок цветной, по цвету СЛОЯ (легенда
+  // группируется по ТИПУ прибора, а не по линии QF), чтобы читалось на тёмной шторке.
+  function sheetLegend() {
+    const p = core().project; if (!p) return;
+    const TY = (EP.Plan.Elements && EP.Plan.Elements.TYPES) || {};
+    const layerColor = (lid) => ((p.layers || []).find((l) => l.id === lid) || {}).color || "#94a3b8";
+    const rows = (EP.Plan.Export && EP.Plan.Export.counts) ? EP.Plan.Export.counts(p) : [];
+    const line = (glyph, color, name, qty) =>
+      `<div class="ep-leg-row"><span class="ep-leg-ic" style="background:${esc(color)}">${esc(glyph)}</span>` +
+      `<span class="ep-leg-name">${esc(name)}</span><span class="ep-leg-qty">${qty != null ? qty + " шт." : ""}</span></div>`;
+    let html = rows.map((c) => line(c.glyph, layerColor((TY[c.k] || {}).layer), c.name, c.qty)).join("");
+    // проёмы/щиты/лента живут не в p.elements — добавляем отдельно
+    const doorN = (p.openings || []).filter((o) => o.type === "door").length;
+    if (doorN) html += line("Дв", "#94a3b8", "Дверь / проём", doorN);
+    const winN = (p.openings || []).filter((o) => o.type === "window").length;
+    if (winN) html += line("Ок", "#94a3b8", "Окно", winN);
+    if ((p.panels || []).length) html += line("Щ", layerColor("power"), "Щит", (p.panels || []).length);
+    if ((p.ledStrips || []).length) html += line("LED", layerColor("light"), "Светодиодная лента", (p.ledStrips || []).length);
+    if (!html) html = `<div class="ep-plan-modehint">${T.legendEmpty}</div>`;
+    openSheet(`<div class="ep-plan-srow"><b>📋 ${T.legendTitle}</b>
+        <span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-sheet-fs aria-label="${T.sheetFs}">⛶</button>
+        <button type="button" class="ep-plan-mini ep-clickable" data-pr-cancel>✕</button></div>
+      <div class="ep-leg">${html}</div>`);
   }
 
   // ---------- действия ----------
@@ -1017,6 +1048,7 @@
       c.persist("symbol-style"); sheetLayers(); renderScene();
       return;
     }
+    if (t.closest("[data-pr-legend]")) return sheetLegend();
     if ((el = t.closest("[data-pr-mat]"))) {
       const c = core(), room = c.project.rooms.find((r) => r.id === R.selectedRoomId);
       if (room) { c.commit(); room.material = el.getAttribute("data-pr-mat"); c.persist("room-mat"); sheetRoom(room); }

@@ -332,6 +332,14 @@ body[data-visual-mode="day"] .ep-plan-wallband.mat-concrete, body[data-visual-mo
 .ep-plan-voidname { fill: #e2e8f0; font-family: system-ui; font-weight: 600; pointer-events: none; }
 body[data-visual-mode="day"] .ep-plan-voidname { fill: #0f172a; }
 .ep-plan-qf { font-family: system-ui; font-weight: 700; }
+/* живая легенда «Условные обозначения» (шторка) */
+.ep-leg { display: flex; flex-direction: column; gap: 2px; padding: 4px 2px; max-height: 46vh; overflow-y: auto; }
+.ep-leg-row { display: flex; align-items: center; gap: 9px; padding: 4px 6px; border-radius: 8px; }
+.ep-leg-row:nth-child(odd) { background: rgba(148, 163, 184, .08); }
+.ep-leg-ic { flex: none; width: 26px; height: 20px; border-radius: 5px; display: inline-flex; align-items: center;
+  justify-content: center; font: 700 10px system-ui; color: #06121f; border: 1px solid rgba(255, 255, 255, .55); }
+.ep-leg-name { flex: 1; font-size: 13px; }
+.ep-leg-qty { flex: none; opacity: .7; font-size: 12px; font-variant-numeric: tabular-nums; }
 /* подпись высоты установки под маркером точки (h=NNN) */
 .ep-plan-hlabel { fill: #cbd5e1; font-family: system-ui; font-weight: 600; pointer-events: none; }
 body[data-visual-mode="day"] .ep-plan-hlabel { fill: #475569; }
