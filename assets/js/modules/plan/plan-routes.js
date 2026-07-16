@@ -173,6 +173,50 @@
     });
   }
 
+  // группирует точки по линии (QF) и строит их трассы: точки с доступной распайкой
+  // своей линии — напрямую к ближайшей распайке/щиту; без распайки — шлейфом
+  // (chainFromPanel). extraConnected — ДОПОЛНИТЕЛЬНЫЕ уже подключённые узлы для шлейфа
+  // (используется buildIncremental(), чтобы новая точка могла лечь к уже проведённой
+  // розетке, а не только к щиту) — build() передаёт null, поведение не меняется.
+  function routeGroups(c, p, pointsToRoute, juncts, panels, extraConnected) {
+    const groups = new Map();
+    pointsToRoute.forEach((el) => {
+      const pos = G().routeAnchor(p, el); // блок -> вход штробы (нужный подрозетник)
+      if (!pos) return;
+      const key = el.circuitId || "_none";
+      if (!groups.has(key)) groups.set(key, { circuitId: el.circuitId || null, items: [] });
+      groups.get(key).items.push({ el, pos });
+    });
+    groups.forEach((g) => {
+      // распайки, доступные этой линии (своей QF; «без линии» — любые распайки)
+      const J = g.circuitId ? juncts.filter((n) => n.circuitId === g.circuitId) : juncts.slice();
+      if (J.length) {
+        // есть распайка -> каждая точка к ближайшей распайке своей линии (или щиту)
+        g.items.forEach(({ el, pos }) => {
+          const target = nearest(pos, J.concat(panels));
+          if (target) addRoute(c, p, el, pos, target, el.circuitId, colorOf(p, el));
+        });
+      } else {
+        // НЕТ распайки -> шлейф: щит [+ уже подключённые точки] -> розетка -> розетка
+        const extra = extraConnected ? (g.circuitId ? extraConnected.filter((n) => n.circuitId === g.circuitId) : extraConnected) : null;
+        chainFromPanel(c, p, g.items, extra ? panels.concat(extra) : panels, g.circuitId);
+      }
+    });
+  }
+  // распайки -> дерево к щиту (juncstToRoute — какие именно достроить; allJuncts —
+  // ПОЛНЫЙ список для поиска «более близкой к щиту распайки той же линии», включая
+  // уже построенные — их позиция не меняется, использовать как опорные узлы безопасно)
+  function routeJunctionsToPanel(c, p, allJuncts, juncstToRoute, panels) {
+    const panelDist = (pos) => { const n = nearest(pos, panels); return n ? dist(pos, n.pos) : Infinity; };
+    const js = allJuncts.map((n) => ({ n, d: panelDist(n.pos) }));
+    juncstToRoute.forEach((n) => {
+      const d = panelDist(n.pos);
+      const closerJ = js.filter((x) => x.d < d - 1 && (!n.circuitId || x.n.circuitId === n.circuitId)).map((x) => x.n);
+      const target = nearest(n.pos, panels.concat(closerJ));
+      if (target) addRoute(c, p, n.el, n.pos, target, n.circuitId, colorOf(p, n.el));
+    });
+  }
+
   function build(opts) {
     const silent = !!(opts && opts.silent); // тихая автоперестройка: без тостов/шторки
     const c = core(), p = c.project;
@@ -188,45 +232,64 @@
     const panels = (p.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y } }));
     const juncts = (p.elements || []).filter(isJunction).map((el) => ({ kind: "junction", id: el.id, el, circuitId: el.circuitId, pos: G().elemPoint(p, el) })).filter((n) => n.pos);
 
-    // группируем точки по линии (QF): QF1 отдельно от QF2, «без линии» — своя группа.
     // pos — ЕДИНАЯ точка отрисовки (та же, что у маркера): трасса доходит до точки,
     // а зазор между линиями QF заложен в самой точке (полоса по номеру линии).
-    const groups = new Map();
-    points.forEach((el) => {
-      const pos = G().routeAnchor(p, el); // блок -> вход штробы (нужный подрозетник)
-      if (!pos) return;
-      const key = el.circuitId || "_none";
-      if (!groups.has(key)) groups.set(key, { circuitId: el.circuitId || null, items: [] });
-      groups.get(key).items.push({ el, pos });
-    });
-
-    // 1) для каждой линии:
-    groups.forEach((g) => {
-      // распайки, доступные этой линии (своей QF; «без линии» — любые распайки)
-      const J = g.circuitId ? juncts.filter((n) => n.circuitId === g.circuitId) : juncts.slice();
-      if (J.length) {
-        // есть распайка -> каждая точка к ближайшей распайке своей линии (или щиту)
-        g.items.forEach(({ el, pos }) => {
-          const target = nearest(pos, J.concat(panels));
-          if (target) addRoute(c, p, el, pos, target, el.circuitId, colorOf(p, el));
-        });
-      } else {
-        // НЕТ распайки -> шлейф: щит -> розетка -> розетка (дерево от щита)
-        chainFromPanel(c, p, g.items, panels, g.circuitId);
-      }
-    });
-
-    // 2) распайки -> дерево к щиту. Распайка предпочитает узел своей QF ближе к щиту.
-    const panelDist = (pos) => { const n = nearest(pos, panels); return n ? dist(pos, n.pos) : Infinity; };
-    const js = juncts.map((n) => ({ n, d: panelDist(n.pos) })).sort((a, b) => a.d - b.d);
-    js.forEach(({ n, d }) => {
-      const closerJ = js.filter((x) => x.d < d - 1 && (!n.circuitId || x.n.circuitId === n.circuitId)).map((x) => x.n);
-      const target = nearest(n.pos, panels.concat(closerJ));
-      if (target) addRoute(c, p, n.el, n.pos, target, n.circuitId, colorOf(p, n.el));
-    });
+    routeGroups(c, p, points, juncts, panels, null);
+    routeJunctionsToPanel(c, p, juncts, juncts, panels);
 
     if (savedManual.length) restoreManualRoutes(p, savedManual);
     c.persist("routes-build");
+    if (!silent) sheet();
+  }
+
+  // ---- инкрементальная достройка: кнопка "⚡ Построить" — раньше звала build()
+  // целиком, а он ВСЕГДА перестраивает С НУЛЯ все не-ручные трассы проекта (см.
+  // комментарий выше про build()) — расставил новые розетки в одной комнате, нажал
+  // «Построить» — и уже готовые трассы в СОВСЕМ других комнатах незаметно меняли форму
+  // (баг, пойманный тем же способом — экспорт проекта до/после клика: 6 посторонних
+  // трасс реально меняли путь, хотя их точки не двигались; отличие от «↺ Авто» в том,
+  // что здесь это оказалось НЕ багом build() — build() детерминирован, — а ожидаемым
+  // следствием того, что «Построить» полностью пересчитывает вообще всё). Пользователь
+  // явно попросил другое поведение для ЭТОЙ кнопки: строить трассы ТОЛЬКО для точек/
+  // распаек, у которых её ещё нет вообще; уже существующие НЕ-ручные трассы вообще не
+  // трогает (даже проходки) — ручные (route.manual:true) трогает ТОЛЬКО как просил
+  // пользователь дополнительно: recomputeThroughWalls (проходки актуализируются на
+  // случай, если стены/комнаты вокруг успели измениться), сам путь НЕ пересчитывается.
+  // Полный build() (перестройка ВООБЩЕ всех не-ручных трасс) остаётся — и ОБЯЗАН
+  // оставаться — для AUTOREBUILD_ON и смены отступа/сечения штробы в настройках: там
+  // геометрия ДЕЙСТВИТЕЛЬНО изменилась и старые трассы физически неточны, а не просто
+  // «не нужно трогать». Полная перестройка всё ещё доступна пользователю через
+  // «✕ Очистить» + «⚡ Построить» заново (для несуществующих трасс инкрементальная
+  // сборка эквивалентна полной).
+  function buildIncremental(opts) {
+    const silent = !!(opts && opts.silent); // тихо — не открывать шторку «Трассы» (напр. поверх fullscreen развёртки)
+    const c = core(), p = c.project;
+    p.circuits = p.circuits || [];
+    if (!(p.panels || []).length) { if (!silent) rooms().toast(T.noPanel); return; }
+    const points = (p.elements || []).filter(isPoint);
+    if (!points.length) { if (!silent) rooms().toast(T.noElems); return; }
+    c.commit();
+
+    // проходки уже существующих ручных трасс — актуализируем, путь НЕ трогаем
+    (p.routes || []).forEach((rt) => { if (rt.manual) recomputeThroughWalls(p, rt); });
+
+    const haveRoute = new Set((p.routes || []).map((r) => r.fromId));
+    const newPoints = points.filter((el) => !haveRoute.has(el.id));
+    const allJuncts = (p.elements || []).filter(isJunction).map((el) => ({ kind: "junction", id: el.id, el, circuitId: el.circuitId, pos: G().elemPoint(p, el) })).filter((n) => n.pos);
+    const newJuncts = allJuncts.filter((n) => !haveRoute.has(n.id));
+
+    if (newPoints.length || newJuncts.length) {
+      const panels = (p.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y } }));
+      // уже проведённые точки — реальные узлы графа для шлейфа, не только щиты
+      const existingPointNodes = points.filter((el) => haveRoute.has(el.id)).map((el) => {
+        const pos = G().routeAnchor(p, el);
+        return pos ? { kind: "point", id: el.id, el, circuitId: el.circuitId, pos } : null;
+      }).filter(Boolean);
+      routeGroups(c, p, newPoints, allJuncts, panels, existingPointNodes);
+      routeJunctionsToPanel(c, p, allJuncts, newJuncts, panels);
+    }
+
+    c.persist("routes-build-inc");
     if (!silent) sheet();
   }
 
@@ -440,7 +503,7 @@
     if (!rooms() || !rooms().isActive()) return;
     const t = e.target; let b;
     if (t.closest("[data-plan-routes]")) return sheet();
-    if (t.closest("[data-prt-build]")) return build();
+    if (t.closest("[data-prt-build]")) return buildIncremental();
     if (t.closest("[data-prt-clear]")) return clearRoutes();
     if (t.closest("[data-prt-close]")) { rooms().closeSheet(); return; }
     if ((b = t.closest("[data-prt-conn]"))) {
@@ -487,5 +550,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { build, clearRoutes, lengths, sheet, pointVert, panelVert, hopVertMul, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls };
+  EP.Plan.Routes = { build, buildIncremental, clearRoutes, lengths, sheet, pointVert, panelVert, hopVertMul, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls };
 })();

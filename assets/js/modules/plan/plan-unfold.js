@@ -701,7 +701,7 @@
       const act = b.getAttribute("data-pu-act"), c = core();
       if (act === "undo") { c.undo(); drawStrip(); rooms().renderScene(); }
       else if (act === "redo") { c.redo(); drawStrip(); rooms().renderScene(); }
-      else if (act === "trace") { if (EP.Plan.Routes) EP.Plan.Routes.build({ silent: true }); drawStrip(); rooms().renderScene(); } // silent — иначе build() зовёт sheet() и стирает DOM развёртки поверх неё
+      else if (act === "trace") { if (EP.Plan.Routes) EP.Plan.Routes.buildIncremental({ silent: true }); drawStrip(); rooms().renderScene(); } // silent — иначе sheet() открывает шторку «Трассы» поверх fullscreen развёртки
       else if (act === "checks") { showChecks(); }
       else if (act === "pdf") { if (EP.Plan.Export) EP.Plan.Export.print(); }
       else if (act === "calc") { exitFS(); close(); rooms().closeSheet(); if (EP.Plan.Calc) EP.Plan.Calc.sheet(); }
