@@ -119,6 +119,14 @@
     });
     return s + "</svg>";
   }
+  // РОВНО 2 развёртки на лист (просьба пользователя — «на объекте по бумагам
+  // смотреть» удобнее парой, не разбросано по многу штук на странице).
+  // Раньше все карточки лежали в ОДНОМ .unfgrid (CSS Grid) и печатный движок
+  // сам решал, сколько строк влезет на лист — CSS Grid в печати у Chromium
+  // ненадёжно разбивается по страницам (может ужать/обрезать лишние строки
+  // вместо переноса на новый лист). Явное разбиение на страницы по 2 карточки
+  // — детерминировано, не зависит от печатного движка браузера.
+  const UNF_PER_PAGE = 2;
   function buildUnfolds(p) {
     const cards = [];
     (p.rooms || []).forEach((room) => {
@@ -129,7 +137,15 @@
         cards.push(`<div class="unfcard"><h4>${esc(room.name)} · стена ${w.n} · ${G().fmtLen(w.len)} × ${G().fmtLen(room.height || p.settings.ceilingHeight)}</h4>${unfoldSvg(p, room, w, els)}</div>`);
       });
     });
-    return cards.length ? `<div class="unfsec"><h3>Развёртки стен</h3><div class="unfgrid">${cards.join("")}</div></div>` : "";
+    if (!cards.length) return "";
+    const totalPages = Math.ceil(cards.length / UNF_PER_PAGE);
+    const pages = [];
+    for (let i = 0; i < cards.length; i += UNF_PER_PAGE) {
+      const n = i / UNF_PER_PAGE + 1;
+      const title = totalPages > 1 ? `Развёртки стен (${n}/${totalPages})` : "Развёртки стен";
+      pages.push(`<div class="unfsec"><h3>${esc(title)}</h3><div class="unfgrid">${cards.slice(i, i + UNF_PER_PAGE).join("")}</div></div>`);
+    }
+    return pages.join("");
   }
 
   // однолинейная схема в лист (тем же движком, что и в приложении)
@@ -257,7 +273,7 @@
       .unfgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
       .unfcard { border: 1px solid #999; padding: 4px 6px; break-inside: avoid; }
       .unfcard h4 { font-size: 9.5px; margin-bottom: 2px; }
-      .unf { width: 100%; max-height: 62mm; }
+      .unf { width: 100%; max-height: 160mm; }
       .unfwall { fill: #f1f5f9; stroke: #94a3b8; stroke-width: 1; }
       .unffloor { stroke: #111; stroke-width: 2; }
       .unfdim { stroke: #0891b2; stroke-width: 1; }
