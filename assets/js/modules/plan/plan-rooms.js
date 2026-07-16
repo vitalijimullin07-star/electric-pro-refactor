@@ -619,6 +619,7 @@
     c.commit();
     rt.points[best] = flipped;
     rt.manual = true;
+    if (EP.Plan.Routes.recomputeThroughWalls) EP.Plan.Routes.recomputeThroughWalls(c.project, rt);
     c.persist("route-flip");
     R.selectedRouteTap = flipped;
     sheetRoute(rt, flipped);
@@ -663,6 +664,7 @@
           y: oj.lockedY ? oj.y : G().snap(oj.y, step)
         };
         rt.manual = true;
+        if (EP.Plan.Routes.recomputeThroughWalls) EP.Plan.Routes.recomputeThroughWalls(c.project, rt);
         R.selectedRouteTap = rt.points[grabbed];
         c.persist("route-drag"); grabbed = -1; renderScene();
       }
