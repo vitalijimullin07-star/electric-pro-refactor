@@ -326,6 +326,9 @@ body[data-visual-mode="day"] .ep-plan-wallband.mat-concrete, body[data-visual-mo
 .ep-plan-voidname { fill: #e2e8f0; font-family: system-ui; font-weight: 600; pointer-events: none; }
 body[data-visual-mode="day"] .ep-plan-voidname { fill: #0f172a; }
 .ep-plan-qf { font-family: system-ui; font-weight: 700; }
+/* подпись высоты установки под маркером точки (h=NNN) */
+.ep-plan-hlabel { fill: #cbd5e1; font-family: system-ui; font-weight: 600; pointer-events: none; }
+body[data-visual-mode="day"] .ep-plan-hlabel { fill: #475569; }
 /* пунктир: выключатель -> его свет/вывод */
 .ep-plan-swlink { stroke-dasharray: 6 5; opacity: .8; fill: none; pointer-events: none; }
 /* цепочка проходных/перекрёстных — звено к звену, сплошная (провод-связка) */
