@@ -253,6 +253,12 @@ body[data-visual-mode="day"] .ep-plan-unfwall { fill: rgba(71, 85, 105, .06); }
   color: var(--text, #e8eef7); font: 700 13px system-ui;
 }
 .ep-plan-blockrect { stroke: rgba(255, 255, 255, .8); }
+/* стиль «Дизайн»: рамка-квадрат + выноска к точке-плагу на стене */
+.ep-plan-designframe { stroke: rgba(255, 255, 255, .85); }
+.ep-plan-leader { stroke: #94a3b8; fill: none; pointer-events: none; }
+.ep-plan-walldot { fill: #cbd5e1; stroke: none; pointer-events: none; }
+body[data-visual-mode="day"] .ep-plan-leader { stroke: #64748b; }
+body[data-visual-mode="day"] .ep-plan-walldot { fill: #475569; }
 
 /* материалы стен: бетон — сплошная, кирпич — терракот, панель — двойной штрих, мягкий — светлый пунктир */
 .ep-plan-wall.mat-brick { stroke: #d97706; }

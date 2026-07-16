@@ -97,6 +97,25 @@
     return true;
   }
 
+  // Стиль «Дизайн» (как на профессиональном чертеже, скрины пользователя): рамка-квадрат
+  // с иконкой прибора + короткая выноска к точке-«плагу» на стене. Цвет рамки = цвет линии
+  // QF (col). Рамка НЕ поворачивается вдоль стены — символ всегда стоит вертикально (как в
+  // проф. плане), выноска сама тянется к нужной точке стены. Возвращает false для типов,
+  // у которых своя отрисовка (распайка/блок).
+  function drawDesignEl(grp, elem, pt, cx, cy, k, sw, col, glyph) {
+    if (elem.type === "junction" || elem.type === "block") return false;
+    const lw = sw * 0.7;
+    // выноска к стене — только у настенных (у свободных pt совпадает с маркером)
+    if (pt && pt.wall && (Math.abs(pt.x - cx) > 0.5 || Math.abs(pt.y - cy) > 0.5)) {
+      grp.appendChild(el("line", { x1: pt.x, y1: pt.y, x2: cx, y2: cy, class: "ep-plan-leader", "stroke-width": lw }));
+      grp.appendChild(el("circle", { cx: pt.x, cy: pt.y, r: 2.6 * k, class: "ep-plan-walldot" }));
+    }
+    const s = 11 * k;
+    grp.appendChild(el("rect", { x: cx - s, y: cy - s, width: s * 2, height: s * 2, rx: 3 * k, fill: col, class: "ep-plan-designframe", "stroke-width": lw }));
+    grp.appendChild(el("text", { x: cx, y: cy, "font-size": 9 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph" }, glyph));
+    return true;
+  }
+
   // ---------- статичная часть: подложка + заливки комнат ----------
   function draw(canvas, project, ui) {
     const G = EP.Plan.Geometry;
@@ -409,6 +428,7 @@
     const layerColor2 = (id) => (((project.layers || []).find((l) => l.id === id) || {}).color) || "#94a3b8";
     const circ = (id) => (project.circuits || []).find((c) => c.id === id);
     const gost = (project.settings && project.settings.symbolStyle) === "gost";
+    const design = (project.settings && project.settings.symbolStyle) === "design";
     // цвет элемента = цвет линии (QF), если она назначена; иначе цвет слоя. Блоки/посты
     // и одиночные точки красятся по линии, как на профессиональном чертеже (просил
     // пользователь: «цвет естественно должен зависеть от линии QF»).
@@ -463,6 +483,11 @@
           if (bad.has(elem.id)) grp.appendChild(el("circle", Object.assign({ cx: 0, cy: 0, r: rMax * 1.4, class: "ep-plan-warnring", fill: "none", "stroke-width": sw * 0.7 }, { transform: `translate(${cx} ${cy})` + (rot ? ` rotate(${rot})` : "") })));
           grp.appendChild(el("circle", Object.assign({ cx: 0, cy: sgn * (rMax + 6 * k), r: 2.6 * k, class: "ep-plan-entrymark" }, { transform: `translate(${cx} ${cy})` + (rot ? ` rotate(${rot})` : "") })));
         } else {
+          // стиль «Дизайн»: выноска от блока к точке-«плагу» на стене
+          if (design && pt && pt.wall && (Math.abs(pt.x - cx) > 0.5 || Math.abs(pt.y - cy) > 0.5)) {
+            grp.appendChild(el("line", { x1: pt.x, y1: pt.y, x2: cx, y2: cy, class: "ep-plan-leader", "stroke-width": sw * 0.7 }));
+            grp.appendChild(el("circle", { cx: pt.x, cy: pt.y, r: 2.6 * k, class: "ep-plan-walldot" }));
+          }
           if (bad.has(elem.id)) grp.appendChild(el("rect", Object.assign({ x: cx - bw / 2 - 4 * k, y: cy - bh / 2 - 4 * k, width: bw + 8 * k, height: bh + 8 * k, rx: 6 * k, class: "ep-plan-warnring", fill: "none", "stroke-width": sw * 0.7 }, tr ? { transform: tr } : {})));
           grp.appendChild(el("rect", Object.assign({ x: cx - bw / 2, y: cy - bh / 2, width: bw, height: bh, rx: 5 * k, fill: elemColor(elem), class: "ep-plan-blockrect", "stroke-width": sw * 0.7 }, tr ? { transform: tr } : {})));
           items.forEach((it, i) => grp.appendChild(el("text", Object.assign({
@@ -477,7 +502,9 @@
       } else {
         if (bad.has(elem.id)) grp.appendChild(el("circle", { cx, cy, r: r0 * 1.55, class: "ep-plan-warnring", "stroke-width": sw * 0.7 }));
         const colEl = elem.circuitId && circ(elem.circuitId) ? circ(elem.circuitId).color : layerColor2(elem.layer);
-        if (!(gost && drawGostEl(grp, elem, cx, cy, rot, dp, k, sw, colEl))) {
+        const drewGost = gost && drawGostEl(grp, elem, cx, cy, rot, dp, k, sw, colEl);
+        const drewDesign = !drewGost && design && drawDesignEl(grp, elem, pt, cx, cy, k, sw, colEl, (TY[elem.type] || {}).glyph || "?");
+        if (!drewGost && !drewDesign) {
           grp.appendChild(el("circle", { cx, cy, r: r0, fill: colEl, "stroke-width": sw * 0.7 }));
           grp.appendChild(el("text", { x: cx, y: cy, "font-size": 10 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph" }, (TY[elem.type] || {}).glyph || "?"));
         }
