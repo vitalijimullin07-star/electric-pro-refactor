@@ -249,6 +249,58 @@
     renderScene();
   }
 
+  // Двойной тап по ЦИФРЕ размера (подпись высоты h=NNN под точкой ИЛИ звено размерной
+  // цепочки вдоль стены) → сразу открыть редактор ЭТОЙ точки, где меняются «Отступ от
+  // угла» и «Высота» (пользователь: «хотел двойной там по размеру, и редактировать»).
+  // Возвращает true, если попал по цифре — тогда plan-canvas НЕ делает зум. Работает
+  // только в режиме view (в режимах рисования двойной тап не переосмысливается).
+  function onDoubleTap(w) {
+    const p = core().project;
+    if (!p || R.mode !== "view" || !R.canvas || !EP.Plan.Elements) return false;
+    const k = R.canvas.cmPerPx();
+    const tol = 16 * k;
+    const dimsOn = ((p.layers || []).find((l) => l.id === "dims") || {}).visible !== false;
+    let best = null;
+    const consider = (elemId, d) => { if (elemId && d < tol && (!best || d < best.d)) best = { elemId, d }; };
+    // подписи высоты h=NNN под маркерами (рисуются всегда, см. plan-render.js)
+    (p.elements || []).forEach((e) => {
+      if (!e.wallId || e.type === "junction" || e.height == null) return;
+      const dp = G().elemDrawPoint(p, e); if (!dp) return;
+      const lp = { x: dp.x, y: dp.y + (e.type === "block" ? 22 : 20) * k };
+      consider(e.id, Math.hypot(w.x - lp.x, w.y - lp.y));
+    });
+    // звенья размерной цепочки вдоль стен (только если слой «Размеры» включён — иначе
+    // их не видно). Позиция цифры считается ТЕМ ЖЕ off2, что и в plan-render.js
+    // (labelOffsetPx 14 × 2.6 × k) — общий хелпер G.wallChainStations, чтобы хит-тест
+    // совпадал с видимой цифрой.
+    if (dimsOn) {
+      const off2 = 14 * 2.6 * k;
+      (p.rooms || []).forEach((room) => {
+        if ((room.points || []).length < 3) return;
+        const c0 = G().centroid(room.points);
+        G().walls(room).forEach((wl) => {
+          const chain = G().wallChainStations(p, wl);
+          if (!chain) return;
+          let nx = -(wl.b.y - wl.a.y), ny = wl.b.x - wl.a.x;
+          const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
+          if ((wl.mx - c0.x) * nx + (wl.my - c0.y) * ny < 0) { nx = -nx; ny = -ny; }
+          chain.segs.forEach((sg) => {
+            const pm = G().pointAtOffset(wl, sg.midOff);
+            const mid = { x: pm.x + nx * off2, y: pm.y + ny * off2 };
+            // правим «дальнюю» точку звена (bElemId), иначе ближнюю (у углов/проёмов elemId=null)
+            consider(sg.bElemId || sg.aElemId, Math.hypot(w.x - mid.x, w.y - mid.y));
+          });
+        });
+      });
+    }
+    if (!best) return false;
+    const elem = (p.elements || []).find((e) => e.id === best.elemId);
+    if (!elem) return false;
+    R.selectedRoomId = null;
+    EP.Plan.Elements.openEditor(elem);
+    return true;
+  }
+
   // ---------- шторка (нижняя панель) ----------
   function sheet() { return $("#ep-plan-sheet"); }
   // quickbar прячется, пока открыта шторка — они бы перекрывались снизу, а у
@@ -1162,6 +1214,7 @@
   function attach(canvas) {
     R.canvas = canvas;
     canvas.onTap(onTap);
+    if (canvas.onDblTap) canvas.onDblTap(onDoubleTap);
     canvas.onViewChanged(() => renderScaled());
     canvas.onHover(onCanvasHover);
     canvas.onHoverEnd(clearHoverPreview);

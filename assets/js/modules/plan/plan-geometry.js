@@ -149,6 +149,39 @@
     return { inner, outer: offsetRing(project, room, -1, 0) };
   };
 
+  // ---- станции размерной цепочки ВДОЛЬ стены (плана) ----
+  // ЕДИНЫЙ источник для рендера цепочки (plan-render.js) И для двойного тапа по цифре
+  // размера (plan-rooms.js) — чтобы визуальные цифры и хит-тест не разъезжались.
+  // Станции: ВНУТРЕННИЕ углы стены (thR/2 от края — работаем изнутри квартиры) + каждая
+  // настенная точка (offset, приклампленный к внутренним углам) + края проёмов. У станции-
+  // точки тегируется elemId (для правки — какую точку двигать), у угла/проёма elemId=null.
+  G.wallChainStations = (project, wall) => {
+    if (!wall || !wall.len) return null;
+    const thR = G.wallThOf(project, wall);
+    const inA = Math.min(thR / 2, wall.len / 2), inB = Math.max(wall.len - thR / 2, wall.len / 2);
+    const clamp = (d) => Math.round(Math.max(inA, Math.min(inB, d)));
+    const map = new Map(); // off -> elemId | null
+    map.set(Math.round(inA), null); map.set(Math.round(inB), null);
+    (project.elements || []).forEach((e) => {
+      if (e.wallId === wall.id && e.offset != null && e.type !== "junction") map.set(clamp(e.offset), e.id);
+    });
+    G.openingsOnWall(project, wall.id).forEach((o) => {
+      const s = clamp(o.offset), e2 = clamp(o.offset + o.width);
+      if (!map.has(s)) map.set(s, null);
+      if (!map.has(e2)) map.set(e2, null);
+    });
+    const offs = [...map.keys()].sort((a, b) => a - b);
+    if (offs.length <= 2) return null; // только углы — нечего привязывать
+    const stations = offs.map((off) => ({ off, elemId: map.get(off) || null }));
+    const segs = [];
+    for (let i = 0; i < stations.length - 1; i++) {
+      const a = stations[i], b = stations[i + 1], dist = b.off - a.off;
+      if (dist < 2) continue;
+      segs.push({ aOff: a.off, bOff: b.off, midOff: (a.off + b.off) / 2, dist, aElemId: a.elemId, bElemId: b.elemId });
+    }
+    return { stations, segs };
+  };
+
   // ---- контур ТРАССИРОВКИ: отступ от внутренней грани стены на extra см ----
   // Линии кабеля идут по этому контуру — параллельно стенам, не по стене.
   G.insetContour = (project, room, extra) => {

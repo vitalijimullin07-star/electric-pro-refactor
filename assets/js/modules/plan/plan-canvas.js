@@ -195,9 +195,12 @@
           const isDbl = lastTapInfo && (now - lastTapInfo.t) <= CFG.dblTapMs &&
             Math.hypot(e.clientX - lastTapInfo.x, e.clientY - lastTapInfo.y) <= CFG.dblTapPx;
           if (isDbl) {
-            // двойной тап — зум к точке касания (первый тап уже отработал как обычно,
-            // задержки на распознавание двойного тапа НЕТ — второй просто переосмыслен)
+            // двойной тап — сперва даём модулю шанс обработать (напр. правка размера по
+            // цепочке): если cb.dbl вернул truthy — двойной тап «съеден», зум НЕ делаем.
             const wc = toWorld(e.clientX, e.clientY);
+            if (cb.dbl && cb.dbl(wc, e)) { lastTapInfo = null; tapStart = null; return; }
+            // иначе зум к точке касания (первый тап уже отработал как обычно,
+            // задержки на распознавание двойного тапа НЕТ — второй просто переосмыслен)
             view.w *= CFG.dblTapZoomK; view.h *= CFG.dblTapZoomK;
             clampView();
             const wc2 = toWorld(e.clientX, e.clientY);
@@ -256,6 +259,7 @@
       toWorld, fit, redraw: apply,
       panBy: (dx, dy) => { view.x += dx; view.y += dy; apply(); }, // сдвиг вида в мировых см (программный, не жестом)
       onTap: (fn) => { cb.tap = fn; },
+      onDblTap: (fn) => { cb.dbl = fn; }, // (worldPt, e) → true, если двойной тап обработан (зум не делать)
       onViewChanged: (fn) => { cb.viewChanged = fn; },
       onHover: (fn) => { cb.hover = fn; },     // (worldPt, e) — живой предпросмотр снапа/прицела пера
       onHoverEnd: (fn) => { cb.hoverEnd = fn; }, // указатель ушёл с холста — убрать предпросмотр
