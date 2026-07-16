@@ -612,6 +612,21 @@ plan-rules (ПУЭ-проверки).
   lock не вызывался), хотя раньше (до параметра lock у requestFS/enterFS)
   так было всегда — теперь open(wallId, true) явно ставит и S.full, и
   S.fullLock в true.
+- Назначение линии (QF) ПРЯМО в карточке точки развёртки (renderPtPanel в
+  plan-unfold.js) — раньше сменить линию можно было только через «⚙ Полный
+  редактор» (закрывает fullscreen-развёртку и открывает главный редактор
+  точки на #ep-plan-sheet, теряя контекст стены). circuitRow(el, attr) в
+  plan-elements.js принял НЕобязательный 2-й параметр — префикс data-атрибутов
+  чипов: "pe" (по умолчанию, главный редактор — клик зовёт openEditor(el),
+  ПЕРЕРИСОВЫВАЕТ ВЕСЬ #ep-plan-sheet) или "pu" (карточка в развёртке — свой
+  обработчик в plan-unfold.js, зовёт ТОЛЬКО renderPtPanel()+renderScene(),
+  #ep-pu-box не трогает). ОБЯЗАТЕЛЬНО разные атрибуты на разных префиксах —
+  иначе клик по чипу внутри развёртки поймал бы обработчик plan-elements.js
+  (свой document-level click-listener, ловит ЛЮБОЙ клик в документе) и тот
+  вызвал бы openEditor(), стерев fullscreen-развёртку с #ep-plan-sheet.
+  Подбор цвета/номера новой линии вынесен в общую
+  assignNewCircuit(el) (было продублировано в data-pe-circ-new), её же
+  зовёт data-pu-circ-new.
 
 ## Общие UI-утилиты (вне модуля плана)
 - Подсказка по долгому удержанию (assets/js/modules/ui/long-tip.js, ~2с,

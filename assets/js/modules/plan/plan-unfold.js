@@ -196,6 +196,7 @@
         <button type="button" class="ep-plan-unfpt-b is-wide ep-clickable" data-pu-pt="p-">− пост</button>
         <button type="button" class="ep-plan-unfpt-b is-wide ep-clickable" data-pu-pt="p+">+ пост</button>
       </div>` : ""}
+      ${EL().circuitRow ? EL().circuitRow(el, "pu") : ""}
       <div class="ep-plan-unfpt-row"><button type="button" class="ep-plan-unfpt-b is-wide ep-clickable" data-pu-pt-edit>⚙ Полный редактор</button></div>`;
     box.appendChild(d);
   }
@@ -659,6 +660,19 @@
     if (t.closest("[data-pu-over-close]")) { const ov = $("#ep-pu-box .ep-plan-unfover"); if (ov) ov.remove(); return; }
     if (t.closest("[data-pu-pt-close]")) { S.ptPanel = null; const pt = $("#ep-pu-box .ep-plan-unfpt"); if (pt) pt.remove(); return; }
     if (t.closest("[data-pu-pt-edit]")) { const el2 = ptEl(); S.ptPanel = null; if (el2 && EL().openEditor) { close(); EL().openEditor(el2); } return; }
+    if ((b = t.closest("[data-pu-circ]"))) {
+      const el2 = ptEl(); if (!el2) return;
+      const id = b.getAttribute("data-pu-circ");
+      const c = core();
+      c.commit(); el2.circuitId = el2.circuitId === id ? null : id; c.persist("elem-circuit");
+      renderPtPanel(); rooms().renderScene(); return;
+    }
+    if (t.closest("[data-pu-circ-new]")) {
+      const el2 = ptEl(); if (!el2) return;
+      const c = core();
+      c.commit(); if (EL().assignNewCircuit) EL().assignNewCircuit(el2); c.persist("circuit-add");
+      renderPtPanel(); rooms().renderScene(); return;
+    }
     if ((b = t.closest("[data-pu-pt]"))) {
       const k = b.getAttribute("data-pu-pt"); // h±N | o±N | p+ | p-
       if (k[0] === "p") {

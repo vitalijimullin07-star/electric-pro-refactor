@@ -269,12 +269,31 @@
     rooms().renderScene();
     if (rooms().ensureVisibleAboveSheet) rooms().ensureVisibleAboveSheet({ x: pn.x, y: pn.y });
   }
-  // Назначение линии (автомата): чипы существующих линий + «новая»
-  function circuitRow(el) {
+  // создаёт новую линию (QF) и назначает её элементу — первый незанятый цвет,
+  // номер = максимум существующих QF + 1 (без повторов после удалений). Общая
+  // логика для главного редактора точки (data-pe-circ-new) и карточки точки
+  // в развёртке (data-pu-circ-new) — не дублировать подбор цвета/номера.
+  function assignNewCircuit(el) {
+    const c = core();
+    const colors = EP.Plan.Core.DEFAULTS.circuitColors;
+    const cs = c.project.circuits;
+    const used = new Set(cs.map((x) => x.color));
+    const color = colors.find((col) => !used.has(col)) || colors[cs.length % colors.length];
+    const maxN = cs.reduce((m, x) => { const n = parseInt(String(x.name).replace(/\D/g, ""), 10); return Number.isFinite(n) ? Math.max(m, n) : m; }, 0);
+    const circ = c.model.newCircuit("QF" + (maxN + 1), color, 16);
+    cs.push(circ); el.circuitId = circ.id;
+    return circ;
+  }
+  // Назначение линии (автомата): чипы существующих линий + «новая». attr — префикс
+  // data-атрибутов ("pe" в главном редакторе точки, "pu" в карточке точки развёртки —
+  // РАЗНЫЕ обработчики: pe-* зовёт openEditor() и перерисовывает ВЕСЬ #ep-plan-sheet,
+  // pu-* остаётся внутри развёртки и перерисовывает только карточку, см. plan-unfold.js).
+  function circuitRow(el, attr) {
+    const a = attr || "pe";
     const cs = core().project.circuits || [];
     return `<div class="ep-plan-srow">Линия:
-      ${cs.map((c) => `<button type="button" class="ep-plan-chip ep-clickable ${el.circuitId === c.id ? "on" : ""}" data-pe-circ="${esc(c.id)}" style="border-color:${esc(c.color)}"><i class="ep-plan-cdot" style="background:${esc(c.color)}"></i>${esc(c.name)}·${c.breaker}A</button>`).join("")}
-      <button type="button" class="ep-plan-chip ep-clickable" data-pe-circ-new>+ линия</button>
+      ${cs.map((c) => `<button type="button" class="ep-plan-chip ep-clickable ${el.circuitId === c.id ? "on" : ""}" data-${a}-circ="${esc(c.id)}" style="border-color:${esc(c.color)}"><i class="ep-plan-cdot" style="background:${esc(c.color)}"></i>${esc(c.name)}·${c.breaker}A</button>`).join("")}
+      <button type="button" class="ep-plan-chip ep-clickable" data-${a}-circ-new>+ линия</button>
     </div>`;
   }
 
@@ -456,17 +475,7 @@
     }
     if (t.closest("[data-pe-circ-new]")) {
       const c = core(), el = current(); if (!el) return;
-      c.commit();
-      const colors = EP.Plan.Core.DEFAULTS.circuitColors;
-      const cs = c.project.circuits;
-      // берём первый НЕзанятый цвет — чтобы QF разных номеров всегда различались визуально
-      const used = new Set(cs.map((x) => x.color));
-      const color = colors.find((col) => !used.has(col)) || colors[cs.length % colors.length];
-      // номер линии = максимум существующих QF + 1 (без повторов после удалений)
-      const maxN = cs.reduce((m, x) => { const n = parseInt(String(x.name).replace(/\D/g, ""), 10); return Number.isFinite(n) ? Math.max(m, n) : m; }, 0);
-      const circ = c.model.newCircuit("QF" + (maxN + 1), color, 16);
-      cs.push(circ); el.circuitId = circ.id;
-      c.persist("circuit-add"); openEditor(el); return;
+      c.commit(); assignNewCircuit(el); c.persist("circuit-add"); openEditor(el); return;
     }
     if (t.closest("[data-pe-apply]")) return applyEditor();
     if (t.closest("[data-pe-del]")) { deleteElement(current()); return; }
@@ -568,5 +577,5 @@
   }
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, onModeEnter, onOpeningModeEnter, placeAt, placeOpening, openingNum, hitAt, openEditor, openPanelEditor, openOpeningEditor, selectedId, deselect, deleteElement, duplicateElement };
+  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, onModeEnter, onOpeningModeEnter, placeAt, placeOpening, openingNum, hitAt, openEditor, openPanelEditor, openOpeningEditor, selectedId, deselect, deleteElement, duplicateElement, circuitRow, assignNewCircuit };
 })();
