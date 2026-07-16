@@ -183,7 +183,7 @@
     collect(CC.calc({
       mode: "mount", cableM: totalCable, boxes: junctBoxes,
       sockets: totalSockets, strobeM: totalStrobeSmall + totalStrobeBig,
-      surface, gofra: surface !== "floor"
+      surface, gofra: surface !== "floor" && p.settings.gofraCeil !== false
     }));
 
     const matNames = Array.from(new Set(Object.keys(smallByMat).concat(Object.keys(bigByMat), Object.keys(sockByMat))));

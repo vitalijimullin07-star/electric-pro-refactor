@@ -6,7 +6,10 @@
   "use strict";
   window.EP = window.EP || {};
 
-  const T = { sheet: "План электрики", made: "Исполнитель", obj: "Объект", addr: "Адрес", date: "Дата", legend: "Условные обозначения", expl: "Экспликация помещений", spec: "Спецификация точек", door: "Дверь", win: "Окно", panel: "Щит" };
+  const T = { sheet: "План электрики", made: "Исполнитель", obj: "Объект", addr: "Адрес", client: "Заказчик", area: "Площадь", roomsN: "Помещений", date: "Дата", legend: "Условные обозначения", expl: "Экспликация помещений", spec: "Спецификация точек", door: "Дверь", win: "Окно", panel: "Щит", genplan: "Общий план", tracesOf: (name) => `Трассы: ${name}` };
+  // слои-«трассы» — те, что реально прокладываются кабелем (не считая dims/labels/routes —
+  // это служебные оверлеи, не самостоятельный вид работ)
+  const TRACE_LAYER_IDS = ["light", "power", "lv", "tv", "cctv", "ac", "warm"];
 
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const core = () => EP.Plan.Core;
@@ -29,6 +32,62 @@
     cv.destroy();
     document.body.removeChild(host);
     return html;
+  }
+
+  // временно включает ТОЛЬКО перечисленные слои (project.layers[].visible), зовёт fn,
+  // восстанавливает исходную видимость — для страниц-по-слоям альбома (не трогаем
+  // настройки видимости, которые пользователь оставил в самом редакторе плана)
+  function withLayers(p, onIds, fn) {
+    const layers = p.layers || [];
+    const orig = layers.map((l) => l.visible);
+    layers.forEach((l) => { l.visible = onIds.indexOf(l.id) >= 0; });
+    try { return fn(); } finally { layers.forEach((l, i) => { l.visible = orig[i]; }); }
+  }
+  function layerName(p, id) {
+    const l = (p.layers || []).find((x) => x.id === id);
+    return l ? l.name : id;
+  }
+  // какие из «трассируемых» слоёв реально что-то содержат в ЭТОМ проекте (нет
+  // смысла печатать пустую страницу «Тёплый пол», если его в проекте нет)
+  function usedTraceLayers(p) {
+    const used = new Set();
+    (p.routes || []).forEach((r) => { if (r.layer) used.add(r.layer); });
+    (p.elements || []).forEach((e) => { if (e.layer) used.add(e.layer); });
+    return TRACE_LAYER_IDS.filter((id) => used.has(id));
+  }
+  // отдельная страница альбома на каждый слой трасс — сам план (стены/комнаты
+  // рисуются всегда, они не «слой») + точки и трассы ТОЛЬКО этого слоя. labels
+  // включаем всегда (имя линии QF над точкой — полезно даже на отдельном листе),
+  // routes включаем как мастер-тумблер (рендер трасс гейтится ОБОИМИ: "routes" И
+  // r.layer, см. plan-render.js draw()).
+  function buildLayerPages(p) {
+    const ids = usedTraceLayers(p);
+    if (!ids.length) return "";
+    return ids.map((id) => {
+      const svg = withLayers(p, [id, "routes", "labels"], () => buildSvg(p));
+      return `<div class="unfsec"><h3>${esc(T.tracesOf(layerName(p, id)))}</h3><div class="plan">${svg}</div></div>`;
+    }).join("");
+  }
+  // титульный лист — заказчик/объект/площадь (просьба пользователя: «титульный
+  // лист где информация о заказчике и квартире/доме»)
+  function buildTitlePage(p) {
+    const master = (window.EP.state && EP.state.user && EP.state.user.displayName) || "";
+    const date = new Date().toLocaleDateString("ru-RU");
+    const roomsList = (p.rooms || []).filter((r) => (r.points || []).length >= 3);
+    const totalArea = roomsList.reduce((s, r) => s + G().roomNetArea(p, r), 0);
+    return `<div class="titlepage">
+      <div class="tpbadge">⚡</div>
+      <h1>${esc(p.name)}</h1>
+      <div class="tpsub">Проект электроснабжения</div>
+      <table class="tptable">
+        <tr><th>${T.obj}</th><td>${esc(p.name)}</td></tr>
+        <tr><th>${T.addr}</th><td>${esc(p.address || "—")}</td></tr>
+        ${p.client ? `<tr><th>${T.client}</th><td>${esc(p.client)}</td></tr>` : ""}
+        ${roomsList.length ? `<tr><th>${T.area}</th><td>${G().fmtArea(totalArea)}</td></tr><tr><th>${T.roomsN}</th><td>${roomsList.length}</td></tr>` : ""}
+        <tr><th>${T.made}</th><td>${esc(master || "—")}</td></tr>
+        <tr><th>${T.date}</th><td>${esc(date)}</td></tr>
+      </table>
+    </div>`;
   }
 
   // развёртка одной стены для печати (длина × высота, точки с рулетками от угла и от пола)
@@ -89,7 +148,8 @@
     if (!circuits.length) return "";
     if (EP.Plan.Scheme && EP.Plan.Scheme.recompute) { try { EP.Plan.Scheme.recompute(p); } catch (e) {} }
     const rl = EP.Plan.Routes ? EP.Plan.Routes.lengths(p) : { byCircuit: {} };
-    const rows = circuits.map((c) => `<tr><td><i class="cd" style="background:${esc(c.color)}"></i>${esc(c.name)}</td><td>${(c.breaker || 16)}A${c.rcd ? " + УЗО" : ""}</td><td>${esc(c.cable || "—")}</td><td>${c.poles === 3 ? "3P" : "1P"}</td><td>${rl.byCircuit && rl.byCircuit[c.id] ? G().fmtLen(rl.byCircuit[c.id]) : "—"}</td></tr>`).join("");
+    const cableOf = (c) => c.cable || (EP.Plan.Scheme && EP.Plan.Scheme.autoCable ? EP.Plan.Scheme.autoCable(p, c) : null) || "—";
+    const rows = circuits.map((c) => `<tr><td><i class="cd" style="background:${esc(c.color)}"></i>${esc(c.name)}</td><td>${(c.breaker || 16)}A${c.rcd ? " + УЗО" : ""}</td><td>${esc(cableOf(c))}</td><td>${c.poles === 3 ? "3P" : "1P"}</td><td>${rl.byCircuit && rl.byCircuit[c.id] ? G().fmtLen(rl.byCircuit[c.id]) : "—"}</td></tr>`).join("");
     const box = p.settings.panelBox;
     const panelInfo = box && box.modules ? `Щит: <b>${esc(box.brand)}</b> · ${box.modules} мод · ${box.wmm}×${box.hmm}×${box.dmm} мм` : "";
     return `<div class="unfsec"><h3>Линии и щит</h3>${panelInfo ? `<p style="margin:2px 0 6px">${panelInfo}</p>` : ""}
@@ -120,8 +180,6 @@
   const iconFor = (k, glyph, gost) => (gost && GOST_ICONS[k]) ? GOST_ICONS[k] : `<i class="g">${esc(glyph)}</i>`;
 
   function sheetHtml(p) {
-    const master = (window.EP.state && EP.state.user && EP.state.user.displayName) || "";
-    const date = new Date().toLocaleDateString("ru-RU");
     const expl = (p.rooms || []).filter((r) => (r.points || []).length >= 3)
       .map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.name)}</td><td>${G().fmtArea(G().roomNetArea(p, r))}</td><td>${esc(r.material || p.settings.wallMaterial)}</td></tr>`).join("");
     const gost = (p.settings && p.settings.symbolStyle) === "gost";
@@ -145,9 +203,15 @@
       td, th { border: 1px solid #555; padding: 2px 5px; text-align: left; font-size: 10px; }
       .legend div { display: flex; align-items: center; gap: 6px; padding: 1.5px 0; }
       .g { font-style: normal; display: inline-flex; width: 17px; height: 17px; border-radius: 50%; border: 1px solid #111; align-items: center; justify-content: center; font-size: 8.5px; font-weight: 700; flex: none; }
-      .stamp { border: 1.6px solid #111; display: grid; grid-template-columns: 1fr 1fr 1fr 90px; }
-      .stamp div { border: .6px solid #555; padding: 3px 6px; }
-      .stamp b { display: block; font-size: 8.5px; color: #555; font-weight: 600; }
+      /* титульный лист (заменил собой прежний .stamp внизу листа — тот же
+         Объект/Адрес/Исполнитель/Дата, но отдельной первой страницей, плюс Заказчик/Площадь) */
+      .titlepage { break-after: page; page-break-after: always; min-height: 190mm; border: 2.2px solid #111; padding: 20mm; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+      .titlepage .tpbadge { font-size: 40px; margin-bottom: 10px; }
+      .titlepage h1 { font-size: 24px; margin-bottom: 4px; }
+      .titlepage .tpsub { color: #555; margin-bottom: 22px; font-size: 13px; }
+      .titlepage .tptable { border-collapse: collapse; }
+      .titlepage .tptable th, .titlepage .tptable td { border: 1px solid #555; padding: 5px 16px; text-align: left; font-size: 12px; }
+      .titlepage .tptable th { color: #555; font-weight: 600; white-space: nowrap; background: #f8fafc; }
       /* сцена SVG — печатные цвета */
       .gsym { flex: none; vertical-align: middle; }
       .legend .gsym { margin-right: 0; }
@@ -179,8 +243,14 @@
       .ep-plan-doorarc { stroke: #444; } .ep-plan-doorleaf { stroke: #111; } .ep-plan-window { stroke: #111; }
       .ep-plan-elglyph { fill: #fff; font-family: system-ui; font-weight: 700; }
       .ep-plan-el circle, .ep-plan-blockrect { stroke: #111; } .ep-plan-panel rect { fill: #1d4ed8; stroke: #111; }
-      .ep-plan-route { opacity: .75; } .ep-plan-cross { stroke: #b45309; fill: none; }
+      .ep-plan-route { opacity: .75; fill: none; } .ep-plan-cross { stroke: #b45309; fill: none; }
       .ep-plan-warnring, .ep-plan-eldone { display: none; }
+      /* многосегментные линии-связи БЕЗ fill:none — SVG по умолчанию заливает область
+         между последней и первой точкой пути чёрным (даже без явного "Z" замыкания),
+         на изогнутых трассах это давало жирные тёмные треугольники в PDF (репорт
+         пользователя, скриншот) — в живом плане это НЕ видно, там fill:none уже есть
+         в plan.css, а этот <style> — отдельный, только для печати. */
+      .ep-plan-swlink, .ep-plan-swchain { fill: none; }
       /* развёртки стен */
       .unfsec { break-before: page; page-break-before: always; margin-top: 6px; }
       .unfsec h3 { font-size: 12px; margin-bottom: 6px; }
@@ -199,23 +269,22 @@
       .schemebox { border: 1px solid #999; padding: 6px; overflow: auto; }
       .schemebox svg { max-width: 100%; height: auto; }
       .cd { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
-    </style></head><body><div class="frame">
-      <div class="plan">${buildSvg(p)}</div>
-      <div class="cols">
-        <div><h3>${T.expl}</h3><table><tr><th>№</th><th>Помещение</th><th>S</th><th>Стены</th></tr>${expl}</table></div>
-        <div><h3>${T.spec}</h3><table><tr><th></th><th>Тип</th><th>Кол-во</th></tr>${spec}</table></div>
-        <div class="legend"><h3>${T.legend}</h3>${legendRows}</div>
+    </style></head><body>
+      ${buildTitlePage(p)}
+      <div class="frame">
+        <h3>${T.genplan}</h3>
+        <div class="plan">${buildSvg(p)}</div>
+        <div class="cols">
+          <div><h3>${T.expl}</h3><table><tr><th>№</th><th>Помещение</th><th>S</th><th>Стены</th></tr>${expl}</table></div>
+          <div><h3>${T.spec}</h3><table><tr><th></th><th>Тип</th><th>Кол-во</th></tr>${spec}</table></div>
+          <div class="legend"><h3>${T.legend}</h3>${legendRows}</div>
+        </div>
       </div>
-      ${buildUnfolds(p)}
+      ${buildLayerPages(p)}
       ${buildCircuits(p)}
+      ${buildUnfolds(p)}
       ${buildScheme(p)}
-      <div class="stamp">
-        <div><b>${T.obj}</b>${esc(p.name)}</div>
-        <div><b>${T.addr}</b>${esc(p.address || "—")}</div>
-        <div><b>${T.made}</b>${esc(master || "—")}</div>
-        <div><b>${T.date}</b>${esc(date)}</div>
-      </div>
-    </div></body></html>`;
+    </body></html>`;
   }
 
   function print() {

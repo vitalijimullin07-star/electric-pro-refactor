@@ -14,6 +14,8 @@
     empty: "Проектов пока нет. Создай первый — название можно менять потом.",
     back: "‹ Проекты",
     rename: "✎",
+    meta: "ℹ️", metaTitle: "О проекте (для титульного листа PDF)",
+    metaClient: "Заказчик", metaAddress: "Адрес объекта",
     undo: "↶", redo: "↷",
     exportBtn: "⤓ Экспорт",
     del: "Удалить",
@@ -77,6 +79,7 @@
         <div class="ep-plan-title">
           <b id="ep-plan-title-text">${esc(p.name)}</b>
           <button type="button" class="ep-plan-mini ep-clickable" data-plan-rename aria-label="Переименовать проект">${T.rename}</button>
+          <button type="button" class="ep-plan-mini ep-clickable" data-plan-meta aria-label="${T.metaTitle}" title="${T.metaTitle}">${T.meta}</button>
         </div>
         <button type="button" class="ep-plan-mini ep-clickable" data-plan-full aria-label="Во весь экран">⤢</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-plan-ctrls aria-label="${V.ctrlsOn ? "Свернуть панель" : "Развернуть панель"}" title="Свернуть/развернуть панель инструментов">${V.ctrlsOn ? "︿" : "﹀"}</button>
@@ -189,6 +192,13 @@
     inp.addEventListener("blur", done);
     inp.focus(); inp.select();
   }
+  function doMeta() {
+    const c = core(), p = c.project; if (!p) return;
+    const rooms = EP.Plan.Rooms; if (!rooms) return;
+    rooms.openSheet(`<div class="ep-plan-srow"><b>${T.metaTitle}</b><span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-plan-meta-close>✕</button></div>
+      <div class="ep-plan-srow"><label style="flex:1">${T.metaClient}<input type="text" id="ep-plan-meta-client" value="${esc(p.client || "")}" placeholder="Иванов И.И."></label></div>
+      <div class="ep-plan-srow"><label style="flex:1">${T.metaAddress}<input type="text" id="ep-plan-meta-addr" value="${esc(p.address || "")}" placeholder="г. Москва, ул. …, д. …, кв. …"></label></div>`);
+  }
   function doExport() {
     const c = core(), p = c.project; if (!p) return;
     const text = c.exportJSON(); if (!text) return;
@@ -222,6 +232,8 @@
     if (t.closest("[data-plan-back]")) { core().closeProject(); return renderList(r); }
     if (t.closest("[data-plan-ctrls]")) return toggleTopCtrls(r);
     if (t.closest("[data-plan-rename]")) return doRename();
+    if (t.closest("[data-plan-meta]")) return doMeta();
+    if (t.closest("[data-plan-meta-close]")) { EP.Plan.Rooms.closeSheet(); return; }
     if (t.closest("[data-plan-undo]")) { core().undo(); return; }
     if (t.closest("[data-plan-redo]")) { core().redo(); return; }
     if (t.closest("[data-plan-export]")) return doExport();
@@ -242,6 +254,12 @@
       else if (!on && document.fullscreenElement === box) document.exitFullscreen().catch(() => {});
     } catch (e) {}
   }
+  document.addEventListener("input", (e) => {
+    const r = root(); if (!r || !V.active) return;
+    const t = e.target, c = core(); if (!c.project) return;
+    if (t.id === "ep-plan-meta-client") { c.project.client = t.value; c.persist("meta-client"); }
+    else if (t.id === "ep-plan-meta-addr") { c.project.address = t.value; c.persist("meta-addr"); }
+  });
   document.addEventListener("fullscreenchange", () => {
     if (!document.fullscreenElement) {
       const box = document.querySelector(".ep-plan.is-full");

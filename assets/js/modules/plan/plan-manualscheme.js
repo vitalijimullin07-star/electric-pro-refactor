@@ -223,6 +223,7 @@
       <div class="ep-plan-lineRow">
         <select class="ep-plan-sel" data-pms-lcab="${gi}:${li}"><option value="">авто</option>${cables.map((cb) => `<option value="${esc(cb)}" ${l.cable === cb ? "selected" : ""}>${esc(cb)}</option>`).join("")}</select>
         <input type="number" inputmode="decimal" min="0" step="0.5" data-pms-lclen="${gi}:${li}" value="${l.cableLen == null ? "" : esc(l.cableLen)}" placeholder="м" style="width:70px">
+        ${circuit ? `<button type="button" class="ep-plan-mini ep-clickable" data-pms-lclensync="${gi}:${li}" title="Взять длину из трассировки">⭯</button>` : ""}
         ${circuit ? `<span class="ep-plan-mshint">${esc(loadInfo)}</span>` : ""}
       </div>
       <div class="ep-plan-msapps"><span class="ep-plan-mshint">Аппараты:</span>${appChipsRow(l.apps, "l:" + gi + ":" + li)}${appAddSelect("pms-lappadd", gi + ":" + li)}</div>`;
@@ -296,6 +297,16 @@
       return;
     }
     if ((el = t.closest("[data-pms-ldel]"))) { const [gi, li] = el.getAttribute("data-pms-ldel").split(":").map(Number); const g = ms(p).groups[gi]; if (g) { c.commit(); g.lines.splice(li, 1); c.persist("mscheme-ldel"); refresh(); } return; }
+    if ((el = t.closest("[data-pms-lclensync]"))) {
+      const [gi, li] = el.getAttribute("data-pms-lclensync").split(":").map(Number);
+      const ln = ms(p).groups[gi] && ms(p).groups[gi].lines[li];
+      if (ln && ln.circuitId) {
+        const rl = EP.Plan.Routes && EP.Plan.Routes.lengths ? EP.Plan.Routes.lengths(p).byCircuit[ln.circuitId] : null;
+        if (rl) { c.commit(); ln.cableLen = Math.round(rl * 10) / 10; c.persist("mscheme-lclensync"); refresh(); }
+        else rooms().toast("Трасса для этой линии ещё не построена.");
+      }
+      return;
+    }
     if ((el = t.closest("[data-pms-gdel]"))) { const gi = +el.getAttribute("data-pms-gdel"); if (confirm("Удалить группу?")) { c.commit(); ms(p).groups.splice(gi, 1); c.persist("mscheme-gdel"); refresh(); } return; }
     if (t.closest("[data-pms-addgroup]")) { c.commit(); ms(p).groups.push(c.model.newSchemeGroup("Группа " + (ms(p).groups.length + 1))); c.persist("mscheme-gadd"); refresh(); return; }
     // реордер прямо в SVG-предпросмотре (кнопки ▲▼/◀▶ рисует ShieldSchemeSVG.renderGost)
@@ -314,7 +325,14 @@
       if (g && val) {
         c.commit();
         const ln = c.model.newSchemeLine("");
-        if (val !== "_manual") { const circuit = circuitById(p, val); if (circuit) { ln.circuitId = circuit.id; ln.name = circuit.name; ln.amp = circuit.breaker || 16; ln.cable = circuit.cable || null; } }
+        if (val !== "_manual") {
+          const circuit = circuitById(p, val);
+          if (circuit) {
+            ln.circuitId = circuit.id; ln.name = circuit.name; ln.amp = circuit.breaker || 16; ln.cable = circuit.cable || null;
+            const rl = EP.Plan.Routes && EP.Plan.Routes.lengths ? EP.Plan.Routes.lengths(p).byCircuit[circuit.id] : null;
+            if (rl) ln.cableLen = Math.round(rl * 10) / 10;
+          }
+        }
         (g.lines = g.lines || []).push(ln);
         c.persist("mscheme-ladd"); refresh();
       }

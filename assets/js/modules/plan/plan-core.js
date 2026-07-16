@@ -34,6 +34,7 @@
     routeOffset: 15,       // см — отступ трассы от грани стены (линии идут по контуру комнаты)
     sleeveD: 20,           // мм — диаметр проходки (гильзы) через стену, макс. 2 кабеля
     connectorMode: "gml",  // соединители в распайках: "wago" | "gml" (гильзы) | "siz"
+    gofraCeil: true,       // прокладка по потолку: в гофре (true) или прямой монтаж на клипсах (false) — влияет на расходники (EP.CableConsum)
     schemeMode: "auto",    // однолинейка: "auto" (из p.circuits) | "manual" (ручной конструктор)
     mainBreaker: 40, phases: 1, // вводной автомат (А) и число фаз (1/3) для однолинейки
     panelBrand: "IEK", panelReserve: 6, // бренд корпуса щита и запас модулей
@@ -72,7 +73,7 @@
     return {
       id: uid("prj"), v: 1,
       name: String(name || "").trim() || "Новый проект",
-      address: "", clientId: null,
+      address: "", client: "", clientId: null,
       settings: {
         ceilingHeight: DEFAULTS.ceilingHeight,
         wallThickness: DEFAULTS.wallThickness,
@@ -88,6 +89,7 @@
         panelBrand: DEFAULTS.panelBrand, panelReserve: DEFAULTS.panelReserve, panelBox: null,
         symbolStyle: DEFAULTS.symbolStyle, cableReserve: DEFAULTS.cableReserve,
         routeOffset: DEFAULTS.routeOffset, sleeveD: DEFAULTS.sleeveD, connectorMode: DEFAULTS.connectorMode,
+        gofraCeil: DEFAULTS.gofraCeil,
         schemeMode: DEFAULTS.schemeMode,
         rules: {} // пороги проверок (Слой 6), пусто = дефолты plan-rules
       },
@@ -235,6 +237,7 @@
   // применяется и при открытии (openProject), и при импорте JSON (importJSON),
   // чтобы старые/сторонние проекты не теряли настройки молча.
   function backfillProject(p) {
+    if (p.client == null) p.client = "";
     p.openings = p.openings || [];
     p.beams = p.beams || [];
     p.voids = p.voids || [];
@@ -249,6 +252,7 @@
     if (p.settings.routeOffset == null) p.settings.routeOffset = DEFAULTS.routeOffset;
     if (p.settings.sleeveD == null) p.settings.sleeveD = DEFAULTS.sleeveD;
     if (!p.settings.connectorMode) p.settings.connectorMode = DEFAULTS.connectorMode;
+    if (p.settings.gofraCeil == null) p.settings.gofraCeil = DEFAULTS.gofraCeil;
     if (!p.settings.schemeMode) p.settings.schemeMode = DEFAULTS.schemeMode;
     if (!p.manualScheme || typeof p.manualScheme !== "object") p.manualScheme = newManualScheme();
     else {
