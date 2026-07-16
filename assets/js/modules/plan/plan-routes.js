@@ -230,17 +230,40 @@
     if (!silent) sheet();
   }
 
-  // сброс конкретной трассы к авто-варианту (кнопка "↺ Авто" в sheetRoute) — снимает
-  // флаг и полная перестройка сама подставит свежий путь; остальные ручные трассы
-  // сохраняются (build() трогает только те, чей manual уже снят)
+  // сброс конкретной трассы к авто-варианту (кнопка "↺ Авто" в sheetRoute) — пересчитывает
+  // ТОЛЬКО путь ЭТОЙ трассы (те же fromId/toId — топология не меняется), а НЕ полный
+  // build(): раньше звали build({silent:true}) целиком, а он ВСЕГДА перестраивает С НУЛЯ
+  // все НЕ-ручные трассы проекта (p.routes=[] и заново), не только сброшенную — снаружи
+  // это выглядело как «нажал на одну линию, а перетрассировались другие» (репорт
+  // пользователя: любая другая уже построенная НЕ-ручная трасса, чья геометрия устарела
+  // относительно текущего кода/состояния — что для build() нормально, restoreManualRoutes
+  // хранит только manual:true — но пользователь этого не просил и не ожидал при клике
+  // именно по ↺ Авто ОДНОЙ трассы). Здесь же — та же buildPath(), что и в build(), но
+  // с fromEl/target, восстановленными из уже сохранённых rt.fromId/rt.toId/rt.toPanel
+  // (сама связь узел->узел трассы уже определена раньше build()'ом и не пересматривается
+  // здесь заново — только геометрия пути между теми же двумя концами).
   function resetRouteToAuto(routeId) {
     const c = core(), p = c.project;
     const rt = (p.routes || []).find((r) => r.id === routeId);
     if (!rt) return;
+    const fromEl = (p.elements || []).find((e) => e.id === rt.fromId);
+    if (!fromEl) return;
+    const a = isJunction(fromEl) ? G().elemPoint(p, fromEl) : G().routeAnchor(p, fromEl);
+    if (!a) return;
+    let target = null;
+    if (rt.toPanel) {
+      const pn = (p.panels || []).find((x) => x.id === rt.toId);
+      if (pn) target = { kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y } };
+    } else {
+      const toEl = (p.elements || []).find((e) => e.id === rt.toId);
+      if (toEl) target = { kind: isJunction(toEl) ? "junction" : "point", id: toEl.id, pos: isJunction(toEl) ? G().elemPoint(p, toEl) : G().routeAnchor(p, toEl) };
+    }
+    if (!target || !target.pos) return;
     c.commit();
+    rt.points = buildPath(p, fromEl, a, target, 0, rt.circuitId);
     rt.manual = false;
+    recomputeThroughWalls(p, rt);
     c.persist("route-reset");
-    build({ silent: true });
   }
 
   // хит-тест по уже построенным трассам (для ручного редактирования, plan-rooms.js)
