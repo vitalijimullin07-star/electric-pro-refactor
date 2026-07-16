@@ -524,6 +524,25 @@ test("buildIncremental: новая точка шлейфом подключае�
   eq(bRoute.toId, a.id, "B подключилась к уже проведённой A (ближе), а не напрямую к щиту");
   eq(JSON.stringify(aRoute.points), JSON.stringify(P.routes.find((r) => r.fromId === a.id).points), "трасса A не изменилась");
 });
+test("розетка в откосе: маркер на кромке проёма, без отступа внутрь комнаты", () => {
+  const { P, w } = install();
+  const op = M.newOpening("window"); op.wallId = w(0); op.offset = 100; op.width = 90;
+  P.openings.push(op);
+  // откосная розетка слева (сторона "a" = кромка на offset 100)
+  const el = M.newElement("socket", w(0), 100, 90, "power");
+  el.reveal = { openingId: op.id, side: "a" };
+  P.elements.push(el);
+  const dp = G.elemDrawPoint(P, el);
+  // стена 0 = верх (0,0)->(400,0), внутренняя нормаль вниз (+y); откосная розетка
+  // остаётся на оси стены (y≈0), НЕ отступает внутрь комнаты, сдвинута вдоль стены в проём
+  near(dp.y, 0, 3, "маркер откосной розетки на оси стены, не внутрь комнаты");
+  ok(dp.x > 100, "сдвинут вдоль стены внутрь проёма (сторона a → больший offset)");
+  // обычная розетка на той же стене — для контраста — отступает внутрь комнаты
+  const normal = M.newElement("socket", w(0), 250, 30, "power"); P.elements.push(normal);
+  ok(Math.abs(G.elemDrawPoint(P, normal).y) > 10, "обычная розетка отступает внутрь комнаты");
+  // откосная розетка — обычная точка для трассировки (не исключается)
+  ok(el.type === "socket" && el.status !== "existing", "откосная розетка участвует в трассировке как обычная точка");
+});
 test("hitAt: тап попадает по ВИДИМОМУ маркеру (elemDrawPoint), а не по оси стены", () => {
   const { P, w } = install();
   const s1 = M.newElement("socket", w(0), 100, 30, "power");

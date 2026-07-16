@@ -630,6 +630,14 @@
     const fr = G.wallFrame(project, pt.wall);
     if (!fr) return pt;
     const th = G.wallThOf(project, pt.wall);
+    // розетка в откосе проёма — маркер стоит НА кромке проёма (в самом вырезе, на
+    // поверхности откоса), БЕЗ отступа внутрь комнаты. Чуть сдвигаем вдоль стены
+    // внутрь проёма (сторона "b" — к меньшему offset), чтобы сидел на откосе, не в углу.
+    if (el.reveal) {
+      const sign = el.reveal.side === "b" ? -1 : 1;
+      const nudge = 6;
+      return { x: pt.x + fr.dir.x * nudge * sign, y: pt.y + fr.dir.y * nudge * sign, wall: pt.wall, nrm: fr.nrm, angle: fr.angle };
+    }
     const idx = G.elemOverlapIndex(project, el);
     const step = idx * G.STACK_STEP_CM;
     const d = th / 2 + 8 + step; // фикс. отступ от стены внутрь + ступенька лесенки
