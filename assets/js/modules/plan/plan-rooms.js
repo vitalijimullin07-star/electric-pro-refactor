@@ -25,6 +25,7 @@
     room: "Комната", create: "Создать", cancel: "Отмена", close: "Закрыть",
     name: "Название", width: "Ширина, см", depth: "Глубина, см", ceil: "Потолок, см",
     wet: "Влажная зона (санузел/кухня)", dup: "⧉ Копия", mirror: "⇋ Зеркало", del: "✕ Удалить",
+    unfoldBtn: "Развёртка",
     confirmDelRoom: "Удалить комнату?",
     mergeTapRoom: "Тапни по комнате.",
     mergeFail: "Эти комнаты не соприкасаются одной общей границей — объединить нельзя.",
@@ -420,6 +421,7 @@
       <div class="ep-plan-srow"><label class="ep-plan-chk"><input id="ep-pr-wet" type="checkbox" ${wet ? "checked" : ""}> ${T.wet}</label></div>
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-apply="${esc(room.id)}">✓</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-unfold="${esc(room.id)}">📐 ${T.unfoldBtn}</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-dup="${esc(room.id)}">${T.dup}</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-mirror="${esc(room.id)}">${T.mirror}</button>
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pr-delroom="${esc(room.id)}">${T.del}</button>
@@ -1008,6 +1010,12 @@
       return;
     }
     if ((el = t.closest("[data-pr-apply]"))) return applyRoom(el.getAttribute("data-pr-apply"));
+    if ((el = t.closest("[data-pr-unfold]"))) {
+      const rid = el.getAttribute("data-pr-unfold");
+      const room2 = (core().project.rooms || []).find((r) => r.id === rid);
+      if (room2 && EP.Plan.Unfold) EP.Plan.Unfold.open(rid + ":0", true);
+      return;
+    }
     if ((el = t.closest("[data-pr-dup]"))) return dupRoom(el.getAttribute("data-pr-dup"));
     if ((el = t.closest("[data-pr-mirror]"))) return mirrorRoom(el.getAttribute("data-pr-mirror"));
     if ((el = t.closest("[data-pr-delroom]"))) return delRoom(el.getAttribute("data-pr-delroom"));

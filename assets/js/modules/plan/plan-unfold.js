@@ -41,7 +41,10 @@
 
   function open(wallId, full) {
     S.wallId = wallId; S.view = null; S.ptPanel = null; S.lastTap = null; S.ledDraft = null;
-    if (full != null) S.full = !!full; // full=true — только из явного режима «Стена»; обычный тап по стене открывает мини-превью
+    // full=true — только из явного режима «Стена» (или кнопки «Развёртка» в шторке комнаты);
+    // обычный тап по стене открывает мини-превью. Авто-fullscreen — с локом (как раньше делала ⤢),
+    // это НЕ трогает fullLock у уже открытой развёртки (full=null при переключении стен/перерисовке)
+    if (full != null) { S.full = !!full; S.fullLock = !!full; }
     const p = core().project, w = G().wallById(p, wallId);
     if (!w) return;
     const TY = EL().TYPES, OT = EL().OPEN_TYPES || {};
