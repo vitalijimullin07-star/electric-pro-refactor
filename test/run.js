@@ -238,15 +238,34 @@ test("spansMinusOpenings: окно рвёт стену на 2 участка", (
   const wall = G.wallById(P, w(0));
   eq(G.spansMinusOpenings(wall.len, G.openingsOnWall(P, w(0))).length, 2);
 });
-test("elemDrawPoint: отступ от стены ОДИНАКОВЫЙ (не зависит от QF)", () => {
+test("elemDrawPoint: отступ от стены ОДИНАКОВЫЙ (не зависит от QF), точки не сталкиваются", () => {
   const q1 = M.newCircuit("QF1", "#e11", 16), q2 = M.newCircuit("QF2", "#1e1", 16);
   const { P, w } = install({ circuits: [q1, q2] });
   const s1 = M.newElement("socket", w(0), 100, 30, "power"); s1.circuitId = q1.id;
-  const s2 = M.newElement("socket", w(0), 100, 30, "power"); s2.circuitId = q2.id;
+  const s2 = M.newElement("socket", w(0), 160, 30, "power"); s2.circuitId = q2.id; // разный offset — не сталкиваются
   P.elements.push(s1, s2);
-  const d0 = G.elemPoint(P, s1), d1 = G.elemDrawPoint(P, s1), d2 = G.elemDrawPoint(P, s2);
-  ok(Math.hypot(d1.x - d0.x, d1.y - d0.y) > 4, "маркер отступает от стены");
-  ok(Math.hypot(d1.x - d2.x, d1.y - d2.y) < 0.5, "точки на разных QF — одинаковый отступ (не расползаются)");
+  const d0a = G.elemPoint(P, s1), d0b = G.elemPoint(P, s2);
+  const d1 = G.elemDrawPoint(P, s1), d2 = G.elemDrawPoint(P, s2);
+  ok(Math.hypot(d1.x - d0a.x, d1.y - d0a.y) > 4, "маркер отступает от стены");
+  near(Math.abs(d1.y - d0a.y), Math.abs(d2.y - d0b.y), 0.5); // одинаковый отступ от СВОЕЙ точки на стене у обеих (QF не влияет)
+  eq(G.elemOverlapIndex(P, s1), 0, "не сталкиваются — индекс лесенки 0");
+  eq(G.elemOverlapIndex(P, s2), 0, "не сталкиваются — индекс лесенки 0");
+});
+test("elemDrawPoint: «лесенка» — точки почти в одном месте стены раздвигаются, а не рисуются друг на друге", () => {
+  const { P, w } = install({});
+  const s1 = M.newElement("socket", w(0), 100, 30, "power");
+  const s2 = M.newElement("socket", w(0), 100, 150, "power"); // тот же offset, другая высота — на 2D-плане совпали бы
+  const s3 = M.newElement("socket", w(0), 101, 90, "power"); // offset почти совпадает (в пределах порога 3см)
+  P.elements.push(s1, s2, s3);
+  // порядок внутри группы стабилен (по id), но не обязан совпадать с порядком push —
+  // важно, что индексы РАЗНЫЕ и покрывают 0,1,2 без повторов
+  const idxs = [s1, s2, s3].map((s) => G.elemOverlapIndex(P, s));
+  eq(new Set(idxs).size, 3, "у всех трёх — разные индексы лесенки");
+  eq(idxs.slice().sort().join(","), "0,1,2", "индексы группы — ровно 0,1,2");
+  const pts = [s1, s2, s3].map((s) => G.elemDrawPoint(P, s));
+  for (let i = 0; i < 3; i++) for (let j = i + 1; j < 3; j++) {
+    ok(Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y) >= G.STACK_STEP_CM - 0.5, `точки ${i} и ${j} видимо разнесены`);
+  }
 });
 test("общая стена: проём режет обе полосы (соседние комнаты)", () => {
   const r1 = M.newRoom(G.rectPoints(0, 0, 400, 300), "R1");

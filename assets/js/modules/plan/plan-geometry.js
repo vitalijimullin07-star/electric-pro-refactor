@@ -575,14 +575,32 @@
   // ЕДИНАЯ точка отрисовки/трассировки элемента на стене: ОДИНАКОВЫЙ небольшой отступ
   // внутрь комнаты (в СМ, не зависит ни от зума, ни от линии QF) — точки стоят ровно у
   // стены, не «расползаются». И маркер, и трасса берут ОДНУ эту точку — линия доходит до точки.
+  // «Лесенка» для точек, стоящих практически в одном месте стены (одинаковый offset,
+  // разная высота — высота на 2D-плане никак не отражается, поэтому такие точки раньше
+  // рисовались ровно друг на друге и были недоступны для тапа, кроме верхней). Индекс
+  // 0 у «первой» точки группы — её позиция не меняется (обратная совместимость),
+  // у остальных k-я точка смещается дальше от стены И вдоль неё на k шагов —
+  // видно и можно тапнуть все, включая те, что раньше были полностью скрыты.
+  G.STACK_STEP_CM = 14;
+  G.elemOverlapIndex = (project, el) => {
+    if (!el.wallId) return 0;
+    const STACK_CM = 3; // порог "то же место" — фиксированный, не зависит от зума
+    const group = (project.elements || []).filter((e) =>
+      e.wallId === el.wallId && Math.abs((e.offset || 0) - (el.offset || 0)) <= STACK_CM);
+    if (group.length < 2) return 0;
+    group.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)); // стабильный порядок
+    return Math.max(0, group.findIndex((e) => e.id === el.id));
+  };
   G.elemDrawPoint = (project, el) => {
     const pt = G.elemPoint(project, el);
     if (!pt || !pt.wall) return pt;
     const fr = G.wallFrame(project, pt.wall);
     if (!fr) return pt;
     const th = G.wallThOf(project, pt.wall);
-    const d = th / 2 + 8; // фикс. отступ от стены внутрь, одинаковый для всех точек
-    return { x: pt.x + fr.nrm.x * d, y: pt.y + fr.nrm.y * d, wall: pt.wall, nrm: fr.nrm, angle: fr.angle };
+    const idx = G.elemOverlapIndex(project, el);
+    const step = idx * G.STACK_STEP_CM;
+    const d = th / 2 + 8 + step; // фикс. отступ от стены внутрь + ступенька лесенки
+    return { x: pt.x + fr.nrm.x * d + fr.dir.x * step, y: pt.y + fr.nrm.y * d + fr.dir.y * step, wall: pt.wall, nrm: fr.nrm, angle: fr.angle };
   };
 
   // Шаг подрозетников в блоке, см (стандарт межцентрового расстояния ~71 мм)
