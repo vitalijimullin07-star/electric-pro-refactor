@@ -100,7 +100,7 @@
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="elem" aria-label="Точки: розетки, свет">🔌</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="opening" aria-label="Проёмы: двери, окна, балкон">🚪</button>
         <span class="ep-plan-modesep" aria-hidden="true"></span>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="wall" aria-label="Открыть развёртку стены">📐</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="wall" aria-label="Развёртка: выбрать комнату">📐</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="ruler" aria-label="Рулетка">📏</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="underlay" aria-label="Подложка-фото">🖼</button>
         <span class="ep-plan-modesep" aria-hidden="true"></span>
