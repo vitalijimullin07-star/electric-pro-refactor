@@ -7,7 +7,7 @@
   window.EP = window.EP || {};
 
   const T = {
-    modes: { view: "☝", rect: "▭", poly: "⬠", beam: "▬", void: "▦", elem: "🔌", opening: "🚪", wall: "📐", ruler: "📏", underlay: "🖼", merge: "🔗" },
+    modes: { view: "☝", rect: "▭", poly: "⬠", beam: "▬", void: "▦", elem: "🔌", opening: "🚪", ruler: "📏", underlay: "🖼", merge: "🔗" },
     modeHint: {
       view: "Тап: точка — редактор, стена — развёртка, комната — свойства.",
       rect: "Тапни два противоположных угла комнаты.",
@@ -16,7 +16,6 @@
       void: "Вентшахта / мини-комната внутри комнаты: тапни два противоположных угла.",
       elem: "Выбери тип в палитре и тапай по стене (свет/ТП — внутрь комнаты).",
       opening: "Проёмы: выбери дверь/окно/раздвижную/балкон и тапни по стене или перегородке.",
-      wall: "Тапни по любой стене — сразу откроется её развёртка во весь экран.",
       ruler: "Тапни две точки — расстояние.",
       underlay: "Фото-план: загрузка, масштаб по известной длине, перенос.",
       merge: "Тапни первую комнату, потом соседнюю — объединятся в одну.",
@@ -26,6 +25,8 @@
     name: "Название", width: "Ширина, см", depth: "Глубина, см", ceil: "Потолок, см",
     wet: "Влажная зона (санузел/кухня)", dup: "⧉ Копия", mirror: "⇋ Зеркало", del: "✕ Удалить",
     unfoldBtn: "Развёртка",
+    pickRoomHint: "Выбери комнату — откроется развёртка её первой стены во весь экран.",
+    pickRoomEmpty: "Сначала нарисуй комнату.",
     confirmDelRoom: "Удалить комнату?",
     mergeTapRoom: "Тапни по комнате.",
     mergeFail: "Эти комнаты не соприкасаются одной общей границей — объединить нельзя.",
@@ -206,15 +207,6 @@
     }
     if (R.mode === "elem") { if (EP.Plan.Elements) { EP.Plan.Elements.placeAt(w); renderScene(); } return; }
     if (R.mode === "opening") { if (EP.Plan.Elements) { EP.Plan.Elements.placeOpening(w); renderScene(); } return; }
-    if (R.mode === "wall") {
-      // выделенный режим: любой тап сразу открывает развёртку СТЕНЫ (без приоритета
-      // элементов/балок/комнат, как в "view") — надёжнее, чем ловить нужную стену обычным тапом
-      const k = R.canvas.cmPerPx();
-      const hit = G().wallAt(p, w, CFG.hitWallPx * 1.6 * k);
-      if (hit && EP.Plan.Unfold) EP.Plan.Unfold.open(hit.wall.id, true);
-      else toast(T.modeHint.wall);
-      return;
-    }
     if (R.mode === "merge") { onMergeTap(p, w); return; }
     // view: приоритет — элемент/щит > балка > шахта/мини-комната > трасса > стена (развёртка) > комната
     clearBeamSel(); clearVoidSel(); clearRouteSel();
@@ -242,8 +234,9 @@
     const wallHit = G().wallAt(p, w, CFG.hitWallPx * k);
     if (wallHit && EP.Plan.Unfold) {
       R.selectedRoomId = null;
-      // мини-превью — во весь экран разворачивается ТОЛЬКО явным режимом «Стена»
-      // (см. R.mode==="wall" выше) или кнопкой ⤢ внутри самой развёртки
+      // мини-превью — во весь экран разворачивается ТОЛЬКО через кнопку 📐 (список
+      // комнат, sheetPickRoomForUnfold), кнопку «📐 Развёртка» в шторке комнаты,
+      // или кнопкой ⤢ внутри самой развёртки
       EP.Plan.Unfold.open(wallHit.wall.id, false);
       renderScene();
       return;
@@ -403,6 +396,19 @@
     const inp = $("#ep-pr-plen"); if (inp) inp.focus();
   }
 
+  // кнопка 📐 в тулбаре: не режим рисования — сразу список комнат, тап по имени
+  // открывает Развёртку fullscreen для ПЕРВОЙ стены этой комнаты (переключиться на
+  // другую стену той же комнаты — чипы «Стена:» уже внутри развёртки). Без прицельного
+  // тапа по конкретной стене на плане — пользователь путался, куда именно тапнуть.
+  function sheetPickRoomForUnfold() {
+    const rs = core().project.rooms || [];
+    if (!rs.length) { toast(T.pickRoomEmpty); return; }
+    openSheet(`<div class="ep-plan-srow"><b>📐 ${T.unfoldBtn}</b></div>
+      <div class="ep-plan-srow">${T.pickRoomHint}</div>
+      <div class="ep-plan-srow ep-plan-sbtns">
+        ${rs.map((r) => `<button type="button" class="ep-plan-tbtn ep-clickable" data-pr-pickunfold="${esc(r.id)}">${esc(r.name)}</button>`).join("")}
+      </div>`);
+  }
   function sheetRoom(room) {
     const p = core().project;
     const isR = G().isRect(room), d = isR ? G().rectDims(room) : null;
@@ -988,7 +994,11 @@
   document.addEventListener("click", (e) => {
     if (!R.active) return;
     const t = e.target; let el;
-    if ((el = t.closest("[data-plan-mode]"))) return setMode(el.getAttribute("data-plan-mode"));
+    if ((el = t.closest("[data-plan-mode]"))) {
+      const m = el.getAttribute("data-plan-mode");
+      if (m === "wall") return sheetPickRoomForUnfold(); // не режим — сразу список комнат
+      return setMode(m);
+    }
     if (t.closest("[data-plan-layers]")) return sheetLayers();
     // общая кнопка «во весь экран» шторки — используется ЛЮБЫМ модулем слоёв 2-6
     // (Расчёт/Трассы/Проверки/Слои и т.п.), поэтому обработчик один здесь, а не в каждом
@@ -1016,6 +1026,12 @@
       const rid = el.getAttribute("data-pr-unfold");
       const room2 = (core().project.rooms || []).find((r) => r.id === rid);
       if (room2 && EP.Plan.Unfold) EP.Plan.Unfold.open(rid + ":0", true);
+      return;
+    }
+    if ((el = t.closest("[data-pr-pickunfold]"))) {
+      const rid = el.getAttribute("data-pr-pickunfold");
+      closeSheet();
+      if (EP.Plan.Unfold) EP.Plan.Unfold.open(rid + ":0", true);
       return;
     }
     if ((el = t.closest("[data-pr-dup]"))) return dupRoom(el.getAttribute("data-pr-dup"));
