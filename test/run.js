@@ -372,6 +372,31 @@ test("recomputeThroughWalls: пересчитывает проходки по Т
   EP.Plan.Routes.recomputeThroughWalls(P, rt);
   eq(rt.throughWalls.length, 0, "путь больше не пересекает стену — проходка снята");
 });
+test("wallChainStations: размерная цепочка точек вдоль стены (внутр. углы + точки, звенья с elemId)", () => {
+  const { P, w } = install();
+  // стена 0 = верх (0,0)->(400,0), длина 400; стена 10см → внутр. углы 5 и 395
+  const a = M.newElement("socket", w(0), 100, 30, "power");
+  const b = M.newElement("socket", w(0), 250, 30, "power");
+  P.elements.push(a, b);
+  const wall = G.walls(P.rooms[0])[0];
+  const ch = G.wallChainStations(P, wall);
+  ok(ch, "цепочка построена");
+  eq(ch.stations.length, 4, "4 станции: 2 внутр. угла + 2 точки");
+  eq(ch.segs.length, 3, "3 звена");
+  near(ch.segs[0].dist, 95, 0.5, "внутр.угол(5)→a(100) = 95");
+  near(ch.segs[1].dist, 150, 0.5, "a→b = 150");
+  near(ch.segs[2].dist, 145, 0.5, "b(250)→внутр.угол(395) = 145");
+  eq(ch.segs[1].aElemId, a.id, "ближняя точка среднего звена = a");
+  eq(ch.segs[1].bElemId, b.id, "дальняя точка среднего звена = b");
+});
+test("wallChainStations: без точек на стене — null; распайка не считается точкой", () => {
+  const { P, w } = install();
+  const wall = G.walls(P.rooms[0])[0];
+  eq(G.wallChainStations(P, wall), null, "пустая стена — null (только углы)");
+  const j = M.newElement("junction", w(0), 100, 240, "routes");
+  P.elements.push(j);
+  eq(G.wallChainStations(P, wall), null, "распайка на стене не участвует в размерной цепочке");
+});
 test("routeAt: хит-тест находит построенную трассу рядом с сегментом", () => {
   const { P } = scene(false);
   EP.Plan.Routes.build();

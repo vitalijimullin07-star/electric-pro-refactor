@@ -365,32 +365,25 @@
         const c0 = G.centroid(room.points);
         // размеры берём от ВНУТРЕННИХ углов (работаем изнутри квартиры)
         G.walls(room).forEach((w) => {
-          const thR = G.wallThOf(project, w);
-          const inA = Math.min(thR / 2, w.len / 2), inB = Math.max(w.len - thR / 2, w.len / 2);
-          const clamp = (d) => Math.round(Math.max(inA, Math.min(inB, d)));
-          const stations = new Set([Math.round(inA), Math.round(inB)]);
-          (project.elements || []).forEach((e2) => { if (e2.wallId === w.id) stations.add(clamp(e2.offset)); });
-          G.openingsOnWall(project, w.id).forEach((o) => { stations.add(clamp(o.offset)); stations.add(clamp(o.offset + o.width)); });
-          if (stations.size <= 2) return; // нечего привязывать
+          const chain = G.wallChainStations(project, w);
+          if (!chain) return; // нечего привязывать (только углы)
           let nx = -(w.b.y - w.a.y), ny = w.b.x - w.a.x;
           const nl = Math.hypot(nx, ny) || 1;
           nx /= nl; ny /= nl;
           if ((w.mx - c0.x) * nx + (w.my - c0.y) * ny < 0) { nx = -nx; ny = -ny; }
           const off2 = CFG.labelOffsetPx * 2.6 * k, tick = 4 * k, fs2 = 8.5 * k;
-          const st2 = [...stations].sort((x, y) => x - y);
           const base = (d) => { const p = G.pointAtOffset(w, d); return { x: p.x + nx * off2, y: p.y + ny * off2 }; };
-          const b0 = base(st2[0]), b1 = base(st2[st2.length - 1]);
+          const st2 = chain.stations;
+          const b0 = base(st2[0].off), b1 = base(st2[st2.length - 1].off);
           g.appendChild(el("line", { x1: b0.x, y1: b0.y, x2: b1.x, y2: b1.y, class: "ep-plan-chain", "stroke-width": sw * 0.35 }));
-          st2.forEach((d) => {
-            const p = base(d);
+          st2.forEach((s) => {
+            const p = base(s.off);
             g.appendChild(el("line", { x1: p.x - nx * tick, y1: p.y - ny * tick, x2: p.x + nx * tick, y2: p.y + ny * tick, class: "ep-plan-chain", "stroke-width": sw * 0.35 }));
           });
-          for (let i = 0; i < st2.length - 1; i++) {
-            const seg = st2[i + 1] - st2[i];
-            if (seg < 2) continue;
-            const m = base((st2[i] + st2[i + 1]) / 2);
-            g.appendChild(el("text", { x: m.x + nx * 6 * k, y: m.y + ny * 6 * k, class: "ep-plan-chaintext", "font-size": fs2, "text-anchor": "middle", "dominant-baseline": "middle" }, String(seg)));
-          }
+          chain.segs.forEach((sg) => {
+            const m = base(sg.midOff);
+            g.appendChild(el("text", { x: m.x + nx * 6 * k, y: m.y + ny * 6 * k, class: "ep-plan-chaintext", "font-size": fs2, "text-anchor": "middle", "dominant-baseline": "middle" }, String(sg.dist)));
+          });
         });
       });
     }
