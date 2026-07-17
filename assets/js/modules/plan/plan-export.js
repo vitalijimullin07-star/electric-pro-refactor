@@ -6,7 +6,7 @@
   "use strict";
   window.EP = window.EP || {};
 
-  const T = { sheet: "План электрики", made: "Исполнитель", obj: "Объект", addr: "Адрес", client: "Заказчик", area: "Площадь", roomsN: "Помещений", date: "Дата", legend: "Условные обозначения", expl: "Экспликация помещений", spec: "Спецификация точек", door: "Дверь", win: "Окно", panel: "Щит", genplan: "Общий план", tracesOf: (name) => `Трассы: ${name}` };
+  const T = { sheet: "План электрики", made: "Исполнитель", obj: "Объект", addr: "Адрес", client: "Заказчик", area: "Площадь", roomsN: "Помещений", date: "Дата", legend: "Условные обозначения", expl: "Экспликация помещений", spec: "Спецификация точек", door: "Дверь", win: "Окно", panel: "Щит", genplan: "Общий план", specSheet: "Спецификация", tracesOf: (name) => `Трассы: ${name}` };
   // слои-«трассы» — те, что реально прокладываются кабелем (не считая dims/labels/routes —
   // это служебные оверлеи, не самостоятельный вид работ)
   const TRACE_LAYER_IDS = ["light", "power", "lv", "tv", "cctv", "ac", "warm"];
@@ -224,6 +224,17 @@
     try {
       const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       window.ShieldSchemeSVG.render(svg, EP.Plan.Scheme.buildTree(p));
+      // render() ставит ТОЛЬКО пиксельные width/height, БЕЗ viewBox (рассчитан на
+      // живой просмотр с горизонтальным скроллом при много QF в ряд — трогать
+      // общий модуль shield-scheme-svg-v28.js нельзя, им пользуются и живые экраны).
+      // Раньше здесь просто перезаписывался width="100%" БЕЗ viewBox — без него
+      // width:100% не масштабирует содержимое (внутренние координаты остаются в
+      // исходных px), схему просто обрезало по правому краю листа (репорт
+      // пользователя — часть линий QF не влезала на печатный лист). viewBox из тех
+      // же width/height, что уже проставил render(), — сохраняет пропорции, и
+      // .schemebox svg{max-width:100%;height:auto} ниже честно вписывает всю схему.
+      const w0 = svg.getAttribute("width"), h0 = svg.getAttribute("height");
+      if (w0 && h0) svg.setAttribute("viewBox", `0 0 ${w0} ${h0}`);
       svg.setAttribute("width", "100%");
       return `<div class="unfsec"><h3>Однолинейная схема</h3><div class="schemebox">${svg.outerHTML}</div></div>`;
     } catch (e) { return ""; }
@@ -364,6 +375,8 @@
       <div class="frame">
         <h3>${T.genplan}</h3>
         <div class="plan">${buildSvg(p)}</div>
+      </div>
+      <div class="unfsec"><h3>${T.specSheet}</h3>
         <div class="cols">
           <div><h3>${T.expl}</h3><table><tr><th>№</th><th>Помещение</th><th>S</th><th>Стены</th></tr>${expl}</table></div>
           <div><h3>${T.spec}</h3><table><tr><th></th><th>Тип</th><th>Кол-во</th></tr>${spec}</table></div>
@@ -412,7 +425,7 @@
     const pct = Math.round(pdfScale * 100);
     rooms().openSheet(`<div class="ep-plan-srow"><b>📄 Печатный лист (PDF)</b><span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-pxp-close>✕</button></div>
       <div class="ep-plan-srow">Масштаб постов на развёртках:
-        <input type="range" min="60" max="220" value="${pct}" data-pxp-scale class="ep-plan-unfslider">
+        <input type="range" min="20" max="220" value="${pct}" data-pxp-scale class="ep-plan-unfslider">
         <b data-pxp-scaleval>${pct}%</b>
       </div>
       <div class="ep-plan-modehint">Меняет размер символов/подписей НА РАЗВЁРТКАХ СТЕН в PDF — сам план и физические размеры не меняются.</div>
@@ -432,7 +445,7 @@
     if (!rooms() || !rooms().isActive()) return;
     const t = e.target;
     if (!(t.hasAttribute && t.hasAttribute("data-pxp-scale"))) return;
-    pdfScale = Math.max(0.6, Math.min(2.2, (Number(t.value) || 100) / 100));
+    pdfScale = Math.max(0.2, Math.min(2.2, (Number(t.value) || 100) / 100));
     const lbl = document.querySelector("[data-pxp-scaleval]"); if (lbl) lbl.textContent = Math.round(pdfScale * 100) + "%";
     const box = document.getElementById("ep-plan-pdfpreview-box");
     const p = core().project;
