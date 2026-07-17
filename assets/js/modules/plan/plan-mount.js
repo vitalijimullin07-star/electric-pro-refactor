@@ -290,18 +290,23 @@
     }
   });
 
-  // Во весь экран: нативный Fullscreen API + фиксированная раскладка как запас (iOS)
+  // Во весь экран главного редактора: ЧИСТЫЙ CSS (position:fixed, см. plan.css
+  // .ep-plan.is-full) — БЕЗ нативного Fullscreen API. Раньше здесь звался
+  // box.requestFullscreen()/exitFullscreen(), но нативный Fullscreen API
+  // невозможно "запереть" только на свою кнопку — браузер ВСЕГДА позволяет
+  // выйти из него по Esc/системному жесту «назад» в обход любой логики
+  // страницы (это гарантия самого API, не обойти). Пользователь явно попросил:
+  // «снималась ТОЛЬКО нажатием данной кнопки, ни кнопками назад и т.д.» —
+  // единственный надёжный способ дать эту гарантию — вообще не отдавать
+  // управление нативному API. Тот же приём уже стоял у шторок (⛶ у Расчёта/
+  // Трасс/Слоёв — см. инвариант «Во весь экран шторок») и у 🔄-развёртки
+  // (position:fixed без screen.orientation.lock). ЦЕНА: браузерный chrome
+  // (адресная строка) теперь не скрывается, как скрывал бы настоящий
+  // Fullscreen API — сознательный компромисс ради предсказуемости закрытия.
   function toggleFullscreen(r) {
     const box = r.querySelector(".ep-plan");
     if (!box) return;
-    const on = !box.classList.contains("is-full");
-    box.classList.toggle("is-full", on);
-    try {
-      if (on && box.requestFullscreen) box.requestFullscreen().catch(() => {});
-      // гасим браузерный fullscreen, только если он принадлежит РЕДАКТОРУ (не
-      // развёртке стены поверх него — та гасит себя сама, см. exitFS в plan-unfold.js)
-      else if (!on && document.fullscreenElement === box) document.exitFullscreen().catch(() => {});
-    } catch (e) {}
+    box.classList.toggle("is-full");
   }
   document.addEventListener("input", (e) => {
     const r = root(); if (!r || !V.active) return;
@@ -314,12 +319,13 @@
       if (f) { f.name = t.value; c.persist("floor-rename-live"); refreshFloorsBar(); }
     }
   });
-  document.addEventListener("fullscreenchange", () => {
-    if (!document.fullscreenElement) {
-      const box = document.querySelector(".ep-plan.is-full");
-      if (box) box.classList.remove("is-full");
-    }
-  });
+  // Главный редактор БОЛЬШЕ НЕ запрашивает нативный Fullscreen API (см.
+  // toggleFullscreen выше) — .ep-plan.is-full теперь ЧИСТО CSS-состояние,
+  // не завязанное на document.fullscreenElement, поэтому реагировать на
+  // fullscreenchange здесь больше не на что: слушатель, что раньше снимал
+  // is-full при ЛЮБОМ выходе из нативного fullscreen (в т.ч. чужого — Esc
+  // после fullscreen Развёртки/Схемы), удалён целиком — иначе он бы ошибочно
+  // гасил is-full редактора при выходе ИЗ ЧУЖОГО fullscreen.
 
   // Кнопка «Назад» на Android: закрывает функцию ВНУТРИ планировки (вкладку/режим/
   // полноэкранку), а не выходит из неё. Когда ничего не открыто — уходит к списку проектов.
@@ -347,7 +353,11 @@
     const sh = document.getElementById("ep-plan-sheet");
     const sheetOpen = sh && !sh.hidden;
     const mode = R2 && R2.currentMode ? R2.currentMode() : "view";
-    if (fullBox) { fullBox.classList.remove("is-full"); armBack(); return; }
+    // Полный экран ГЛАВНОГО редактора (fullBox) больше НЕ закрывается «назад» —
+    // прямая просьба пользователя: снимается только повторным нажатием кнопки
+    // ⤢. Полностью глотаем нажатие (только перевзводим ловушку), не давая ему
+    // провалиться ни в закрытие шторки/режима, ни тем более в закрытие проекта.
+    if (fullBox) { armBack(); return; }
     if (sh) sh.classList.remove("ep-plan-sheet-full");
     if (EP.Plan.Unfold && EP.Plan.Unfold.isOpen()) { EP.Plan.Unfold.close(); if (R2) R2.closeSheet(); armBack(); return; }
     if (sheetOpen || mode !== "view") { if (R2) R2.setMode("view"); armBack(); return; }

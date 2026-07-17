@@ -129,6 +129,53 @@
       s += `<text x="${sp.offset + sp.width / 2}" y="${yTop + 12 * kk}" font-size="${10 * kk}" text-anchor="middle" class="unfopent">${esc(EP.Plan.Elements.openingNum ? EP.Plan.Elements.openingNum(p, op) : (meta.glyph || ""))}</text>`;
     });
     const sorted = els.slice().sort((a, b) => a.offset - b.offset);
+    // ШТРОБЫ: откуда физически идёт кабель (потолок/пол) до поста — та же
+    // логика, что и в живой развёртке (кнопка «〰 Штробы», S.showChases в
+    // plan-unfold.js), но в PDF рисуется ВСЕГДА (печатный лист статичен,
+    // незачем прятать монтажную информацию, ради которой лист и печатают —
+    // репорт пользователя: «нет направления штроб»). Цвет по виду (силовая/
+    // свет/слаботочка/тёплый пол), линия идёт от потолка ИЛИ от пола (по
+    // routeType) до высоты поста — это и есть направление; подпись сечения
+    // рядом с концом линии.
+    {
+      const floorRoute = p.settings.routeType === "floor";
+      const chaseY0 = floorRoute ? H : 0;
+      const CHASE_COL = { power: "#f59e0b", light: "#facc15", lv: "#38bdf8", warm: "#fb7185" };
+      const SIZE_LBL = {
+        power: `${Math.round(p.settings.chaseW || 25)}×${Math.round(p.settings.chaseH || 30)}`,
+        light: `${Math.round(p.settings.chaseW || 25)}×${Math.round(p.settings.chaseH || 30)}`,
+        lv: `${Math.round(p.settings.chaseW || 25)}×${Math.round(p.settings.chaseH || 30)}`,
+        warm: `${Math.round(p.settings.tpChaseW || 50)}×${Math.round(p.settings.tpChaseH || 50)}`
+      };
+      const chaseKindOf = (layer) => (layer === "warm" ? "warm" : (layer === "lv" || layer === "tv" || layer === "cctv" ? "lv" : (layer === "light" ? "light" : "power")));
+      const drawChase = (cx, cy0, cy1, kind) => {
+        if (Math.abs(cy1 - cy0) < 1) return;
+        const col = CHASE_COL[kind] || CHASE_COL.power;
+        s += `<line x1="${cx}" y1="${cy0}" x2="${cx}" y2="${cy1}" stroke="${col}" stroke-width="${kk * 5}" opacity="0.28"/>`;
+        s += `<line x1="${cx}" y1="${cy0}" x2="${cx}" y2="${cy1}" stroke="${col}" stroke-width="${kk * 1.4}" stroke-dasharray="${3 * kk} ${2 * kk}"/>`;
+        const labelY = cy0 + (cy1 > cy0 ? 12 * kk : -6 * kk);
+        s += `<text x="${cx + 3 * kk}" y="${labelY}" font-size="${8 * kk}" fill="${col}">${SIZE_LBL[kind] || ""}</text>`;
+      };
+      sorted.forEach((el2) => {
+        const xx = el2.offset, yy = H - el2.height;
+        if (el2.type === "block") {
+          const items = (el2.params && el2.params.items) || [];
+          const step2 = 18 * kk, bw = items.length * step2 + 6 * kk;
+          (G().blockChaseEntries ? G().blockChaseEntries(el2) : []).forEach((en) => {
+            const ex = xx - bw / 2 + 3 * kk + step2 * en.idx + step2 / 2;
+            const y0 = (en.kind === "light" && floorRoute) ? 0 : chaseY0;
+            drawChase(ex, y0, yy, en.kind);
+          });
+        } else if (el2.layer === "warm") {
+          drawChase(xx, chaseY0, yy, "power");
+          if (el2.height > 1) drawChase(xx, yy, H, "warm");
+        } else {
+          const kind = chaseKindOf(el2.layer);
+          const y0 = (el2.type === "switch" && floorRoute) ? 0 : chaseY0;
+          drawChase(xx, y0, yy, kind);
+        }
+      });
+    }
     // AABB символов — подпись высоты кладём РЯДОМ с постом, сдвигая, если она
     // ложится на другой пост (просьба пользователя: высота у поста, не пересекать)
     const symHalf = (el) => {
