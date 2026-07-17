@@ -98,14 +98,44 @@
     let s = `<svg viewBox="${-pad} ${-pad} ${L + pad * 1.5} ${H + pad * 1.9}" preserveAspectRatio="xMidYMid meet" class="unf">`;
     s += `<rect x="0" y="0" width="${L}" height="${H}" class="unfwall"/>`;
     s += `<line x1="0" y1="${H}" x2="${L}" y2="${H}" class="unffloor"/>`;
-    els.slice().sort((a, b) => a.offset - b.offset).forEach((el) => {
+    const sorted = els.slice().sort((a, b) => a.offset - b.offset);
+    // AABB символов — подпись высоты кладём РЯДОМ с постом, сдвигая, если она
+    // ложится на другой пост (просьба пользователя: высота у поста, не пересекать)
+    const symHalf = (el) => {
+      if (el.type === "block") {
+        const items = (el.params && el.params.items) || ["socket"];
+        const step = 18 * kk, bw = items.length * step + 6 * kk, bh = 24 * kk;
+        return { hw: bw / 2, hh: bh / 2 };
+      }
+      return { hw: 13 * kk, hh: 13 * kk };
+    };
+    const boxes = sorted.map((e) => { const h = symHalf(e); return { x: e.offset, y: H - e.height, hw: h.hw, hh: h.hh }; });
+    const placeHLabel = (idx) => {
+      const b = boxes[idx], lw = 14 * kk, lh = 8 * kk;
+      const hits = (lx, ly) => boxes.some((o, j) => j !== idx && Math.abs(lx - o.x) < lw + o.hw && Math.abs(ly - o.y) < lh + o.hh);
+      const cand = [
+        [b.x + b.hw + lw + 2 * kk, b.y], [b.x - b.hw - lw - 2 * kk, b.y],
+        [b.x + b.hw + lw + 2 * kk, b.y - b.hh - lh], [b.x - b.hw - lw - 2 * kk, b.y - b.hh - lh],
+        [b.x, b.y - b.hh - lh - 2 * kk], [b.x, b.y + b.hh + lh + 2 * kk]
+      ];
+      for (const [lx, ly] of cand) if (!hits(lx, ly)) return { x: lx, y: ly };
+      return { x: b.x + b.hw + lw + 2 * kk, y: b.y };
+    };
+    sorted.forEach((el, idx) => {
       const x = el.offset, y = H - el.height;
       const cc = (p.circuits || []).find((c) => c.id === el.circuitId);
       const col = cc ? cc.color : "#1d4ed8";
+      // вертикаль (высота от пола) + горизонталь от левого угла до поста НА ЕГО ВЫСОТЕ
+      // с числом-расстоянием (те «размеры», что просил пользователь на скрине)
       s += `<line x1="${x}" y1="${H}" x2="${x}" y2="${y}" class="unfdim"/>`;
-      s += `<text x="${x + 6 * kk}" y="${(H + y) / 2}" font-size="${11 * kk}" class="unfdimt">${Math.round(el.height)}</text>`;
-      s += `<line x1="0" y1="${H + 16 * kk}" x2="${x}" y2="${H + 16 * kk}" class="unfdim"/>`;
-      s += `<text x="${x / 2}" y="${H + 30 * kk}" font-size="${11 * kk}" text-anchor="middle" class="unfdimt">${Math.round(el.offset)}</text>`;
+      if (x > 2) {
+        s += `<line x1="0" y1="${y}" x2="${x}" y2="${y}" class="unfdimh"/>`;
+        s += `<line x1="0" y1="${y - 3 * kk}" x2="0" y2="${y + 3 * kk}" class="unfdimh"/>`;
+        s += `<text x="${x / 2}" y="${y - 3 * kk}" font-size="${9.5 * kk}" text-anchor="middle" class="unfdimt">${Math.round(el.offset)}</text>`;
+      }
+      // подпись высоты — рядом с постом, с антиналожением
+      const hl = placeHLabel(idx);
+      s += `<text x="${hl.x}" y="${hl.y}" font-size="${11 * kk}" text-anchor="middle" dominant-baseline="middle" class="unfdimt">${Math.round(el.height)}</text>`;
       if (el.type === "block") {
         const items = (el.params && el.params.items) || ["socket"];
         const step = 18 * kk, bw = items.length * step + 6 * kk, bh = 24 * kk;
@@ -277,6 +307,7 @@
       .unfwall { fill: #f1f5f9; stroke: #94a3b8; stroke-width: 1; }
       .unffloor { stroke: #111; stroke-width: 2; }
       .unfdim { stroke: #0891b2; stroke-width: 1; }
+      .unfdimh { stroke: #38bdf8; stroke-width: .8; }
       .unfdimt { fill: #0e7490; font-family: system-ui; }
       .unfshape { stroke: #111; stroke-width: 1; }
       .unfglyph { fill: #fff; font-weight: 700; font-family: system-ui; }
