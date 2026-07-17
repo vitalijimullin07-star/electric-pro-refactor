@@ -976,6 +976,21 @@ body[data-noblur="1"] .glass,
 body[data-noblur="1"] .card,
 body[data-noblur="1"] .ep-navbar,
 body[data-noblur="1"] .ep-qty-ov{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+/* Без blur полупрозрачный фон (--card-opacity по умолчанию ~0.72) пропускает
+   яркий/анимированный фон НЕРАЗМЫТЫМ насквозь — контент позади читается сквозь
+   бургер-меню/карточки внахлёст (репорт с реального устройства Honor X7C —
+   isWeakDevice() там детектит отсутствие backdrop-filter и уже включает
+   data-noblur, но раньше это только убирало blur, не поднимая непрозрачность,
+   и оставляло «стекло» без стекла — сквозным и нечитаемым). Проверено вживую
+   (headless Chromium, минимальный html-репро): даже 0.94/0.97/0.99 оставляют
+   ЗАМЕТНЫЙ РЕЗКИЙ (нерастушёванный, в отличие от размытого) призрак жирного
+   текста фона сквозь панель — без blur сглаживать бледный текст нечем, поэтому
+   частичная прозрачность здесь не помогает, только полностью непрозрачный фон
+   (1) убирает след полностью. Раз blur всё равно не рендерится — смысла в
+   полупрозрачности тут нет (это чисто функциональный фолбэк, не эстетика).*/
+body[data-noblur="1"] .glass,
+body[data-noblur="1"] .card,
+body[data-noblur="1"] .ep-navbar{background:rgb(var(--card-bg-rgb))!important}
 /* Уровень 2+: лёгкие тени */
 body[data-flatshadow="1"] .card,
 body[data-flatshadow="1"] .glass{box-shadow:0 2px 8px rgba(0,0,0,.22)!important}
