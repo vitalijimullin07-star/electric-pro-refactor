@@ -429,6 +429,25 @@ body[data-visual-mode="day"] .ep-plan-opnum { fill: #0f172a; stroke: rgba(255,25
 .ep-plan-unfopen { cursor: pointer; }
 .ep-plan-unfold.is-full .ep-plan-unfsvg, .ep-plan-sheet-full .ep-plan-unfsvg { height: 80vh; height: 80dvh; }
 
+/* превью масштаба PDF-развёртки (шторка 📄 перед печатью, plan-export.js) — сама
+   svg-разметка (unfoldSvg) общая с печатным листом, но ТОТ <style> — отдельный
+   документ (window.open, без доступа к plan.css) со своими цветами под белую
+   бумагу; здесь те же классы стилизуются заново под живой предпросмотр на
+   белом фоне (буквально то, что попадёт на бумагу) */
+.ep-plan-pdfpreview { background: #fff; border-radius: 8px; padding: 8px; margin-top: 4px; }
+.ep-plan-pdfpreview .unf { width: 100%; height: auto; max-height: 220px; display: block; }
+.ep-plan-pdfpreview .unfwall { fill: #f1f5f9; stroke: #94a3b8; stroke-width: 1; }
+.ep-plan-pdfpreview .unffloor { stroke: #111; stroke-width: 2; }
+.ep-plan-pdfpreview .unfopen { fill: rgba(56,189,248,.12); stroke: #0891b2; stroke-width: 1; }
+.ep-plan-pdfpreview .unfopen.is-win { fill: rgba(56,189,248,.2); }
+.ep-plan-pdfpreview .unfopent { fill: #0e7490; font-family: system-ui; font-weight: 700; }
+.ep-plan-pdfpreview .unfdim { stroke: #0891b2; stroke-width: 1; }
+.ep-plan-pdfpreview .unfdimh { stroke: #38bdf8; stroke-width: .8; }
+.ep-plan-pdfpreview .unfdimt { fill: #0e7490; font-family: system-ui; }
+.ep-plan-pdfpreview .unfshape { stroke: #111; stroke-width: 1; }
+.ep-plan-pdfpreview .unfglyph { fill: #fff; font-weight: 700; font-family: system-ui; }
+.ep-plan-pdfpreview .unfqf { font-weight: 700; font-family: system-ui; }
+
 /* — v19: светодиодная лента в развёртке (сегмент вдоль стены) — */
 .ep-plan-unfled { stroke: #fbbf24; stroke-linecap: round; cursor: pointer; filter: drop-shadow(0 0 2px rgba(251,191,36,.7)); }
 .ep-plan-unfledt { fill: #fbbf24; font-family: system-ui; font-weight: 700; }
