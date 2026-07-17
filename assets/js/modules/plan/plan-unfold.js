@@ -397,9 +397,23 @@
       return { hw: 13 * ks, hh: 13 * ks };
     };
     const elBoxes = els.map((e) => { const s = symHalf(e); return { x: e.offset, y: H - e.height, hw: s.hw, hh: s.hh }; });
+    // QF-имя (текст над постом) и подпись расстояния от угла (текст на горизонтали
+    // до поста) — тоже места, которые подпись высоты не должна перекрывать, иначе
+    // они сливаются (репорт пользователя со скриншотом: цифры высоты и расстояния
+    // от угла наезжают друг на друга при большом числе близких постов).
+    const qfBoxes = els.map((e) => {
+      const cc = circ(p, e); if (!cc) return null;
+      return { x: e.offset, y: H - e.height - 18 * ks, hw: Math.max(14, cc.name.length * 4.2) * ks, hh: 7 * ks };
+    }).filter(Boolean);
+    const offBoxes = els.map((e) => {
+      const x = e.offset, y = H - e.height;
+      if (x - inA <= 2) return null;
+      return { x: (inA + x) / 2, y: y - 3 * ks, hw: 14 * ks, hh: 8 * ks };
+    }).filter(Boolean);
+    const obstacles = elBoxes.concat(qfBoxes, offBoxes);
     const placeHLabel = (idx) => {
       const b = elBoxes[idx], lw = 15 * ks, lh = 9 * ks;
-      const hits = (lx, ly) => elBoxes.some((o, j) => j !== idx && Math.abs(lx - o.x) < lw + o.hw && Math.abs(ly - o.y) < lh + o.hh);
+      const hits = (lx, ly) => obstacles.some((o) => o !== b && Math.abs(lx - o.x) < lw + o.hw && Math.abs(ly - o.y) < lh + o.hh);
       const cand = [
         [b.x + b.hw + lw + 2 * ks, b.y], [b.x - b.hw - lw - 2 * ks, b.y],
         [b.x + b.hw + lw + 2 * ks, b.y - b.hh - lh], [b.x - b.hw - lw - 2 * ks, b.y - b.hh - lh],
