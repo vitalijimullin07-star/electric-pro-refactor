@@ -69,11 +69,27 @@
   function blankLayers() {
     return DEFAULTS.layers.map((l) => ({ id: l.id, name: l.name, color: l.color, visible: true, opacity: 1 }));
   }
+  // Этажи: проект — ОДНА модель на все этажи (общая смета/схема/циркуиты),
+  // но комнаты/точки/щиты/балки/пустоты/лента/проёмы/трассы у каждой сущности
+  // своё floorId — рендер/хит-тест/автотрассировка видят только activeFloorId
+  // (см. G.floorScoped в plan-geometry.js), а расчёт/смета/однолинейка читают
+  // p.routes/p.circuits КАК ЕСТЬ, без фильтра — суммируются по всем этажам разом.
+  function newFloor(name) { return { id: uid("fl"), name: name || "Этаж" }; }
+  // floorId новых сущностей берём из S.project.activeFloorId (текущий активный этаж) —
+  // ЕДИНАЯ точка простановки, чтобы не трогать десятки мест создания комнат/точек/щитов
+  // по всему модулю (все они и так создаются только над видимым, т.е. активным, этажом).
+  function curFloorId() {
+    const p = S.project;
+    if (!p) return null;
+    return p.activeFloorId || (p.floors && p.floors[0] && p.floors[0].id) || null;
+  }
   function newProject(name) {
+    const floors = [newFloor("1 этаж")];
     return {
       id: uid("prj"), v: 1,
       name: String(name || "").trim() || "Новый проект",
       address: "", client: "", clientId: null,
+      floors, activeFloorId: floors[0].id,
       settings: {
         ceilingHeight: DEFAULTS.ceilingHeight,
         wallThickness: DEFAULTS.wallThickness,
@@ -106,20 +122,20 @@
     };
   }
   function newRoom(points, name) {
-    return { id: uid("rm"), name: name || "Комната", points: points || [], height: null /* null = settings.ceilingHeight */, zones: [], material: null /* null = settings.wallMaterial */ };
+    return { id: uid("rm"), name: name || "Комната", points: points || [], height: null /* null = settings.ceilingHeight */, zones: [], material: null /* null = settings.wallMaterial */, floorId: curFloorId() };
   }
-  function newPanel(x, y, name) { return { id: uid("pn"), x: x || 0, y: y || 0, name: name || "Щит", transformer: false, height: null /* null = settings.panelHeight (общая на проект) */ }; }
+  function newPanel(x, y, name) { return { id: uid("pn"), x: x || 0, y: y || 0, name: name || "Щит", transformer: false, height: null /* null = settings.panelHeight (общая на проект) */, floorId: curFloorId() }; }
   function newElement(type, wallId, offset, height, layer) {
     return {
       id: uid("el"), type, wallId, offset: offset || 0, height: height || 0, layer: layer || "power", status: "planned",
-      circuitId: null, entryPost: null, targetId: null, photos: [], params: {},
+      circuitId: null, entryPost: null, targetId: null, photos: [], params: {}, floorId: curFloorId(),
       // только для type:"switch" — клавиши (1-3), вид (обычный/проходной/перекрёстный),
       // цель каждой клавиши (свет/вывод) и звено цепочки проходных/перекрёстных
       keys: 1, swKind: "normal", targetIds: [], chainNext: null
     };
   }
   function newRoute(layer, routeType, points, fromId, toId) {
-    return { id: uid("rt"), layer: layer || "routes", routeType: routeType || "ceiling", points: points || [], fromId: fromId || null, toId: toId || null, throughWalls: [] };
+    return { id: uid("rt"), layer: layer || "routes", routeType: routeType || "ceiling", points: points || [], fromId: fromId || null, toId: toId || null, throughWalls: [], floorId: curFloorId() };
   }
   // phase: 1/2/3 — на какую фазу L1/L2/L3 посажена 1-полюсная линия (в 3-фазном щите,
   // для баланса нагрузки); у 3-полюсной линии (poles:3) не используется — она сама
@@ -146,7 +162,7 @@
   // светодиодная лента: сегмент ВДОЛЬ конкретной стены между двумя офсетами (см. wall).
   // Привязка к стене (как у элементов) — тривиальный рендер и на плане, и в развёртке.
   function newLedStrip(wallId, offsetA, offsetB, height, circuitId) {
-    return { id: uid("ls"), wallId, offsetA: offsetA || 0, offsetB: offsetB || 0, height: height || 0, circuitId: circuitId || null, status: "planned" };
+    return { id: uid("ls"), wallId, offsetA: offsetA || 0, offsetB: offsetB || 0, height: height || 0, circuitId: circuitId || null, status: "planned", floorId: curFloorId() };
   }
   // Проёмы: дверь / раздвижная / окно / балконный блок. Размеры настраиваемые.
   // height — высота проёма (см), sill — низ проёма от пола (окно ~90, дверь 0).
@@ -161,17 +177,17 @@
     // hinge: у какого края петли ('a' — ближний угол), flip: сторона открывания (±1)
     const k = OPENING_KINDS[kind] ? kind : (kind === "window" ? "window" : "door");
     const d = OPENING_KINDS[k];
-    return { id: uid("op"), kind: k, type: d.win ? "window" : "door", wallId, offset: offset || 0, width: width || d.w, height: d.h, sill: d.sill, hinge: "a", flip: 1 };
+    return { id: uid("op"), kind: k, type: d.win ? "window" : "door", wallId, offset: offset || 0, width: width || d.w, height: d.h, sill: d.sill, hinge: "a", flip: 1, floorId: curFloorId() };
   }
   function newBeam(a, b, kind, width, material) {
-    return { id: uid("bm"), a: a || { x: 0, y: 0 }, b: b || { x: 0, y: 0 }, width: width || DEFAULTS.wallThickness, kind: kind === "lintel" ? "lintel" : "beam", material: material || null };
+    return { id: uid("bm"), a: a || { x: 0, y: 0 }, b: b || { x: 0, y: 0 }, width: width || DEFAULTS.wallThickness, kind: kind === "lintel" ? "lintel" : "beam", material: material || null, floorId: curFloorId() };
   }
   // Внутреннее препятствие (вентшахта / мини-комната внутри комнаты) — прямоугольник
   // по двум противоположным углам a/b, БЕЗ привязки к конкретной room (комната
   // определяется геометрически, как и у всех прочих свободных объектов плана).
   function newVoid(a, b, kind) {
     const k = kind === "room" ? "room" : "shaft";
-    return { id: uid("vd"), a: a || { x: 0, y: 0 }, b: b || { x: 0, y: 0 }, kind: k, name: k === "room" ? "Комната" : "Шахта" };
+    return { id: uid("vd"), a: a || { x: 0, y: 0 }, b: b || { x: 0, y: 0 }, kind: k, name: k === "room" ? "Комната" : "Шахта", floorId: curFloorId() };
   }
 
   // ---------- состояние ----------
@@ -238,6 +254,15 @@
   // чтобы старые/сторонние проекты не теряли настройки молча.
   function backfillProject(p) {
     if (p.client == null) p.client = "";
+    // Этажи: старые проекты — один неявный этаж. Сюда же попадают проекты,
+    // где чей-то floorId ссылается на этаж, которого уже нет (например, после
+    // ручного редактирования JSON) — фолбэк на первый этаж, а не потеря объекта.
+    if (!Array.isArray(p.floors) || !p.floors.length) p.floors = [newFloor("1 этаж")];
+    if (!p.activeFloorId || !p.floors.some((f) => f.id === p.activeFloorId)) p.activeFloorId = p.floors[0].id;
+    const fid0 = p.floors[0].id;
+    [p.rooms, p.panels, p.elements, p.beams, p.voids, p.ledStrips, p.openings, p.routes].forEach((arr) => {
+      (arr || []).forEach((x) => { if (!x.floorId || !p.floors.some((f) => f.id === x.floorId)) x.floorId = fid0; });
+    });
     p.openings = p.openings || [];
     p.beams = p.beams || [];
     p.voids = p.voids || [];
@@ -293,6 +318,49 @@
     commit();
     S.project.name = clean;
     persist("rename");
+  }
+
+  // ---------- этажи ----------
+  function addFloor(name) {
+    if (!S.project) return null;
+    commit();
+    const f = newFloor(name || `Этаж ${S.project.floors.length + 1}`);
+    S.project.floors.push(f);
+    S.project.activeFloorId = f.id;
+    persist("floor-add");
+    return f;
+  }
+  function renameFloor(id, name) {
+    if (!S.project) return;
+    const f = (S.project.floors || []).find((x) => x.id === id);
+    const clean = String(name || "").trim();
+    if (!f || !clean) return;
+    commit();
+    f.name = clean;
+    persist("floor-rename");
+  }
+  // Переключение вида — НЕ мутация данных (без commit(), как R.mode), но persist()
+  // запоминает, на каком этаже пользователь остановился (переживает перезагрузку/синк).
+  function setActiveFloor(id) {
+    if (!S.project || S.project.activeFloorId === id) return;
+    if (!(S.project.floors || []).some((f) => f.id === id)) return;
+    S.project.activeFloorId = id;
+    persist("floor-switch");
+  }
+  // Удаляет этаж СО ВСЕМ содержимым (комнаты/щиты/точки/балки/пустоты/лента/проёмы/
+  // трассы этого floorId) — каскадно, как удаление комнаты чистит её точки; подтверждение
+  // (confirm) — на стороне UI. Нельзя удалить последний оставшийся этаж проекта.
+  function deleteFloor(id) {
+    if (!S.project || S.project.floors.length < 2) return false;
+    commit();
+    const p = S.project;
+    p.floors = p.floors.filter((f) => f.id !== id);
+    ["rooms", "panels", "elements", "beams", "voids", "ledStrips", "openings", "routes"].forEach((key) => {
+      p[key] = (p[key] || []).filter((x) => x.floorId !== id);
+    });
+    if (p.activeFloorId === id) p.activeFloorId = p.floors[0].id;
+    persist("floor-del");
+    return true;
   }
 
   function persist(what) {
@@ -361,6 +429,7 @@
     listProjects, createProject, openProject, closeProject, deleteProject, renameProject,
     commit, undo, redo, canUndo, canRedo, persist,
     exportJSON, importJSON, cloudPullIndex,
-    model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening, newBeam, newVoid, newManualScheme, newSchemeGroup, newSchemeLine, newLedStrip }
+    addFloor, renameFloor, setActiveFloor, deleteFloor,
+    model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening, newBeam, newVoid, newManualScheme, newSchemeGroup, newSchemeLine, newLedStrip, newFloor }
   };
 })();

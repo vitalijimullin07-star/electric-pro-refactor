@@ -166,7 +166,7 @@
 
   // ---------- попадание / выбор ----------
   function hitAt(w, maxCm) {
-    const p = core().project;
+    const p = G().floorScoped(core().project); // хит-тест — только по видимому (активному) этажу
     let best = null;
     p.elements.forEach((el) => {
       const pt = G().elemDrawPoint(p, el); // тап должен попадать по ВИДИМОМУ маркеру, а не по оси стены

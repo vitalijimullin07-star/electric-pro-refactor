@@ -11,13 +11,38 @@
   G.snapPoint = (p, step) => ({ x: G.snap(p.x, step), y: G.snap(p.y, step) });
   G.dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
+  // ---- этажи: view-фильтр проекта на активный этаж (не мутирует project) ----
+  // Один проект — одна модель на ВСЕ этажи (общая смета/схема/циркуиты читают
+  // p.routes/p.circuits как есть, БЕЗ фильтра — суммируются по всем этажам разом),
+  // но рендер/хит-тест/автотрассировка должны видеть только activeFloorId — иначе
+  // геометрия разных этажей в одних координатах физически накладывалась бы друг
+  // на друга. floorScoped() — ЕДИНАЯ точка этого фильтра: возвращает мелкий клон
+  // project с 8 геометрическими массивами, урезанными до активного этажа (те же
+  // ссылки на объекты — мутации через них по-прежнему бьют в реальный проект).
+  // Для проектов с одним этажом (подавляющее большинство) возвращает project
+  // КАК ЕСТЬ, без клонирования — нулевые накладные расходы и 100% обратная
+  // совместимость со старыми проектами/тестами.
+  G.floorScoped = (project) => {
+    const floors = project && project.floors;
+    if (!floors || floors.length <= 1) return project;
+    const fid = project.activeFloorId || floors[0].id;
+    const fid0 = floors[0].id;
+    const on = (arr) => (arr || []).filter((x) => (x.floorId || fid0) === fid);
+    return Object.assign({}, project, {
+      rooms: on(project.rooms), elements: on(project.elements), panels: on(project.panels),
+      beams: on(project.beams), voids: on(project.voids), ledStrips: on(project.ledStrips),
+      openings: on(project.openings), routes: on(project.routes)
+    });
+  };
+
   // Привязка: угол комнаты -> выравнивание по осям чужих углов -> сетка.
   // snapped=true только для угла/оси (значимая привязка) — НЕ для рядового
   // округления по сетке, чтобы вызывающий код мог дать тактильный отклик
   // только на реальный снап, а не на каждый тап.
   G.snapSmart = (project, p, step, cornerRadius) => {
     let best = null, ax = null, ay = null;
-    (project.rooms || []).forEach((r) => (r.points || []).forEach((c) => {
+    const pr = G.floorScoped(project);
+    (pr.rooms || []).forEach((r) => (r.points || []).forEach((c) => {
       const d = G.dist(p, c);
       if (d <= cornerRadius && (!best || d < best.d)) best = { d, x: c.x, y: c.y };
       if (Math.abs(p.x - c.x) <= cornerRadius && (ax == null || Math.abs(p.x - c.x) < Math.abs(p.x - ax))) ax = c.x;
@@ -236,13 +261,14 @@
     return { x, y, t, d: Math.hypot(p.x - x, p.y - y) };
   };
   G.wallAt = (project, p, maxD) => {
+    const pr = G.floorScoped(project);
     const cands = [];
-    (project.rooms || []).forEach((r) => G.walls(r).forEach((w) => {
+    (pr.rooms || []).forEach((r) => G.walls(r).forEach((w) => {
       const c = G.closestOnSeg(p, w.a, w.b);
       if (c.d <= maxD) cands.push({ wall: w, hit: c, offset: Math.round(c.t * w.len) });
     }));
     // перегородки/балки тоже принимают проёмы
-    (project.beams || []).forEach((bm) => {
+    (pr.beams || []).forEach((bm) => {
       const w = G.beamWall(bm);
       const c = G.closestOnSeg(p, w.a, w.b);
       const md = Math.max(maxD, (bm.width || 10) / 2);
@@ -254,7 +280,7 @@
     // вторая становилась недостижимой для простановки точек на этой стене.
     // Отдаём предпочтение той комнате, В СТОРОНУ КОТОРОЙ тап физически смещён.
     const side = (cand) => {
-      const fr = G.wallFrame(project, cand.wall);
+      const fr = G.wallFrame(pr, cand.wall);
       return fr ? (p.x - cand.hit.x) * fr.nrm.x + (p.y - cand.hit.y) * fr.nrm.y : 0; // >0 — тап внутри ЭТОЙ комнаты
     };
     const inside = cands.filter((c) => side(c) > -0.5);
@@ -270,7 +296,7 @@
     return inside;
   };
   G.roomAt = (project, p) =>
-    (project.rooms || []).find((r) => (r.points || []).length >= 3 && G.pointInPolygon(p, r.points)) || null;
+    (G.floorScoped(project).rooms || []).find((r) => (r.points || []).length >= 3 && G.pointInPolygon(p, r.points)) || null;
 
   // ---- прямоугольные комнаты (размеры числом) ----
   G.rectPoints = (x, y, w, h) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];

@@ -84,6 +84,7 @@
         <button type="button" class="ep-plan-mini ep-clickable" data-plan-full aria-label="Во весь экран">⤢</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-plan-ctrls aria-label="${V.ctrlsOn ? "Свернуть панель" : "Развернуть панель"}" title="Свернуть/развернуть панель инструментов">${V.ctrlsOn ? "︿" : "﹀"}</button>
       </div>
+      ${floorsBarHtml(p)}
       <div class="ep-plan-toolbar">
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-undo aria-label="Отменить">${T.undo}</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-redo aria-label="Вернуть">${T.redo}</button>
@@ -192,6 +193,38 @@
     inp.addEventListener("blur", done);
     inp.focus(); inp.select();
   }
+  // ---------- этажи ----------
+  // Чипы этажей — ВСЕГДА видны (даже с одним этажом), чтобы «+ Этаж» был на виду
+  // и пользователь вообще узнал о фиче. Переключение — 1 тап по чипу; управление
+  // (переименовать/удалить/добавить) — отдельная кнопка «✎ Этажи» → шторка со
+  // списком (тот же rooms().openSheet(), что и у остальных редакторов модуля).
+  function floorsBarHtml(p) {
+    const floors = p.floors || [];
+    return `<div class="ep-plan-toolbar ep-plan-floors" id="ep-plan-floors">
+      ${floors.map((f) => `<button type="button" class="ep-plan-chip ep-clickable ${f.id === p.activeFloorId ? "on" : ""}" data-plan-floor="${esc(f.id)}">${esc(f.name)}</button>`).join("")}
+      <button type="button" class="ep-plan-mini ep-clickable" data-plan-floors-manage aria-label="Управление этажами" title="Добавить/переименовать/удалить этаж">✎ Этажи</button>
+    </div>`;
+  }
+  function refreshFloorsBar() {
+    const p = core().project; if (!p) return;
+    const el = $("#ep-plan-floors");
+    if (el) el.outerHTML = floorsBarHtml(p);
+  }
+  function doSwitchFloor(id) {
+    core().setActiveFloor(id);
+    if (EP.Plan.Rooms) EP.Plan.Rooms.setMode("view"); // прошлая шторка/режим — с чужого этажа, закрываем
+  }
+  function doFloors() {
+    const c = core(), p = c.project; if (!p) return;
+    const rooms = EP.Plan.Rooms; if (!rooms) return;
+    rooms.openSheet(`<div class="ep-plan-srow"><b>🏢 Этажи</b><span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-plan-floors-close>✕</button></div>
+      ${p.floors.map((f) => `<div class="ep-plan-srow">
+        <input type="text" class="ep-plan-flex" data-plan-floor-rn="${esc(f.id)}" value="${esc(f.name)}" maxlength="40">
+        ${p.floors.length > 1 ? `<button type="button" class="ep-plan-mini ep-plan-danger ep-clickable" data-plan-floor-del="${esc(f.id)}" aria-label="Удалить этаж ${esc(f.name)}">✕</button>` : ""}
+      </div>`).join("")}
+      <div class="ep-plan-srow ep-plan-sbtns"><button type="button" class="ep-plan-tbtn ep-clickable" data-plan-floor-add>+ Добавить этаж</button></div>
+      <div class="ep-plan-modehint">Удаление этажа стирает всё его содержимое (комнаты, точки, трассы) безвозвратно.</div>`);
+  }
   function doMeta() {
     const c = core(), p = c.project; if (!p) return;
     const rooms = EP.Plan.Rooms; if (!rooms) return;
@@ -239,6 +272,15 @@
     if (t.closest("[data-plan-export]")) return doExport();
     if (t.closest("[data-plan-import]")) return doImport(r);
     if (t.closest("[data-plan-full]")) return toggleFullscreen(r);
+    if ((el = t.closest("[data-plan-floor]"))) return doSwitchFloor(el.getAttribute("data-plan-floor"));
+    if (t.closest("[data-plan-floors-manage]")) return doFloors();
+    if (t.closest("[data-plan-floors-close]")) { EP.Plan.Rooms.closeSheet(); return; }
+    if (t.closest("[data-plan-floor-add]")) { core().addFloor(); doFloors(); return; }
+    if ((el = t.closest("[data-plan-floor-del]"))) {
+      const p = core().project, f = p && (p.floors || []).find((x) => x.id === el.getAttribute("data-plan-floor-del"));
+      if (f && confirm(`Удалить «${f.name}» со всем содержимым?`)) { core().deleteFloor(f.id); doFloors(); }
+      return;
+    }
   });
 
   // Во весь экран: нативный Fullscreen API + фиксированная раскладка как запас (iOS)
@@ -259,6 +301,11 @@
     const t = e.target, c = core(); if (!c.project) return;
     if (t.id === "ep-plan-meta-client") { c.project.client = t.value; c.persist("meta-client"); }
     else if (t.id === "ep-plan-meta-addr") { c.project.address = t.value; c.persist("meta-addr"); }
+    else if (t.hasAttribute("data-plan-floor-rn")) {
+      // без commit() — как gtitle/lname в ручной схеме: не плодить undo-снапшот на каждую букву
+      const f = (c.project.floors || []).find((x) => x.id === t.getAttribute("data-plan-floor-rn"));
+      if (f) { f.name = t.value; c.persist("floor-rename-live"); refreshFloorsBar(); }
+    }
   });
   document.addEventListener("fullscreenchange", () => {
     if (!document.fullscreenElement) {
@@ -317,6 +364,12 @@
       if ((what === "undo" || what === "redo") && EP.Plan.Rooms) {
         EP.Plan.Rooms.renderScene();
         if (EP.Plan.Unfold && EP.Plan.Unfold.isOpen()) EP.Plan.Unfold.drawStrip();
+      }
+      if (what === "floor-switch" || what === "floor-add" || what === "floor-del") {
+        refreshFloorsBar();
+        if (EP.Plan.Rooms) EP.Plan.Rooms.renderScene(); // сменился набор видимой геометрии — перерисовать холст
+      } else if (what === "floor-rename" || what === "floor-rename-live") {
+        refreshFloorsBar();
       }
     }
     if (what === "index" && !core().project) { const r = root(); if (r) renderList(r); }
