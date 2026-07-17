@@ -8,7 +8,7 @@
   window.EP = window.EP || {};
   const OWNER = "vits0007@gmail.com";
   const SRV_DOC = "main", META_DOC = "__meta__";
-  const A = { tab: "users", users: [], selectedUid: null, userTab: "status", section: null, onlyPending: false, srv: null, srvKeys: new Set(), masterDb: [], exp: new Set(), contact: null, uexp: new Set(), uq: "" };
+  const A = { tab: "users", users: [], selectedUid: null, section: null, srv: null, srvKeys: new Set(), masterDb: [], exp: new Set(), contact: null, uq: "" };
   const $ = (s, r) => (r || document).querySelector(s);
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const jn = (o) => { try { return JSON.stringify(o, null, 2); } catch (e) { return String(o); } };
@@ -173,11 +173,11 @@
     host.innerHTML = `<div class="ep-uback"><button type="button" class="ep-btn ep-btn-sm" data-u-back>‹ К списку</button></div>
       <div class="ep-uhead"><h2>${esc(u.email || u.uid)}</h2><p class="ep-admin-muted">${esc(u.displayName || "—")} · рег. ${esc(dstr(u.createdAt))}</p><div class="ep-uhead-badges"><span class="ep-st ep-st-${esc(st)}">${esc(st)}</span><span class="ep-badge">${esc(u.role || "master")}</span></div></div>
 
-      <div class="ep-usec"><h3>Доступ</h3><div class="ep-usec-btns">
+      <div class="ep-usec"><h3>🔐 Доступ</h3><div class="ep-usec-btns">
         ${access ? `<button type="button" class="ep-btn ep-btn-danger" data-u-act="block">Заблокировать</button>` : `<button type="button" class="ep-btn ep-btn-ok" data-u-act="approve">Открыть доступ</button>`}
         ${blocked ? `<button type="button" class="ep-btn ep-btn-ok" data-u-act="unblock">Разблокировать</button>` : ""}</div></div>
 
-      <div class="ep-usec"><h3>Подписка</h3>
+      <div class="ep-usec"><h3>💳 Подписка</h3>
         <p class="ep-admin-muted">${subActive(sub) ? "Активна: <b>" + esc(isTrialSub(sub) ? "Тест" : planId) + "</b>" + (sub.expiresAt ? " · до " + esc(dstr(sub.expiresAt)) : "") : "Подписки нет."}</p>
         <div class="ep-uform">
           <label class="ep-ufield"><span>План</span><select id="ep-uplan">${opt("basic", "Базовый", planId)}${opt("ai", "С ИИ", planId)}</select></label>
@@ -191,17 +191,17 @@
         <div class="ep-usec-btns"><button type="button" class="ep-btn ep-btn-ok" data-u-act="grant">Выдать / продлить</button><button type="button" class="ep-btn ep-btn-danger" data-u-act="cancelsub">Отменить</button></div>
       </div>
 
-      <div class="ep-usec"><h3>ИИ / API</h3>
+      <div class="ep-usec"><h3>🤖 ИИ / API</h3>
         <label class="ep-ufield"><span>Режим</span><select id="ep-uaimode">${opt("off", "выкл", ai.mode || "off")}${opt("client", "свой ключ", ai.mode || "off")}${opt("server", "общий ключ (сервер)", ai.mode || "off")}</select></label>
         <div class="ep-usec-btns"><button type="button" class="ep-btn" data-u-act="aimode">Сохранить режим</button></div>
         <p class="ep-admin-muted">Сейчас: ${esc(ai.mode || "выкл")}. Баланс твоих ключей (из ИИ-ассистента): <b>${esc(aiKeyBalanceStr())}</b>.</p>
       </div>
 
-      <div class="ep-usec"><h3>Баланс мастера (₽)</h3>
+      <div class="ep-usec"><h3>💰 Баланс мастера (₽)</h3>
         <div class="ep-ubal"><input type="number" step="0.01" min="0" id="ep-ubalamt" value="${ai.balanceRub != null ? esc(ai.balanceRub) : ""}" placeholder="0"><button type="button" class="ep-btn ep-btn-ok" data-u-act="setbal">Задать</button><input type="number" step="0.01" min="0" id="ep-utopup" placeholder="+ сумма"><button type="button" class="ep-btn" data-u-act="topup">Пополнить</button></div>
         <p class="ep-admin-muted">Баланс, выделенный мастеру на ИИ (заработает с ИИ-прокси). Реальный баланс твоих ключей — в ИИ-ассистенте.</p></div>
 
-      <div class="ep-usec"><h3>Данные</h3>
+      <div class="ep-usec"><h3>🗂️ Данные</h3>
         <div class="ep-usec-btns"><button type="button" class="ep-btn" data-u-data="db">🗂️ База мастера</button><button type="button" class="ep-btn" data-u-data="docs">🧾 Сметы / документы</button></div>
         <div id="ep-udata" class="ep-udata"></div>
         <div class="ep-usec-btns"><button type="button" class="ep-btn ep-btn-ok" data-u-act="backupuser">⬇️ Бекап этого пользователя</button></div></div>
@@ -262,7 +262,7 @@
   // ====== БД СЕРВЕРА (вид как у мастера + ручное добавление) ======
   async function renderServerDb() {
     const host = $("#ep-admin-body"); if (!host) return;
-    host.innerHTML = `<div class="ep-admin-card"><h3>База сервера (общий каталог)</h3><p class="ep-admin-muted">Хранится в <code>server_db/main</code>, мастера тянут в кэш. Добавлять можно из БД мастера (➕) или вручную ниже.</p>
+    host.innerHTML = `<div class="ep-admin-card"><h3>🗄️ База сервера (общий каталог)</h3><p class="ep-admin-muted">Хранится в <code>server_db/main</code>, мастера тянут в кэш. Добавлять можно из БД мастера (➕) или вручную ниже.</p>
       <details class="ep-adb-manual"><summary>+ добавить вручную</summary><div class="ep-admin-row"><select id="ep-srv-type"><option value="material">материал</option><option value="work">работа</option></select><input id="ep-srv-name" placeholder="название" style="flex:1;min-width:140px"><input id="ep-srv-cat" placeholder="категория" style="width:130px"><input id="ep-srv-unit" placeholder="ед." style="width:80px"><input id="ep-srv-price" type="number" step="0.01" placeholder="цена" style="width:100px"><button id="ep-srv-add" class="ep-ok">Добавить</button></div></details>
       <div id="ep-srv-list"><div class="ep-admin-empty">Загрузка…</div></div></div>`;
     if (!(await ensureSrv())) { $("#ep-srv-list").innerHTML = "<div class='ep-admin-empty'>Нет доступа к server_db.</div>"; return; }
@@ -290,7 +290,7 @@
     const host = $("#ep-admin-body"); if (!host) return;
     if (!A.contact) { const r = await readDoc("server_db", META_DOC); A.contact = (r.data && r.data.contact) ? r.data.contact : {}; }
     const c = A.contact || {};
-    host.innerHTML = `<div class="ep-admin-card"><h3>Контакты для мастеров</h3><p class="ep-admin-muted">Мастера увидят это, чтобы связаться (оплата/вопросы). Хранится в <code>server_db/__meta__</code>.</p>
+    host.innerHTML = `<div class="ep-admin-card"><h3>⚙️ Контакты для мастеров</h3><p class="ep-admin-muted">Мастера увидят это, чтобы связаться (оплата/вопросы). Хранится в <code>server_db/__meta__</code>.</p>
       <div class="ep-admin-row"><label class="ep-admin-fl">Telegram</label><input id="ep-c-tg" value="${esc(c.telegram || "")}" placeholder="@username" style="flex:1"></div>
       <div class="ep-admin-row"><label class="ep-admin-fl">Телефон</label><input id="ep-c-phone" value="${esc(c.phone || "")}" placeholder="+7…" style="flex:1"></div>
       <div class="ep-admin-row"><label class="ep-admin-fl">E-mail</label><input id="ep-c-email" value="${esc(c.email || "")}" placeholder="mail@…" style="flex:1"></div>
@@ -326,11 +326,6 @@
   // ====== ошибки чтения ======
   function errB(coll, r) { return String(r.error).indexOf("permission-denied") >= 0 ? `<div class='ep-admin-empty'>Нет доступа к <code>${esc(coll)}</code>.</div>` : `<div class='ep-admin-empty'>Ошибка <code>${esc(coll)}</code>: ${esc(r.error)}</div>`; }
 
-  // ====== модалка ======
-  function openPicker() { const m = $("#ep-admin-modal"); if (!m) return; m.classList.add("open"); renderPickerList(); const s = $("#ep-admin-modal-search"); if (s) s.value = ""; }
-  function closePicker() { const m = $("#ep-admin-modal"); if (m) m.classList.remove("open"); }
-  function renderPickerList() { const el = $("#ep-admin-modal-list"); if (!el) return; const q = ($("#ep-admin-modal-search") && $("#ep-admin-modal-search").value || "").trim().toLowerCase(); let list = A.users; if (A.onlyPending) list = list.filter(isPending); if (q) list = list.filter((u) => [u.uid, u.email, u.displayName, u.role].some((x) => String(x || "").toLowerCase().indexOf(q) >= 0)); el.innerHTML = list.length ? list.map((u) => { const st = uStatus(u), sub = u.subscription; return `<button type="button" class="ep-admin-pick" data-open="${esc(u.uid)}"><b>${esc(u.email || "(без email)")}</b><span>${esc(u.displayName || "—")} · ${esc(u.role)} · <i class="ep-st ep-st-${esc(st)}">${esc(st)}</i>${sub && subActive(sub) ? " · " + esc(sub.planId || "sub") : ""}</span></button>`; }).join("") : "<div class='ep-admin-empty'>Никого не найдено.</div>"; }
-
   // ====== делегация ======
   function bind(root) {
     if (root.__epAdmin4) return; root.__epAdmin4 = true;
@@ -339,8 +334,6 @@
       const nav = t.closest("[data-tab]"); if (nav) return switchTab(nav.getAttribute("data-tab"));
       const fold = t.closest("[data-fold]"); if (fold) { const k = fold.getAttribute("data-fold"); if (A.exp.has(k)) A.exp.delete(k); else A.exp.add(k); if (A.tab === "serverdb") { const el = $("#ep-srv-list"); if (el) el.innerHTML = renderTree(A.srv, "server"); } else if (A.view === "user" && A.section === "db") { const box = $("#ep-udata"); if (box && A.masterDb.length) box.innerHTML = `<div class="ep-adb-hint">➕ — добавить позицию в БД сервера</div>` + renderTree(A.masterDb, "master"); } return; }
       const addS = t.closest("[data-add-srv]"); if (addS) return addToServer(addS.getAttribute("data-add-srv"));
-      if (t.closest("#ep-admin-open-picker")) return openPicker();
-      if (t.closest("#ep-admin-modal-close") || t.closest("#ep-admin-modal-overlay")) return closePicker();
       if (t.closest("#ep-admin-refresh")) return loadUsers();
       const uopen = t.closest("[data-u-open]"); if (uopen) { openUser(uopen.getAttribute("data-u-open")); return; }
       if (t.closest("[data-u-back]")) { A.view = "list"; A.selectedUid = null; renderUsersTab(); return; }
@@ -350,16 +343,12 @@
       const udata = t.closest("[data-u-data]"); if (udata) return loadUserData(udata.getAttribute("data-u-data"));
       const bk = t.closest("[data-bk]"); if (bk) return doBackup(bk.getAttribute("data-bk"));
       const asp = t.closest("[data-aisrv-prov]"); if (asp) { A.aiProv = asp.getAttribute("data-aisrv-prov"); return renderAiServer(); }
-      if (t.closest("#ep-admin-toggle-pending")) { A.onlyPending = !A.onlyPending; renderPickerList(); const b = $("#ep-admin-toggle-pending"); if (b) b.classList.toggle("on", A.onlyPending); return; }
-      const op = t.closest("[data-open]"); if (op) { return openUser(op.getAttribute("data-open")); }
-      const ap = t.closest("[data-approve]"); if (ap) { A.selectedUid = ap.getAttribute("data-approve"); return adminOp(A.selectedUid, "approve", {}, "Мастер одобрен ✓"); }
       if (t.closest("#ep-srv-add")) return srvAddManual();
       const se = t.closest("[data-srv-edit]"); if (se) return srvEdit(se.getAttribute("data-srv-edit"));
       const sd = t.closest("[data-srv-del]"); if (sd) return srvDel(sd.getAttribute("data-srv-del"));
       if (t.closest("#ep-c-save")) return saveContacts();
     });
     root.addEventListener("input", (ev) => {
-      if (ev.target.id === "ep-admin-modal-search") return renderPickerList();
       if (ev.target.getAttribute && ev.target.getAttribute("data-aisrv")) { const f = ev.target.getAttribute("data-aisrv"); const p = A.aiProv || "openai"; const o = aiSrvCfg(p); o.server[p][f] = (f === "key" || f === "model") ? ev.target.value : num(ev.target.value); aiSaveObj(o); return; }
       if (ev.target.id === "ep-uq") { A.uq = ev.target.value; const el = $(".ep-ulist"); if (el) { const q = A.uq.toLowerCase(); let list = A.users.filter(matchFilter); if (q) list = list.filter((x) => [x.email, x.displayName, x.uid].some((v) => String(v || "").toLowerCase().indexOf(q) >= 0)); el.innerHTML = list.length ? list.map(uRow).join("") : "<div class='ep-admin-empty'>Никого не найдено.</div>"; } }
     });
