@@ -77,7 +77,7 @@
     if (!document.getElementById("ep-currency-style")) {
       const st = document.createElement("style");
       st.id = "ep-currency-style";
-      st.textContent = '.db26cur{height:34px;border:1px solid rgba(15,23,42,.18);border-radius:8px;padding:0 8px;background:#fff;color:#0f172a;font:800 12px/1 system-ui;cursor:pointer;}';
+      st.textContent = '.db26cur{height:34px;border:1px solid rgba(255,255,255,.16);border-radius:8px;padding:0 8px;background:rgba(0,0,0,.22);color:var(--text);font:800 12px/1 system-ui;cursor:pointer;}';
       (document.head || document.documentElement).appendChild(st);
     }
   } catch (e) {}
