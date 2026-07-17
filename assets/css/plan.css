@@ -130,6 +130,13 @@ body[data-visual-mode="day"] .ep-plan-item-main { color: #0f172a; }
   border: 1px solid rgba(255, 255, 255, .12);
   backdrop-filter: blur(8px); color: var(--text, #e8eef7);
 }
+/* без этого явного правила display:flex выше (author-стиль) побеждает UA-правило
+   [hidden]{display:none} независимо от специфичности (порядок происхождения в
+   каскаде важнее специфичности) — закрытая шторка (closeSheet() ставит hidden=true
+   И чистит innerHTML) оставалась пустой рамкой с паддингом/бордером внизу холста
+   ВСЕГДА, даже «закрытая»; просто малозаметно на тёмном фоне за блюром. Найдено
+   при подготовке десктоп-сайдбара ниже — правится универсально, для любого экрана. */
+.ep-plan-sheet[hidden] { display: none; }
 .ep-plan-srow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font: 500 13.5px system-ui; }
 .ep-plan-srow b { font: 700 14.5px system-ui; }
 .ep-plan-srow input[type="text"], .ep-plan-srow input[type="number"] {
@@ -279,6 +286,23 @@ body[data-visual-mode="day"] .ep-plan-wall.mat-soft { stroke: #94a3b8; }
 .ep-plan.is-ctrls-collapsed .ep-plan-modehint { display: none; }
 .ep-plan.is-ctrls-collapsed .ep-plan-canvas { height: calc(100vh - 110px); height: calc(100dvh - 110px); }
 .ep-plan.is-full.is-ctrls-collapsed .ep-plan-canvas { height: calc(100vh - 75px); height: calc(100dvh - 75px); }
+
+/* — десктоп: шторка становится боковой панелью справа от холста, а не нижней
+   (просьба пользователя «адаптировать под ПК»). Холст (.ep-plan-svg) сам не
+   трогаем — он viewBox-based, ResizeObserver в plan-canvas.js уже пересчитывает
+   пропорции при изменении размера контейнера, доп. JS не потребовался. */
+@media (min-width: 1024px) {
+  .ep-plan-canvas { display: flex; align-items: stretch; }
+  .ep-plan-svg { flex: 1 1 auto; width: auto; min-width: 280px; }
+  .ep-plan-sheet {
+    position: static; left: auto; right: auto; bottom: auto;
+    flex: 0 1 380px; min-width: 260px; width: auto; height: auto; max-height: none;
+    border-radius: 0; border-width: 0 0 0 1px; margin: 0;
+  }
+  /* плавающий quickbar — под палец на телефоне; на десктопе мышь и так всегда
+     видит полный тулбар, дублирующая мини-панель лишняя */
+  .ep-plan-quickbar { display: none; }
+}
 
 /* — Remplanner-пакет: двери/окна, размерные цепочки — */
 .ep-plan-doorarc { stroke: #94a3b8; fill: none; }
