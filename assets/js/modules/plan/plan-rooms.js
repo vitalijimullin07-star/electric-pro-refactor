@@ -270,11 +270,12 @@
       consider(e.id, Math.hypot(w.x - lp.x, w.y - lp.y));
     });
     // звенья размерной цепочки вдоль стен (только если слой «Размеры» включён — иначе
-    // их не видно). Позиция цифры считается ТЕМ ЖЕ off2, что и в plan-render.js
-    // (labelOffsetPx 14 × 2.6 × k) — общий хелпер G.wallChainStations, чтобы хит-тест
-    // совпадал с видимой цифрой.
+    // их не видно). Позиция цифры считается ТЕМ ЖЕ off2, что и в plan-render.js —
+    // фиксированный отступ 5см от грани стены (не зависит от зума, просьба
+    // пользователя) — общий хелпер G.wallChainStations, чтобы хит-тест совпадал
+    // с видимой цифрой.
     if (dimsOn) {
-      const off2 = 14 * 2.6 * k;
+      const off2 = 5;
       (p.rooms || []).forEach((room) => {
         if ((room.points || []).length < 3) return;
         const c0 = G().centroid(room.points);
