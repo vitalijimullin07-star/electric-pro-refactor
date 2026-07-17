@@ -314,32 +314,17 @@
     }
 
     const els = wallElems(p, S.wallId).slice().sort((a, b) => a.offset - b.offset);
-    const chY = H + 30 * ks, ovY = chY + 18 * ks; // цепь размеров и общий размер по низу (в см)
+    const ovY = H + 30 * ks; // общий размер стены по низу (в см)
 
     // прозрачный хит-рект под текстом — цифра на пальце маленькая, area больше
     const hitRect = (cx, cy, w2, h2, attrs) => svgEl("rect", Object.assign({ x: cx - w2 / 2, y: cy - h2 / 2, width: w2, height: h2, fill: "transparent" }, attrs));
 
-    // размерная ЦЕПЬ по низу (от внутренних углов, синим); станции хранят
-    // ЭЛЕМЕНТ (если это не угол стены) — клик по сегменту откроет карточку
-    // ПРАВОЙ точки цепочки: «хотелось бы кликать по размерам и вводить вручную».
-    const stations = [];
-    [{ v: inA, el: null }].concat(els.map((e) => ({ v: Math.max(inA, Math.min(inB, e.offset)), el: e }))).concat([{ v: inB, el: null }])
-      .sort((a, b) => a.v - b.v)
-      .forEach((s) => { if (!stations.length || Math.abs(s.v - stations[stations.length - 1].v) > 1) stations.push(s); else if (s.el) stations[stations.length - 1].el = s.el; });
-    svg.appendChild(svgEl("line", { x1: inA, y1: chY, x2: inB, y2: chY, class: "ep-plan-unfdimL", "stroke-width": kk }));
-    stations.forEach((s) => {
-      svg.appendChild(svgEl("line", { x1: s.v, y1: H, x2: s.v, y2: chY, class: "ep-plan-unfdimE", "stroke-width": kk * 0.7 })); // выносная
-      svg.appendChild(svgEl("line", { x1: s.v, y1: chY - 4 * ks, x2: s.v, y2: chY + 4 * ks, class: "ep-plan-unfdimL", "stroke-width": kk })); // засечка
-    });
-    for (let i = 0; i < stations.length - 1; i++) {
-      const seg = Math.round(stations[i + 1].v - stations[i].v);
-      if (seg < 2) continue;
-      const mx = (stations[i].v + stations[i + 1].v) / 2;
-      const editEl = stations[i + 1].el; // двигаем правую точку цепочки
-      if (editEl) svg.appendChild(hitRect(mx, chY - 5 * ks, 22 * ks, 16 * ks, { "data-pu-segof": editEl.id, class: "ep-plan-unftap" }));
-      svg.appendChild(svgEl("text", { x: mx, y: chY - 5 * ks, "font-size": 11 * ks, "text-anchor": "middle", class: "ep-plan-unfdimT" + (editEl ? " is-tap" : "") }, seg + ""));
-    }
-    // общий размер (внутренняя длина стены)
+    // По низу — ТОЛЬКО общий размер стены (внутренняя длина). Раньше здесь ещё
+    // была интерактивная цепь по сегментам между точками (тап → карточка
+    // точки) — убрана: с горизонтальными размерами и подписями высоты У
+    // КАЖДОГО поста (см. ниже) она визуально перегружала лист, а сам тап по
+    // точке уже открывает карточка через data-pu-heightof (просьба
+    // пользователя: убрать нижнюю цепь, оставить только длину стены).
     svg.appendChild(svgEl("line", { x1: inA, y1: ovY, x2: inB, y2: ovY, class: "ep-plan-unfdimL", "stroke-width": kk }));
     [inA, inB].forEach((s) => svg.appendChild(svgEl("line", { x1: s, y1: ovY - 4 * ks, x2: s, y2: ovY + 4 * ks, class: "ep-plan-unfdimL", "stroke-width": kk })));
     svg.appendChild(svgEl("text", { x: (inA + inB) / 2, y: ovY - 5 * ks, "font-size": 11 * ks, "text-anchor": "middle", class: "ep-plan-unfdimT" }, Math.round(inB - inA) + ""));
@@ -519,11 +504,9 @@
       if (pts.size === 2) { pinch = pinchInfo(); S.drag = null; pending = null; return; }
       const p = core().project;
       downClient = { x: e.clientX, y: e.clientY }; moved = false; pending = null;
-      // тап по цифре размера — сразу карточка точки с полями (не тяга, не добавление)
+      // тап по цифре размера высоты — сразу карточка точки с полями (не тяга, не добавление)
       const hof = e.target.closest && e.target.closest("[data-pu-heightof]");
       if (hof) { pending = { kind: "dimof", id: hof.getAttribute("data-pu-heightof") }; return; }
-      const sof = e.target.closest && e.target.closest("[data-pu-segof]");
-      if (sof) { pending = { kind: "dimof", id: sof.getAttribute("data-pu-segof") }; return; }
       const pg2 = e.target.closest && e.target.closest("[data-pu-panel]");
       if (pg2) {
         const pn = (p.panels || []).find((x) => x.id === pg2.getAttribute("data-pu-panel"));
