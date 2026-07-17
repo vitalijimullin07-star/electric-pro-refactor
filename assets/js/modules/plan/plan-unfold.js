@@ -275,15 +275,24 @@
     for (let y = H - 50; y > 0; y -= 50) svg.appendChild(svgEl("line", { x1: 0, y1: y, x2: L, y2: y, class: "ep-plan-unfgrid", "stroke-width": kk }));
     svg.appendChild(svgEl("line", { x1: 0, y1: H, x2: L, y2: H, class: "ep-plan-unffloor", "stroke-width": 2.5 * kk }));
 
-    // проёмы (в <g data-pu-open> — общий узел для рендера И тяги, как у элементов)
-    (p.openings || []).filter((o) => o.wallId === S.wallId).forEach((op) => {
+    // проёмы (в <g data-pu-open> — общий узел для рендера И тяги, как у элементов).
+    // Общая стена двух комнат — ДВА wall-объекта с разными id; проём физически
+    // мог быть поставлен с СОСЕДНЕЙ стороны шва (owner — стена другой комнаты) —
+    // через G.wallOpeningSpans (не сырой фильтр по o.wallId===S.wallId) он всё
+    // равно виден и на ЭТОЙ развёртке (репорт пользователя: «не вижу проём»),
+    // но тянуть/тапать можно только «родной» (ownWallId===S.wallId) — с чужой
+    // стороны меняется только offset НА ДРУГОЙ стене, редактируется её разверткой.
+    G().wallOpeningSpans(p, w).forEach((sp) => {
+      const op = (p.openings || []).find((o) => o.id === sp.srcId);
+      if (!op) return;
+      const own = sp.ownWallId === S.wallId;
       const oh = op.height || (op.type === "window" ? 140 : 200), sill = op.sill || 0;
       const yTop = H - (sill + oh), hgt = Math.min(oh, H - sill);
       const isWin = op.type === "window" || op.kind === "window" || op.kind === "balcony";
-      const grp = svgEl("g", { "data-pu-open": op.id });
-      grp.appendChild(svgEl("rect", { x: op.offset, y: yTop, width: op.width, height: hgt, class: "ep-plan-unfopen" + (isWin ? " is-win" : ""), "stroke-width": 1.5 * kk }));
+      const grp = svgEl("g", own ? { "data-pu-open": op.id } : {});
+      grp.appendChild(svgEl("rect", { x: sp.offset, y: yTop, width: sp.width, height: hgt, class: "ep-plan-unfopen" + (isWin ? " is-win" : "") + (own ? "" : " is-foreign"), "stroke-width": 1.5 * kk }));
       const meta = (EL().OPEN_TYPES || {})[op.kind || (isWin ? "window" : "door")] || {};
-      grp.appendChild(svgEl("text", { x: op.offset + op.width / 2, y: yTop + 12 * ks, "font-size": 10 * ks, "text-anchor": "middle", class: "ep-plan-unfopent" }, (EL().openingNum ? EL().openingNum(p, op) : (meta.glyph || ""))));
+      grp.appendChild(svgEl("text", { x: sp.offset + sp.width / 2, y: yTop + 12 * ks, "font-size": 10 * ks, "text-anchor": "middle", class: "ep-plan-unfopent" }, (EL().openingNum ? EL().openingNum(p, op) : (meta.glyph || ""))));
       svg.appendChild(grp);
     });
 
@@ -399,25 +408,19 @@
       for (const [lx, ly] of cand) if (!hits(lx, ly)) return { x: lx, y: ly };
       return { x: b.x + b.hw + lw + 2 * ks, y: b.y };
     };
+    // ДВА прохода: сначала все символы постов, потом ВСЕ размеры/подписи высоты —
+    // иначе (при одном проходе) собственный кружок/блок поста рисуется ПОСЛЕ своих
+    // размерных линий и закрывает их конец собой («размеры уходят за точку», репорт
+    // пользователя со скриншотом печатного листа — тот же порядок отрисовки и здесь,
+    // в живой развёртке). Размеры теперь заведомо ПОВЕРХ всех символов постов.
+    const dimJobs = [];
     els.forEach((el, idx) => {
       const x = el.offset, y = H - el.height;
       const cc = circ(p, el);
       const col = cc ? cc.color : "var(--accent)";
       const gr = svgEl("g", { "data-pu-el": el.id, class: "ep-plan-unfel" + (el.status === "mounted" ? " is-done" : "") });
 
-      // вертикаль: высота от пола до точки (синим)
-      svg.appendChild(svgEl("line", { "data-pu-diml": el.id, x1: x, y1: H, x2: x, y2: y, class: "ep-plan-unfdimL", "stroke-width": kk }));
-      // горизонталь: от левого внутреннего угла до поста НА ЕГО ВЫСОТЕ (синим, с засечками)
-      // и число — расстояние от угла (это те «размеры», что просил пользователь на скрине)
-      if (x - inA > 2) {
-        svg.appendChild(svgEl("line", { x1: inA, y1: y, x2: x, y2: y, class: "ep-plan-unfdimE", "stroke-width": kk * 0.7 }));
-        svg.appendChild(svgEl("line", { x1: inA, y1: y - 3 * ks, x2: inA, y2: y + 3 * ks, class: "ep-plan-unfdimE", "stroke-width": kk * 0.7 }));
-        svg.appendChild(svgEl("text", { x: (inA + x) / 2, y: y - 3 * ks, "font-size": 9.5 * ks, "text-anchor": "middle", class: "ep-plan-unfdimT" }, Math.round(x - inA) + ""));
-      }
-      // подпись высоты — РЯДОМ с постом, с антиналожением (тап — карточка точки)
-      const hl = placeHLabel(idx);
-      svg.appendChild(hitRect(hl.x, hl.y, 30 * ks, 18 * ks, { "data-pu-heightof": el.id, class: "ep-plan-unftap" }));
-      svg.appendChild(svgEl("text", { "data-pu-dimt": el.id, x: hl.x, y: hl.y, "font-size": 11 * ks, "text-anchor": "middle", "dominant-baseline": "middle", class: "ep-plan-unfdimT is-tap" }, Math.round(el.height) + ""));
+      dimJobs.push({ el, x, y, idx });
 
       if (el.type === "block") {
         const items = (el.params && el.params.items) || ["socket"];
@@ -446,6 +449,22 @@
       }
       if (cc) gr.appendChild(svgEl("text", { x, y: y - 18 * ks, "font-size": 8.5 * ks, "text-anchor": "middle", fill: col, class: "ep-plan-unfqf" }, cc.name));
       svg.appendChild(gr);
+    });
+    // проход 2: размеры/высоты — ПОСЛЕ всех символов, значит визуально ПОВЕРХ них
+    dimJobs.forEach(({ el, x, y, idx }) => {
+      // вертикаль: высота от пола до точки (синим)
+      svg.appendChild(svgEl("line", { "data-pu-diml": el.id, x1: x, y1: H, x2: x, y2: y, class: "ep-plan-unfdimL", "stroke-width": kk }));
+      // горизонталь: от левого внутреннего угла до поста НА ЕГО ВЫСОТЕ (синим, с засечками)
+      // и число — расстояние от угла (это те «размеры», что просил пользователь на скрине)
+      if (x - inA > 2) {
+        svg.appendChild(svgEl("line", { x1: inA, y1: y, x2: x, y2: y, class: "ep-plan-unfdimE", "stroke-width": kk * 0.7 }));
+        svg.appendChild(svgEl("line", { x1: inA, y1: y - 3 * ks, x2: inA, y2: y + 3 * ks, class: "ep-plan-unfdimE", "stroke-width": kk * 0.7 }));
+        svg.appendChild(svgEl("text", { x: (inA + x) / 2, y: y - 3 * ks, "font-size": 9.5 * ks, "text-anchor": "middle", class: "ep-plan-unfdimT" }, Math.round(x - inA) + ""));
+      }
+      // подпись высоты — РЯДОМ с постом, с антиналожением (тап — карточка точки)
+      const hl = placeHLabel(idx);
+      svg.appendChild(hitRect(hl.x, hl.y, 30 * ks, 18 * ks, { "data-pu-heightof": el.id, class: "ep-plan-unftap" }));
+      svg.appendChild(svgEl("text", { "data-pu-dimt": el.id, x: hl.x, y: hl.y, "font-size": 11 * ks, "text-anchor": "middle", "dominant-baseline": "middle", class: "ep-plan-unfdimT is-tap" }, Math.round(el.height) + ""));
     });
     box.appendChild(svg);
     bindStrip(svg, w, H, L);

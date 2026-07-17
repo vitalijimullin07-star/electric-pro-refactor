@@ -581,8 +581,14 @@
   // Проёмы для ВЫРЕЗА в стене как {offset,width,sill}: свои + спроецированные с
   // близкой параллельной стены соседней комнаты/перегородки — чтобы проём «резал»
   // обе полосы общей стены (две комнаты рядом), а не только одну.
+  // srcId/ownWallId — ID реального проёма (project.openings) и стены, которая им
+  // физически владеет (offset/width которой в исходных данных проёма) — нужно
+  // развёртке (plan-unfold.js/plan-export.js), чтобы найти настоящий объект проёма
+  // (тип/высоту/номер) и понять, редактируется ли он с ЭТОЙ стороны шва или нет.
+  // Существующие вызовы (routes/render) читают только offset/width/sill — доп.
+  // поля им не мешают, обратная совместимость сохранена.
   G.wallOpeningSpans = (project, wall) => {
-    const out = G.openingsOnWall(project, wall.id).map((o) => ({ offset: o.offset, width: o.width, sill: o.sill }));
+    const out = G.openingsOnWall(project, wall.id).map((o) => ({ offset: o.offset, width: o.width, sill: o.sill, srcId: o.id, ownWallId: wall.id }));
     const len = wall.len || 1;
     const dir = { x: (wall.b.x - wall.a.x) / len, y: (wall.b.y - wall.a.y) / len };
     const nx = -dir.y, ny = dir.x;
@@ -599,7 +605,7 @@
         const ta = (pa.x - wall.a.x) * dir.x + (pa.y - wall.a.y) * dir.y;
         const tb = (pb.x - wall.a.x) * dir.x + (pb.y - wall.a.y) * dir.y;
         const s = Math.max(0, Math.min(len, Math.min(ta, tb))), e = Math.max(0, Math.min(len, Math.max(ta, tb)));
-        if (e > s + 1) out.push({ offset: s, width: e - s, sill: o.sill });
+        if (e > s + 1) out.push({ offset: s, width: e - s, sill: o.sill, srcId: o.id, ownWallId: w2.id });
       });
     });
     return out;

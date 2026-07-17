@@ -419,6 +419,7 @@ body[data-visual-mode="day"] .ep-plan-opnum { fill: #0f172a; stroke: rgba(255,25
 /* проёмы на развёртке стены */
 .ep-plan-unfopen { fill: rgba(56,189,248,.10); stroke: #38bdf8; }
 .ep-plan-unfopen.is-win { fill: rgba(56,189,248,.16); }
+.ep-plan-unfopen.is-foreign { stroke-dasharray: 4 3; opacity: .65; }
 .ep-plan-unfopent { fill: #7dd3fc; font-family: system-ui; font-weight: 700; }
 .ep-plan-unfwalls .ep-plan-chip { min-width: 30px; }
 

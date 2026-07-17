@@ -98,6 +98,22 @@
     let s = `<svg viewBox="${-pad} ${-pad} ${L + pad * 1.5} ${H + pad * 1.9}" preserveAspectRatio="xMidYMid meet" class="unf">`;
     s += `<rect x="0" y="0" width="${L}" height="${H}" class="unfwall"/>`;
     s += `<line x1="0" y1="${H}" x2="${L}" y2="${H}" class="unffloor"/>`;
+    // проёмы (двери/окна) — раньше в PDF-развёртке не рисовались вообще. Через
+    // G.wallOpeningSpans (не сырой фильтр по openings[].wallId) — общая стена двух
+    // комнат хранится как ДВА wall-объекта, проём мог быть физически поставлен с
+    // СОСЕДНЕЙ стороны шва (owner — стена другой комнаты), но должен быть виден и
+    // на этой развёртке (репорт пользователя: «не вижу проём» в PDF).
+    G().wallOpeningSpans(p, w).forEach((sp) => {
+      const op = (p.openings || []).find((o) => o.id === sp.srcId);
+      if (!op) return;
+      const oh = op.height || (op.type === "window" ? 140 : 200), sill = op.sill || 0;
+      const yTop = H - (sill + oh), hgt = Math.min(oh, H - sill);
+      const isWin = op.type === "window" || op.kind === "window" || op.kind === "balcony";
+      const OT = EP.Plan.Elements.OPEN_TYPES || {};
+      const meta = OT[op.kind || (isWin ? "window" : "door")] || {};
+      s += `<rect x="${sp.offset}" y="${yTop}" width="${sp.width}" height="${hgt}" class="unfopen${isWin ? " is-win" : ""}"/>`;
+      s += `<text x="${sp.offset + sp.width / 2}" y="${yTop + 12 * kk}" font-size="${10 * kk}" text-anchor="middle" class="unfopent">${esc(EP.Plan.Elements.openingNum ? EP.Plan.Elements.openingNum(p, op) : (meta.glyph || ""))}</text>`;
+    });
     const sorted = els.slice().sort((a, b) => a.offset - b.offset);
     // AABB символов — подпись высоты кладём РЯДОМ с постом, сдвигая, если она
     // ложится на другой пост (просьба пользователя: высота у поста, не пересекать)
@@ -121,21 +137,14 @@
       for (const [lx, ly] of cand) if (!hits(lx, ly)) return { x: lx, y: ly };
       return { x: b.x + b.hw + lw + 2 * kk, y: b.y };
     };
-    sorted.forEach((el, idx) => {
+    // ДВА прохода: сначала все символы постов, потом ВСЕ размеры/подписи высоты —
+    // иначе (при одном проходе) собственный кружок/блок поста рисуется ПОСЛЕ своих
+    // размерных линий в том же SVG-документе и закрывает их конец собой («размеры
+    // уходят за точку», репорт пользователя со скриншотом печатного листа).
+    sorted.forEach((el) => {
       const x = el.offset, y = H - el.height;
       const cc = (p.circuits || []).find((c) => c.id === el.circuitId);
       const col = cc ? cc.color : "#1d4ed8";
-      // вертикаль (высота от пола) + горизонталь от левого угла до поста НА ЕГО ВЫСОТЕ
-      // с числом-расстоянием (те «размеры», что просил пользователь на скрине)
-      s += `<line x1="${x}" y1="${H}" x2="${x}" y2="${y}" class="unfdim"/>`;
-      if (x > 2) {
-        s += `<line x1="0" y1="${y}" x2="${x}" y2="${y}" class="unfdimh"/>`;
-        s += `<line x1="0" y1="${y - 3 * kk}" x2="0" y2="${y + 3 * kk}" class="unfdimh"/>`;
-        s += `<text x="${x / 2}" y="${y - 3 * kk}" font-size="${9.5 * kk}" text-anchor="middle" class="unfdimt">${Math.round(el.offset)}</text>`;
-      }
-      // подпись высоты — рядом с постом, с антиналожением
-      const hl = placeHLabel(idx);
-      s += `<text x="${hl.x}" y="${hl.y}" font-size="${11 * kk}" text-anchor="middle" dominant-baseline="middle" class="unfdimt">${Math.round(el.height)}</text>`;
       if (el.type === "block") {
         const items = (el.params && el.params.items) || ["socket"];
         const step = 18 * kk, bw = items.length * step + 6 * kk, bh = 24 * kk;
@@ -146,6 +155,18 @@
         s += `<text x="${x}" y="${y}" font-size="${10 * kk}" text-anchor="middle" dominant-baseline="central" class="unfglyph">${esc((TY[el.type] || {}).glyph || "?")}</text>`;
       }
       if (cc) s += `<text x="${x}" y="${y - 18 * kk}" font-size="${8.5 * kk}" text-anchor="middle" fill="${col}" class="unfqf">${esc(cc.name)}</text>`;
+    });
+    // проход 2: размеры/высоты — ПОСЛЕ всех символов, значит визуально ПОВЕРХ них
+    sorted.forEach((el, idx) => {
+      const x = el.offset, y = H - el.height;
+      s += `<line x1="${x}" y1="${H}" x2="${x}" y2="${y}" class="unfdim"/>`;
+      if (x > 2) {
+        s += `<line x1="0" y1="${y}" x2="${x}" y2="${y}" class="unfdimh"/>`;
+        s += `<line x1="0" y1="${y - 3 * kk}" x2="0" y2="${y + 3 * kk}" class="unfdimh"/>`;
+        s += `<text x="${x / 2}" y="${y - 3 * kk}" font-size="${9.5 * kk}" text-anchor="middle" class="unfdimt">${Math.round(el.offset)}</text>`;
+      }
+      const hl = placeHLabel(idx);
+      s += `<text x="${hl.x}" y="${hl.y}" font-size="${11 * kk}" text-anchor="middle" dominant-baseline="middle" class="unfdimt">${Math.round(el.height)}</text>`;
     });
     return s + "</svg>";
   }
@@ -306,6 +327,9 @@
       .unf { width: 100%; max-height: 160mm; }
       .unfwall { fill: #f1f5f9; stroke: #94a3b8; stroke-width: 1; }
       .unffloor { stroke: #111; stroke-width: 2; }
+      .unfopen { fill: rgba(56,189,248,.12); stroke: #0891b2; stroke-width: 1; }
+      .unfopen.is-win { fill: rgba(56,189,248,.2); }
+      .unfopent { fill: #0e7490; font-family: system-ui; font-weight: 700; }
       .unfdim { stroke: #0891b2; stroke-width: 1; }
       .unfdimh { stroke: #38bdf8; stroke-width: .8; }
       .unfdimt { fill: #0e7490; font-family: system-ui; }
