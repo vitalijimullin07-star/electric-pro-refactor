@@ -556,5 +556,10 @@
     render();
   }
 
-  window.ManualSchemeV28 = { bindPage };
+  // loadSaved — читает+мигрирует сохранённую ручную схему из localStorage
+  // НЕЗАВИСИМО от того, открывался ли экран конструктора (не завязано на
+  // in-memory m). Конфигуратор щита пользуется этим для живой синхронизации
+  // (см. bindPage в shield-configurator-v28.js): при активном ручном режиме он
+  // подтягивает последнюю версию схемы на каждом заходе.
+  window.ManualSchemeV28 = { bindPage, loadSaved: load };
 })();

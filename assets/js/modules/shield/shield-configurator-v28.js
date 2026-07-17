@@ -853,7 +853,9 @@
     const size = cfg.sizeMode === "auto" ? pc.suggestedSize : cfg.size;
     root.innerHTML = `
       <div class="shv28">
-        ${cfg.manualMode ? `<div class="shv28-manual-banner">✍️ Активна <b>ручная схема</b> из конструктора (${(cfg.manualGroups || []).length} групп). Расчёт идёт по ней. <button type="button" data-manualoff>Вернуться к шаблонам</button></div>` : ""}
+        ${cfg.manualMode
+          ? `<div class="shv28-manual-banner">✍️ Активна <b>ручная схема</b> из конструктора (${(cfg.manualGroups || []).length} групп). Расчёт идёт по ней, правки в конструкторе подтягиваются автоматически. <button type="button" data-openscheme>✍️ Править однолинейку</button> <button type="button" data-manualoff>Вернуться к шаблонам</button></div>`
+          : `<button type="button" class="shv28-scheme-entry" data-openscheme>✍️ Собрать по ручной однолинейке →</button>`}
         <details class="shv28-foldcard" data-fold="tpl" ${openState.tpl?"open":""}>
           <summary><span class="shv28-fi">📋</span><span class="shv28-ftx"><b>Шаблоны</b><i>Тип объекта и профиль Бюджет / Стандарт / Топ</i></span><span class="shv28-arrow">⌄</span></summary>
           <div class="shv28-foldbody">
@@ -982,6 +984,7 @@
       const root = document.getElementById("ep-shield-v28-root");
       if (!root || !root.contains(e.target)) return;
       const t = e.target;
+      if (t.closest?.("[data-openscheme]")) { if (window.Router && window.Router.load) window.Router.load("scheme"); return; }
       if (t.closest?.("[data-manualoff]")) { cfg.manualMode = false; cfg.draft = null; save(cfg); render(); return; }
       const tpldel = t.closest?.("[data-tpldel]");
       if (tpldel) {
@@ -1104,10 +1107,30 @@
     }, true);
   }
 
-  function bindPage() { cfg = load(); bindOnce(); render(); }
-  // приём ручной схемы из конструктора однолинейки
-  function loadManual(model) {
+  function bindPage() {
     cfg = load();
+    // Живая синхронизация с конструктором однолинейки: если ручной режим уже
+    // активен, при КАЖДОМ заходе в конфигуратор подтягиваем последнюю сохранённую
+    // версию ручной схемы (источник истины в ручном режиме) — правки в
+    // «Однолинейной схеме» попадают в расчёт автоматически на обратном переходе,
+    // без повторного нажатия «Передать». Только если схема не пуста (иначе не
+    // затираем уже загруженную вслепую). Первичная активация manualMode — по-
+    // прежнему явная через loadManual (кнопка «Передать» в конструкторе).
+    if (cfg.manualMode) {
+      try {
+        const live = window.ManualSchemeV28 && window.ManualSchemeV28.loadSaved && window.ManualSchemeV28.loadSaved();
+        if (live && Array.isArray(live.groups) && live.groups.reduce((n, g) => n + ((g.lines || []).length), 0) > 0) {
+          applyManualModel(live);
+          save(cfg);
+        }
+      } catch (e) {}
+    }
+    bindOnce();
+    render();
+  }
+  // применить модель ручной схемы к текущему cfg (без save/render — общая часть
+  // для приёма из конструктора loadManual и живого ре-синка в bindPage)
+  function applyManualModel(model) {
     model = model || {};
     const inp = model.input || {};
     cfg.phase = inp.phase === "3" ? "3" : "1";
@@ -1123,6 +1146,11 @@
     cfg.manualMode = true;
     // сразу строим черновик
     cfg.draft = resolveDraft(buildPlan());
+  }
+  // приём ручной схемы из конструктора однолинейки (кнопка «Передать»)
+  function loadManual(model) {
+    cfg = load();
+    applyManualModel(model);
     save(cfg);
     render();
   }
