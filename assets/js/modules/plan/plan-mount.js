@@ -33,6 +33,12 @@
 
   const V = { active: false, canvas: null, unsub: null, saveNote: "", ctrlsOn: true };
   const core = () => EP.Plan && EP.Plan.Core;
+  // Шаблоны квартир (plan-templates.js) — временно скрыты для всех, кроме админа
+  // (репорт пользователя: «шаблоны кривые» — раскладки требуют доработки перед
+  // публичным показом). Проверка ЗДЕСЬ (видимость кнопки) — основная; вторая,
+  // защитная — в самом plan-templates.js (клик-делегат), на случай устаревшего
+  // кэша JS у обычного пользователя.
+  const isAdmin = () => { try { return !!(window.EP && EP.Auth && EP.Auth.isAdmin && EP.Auth.isAdmin()); } catch (e) { return false; } };
 
   // общая шапка «← Plan» (nav-header.js) в редакторе проекта дублирует «‹ Проекты» — прячем
   function setNavHidden(hide) {
@@ -90,7 +96,7 @@
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-redo aria-label="Вернуть">${T.redo}</button>
         <span class="ep-plan-savenote" id="ep-plan-savenote"></span>
         <span class="ep-plan-flex"></span>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-tpl-open aria-label="Шаблон квартиры" title="Готовая раскладка комнат — по количеству комнат или по серии дома">🧩 Шаблон</button>
+        ${isAdmin() ? `<button type="button" class="ep-plan-tbtn ep-clickable" data-plan-tpl-open aria-label="Шаблон квартиры" title="Готовая раскладка комнат — по количеству комнат или по серии дома">🧩 Шаблон</button>` : ""}
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-pdf aria-label="Печатный лист (PDF)">📄</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-export>${T.exportBtn}</button>
       </div>

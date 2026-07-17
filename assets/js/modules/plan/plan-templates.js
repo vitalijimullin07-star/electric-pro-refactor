@@ -125,13 +125,17 @@
       <div class="ep-plan-modehint">${T.seriesNote}</div>
       <div class="ep-plan-tplgrid">${SERIES.map(card).join("")}</div>`;
   }
+  // Временно только для админа (репорт пользователя: «шаблоны кривые» — раскладки
+  // требуют доработки перед публичным показом). Основная проверка — видимость
+  // кнопки в plan-mount.js; эта — защитная, на случай устаревшего кэша JS.
+  const isAdmin = () => { try { return !!(window.EP && EP.Auth && EP.Auth.isAdmin && EP.Auth.isAdmin()); } catch (e) { return false; } };
   function sheetPicker() {
-    if (!rooms()) return;
+    if (!rooms() || !isAdmin()) return;
     rooms().openSheet(pickerHtml());
   }
 
   document.addEventListener("click", (e) => {
-    if (!rooms() || !rooms().isActive()) return;
+    if (!rooms() || !rooms().isActive() || !isAdmin()) return;
     if (e.target.closest("[data-plan-tpl-open]")) return sheetPicker();
     if (e.target.closest("[data-plan-tpl-close]")) { rooms().closeSheet(); return; }
     const btn = e.target.closest("[data-plan-tpl]");
