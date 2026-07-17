@@ -16,6 +16,11 @@
   const G = () => EP.Plan.Geometry;
   const rooms = () => EP.Plan.Rooms;
 
+  // масштаб символов/подписей на развёртках стен в PDF — сессионная настройка
+  // (как S.sym в живой развёртке, plan-unfold.js: не часть модели проекта,
+  // сбрасывается между сессиями), крутится ползунком в шторке 📄 перед печатью
+  let pdfScale = 1;
+
   // чистый SVG плана: отдельный офф-скрин холст, без сетки и подложки
   function buildSvg(p) {
     const host = document.createElement("div");
@@ -94,7 +99,9 @@
   function unfoldSvg(p, room, w, els) {
     const H = room.height || p.settings.ceilingHeight, L = w.len, pad = 45;
     const TY = EP.Plan.Elements.TYPES;
-    const kk = (H + pad) / 200;
+    // viewBox (физические пропорции стены) от масштаба НЕ зависит — растут только
+    // символы/подписи/толщины линий (kk), просьба пользователя: «масштаб самих постов»
+    const kk = (H + pad) / 200 * pdfScale;
     let s = `<svg viewBox="${-pad} ${-pad} ${L + pad * 1.5} ${H + pad * 1.9}" preserveAspectRatio="xMidYMid meet" class="unf">`;
     s += `<rect x="0" y="0" width="${L}" height="${H}" class="unfwall"/>`;
     s += `<line x1="0" y1="${H}" x2="${L}" y2="${H}" class="unffloor"/>`;
@@ -380,9 +387,56 @@
     setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 400);
   }
 
+  // первая попавшаяся стена с точками — образец для живого превью масштаба
+  // (просьба пользователя: ползунок с превью ПЕРЕД печатью PDF)
+  function firstUnfoldSample(p) {
+    let card = null;
+    (p.rooms || []).some((room) => {
+      if ((room.points || []).length < 2) return false;
+      return G().walls(room).some((w) => {
+        const els = (p.elements || []).filter((e) => e.wallId === w.id);
+        if (!els.length) return false;
+        card = unfoldSvg(p, room, w, els);
+        return true;
+      });
+    });
+    return card;
+  }
+  function pdfScalePreview(p) {
+    const card = firstUnfoldSample(p);
+    return card ? `<div class="ep-plan-pdfpreview">${card}</div>` : `<div class="ep-plan-modehint">Нет точек на стенах для превью — масштаб всё равно применится ко всем развёрткам.</div>`;
+  }
+  function sheetPdfScale() {
+    const p = core().project;
+    if (!p || !(p.rooms || []).length) { rooms().toast("Нарисуй план — потом лист."); return; }
+    const pct = Math.round(pdfScale * 100);
+    rooms().openSheet(`<div class="ep-plan-srow"><b>📄 Печатный лист (PDF)</b><span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-pxp-close>✕</button></div>
+      <div class="ep-plan-srow">Масштаб постов на развёртках:
+        <input type="range" min="60" max="220" value="${pct}" data-pxp-scale class="ep-plan-unfslider">
+        <b data-pxp-scaleval>${pct}%</b>
+      </div>
+      <div class="ep-plan-modehint">Меняет размер символов/подписей НА РАЗВЁРТКАХ СТЕН в PDF — сам план и физические размеры не меняются.</div>
+      <div id="ep-plan-pdfpreview-box">${pdfScalePreview(p)}</div>
+      <div class="ep-plan-srow ep-plan-sbtns">
+        <button type="button" class="btn btn-primary ep-clickable" data-pxp-print>📄 Сформировать PDF</button>
+      </div>`);
+  }
+
   document.addEventListener("click", (e) => {
     if (!rooms() || !rooms().isActive()) return;
-    if (e.target.closest("[data-plan-pdf]")) print();
+    if (e.target.closest("[data-plan-pdf]")) return sheetPdfScale();
+    if (e.target.closest("[data-pxp-close]")) { rooms().closeSheet(); return; }
+    if (e.target.closest("[data-pxp-print]")) { print(); rooms().closeSheet(); return; }
+  });
+  document.addEventListener("input", (e) => {
+    if (!rooms() || !rooms().isActive()) return;
+    const t = e.target;
+    if (!(t.hasAttribute && t.hasAttribute("data-pxp-scale"))) return;
+    pdfScale = Math.max(0.6, Math.min(2.2, (Number(t.value) || 100) / 100));
+    const lbl = document.querySelector("[data-pxp-scaleval]"); if (lbl) lbl.textContent = Math.round(pdfScale * 100) + "%";
+    const box = document.getElementById("ep-plan-pdfpreview-box");
+    const p = core().project;
+    if (box && p) box.innerHTML = pdfScalePreview(p);
   });
 
   EP.Plan = EP.Plan || {};
