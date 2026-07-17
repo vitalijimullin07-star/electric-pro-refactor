@@ -715,9 +715,9 @@
         const right = a.found
           ? `<span class="cp">${cur(a.price)}</span>`
           : (mp ? `<span class="cp">${cur(mp)} <i>(вручную)</i></span>` : `<button type="button" class="shv28-manual" data-manual="${esc(key)}" data-mname="${esc(a.title)}" data-mtype="material" data-munit="шт">вписать ₽</button>`);
-        return `<div class="shv28-cons-row"><span class="cl">${esc(a.title)}${a.found ? ` <i style="color:#94a3b8;font-weight:600">${esc(a.name)}</i>${brandTag(a.name)}` : ""}</span>${right}</div>`;
+        return `<div class="shv28-cons-row"><span class="cl">${esc(a.title)}${a.found ? ` <i style="color:var(--muted);font-weight:600">${esc(a.name)}</i>${brandTag(a.name)}` : ""}</span>${right}</div>`;
       }).join("");
-      appHtml = `<div class="shv28-cons"><div class="shv28-cons-head" style="background:#ede9fe;color:#5b21b6">Аппараты защиты / автоматика · ≈ <b>${cur(appTotal)}</b></div>${rows}</div>`;
+      appHtml = `<div class="shv28-cons"><div class="shv28-cons-head" style="background:rgba(139,92,246,.2);color:var(--text)">Аппараты защиты / автоматика · ≈ <b>${cur(appTotal)}</b></div>${rows}</div>`;
     }
 
     const cons = draft.cons;
@@ -913,7 +913,7 @@
               <label>Ширина диф/УЗО ${selectHtml('data-set="difWidth"', DIFW, cfg.difWidth, o => o.v, o => o.t)}</label>
               <label>Размер щита (мод.)
                 ${cfg.sizeMode === "auto"
-                  ? `<input value="${size} (авто)" disabled style="height:40px;border:1px solid rgba(15,23,42,.14);border-radius:10px;padding:0 8px;background:#f1f5f9;color:#475569;font:800 14px/1 system-ui;">`
+                  ? `<input value="${size} (авто)" disabled style="height:40px;border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:0 8px;background:rgba(255,255,255,.06);color:var(--muted);font:800 14px/1 system-ui;">`
                   : selectHtml('data-set="size"', SIZES, size, x => x, x => x)}
               </label>
             </div>
@@ -962,7 +962,7 @@
 
         <div class="shv28-actions">
           <button type="button" class="shv28-btn gen" data-gen>📋 Черновик</button>
-          <button type="button" class="shv28-btn" style="background:#22c55e" data-shield-to-estimate>➕ В смету</button>
+          <button type="button" class="shv28-btn" style="background:var(--accent);color:#06231a" data-shield-to-estimate>➕ В смету</button>
           <button type="button" class="shv28-btn clr" data-clear>🗑 Очистить</button>
         </div>
       </div>${railOverlayHtml()}`;
