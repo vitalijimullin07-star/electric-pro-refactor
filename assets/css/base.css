@@ -49,6 +49,23 @@ body[data-button-shape="minimal"]{--button-radius:8px;--button-opacity:.55}
 .side-head{display:flex;align-items:center;gap:12px}.avatar{width:44px;height:44px;display:grid;place-items:center;border-radius:16px;background:color-mix(in srgb,var(--accent) 36%,transparent)}.side-head strong,.side-head span{display:block}.side-head span{color:var(--muted);font-size:calc(12px * var(--eff-text-scale,1))}
 .side-nav{display:grid;gap:8px;overflow-y:auto;padding-right:3px}.side-nav button{border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.07);color:var(--text);padding:11px 12px;border-radius:var(--button-radius);text-align:left;cursor:pointer}
 .page-container{padding:6px 8px 22px;max-width:1180px;margin:0 auto}.page{animation:epPageEnter calc(220ms * var(--anim-speed)) var(--anim-ease)}.page-head{margin:4px 2px 8px}.page-head h1{margin:0;font-size:calc(21px * var(--eff-text-scale,1));line-height:1.12;letter-spacing:-.5px}.page-head p{margin:3px 0 0;color:var(--muted);font-size:calc(13px * var(--eff-text-scale,1));line-height:1.25}
+
+/* — десктоп: боковое меню развёрнуто ПОСТОЯННО, без бургера (просьба
+   пользователя «адаптировать под ПК», навигация — второй шаг после плана).
+   .side-menu/.topbar — оба position:fixed, поэтому padding-left на .app-shell
+   их напрямую не двигает (fixed игнорирует паддинг предка) — топбар специально
+   остаётся во всю ширину (обычный паттерн: полноширинная шапка + сайдбар под
+   ней), а .page-container (обычный block в потоке) сдвигается паддингом
+   .app-shell и центрируется через свой же margin:0 auto уже в ОСТАВШЕЙСЯ
+   ширине — никаких иных правок не потребовалось. Брейкпоинт 1024px — тот же,
+   что и у боковой панели плана (assets/css/plan.css), чтобы оба перехода
+   происходили одновременно при изменении ширины окна. */
+@media (min-width: 1024px) {
+  .burger-btn { display: none; }
+  .menu-overlay { display: none; }
+  .side-menu, .side-menu.open { transform: none; transition: none; }
+  .app-shell { padding-left: 358px; }
+}
 .grid{display:grid;gap:var(--space)}.grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}.grid-3{grid-template-columns:repeat(2,minmax(0,1fr))}@media(min-width:820px){.grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .card{padding:11px;border-radius:var(--radius);background:rgba(var(--card-bg-rgb),var(--card-opacity));border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(var(--blur));box-shadow:0 6px 18px rgba(0,0,0,.18)}
 .tile{min-height:92px;padding:11px;border-radius:18px;cursor:pointer;transition:transform calc(180ms * var(--anim-speed)) var(--anim-ease),background calc(180ms * var(--anim-speed)) var(--anim-ease),border-color calc(180ms * var(--anim-speed)) var(--anim-ease);position:relative;overflow:hidden}.tile:hover{transform:translateY(-2px);background:rgba(255,255,255,.10)}.tile-icon{font-size:calc(22px * var(--eff-text-scale,1));margin-bottom:5px}.tile h3{margin:0 0 4px;font-size:calc(17px * var(--eff-text-scale,1));line-height:1.12}.tile p{margin:0;color:var(--muted);font-size:calc(12px * var(--eff-text-scale,1));line-height:1.22}
