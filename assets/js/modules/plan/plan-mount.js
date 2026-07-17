@@ -10,6 +10,11 @@
     subtitle: "План электрики: комнаты, точки, трассы, расчёт.",
     newPlaceholder: "Название проекта (адрес, клиент)…",
     create: "Создать",
+    newCeil: "Высота потолка (от пола), см",
+    newRoute: "Ведём силу по",
+    newCeiling: "потолку", newFloor: "полу",
+    newMount: "Монтаж по потолку", newGofra: "В гофре", newTies: "На стяжки",
+    metaCeil: "Высота потолка по умолчанию, см",
     importBtn: "⤒ Импорт JSON",
     empty: "Проектов пока нет. Создай первый — название можно менять потом.",
     back: "‹ Проекты",
@@ -28,6 +33,7 @@
   };
 
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const DEFAULTS_CEIL = 270; // дефолт высоты потолка в форме создания (зеркалит plan-core DEFAULTS.ceilingHeight)
   const $ = (sel, r) => (r || document).querySelector(sel);
   const fmtDate = (ms) => { try { return new Date(ms).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); } catch (e) { return "—"; } };
 
@@ -54,9 +60,24 @@
       <div class="card ep-plan-new">
         <div class="ep-plan-newrow">
           <input id="ep-plan-name" type="text" placeholder="${esc(T.newPlaceholder)}" maxlength="80">
-          <button type="button" class="btn btn-primary ep-clickable" data-plan-create>${T.create}</button>
         </div>
         <div class="ep-plan-newrow">
+          <label class="ep-plan-newfield" style="flex:1">${T.newCeil}
+            <input id="ep-plan-ceil" type="number" inputmode="numeric" min="150" max="600" value="${DEFAULTS_CEIL}">
+          </label>
+        </div>
+        <div class="ep-plan-newrow ep-plan-newseg" data-plan-newroute="ceiling">
+          <span class="ep-plan-newlbl">${T.newRoute}:</span>
+          <button type="button" class="ep-plan-chip ep-clickable on" data-plan-rt="ceiling">${T.newCeiling}</button>
+          <button type="button" class="ep-plan-chip ep-clickable" data-plan-rt="floor">${T.newFloor}</button>
+        </div>
+        <div class="ep-plan-newrow ep-plan-newseg ep-plan-newmount" data-plan-newmount="1">
+          <span class="ep-plan-newlbl">${T.newMount}:</span>
+          <button type="button" class="ep-plan-chip ep-clickable on" data-plan-mt="1">${T.newGofra}</button>
+          <button type="button" class="ep-plan-chip ep-clickable" data-plan-mt="0">${T.newTies}</button>
+        </div>
+        <div class="ep-plan-newrow">
+          <button type="button" class="btn btn-primary ep-clickable" data-plan-create>${T.create}</button>
           <button type="button" class="btn btn-ghost ep-clickable" data-plan-import>${T.importBtn}</button>
           <input id="ep-plan-file" type="file" accept="application/json,.json" hidden>
         </div>
@@ -176,9 +197,33 @@
   }
 
   // ---------- действия ----------
+  // Чипы «Ведём силу по» / «Монтаж по потолку» в форме создания — тоглятся прямо в
+  // DOM (форма статична, без ре-рендера): подсветка активного + скрытие блока
+  // «Монтаж по потолку» при выборе «полу» (по полу способ монтажа не спрашиваем —
+  // расходка всегда гофра+лента, см. EP.CableConsum).
+  function pickNewRoute(root, rt) {
+    const seg = root.querySelector("[data-plan-newroute]"); if (!seg) return;
+    seg.setAttribute("data-plan-newroute", rt);
+    seg.querySelectorAll("[data-plan-rt]").forEach((b) => b.classList.toggle("on", b.getAttribute("data-plan-rt") === rt));
+    const mount = root.querySelector("[data-plan-newmount]");
+    if (mount) mount.style.display = rt === "floor" ? "none" : "";
+  }
+  function pickNewMount(root, mt) {
+    const seg = root.querySelector("[data-plan-newmount]"); if (!seg) return;
+    seg.setAttribute("data-plan-newmount", mt);
+    seg.querySelectorAll("[data-plan-mt]").forEach((b) => b.classList.toggle("on", b.getAttribute("data-plan-mt") === mt));
+  }
   function doCreate(root) {
     const inp = $("#ep-plan-name");
-    core().createProject(inp ? inp.value : "");
+    const ceilInp = $("#ep-plan-ceil");
+    const routeSeg = root.querySelector("[data-plan-newroute]");
+    const mountSeg = root.querySelector("[data-plan-newmount]");
+    const opts = {
+      ceilingHeight: ceilInp ? Number(ceilInp.value) : DEFAULTS_CEIL,
+      routeType: routeSeg ? routeSeg.getAttribute("data-plan-newroute") : "ceiling",
+      gofraCeil: mountSeg ? mountSeg.getAttribute("data-plan-newmount") !== "0" : true
+    };
+    core().createProject(inp ? inp.value : "", opts);
     renderEditor(root);
   }
   async function doOpen(root, id) {
@@ -237,7 +282,9 @@
     const rooms = EP.Plan.Rooms; if (!rooms) return;
     rooms.openSheet(`<div class="ep-plan-srow"><b>${T.metaTitle}</b><span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-plan-meta-close>✕</button></div>
       <div class="ep-plan-srow"><label style="flex:1">${T.metaClient}<input type="text" id="ep-plan-meta-client" value="${esc(p.client || "")}" placeholder="Иванов И.И."></label></div>
-      <div class="ep-plan-srow"><label style="flex:1">${T.metaAddress}<input type="text" id="ep-plan-meta-addr" value="${esc(p.address || "")}" placeholder="г. Москва, ул. …, д. …, кв. …"></label></div>`);
+      <div class="ep-plan-srow"><label style="flex:1">${T.metaAddress}<input type="text" id="ep-plan-meta-addr" value="${esc(p.address || "")}" placeholder="г. Москва, ул. …, д. …, кв. …"></label></div>
+      <div class="ep-plan-srow"><label style="flex:1">${T.metaCeil}<input type="number" inputmode="numeric" min="150" max="600" id="ep-plan-meta-ceil" value="${esc(p.settings.ceilingHeight || 270)}"></label></div>
+      <div class="ep-plan-modehint">Высота потолка проекта — база для вертикалей трасс и расчёта кабеля. У отдельной комнаты можно задать свою высоту в её карточке.</div>`);
   }
   function doExport() {
     const c = core(), p = c.project; if (!p) return;
@@ -266,6 +313,8 @@
   document.addEventListener("click", (e) => {
     const r = root(); if (!r || !V.active) return;
     const t = e.target; let el;
+    if ((el = t.closest("[data-plan-rt]"))) return pickNewRoute(r, el.getAttribute("data-plan-rt"));
+    if ((el = t.closest("[data-plan-mt]"))) return pickNewMount(r, el.getAttribute("data-plan-mt"));
     if ((el = t.closest("[data-plan-create]"))) return doCreate(r);
     if ((el = t.closest("[data-plan-open]"))) return void doOpen(r, el.getAttribute("data-plan-open"));
     if ((el = t.closest("[data-plan-del]"))) return doDelete(r, el.getAttribute("data-plan-del"));
@@ -313,6 +362,7 @@
     const t = e.target, c = core(); if (!c.project) return;
     if (t.id === "ep-plan-meta-client") { c.project.client = t.value; c.persist("meta-client"); }
     else if (t.id === "ep-plan-meta-addr") { c.project.address = t.value; c.persist("meta-addr"); }
+    else if (t.id === "ep-plan-meta-ceil") { const v = Math.round(Number(t.value)); if (v >= 150 && v <= 600) { c.project.settings.ceilingHeight = v; c.persist("meta-ceil"); } }
     else if (t.hasAttribute("data-plan-floor-rn")) {
       // без commit() — как gtitle/lname в ручной схеме: не плодить undo-снапшот на каждую букву
       const f = (c.project.floors || []).find((x) => x.id === t.getAttribute("data-plan-floor-rn"));

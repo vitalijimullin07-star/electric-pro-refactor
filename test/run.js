@@ -1056,6 +1056,38 @@ test("другая комната: перпендикулярная проход
   }
   ok(perp, "проходка перпендикулярна стене");
 });
+test("проходка через перегородку-балку (после слияния комнат): polylineCrossings ловит beam", () => {
+  const { P } = install();
+  const beam = M.newBeam({ x: 200, y: 0 }, { x: 200, y: 300 }, "beam", 12, "Бетон");
+  P.beams.push(beam);
+  const hits = G.polylineCrossings(P, [{ x: 100, y: 150 }, { x: 300, y: 150 }], null);
+  ok(hits.some((h) => h.wallId === "beam:" + beam.id), "пересечение сплошной перегородки поймано");
+});
+test("трасса по полу: сплошная перегородка — гильза, перемычка — без гильзы; по потолку — обе с гильзой", () => {
+  const { P } = install();
+  const beam = M.newBeam({ x: 200, y: 0 }, { x: 200, y: 300 }, "beam", 12, "Бетон");
+  P.beams.push(beam);
+  const rt = M.newRoute("power", "floor", [{ x: 100, y: 150 }, { x: 300, y: 150 }], null, null);
+  const has = () => (rt.throughWalls || []).some((c) => c.wallId === "beam:" + beam.id);
+  P.settings.routeType = "floor";
+  EP.Plan.Routes.recomputeThroughWalls(P, rt);
+  ok(has(), "перегородка по полу — гильза нужна");
+  beam.kind = "lintel";
+  EP.Plan.Routes.recomputeThroughWalls(P, rt);
+  ok(!has(), "перемычка по полу — кабель под ней, гильзы нет");
+  P.settings.routeType = "ceiling";
+  EP.Plan.Routes.recomputeThroughWalls(P, rt);
+  ok(has(), "перемычка по потолку — гильза нужна");
+});
+test("createProject: стартовые настройки высота/пол-потолок/монтаж (опции формы создания)", () => {
+  const p = EP.Plan.Core.createProject("X", { ceilingHeight: 300, routeType: "floor", gofraCeil: false });
+  eq(p.settings.ceilingHeight, 300, "высота из формы");
+  eq(p.settings.routeType, "floor", "сила по полу");
+  eq(p.settings.gofraCeil, false, "монтаж на стяжки");
+  const d = EP.Plan.Core.createProject("Y");
+  eq(d.settings.ceilingHeight, 270, "дефолт без opts");
+  eq(d.settings.routeType, "ceiling", "дефолт по потолку");
+});
 test("проходки Ø20: макс. 2 кабеля в гильзу", () => {
   const { P, w } = install();
   const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);

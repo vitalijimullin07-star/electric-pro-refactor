@@ -243,8 +243,18 @@
 
   // ---------- проекты ----------
   function listProjects() { return S.index.slice(); }
-  function createProject(name) {
+  // opts (необязателен) — стартовые настройки, заданные в форме создания проекта:
+  // { ceilingHeight (см), routeType ("ceiling"|"floor"), gofraCeil (bool — способ
+  //  монтажа по потолку: гофра/на стяжки) }. Материалы (пол → гофра+лента, потолок →
+  // гофра ИЛИ стяжки) считает EP.CableConsum по routeType+gofraCeil, отдельной модели
+  // не заводим — здесь только начальные значения settings.
+  function createProject(name, opts) {
     const p = newProject(name);
+    if (opts) {
+      if (Number(opts.ceilingHeight) >= 150) p.settings.ceilingHeight = Math.round(Number(opts.ceilingHeight));
+      if (opts.routeType === "floor" || opts.routeType === "ceiling") p.settings.routeType = opts.routeType;
+      if (typeof opts.gofraCeil === "boolean") p.settings.gofraCeil = opts.gofraCeil;
+    }
     S.project = p; S.undo = []; S.redo = [];
     persist("create");
     return p;

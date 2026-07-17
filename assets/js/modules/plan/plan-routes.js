@@ -399,9 +399,26 @@
     let throughWalls = G().polylineCrossings(p, pts, fromEl.wallId || null);
     // Пол: крест пути с проёмом до пола (дверь и т.п.) — уже не «сверление», гильза
     // Ø20 туда не считается (см. приоритет проёмов в buildPath выше).
-    if (s.routeType === "floor") throughWalls = throughWalls.filter((cr) => !G().floorOpeningAt(p, cr.wallId, cr));
+    if (s.routeType === "floor") throughWalls = throughWalls.filter((cr) => !floorSkip(p, cr));
     rt.throughWalls = throughWalls;
     p.routes.push(rt);
+  }
+
+  // При трассировке ПО ПОЛУ гильза НЕ нужна там, где кабель физически идёт понизу без
+  // сверления: (1) проём до пола на стене (дверь/раздвижная/балконная/«Проём», sill=0,
+  // НЕ окно) — G.floorOpeningAt; (2) перемычка (балка kind:"lintel" — низ открыт, как
+  // арка над проходом) — кабель идёт под ней. Сплошная перегородка (kind:"beam", остаток
+  // общей стены после слияния комнат) — стена от пола до потолка, гильза НУЖНА, её
+  // floorSkip НЕ пропускает. По потолку floorSkip не применяется вовсе — там любое
+  // пересечение стены/перегородки/перемычки сверлится (см. фильтр только при "floor").
+  function floorSkip(p, cr) {
+    if (G().floorOpeningAt(p, cr.wallId, cr)) return true;
+    const s = String(cr.wallId || "");
+    if (s.slice(0, 5) === "beam:") {
+      const bm = (p.beams || []).find((b) => "beam:" + b.id === s);
+      if (bm && bm.kind === "lintel") return true;
+    }
+    return false;
   }
 
   // Пересчитывает ТОЛЬКО проходки (throughWalls) уже существующей трассы по её ТЕКУЩИМ
@@ -411,7 +428,7 @@
   function recomputeThroughWalls(p, rt) {
     const fromEl = (p.elements || []).find((e) => e.id === rt.fromId);
     let throughWalls = G().polylineCrossings(p, rt.points, (fromEl && fromEl.wallId) || null);
-    if (p.settings.routeType === "floor") throughWalls = throughWalls.filter((cr) => !G().floorOpeningAt(p, cr.wallId, cr));
+    if (p.settings.routeType === "floor") throughWalls = throughWalls.filter((cr) => !floorSkip(p, cr));
     rt.throughWalls = throughWalls;
   }
 
@@ -500,8 +517,8 @@
       </div>
       ${p.settings.routeType !== "floor" ? `<div class="ep-plan-srow">Монтаж по потолку:
         <button type="button" class="ep-plan-chip ep-clickable ${p.settings.gofraCeil !== false ? "on" : ""}" data-prt-gofra="1">В гофре</button>
-        <button type="button" class="ep-plan-chip ep-clickable ${p.settings.gofraCeil === false ? "on" : ""}" data-prt-gofra="0">Без гофры</button>
-      </div>` : ""}
+        <button type="button" class="ep-plan-chip ep-clickable ${p.settings.gofraCeil === false ? "on" : ""}" data-prt-gofra="0">На стяжки</button>
+      </div>` : `<div class="ep-plan-modehint">По полу: кабель в гофре ПНД + монтажная лента (расходка считается автоматически).</div>`}
       <div class="ep-plan-modehint">Линии идут по контуру комнаты с отступом, стены не пересекают — только перпендикулярной проходкой Ø${p.settings.sleeveD || 20} (макс. 2 кабеля в гильзу).</div>
       <div class="ep-plan-modehint">Тёплый пол — штроба в пол ${p.settings.tpChaseW || 50}×${p.settings.tpChaseH || 50} мм. Штроба к посту блока — в редакторе точки.</div>
       ${!juncN ? `<div class="ep-plan-modehint">${T.hintJ}</div>` : ""}
