@@ -75,11 +75,11 @@
   function ui() { return { selectedRoomId: R.selectedRoomId, draft: R.draft, ruler: R.ruler, beamDraft: R.beamDraft, voidDraft: R.voidDraft }; }
   function renderScene() {
     if (!R.canvas || !EP.Plan.Render) return;
-    EP.Plan.Render.draw(R.canvas, core().project, ui());
+    EP.Plan.Render.draw(R.canvas, G().floorScoped(core().project), ui());
     const hint = $("#ep-plan-modehint");
     if (hint) hint.textContent = T.modeHint[R.mode] || "";
   }
-  function renderScaled() { if (R.canvas && EP.Plan.Render) EP.Plan.Render.drawScaled(R.canvas, core().project, ui()); }
+  function renderScaled() { if (R.canvas && EP.Plan.Render) EP.Plan.Render.drawScaled(R.canvas, G().floorScoped(core().project), ui()); }
   // перерисовка не чаще кадра — тяга пальцем остаётся плавной
   let sceneRaf = 0;
   function renderSceneSoon() {
@@ -514,7 +514,7 @@
   }
   function beamAt(p, w, maxD) {
     let best = null;
-    (p.beams || []).forEach((bm) => {
+    (G().floorScoped(p).beams || []).forEach((bm) => {
       const c = G().closestOnSeg(w, bm.a, bm.b);
       if (c.d <= Math.max(maxD, (bm.width || 20) / 2) && (!best || c.d < best.d)) best = { d: c.d, beam: bm };
     });
@@ -571,7 +571,7 @@
 
   // ---------- вентшахта / мини-комната внутри комнаты (project.voids) ----------
   function voidAt(p, w) {
-    return (p.voids || []).find((vd) => {
+    return (G().floorScoped(p).voids || []).find((vd) => {
       const r = G().voidRect(vd);
       return w.x >= r.x1 && w.x <= r.x2 && w.y >= r.y1 && w.y <= r.y2;
     }) || null;

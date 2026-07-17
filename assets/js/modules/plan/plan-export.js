@@ -21,8 +21,15 @@
   // сбрасывается между сессиями), крутится ползунком в шторке 📄 перед печатью
   let pdfScale = 1;
 
-  // чистый SVG плана: отдельный офф-скрин холст, без сетки и подложки
-  function buildSvg(p) {
+  // чистый SVG плана: отдельный офф-скрин холст, без сетки и подложки.
+  // floorScoped() ЗДЕСЬ, а не у каждого вызывающего — buildLayerPages() тоже
+  // зовёт buildSvg(p) внутри withLayers(), одно место фильтра покрывает оба
+  // случая. У многоэтажных проектов «Общий план»/страницы по слоям в PDF —
+  // ТОЛЬКО активный этаж (известное ограничение Этапа 1: без разбивки PDF
+  // постранично по этажам — иначе комнаты разных этажей легли бы друг на
+  // друга в одних координатах).
+  function buildSvg(pRaw) {
+    const p = G().floorScoped(pRaw);
     const host = document.createElement("div");
     host.style.cssText = "position:fixed;left:-2000px;top:0;width:1050px;height:700px;";
     document.body.appendChild(host);

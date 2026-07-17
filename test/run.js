@@ -1435,6 +1435,85 @@ test("estimateItems: без движка пула (PoolEngine не подклю�
   eq(EP.Plan.Calc.estimateItems(P), null, "нет ни точного счёта, ни движка — null (как и runEngine напрямую)");
 });
 
+// ===== 18. Этажи =====
+test("newProject: floors — один этаж по умолчанию, activeFloorId указывает на него", () => {
+  const p = M.newProject("x");
+  eq(p.floors.length, 1, "один этаж");
+  eq(p.floors[0].name, "1 этаж");
+  eq(p.activeFloorId, p.floors[0].id, "активный этаж — единственный");
+});
+test("backfillProject: старый проект без floors — миграция на один этаж, все сущности получают floorId", () => {
+  const old = {
+    name: "old", settings: {}, rooms: [{ id: "r1", points: [] }], elements: [{ id: "e1" }],
+    panels: [{ id: "p1", x: 0, y: 0 }], routes: [{ id: "rt1" }], beams: [{ id: "b1" }],
+    voids: [{ id: "v1" }], ledStrips: [{ id: "l1" }], openings: [{ id: "o1", type: "door", wallId: "r1:0" }]
+  };
+  const imp = EP.Plan.Core.importJSON(JSON.stringify({ project: old }));
+  ok(Array.isArray(imp.floors) && imp.floors.length === 1, "миграция создала один этаж");
+  ok(imp.activeFloorId === imp.floors[0].id, "activeFloorId проставлен");
+  ["rooms", "elements", "panels", "routes", "beams", "voids", "ledStrips", "openings"].forEach((key) => {
+    eq(imp[key][0].floorId, imp.floors[0].id, key + ": floorId проставлен бэкофиллом");
+  });
+});
+test("G.floorScoped: с одним этажом возвращает ТОТ ЖЕ объект (без клонирования)", () => {
+  const { P } = install();
+  ok(G.floorScoped(P) === P, "нет клона для однoэтажного проекта");
+});
+test("G.floorScoped: с двумя этажами фильтрует геометрические массивы на активный этаж", () => {
+  const { P } = install();
+  const f2 = EP.Plan.Core.addFloor("2 этаж");
+  const roomB = M.newRoom(G.rectPoints(0, 0, 300, 300), "B"); // создана уже на активном (f2)
+  P.rooms.push(roomB);
+  eq(roomB.floorId, f2.id, "новая комната получила floorId активного этажа");
+  let sv = G.floorScoped(P);
+  eq(sv.rooms.length, 1, "на f2 видна только roomB");
+  eq(sv.rooms[0].id, roomB.id);
+  EP.Plan.Core.setActiveFloor(P.floors[0].id);
+  sv = G.floorScoped(P);
+  eq(sv.rooms.length, 1, "после переключения на этаж 1 видна только исходная комната");
+  eq(sv.rooms[0].id, P.rooms.find((r) => r.id !== roomB.id).id);
+});
+test("addFloor/setActiveFloor/deleteFloor: нельзя удалить последний этаж, удаление чистит содержимое", () => {
+  const { P } = install();
+  eq(EP.Plan.Core.deleteFloor(P.floors[0].id), false, "нельзя удалить единственный этаж");
+  const f2 = EP.Plan.Core.addFloor("2 этаж");
+  eq(P.activeFloorId, f2.id, "addFloor сразу переключает на новый этаж");
+  const pn = M.newPanel(10, 10, "Щ2"); P.panels.push(pn);
+  eq(pn.floorId, f2.id, "щит создан на активном (новом) этаже");
+  ok(EP.Plan.Core.deleteFloor(f2.id), "удаление второго этажа разрешено (не последний)");
+  eq(P.floors.length, 1, "остался один этаж");
+  eq(P.panels.find((x) => x.id === pn.id), undefined, "щит второго этажа удалён вместе с этажом");
+  eq(P.activeFloorId, P.floors[0].id, "активный этаж переключился на оставшийся");
+});
+test("EP.Plan.Routes.build(): перестройка активного этажа не трогает трассы другого этажа", () => {
+  const { P, w } = install();
+  const pn1 = M.newPanel(-50, -50, "Щ1"); P.panels.push(pn1);
+  const s1 = M.newElement("socket", w(0), 100, 30, "power"); P.elements.push(s1);
+  EP.Plan.Routes.build({ silent: true });
+  eq(P.routes.length, 1, "трасса этажа 1 построена");
+  const rt1Id = P.routes[0].id;
+
+  EP.Plan.Core.addFloor("2 этаж");
+  const roomB = M.newRoom(G.rectPoints(0, 0, 400, 300), "B"); P.rooms.push(roomB);
+  const pn2 = M.newPanel(-50, -50, "Щ2"); P.panels.push(pn2);
+  const s2 = M.newElement("socket", roomB.id + ":0", 100, 30, "power"); P.elements.push(s2);
+  EP.Plan.Routes.build({ silent: true });
+
+  ok(P.routes.some((r) => r.id === rt1Id), "трасса этажа 1 осталась нетронутой");
+  eq(P.routes.filter((r) => r.fromId === s2.id).length, 1, "трасса этажа 2 построена");
+});
+test("EP.Plan.Elements.hitAt: не находит элемент другого (неактивного) этажа по тем же координатам", () => {
+  const { P, w } = install();
+  const s1 = M.newElement("socket", w(0), 100, 30, "power"); P.elements.push(s1);
+  const pt1 = G.elemDrawPoint(P, s1);
+  EP.Plan.Core.addFloor("2 этаж"); // теперь активен новый этаж, s1 на нём не виден
+  const hit = EP.Plan.Elements.hitAt(pt1, 50);
+  ok(!hit || !hit.el || hit.el.id !== s1.id, "элемент этажа 1 не находится хит-тестом на этаже 2");
+  EP.Plan.Core.setActiveFloor(P.floors[0].id);
+  const hit2 = EP.Plan.Elements.hitAt(pt1, 50);
+  ok(hit2 && hit2.el && hit2.el.id === s1.id, "но находится обратно на своём этаже");
+});
+
 (async () => {
   await test("openProject: бэкофилл старых проектов", async () => {}); // placeholder to keep sync
   // п.1 аудита: importJSON теперь ТОЖЕ бэкофиллит (не только openProject) — старые/

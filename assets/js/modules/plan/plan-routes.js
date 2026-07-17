@@ -221,16 +221,25 @@
     const silent = !!(opts && opts.silent); // тихая автоперестройка: без тостов/шторки
     const c = core(), p = c.project;
     p.circuits = p.circuits || [];
-    if (!(p.panels || []).length) { if (!silent) rooms().toast(T.noPanel); return; }
-    const points = (p.elements || []).filter(isPoint);
+    const fp = G().floorScoped(p); // щиты/точки/распайки ТОЛЬКО активного этажа — иначе
+    // трасса на этаже без своего щита попыталась бы дотянуться до щита другого этажа
+    // прямой линией по общим координатам (физически бессмысленно, до «стояка» — Этап 2).
+    if (!(fp.panels || []).length) { if (!silent) rooms().toast(T.noPanel); return; }
+    const points = (fp.elements || []).filter(isPoint);
     if (!points.length) { if (!silent) rooms().toast(T.noElems); return; }
     c.commit();
-    const savedManual = (p.routes || []).filter((r) => r.manual);
-    p.routes = [];
+    // Чистим/перестраиваем ТОЛЬКО трассы АКТИВНОГО этажа — трассы других этажей
+    // изолированы (своя геометрия) и не трогаются: иначе «Построить» на этаже 2
+    // незаметно стирал бы уже готовые трассы этажа 1.
+    const floors = p.floors, fid0 = floors && floors[0] && floors[0].id;
+    const activeFid = p.activeFloorId || fid0;
+    const onActiveFloor = (r) => (r.floorId || fid0) === activeFid;
+    const savedManual = (p.routes || []).filter((r) => r.manual && onActiveFloor(r));
+    p.routes = (p.routes || []).filter((r) => !onActiveFloor(r));
 
-    // узлы: щиты + распайки
-    const panels = (p.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y } }));
-    const juncts = (p.elements || []).filter(isJunction).map((el) => ({ kind: "junction", id: el.id, el, circuitId: el.circuitId, pos: G().elemPoint(p, el) })).filter((n) => n.pos);
+    // узлы: щиты + распайки (этого же этажа)
+    const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y } }));
+    const juncts = (fp.elements || []).filter(isJunction).map((el) => ({ kind: "junction", id: el.id, el, circuitId: el.circuitId, pos: G().elemPoint(p, el) })).filter((n) => n.pos);
 
     // pos — ЕДИНАЯ точка отрисовки (та же, что у маркера): трасса доходит до точки,
     // а зазор между линиями QF заложен в самой точке (полоса по номеру линии).
@@ -265,8 +274,9 @@
     const silent = !!(opts && opts.silent); // тихо — не открывать шторку «Трассы» (напр. поверх fullscreen развёртки)
     const c = core(), p = c.project;
     p.circuits = p.circuits || [];
-    if (!(p.panels || []).length) { if (!silent) rooms().toast(T.noPanel); return; }
-    const points = (p.elements || []).filter(isPoint);
+    const fp = G().floorScoped(p); // только активный этаж — та же причина, что и в build()
+    if (!(fp.panels || []).length) { if (!silent) rooms().toast(T.noPanel); return; }
+    const points = (fp.elements || []).filter(isPoint);
     if (!points.length) { if (!silent) rooms().toast(T.noElems); return; }
     c.commit();
 
@@ -275,11 +285,11 @@
 
     const haveRoute = new Set((p.routes || []).map((r) => r.fromId));
     const newPoints = points.filter((el) => !haveRoute.has(el.id));
-    const allJuncts = (p.elements || []).filter(isJunction).map((el) => ({ kind: "junction", id: el.id, el, circuitId: el.circuitId, pos: G().elemPoint(p, el) })).filter((n) => n.pos);
+    const allJuncts = (fp.elements || []).filter(isJunction).map((el) => ({ kind: "junction", id: el.id, el, circuitId: el.circuitId, pos: G().elemPoint(p, el) })).filter((n) => n.pos);
     const newJuncts = allJuncts.filter((n) => !haveRoute.has(n.id));
 
     if (newPoints.length || newJuncts.length) {
-      const panels = (p.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y } }));
+      const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y } }));
       // уже проведённые точки — реальные узлы графа для шлейфа, не только щиты
       const existingPointNodes = points.filter((el) => haveRoute.has(el.id)).map((el) => {
         const pos = G().routeAnchor(p, el);
@@ -332,7 +342,7 @@
   // хит-тест по уже построенным трассам (для ручного редактирования, plan-rooms.js)
   function routeAt(p, w, maxD) {
     let best = null;
-    (p.routes || []).forEach((rt) => {
+    (G().floorScoped(p).routes || []).forEach((rt) => {
       const pts = rt.points || [];
       for (let i = 0; i < pts.length - 1; i++) {
         const cl = G().closestOnSeg(w, pts[i], pts[i + 1]);
