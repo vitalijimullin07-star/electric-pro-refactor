@@ -400,11 +400,22 @@
   function print() {
     const p = core().project;
     if (!p || !(p.rooms || []).length) { rooms().toast("Нарисуй план — потом лист."); return; }
+    // window.open() ОБЯЗАН остаться синхронным, прямо в обработчике клика — иначе
+    // блокировщик всплывающих окон режет его (popup разрешён только внутри стека
+    // вызовов пользовательского жеста, не из setTimeout).
     const w = window.open("", "_blank");
     if (!w) { rooms().toast("Разреши всплывающие окна для печати."); return; }
-    w.document.write(sheetHtml(p));
-    w.document.close();
-    setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 400);
+    rooms().toast("Строим PDF…");
+    // sheetHtml(p) синхронно пересобирает офскрин-SVG НЕСКОЛЬКО раз подряд (общий
+    // план + страница на каждый слой трасс + каждая развёртка стены) — на большом
+    // многоэтажном проекте это заметная пауза, во время которой интерфейс молча
+    // «подвисает» без единой обратной связи. setTimeout(…, 30) отдаёт браузеру
+    // один кадр на отрисовку тоста ПЕРЕД тяжёлой синхронной сборкой.
+    setTimeout(() => {
+      w.document.write(sheetHtml(p));
+      w.document.close();
+      setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 400);
+    }, 30);
   }
 
   // первая попавшаяся стена с точками — образец для живого превью масштаба
@@ -446,7 +457,9 @@
     if (!rooms() || !rooms().isActive()) return;
     if (e.target.closest("[data-plan-pdf]")) return sheetPdfScale();
     if (e.target.closest("[data-pxp-close]")) { rooms().closeSheet(); return; }
-    if (e.target.closest("[data-pxp-print]")) { print(); rooms().closeSheet(); return; }
+    // closeSheet() ПЕРЕД print() — иначе он тут же стёр бы тост «Строим PDF…»,
+    // который print() показывает через тот же openSheet() сразу после себя.
+    if (e.target.closest("[data-pxp-print]")) { rooms().closeSheet(); print(); return; }
   });
   document.addEventListener("input", (e) => {
     if (!rooms() || !rooms().isActive()) return;
