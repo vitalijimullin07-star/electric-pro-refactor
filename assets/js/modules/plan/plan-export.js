@@ -126,9 +126,21 @@
       return { hw: 13 * kk, hh: 13 * kk };
     };
     const boxes = sorted.map((e) => { const h = symHalf(e); return { x: e.offset, y: H - e.height, hw: h.hw, hh: h.hh }; });
+    // QF-имя и подпись расстояния от угла — тоже места, которые подпись высоты не
+    // должна перекрывать (репорт пользователя со скриншотом: цифры сливаются)
+    const qfBoxes = sorted.map((e) => {
+      const cc = (p.circuits || []).find((c) => c.id === e.circuitId); if (!cc) return null;
+      return { x: e.offset, y: H - e.height - 18 * kk, hw: Math.max(14, cc.name.length * 4.2) * kk, hh: 7 * kk };
+    }).filter(Boolean);
+    const offBoxes = sorted.map((e) => {
+      const x = e.offset, y = H - e.height;
+      if (x <= 2) return null;
+      return { x: x / 2, y: y - 3 * kk, hw: 14 * kk, hh: 8 * kk };
+    }).filter(Boolean);
+    const obstacles = boxes.concat(qfBoxes, offBoxes);
     const placeHLabel = (idx) => {
       const b = boxes[idx], lw = 14 * kk, lh = 8 * kk;
-      const hits = (lx, ly) => boxes.some((o, j) => j !== idx && Math.abs(lx - o.x) < lw + o.hw && Math.abs(ly - o.y) < lh + o.hh);
+      const hits = (lx, ly) => obstacles.some((o) => o !== b && Math.abs(lx - o.x) < lw + o.hw && Math.abs(ly - o.y) < lh + o.hh);
       const cand = [
         [b.x + b.hw + lw + 2 * kk, b.y], [b.x - b.hw - lw - 2 * kk, b.y],
         [b.x + b.hw + lw + 2 * kk, b.y - b.hh - lh], [b.x - b.hw - lw - 2 * kk, b.y - b.hh - lh],
