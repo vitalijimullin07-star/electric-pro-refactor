@@ -41,7 +41,7 @@
 
   const base = {
     themeId: "aurora",
-    mode: "night",
+    mode: "auto",
     profile: "night",
     accent: "#22c55e",
     buttonColor: "#22c55e",
@@ -107,7 +107,14 @@
     } catch (e) {}
   }
 
+  // «Авто» — берёт тему прямо из настройки дня/ночи телефона (prefers-color-scheme),
+  // а не по расписанию часов: пользователь попросил «зависело от того, что в
+  // телефоне стоит». matchMedia не поддерживается разве что в древних браузерах —
+  // тогда тихо остаёмся на старой эвристике по часам (7:00-20:00 = день) как запасной.
   function autoMode() {
+    try {
+      if (window.matchMedia) return window.matchMedia("(prefers-color-scheme: dark)").matches ? "night" : "day";
+    } catch (e) {}
     const h = new Date().getHours();
     return h >= 7 && h < 20 ? "day" : "night";
   }
@@ -271,7 +278,8 @@
 
   function modeButton(id, label) {
     const active = settings.mode === id ? "active" : "";
-    return `<button class="${active}" type="button" data-visual-mode="${id}">${label}</button>`;
+    const title = id === "auto" ? ' title="Как на телефоне — следует системной теме дня/ночи"' : "";
+    return `<button class="${active}" type="button" data-visual-mode="${id}"${title}>${label}</button>`;
   }
 
   function profileButton(id, label) {
@@ -630,6 +638,14 @@
       if (event.detail?.route === "settings") render();
       else apply();
     });
+    // Режим «Авто» — если пользователь переключит день/ночь прямо на телефоне,
+    // пока приложение открыто, подхватываем сразу же, без перезахода в приложение.
+    // Только когда явно выбран режим "Авто" — если человек вручную выбрал
+    // "Ночь"/"День", смена системной темы телефона его выбор не перебивает.
+    try {
+      const mq = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)");
+      if (mq) mq.addEventListener("change", () => { if (settings.mode === "auto") apply(); });
+    } catch (e) {}
   }
 
   EP.VisualSettings = { init, apply, render, getSettings: () => Object.assign({}, settings) };
