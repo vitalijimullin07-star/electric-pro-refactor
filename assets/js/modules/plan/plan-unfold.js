@@ -390,16 +390,49 @@
     }
 
     const TY = EL().TYPES;
-    els.forEach((el) => {
+    // AABB символов постов — подпись высоты кладём РЯДОМ с постом, а если она
+    // ложится на другой пост (точки на одном offset, разной высоте) — сдвигаем,
+    // чтобы не пересекалось (просьба пользователя).
+    const symHalf = (el) => {
+      if (el.type === "block") {
+        const items = (el.params && el.params.items) || ["socket"];
+        const vert = !!el.blockVert;
+        const step2 = 18 * ks, along = items.length * step2 + 6 * ks, across = 24 * ks;
+        return { hw: (vert ? across : along) / 2, hh: (vert ? along : across) / 2 };
+      }
+      return { hw: 13 * ks, hh: 13 * ks };
+    };
+    const elBoxes = els.map((e) => { const s = symHalf(e); return { x: e.offset, y: H - e.height, hw: s.hw, hh: s.hh }; });
+    const placeHLabel = (idx) => {
+      const b = elBoxes[idx], lw = 15 * ks, lh = 9 * ks;
+      const hits = (lx, ly) => elBoxes.some((o, j) => j !== idx && Math.abs(lx - o.x) < lw + o.hw && Math.abs(ly - o.y) < lh + o.hh);
+      const cand = [
+        [b.x + b.hw + lw + 2 * ks, b.y], [b.x - b.hw - lw - 2 * ks, b.y],
+        [b.x + b.hw + lw + 2 * ks, b.y - b.hh - lh], [b.x - b.hw - lw - 2 * ks, b.y - b.hh - lh],
+        [b.x, b.y - b.hh - lh - 2 * ks], [b.x, b.y + b.hh + lh + 2 * ks]
+      ];
+      for (const [lx, ly] of cand) if (!hits(lx, ly)) return { x: lx, y: ly };
+      return { x: b.x + b.hw + lw + 2 * ks, y: b.y };
+    };
+    els.forEach((el, idx) => {
       const x = el.offset, y = H - el.height;
       const cc = circ(p, el);
       const col = cc ? cc.color : "var(--accent)";
       const gr = svgEl("g", { "data-pu-el": el.id, class: "ep-plan-unfel" + (el.status === "mounted" ? " is-done" : "") });
 
-      // вертикаль: высота от пола до точки (синим), подпись высоты (тап — карточка точки)
+      // вертикаль: высота от пола до точки (синим)
       svg.appendChild(svgEl("line", { "data-pu-diml": el.id, x1: x, y1: H, x2: x, y2: y, class: "ep-plan-unfdimL", "stroke-width": kk }));
-      svg.appendChild(hitRect(x + 16 * ks, (H + y) / 2, 26 * ks, 16 * ks, { "data-pu-heightof": el.id, class: "ep-plan-unftap" }));
-      svg.appendChild(svgEl("text", { "data-pu-dimt": el.id, x: x + 6 * ks, y: (H + y) / 2, "font-size": 11 * ks, "dominant-baseline": "middle", class: "ep-plan-unfdimT is-tap" }, Math.round(el.height) + ""));
+      // горизонталь: от левого внутреннего угла до поста НА ЕГО ВЫСОТЕ (синим, с засечками)
+      // и число — расстояние от угла (это те «размеры», что просил пользователь на скрине)
+      if (x - inA > 2) {
+        svg.appendChild(svgEl("line", { x1: inA, y1: y, x2: x, y2: y, class: "ep-plan-unfdimE", "stroke-width": kk * 0.7 }));
+        svg.appendChild(svgEl("line", { x1: inA, y1: y - 3 * ks, x2: inA, y2: y + 3 * ks, class: "ep-plan-unfdimE", "stroke-width": kk * 0.7 }));
+        svg.appendChild(svgEl("text", { x: (inA + x) / 2, y: y - 3 * ks, "font-size": 9.5 * ks, "text-anchor": "middle", class: "ep-plan-unfdimT" }, Math.round(x - inA) + ""));
+      }
+      // подпись высоты — РЯДОМ с постом, с антиналожением (тап — карточка точки)
+      const hl = placeHLabel(idx);
+      svg.appendChild(hitRect(hl.x, hl.y, 30 * ks, 18 * ks, { "data-pu-heightof": el.id, class: "ep-plan-unftap" }));
+      svg.appendChild(svgEl("text", { "data-pu-dimt": el.id, x: hl.x, y: hl.y, "font-size": 11 * ks, "text-anchor": "middle", "dominant-baseline": "middle", class: "ep-plan-unfdimT is-tap" }, Math.round(el.height) + ""));
 
       if (el.type === "block") {
         const items = (el.params && el.params.items) || ["socket"];
@@ -472,7 +505,8 @@
       if (d.dimL) { d.dimL.setAttribute("x1", x); d.dimL.setAttribute("x2", x); d.dimL.setAttribute("y2", y); }
       if (d.dimT) {
         if (d.dimTx == null) d.dimTx = (Number(d.dimT.getAttribute("x")) || d.x0) - d.x0;
-        d.dimT.setAttribute("x", d.dimTx + x); d.dimT.setAttribute("y", (H + y) / 2);
+        // подпись высоты теперь стоит РЯДОМ с постом (на его высоте), не в середине вертикали
+        d.dimT.setAttribute("x", d.dimTx + x); d.dimT.setAttribute("y", y);
         d.dimT.textContent = Math.round(d.el.height) + "";
       }
     }
