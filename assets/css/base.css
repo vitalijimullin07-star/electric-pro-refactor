@@ -61,7 +61,18 @@ body[data-button-shape="minimal"]{--button-radius:8px;--button-opacity:.55}
    что и у боковой панели плана (assets/css/plan.css), чтобы оба перехода
    происходили одновременно при изменении ширины окна. */
 @media (min-width: 1024px) {
-  .burger-btn { display: none; }
+  /* visibility:hidden, НЕ display:none — .topbar это CSS Grid (grid-template-
+     columns:38px 1fr 36px) с бургером как ПЕРВЫМ авто-размещаемым элементом;
+     display:none убирает его из авто-размещения целиком, и следующий элемент
+     (.topbar-title) сдвигается в его 38px-колонку вместо своей 1fr — заголовок
+     схлопывался и обрезался слева (найдено скриншотом реального рендера).
+     visibility:hidden оставляет колонку зарезервированной, ничего не считает
+     заново, кнопка просто невидима и некликабельна. !important ОБЯЗАТЕЛЕН —
+     app-shell.js syncAccess() ставит инлайновый burger.style.visibility=
+     "visible"/"hidden" по состоянию авторизации (см. app-shell.js) на КАЖДЫЙ
+     ep:route-loaded/ep:auth-changed; инлайн-стиль иначе бы всегда побеждал
+     это правило и бургер снова появлялся бы после первой смены роута. */
+  .burger-btn { visibility: hidden !important; }
   .menu-overlay { display: none; }
   .side-menu, .side-menu.open { transform: none; transition: none; }
   .app-shell { padding-left: 358px; }
