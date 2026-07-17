@@ -1514,6 +1514,45 @@ test("EP.Plan.Elements.hitAt: не находит элемент другого 
   ok(hit2 && hit2.el && hit2.el.id === s1.id, "но находится обратно на своём этаже");
 });
 
+// ===== 19. Шаблоны квартир =====
+test("EP.Plan.Templates: все шаблоны строят валидные прямоугольные комнаты", () => {
+  const all = EP.Plan.Templates.CATEGORIES.concat(EP.Plan.Templates.SERIES);
+  ok(all.length >= 10, "категорий+серий достаточно");
+  all.forEach((t) => {
+    const built = t.build();
+    ok(built.length >= 1, t.id + ": хотя бы одна комната");
+    built.forEach((r) => {
+      eq(r.points.length, 4, t.id + "/" + r.name + ": прямоугольник — 4 точки");
+      const area = Math.abs((r.points[2].x - r.points[0].x) * (r.points[2].y - r.points[0].y));
+      ok(area > 10000, t.id + "/" + r.name + ": комната не вырожденная (>1 м²)"); // 10000 см² = 1 м²
+    });
+  });
+});
+test("EP.Plan.Templates.apply: вставляет комнаты на активный этаж пустого проекта", () => {
+  const { P } = install(); // одна комната уже есть от install()
+  const before = P.rooms.length;
+  const n = EP.Plan.Templates.apply("r2s");
+  ok(n > 0, "вернул число добавленных комнат");
+  eq(P.rooms.length, before + n, "комнаты реально добавлены в проект");
+  const added = P.rooms.slice(before);
+  added.forEach((r) => eq(r.floorId, P.activeFloorId, "новая комната — на активном этаже"));
+});
+test("EP.Plan.Templates.apply: неизвестный id — 0, ничего не добавляет, не падает", () => {
+  const { P } = install();
+  const before = P.rooms.length;
+  noThrow(() => {
+    eq(EP.Plan.Templates.apply("no-such-template"), 0, "неизвестный шаблон — 0");
+  });
+  eq(P.rooms.length, before, "проект не тронут");
+});
+test("EP.Plan.Templates.apply: вставляет ПРАВЕЕ уже нарисованного на этаже (не поверх)", () => {
+  const { P, room } = install(); // room: rectPoints(0,0,400,300)
+  EP.Plan.Templates.apply("studio");
+  const added = P.rooms[P.rooms.length - 1];
+  const minX = Math.min(...added.points.map((p) => p.x));
+  ok(minX >= 400, "новый шаблон начинается не левее правого края существующей комнаты (x=400)");
+});
+
 (async () => {
   await test("openProject: бэкофилл старых проектов", async () => {}); // placeholder to keep sync
   // п.1 аудита: importJSON теперь ТОЖЕ бэкофиллит (не только openProject) — старые/

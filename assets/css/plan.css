@@ -200,6 +200,15 @@ body[data-visual-mode="day"] .ep-plan-room.is-sel { fill: rgba(2, 132, 199, .17)
   font: 600 12.5px system-ui; cursor: pointer;
 }
 .ep-plan-chip.on { background: var(--accent, #38bdf8); border-color: transparent; color: #06121f; }
+.ep-plan-tplgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 7px; margin-bottom: 4px; }
+.ep-plan-tplcard {
+  display: flex; flex-direction: column; gap: 3px; padding: 10px 11px; border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, .14); background: rgba(255, 255, 255, .05);
+  color: var(--text, #e8eef7); font: 600 12.5px system-ui; cursor: pointer; text-align: left;
+}
+.ep-plan-tplcard span { color: var(--muted, #94a3b8); font-weight: 500; font-size: 11.5px; }
+.ep-plan-tplcard:active { background: var(--accent, #38bdf8); border-color: transparent; color: #06121f; }
+.ep-plan-tplcard:active span { color: #06121f; opacity: .75; }
 .ep-plan-ph { position: relative; display: inline-block; }
 .ep-plan-ph img { width: 52px; height: 52px; object-fit: cover; border-radius: 9px; display: block; }
 .ep-plan-ph button {
