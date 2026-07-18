@@ -111,14 +111,18 @@
         <button type="button" class="ep-plan-mini ep-clickable" data-plan-full aria-label="Во весь экран">⤢</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-plan-ctrls aria-label="${V.ctrlsOn ? "Свернуть панель" : "Развернуть панель"}" title="Свернуть/развернуть панель инструментов">${V.ctrlsOn ? "︿" : "﹀"}</button>
       </div>
-      ${floorsBarHtml(p)}
-      <div class="ep-plan-toolbar">
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-undo aria-label="Отменить">${T.undo}</button>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-redo aria-label="Вернуть">${T.redo}</button>
-        <span class="ep-plan-savenote" id="ep-plan-savenote"></span>
-        <span class="ep-plan-flex"></span>
+      <div class="ep-plan-compactrow">
+        ${floorsBarHtml(p)}
+        <div class="ep-plan-toolbar ep-plan-savebar">
+          <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-undo aria-label="Отменить">${T.undo}</button>
+          <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-redo aria-label="Вернуть">${T.redo}</button>
+          <span class="ep-plan-savenote" id="ep-plan-savenote"></span>
+          <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-more aria-label="Ещё: PDF, экспорт, импорт">⋯</button>
+        </div>
+      </div>
+      <div class="ep-plan-moremenu" id="ep-plan-moremenu" hidden>
         ${isAdmin() ? `<button type="button" class="ep-plan-tbtn ep-clickable" data-plan-tpl-open aria-label="Шаблон квартиры" title="Готовая раскладка комнат — по количеству комнат или по серии дома">🧩 Шаблон</button>` : ""}
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-pdf aria-label="Печатный лист (PDF)">📄</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-pdf aria-label="Печатный лист (PDF)">📄 Печатный лист (PDF)</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-export>${T.exportBtn}</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-import>${T.importBtn}</button>
         <input id="ep-plan-file" type="file" accept="application/json,.json" hidden>
@@ -181,6 +185,8 @@
     V.ctrlsOn = !V.ctrlsOn;
     const box = root.querySelector(".ep-plan");
     if (box) box.classList.toggle("is-ctrls-collapsed", !V.ctrlsOn);
+    const moreMenu = root.querySelector("#ep-plan-moremenu"); // кнопка-переключатель прячется вместе с панелью — само меню тоже
+    if (moreMenu) moreMenu.hidden = true;
     const btn = root.querySelector("[data-plan-ctrls]");
     if (btn) {
       btn.textContent = V.ctrlsOn ? "︿" : "﹀";
@@ -331,9 +337,32 @@
   // ---------- события ----------
   function root() { return document.getElementById("ep-plan-root"); }
 
+  // «⋯» — редко нужные действия (PDF/Экспорт/Импорт/Шаблон), спрятанные из
+  // основной ленты (просьба пользователя сделать панель компактнее). Позиция —
+  // JS-расчёт от getBoundingClientRect() кнопки (та же техника, что и у
+  // #ep-plan-qmenu в plan-rooms.js), т.к. меню НЕ вложено в горизонтально
+  // скроллящуюся .ep-plan-compactrow (иначе overflow-x:auto той обрезал бы
+  // всплывающее меню — см. комментарий в plan.css).
+  function toggleMoreMenu(btn) {
+    const m = document.getElementById("ep-plan-moremenu");
+    if (!m) return;
+    if (!m.hidden) { m.hidden = true; return; }
+    const r = btn.getBoundingClientRect();
+    m.style.position = "fixed";
+    m.style.top = (r.bottom + 6) + "px";
+    m.style.right = Math.max(6, window.innerWidth - r.right) + "px";
+    m.style.left = "auto";
+    m.hidden = false;
+  }
   document.addEventListener("click", (e) => {
     const r = root(); if (!r || !V.active) return;
     const t = e.target; let el;
+    // закрыть «⋯»-меню на ЛЮБОЙ клик, кроме самой кнопки-переключателя (она
+    // сама решает открыть/закрыть ниже) — и по клику на пункт меню (выбор
+    // действия), и по клику мимо (обычный паттерн выпадающего меню)
+    const moreMenu = document.getElementById("ep-plan-moremenu");
+    if (moreMenu && !moreMenu.hidden && !t.closest("[data-plan-more]")) moreMenu.hidden = true;
+    if ((el = t.closest("[data-plan-more]"))) return toggleMoreMenu(el);
     if ((el = t.closest("[data-plan-rt]"))) return pickNewRoute(r, el.getAttribute("data-plan-rt"));
     if ((el = t.closest("[data-plan-mt]"))) return pickNewMount(r, el.getAttribute("data-plan-mt"));
     if ((el = t.closest("[data-plan-create]"))) return doCreate(r);
