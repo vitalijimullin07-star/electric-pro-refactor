@@ -148,6 +148,40 @@ body[data-visual-mode="day"] .ep-plan-item-main { color: #0f172a; }
    ВСЕГДА, даже «закрытая»; просто малозаметно на тёмном фоне за блюром. Найдено
    при подготовке десктоп-сайдбара ниже — правится универсально, для любого экрана. */
 .ep-plan-sheet[hidden] { display: none; }
+
+/* Экономия на слабых устройствах — переиспользуем существующий perfLevel
+   (visual-settings.js: авто-детект слабого телефона + самообучение по
+   реальным просадкам FPS, body[data-noblur]/[data-flatshadow]) — на сильных
+   телефонах (perfLevel 0, дефолт) НИЧЕГО не меняется, максимальный визуал
+   остаётся как есть; ослабляем только на устройствах, которые сами себя
+   определили слабыми. Раньше noblur в base.css покрывал .glass/.card/
+   .ep-navbar, НО НЕ шторку/попапы плана (свой backdrop-filter отдельно от
+   общих карточек) — на слабом телефоне план всё ещё гонял тяжёлый blur(8px)
+   на каждое открытие шторки/долгое нажатие. */
+body[data-noblur="1"] .ep-plan-qmenu,
+body[data-noblur="1"] .ep-plan-quickbar,
+body[data-noblur="1"] .ep-plan-sheet {
+  backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+  background: rgb(var(--card-bg-rgb)) !important;
+}
+body[data-flatshadow="1"] .ep-plan-qmenu,
+body[data-flatshadow="1"] .ep-plan-unfover,
+body[data-flatshadow="1"] .ep-plan-unfpt {
+  box-shadow: none !important;
+}
+body[data-flatshadow="1"] .ep-plan-route.is-sel,
+body[data-flatshadow="1"] .ep-plan-ledstrip,
+body[data-flatshadow="1"] .ep-plan-unfled {
+  filter: none !important;
+}
+/* штриховка материала стены (.ep-plan-wallhatch) — декоративная, поверх нею
+   заливка (.ep-plan-wallfill) уже сама показывает материал цветом; штриховка
+   САМАЯ дорогая часть отрисовки стены (паттерн-заливка поверх маски выреза
+   проёмов, растеризуется браузером на каждый renderScene()). Маски вырезов
+   проёмов (двери/окна в стене) — НЕ трогаем НИ на каком уровне, это не
+   декор, а функциональная читаемость плана (где дверь/окно). */
+body[data-flatshadow="1"] .ep-plan-wallhatch { display: none; }
+
 .ep-plan-srow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font: 500 13.5px system-ui; }
 .ep-plan-srow b { font: 700 14.5px system-ui; }
 .ep-plan-srow input[type="text"], .ep-plan-srow input[type="number"] {
