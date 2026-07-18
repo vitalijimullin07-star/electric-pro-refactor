@@ -21,7 +21,7 @@
 * { box-sizing: border-box; }
 
 .ep-admin-page {
-  min-height: 100vh;
+  min-height: 100dvh;
   padding: 16px;
   color: var(--ep-admin-text);
   background:
