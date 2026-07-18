@@ -43,6 +43,17 @@ body[data-button-shape="minimal"]{--button-radius:8px;--button-opacity:.55}
 .icon-btn{border:0;color:var(--text);background:rgba(255,255,255,.08);border-radius:var(--button-radius);min-width:32px;height:30px;display:grid;place-items:center;cursor:pointer;font-size:calc(22px * var(--eff-text-scale,1));transition:transform calc(120ms * var(--anim-speed)) var(--anim-ease)}
 .burger-btn{gap:4px;padding:7px 8px}.burger-btn span{width:18px;height:2px;display:block;border-radius:999px;background:var(--text)}
 .topbar-title{min-width:0;display:flex;gap:8px;align-items:baseline;justify-content:center}.topbar-title strong{font-size:calc(12px * var(--eff-text-scale,1));white-space:nowrap}.topbar-title span{color:var(--muted);font-size:calc(11px * var(--eff-text-scale,1));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.topbar-name{display:flex;gap:8px;align-items:baseline;min-width:0}
+.topbar-clock{display:none}
+.topbar-sysinfo{display:none;align-items:center;gap:6px;flex:none}
+.topbar-sysinfo .is-offline{color:var(--danger)}
+/* Кластер время/сеть/батарея внутри шапки — показывается ТОЛЬКО когда PWA
+   реально запущен в display-mode:fullscreen (см. topbar-sysinfo.js) и системный
+   статус-бар скрыт ОС — в обычной вкладке браузера он и так виден, дублировать
+   незачем. В обычном (не-fullscreen) режиме .topbar-clock/.topbar-sysinfo
+   остаются display:none — визуал шапки не меняется вообще. */
+body.pwa-fullscreen .topbar-title{justify-content:space-between}
+body.pwa-fullscreen .topbar-clock,body.pwa-fullscreen .topbar-sysinfo{display:inline-flex}
 .status-btn{border:0;background:transparent;height:30px;display:grid;place-items:center;cursor:pointer}.status-dot{width:13px;height:13px;border-radius:999px;display:block;box-shadow:0 0 0 4px rgba(255,255,255,.08)}.status-ok{background:var(--accent);box-shadow:0 0 16px var(--accent)}.status-error{background:var(--danger);box-shadow:0 0 16px var(--danger)}.status-wait{background:var(--warning);box-shadow:0 0 16px var(--warning)}.status-cache{background:#38bdf8;box-shadow:0 0 16px #38bdf8}
 .side-menu{position:fixed;z-index:70;left:8px;top:44px;bottom:8px;width:min(330px,calc(100vw - 22px));padding:14px;transform:translateX(calc(-100% - 18px));transition:transform var(--menu-transition-ms) var(--anim-ease);display:flex;flex-direction:column;gap:14px}.side-menu.open{transform:translateX(0)}
 .menu-overlay{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:opacity var(--menu-transition-ms) ease}.menu-overlay.open{opacity:1;pointer-events:auto}
