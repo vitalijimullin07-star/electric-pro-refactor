@@ -386,9 +386,18 @@
       <div class="ep-plan-modehint">${T.blockTapDel} · штроба входит в выбранный подрозетник.</div>`;
   }
 
+  // el.photos хранит короткие id (байты — в IndexedDB, см. plan-core.js) — src
+  // достаём через photoUrl(id) из уже прогруженного при открытии проекта кэша
+  // (синхронно, без ожидания). Фолбэк на сам id — на случай ОЧЕНЬ старого
+  // проекта, ещё не прошедшего миграцию (openProject мигрирует всегда, но
+  // защищаемся от неучтённого пути), где id может внезапно оказаться
+  // "data:..."-строкой напрямую.
   function photosHtml(el) {
-    return (el.photos || []).map((src, i) =>
-      `<span class="ep-plan-ph"><img src="${src}" alt="фото точки"><button type="button" data-pe-phdel="${i}" aria-label="Удалить фото">✕</button></span>`).join("");
+    const c = core();
+    return (el.photos || []).map((id, i) => {
+      const src = (typeof id === "string" && id.startsWith("data:")) ? id : ((c.photoUrl && c.photoUrl(id)) || "");
+      return `<span class="ep-plan-ph"><img src="${src}" alt="фото точки"><button type="button" data-pe-phdel="${i}" aria-label="Удалить фото">✕</button></span>`;
+    }).join("");
   }
   function current() { return core().project.elements.find((e) => e.id === S.selId) || null; }
 
@@ -419,7 +428,9 @@
         const c = core();
         c.commit();
         el.photos = el.photos || [];
-        el.photos.push(cv.toDataURL("image/jpeg", 0.7));
+        // addPhoto кладёт байты в IndexedDB (фоново) и сразу в память — el.photos
+        // хранит только id, поэтому commit()/persist() остаются лёгкими даже с фото
+        el.photos.push(c.addPhoto ? c.addPhoto(cv.toDataURL("image/jpeg", 0.7)) : cv.toDataURL("image/jpeg", 0.7));
         c.persist("elem-photo");
         openEditor(el);
       };

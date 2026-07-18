@@ -205,6 +205,101 @@
   }
   function lsSet(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch (e) { return false; } }
 
+  // ---------- фото точек: IndexedDB вместо inline base64 в модели проекта ----------
+  // Раньше el.photos хранил ПРЯМО data:-строки (до 4 шт/точку, ~50-80КБ каждая
+  // после сжатия в plan-elements.js) — попадали в КАЖДЫЙ undo-снимок (commit())
+  // и в КАЖДУЮ запись localStorage (persist()). На проекте с несколькими
+  // десятками сфотографированных точек это реально пробивает квоту localStorage
+  // (~5-10МБ НА ORIGIN, общую для ВСЕХ модулей приложения, не только плана) —
+  // lsSet() после этого молча возвращает false (emit("storage-full")), и
+  // ВЕСЬ проект (не только новые фото) перестаёт сохраняться. Подтверждено
+  // нагрузочным тестом (30 комнат, фото на 20% точек → QuotaExceededError).
+  // Теперь el.photos хранит короткие id ("ph_..."), сами байты — в IndexedDB
+  // (лимит на порядки больше localStorage, запись асинхронная — не блокирует
+  // поток на каждый commit()/persist()).
+  const IDB_NAME = "ep_plan_photos", IDB_STORE = "photos";
+  let idbPromise = null;
+  function idbOpen() {
+    if (idbPromise) return idbPromise;
+    idbPromise = new Promise((resolve) => {
+      if (!window.indexedDB) { resolve(null); return; }
+      try {
+        const req = indexedDB.open(IDB_NAME, 1);
+        req.onupgradeneeded = () => { try { req.result.createObjectStore(IDB_STORE); } catch (e) {} };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(null);
+      } catch (e) { resolve(null); }
+    });
+    return idbPromise;
+  }
+  const photoCache = new Map(); // id -> data:URL, в памяти на время открытого проекта (синхронное чтение для рендера)
+  function idbPutPhoto(id, dataUrl) {
+    idbOpen().then((db) => { if (!db) return; try { db.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).put(dataUrl, id); } catch (e) {} });
+  }
+  function idbDeletePhoto(id) {
+    idbOpen().then((db) => { if (!db) return; try { db.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).delete(id); } catch (e) {} });
+  }
+  function idbGetPhoto(id) {
+    return idbOpen().then((db) => {
+      if (!db) return null;
+      return new Promise((resolve) => {
+        try {
+          const req = db.transaction(IDB_STORE, "readonly").objectStore(IDB_STORE).get(id);
+          req.onsuccess = () => resolve(req.result || null);
+          req.onerror = () => resolve(null);
+        } catch (e) { resolve(null); }
+      });
+    });
+  }
+  // синхронное чтение из памяти — рендер карточки точки (plan-elements.js)
+  // не может ждать промис на каждый показ; байты грузятся заранее, см. preloadPhotos
+  function photoUrl(id) { return photoCache.get(id) || null; }
+  // добавление фото (plan-elements.js addPhoto) — id доступен СРАЗУ (для el.photos.push),
+  // байты кладутся в IndexedDB фоново, не блокируя добавление
+  function addPhoto(dataUrl) {
+    const id = uid("ph");
+    photoCache.set(id, dataUrl);
+    idbPutPhoto(id, dataUrl);
+    return id;
+  }
+  // намеренно НЕТ deletePhoto(): удаление конкретного фото у точки (data-pe-phdel в
+  // plan-elements.js) убирает id ТОЛЬКО из el.photos (обычная undo-отслеживаемая
+  // мутация массива) — саму запись в IndexedDB не трогаем, иначе Undo вернул бы id
+  // в массив, а байтов под ним уже нет (битая картинка). Небольшая утечка
+  // неиспользуемых записей в IndexedDB — приемлемая цена (квота на порядки больше
+  // localStorage), настоящая очистка — при удалении ВСЕГО проекта (purgeProjectPhotos,
+  // это НЕ отменяемое действие, там утечки нет).
+  function purgeProjectPhotos(p) {
+    (p.elements || []).forEach((el) => (el.photos || []).forEach((id) => {
+      if (typeof id === "string" && !id.startsWith("data:")) { photoCache.delete(id); idbDeletePhoto(id); }
+    }));
+  }
+  // миграция старых проектов: el.photos раньше хранил ПРЯМО data:-строки — заменяем
+  // на id, кладём байты в IndexedDB+кэш. true, если что-то мигрировали (вызывающий
+  // код обязан persist() сразу — иначе урезанный после миграции проект не перезапишет
+  // раздутую старую запись в localStorage, а именно раздутая запись и есть причина бага).
+  function migratePhotos(p) {
+    let changed = false;
+    (p.elements || []).forEach((el) => {
+      if (!Array.isArray(el.photos) || !el.photos.length) return;
+      el.photos = el.photos.map((src) => {
+        if (typeof src !== "string" || !src.startsWith("data:")) return src; // уже id
+        changed = true;
+        return addPhoto(src);
+      });
+    });
+    return changed;
+  }
+  // подгрузить в кэш байты фото ТЕКУЩЕГО проекта одним проходом (после openProject/
+  // importJSON) — рендер карточки точки читает photoUrl() синхронно, догружать по
+  // требованию на каждый показ было бы асинхронщиной по всему plan-elements.js
+  async function preloadPhotos(p) {
+    const ids = [];
+    (p.elements || []).forEach((el) => (el.photos || []).forEach((id) => { if (typeof id === "string" && !id.startsWith("data:") && !photoCache.has(id)) ids.push(id); }));
+    if (!ids.length) return;
+    await Promise.all(ids.map(async (id) => { const v = await idbGetPhoto(id); if (v) photoCache.set(id, v); }));
+  }
+
   function loadIndex() { S.index = lsGet(LS_INDEX, []); }
   function saveIndex() { lsSet(LS_INDEX, S.index); }
   function indexUpsert(p) {
@@ -217,6 +312,14 @@
 
   // ---------- облако (best-effort поверх localStorage) ----------
   function cloudReady() { return !!(window.EP.Cloud && EP.Cloud.isReady && EP.Cloud.isReady()); }
+  // ВАЖНО про фото: пушим S.project КАК ЕСТЬ — после переноса в IndexedDB это
+  // компактные id, не байты (см. блок "фото точек" выше). Firestore-документ
+  // ограничен 1МиБ — раньше inline-фото в проекте с достаточным числом точек
+  // молча (r.set().catch(()=>false), best-effort) ПРОБИВАЛИ этот лимит и облако
+  // вообще переставало принимать проект; сейчас основная геометрия синкается
+  // надёжно. ПЛАТА: сами фото — IndexedDB ЛОКАЛЬНА устройству, на другом
+  // устройстве/браузере по id из облака их не достать (там их просто нет) —
+  // раскрыто пользователю как известное ограничение, см. CLAUDE.md.
   function cloudPushSoon() {
     clearTimeout(S.cloudTimer);
     S.cloudTimer = setTimeout(() => {
@@ -256,7 +359,7 @@
       if (opts.routeType === "floor" || opts.routeType === "ceiling") p.settings.routeType = opts.routeType;
       if (typeof opts.gofraCeil === "boolean") p.settings.gofraCeil = opts.gofraCeil;
     }
-    S.project = p; S.undo = []; S.redo = [];
+    S.project = p; S.undo = []; S.redo = []; photoCache.clear();
     persist("create");
     return p;
   }
@@ -311,16 +414,23 @@
     if (!p) p = await cloudPullProject(id); // проект, созданный на другом устройстве
     if (!p) return null;
     backfillProject(p);
+    const migrated = migratePhotos(p); // старые проекты с inline base64 в el.photos
+    photoCache.clear();
     S.project = p; S.undo = []; S.redo = [];
+    await preloadPhotos(p); // фото ТЕКУЩЕГО проекта в кэш — photoUrl() дальше читает синхронно
     emit("open");
+    if (migrated) persist("photo-migrate"); // перезаписать раздутую старую запись в localStorage урезанной
     return p;
   }
-  function closeProject() { S.project = null; S.undo = []; S.redo = []; emit("close"); }
+  function closeProject() { S.project = null; S.undo = []; S.redo = []; photoCache.clear(); emit("close"); }
   function deleteProject(id) {
     // отложенная (debounced) запись persist() могла ещё не сработать — если она
     // как раз для ЭТОГО проекта, гасим её, иначе таймер воскресит удалённый
     // проект в localStorage после того, как мы его тут же удалим строкой ниже.
     if (persistDirty && persistDirty.id === id) { clearTimeout(persistTimer); persistTimer = 0; persistDirty = null; }
+    // само удаление проекта НЕ отменяемо (не через commit()/undo) — можно спокойно
+    // почистить и байты фото в IndexedDB, в отличие от удаления ОДНОГО фото у точки
+    purgeProjectPhotos((S.project && S.project.id === id) ? S.project : lsGet(LS_PROJECT + id, null) || { elements: [] });
     try { localStorage.removeItem(LS_PROJECT + id); } catch (e) {}
     S.index = S.index.filter((x) => x.id !== id);
     saveIndex(); cloudPushSoon();
@@ -450,9 +560,20 @@
   const canRedo = () => S.redo.length > 0;
 
   // ---------- экспорт / импорт ----------
+  // exportJSON() отдаёт файл для переноса на ДРУГОЕ устройство/браузер — там нет
+  // доступа к НАШЕЙ IndexedDB, поэтому id фото гидрируются обратно в реальные
+  // data:-байты ИЗ photoCache (текущий проект уже прогружен через preloadPhotos
+  // при открытии) ТОЛЬКО в экспортируемой копии — S.project (и, соответственно,
+  // localStorage/undo/облако) продолжает хранить компактные id, ради которых и
+  // затевался весь перенос в IndexedDB.
   function exportJSON() {
     if (!S.project) return null;
-    return JSON.stringify({ type: "ep-plan-project", exportedAt: new Date().toISOString(), project: S.project }, null, 2);
+    const p = deepClone(S.project);
+    (p.elements || []).forEach((el) => {
+      if (!Array.isArray(el.photos)) return;
+      el.photos = el.photos.map((id) => (typeof id === "string" && !id.startsWith("data:")) ? (photoCache.get(id) || id) : id);
+    });
+    return JSON.stringify({ type: "ep-plan-project", exportedAt: new Date().toISOString(), project: p }, null, 2);
   }
   function importJSON(text) {
     try {
@@ -461,7 +582,14 @@
       if (!src || !Array.isArray(src.rooms) || !Array.isArray(src.elements)) return null;
       const p = Object.assign(newProject(src.name), src, { id: uid("prj"), updatedAt: now() }); // копия, свой id
       backfillProject(p); // старые/сторонние экспорты не теряют новые настройки молча
+      photoCache.clear();
+      migratePhotos(p); // импортированный JSON почти всегда содержит inline base64 (см. exportJSON выше) — заводим в IndexedDB
       S.project = p; S.undo = []; S.redo = [];
+      // фоново, БЕЗ await — importJSON() синхронна по контракту (тесты и вызывающий
+      // код читают возврат сразу); краевой случай (во входном JSON уже был готовый
+      // id, а не data:-строка — так делает только повторный экспорт ДО хидрации,
+      // обычным экспортом не производится) сам доберёт байты из IndexedDB чуть позже
+      preloadPhotos(p);
       persist("import");
       return p;
     } catch (e) { return null; }
@@ -480,6 +608,7 @@
     commit, undo, redo, canUndo, canRedo, persist,
     exportJSON, importJSON, cloudPullIndex,
     addFloor, renameFloor, setActiveFloor, deleteFloor,
+    photoUrl, addPhoto,
     model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening, newBeam, newVoid, newManualScheme, newSchemeGroup, newSchemeLine, newLedStrip, newFloor }
   };
 })();

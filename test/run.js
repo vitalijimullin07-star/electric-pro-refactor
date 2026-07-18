@@ -1604,6 +1604,50 @@ test("EP.Plan.Templates.apply: вставляет ПРАВЕЕ уже нарис
   ok(minX >= 400, "новый шаблон начинается не левее правого края существующей комнаты (x=400)");
 });
 
+// ===== 20. Фото точек: IndexedDB вместо inline base64 (оптимизация под слабые
+// телефоны — фото больше НЕ дублируются в каждом undo-снимке/localStorage-записи) =====
+test("фото: миграция inline base64 при импорте старого проекта → компактный id + photoUrl из кэша", () => {
+  const room = M.newRoom(G.rectPoints(0, 0, 400, 300), "R");
+  const proj = Object.assign(M.newProject("PhotoTest"), { rooms: [room] });
+  const el = M.newElement("socket", room.id + ":0", 50, 30, "power");
+  el.photos = ["data:image/jpeg;base64,AAAABBBB"];
+  proj.elements = [el];
+  EP.Plan.Core.importJSON(JSON.stringify({ project: proj }));
+  const P = EP.Plan.Core.project;
+  const id = P.elements[0].photos[0];
+  ok(typeof id === "string" && !id.startsWith("data:"), "фото мигрировано в id, не data:-строка");
+  eq(EP.Plan.Core.photoUrl(id), "data:image/jpeg;base64,AAAABBBB", "photoUrl отдаёт оригинальные байты из кэша");
+});
+test("фото: exportJSON гидрирует id обратно в base64 (переносимость на другое устройство), сам проект остаётся компактным", () => {
+  const room = M.newRoom(G.rectPoints(0, 0, 400, 300), "R");
+  const proj = Object.assign(M.newProject("PhotoExport"), { rooms: [room] });
+  const el = M.newElement("light", room.id + ":0", 50, 0, "power");
+  el.photos = ["data:image/png;base64,ZZZZ"];
+  proj.elements = [el];
+  EP.Plan.Core.importJSON(JSON.stringify({ project: proj }));
+  const exported = JSON.parse(EP.Plan.Core.exportJSON());
+  eq(exported.project.elements[0].photos[0], "data:image/png;base64,ZZZZ", "экспорт гидрирует id обратно в base64");
+  ok(!EP.Plan.Core.project.elements[0].photos[0].startsWith("data:"), "исходный (не экспортный) проект остаётся с компактным id");
+});
+test("фото: addPhoto/photoUrl работают синхронно в памяти (без IndexedDB в тестовом сэндбоксе)", () => {
+  const id = EP.Plan.Core.addPhoto("data:image/png;base64,QQQQ");
+  ok(typeof id === "string" && id.length > 0, "addPhoto вернул id");
+  eq(EP.Plan.Core.photoUrl(id), "data:image/png;base64,QQQQ");
+});
+test("фото: deleteProject чистит кэш фото своего проекта (утечки нет — не отменяемое действие)", () => {
+  const room = M.newRoom(G.rectPoints(0, 0, 400, 300), "R");
+  const proj = Object.assign(M.newProject("PhotoDel"), { rooms: [room] });
+  const el = M.newElement("socket", room.id + ":0", 50, 30, "power");
+  el.photos = ["data:image/jpeg;base64,CCCC"];
+  proj.elements = [el];
+  EP.Plan.Core.importJSON(JSON.stringify({ project: proj }));
+  const pid = EP.Plan.Core.project.id;
+  const photoId = EP.Plan.Core.project.elements[0].photos[0];
+  ok(EP.Plan.Core.photoUrl(photoId) != null, "фото в кэше до удаления проекта");
+  EP.Plan.Core.deleteProject(pid);
+  eq(EP.Plan.Core.photoUrl(photoId), null, "фото вычищено из кэша после удаления проекта");
+});
+
 (async () => {
   await test("openProject: бэкофилл старых проектов", async () => {}); // placeholder to keep sync
   // п.1 аудита: importJSON теперь ТОЖЕ бэкофиллит (не только openProject) — старые/
