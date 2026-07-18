@@ -157,6 +157,15 @@
     const k = canvas.cmPerPx(); // см в одном экранном пикселе
     const fs = CFG.labelPx * k, fsName = CFG.namePx * k, sw = CFG.wallPx * k, off = CFG.labelOffsetPx * k;
     const dimsOn = layerOn(project, "dims"), labelsOn = layerOn(project, "labels");
+    // Работа по линиям (QF): солo — показать только одну линию ярко, остальные приглушить
+    // (ui.soloCircuit); видимость — circuit.hidden скрывает линию целиком. В режиме solo
+    // hidden игнорируем (solo и так приглушает всё, кроме выбранной). Общие хелперы —
+    // объявлены ДО блока трасс, чтобы и трассы, и точки, и связи их использовали.
+    const soloC = ui && ui.soloCircuit;
+    const circById = (id) => (project.circuits || []).find((c) => c.id === id);
+    const circHidden = (id) => { if (soloC) return false; const c = id && circById(id); return !!(c && c.hidden); };
+    const circDim = (id) => soloC && id !== soloC; // приглушить: solo активен и это НЕ выбранная линия
+    const DIM_OP = "0.12";
 
     (project.rooms || []).forEach((room) => {
       const pts = room.points || [];
@@ -403,15 +412,17 @@
       const selRoute = EP.Plan.Rooms && EP.Plan.Rooms.selectedRouteId && EP.Plan.Rooms.selectedRouteId();
       (project.routes || []).forEach((rt) => {
         if (!layerOn(project, rt.layer)) return;
+        if (circHidden(rt.circuitId)) return; // скрытая линия — не рисуем её трассы
+        const dimR = circDim(rt.circuitId);
         const selR = selRoute === rt.id;
-        g.appendChild(el("polyline", {
+        g.appendChild(el("polyline", Object.assign({
           points: (rt.points || []).map((p) => p.x + "," + p.y).join(" "),
           class: "ep-plan-route" + (rt.manual ? " is-manual" : "") + (selR ? " is-sel" : ""),
           stroke: rt.color || layerColor(rt.layer), "stroke-width": sw * 0.8
-        }));
-        (rt.throughWalls || []).forEach((c) => g.appendChild(el("circle", {
+        }, dimR ? { opacity: DIM_OP } : {})));
+        (rt.throughWalls || []).forEach((c) => g.appendChild(el("circle", Object.assign({
           cx: c.x, cy: c.y, r: 5 * k, class: "ep-plan-cross", "stroke-width": sw * 0.6
-        })));
+        }, dimR ? { opacity: DIM_OP } : {}))));
         // ручки тяги — только у выбранной трассы, только на промежуточных изломах
         // (концы 0 и last завязаны на позицию элемента/щита/распайки, не тянутся здесь)
         if (selR) {
@@ -437,6 +448,7 @@
     const elemColor = (elem) => (elem.circuitId && circ(elem.circuitId) ? circ(elem.circuitId).color : layerColor2(elem.layer));
     (project.elements || []).forEach((elem) => {
       if (!layerOn(project, elem.layer)) return;
+      if (circHidden(elem.circuitId)) return; // скрытая линия — не рисуем её точки
       const pt = EP.Plan.Geometry.elemPoint(project, elem);
       if (!pt) return;
       const r0 = 11 * k;
@@ -527,6 +539,7 @@
         const below = (elem.type === "block" ? 15 * k : r0 + 2 * k);
         grp.appendChild(el("text", { x: cx, y: cy + below + 7 * k, "font-size": 8.5 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-hlabel" }, "h=" + Math.round(elem.height)));
       }
+      if (circDim(elem.circuitId)) grp.setAttribute("opacity", DIM_OP); // solo другой линии — приглушить точку
       g.appendChild(grp);
     });
     // пунктир: какой выключатель к какой лампе/выводу идёт (по линии QF или назначено вручную).
@@ -536,20 +549,23 @@
     if (layerOn(project, "light")) {
       (project.elements || []).forEach((elem) => {
         if (elem.type !== "switch") return;
+        if (circHidden(elem.circuitId)) return; // связь скрытой линии не рисуем
         const a = G.elemDrawPoint(project, elem);
         if (!a) return;
+        const dimSw = circDim(elem.circuitId);
+        const swLine = (attrs) => el("line", dimSw ? Object.assign({ opacity: DIM_OP }, attrs) : attrs);
         const col = elem.circuitId && circ(elem.circuitId) ? circ(elem.circuitId).color : layerColor2("light");
         if (elem.chainNext) {
           const nextEl = (project.elements || []).find((e) => e.id === elem.chainNext);
           const b = nextEl && G.elemDrawPoint(project, nextEl);
-          if (b) g.appendChild(el("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: "ep-plan-swchain", stroke: col, "stroke-width": sw * 0.6 }));
+          if (b) g.appendChild(swLine({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: "ep-plan-swchain", stroke: col, "stroke-width": sw * 0.6 }));
           return; // не последнее звено — к лампе не рисуем, это сделает последнее
         }
         const keys = elem.swKind && elem.swKind !== "normal" ? 1 : Math.max(1, elem.keys || 1);
         for (let ki = 0; ki < keys; ki++) {
           const target = G.switchTarget(project, elem, ki);
           const b = target && G.elemDrawPoint(project, target);
-          if (b) { g.appendChild(el("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: "ep-plan-swlink", stroke: col, "stroke-width": sw * 0.5 })); continue; }
+          if (b) { g.appendChild(swLine({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: "ep-plan-swlink", stroke: col, "stroke-width": sw * 0.5 })); continue; }
           // нет лампы/вывода той же линии — пробуем светодиодную ленту. Если в проекте
           // есть щит с трансформатором (panel.transformer) — ведём ДВУМЯ отрезками
           // (выключатель→щит, щит→лента), иначе прямой линией (нет отдельного щита слаботочки).

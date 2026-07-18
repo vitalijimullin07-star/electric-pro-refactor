@@ -17,7 +17,9 @@
     routeType: "Ведём по", ceiling: "потолку", floor: "полу",
     built: (n) => `Трасс: ${n}`, total: "Итого кабеля", crossings: "проходок",
     lines: "Линии (автоматы)", noLine: "Без линии", junctions: "Распаек",
-    breaker: "Автомат", rcd: "УЗО"
+    breaker: "Автомат", rcd: "УЗО",
+    soloHint: "Тап по линии — показать на плане только её (повторный тап или ✕ шторки — вернуть все). 👁 — скрыть линию.",
+    soloAll: "Показать все линии"
   };
 
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -486,13 +488,16 @@
     const circuits = p.circuits || [];
     const breakers = EP.Plan.Core.DEFAULTS.breakers;
 
+    const solo = rooms().soloCircuitId ? rooms().soloCircuitId() : null;
     const linesHtml = (circuits.length || st.byCircuit._none)
-      ? `<div class="ep-plan-srow"><b>${T.lines}</b></div>` +
-        circuits.map((c) => `<div class="ep-plan-lineRow">
-            <span class="ep-plan-cdot" style="background:${esc(c.color)}"></span>
-            <b>${esc(c.name)}</b>
+      ? `<div class="ep-plan-srow"><b>${T.lines}</b>${solo ? `<span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-prt-soloall>${T.soloAll}</button>` : ""}</div>` +
+        `<div class="ep-plan-srow ep-plan-hintrow">${T.soloHint}</div>` +
+        circuits.map((c) => `<div class="ep-plan-lineRow${solo === c.id ? " is-solo" : ""}${c.hidden ? " is-hidden" : ""}">
+            <button type="button" class="ep-plan-lineName ep-clickable" data-prt-solo="${esc(c.id)}">
+              <span class="ep-plan-cdot" style="background:${esc(c.color)}"></span><b>${esc(c.name)}</b></button>
             <span class="ep-plan-flex"></span>
             <span>${st.byCircuit[c.id] ? G().fmtLen(st.byCircuit[c.id]) : "—"}</span>
+            <button type="button" class="ep-plan-mini ep-clickable" data-prt-hide="${esc(c.id)}" aria-label="Скрыть/показать линию">${c.hidden ? "🚫" : "👁"}</button>
             <select data-prt-brk="${esc(c.id)}" class="ep-plan-sel">${breakers.map((b) => `<option value="${b}" ${c.breaker === b ? "selected" : ""}>${b}A</option>`).join("")}</select>
             <label class="ep-plan-chk"><input type="checkbox" data-prt-rcd="${esc(c.id)}" ${c.rcd ? "checked" : ""}>${T.rcd}</label>
             <button type="button" class="ep-plan-mini ep-plan-danger ep-clickable" data-prt-cdel="${esc(c.id)}">✕</button>
@@ -537,6 +542,16 @@
     if (t.closest("[data-prt-build]")) return buildIncremental();
     if (t.closest("[data-prt-clear]")) return clearRoutes();
     if (t.closest("[data-prt-close]")) { rooms().closeSheet(); return; }
+    // solo линии (изоляция на плане): тап по имени линии — показать только её; ✕ шторки
+    // или «Показать все» — вернуть. Хендлер только меняет view-состояние в Rooms + перерисовка.
+    if ((b = t.closest("[data-prt-solo]"))) { rooms().setSoloCircuit(b.getAttribute("data-prt-solo")); sheet(); return; }
+    if (t.closest("[data-prt-soloall]")) { rooms().clearSolo(); sheet(); return; }
+    // видимость линии (👁) — circuit.hidden персистится в модели (в отличие от solo)
+    if ((b = t.closest("[data-prt-hide]"))) {
+      const c = core(), circ = (c.project.circuits || []).find((x) => x.id === b.getAttribute("data-prt-hide"));
+      if (circ) { c.commit(); circ.hidden = !circ.hidden; c.persist("circuit-hide"); rooms().renderScene(); sheet(); }
+      return;
+    }
     if ((b = t.closest("[data-prt-conn]"))) {
       const c = core(); c.commit(); c.project.settings.connectorMode = b.getAttribute("data-prt-conn"); c.persist("routes-conn"); sheet(); return;
     }
