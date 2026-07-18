@@ -68,11 +68,16 @@
     canvas: null, active: false,
     mode: "view", draft: { points: [] }, pendingRect: null, pendingPoly: null,
     selectedRoomId: null, ruler: { a: null, b: null }, beamDraft: { a: null, b: null }, voidDraft: { a: null, b: null },
-    umove: false, calib: { on: false, a: null, b: null }, mergeFirst: null, mergePending: null
+    umove: false, calib: { on: false, a: null, b: null }, mergeFirst: null, mergePending: null,
+    soloCircuit: null // работа по линиям: id единственной показанной ярко линии QF (view-состояние, не в модели)
   };
 
   // ---------- сцена ----------
-  function ui() { return { selectedRoomId: R.selectedRoomId, draft: R.draft, ruler: R.ruler, beamDraft: R.beamDraft, voidDraft: R.voidDraft }; }
+  function ui() { return { selectedRoomId: R.selectedRoomId, draft: R.draft, ruler: R.ruler, beamDraft: R.beamDraft, voidDraft: R.voidDraft, soloCircuit: R.soloCircuit }; }
+  // solo линии QF (изоляция на плане): тап по линии в шторке 🧵 Трассы — только она ярко,
+  // остальные приглушены. Повторный тап по той же линии — снять solo. Не персистится.
+  function setSoloCircuit(id) { R.soloCircuit = (R.soloCircuit === id) ? null : (id || null); renderScene(); }
+  function clearSolo() { if (R.soloCircuit) { R.soloCircuit = null; renderScene(); } }
   function renderScene() {
     if (!R.canvas || !EP.Plan.Render) return;
     EP.Plan.Render.draw(R.canvas, G().floorScoped(core().project), ui());
@@ -318,6 +323,9 @@
     // fullscreen — гасим его тоже, иначе браузер завис бы в fullscreen с пустой шторкой
     try { if (s && document.fullscreenElement === s) document.exitFullscreen().catch(() => {}); } catch (e) {}
     if (s) { s.hidden = true; s.innerHTML = ""; s.classList.remove("ep-plan-sheet-full"); }
+    // solo линии управляется из шторки 🧵 Трассы — закрыли шторку, вернули полный вид
+    // (иначе план остался бы приглушённым без видимого элемента управления)
+    if (R.soloCircuit) { R.soloCircuit = null; renderScene(); }
     syncQuickbarForSheet(false);
   }
   // общая кнопка «во весь экран» для шторок БЕЗ своего fullscreen-состояния
@@ -684,18 +692,47 @@
     R.selectedRouteTap = flipped;
     sheetRoute(rt, flipped);
   }
-  // тяга: существующий излом (не концевые точки — те завязаны на позицию элемента/
-  // щита/распайки) — двигаем; середина прямого участка — вставляем новый излом и
-  // сразу тянем его. Мимо — жест остаётся паном (return false из "start").
+  // Тяга трассы (два режима — просьба пользователя):
+  //  • ОБЫЧНЫЙ тап + тяга: существующий излом (не концевые — те завязаны на позицию
+  //    элемента/щита/распайки) двигаем; середина прямого участка — вставляем новый излом
+  //    и тянем его в 2D. Мимо — жест остаётся паном (return false из "start").
+  //  • ДВОЙНОЙ тап + тяга (opts.dbl из plan-canvas.js): хватаем ЦЕЛЫЙ прямой участок
+  //    (сегмент между двумя изломами) и двигаем его как жёсткий отрезок ПЕРПЕНДИКУЛЯРНО
+  //    себе — обе концевые точки сегмента едут на одинаковый перпендикулярный сдвиг, а
+  //    соседние (перпендикулярные) сегменты просто удлиняются/укорачиваются, сохраняя
+  //    прямые углы. Если участок упирается в КОНЦЕВУЮ точку трассы (анкер элемента/щита) —
+  //    у неё вставляем короткий коннектор (копию анкера), чтобы сам анкер не двигать, а
+  //    участок всё равно ехал прямым (полоса «до первого поворота», а где поворота нет —
+  //    до анкера через новый коннектор). segDrag хранит индексы концов участка и нормаль.
   function enableRouteDrag() {
     if (!R.canvas) return;
-    let grabbed = -1;
-    R.canvas.setDragHandler((dx, dy, phase, start) => {
+    let grabbed = -1, segDrag = null;
+    R.canvas.setDragHandler((dx, dy, phase, start, opts) => {
       const c = core(), rt = (c.project.routes || []).find((r) => r.id === R.selectedRoute);
       if (!rt || !rt.points) return false;
       if (phase === "start") {
         const k = R.canvas.cmPerPx();
         const rr = Math.max(18 * k, 14);
+        // ---- двойной тап: тянем целый прямой участок ----
+        if (opts && opts.dbl) {
+          let segI = -1, segD = rr;
+          for (let i = 0; i < rt.points.length - 1; i++) {
+            const cl = G().closestOnSeg(start, rt.points[i], rt.points[i + 1]);
+            if (cl.d <= segD) { segD = cl.d; segI = i; }
+          }
+          if (segI < 0) return false; // мимо — пан
+          core().commit();
+          let a = segI, b = segI + 1;
+          // концевую точку (анкер) не двигаем — вставляем у неё коннектор-копию
+          if (a === 0) { rt.points.splice(1, 0, { x: rt.points[0].x, y: rt.points[0].y }); a = 1; b = 2; }
+          if (b === rt.points.length - 1) { rt.points.splice(b, 0, { x: rt.points[b].x, y: rt.points[b].y }); }
+          const A = rt.points[a], B = rt.points[b];
+          let sx = B.x - A.x, sy = B.y - A.y; const L = Math.hypot(sx, sy) || 1;
+          segDrag = { a, b, nx: -sy / L, ny: sx / L }; // нормаль к участку
+          grabbed = -2;
+          return;
+        }
+        // ---- обычный тап: излом или вставка излома ----
         let best = -1, bestD = rr;
         for (let i = 1; i < rt.points.length - 1; i++) {
           const d = G().dist(start, rt.points[i]);
@@ -713,9 +750,26 @@
         grabbed = segI + 1;
         return;
       }
-      if (phase === "move" && grabbed >= 0) {
+      if (phase === "move" && grabbed === -2 && segDrag) {
+        // проекция сдвига пальца на нормаль участка — обе концевые точки едут одинаково
+        const pn = segDrag.nx * dx + segDrag.ny * dy;
+        const A = rt.points[segDrag.a], B = rt.points[segDrag.b];
+        A.x += segDrag.nx * pn; A.y += segDrag.ny * pn;
+        B.x += segDrag.nx * pn; B.y += segDrag.ny * pn;
+        renderSceneSoon();
+      } else if (phase === "move" && grabbed >= 0) {
         rt.points[grabbed] = { x: rt.points[grabbed].x + dx, y: rt.points[grabbed].y + dy };
         renderSceneSoon();
+      } else if (phase === "end" && grabbed === -2 && segDrag) {
+        const step = c.project.settings.gridStep || 10;
+        [segDrag.a, segDrag.b].forEach((idx) => {
+          const q = rt.points[idx];
+          rt.points[idx] = { x: G().snap(q.x, step), y: G().snap(q.y, step) };
+        });
+        rt.manual = true;
+        if (EP.Plan.Routes.recomputeThroughWalls) EP.Plan.Routes.recomputeThroughWalls(c.project, rt);
+        R.selectedRouteTap = rt.points[segDrag.a];
+        c.persist("route-dragseg"); grabbed = -1; segDrag = null; renderScene();
       } else if (phase === "end" && grabbed >= 0) {
         const step = c.project.settings.gridStep || 10;
         const oj = G().orthoJoint(rt.points[grabbed - 1], rt.points[grabbed], rt.points[grabbed + 1]);
@@ -1237,6 +1291,8 @@
     selectedBeamId: () => R.selectedBeam || null,
     selectedVoidId: () => R.selectedVoid || null,
     selectedRouteId: () => R.selectedRoute || null,
+    soloCircuitId: () => R.soloCircuit || null,
+    setSoloCircuit, clearSolo,
     canvasCmPerPx: () => (R.canvas ? R.canvas.cmPerPx() : 1),
     mergeRooms
   };

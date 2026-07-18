@@ -343,6 +343,11 @@ body[data-visual-mode="day"] .ep-plan-chaintext { fill: #dc2626; }
 .ep-plan-cdot { margin-right: 2px; }
 .ep-plan-lineRow { display: flex; align-items: center; gap: 8px; font: 500 12.5px system-ui; padding: 4px 0; border-bottom: 1px solid rgba(148,163,184,.14); flex-wrap: wrap; }
 .ep-plan-lineRow b { font: 700 13px system-ui; }
+/* работа по линиям QF: кнопка-имя (тап = solo), активная линия и скрытая */
+.ep-plan-lineName { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: inherit; cursor: pointer; padding: 3px 6px; border-radius: 8px; }
+.ep-plan-lineRow.is-solo { background: rgba(56,189,248,.12); border-radius: 8px; }
+.ep-plan-lineRow.is-solo .ep-plan-lineName { box-shadow: inset 0 0 0 1.5px var(--accent, #38bdf8); }
+.ep-plan-lineRow.is-hidden { opacity: .5; }
 .ep-plan-sel { padding: 5px 7px; border-radius: 8px; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.05); color: var(--text,#e8eef7); font: 600 12px system-ui; }
 body[data-visual-mode="day"] .ep-plan-sel { background:#fff; border-color:#cbd5e1; color:#0f172a; }
 body[data-visual-mode="day"] .ep-plan-junction { fill:#0284c7; stroke:#0f172a; }

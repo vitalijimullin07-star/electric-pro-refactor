@@ -111,6 +111,10 @@
 
     let downClient = null; // экранная точка начала одиночного жеста (для drag-старта)
     let lastTapInfo = null; // { x, y, t } — экранные координаты последнего одиночного тапа, для двойного
+    let dblDown = false; // текущий pointerdown — ВТОРОЙ тап двойного (в окне dblTapMs/dblTapPx
+    // от отпускания предыдущего одиночного тапа): прокидывается в dragHandler("start") пятым
+    // аргументом {dbl}, чтобы «двойной тап + тяга» отличался от обычной тяги (плану нужно:
+    // dbl → тянуть целый прямой участок трассы, обычная тяга → ломать и тянуть точку).
     let longPressTimer = null;
     function clearLongPress() { if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; } }
     svg.addEventListener("pointerdown", (e) => {
@@ -120,6 +124,9 @@
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pts.size === 1) {
         downClient = { x: e.clientX, y: e.clientY };
+        // этот down — второй тап двойного? (в окне dblTapMs/dblTapPx от прошлого одиночного)
+        dblDown = !!(lastTapInfo && (Date.now() - lastTapInfo.t) <= CFG.dblTapMs &&
+          Math.hypot(e.clientX - lastTapInfo.x, e.clientY - lastTapInfo.y) <= CFG.dblTapPx);
         // боковая кнопка пера (S Pen/Wacom, приходит как button=2) — всегда чистая
         // панорама этим же пером, без тапа/тяги под наконечником
         const barrelBtn = e.pointerType === "pen" && e.button === 2;
@@ -170,7 +177,7 @@
             // мусорный микро-шаг в истории отмены (commit() на "start" уже необратим)
             if (downClient && Math.hypot(e.clientX - downClient.x, e.clientY - downClient.y) < CFG.dragStartPx) return;
             // хендлер может отказаться (вернуть false) — тогда жест панорамирует
-            const res = dragHandler(0, 0, "start", toWorld((downClient || e).x, (downClient || e).y));
+            const res = dragHandler(0, 0, "start", toWorld((downClient || e).x, (downClient || e).y), { dbl: dblDown });
             if (res === false) { dragVeto = true; view.x -= dx; view.y -= dy; apply(); }
             else { dragMoved = true; clearLongPress(); dragHandler(dx, dy, "move"); }
           } else dragHandler(dx, dy, "move");
