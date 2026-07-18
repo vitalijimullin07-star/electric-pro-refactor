@@ -237,7 +237,12 @@
     }, { passive: false });
 
     // ---------- вписать содержимое ----------
+    // lastFit — последний осознанный fit(bbox, padRatio) (включая fit(null) —
+    // «вписать дефолтный вид»): используется ниже, чтобы пережить «устаканивание»
+    // вёрстки контейнера сразу после монтирования (см. resize()).
+    let lastFit = null;
     function fit(bbox, padRatio) {
+      lastFit = { bbox, padRatio };
       const pad = padRatio == null ? 0.15 : padRatio;
       const b = bbox && bbox.w > 0 && bbox.h > 0 ? bbox : { x: CFG.startView.x, y: CFG.startView.y, w: CFG.startView.w, h: CFG.startView.h };
       const aspect = svg.clientHeight > 0 ? svg.clientWidth / svg.clientHeight : 1.5;
@@ -247,7 +252,26 @@
       clampView(); apply();
     }
 
-    function resize() { // подгон пропорций viewBox под контейнер
+    // Окно «устаканивания» после монтирования (мс) — на части реальных мобильных
+    // браузеров 100dvh у .ep-plan (см. plan.css) при первой отрисовке ещё не
+    // отражает финальный размер (адресная строка сворачивается/разворачивается
+    // уже ПОСЛЕ первого layout) — mountCanvas() (plan-mount.js) зовёт fit(bbox)
+    // синхронно сразу после создания канваса, когда svg.clientWidth/Height может
+    // быть замерен по ЕЩЁ НЕ устаканившемуся контейнеру. Раньше resize() (колбэк
+    // ResizeObserver) только подстраивал ПРОПОРЦИИ viewBox под новый размер,
+    // сохраняя уже неверный ЦЕНТР вида — план оставался обрезанным/съехавшим до
+    // ручного действия, которое заново зовёт fit() (репорт пользователя: «при
+    // открытии проекта получается обрезанное, нормальным становится когда нажимаю
+    // во весь экран 2 раза» — сам toggleFullscreen() fit() не зовёт, но резкий
+    // скачок размера контейнера в fullscreen лишний раз гоняет resize(), и к
+    // моменту возврата из fullscreen dvh у браузера уже успевает устаканиться).
+    // Пока это окно не истекло, resize() вместо простой подстройки пропорций
+    // заново зовёт fit() с ПОСЛЕДНИМИ осознанными параметрами — самокорректируется
+    // без необходимости лезть в fullscreen. После окна — обычное поведение (сохраняет
+    // текущий вид пользователя, НЕ переприменяет fit поверх его собственного зума/пана).
+    const settleUntil = Date.now() + 1500;
+    function resize() { // подгон пропорций viewBox под контейнер (или полный re-fit во время «устаканивания»)
+      if (lastFit && Date.now() < settleUntil) { fit(lastFit.bbox, lastFit.padRatio); return; }
       const aspect = svg.clientHeight > 0 ? svg.clientWidth / svg.clientHeight : 1.5;
       const cy = view.y + view.h / 2;
       view.h = view.w / aspect;

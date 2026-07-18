@@ -351,10 +351,28 @@
   // (position:fixed без screen.orientation.lock). ЦЕНА: браузерный chrome
   // (адресная строка) теперь не скрывается, как скрывал бы настоящий
   // Fullscreen API — сознательный компромисс ради предсказуемости закрытия.
+  // При входе в fullscreen панель инструментов сворачивается автоматически —
+  // просьба пользователя («хотел бы что бы оно всплывало когда во весь экран
+  // раскрываю», про плавающую quickbar снизу холста): у крупного тулбара (шапка+
+  // этажи+2 ряда режимов) на реальном телефоне остаётся так мало места, что холст
+  // (и quickbar на нём, привязанная к его низу) может оказаться ниже видимой
+  // области fullscreen — тот же самый экран, что и должен максимально освобождать
+  // место под рисование. Прежнее состояние панели запоминается и восстанавливается
+  // при выходе — если пользователь сам её не разворачивал, сама панель по-прежнему
+  // сворачивается/разворачивается вручную (︿/﹀) независимо от fullscreen.
+  let ctrlsWasOnBeforeFull = null;
   function toggleFullscreen(r) {
     const box = r.querySelector(".ep-plan");
     if (!box) return;
+    const enteringFull = !box.classList.contains("is-full");
     box.classList.toggle("is-full");
+    if (enteringFull) {
+      ctrlsWasOnBeforeFull = V.ctrlsOn;
+      if (V.ctrlsOn) toggleTopCtrls(r);
+    } else if (ctrlsWasOnBeforeFull != null) {
+      if (V.ctrlsOn !== ctrlsWasOnBeforeFull) toggleTopCtrls(r);
+      ctrlsWasOnBeforeFull = null;
+    }
   }
   document.addEventListener("input", (e) => {
     const r = root(); if (!r || !V.active) return;
