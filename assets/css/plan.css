@@ -309,13 +309,26 @@ body[data-visual-mode="day"] .ep-plan-wall.mat-soft { stroke: #94a3b8; }
   position: fixed; inset: 0; z-index: 9999; margin: 0; padding: 10px;
   overflow: auto; background: var(--bg-a, #0b1220);
 }
-.ep-plan.is-full .ep-plan-canvas { height: calc(100vh - 215px); height: calc(100dvh - 215px); }
 
-/* свернуть панель инструментов редактора — холст занимает освободившееся место */
+/* свернуть панель инструментов редактора — холст занимает освободившееся место.
+   Вне fullscreen страница сама скроллится, магическое число безопасно (расхождение
+   даёт чуть больше/меньше скролла, не пустой блок). */
 .ep-plan.is-ctrls-collapsed .ep-plan-toolbar,
 .ep-plan.is-ctrls-collapsed .ep-plan-modehint { display: none; }
 .ep-plan.is-ctrls-collapsed .ep-plan-canvas { height: calc(100vh - 110px); height: calc(100dvh - 110px); }
-.ep-plan.is-full.is-ctrls-collapsed .ep-plan-canvas { height: calc(100vh - 75px); height: calc(100dvh - 75px); }
+
+/* Fullscreen: холст (flex:1) сам занимает ВСЁ оставшееся место под видимой шапкой —
+   БЕЗ фиксированного вычитания px. Раньше calc(100vh-215px) / calc(100vh-75px) со
+   свёрнутой панелью держались на магическом числе реальной высоты шапки — в свёрнутом
+   виде оно расходилось с фактической высотой .ep-plan-top, оставляя пустой промежуток
+   внизу (репорт пользователя со скриншотом: «съехал наверх, а не во весь экран»).
+   Правило ОБЯЗАНО идти ПОСЛЕ .is-ctrls-collapsed выше — та же специфичность
+   (.ep-plan + 1 класс + .ep-plan-canvas = 3 класса у обоих), побеждает по порядку в
+   каскаде, а тут нужно именно flex, а не вычитание 110px, даже когда на элементе разом
+   и is-full, и is-ctrls-collapsed. min-height:0 намеренно — не жёстко удерживать
+   320px-пол (как у базового .ep-plan-canvas), а дать холсту честно ужаться, если
+   видимая шапка (напр. с крупным масштабом текста) внезапно выше расчётного. */
+.ep-plan.is-full .ep-plan-canvas { flex: 1 1 auto; min-height: 0; height: auto; }
 
 /* — десктоп: шторка становится боковой панелью справа от холста, а не нижней
    (просьба пользователя «адаптировать под ПК»). Холст (.ep-plan-svg) сам не
