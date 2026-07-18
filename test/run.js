@@ -1458,6 +1458,25 @@ test("estimateItems: с построенными трассами — тот ж�
   ok(items && items.length, "позиции есть");
   eq(JSON.stringify(items), JSON.stringify(exact.items), "тот же точный счёт по трассам, что в шторке Расчёта");
 });
+test("perCircuit: разбивка по линиям QF — кабель/точки/проходки по своей линии", () => {
+  const { P, w } = install();
+  const cc1 = M.newCircuit("QF1", "#ef4444", 16); P.circuits.push(cc1);
+  const cc2 = M.newCircuit("QF2", "#22c55e", 25); cc2.rcd = true; P.circuits.push(cc2);
+  const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
+  const a = M.newElement("socket", w(0), 100, 30, "power"); a.circuitId = cc1.id; P.elements.push(a);
+  const b = M.newElement("socket", w(0), 200, 30, "power"); b.circuitId = cc1.id; P.elements.push(b);
+  const d = M.newElement("socket", w(2), 100, 30, "power"); d.circuitId = cc2.id; P.elements.push(d);
+  [a, b, d].forEach((e) => {
+    const rt = M.newRoute("power", "ceiling", [G.elemPoint(P, e), { x: pn.x, y: pn.y }], e.id, pn.id);
+    rt.toPanel = true; rt.circuitId = e.circuitId; P.routes.push(rt);
+  });
+  const per = EP.Plan.Calc.perCircuit(P);
+  ok(per && per.length === 2, "две линии в разбивке");
+  const r1 = per.find((r) => r.name === "QF1"), r2 = per.find((r) => r.name === "QF2");
+  eq(r1.points, 2, "QF1 — 2 точки"); eq(r1.breaker, 16, "QF1 автомат 16A"); eq(r1.rcd, false, "QF1 без УЗО");
+  eq(r2.points, 1, "QF2 — 1 точка"); eq(r2.breaker, 25, "QF2 автомат 25A"); eq(r2.rcd, true, "QF2 с УЗО");
+  ok(r1.cableLen > 0, "QF1 длина кабеля посчитана");
+});
 test("estimateItems: без движка пула (PoolEngine не подключён) и без трасс — null, не падает", () => {
   const { P, w } = install();
   const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
