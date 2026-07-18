@@ -14,6 +14,10 @@
     pointPx: 6,         // маркер точки черновика, px
     labelOffsetPx: 14   // отступ подписи от стены, px
   };
+  // кэш собранного <g> со стенами/масками/проёмами/балками/пустотами/лентой на
+  // canvas (см. buildWalls() внутри drawScaled) — WeakMap, не свойство на canvas,
+  // чтобы не полагаться на форму объекта canvas (в т.ч. в тестовом fakeCanvas())
+  const wallsCache = new WeakMap();
 
   function el(tag, attrs, text) {
     const n = document.createElementNS(NS, tag);
@@ -152,8 +156,7 @@
   function drawScaled(canvas, project, ui) {
     const G = EP.Plan.Geometry;
     const g = canvas.layers.overlay;
-    clear(g);
-    if (!project) return;
+    if (!project) { clear(g); return; }
     const k = canvas.cmPerPx(); // см в одном экранном пикселе
     const fs = CFG.labelPx * k, fsName = CFG.namePx * k, sw = CFG.wallPx * k, off = CFG.labelOffsetPx * k;
     const dimsOn = layerOn(project, "dims"), labelsOn = layerOn(project, "labels");
@@ -167,205 +170,246 @@
     const circDim = (id) => soloC && id !== soloC; // приглушить: solo активен и это НЕ выбранная линия
     const DIM_OP = "0.12";
 
-    (project.rooms || []).forEach((room) => {
-      const pts = room.points || [];
-      if (pts.length < 2) return;
-      const sel = ui && ui.selectedRoomId === room.id;
-      const closed = pts.length >= 3;
-      const mat = room.material || (project.settings && project.settings.wallMaterial) || "Бетон";
-      const matClass = MATCLASS(mat);
-      // стены — как на чертеже: митра-стыки (без кружков), заливка + штриховка
-      // материала, проёмы вырезаются маской (в т.ч. проёмы общей стены соседа)
-      const band = closed ? G.roomBand(project, room) : null;
-      if (band) {
-        const quads = [];
-        G.walls(room).forEach((w) => {
-          const th2 = G.wallThOf(project, w) / 2 + 0.6;
-          const len = w.len || 1, ddx = (w.b.x - w.a.x) / len, ddy = (w.b.y - w.a.y) / len;
-          const nx = -ddy, ny = ddx;
-          G.wallOpeningSpans(project, w).forEach((o) => {
-            const s0 = Math.max(0, o.offset), e0 = Math.min(w.len, o.offset + o.width);
-            if (e0 - s0 < 1) return;
-            const pa = G.pointAtOffset(w, s0), pb = G.pointAtOffset(w, e0);
-            quads.push(`M${pa.x + nx * th2} ${pa.y + ny * th2} L${pb.x + nx * th2} ${pb.y + ny * th2} L${pb.x - nx * th2} ${pb.y - ny * th2} L${pa.x - nx * th2} ${pa.y - ny * th2} Z`);
+    // ---------- стены/маски/проёмы/балки/пустоты/лента — кэшируемый <g> ----------
+    // Самая дорогая часть рендера (профилировано headless Chromium CPU-профилем на
+    // 30 комнатах/150 точках: <mask> на каждую комнату с проёмами + до 3 наложенных
+    // <path> на стену + G.wallOpeningSpans/G.walls — больше 30% времени renderScene()
+    // на КАЖДЫЙ вызов), но геометрия стен меняется НАМНОГО реже точек/трасс — перенос
+    // розетки, построение трассы, переключение слоя её вообще не трогают. Строим ОДИН
+    // раз в отдельный <g> и переиспользуем, пока сигнатура структурных входов (ниже)
+    // не изменится буквально — НЕ вручную отслеживаемый dirty-флаг (риск пропустить
+    // место мутации и молча показывать устаревшие стены), а JSON-сигнатура: дешевле
+    // самой сборки (масок/путей) и самокорректируется на ЛЮБОЕ структурное изменение.
+    // Черновики рисования (room/beam/void draft) НАМЕРЕННО остаются ВНУТРИ этого же
+    // кэшируемого блока (как и были, по позиции в коде) — их состояние тоже входит в
+    // сигнатуру: пока ничего не рисуется (обычный режим правки уже готового проекта —
+    // 99% времени) сигнатура стабильна и кэш работает; во время АКТИВНОГО рисования
+    // комнаты/балки/пустоты сигнатура меняется на каждый пойнтермув, кэш промахивается
+    // каждый раз — ровно то же поведение, что было до этой правки (не хуже, не лучше
+    // — оптимизация целится в редактирование уже готового плана, не в его рисование).
+    const structSig = JSON.stringify([
+      project.rooms, project.openings, project.beams, project.voids, project.ledStrips,
+      project.settings && project.settings.wallThickness, project.settings && project.settings.wallMaterial,
+      dimsOn, labelsOn, ui && ui.selectedRoomId, ui && ui.draft, ui && ui.beamDraft, ui && ui.voidDraft,
+      EP.Plan.Rooms && EP.Plan.Rooms.selectedBeamId && EP.Plan.Rooms.selectedBeamId(),
+      EP.Plan.Rooms && EP.Plan.Rooms.selectedVoidId && EP.Plan.Rooms.selectedVoidId()
+    ]);
+    const wallsCached = wallsCache.get(canvas);
+    let wallsGroup;
+    if (wallsCached && wallsCached.sig === structSig) {
+      wallsGroup = wallsCached.node;
+    } else {
+      wallsGroup = el("g", { "data-l": "walls" });
+      buildWalls(wallsGroup);
+      wallsCache.set(canvas, { sig: structSig, node: wallsGroup });
+    }
+    clear(g);
+    g.appendChild(wallsGroup);
+
+    // содержимое — ДОСЛОВНО тот же код, что был раньше напрямую в g (тень имени g
+    // ниже гарантирует это без переписывания каждого вызова appendChild)
+    function buildWalls(wallsTarget) {
+      const g = wallsTarget;
+      (project.rooms || []).forEach((room) => {
+        const pts = room.points || [];
+        if (pts.length < 2) return;
+        const sel = ui && ui.selectedRoomId === room.id;
+        const closed = pts.length >= 3;
+        const mat = room.material || (project.settings && project.settings.wallMaterial) || "Бетон";
+        const matClass = MATCLASS(mat);
+        // стены — как на чертеже: митра-стыки (без кружков), заливка + штриховка
+        // материала, проёмы вырезаются маской (в т.ч. проёмы общей стены соседа)
+        const band = closed ? G.roomBand(project, room) : null;
+        if (band) {
+          const quads = [];
+          G.walls(room).forEach((w) => {
+            const th2 = G.wallThOf(project, w) / 2 + 0.6;
+            const len = w.len || 1, ddx = (w.b.x - w.a.x) / len, ddy = (w.b.y - w.a.y) / len;
+            const nx = -ddy, ny = ddx;
+            G.wallOpeningSpans(project, w).forEach((o) => {
+              const s0 = Math.max(0, o.offset), e0 = Math.min(w.len, o.offset + o.width);
+              if (e0 - s0 < 1) return;
+              const pa = G.pointAtOffset(w, s0), pb = G.pointAtOffset(w, e0);
+              quads.push(`M${pa.x + nx * th2} ${pa.y + ny * th2} L${pb.x + nx * th2} ${pb.y + ny * th2} L${pb.x - nx * th2} ${pb.y - ny * th2} L${pa.x - nx * th2} ${pa.y - ny * th2} Z`);
+            });
           });
-        });
-        let maskAttr = {};
-        if (quads.length) {
-          const bb = G.bbox(band.outer);
-          const m = el("mask", { id: "ep-cut-" + room.id, maskUnits: "userSpaceOnUse", x: bb.x - 60, y: bb.y - 60, width: bb.w + 120, height: bb.h + 120 });
-          m.appendChild(el("rect", { x: bb.x - 60, y: bb.y - 60, width: bb.w + 120, height: bb.h + 120, fill: "#fff" }));
-          m.appendChild(el("path", { d: quads.join(" "), fill: "#000" }));
-          g.appendChild(m);
-          maskAttr = { mask: "url(#ep-cut-" + room.id + ")" };
+          let maskAttr = {};
+          if (quads.length) {
+            const bb = G.bbox(band.outer);
+            const m = el("mask", { id: "ep-cut-" + room.id, maskUnits: "userSpaceOnUse", x: bb.x - 60, y: bb.y - 60, width: bb.w + 120, height: bb.h + 120 });
+            m.appendChild(el("rect", { x: bb.x - 60, y: bb.y - 60, width: bb.w + 120, height: bb.h + 120, fill: "#fff" }));
+            m.appendChild(el("path", { d: quads.join(" "), fill: "#000" }));
+            g.appendChild(m);
+            maskAttr = { mask: "url(#ep-cut-" + room.id + ")" };
+          }
+          const ringD = (r2) => "M" + r2.map((p) => p.x + " " + p.y).join(" L") + " Z";
+          const dBand = ringD(band.outer) + " " + ringD(band.inner);
+          g.appendChild(el("path", Object.assign({ d: dBand, "fill-rule": "evenodd", class: "ep-plan-wallfill" + matClass + (sel ? " is-sel" : "") }, maskAttr)));
+          g.appendChild(el("path", Object.assign({ d: dBand, "fill-rule": "evenodd", fill: HATCH(mat), class: "ep-plan-wallhatch" }, maskAttr)));
+          g.appendChild(el("path", Object.assign({ d: dBand, "fill-rule": "evenodd", class: "ep-plan-walledge", fill: "none", "stroke-width": Math.min(1, sw * 0.3) }, maskAttr)));
+          // ручки углов выбранной комнаты: тяни угол — форма, тяни стену — сдвиг стены
+          if (sel) pts.forEach((v) => g.appendChild(el("circle", { cx: v.x, cy: v.y, r: CFG.pointPx * 1.25 * k, class: "ep-plan-roomhandle" })));
+        } else if (pts.length >= 2) {
+          const th = Math.max(4, (project.settings && project.settings.wallThickness) || 10);
+          g.appendChild(el("path", { d: "M" + pts.map((p) => p.x + " " + p.y).join(" L"), class: "ep-plan-wallband" + matClass, "stroke-width": th, fill: "none" }));
         }
-        const ringD = (r2) => "M" + r2.map((p) => p.x + " " + p.y).join(" L") + " Z";
-        const dBand = ringD(band.outer) + " " + ringD(band.inner);
-        g.appendChild(el("path", Object.assign({ d: dBand, "fill-rule": "evenodd", class: "ep-plan-wallfill" + matClass + (sel ? " is-sel" : "") }, maskAttr)));
-        g.appendChild(el("path", Object.assign({ d: dBand, "fill-rule": "evenodd", fill: HATCH(mat), class: "ep-plan-wallhatch" }, maskAttr)));
-        g.appendChild(el("path", Object.assign({ d: dBand, "fill-rule": "evenodd", class: "ep-plan-walledge", fill: "none", "stroke-width": Math.min(1, sw * 0.3) }, maskAttr)));
-        // ручки углов выбранной комнаты: тяни угол — форма, тяни стену — сдвиг стены
-        if (sel) pts.forEach((v) => g.appendChild(el("circle", { cx: v.x, cy: v.y, r: CFG.pointPx * 1.25 * k, class: "ep-plan-roomhandle" })));
-      } else if (pts.length >= 2) {
-        const th = Math.max(4, (project.settings && project.settings.wallThickness) || 10);
-        g.appendChild(el("path", { d: "M" + pts.map((p) => p.x + " " + p.y).join(" L"), class: "ep-plan-wallband" + matClass, "stroke-width": th, fill: "none" }));
-      }
 
-      if (closed && dimsOn) {
-        const c = G.centroid(pts);
-        G.walls(room).forEach((w) => {
-          // подпись снаружи: нормаль от центроида
-          let nx = -(w.b.y - w.a.y), ny = w.b.x - w.a.x;
-          const nl = Math.hypot(nx, ny) || 1;
-          nx /= nl; ny /= nl;
-          if ((w.mx - c.x) * nx + (w.my - c.y) * ny < 0) { nx = -nx; ny = -ny; }
+        if (closed && dimsOn) {
+          const c = G.centroid(pts);
+          G.walls(room).forEach((w) => {
+            // подпись снаружи: нормаль от центроида
+            let nx = -(w.b.y - w.a.y), ny = w.b.x - w.a.x;
+            const nl = Math.hypot(nx, ny) || 1;
+            nx /= nl; ny /= nl;
+            if ((w.mx - c.x) * nx + (w.my - c.y) * ny < 0) { nx = -nx; ny = -ny; }
+            g.appendChild(el("text", {
+              x: w.mx + nx * off, y: w.my + ny * off,
+              class: "ep-plan-dim", "font-size": fs,
+              "text-anchor": "middle", "dominant-baseline": "middle"
+            }, w.n + " · " + G.fmtLen(w.len)));
+          });
+        }
+        if (closed && labelsOn) {
+          const c = G.centroid(pts);
           g.appendChild(el("text", {
-            x: w.mx + nx * off, y: w.my + ny * off,
-            class: "ep-plan-dim", "font-size": fs,
+            x: c.x, y: c.y, class: "ep-plan-name", "font-size": fsName,
             "text-anchor": "middle", "dominant-baseline": "middle"
-          }, w.n + " · " + G.fmtLen(w.len)));
-        });
-      }
-      if (closed && labelsOn) {
-        const c = G.centroid(pts);
-        g.appendChild(el("text", {
-          x: c.x, y: c.y, class: "ep-plan-name", "font-size": fsName,
-          "text-anchor": "middle", "dominant-baseline": "middle"
-        }, room.name + " · " + G.fmtArea(G.roomNetArea(project, room))));
-      }
-    });
-
-    // черновик рисования (прямоугольник: 1-я точка; полигон: линия точек)
-    const draft = ui && ui.draft;
-    if (draft && draft.points && draft.points.length) {
-      const dp = draft.points;
-      if (dp.length > 1) {
-        g.appendChild(el("polyline", {
-          points: dp.map((p) => p.x + "," + p.y).join(" "),
-          class: "ep-plan-draft", "stroke-width": sw, fill: "none"
-        }));
-        // живые длины сегментов при рисовании — видно, что получается
-        for (let i = 0; i < dp.length - 1; i++) {
-          const a = dp[i], b = dp[i + 1], L = G.dist(a, b);
-          if (L < 5) continue;
-          g.appendChild(el("text", { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - 8 * k, class: "ep-plan-rulertext", "font-size": 10 * k, "text-anchor": "middle" }, G.fmtLen(L)));
+          }, room.name + " · " + G.fmtArea(G.roomNetArea(project, room))));
         }
-      }
-      dp.forEach((p, i) => g.appendChild(el("circle", {
-        cx: p.x, cy: p.y, r: CFG.pointPx * k,
-        class: "ep-plan-draftpt" + (i === 0 ? " is-first" : "")
-      })));
-    }
-
-    // проёмы: дверь (дуга) / раздвижная / окно (двойная линия) / балкон (окно+дверь)
-    (project.openings || []).forEach((op) => {
-      const w = G.wallById(project, op.wallId);
-      if (!w) return;
-      const a = G.pointAtOffset(w, op.offset), b = G.pointAtOffset(w, op.offset + op.width);
-      const dirx = (w.b.x - w.a.x) / (w.len || 1), diry = (w.b.y - w.a.y) / (w.len || 1);
-      const nx = -diry * op.flip, ny = dirx * op.flip; // сторона открывания/выступа
-      const kind = op.kind || (op.type === "window" ? "window" : "door");
-      const drawSwing = (h, far, width) => {
-        const leaf = { x: h.x + nx * width, y: h.y + ny * width };
-        const cross = (far.x - h.x) * (leaf.y - h.y) - (far.y - h.y) * (leaf.x - h.x);
-        const sweep = cross > 0 ? 1 : 0;
-        g.appendChild(el("path", { d: `M${far.x} ${far.y} A${width} ${width} 0 0 ${sweep} ${leaf.x} ${leaf.y}`, class: "ep-plan-doorarc", "stroke-width": sw * 0.45, fill: "none" }));
-        g.appendChild(el("line", { x1: h.x, y1: h.y, x2: leaf.x, y2: leaf.y, class: "ep-plan-doorleaf", "stroke-width": sw * 0.7 }));
-      };
-      const drawWindow = (pa, pb) => {
-        const off3 = 3.2 * k;
-        [-1, 1].forEach((s) => g.appendChild(el("line", { x1: pa.x + nx * off3 * s, y1: pa.y + ny * off3 * s, x2: pb.x + nx * off3 * s, y2: pb.y + ny * off3 * s, class: "ep-plan-window", "stroke-width": sw * 0.5 })));
-        [pa, pb].forEach((p) => g.appendChild(el("line", { x1: p.x + nx * off3, y1: p.y + ny * off3, x2: p.x - nx * off3, y2: p.y - ny * off3, class: "ep-plan-window", "stroke-width": sw * 0.5 })));
-      };
-      if (kind === "door") {
-        const h = op.hinge === "a" ? a : b, far = op.hinge === "a" ? b : a;
-        drawSwing(h, far, op.width);
-      } else if (kind === "sliding") {
-        const off3 = 3.5 * k, mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-        g.appendChild(el("line", { x1: a.x + nx * off3, y1: a.y + ny * off3, x2: mid.x + dirx * 3 * k + nx * off3, y2: mid.y + diry * 3 * k + ny * off3, class: "ep-plan-doorleaf", "stroke-width": sw * 0.7 }));
-        g.appendChild(el("line", { x1: mid.x - dirx * 3 * k - nx * off3, y1: mid.y - diry * 3 * k - ny * off3, x2: b.x - nx * off3, y2: b.y - ny * off3, class: "ep-plan-doorleaf", "stroke-width": sw * 0.7 }));
-        g.appendChild(el("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: "ep-plan-window", "stroke-width": sw * 0.4 }));
-      } else if (kind === "balcony") {
-        const dW = Math.min(80, op.width * 0.5);
-        const hinge = op.hinge === "a" ? a : b;
-        const doorFar = { x: hinge.x + dirx * (op.hinge === "a" ? dW : -dW), y: hinge.y + diry * (op.hinge === "a" ? dW : -dW) };
-        const winA = op.hinge === "a" ? doorFar : a, winB = op.hinge === "a" ? b : doorFar;
-        drawWindow(winA, winB);
-        drawSwing(hinge, doorFar, dW);
-      } else if (kind === "opening") {
-        // просто проём — без двери и без окна, только вырез в стене (маска выше)
-      } else {
-        drawWindow(a, b);
-      }
-      // номер проёма (О1, Дв2 …) — на слое «Подписи»
-      if (labelsOn && EP.Plan.Elements && EP.Plan.Elements.openingNum) {
-        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-        g.appendChild(el("text", { x: mid.x - nx * 16 * k, y: mid.y - ny * 16 * k, class: "ep-plan-opnum", "font-size": 10 * k, "text-anchor": "middle", "dominant-baseline": "middle" }, EP.Plan.Elements.openingNum(project, op)));
-      }
-    });
-
-    // балки / перемычки / перегородки — рисуются КАК СТЕНА: тем же материалом и толщиной
-    const matClassOf = MATCLASS;
-    const wallTh = Math.max(4, (project.settings && project.settings.wallThickness) || 10);
-    (project.beams || []).forEach((bm) => {
-      const bw = Math.max(4, bm.width || wallTh);
-      const matB = bm.material || (project.settings && project.settings.wallMaterial) || "Бетон";
-      const mc = matClassOf(matB);
-      const sel = EP.Plan.Rooms && EP.Plan.Rooms.selectedBeamId && EP.Plan.Rooms.selectedBeamId() === bm.id;
-      // тело перегородки — заливка + штриховка материала, ЗА ВЫЧЕТОМ проёмов
-      const bwWall = G.beamWall(bm);
-      const bOpens = G.openingsOnWall(project, bwWall.id);
-      const spans = G.spansMinusOpenings(bwWall.len, bOpens);
-      const lenB = bwWall.len || 1;
-      const ddx = (bwWall.b.x - bwWall.a.x) / lenB, ddy = (bwWall.b.y - bwWall.a.y) / lenB;
-      const nx = -ddy, ny = ddx, h2 = bw / 2;
-      const clsF = "ep-plan-wallfill" + mc + (bm.kind === "lintel" ? " is-lintel-band" : "") + (sel ? " is-sel" : "");
-      spans.forEach(([s, e]) => {
-        const p1 = G.pointAtOffset(bwWall, s), p2 = G.pointAtOffset(bwWall, e);
-        const d = `M${p1.x + nx * h2} ${p1.y + ny * h2} L${p2.x + nx * h2} ${p2.y + ny * h2} L${p2.x - nx * h2} ${p2.y - ny * h2} L${p1.x - nx * h2} ${p1.y - ny * h2} Z`;
-        g.appendChild(el("path", { d, class: clsF }));
-        g.appendChild(el("path", { d, fill: HATCH(matB), class: "ep-plan-wallhatch" }));
-        g.appendChild(el("path", { d, class: "ep-plan-walledge", fill: "none", "stroke-width": Math.min(1, sw * 0.3) }));
       });
-      // ручки-концы, когда балка выбрана (тянуть пальцем)
-      if (sel) [bm.a, bm.b].forEach((v) => g.appendChild(el("circle", { cx: v.x, cy: v.y, r: CFG.pointPx * 1.3 * k, class: "ep-plan-beamhandle" })));
-    });
-    // черновик балки
-    if (ui && ui.beamDraft && ui.beamDraft.a) {
-      const d2 = ui.beamDraft;
-      if (d2.b) g.appendChild(el("line", { x1: d2.a.x, y1: d2.a.y, x2: d2.b.x, y2: d2.b.y, class: "ep-plan-wallband ep-plan-beamdraft", "stroke-width": wallTh }));
-      g.appendChild(el("circle", { cx: d2.a.x, cy: d2.a.y, r: CFG.pointPx * k, class: "ep-plan-draftpt is-first" }));
-    }
 
-    // внутренние препятствия: вентшахта (штриховка) / мини-комната (тонкий контур)
-    (project.voids || []).forEach((vd) => {
-      const r = G.voidRect(vd);
-      const selV = EP.Plan.Rooms && EP.Plan.Rooms.selectedVoidId && EP.Plan.Rooms.selectedVoidId() === vd.id;
-      const cls = "ep-plan-void ep-plan-void-" + (vd.kind === "room" ? "room" : "shaft") + (selV ? " is-sel" : "");
-      const grp = el("g", { "data-pl-void": vd.id });
-      const rectAttrs = { x: r.x1, y: r.y1, width: r.w, height: r.h, class: cls, "stroke-width": sw * 0.6 };
-      grp.appendChild(el("rect", rectAttrs));
-      if (vd.kind !== "room") grp.appendChild(el("rect", { x: r.x1, y: r.y1, width: r.w, height: r.h, fill: HATCH("Панель"), class: "ep-plan-voidhatch" }));
-      const cx = (r.x1 + r.x2) / 2, cy = (r.y1 + r.y2) / 2;
-      const fsV = Math.max(8, Math.min(13, r.w / 6)) * k;
-      grp.appendChild(el("text", { x: cx, y: cy, class: "ep-plan-voidname", "font-size": fsV, "text-anchor": "middle", "dominant-baseline": "middle" }, vd.name || (vd.kind === "room" ? "Комната" : "Шахта")));
-      g.appendChild(grp);
-    });
-    // черновик внутреннего препятствия (первая точка уже поставлена)
-    if (ui && ui.voidDraft && ui.voidDraft.a) {
-      g.appendChild(el("circle", { cx: ui.voidDraft.a.x, cy: ui.voidDraft.a.y, r: CFG.pointPx * k, class: "ep-plan-draftpt is-first" }));
-    }
+      // черновик рисования (прямоугольник: 1-я точка; полигон: линия точек)
+      const draft = ui && ui.draft;
+      if (draft && draft.points && draft.points.length) {
+        const dp = draft.points;
+        if (dp.length > 1) {
+          g.appendChild(el("polyline", {
+            points: dp.map((p) => p.x + "," + p.y).join(" "),
+            class: "ep-plan-draft", "stroke-width": sw, fill: "none"
+          }));
+          // живые длины сегментов при рисовании — видно, что получается
+          for (let i = 0; i < dp.length - 1; i++) {
+            const a = dp[i], b = dp[i + 1], L = G.dist(a, b);
+            if (L < 5) continue;
+            g.appendChild(el("text", { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - 8 * k, class: "ep-plan-rulertext", "font-size": 10 * k, "text-anchor": "middle" }, G.fmtLen(L)));
+          }
+        }
+        dp.forEach((p, i) => g.appendChild(el("circle", {
+          cx: p.x, cy: p.y, r: CFG.pointPx * k,
+          class: "ep-plan-draftpt" + (i === 0 ? " is-first" : "")
+        })));
+      }
 
-    // светодиодная лента — сегмент ВДОЛЬ стены (offsetA..offsetB), с небольшим отступом
-    // внутрь комнаты, чтобы не сливаться с самой стеной
-    (project.ledStrips || []).forEach((ls) => {
-      const lw = G.wallById(project, ls.wallId); if (!lw) return;
-      const fr = G.wallFrame(project, lw);
-      const d3 = 4; // см, чисто визуальный отступ от грани стены
-      const a2 = G.pointAtOffset(lw, Math.min(ls.offsetA, ls.offsetB)), b2 = G.pointAtOffset(lw, Math.max(ls.offsetA, ls.offsetB));
-      const nx = fr ? fr.nrm.x * d3 : 0, ny = fr ? fr.nrm.y * d3 : 0;
-      g.appendChild(el("line", { x1: a2.x + nx, y1: a2.y + ny, x2: b2.x + nx, y2: b2.y + ny, class: "ep-plan-ledstrip", "stroke-width": sw * 1.4 }));
-    });
+      // проёмы: дверь (дуга) / раздвижная / окно (двойная линия) / балкон (окно+дверь)
+      (project.openings || []).forEach((op) => {
+        const w = G.wallById(project, op.wallId);
+        if (!w) return;
+        const a = G.pointAtOffset(w, op.offset), b = G.pointAtOffset(w, op.offset + op.width);
+        const dirx = (w.b.x - w.a.x) / (w.len || 1), diry = (w.b.y - w.a.y) / (w.len || 1);
+        const nx = -diry * op.flip, ny = dirx * op.flip; // сторона открывания/выступа
+        const kind = op.kind || (op.type === "window" ? "window" : "door");
+        const drawSwing = (h, far, width) => {
+          const leaf = { x: h.x + nx * width, y: h.y + ny * width };
+          const cross = (far.x - h.x) * (leaf.y - h.y) - (far.y - h.y) * (leaf.x - h.x);
+          const sweep = cross > 0 ? 1 : 0;
+          g.appendChild(el("path", { d: `M${far.x} ${far.y} A${width} ${width} 0 0 ${sweep} ${leaf.x} ${leaf.y}`, class: "ep-plan-doorarc", "stroke-width": sw * 0.45, fill: "none" }));
+          g.appendChild(el("line", { x1: h.x, y1: h.y, x2: leaf.x, y2: leaf.y, class: "ep-plan-doorleaf", "stroke-width": sw * 0.7 }));
+        };
+        const drawWindow = (pa, pb) => {
+          const off3 = 3.2 * k;
+          [-1, 1].forEach((s) => g.appendChild(el("line", { x1: pa.x + nx * off3 * s, y1: pa.y + ny * off3 * s, x2: pb.x + nx * off3 * s, y2: pb.y + ny * off3 * s, class: "ep-plan-window", "stroke-width": sw * 0.5 })));
+          [pa, pb].forEach((p) => g.appendChild(el("line", { x1: p.x + nx * off3, y1: p.y + ny * off3, x2: p.x - nx * off3, y2: p.y - ny * off3, class: "ep-plan-window", "stroke-width": sw * 0.5 })));
+        };
+        if (kind === "door") {
+          const h = op.hinge === "a" ? a : b, far = op.hinge === "a" ? b : a;
+          drawSwing(h, far, op.width);
+        } else if (kind === "sliding") {
+          const off3 = 3.5 * k, mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+          g.appendChild(el("line", { x1: a.x + nx * off3, y1: a.y + ny * off3, x2: mid.x + dirx * 3 * k + nx * off3, y2: mid.y + diry * 3 * k + ny * off3, class: "ep-plan-doorleaf", "stroke-width": sw * 0.7 }));
+          g.appendChild(el("line", { x1: mid.x - dirx * 3 * k - nx * off3, y1: mid.y - diry * 3 * k - ny * off3, x2: b.x - nx * off3, y2: b.y - ny * off3, class: "ep-plan-doorleaf", "stroke-width": sw * 0.7 }));
+          g.appendChild(el("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: "ep-plan-window", "stroke-width": sw * 0.4 }));
+        } else if (kind === "balcony") {
+          const dW = Math.min(80, op.width * 0.5);
+          const hinge = op.hinge === "a" ? a : b;
+          const doorFar = { x: hinge.x + dirx * (op.hinge === "a" ? dW : -dW), y: hinge.y + diry * (op.hinge === "a" ? dW : -dW) };
+          const winA = op.hinge === "a" ? doorFar : a, winB = op.hinge === "a" ? b : doorFar;
+          drawWindow(winA, winB);
+          drawSwing(hinge, doorFar, dW);
+        } else if (kind === "opening") {
+          // просто проём — без двери и без окна, только вырез в стене (маска выше)
+        } else {
+          drawWindow(a, b);
+        }
+        // номер проёма (О1, Дв2 …) — на слое «Подписи»
+        if (labelsOn && EP.Plan.Elements && EP.Plan.Elements.openingNum) {
+          const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+          g.appendChild(el("text", { x: mid.x - nx * 16 * k, y: mid.y - ny * 16 * k, class: "ep-plan-opnum", "font-size": 10 * k, "text-anchor": "middle", "dominant-baseline": "middle" }, EP.Plan.Elements.openingNum(project, op)));
+        }
+      });
+
+      // балки / перемычки / перегородки — рисуются КАК СТЕНА: тем же материалом и толщиной
+      const matClassOf = MATCLASS;
+      const wallTh = Math.max(4, (project.settings && project.settings.wallThickness) || 10);
+      (project.beams || []).forEach((bm) => {
+        const bw = Math.max(4, bm.width || wallTh);
+        const matB = bm.material || (project.settings && project.settings.wallMaterial) || "Бетон";
+        const mc = matClassOf(matB);
+        const sel = EP.Plan.Rooms && EP.Plan.Rooms.selectedBeamId && EP.Plan.Rooms.selectedBeamId() === bm.id;
+        // тело перегородки — заливка + штриховка материала, ЗА ВЫЧЕТОМ проёмов
+        const bwWall = G.beamWall(bm);
+        const bOpens = G.openingsOnWall(project, bwWall.id);
+        const spans = G.spansMinusOpenings(bwWall.len, bOpens);
+        const lenB = bwWall.len || 1;
+        const ddx = (bwWall.b.x - bwWall.a.x) / lenB, ddy = (bwWall.b.y - bwWall.a.y) / lenB;
+        const nx = -ddy, ny = ddx, h2 = bw / 2;
+        const clsF = "ep-plan-wallfill" + mc + (bm.kind === "lintel" ? " is-lintel-band" : "") + (sel ? " is-sel" : "");
+        spans.forEach(([s, e]) => {
+          const p1 = G.pointAtOffset(bwWall, s), p2 = G.pointAtOffset(bwWall, e);
+          const d = `M${p1.x + nx * h2} ${p1.y + ny * h2} L${p2.x + nx * h2} ${p2.y + ny * h2} L${p2.x - nx * h2} ${p2.y - ny * h2} L${p1.x - nx * h2} ${p1.y - ny * h2} Z`;
+          g.appendChild(el("path", { d, class: clsF }));
+          g.appendChild(el("path", { d, fill: HATCH(matB), class: "ep-plan-wallhatch" }));
+          g.appendChild(el("path", { d, class: "ep-plan-walledge", fill: "none", "stroke-width": Math.min(1, sw * 0.3) }));
+        });
+        // ручки-концы, когда балка выбрана (тянуть пальцем)
+        if (sel) [bm.a, bm.b].forEach((v) => g.appendChild(el("circle", { cx: v.x, cy: v.y, r: CFG.pointPx * 1.3 * k, class: "ep-plan-beamhandle" })));
+      });
+      // черновик балки
+      if (ui && ui.beamDraft && ui.beamDraft.a) {
+        const d2 = ui.beamDraft;
+        if (d2.b) g.appendChild(el("line", { x1: d2.a.x, y1: d2.a.y, x2: d2.b.x, y2: d2.b.y, class: "ep-plan-wallband ep-plan-beamdraft", "stroke-width": wallTh }));
+        g.appendChild(el("circle", { cx: d2.a.x, cy: d2.a.y, r: CFG.pointPx * k, class: "ep-plan-draftpt is-first" }));
+      }
+
+      // внутренние препятствия: вентшахта (штриховка) / мини-комната (тонкий контур)
+      (project.voids || []).forEach((vd) => {
+        const r = G.voidRect(vd);
+        const selV = EP.Plan.Rooms && EP.Plan.Rooms.selectedVoidId && EP.Plan.Rooms.selectedVoidId() === vd.id;
+        const cls = "ep-plan-void ep-plan-void-" + (vd.kind === "room" ? "room" : "shaft") + (selV ? " is-sel" : "");
+        const grp = el("g", { "data-pl-void": vd.id });
+        const rectAttrs = { x: r.x1, y: r.y1, width: r.w, height: r.h, class: cls, "stroke-width": sw * 0.6 };
+        grp.appendChild(el("rect", rectAttrs));
+        if (vd.kind !== "room") grp.appendChild(el("rect", { x: r.x1, y: r.y1, width: r.w, height: r.h, fill: HATCH("Панель"), class: "ep-plan-voidhatch" }));
+        const cx = (r.x1 + r.x2) / 2, cy = (r.y1 + r.y2) / 2;
+        const fsV = Math.max(8, Math.min(13, r.w / 6)) * k;
+        grp.appendChild(el("text", { x: cx, y: cy, class: "ep-plan-voidname", "font-size": fsV, "text-anchor": "middle", "dominant-baseline": "middle" }, vd.name || (vd.kind === "room" ? "Комната" : "Шахта")));
+        g.appendChild(grp);
+      });
+      // черновик внутреннего препятствия (первая точка уже поставлена)
+      if (ui && ui.voidDraft && ui.voidDraft.a) {
+        g.appendChild(el("circle", { cx: ui.voidDraft.a.x, cy: ui.voidDraft.a.y, r: CFG.pointPx * k, class: "ep-plan-draftpt is-first" }));
+      }
+
+      // светодиодная лента — сегмент ВДОЛЬ стены (offsetA..offsetB), с небольшим отступом
+      // внутрь комнаты, чтобы не сливаться с самой стеной
+      (project.ledStrips || []).forEach((ls) => {
+        const lw = G.wallById(project, ls.wallId); if (!lw) return;
+        const fr = G.wallFrame(project, lw);
+        const d3 = 4; // см, чисто визуальный отступ от грани стены
+        const a2 = G.pointAtOffset(lw, Math.min(ls.offsetA, ls.offsetB)), b2 = G.pointAtOffset(lw, Math.max(ls.offsetA, ls.offsetB));
+        const nx = fr ? fr.nrm.x * d3 : 0, ny = fr ? fr.nrm.y * d3 : 0;
+        g.appendChild(el("line", { x1: a2.x + nx, y1: a2.y + ny, x2: b2.x + nx, y2: b2.y + ny, class: "ep-plan-ledstrip", "stroke-width": sw * 1.4 }));
+      });
+    }
 
     // размерные цепочки: привязки точек и проёмов к углам стены (слой «Размеры»)
     if (dimsOn) {
