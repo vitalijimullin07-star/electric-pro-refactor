@@ -123,22 +123,40 @@ body[data-visual-mode="day"] .ep-plan-qmbtn { background: #f1f5f9; color: #0f172
 .ep-plan-modesep { width: 1px; align-self: stretch; margin: 2px 2px; background: rgba(255, 255, 255, .12); flex: none; }
 body[data-visual-mode="day"] .ep-plan-modesep { background: rgba(15, 23, 42, .12); }
 
-/* плавающая quickbar — отмена/просмотр/вписать под большой палец, снизу холста,
+/* плавающая quickbar — быстрый доступ под большой палец, снизу холста,
    видна только в активных режимах рисования (не в «Просмотре») и прячется,
-   пока открыта шторка редактора (см. syncQuickbarForSheet) */
+   пока открыта шторка редактора (см. syncQuickbarForSheet). Редактируемая
+   (✎), верхняя мини-строка — 《/》 назад/вперёд по изменениям (undo/redo) +
+   ✎ настройка; нижняя строка — 2 динамических места (последние использованные
+   инструменты, plan-rooms.js qbTrack) + закреплённые + ⛶ вписать. */
 .ep-plan-quickbar {
   position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 6;
-  display: flex; gap: 8px; padding: 6px; border-radius: 16px;
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px; border-radius: 16px;
   background: rgba(10, 16, 28, .85); border: 1px solid rgba(255, 255, 255, .14);
   backdrop-filter: blur(8px);
 }
+/* без явного правила [hidden] (author-стиль display:flex выше побеждает UA-правило
+   [hidden]{display:none} независимо от специфичности — та же причина, что и у
+   .ep-plan-sheet[hidden] ранее) closeSheet()/setMode(view) ставили hidden=true, но
+   панель оставалась видимой пустой рамкой поверх холста. */
+.ep-plan-quickbar[hidden] { display: none; }
+.ep-plan-qb-top { display: flex; gap: 4px; }
+.ep-plan-qb-main { display: flex; gap: 8px; }
+.ep-plan-qb-mini {
+  width: 30px; height: 22px; border: 0; border-radius: 8px; cursor: pointer;
+  background: rgba(255, 255, 255, .08); color: var(--text, #e8eef7); font-size: 13px; line-height: 1;
+}
+.ep-plan-qb-mini:disabled { opacity: .35; cursor: default; }
+.ep-plan-qb-mini:active:not(:disabled) { background: var(--accent, #38bdf8); color: #06121f; }
 .ep-plan-qbtn {
   width: 44px; height: 44px; border: 0; border-radius: 12px; cursor: pointer;
   background: rgba(255, 255, 255, .08); color: var(--text, #e8eef7); font-size: 19px;
 }
+.ep-plan-qbtn.on { background: var(--accent, #38bdf8); color: #06121f; }
 .ep-plan-qbtn:active { background: var(--accent, #38bdf8); color: #06121f; }
+.ep-plan-qbchips { flex-wrap: wrap; gap: 6px; }
 body[data-visual-mode="day"] .ep-plan-quickbar { background: rgba(255, 255, 255, .92); border-color: #dbe3ee; }
-body[data-visual-mode="day"] .ep-plan-qbtn { background: #f1f5f9; color: #0f172a; }
+body[data-visual-mode="day"] .ep-plan-qbtn, body[data-visual-mode="day"] .ep-plan-qb-mini { background: #f1f5f9; color: #0f172a; }
 
 /* — дневная тема — */
 body[data-visual-mode="day"] .ep-plan-canvas { background: #fff; border-color: #dbe3ee; }

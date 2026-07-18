@@ -52,7 +52,10 @@
            calibDist: "Реальное расстояние, см", apply: "Применить" },
     layersTitle: "Слои", legendTitle: "Условные обозначения", legendEmpty: "Пока пусто — добавь точки на план.",
     tooSmall: "Комната слишком маленькая (мин. 30 см).",
-    polyNeed: "Нужно минимум 3 точки."
+    polyNeed: "Нужно минимум 3 точки.",
+    qbEdit: "✎ Быстрый доступ", qbClose: "✕",
+    qbEditHint: "Отметь инструменты, которые всегда должны быть под рукой на плавающей панели снизу. Первые места панель дополнительно подстраивает сама — под последние использованные инструменты.",
+    qbReset: "↺ Сбросить"
   };
   const CFG = { cornerSnapCm: 20, closePolyPx: 22, minRoomCm: 30, dupShiftCm: 40, hitWallPx: 18 };
 
@@ -71,6 +74,73 @@
     umove: false, calib: { on: false, a: null, b: null }, mergeFirst: null, mergePending: null,
     soloCircuit: null // работа по линиям: id единственной показанной ярко линии QF (view-состояние, не в модели)
   };
+
+  // ---------- плавающая quickbar: быстрый доступ (просьба пользователя — редактируемая
+  // панель, 2 левых места динамические — под последние использованные инструменты,
+  // запоминаются между сессиями) ----------
+  // Тот же набор, что и «режимы» в верхнем тулбаре (см. T.modes) — здесь его пилотный
+  // список для панели быстрого доступа (что можно закрепить/что попадает в MRU).
+  const QB_TOOLS = { view: "☝", rect: "▭", poly: "⬠", beam: "▬", void: "▦", merge: "🔗", elem: "🔌", opening: "🚪", wall: "📐", ruler: "📏", underlay: "🖼" };
+  const QB_LABELS = {
+    view: "Просмотр", rect: "Прямоугольная комната", poly: "Комната по точкам", beam: "Балка/перемычка",
+    void: "Вентшахта/мини-комната", merge: "Объединить комнаты", elem: "Точки", opening: "Проёмы",
+    wall: "Развёртка стены", ruler: "Рулетка", underlay: "Подложка-фото"
+  };
+  const QB_LS_KEY = "ep_plan_quickbar_v1";
+  // localStorage — view-состояние устройства, не часть проекта (как и soloCircuit
+  // выше, но переживает перезагрузку страницы, поэтому свой ключ, а не R.*)
+  function qbLoad() {
+    try {
+      const v = JSON.parse(localStorage.getItem(QB_LS_KEY) || "null");
+      if (v && typeof v === "object") {
+        return {
+          mru: Array.isArray(v.mru) ? v.mru.filter((m) => QB_TOOLS[m]).slice(0, 2) : [],
+          pinned: Array.isArray(v.pinned) ? v.pinned.filter((m) => QB_TOOLS[m]) : ["view"]
+        };
+      }
+    } catch (e) {}
+    return { mru: [], pinned: ["view"] }; // по умолчанию — как раньше: закреплён «Просмотр»
+  }
+  const QB = qbLoad();
+  function qbSave() { try { localStorage.setItem(QB_LS_KEY, JSON.stringify(QB)); } catch (e) {} }
+  // запоминаем инструмент как «последний использованный» — левые 2 места панели.
+  // "view" НЕ трогает MRU: это не инструмент, а нейтральное состояние — attach()
+  // при КАЖДОМ монтировании канваса безусловно зовёт setMode("view") (см. attach()
+  // ниже), и если бы это тоже попадало в MRU, каждое открытие проекта тихо съедало
+  // бы одно из двух «запомненных» мест ДО того, как пользователь вообще что-то
+  // сделал. «Просмотр» и так всегда доступен — закреплён по умолчанию в pinned.
+  function qbTrack(mode) {
+    if (!QB_TOOLS[mode] || mode === "view") return;
+    QB.mru = [mode].concat(QB.mru.filter((m) => m !== mode)).slice(0, 2);
+    qbSave();
+    renderQuickbar();
+  }
+  function renderQuickbar() {
+    const qb = $("#ep-plan-quickbar"); if (!qb) return;
+    const c = core();
+    const dyn = QB.mru;
+    const pinned = QB.pinned.filter((m) => dyn.indexOf(m) === -1);
+    const toolBtn = (id) => `<button type="button" class="ep-plan-qbtn ep-clickable${R.mode === id ? " on" : ""}" data-plan-mode="${id}" aria-label="${esc(QB_LABELS[id] || id)}">${QB_TOOLS[id]}</button>`;
+    qb.innerHTML = `
+      <div class="ep-plan-qb-top">
+        <button type="button" class="ep-plan-qb-mini ep-clickable" data-plan-undo aria-label="Отменить" title="Назад по изменениям" ${c.canUndo() ? "" : "disabled"}>《</button>
+        <button type="button" class="ep-plan-qb-mini ep-clickable" data-plan-redo aria-label="Вернуть" title="Вперёд по изменениям" ${c.canRedo() ? "" : "disabled"}>》</button>
+        <button type="button" class="ep-plan-qb-mini ep-clickable" data-qb-edit aria-label="${T.qbEdit}" title="${T.qbEdit}">✎</button>
+      </div>
+      <div class="ep-plan-qb-main">
+        ${dyn.map(toolBtn).join("")}${pinned.map(toolBtn).join("")}
+        <button type="button" class="ep-plan-qbtn ep-clickable" data-plan-fit aria-label="Показать всё">⛶</button>
+      </div>`;
+  }
+  // шторка редактирования: какие инструменты держать закреплёнными на панели (кроме
+  // двух динамических мест — теми панель распоряжается сама, см. qbTrack)
+  function sheetQuickbar() {
+    const chip = (id) => `<button type="button" class="ep-plan-chip ep-clickable ${QB.pinned.indexOf(id) !== -1 ? "on" : ""}" data-qb-pin="${id}">${QB_TOOLS[id]} ${esc(QB_LABELS[id])}</button>`;
+    openSheet(`<div class="ep-plan-srow"><b>${T.qbEdit}</b><span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-qb-close>${T.qbClose}</button></div>
+      <div class="ep-plan-modehint">${T.qbEditHint}</div>
+      <div class="ep-plan-srow ep-plan-qbchips">${Object.keys(QB_TOOLS).map(chip).join("")}</div>
+      <div class="ep-plan-srow ep-plan-sbtns"><button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-qb-reset>${T.qbReset}</button></div>`);
+  }
 
   // ---------- сцена ----------
   function ui() { return { selectedRoomId: R.selectedRoomId, draft: R.draft, ruler: R.ruler, beamDraft: R.beamDraft, voidDraft: R.voidDraft, soloCircuit: R.soloCircuit }; }
@@ -101,6 +171,7 @@
     R.selectedBeam = null; R.selectedVoid = null; R.selectedRoute = null; R.selectedRouteTap = null; R.mergeFirst = null; R.mergePending = null;
     setMove(false);
     document.querySelectorAll("[data-plan-mode]").forEach((b) => b.classList.toggle("on", b.getAttribute("data-plan-mode") === mode));
+    qbTrack(mode); // запомнить как «последний использованный» + перерисовать панель быстрого доступа
     // плавающая quickbar (отмена/просмотр/вписать) снизу холста — только в активных
     // режимах рисования/расстановки, где тулбар сверху далеко от пальца
     const qb = document.querySelector("#ep-plan-quickbar");
@@ -1132,9 +1203,19 @@
     const t = e.target; let el;
     if ((el = t.closest("[data-plan-mode]"))) {
       const m = el.getAttribute("data-plan-mode");
-      if (m === "wall") return sheetPickRoomForUnfold(); // не режим — сразу список комнат
+      if (m === "wall") { qbTrack("wall"); return sheetPickRoomForUnfold(); } // не режим — сразу список комнат
       return setMode(m);
     }
+    if (t.closest("[data-qb-edit]")) return sheetQuickbar();
+    if (t.closest("[data-qb-close]")) { closeSheet(); return; }
+    if ((el = t.closest("[data-qb-pin]"))) {
+      const id = el.getAttribute("data-qb-pin");
+      const i = QB.pinned.indexOf(id);
+      if (i === -1) QB.pinned.push(id); else QB.pinned.splice(i, 1);
+      qbSave(); renderQuickbar(); sheetQuickbar();
+      return;
+    }
+    if (t.closest("[data-qb-reset]")) { QB.mru = []; QB.pinned = ["view"]; qbSave(); renderQuickbar(); sheetQuickbar(); return; }
     if (t.closest("[data-plan-layers]")) return sheetLayers();
     // общая кнопка «во весь экран» шторки — используется ЛЮБЫМ модулем слоёв 2-6
     // (Расчёт/Трассы/Проверки/Слои и т.п.), поэтому обработчик один здесь, а не в каждом

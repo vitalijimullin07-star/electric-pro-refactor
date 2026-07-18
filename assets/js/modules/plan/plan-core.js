@@ -125,7 +125,7 @@
   function newRoom(points, name) {
     return { id: uid("rm"), name: name || "Комната", points: points || [], height: null /* null = settings.ceilingHeight */, zones: [], material: null /* null = settings.wallMaterial */, floorId: curFloorId() };
   }
-  function newPanel(x, y, name) { return { id: uid("pn"), x: x || 0, y: y || 0, name: name || "Щит", transformer: false, height: null /* null = settings.panelHeight (общая на проект) */, floorId: curFloorId() }; }
+  function newPanel(x, y, name) { return { id: uid("pn"), x: x || 0, y: y || 0, name: name || "Щит", transformer: false, router: false, height: null /* null = settings.panelHeight (общая на проект) */, floorId: curFloorId() }; }
   function newElement(type, wallId, offset, height, layer) {
     return {
       id: uid("el"), type, wallId, offset: offset || 0, height: height || 0, layer: layer || "power", status: "planned",
@@ -384,7 +384,7 @@
     p.circuits = p.circuits || [];
     p.circuits.forEach((c) => { if (c.phase !== 1 && c.phase !== 2 && c.phase !== 3) c.phase = 1; });
     p.panels = p.panels || [];
-    p.panels.forEach((pn) => { if (pn.transformer == null) pn.transformer = false; });
+    p.panels.forEach((pn) => { if (pn.transformer == null) pn.transformer = false; if (pn.router == null) pn.router = false; });
     p.settings = p.settings || {};
     if (!p.settings.symbolStyle) p.settings.symbolStyle = DEFAULTS.symbolStyle;
     if (p.settings.cableReserve == null) p.settings.cableReserve = DEFAULTS.cableReserve;
