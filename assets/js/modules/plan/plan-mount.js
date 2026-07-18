@@ -120,6 +120,8 @@
         ${isAdmin() ? `<button type="button" class="ep-plan-tbtn ep-clickable" data-plan-tpl-open aria-label="Шаблон квартиры" title="Готовая раскладка комнат — по количеству комнат или по серии дома">🧩 Шаблон</button>` : ""}
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-pdf aria-label="Печатный лист (PDF)">📄</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-export>${T.exportBtn}</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-import>${T.importBtn}</button>
+        <input id="ep-plan-file" type="file" accept="application/json,.json" hidden>
       </div>
       <div class="ep-plan-toolbar ep-plan-modes">
         <button type="button" class="ep-plan-tbtn on ep-clickable" data-plan-mode="view" aria-label="Просмотр и выбор">☝</button>
