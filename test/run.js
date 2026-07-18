@@ -335,6 +335,55 @@ test("build(): тёплый пол (ТП) тоже получает трассу
   EP.Plan.Routes.build();
   ok(P.routes.some((r) => r.fromId === wf.id), "у тёплого пола есть построенная трасса");
 });
+test("routing: router-щит — LV-точка (интернет) идёт ТОЛЬКО к нему, а не к геометрически ближайшему щиту", () => {
+  const near = M.newPanel(10, 10, "Щит");
+  const router = M.newPanel(390, 290, "Роутер"); router.router = true;
+  const { P, w } = install({ panels: [near, router] });
+  const net = M.newElement("internet", w(0), 20, 30, "lv");
+  P.elements.push(net);
+  EP.Plan.Routes.build();
+  const rt = P.routes.find((r) => r.fromId === net.id);
+  ok(rt, "трасса построена");
+  eq(rt.toId, router.id, "LV-точка идёт к router-щиту, а не к ближайшему обычному");
+  ok(rt.toPanel, "конец трассы — щит");
+});
+test("routing: без router-щита LV-точка идёт к геометрически ближайшему щиту (обратная совместимость)", () => {
+  const near = M.newPanel(10, 10, "Щит");
+  const far = M.newPanel(390, 290, "Далёкий щит");
+  const { P, w } = install({ panels: [near, far] });
+  const net = M.newElement("internet", w(0), 20, 30, "lv");
+  P.elements.push(net);
+  EP.Plan.Routes.build();
+  const rt = P.routes.find((r) => r.fromId === net.id);
+  ok(rt, "трасса построена");
+  eq(rt.toId, near.id, "без роутера — как раньше, ближайший щит");
+});
+test("routing: router-щит не мешает силовым точкам — розетка по-прежнему идёт к ближайшему обычному щиту", () => {
+  const near = M.newPanel(10, 10, "Щит");
+  const router = M.newPanel(390, 290, "Роутер"); router.router = true;
+  const { P, w } = install({ panels: [near, router] });
+  const s = M.newElement("socket", w(0), 20, 30, "power");
+  P.elements.push(s);
+  EP.Plan.Routes.build();
+  const rt = P.routes.find((r) => r.fromId === s.id);
+  ok(rt, "трасса построена");
+  eq(rt.toId, near.id, "силовая точка НЕ уходит к роутеру");
+});
+test("routing: ТВ и видеонаблюдение (isLvLayer: tv/cctv) уходят LV-шлейфом к router-щиту, не к обычному", () => {
+  const near = M.newPanel(10, 10, "Щит");
+  const router = M.newPanel(390, 290, "Роутер"); router.router = true;
+  const { P, w } = install({ panels: [near, router] });
+  const tv = M.newElement("tv", w(0), 20, 130, "tv");
+  const cam = M.newElement("camera", w(0), 60, 230, "cctv");
+  P.elements.push(tv, cam);
+  EP.Plan.Routes.build();
+  const rtTv = P.routes.find((r) => r.fromId === tv.id);
+  const rtCam = P.routes.find((r) => r.fromId === cam.id);
+  ok(rtTv && rtCam, "трассы построены для обеих LV-точек");
+  ok(!P.routes.some((r) => r.toId === near.id), "ни одна LV-трасса не подключена к обычному щиту");
+  eq(P.routes.filter((r) => r.toPanel).length, 1, "спуск к щиту — один раз (шлейф)");
+  eq(P.routes.find((r) => r.toPanel).toId, router.id, "спуск к щиту идёт именно к роутеру");
+});
 test("flipOrthoCorner: разворачивает прямой угол (P->C->N) в альтернативную вершину прямоугольника", () => {
   // сначала по Y (100,50)->(100,150), потом по X (100,150)->(200,150) — разворот: сначала по X, потом по Y
   const flipped = G.flipOrthoCorner({ x: 100, y: 50 }, { x: 100, y: 150 }, { x: 200, y: 150 });
@@ -1725,6 +1774,7 @@ test("фото: deleteProject чистит кэш фото своего прое
   ok(Array.isArray(imp.ledStrips), "бэкофилл ledStrips");
   ok(Array.isArray(imp.voids), "бэкофилл voids");
   eq(imp.panels[0].transformer, false, "бэкофилл panel.transformer");
+  eq(imp.panels[0].router, false, "бэкофилл panel.router");
 
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }

@@ -148,11 +148,7 @@
       </div>
       <div class="ep-plan-modehint" id="ep-plan-modehint"></div>
       <div class="ep-plan-canvas" id="ep-plan-canvas">
-        <div class="ep-plan-quickbar" id="ep-plan-quickbar" hidden>
-          <button type="button" class="ep-plan-qbtn ep-clickable" data-plan-undo aria-label="Отменить">↶</button>
-          <button type="button" class="ep-plan-qbtn ep-clickable" data-plan-mode="view" aria-label="Выйти в просмотр">☝</button>
-          <button type="button" class="ep-plan-qbtn ep-clickable" data-plan-fit aria-label="Показать всё">⛶</button>
-        </div>
+        <div class="ep-plan-quickbar" id="ep-plan-quickbar" hidden></div>
         <div class="ep-plan-sheet" id="ep-plan-sheet" hidden></div>
       </div>
     </div>`;
@@ -191,10 +187,11 @@
 
   function refreshToolbar() {
     const c = core();
-    // querySelectorAll — undo дублируется в плавающей quickbar-панели, оба должны гаснуть вместе
+    // querySelectorAll — undo/redo дублируются в плавающей quickbar-панели (《/》),
+    // оба места должны гаснуть вместе
     document.querySelectorAll("[data-plan-undo]").forEach((b) => { b.disabled = !c.canUndo(); });
-    const r = $("[data-plan-redo]"), note = $("#ep-plan-savenote");
-    if (r) r.disabled = !c.canRedo();
+    document.querySelectorAll("[data-plan-redo]").forEach((b) => { b.disabled = !c.canRedo(); });
+    const note = $("#ep-plan-savenote");
     if (note) note.textContent = V.saveNote;
   }
 

@@ -29,6 +29,10 @@
 
   const isJunction = (el) => el.type === "junction";
   const isPoint = (el) => el.status !== "existing" && el.type !== "junction";
+  // Слаботочка сети (интернет/ТВ/видеонаблюдение) — те же слои, что и в plan-calc.js
+  // LV_LAYERS (для штроб/маркировки кабеля); здесь своя копия — модуль грузится
+  // раньше plan-calc.js в index.html, общий экспорт не переиспользуем.
+  const isLvLayer = (layer) => layer === "lv" || layer === "tv" || layer === "cctv";
 
   function circuitOf(p, el) { return el.circuitId ? (p.circuits || []).find((c) => c.id === el.circuitId) : null; }
   function colorOf(p, el) {
@@ -180,28 +184,42 @@
   // (chainFromPanel). extraConnected — ДОПОЛНИТЕЛЬНЫЕ уже подключённые узлы для шлейфа
   // (используется buildIncremental(), чтобы новая точка могла лечь к уже проведённой
   // розетке, а не только к щиту) — build() передаёт null, поведение не меняется.
+  // Роутер (panel.router:true, щит-хаб для сети): если в проекте есть хотя бы один
+  // такой щит, ВСЕ точки слаботочной сети (интернет/ТВ/видеонаблюдение — isLvLayer)
+  // трассируются ТОЛЬКО к нему (к ближайшему из router-щитов, если их несколько) —
+  // просьба пользователя: «роутор, к которому идут абсолютно все отдельно линии
+  // интернета/тв/пк». Без router-щита (routerPanels пуст) — поведение НЕ меняется
+  // вообще (обратная совместимость со всеми существующими проектами): LV-точки, как
+  // и раньше, идут к геометрически ближайшему щиту наравне с силовыми. Силовые/прочие
+  // слои router-щит НЕ исключает из общего списка панелей — флаг влияет только на
+  // выбор цели ДЛЯ LV-точек, не ограничивает сам щит в приёме силовых линий.
   function routeGroups(c, p, pointsToRoute, juncts, panels, extraConnected) {
+    const routerPanels = panels.filter((pn) => pn.router);
     const groups = new Map();
     pointsToRoute.forEach((el) => {
       const pos = G().routeAnchor(p, el); // блок -> вход штробы (нужный подрозетник)
       if (!pos) return;
-      const key = el.circuitId || "_none";
-      if (!groups.has(key)) groups.set(key, { circuitId: el.circuitId || null, items: [] });
+      const lv = isLvLayer(el.layer) && routerPanels.length > 0;
+      const key = (el.circuitId || "_none") + (lv ? ":lv" : "");
+      if (!groups.has(key)) groups.set(key, { circuitId: el.circuitId || null, lv, items: [] });
       groups.get(key).items.push({ el, pos });
     });
     groups.forEach((g) => {
+      const targetPanels = g.lv ? routerPanels : panels;
       // распайки, доступные этой линии (своей QF; «без линии» — любые распайки)
       const J = g.circuitId ? juncts.filter((n) => n.circuitId === g.circuitId) : juncts.slice();
       if (J.length) {
-        // есть распайка -> каждая точка к ближайшей распайке своей линии (или щиту)
+        // есть распайка -> каждая точка к ближайшей распайке своей линии (или щиту/роутеру)
         g.items.forEach(({ el, pos }) => {
-          const target = nearest(pos, J.concat(panels));
+          const target = nearest(pos, J.concat(targetPanels));
           if (target) addRoute(c, p, el, pos, target, el.circuitId, colorOf(p, el));
         });
       } else {
-        // НЕТ распайки -> шлейф: щит [+ уже подключённые точки] -> розетка -> розетка
-        const extra = extraConnected ? (g.circuitId ? extraConnected.filter((n) => n.circuitId === g.circuitId) : extraConnected) : null;
-        chainFromPanel(c, p, g.items, extra ? panels.concat(extra) : panels, g.circuitId);
+        // НЕТ распайки -> шлейф: щит/роутер [+ уже подключённые точки той же группы] -> точка -> точка
+        const extra = extraConnected ? extraConnected.filter((n) =>
+          (g.circuitId ? n.circuitId === g.circuitId : true) && (routerPanels.length ? isLvLayer(n.el.layer) === g.lv : true)
+        ) : null;
+        chainFromPanel(c, p, g.items, extra ? targetPanels.concat(extra) : targetPanels, g.circuitId);
       }
     });
   }
@@ -239,8 +257,9 @@
     const savedManual = (p.routes || []).filter((r) => r.manual && onActiveFloor(r));
     p.routes = (p.routes || []).filter((r) => !onActiveFloor(r));
 
-    // узлы: щиты + распайки (этого же этажа)
-    const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y } }));
+    // узлы: щиты + распайки (этого же этажа); router — флаг щита-хаба сети (LV-точки
+    // предпочитают его, см. routeGroups)
+    const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, router: !!pn.router }));
     const juncts = (fp.elements || []).filter(isJunction).map((el) => ({ kind: "junction", id: el.id, el, circuitId: el.circuitId, pos: G().elemPoint(p, el) })).filter((n) => n.pos);
 
     // pos — ЕДИНАЯ точка отрисовки (та же, что у маркера): трасса доходит до точки,
@@ -291,7 +310,7 @@
     const newJuncts = allJuncts.filter((n) => !haveRoute.has(n.id));
 
     if (newPoints.length || newJuncts.length) {
-      const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y } }));
+      const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, router: !!pn.router }));
       // уже проведённые точки — реальные узлы графа для шлейфа, не только щиты
       const existingPointNodes = points.filter((el) => haveRoute.has(el.id)).map((el) => {
         const pos = G().routeAnchor(p, el);
@@ -357,7 +376,7 @@
   // ---- автоперестройка: геометрия сдвинулась (точка/стена/перегородка) —
   // ранее построенные трассы устарели бы молча (кривые длины/штробы в Расчёте).
   // Перестраиваем тихо, только если трассы уже были построены.
-  const AUTOREBUILD_ON = { "elem-move": 1, "room-reshape": 1, "room-merge": 1, "wall-th": 1, "wall-mat": 1, "beam-move": 1, "beam-w": 1, "panel-move": 1, "opening-move": 1 };
+  const AUTOREBUILD_ON = { "elem-move": 1, "room-reshape": 1, "room-merge": 1, "wall-th": 1, "wall-mat": 1, "beam-move": 1, "beam-w": 1, "panel-move": 1, "panel-router": 1, "opening-move": 1 };
   let rebuilding = false;
   if (core().onChange) {
     core().onChange((what) => {

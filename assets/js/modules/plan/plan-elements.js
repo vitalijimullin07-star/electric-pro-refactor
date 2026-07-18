@@ -276,6 +276,7 @@
     rooms().openSheet(`<div class="ep-plan-srow"><b>${esc(pn.name || "Щит")}</b></div>
       <div class="ep-plan-srow"><input id="ep-pe-pname" type="text" value="${esc(pn.name || "Щит")}" maxlength="30"></div>
       <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-ptrafo="${esc(pn.id)}" ${pn.transformer ? "checked" : ""}>Трансформатор в слаботочном щите (24В для ленты)</label></div>
+      <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-prouter="${esc(pn.id)}" ${pn.router ? "checked" : ""}>Роутер — сюда идут все линии интернет/ТВ/видеонаблюдение</label></div>
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pe-papply="${esc(pn.id)}">${T.apply}</button>
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pe-pdel="${esc(pn.id)}">${T.del}</button>
@@ -587,7 +588,13 @@
       pn.name = (($("#ep-pe-pname") || {}).value || "Щит").trim() || "Щит";
       const trafo = $(`[data-pe-ptrafo="${pn.id}"]`);
       pn.transformer = !!(trafo && trafo.checked);
-      c.persist("panel-edit");
+      const routerChk = $(`[data-pe-prouter="${pn.id}"]`);
+      const routerWas = pn.router;
+      pn.router = !!(routerChk && routerChk.checked);
+      // panel-router — отдельная метка от panel-edit: только смена флага роутера должна
+      // тихо перестроить уже построенные трассы (LV-точки могли сменить целевой щит),
+      // обычное переименование щита такой перестройки не требует (см. AUTOREBUILD_ON).
+      c.persist(routerWas !== pn.router ? "panel-router" : "panel-edit");
       S.selId = null; rooms().closeSheet(); rooms().renderScene(); return; // ✓ применить и закрыть
     }
     if ((b = t.closest("[data-pe-pdel]"))) {
