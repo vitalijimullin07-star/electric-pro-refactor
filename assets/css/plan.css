@@ -528,11 +528,20 @@ body[data-visual-mode="day"] .ep-plan-hlabel { fill: #475569; }
    (баг с реального устройства пользователя, скриншот). Тот же приём, что уже
    используется у .is-landscape-forced ниже: position:fixed на весь вьюпорт —
    гарантированно перекрывает экран независимо от Fullscreen API. */
+/* ВАЖНО: НЕ дублировать ширину/высоту через 100vw/100dvh поверх inset:0 — на части
+   реальных устройств (репорт пользователя: пустоты по бокам ДАЖЕ после ⛶, т.е. уже
+   в -full состоянии) vw/vh-юниты недооценивают реальный вьюпорт в true-fullscreen
+   PWA сильнее, чем сам inset:0 — а т.к. это ЯВНОЕ значение с !important, оно
+   ПЕРЕБИВАЛО собой честный edge-to-edge размер, который дал бы один inset:0.
+   position:fixed с inset:0 и БЕЗ явных width/height сам по себе тянется на
+   всю границу containing block (стандартное поведение блочного элемента) —
+   проверено отдельным тестом (реальный Chromium): не зависит от vh/vw/dvh
+   вообще, только от истинных границ вьюпорта. max-height:100% — тоже
+   ПРОЦЕНТНЫЙ (не vh/dvh), считается от той же самой истинной высоты, что уже
+   задал inset:0, поэтому не может с ней разойтись. */
 .ep-plan-sheet-full {
   position: fixed !important; inset: 0 !important;
-  width: 100vw !important; width: 100dvw !important;
-  height: 100vh !important; height: 100dvh !important;
-  max-height: 100vh !important; max-height: 100dvh !important;
+  max-height: 100% !important;
   margin: 0 !important; border-radius: 0 !important; z-index: 10000;
 }
 /* «Во весь экран горизонтально» без физического поворота телефона — screen.orientation.lock()
