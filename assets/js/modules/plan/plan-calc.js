@@ -20,6 +20,8 @@
     tempHint: "Временные сети на время ремонта (организация — не выводится из чертежа, вводится вручную)",
     tempLighting: "Врем. освещение, точек", tempSockets: "Врем. розетки, точек",
     noPrice: "нет цены в БД", total: "Итого по ценам БД",
+    priceTitle: "Цена", priceLabel: "Цена за", priceSave: "✓ Сохранить в БД",
+    priceHint: "Сохранится в «Мою БД» — эта же цена подставится автоматически в этом и других проектах.",
     consumCfg: "⚙ Настроить расходники", consumTitle: "⚙ Логика расходников", back: "‹ Назад",
     byLines: "По линиям (QF)", secCable: "Кабель", secConsum: "Расходники",
     secMaterial: "Материалы", secWork: "Работы"
@@ -504,7 +506,11 @@
       const priced = items.map((it) => { const price = priceFor(it.name, it.type); return { it, price, lineSum: price * it.qty, sec: sectionOf(it) }; });
       const total = priced.reduce((s, x) => s + (x.price > 0 ? x.lineSum : 0), 0);
       const noPriceN = priced.filter((x) => !(x.price > 0)).length;
-      const irow = ({ it, price, lineSum }) => `<div class="ep-plan-irow"><span>${esc(it.name)}</span><span class="ep-plan-irow-r"><b>${it.qty} ${esc(it.unit)}</b><span class="ep-plan-iprice${price > 0 ? "" : " is-noprice"}">${price > 0 ? esc(fmtRub(lineSum)) : esc(T.noPrice)}</span></span></div>`;
+      // цена кликабельна ВСЕГДА (и «нет цены в БД», и уже найденную — можно поправить) —
+      // просьба пользователя «назначать стоимость, и чтобы сохранялась в БД»: тап открывает
+      // sheetSetPrice(), сохранение идёт через EP.Database.addMyItem — та же запись потом
+      // находится priceFor() (точное совпадение по имени, см. ниже) уже на следующий рендер
+      const irow = ({ it, price, lineSum }) => `<div class="ep-plan-irow"><span>${esc(it.name)}</span><span class="ep-plan-irow-r"><b>${it.qty} ${esc(it.unit)}</b><button type="button" class="ep-plan-iprice${price > 0 ? "" : " is-noprice"} ep-clickable" data-pc-setprice data-pc-pname="${esc(it.name)}" data-pc-ptype="${esc(it.type)}" data-pc-punit="${esc(it.unit)}" data-pc-pcur="${price > 0 ? price : ""}">${price > 0 ? esc(fmtRub(lineSum)) : esc(T.noPrice)}</button></span></div>`;
       // группировка по секциям (Кабель / Работы / Материалы / Расходники) —
       // просьба пользователя «информативно по расходке», чтобы расходка читалась отдельно
       const secHtml = SECTIONS.map(([key, label]) => {
@@ -542,6 +548,22 @@
     if (window.EP && window.EP.ConsumablesUI && EP.ConsumablesUI.renderLogic) EP.ConsumablesUI.renderLogic("ep-consum-root");
   }
 
+  // назначить/поправить цену позиции — сохраняется в «Мою БД» (EP.Database.addMyItem),
+  // ту же самую, что читает priceFor() ниже — точное совпадение по имени находит её
+  // сразу на следующем рендере sheet() (и в «В смету», т.к. estimateItems тоже идёт
+  // через priceFor). Просьба пользователя: «назначать стоимость, и чтобы сохранялась в БД».
+  function sheetSetPrice(name, type, unit, curPrice) {
+    rooms().openSheet(`<div class="ep-plan-srow"><b>💰 ${T.priceTitle}</b>
+        <span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-pc-priceback>${T.back}</button></div>
+      <div class="ep-plan-srow"><b>${esc(name)}</b></div>
+      <div class="ep-plan-srow"><label class="ep-plan-range" style="flex:1 1 100%">${T.priceLabel} (${esc(unit)}), ₽
+        <input type="number" inputmode="decimal" min="0" step="0.01" value="${curPrice || ""}" data-pc-pricevalue></label></div>
+      <div class="ep-plan-srow ep-plan-hintrow">${T.priceHint}</div>
+      <div class="ep-plan-srow ep-plan-sbtns"><button type="button" class="btn btn-primary ep-clickable" data-pc-pricesave data-pc-pname="${esc(name)}" data-pc-ptype="${esc(type)}" data-pc-punit="${esc(unit)}">${T.priceSave}</button></div>`);
+    const inp = document.querySelector("[data-pc-pricevalue]");
+    if (inp) { inp.focus(); inp.select(); }
+  }
+
   document.addEventListener("click", (e) => {
     if (!rooms() || !rooms().isActive()) return;
     const t = e.target;
@@ -549,6 +571,29 @@
     if (t.closest("[data-pc-close]")) { rooms().closeSheet(); return; }
     if (t.closest("[data-pc-consumcfg]")) return sheetConsumSettings();
     if (t.closest("[data-pc-consumback]")) return sheet();
+    if (t.closest("[data-pc-setprice]")) {
+      const b = t.closest("[data-pc-setprice]");
+      return sheetSetPrice(b.getAttribute("data-pc-pname"), b.getAttribute("data-pc-ptype"), b.getAttribute("data-pc-punit"), b.getAttribute("data-pc-pcur"));
+    }
+    if (t.closest("[data-pc-priceback]")) return sheet();
+    if (t.closest("[data-pc-pricesave]")) {
+      const b = t.closest("[data-pc-pricesave]");
+      const name = b.getAttribute("data-pc-pname"), type = b.getAttribute("data-pc-ptype"), unit = b.getAttribute("data-pc-punit");
+      const inp = document.querySelector("[data-pc-pricevalue]");
+      const price = Number(inp && inp.value) || 0;
+      if (price > 0 && window.EP && window.EP.Database) {
+        const D = EP.Database;
+        // если позиция с таким именем уже есть в «Моей БД» — правим цену на месте
+        // (updateMyItem), а не плодим дубль тем же именем (addMyItem создал бы второй
+        // независимый item — priceFor() всё равно нашёл бы верную цену через find(),
+        // но в самой БД остался бы мёртвый дубль со старой ценой)
+        const mine = (D.getItems && D.getItems("my")) || [];
+        const existing = mine.find((x) => x.type === type && String(x.name).toLowerCase() === String(name).toLowerCase());
+        if (existing && D.updateMyItem) D.updateMyItem(existing.id, { price });
+        else if (D.addMyItem) D.addMyItem({ type, name, unit, price, category: "Проект квартиры", subcategory: type === "work" ? "Работы" : "Материалы" });
+      }
+      return sheet(); // назад к расчёту — цена, если сохранилась, уже найдётся priceFor()
+    }
   });
   document.addEventListener("change", (e) => {
     if (!rooms() || !rooms().isActive()) return;
