@@ -13,8 +13,15 @@ EP.AppShell = {
             <span></span><span></span><span></span>
           </button>
           <div class="topbar-title">
-            <strong>Электрик</strong>
-            <span id="masterName">Мастер</span>
+            <span class="topbar-clock" id="topbarClock" aria-hidden="true"></span>
+            <span class="topbar-name">
+              <strong>Электрик</strong>
+              <span id="masterName">Мастер</span>
+            </span>
+            <span class="topbar-sysinfo" aria-hidden="true">
+              <span id="topbarNet"></span>
+              <span id="topbarBatt" hidden></span>
+            </span>
           </div>
           <button class="status-btn ep-clickable" id="firebaseStatusBtn" type="button" aria-label="Статус Firebase">
             <span class="status-dot status-wait" id="firebaseStatusDot"></span>
