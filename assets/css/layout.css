@@ -1,7 +1,7 @@
 /* V29.2 Clean layout bridge for the original Electric Pro visual. */
-#app { min-height: 100vh; }
-.app-shell { min-height: 100vh; }
-.page-container { min-height: calc(100vh - var(--topbar-h)); }
+#app { min-height: 100dvh; }
+.app-shell { min-height: 100dvh; }
+.page-container { min-height: calc(100dvh - var(--topbar-h)); }
 .side-nav button.active { border-color: color-mix(in srgb, var(--accent) 65%, rgba(255,255,255,.12)); background: color-mix(in srgb, var(--accent) 25%, rgba(255,255,255,.07)); }
 .route-placeholder { display:grid; gap:12px; }
 .v29-protected-note { color: var(--muted); font-size: 13px; line-height: 1.45; }
