@@ -488,7 +488,7 @@
     const p = core().project;
     if (!p || !(p.rooms || []).length) { rooms().toast("Нарисуй план — потом лист."); return; }
     const pct = Math.round(pdfScale * 100);
-    rooms().openSheet(`<div class="ep-plan-srow"><b>📄 Печатный лист (PDF)</b><span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-pxp-close>✕</button></div>
+    rooms().openSheet(`<div class="ep-plan-srow"><b>📄 Печатный лист (PDF)</b><span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-sheet-fs aria-label="Во весь экран">⛶</button><button type="button" class="ep-plan-mini ep-clickable" data-pxp-close>✕</button></div>
       <div class="ep-plan-srow">Масштаб постов на развёртках:
         <input type="range" min="20" max="220" value="${pct}" data-pxp-scale class="ep-plan-unfslider">
         <b data-pxp-scaleval>${pct}%</b>
