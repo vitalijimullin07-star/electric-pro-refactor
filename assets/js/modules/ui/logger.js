@@ -31,8 +31,16 @@
   }
 
   // ---- перехват ошибок ----
+  // "ResizeObserver loop completed/limit exceeded" — известная безобидная особенность
+  // Chrome/браузеров: браузер сам откладывает уведомление о ресайзе на следующий кадр
+  // и репортит это КАК error-событие на window, хотя ничего реально не сломалось (ни
+  // один сайт с ResizeObserver от этого не застрахован — не баг конкретно этого
+  // приложения). Без фильтра красил точку статуса в 🔴 на каждом открытии /plan
+  // (репорт пользователя — лог показывал только это, без реальных сбоев рядом).
+  const isResizeObserverNoise = (msg) => /ResizeObserver loop/i.test(String(msg || ""));
   try {
     window.addEventListener("error", (e) => {
+      if (isResizeObserverNoise(e && e.message)) return;
       const f = e && e.filename ? (" @ " + String(e.filename).split("/").pop() + ":" + e.lineno) : "";
       add("error", ((e && e.message) || "Ошибка скрипта") + f);
     });
