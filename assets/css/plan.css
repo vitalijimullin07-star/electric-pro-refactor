@@ -71,7 +71,25 @@ body[data-visual-mode="day"] .ep-plan-newfield input[type="number"] {
   color: var(--text, #e8eef7); font: 600 14px system-ui; cursor: pointer;
 }
 .ep-plan-tbtn:disabled { opacity: .35; cursor: default; }
-.ep-plan-savenote { font: 500 11.5px system-ui; color: var(--muted, #94a3b8); }
+.ep-plan-savenote { font: 500 11.5px system-ui; color: var(--muted, #94a3b8); white-space: nowrap; }
+/* Компакт-режим (просьба пользователя со скриншотом — тулбар занимал полэкрана):
+   строка этажей и строка undo/сохранено/⋯ сведены В ОДНУ, горизонтально
+   прокручиваемую (nowrap), вместо двух отдельных — экономит целую строку
+   высоты. Дети сами НЕ переносятся (flex-wrap:nowrap), overflow уходит вбок,
+   не вниз — тот же принцип, что и у .ep-plan-modes ниже. */
+.ep-plan-compactrow { display: flex; align-items: center; gap: 10px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.ep-plan-compactrow > .ep-plan-toolbar { flex-wrap: nowrap; flex: none; }
+.ep-plan-savebar { gap: 7px; }
+/* Редко нужные действия (PDF/Экспорт/Импорт/Шаблон) спрятаны за «⋯» — просьба
+   пользователя сделать панель компактнее. Меню — position:fixed (НЕ вложено в
+   .ep-plan-compactrow, у которой overflow-x:auto неявно даёт и overflow-y:auto
+   по спецификации CSS — вложенный absolute-дочерний элемент обрезался бы этим
+   скроллом), позиция считается в JS от getBoundingClientRect() кнопки — тот
+   же паттерн, что уже доказанно работает у #ep-plan-qmenu (долгий тап по точке). */
+.ep-plan-moremenu { display: flex; flex-direction: column; gap: 6px; padding: 8px; min-width: 190px; border-radius: 12px; background: rgba(var(--card-bg-rgb, 15, 23, 42), var(--card-opacity, .94)); border: 1px solid rgba(255, 255, 255, .14); backdrop-filter: blur(8px); z-index: 30; box-shadow: 0 12px 30px rgba(0, 0, 0, .4); }
+.ep-plan-moremenu[hidden] { display: none; }
+.ep-plan-moremenu .ep-plan-tbtn { width: 100%; text-align: left; }
+body[data-visual-mode="day"] .ep-plan-moremenu { background: rgba(255, 255, 255, .96); border-color: #dbe3ee; }
 
 /* — холст — */
 /* flex:1 1 auto вместо calc(100vh-250px) — тот же приём, что уже стоял
@@ -186,8 +204,15 @@ body[data-visual-mode="day"] .ep-plan-tbtn { background: #fff; border-color: #cb
 body[data-visual-mode="day"] .ep-plan-item-main { color: #0f172a; }
 
 /* — Слой 1: режимы, шторка, сцена — */
-.ep-plan-modes { gap: 6px; }
-.ep-plan-modes .ep-plan-tbtn { min-width: 42px; padding: 8px 10px; }
+/* Одна горизонтально прокручиваемая строка вместо двух рядов иконок — просьба
+   пользователя сделать панель компактнее (скриншот с выделенным тулбаром на
+   почти половину экрана). flex-wrap:nowrap+overflow-x:auto вместо wrap —
+   иконки/разделители не переносятся на вторую строку, лишние уезжают вбок,
+   долистать свайпом. flex:none у кнопок/разделителей — иначе flex попытался
+   бы их сжать вместо честного горизонтального оверфлоу. */
+.ep-plan-modes { gap: 6px; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.ep-plan-modes .ep-plan-tbtn { min-width: 42px; padding: 8px 10px; flex: none; }
+.ep-plan-modes .ep-plan-modesep { flex: none; }
 .ep-plan-tbtn.on { background: var(--accent, #38bdf8); border-color: transparent; color: #06121f; }
 .ep-plan-modehint { font: 500 12px system-ui; color: var(--muted, #94a3b8); padding: 0 2px; }
 
