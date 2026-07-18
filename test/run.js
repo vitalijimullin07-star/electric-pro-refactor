@@ -777,6 +777,63 @@ test("calcByRoutes: штробы/подрозетники/кабель/ниша 
   const niche = res.items.find((i) => i.name.indexOf("Вырубка ниши") >= 0);
   ok(niche && niche.qty === 24, "вырубка × модули");
   ok(res.items.some((i) => i.name === "Монтаж щита в нишу/стену"), "монтаж щита");
+  // работы, «не падавшие в работу» (просьба пользователя): вклейка подрозетников —
+  // та же раскладка std/deep, что и высверливание; прокладка кабеля — тот же метраж,
+  // что и материал «Кабель …»; сборка/расключение щита — по числу аппаратов
+  const glueStd = res.items.find((i) => i.name === "Вклейка подрозетников обычных бетон");
+  const glueDeep = res.items.find((i) => i.name === "Вклейка подрозетников глубоких бетон");
+  ok(glueStd && glueStd.qty === 1, "вклейка обычного подрозетника отдельно от сверления");
+  ok(glueDeep && glueDeep.qty === 1, "вклейка глубокого подрозетника отдельно от сверления");
+  const layCable = res.items.find((i) => i.name === "Прокладка кабеля");
+  ok(layCable, "есть работа «прокладка кабеля»");
+  near(layCable.qty, cab.qty, 0.05, "метраж прокладки = метражу материала кабеля");
+  const breakers = res.items.find((i) => i.name === "Установка автоматического выключателя");
+  ok(breakers && breakers.qty === 1, "только вводной — линии (p.circuits) в этом проекте не заведены");
+});
+test("calcByRoutes: сборка щита — автоматы/УЗО по числу линий+вводных, распред. коробка, гофра", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "Щ");
+  P.panels.push(pn);
+  P.settings.mainRcd = true; // вводное УЗО
+  const cc1 = M.newCircuit("QF1", "#f00", 16); cc1.rcd = true; // линия с УЗО/дифом
+  const cc2 = M.newCircuit("QF2", "#0f0", 16); // линия без УЗО
+  P.circuits.push(cc1, cc2);
+  const s1 = M.newElement("socket", w(0), 100, 30, "power"); s1.circuitId = cc1.id;
+  const s2 = M.newElement("socket", w(1), 100, 30, "power"); s2.circuitId = cc2.id;
+  const j1 = M.newElement("junction", w(2), 100, 270, "power");
+  P.elements.push(s1, s2, j1);
+  const rt1 = M.newRoute("power", "ceiling", [{ x: 100, y: 18 }, { x: 50, y: 50 }], s1.id, pn.id); rt1.toPanel = true;
+  const rt2 = M.newRoute("power", "ceiling", [{ x: 100, y: 18 }, { x: 50, y: 50 }], s2.id, pn.id); rt2.toPanel = true;
+  P.routes.push(rt1, rt2);
+  const res = EP.Plan.Calc.calcByRoutes(P);
+  const breakers = res.items.find((i) => i.name === "Установка автоматического выключателя");
+  ok(breakers && breakers.qty === 3, "вводной + 2 линии"); // 1 вводной + cc1 + cc2
+  const rcds = res.items.find((i) => i.name === "Установка УЗО/дифавтомата");
+  ok(rcds && rcds.qty === 2, "вводное УЗО + УЗО линии cc1"); // mainRcd + cc1.rcd
+  const junctWork = res.items.find((i) => i.name === "Монтаж и расключение распределительной коробки");
+  ok(junctWork && junctWork.qty === 1, "монтаж распред. коробки по числу распаек");
+});
+test("calcByRoutes: временные сети — вручную заданное число точек добавляет работу", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
+  P.settings.tempLightingPts = 3; P.settings.tempSocketsPts = 5;
+  const s1 = M.newElement("socket", w(0), 100, 30, "power"); P.elements.push(s1);
+  const rt = M.newRoute("power", "ceiling", [{ x: 100, y: 18 }, { x: 50, y: 50 }], s1.id, pn.id); rt.toPanel = true;
+  P.routes.push(rt);
+  const res = EP.Plan.Calc.calcByRoutes(P);
+  const tl = res.items.find((i) => i.name === "Временное освещение (организация)");
+  const ts = res.items.find((i) => i.name === "Временные розеточные сети (организация)");
+  ok(tl && tl.qty === 3, "временное освещение — 3 точки");
+  ok(ts && ts.qty === 5, "временные розетки — 5 точек");
+});
+test("calcByRoutes: временные сети по умолчанию (0) — работа не добавляется", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
+  const s1 = M.newElement("socket", w(0), 100, 30, "power"); P.elements.push(s1);
+  const rt = M.newRoute("power", "ceiling", [{ x: 100, y: 18 }, { x: 50, y: 50 }], s1.id, pn.id); rt.toPanel = true;
+  P.routes.push(rt);
+  const res = EP.Plan.Calc.calcByRoutes(P);
+  ok(!res.items.some((i) => i.name.indexOf("Временн") >= 0), "без ручного ввода — временных работ нет");
 });
 test("calcByRoutes: своя высота щита (pn.height) меняет метраж кабеля до него", () => {
   const { P, w } = install();
