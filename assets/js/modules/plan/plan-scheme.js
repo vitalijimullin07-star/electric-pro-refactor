@@ -152,18 +152,28 @@
   }
   const isOpen = () => !!$("#ep-psc-box");
   function close() { S.full = false; }
-  // lock=true — как раньше (пробуем принудительно развернуть в горизонталь через
-  // screen.orientation.lock, работает не везде — на iOS Safari тихо не срабатывает);
-  // lock=false — просто fullscreen, ориентация экрана как физически держит телефон
+  // ЧИСТЫЙ CSS, БЕЗ нативного Fullscreen API/screen.orientation.lock — репорт
+  // пользователя со скриншотом с реального устройства: `requestFullscreen()`
+  // тихо не срабатывает (или срабатывает, но браузер продолжает показывать
+  // статус-бар и не пересчитывает 100vw синхронно с переходом), в итоге видна
+  // только чуть увеличенная max-height у .ep-plan-schemescroll, а сам лист
+  // остаётся в обычном потоке страницы — статус-бар виден, схема обрезана по
+  // ширине (тот же класс бага, что уже чинили у главного редактора/шторок/
+  // развёртки в этой сессии, здесь просто не был перенесён вместе с ними).
+  // lock=true (⤢) — горизонталь БЕЗ физического поворота телефона тем же
+  // CSS-трюком, что уже доказанно работает у 🔄 в развёртке (plan-unfold.js
+  // enterFSLandscape/.is-landscape-forced: position:fixed на весь вьюпорт +
+  // transform:rotate(90deg)) — НЕ screen.orientation.lock (не поддерживается
+  // в iOS Safari вовсе, на Android требует физически повернуть устройство).
+  // lock=false (⛶) — просто fullscreen, ориентация как физически держат телефон.
   function toggleFull(lock) {
     S.full = !S.full;
     const box = $("#ep-psc-box"); const sheet = $("#ep-plan-sheet");
     if (box) box.classList.toggle("is-full", S.full);
-    if (sheet) sheet.classList.toggle("ep-plan-sheet-full", S.full);
-    try {
-      if (S.full && sheet && sheet.requestFullscreen) sheet.requestFullscreen().then(() => { if (lock && screen.orientation && screen.orientation.lock) screen.orientation.lock("landscape").catch(() => {}); }).catch(() => {});
-      else if (!S.full && document.fullscreenElement) document.exitFullscreen().catch(() => {});
-    } catch (e) {}
+    if (sheet) {
+      sheet.classList.toggle("ep-plan-sheet-full", S.full);
+      sheet.classList.toggle("is-landscape-forced", S.full && !!lock);
+    }
   }
 
   function draw() {
@@ -255,7 +265,15 @@
     if (!rooms() || !rooms().isActive()) return;
     const t = e.target; let b;
     if (t.closest("[data-plan-scheme]")) return open();
-    if (t.closest("[data-psc-close]")) { close(); rooms().closeSheet(); const sh = $("#ep-plan-sheet"); if (sh) sh.classList.remove("ep-plan-sheet-full"); return; }
+    if (t.closest("[data-psc-close]")) {
+      close(); rooms().closeSheet();
+      const sh = $("#ep-plan-sheet");
+      // #ep-plan-sheet — ОБЩИЙ элемент для всех шторок модуля; is-landscape-forced
+      // ОБЯЗАН сниматься здесь же, иначе он останется висеть на закрытии посреди
+      // повёрнутой схемы и сломает вид СЛЕДУЮЩЕЙ открытой шторки (Расчёт и т.п.).
+      if (sh) { sh.classList.remove("ep-plan-sheet-full"); sh.classList.remove("is-landscape-forced"); }
+      return;
+    }
     if (t.closest("[data-psc-fullplain]")) return toggleFull(false);
     if (t.closest("[data-psc-full]")) return toggleFull(true);
     if (!isOpen()) return;

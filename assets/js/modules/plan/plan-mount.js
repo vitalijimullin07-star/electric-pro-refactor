@@ -397,6 +397,14 @@
       else fitToProject(); // состояние панели не менялось — холст всё равно сменил размер
       ctrlsWasOnBeforeFull = null;
     }
+    // toggleTopCtrls() выше уже сам синхронизирует quickbar, НО обе ветки "else"
+    // (панель и до этого была свёрнута — ни при входе, ни при выходе она не
+    // меняется) идут В ОБХОД toggleTopCtrls() и раньше НЕ обновляли видимость
+    // quickbar вообще — репорт пользователя со скриншотом: «во весь экран нажал,
+    // а панель (быстрый выбор) не вылезла» именно в этом случае (панель
+    // инструментов уже была свёрнута ДО входа в fullscreen). Зовём безусловно и
+    // ещё раз здесь — идемпотентно, лишним вызовом не вредит.
+    if (EP.Plan.Rooms && EP.Plan.Rooms.syncQuickbarVisibility) EP.Plan.Rooms.syncQuickbarVisibility();
   }
   document.addEventListener("input", (e) => {
     const r = root(); if (!r || !V.active) return;

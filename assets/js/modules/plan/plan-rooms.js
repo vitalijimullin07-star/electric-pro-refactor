@@ -401,7 +401,11 @@
   function openSheet(html) { const s = sheet(); if (s) { s.innerHTML = html; s.hidden = false; } syncQuickbarForSheet(true); }
   function closeSheet() {
     const s = sheet();
-    if (s) { s.hidden = true; s.innerHTML = ""; s.classList.remove("ep-plan-sheet-full"); }
+    // is-landscape-forced — CSS-разворот на 90° (Схема ⤢, Развёртка 🔄) на ОБЩЕМ
+    // #ep-plan-sheet; снимаем здесь же (единая точка закрытия ЛЮБОЙ шторки, не
+    // только своим ✕) — иначе класс мог бы залипнуть на элементе и сломать вид
+    // СЛЕДУЮЩЕЙ открытой шторки.
+    if (s) { s.hidden = true; s.innerHTML = ""; s.classList.remove("ep-plan-sheet-full"); s.classList.remove("is-landscape-forced"); }
     // solo линии управляется из шторки 🧵 Трассы — закрыли шторку, вернули полный вид
     // (иначе план остался бы приглушённым без видимого элемента управления)
     if (R.soloCircuit) { R.soloCircuit = null; renderScene(); }
