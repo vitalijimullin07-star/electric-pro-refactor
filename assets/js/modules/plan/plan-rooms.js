@@ -318,10 +318,6 @@
   function openSheet(html) { const s = sheet(); if (s) { s.innerHTML = html; s.hidden = false; } syncQuickbarForSheet(true); }
   function closeSheet() {
     const s = sheet();
-    // если шторку закрыли, пока сама она (не Развёртка/Схема поверх нёё —
-    // те гасят себя сами через свой exitFS ДО этого вызова) стоит в нативном
-    // fullscreen — гасим его тоже, иначе браузер завис бы в fullscreen с пустой шторкой
-    try { if (s && document.fullscreenElement === s) document.exitFullscreen().catch(() => {}); } catch (e) {}
     if (s) { s.hidden = true; s.innerHTML = ""; s.classList.remove("ep-plan-sheet-full"); }
     // solo линии управляется из шторки 🧵 Трассы — закрыли шторку, вернули полный вид
     // (иначе план остался бы приглушённым без видимого элемента управления)
@@ -329,14 +325,22 @@
     syncQuickbarForSheet(false);
   }
   // общая кнопка «во весь экран» для шторок БЕЗ своего fullscreen-состояния
-  // (Расчёт/Трассы/Проверки/Слои) — просто нативный Fullscreen без принудительного
-  // разворота (screen.orientation.lock), в отличие от ⤢ у Схемы/Развёртки, которые
-  // держат СВОЁ состояние S.full и умеют это же самое + опциональный лок отдельно.
+  // (Расчёт/Трассы/Проверки/Слои) — ЧИСТЫЙ CSS toggle (position:fixed через
+  // .ep-plan-sheet-full), БЕЗ настоящего Fullscreen API — тот же приём и по той
+  // же причине, что и у «Во весь экран» главного редактора (.ep-plan is-full,
+  // см. инвариант выше): реальный requestFullscreen() на элементе с
+  // backdrop-filter (шторка полупрозрачная, blur(8px)) на части реальных
+  // устройств (репорт пользователя — «когда раскрываю, становится серым»)
+  // ломает композитинг backdrop-filter внутри нативного fullscreen-топ-слоя —
+  // браузер вместо блюра фона рисует шторку плоским серым вместо тёмной
+  // полупрозрачной карточки. Раньше код ВСЁ ЕЩЁ звал s.requestFullscreen()
+  // «для системного выхода жестом/кнопкой назад» — именно этот вызов и
+  // провоцировал баг. Теперь — просто toggle класса, как у Развёртки/Схемы
+  // это НЕ трогали (у них своя leaner fullscreen-логика без backdrop-filter
+  // на самом fullscreen-элементе — .ep-plan-sheet-full там не участвует).
   function toggleSheetFullscreen() {
     const s = sheet(); if (!s) return;
-    if (document.fullscreenElement === s) { document.exitFullscreen().catch(() => {}); return; }
-    s.classList.add("ep-plan-sheet-full");
-    try { if (s.requestFullscreen) s.requestFullscreen().catch(() => {}); } catch (e) {}
+    s.classList.toggle("ep-plan-sheet-full");
   }
   function toast(msg) { openSheet(`<div class="ep-plan-srow ep-plan-toast">${esc(msg)}</div>`); setTimeout(() => { if (sheet() && sheet().querySelector(".ep-plan-toast")) closeSheet(); }, 1800); }
 
@@ -1121,13 +1125,6 @@
     R.canvas.fit(G().projectBBox(c.project));
     sheetUnderlay();
   }
-
-  // системный выход из fullscreen (жест "назад", ESC, смена вкладки) — синхронизируем
-  // класс шторки, а не только явные exitFS()/toggleSheetFullscreen() в самих модулях
-  document.addEventListener("fullscreenchange", () => {
-    const s = sheet();
-    if (s && document.fullscreenElement !== s) s.classList.remove("ep-plan-sheet-full");
-  });
 
   // ---------- события ----------
   document.addEventListener("click", (e) => {
