@@ -17,8 +17,9 @@
     wallThickness: 10,    // см
     gridStep: 10,         // см — шаг привязки
     snapEnabled: true,
-    undoLimit: 100,
+    undoLimit: 40,
     cloudDebounceMs: 1500,
+    persistDebounceMs: 400, // localStorage-запись коалесируется (см. persist() ниже)
     heightPresets: { socket: 30, switch: 90, kitchen: 110 }, // см от пола
     panelHeight: 150,     // см — низ щита (для вертикалей трасс)
     wallMaterial: "Бетон", // материал стен по умолчанию (для расчёта штробления)
@@ -316,6 +317,10 @@
   }
   function closeProject() { S.project = null; S.undo = []; S.redo = []; emit("close"); }
   function deleteProject(id) {
+    // отложенная (debounced) запись persist() могла ещё не сработать — если она
+    // как раз для ЭТОГО проекта, гасим её, иначе таймер воскресит удалённый
+    // проект в localStorage после того, как мы его тут же удалим строкой ниже.
+    if (persistDirty && persistDirty.id === id) { clearTimeout(persistTimer); persistTimer = 0; persistDirty = null; }
     try { localStorage.removeItem(LS_PROJECT + id); } catch (e) {}
     S.index = S.index.filter((x) => x.id !== id);
     saveIndex(); cloudPushSoon();
@@ -373,19 +378,54 @@
     return true;
   }
 
+  // Запись в localStorage (JSON.stringify всего проекта + пересчёт индекса) —
+  // синхронная и тяжёлая операция на больших проектах; persist() вызывается почти
+  // на каждое действие (в т.ч. на "input" некоторых полей — набор текста без
+  // commit()). Коалесируем несколько persist() подряд в ОДНУ запись через
+  // debounce: persistDirty держит ПРЯМУЮ ссылку на объект проекта (не id,
+  // не S.project на момент таймера) — мутации происходят на месте, поэтому
+  // к моменту срабатывания таймера в нём уже самые свежие данные, даже если
+  // пользователь успел переключиться на ДРУГОЙ проект (S.project уже другой,
+  // но persistDirty всё ещё корректно указывает на прежний объект/id).
+  // emit(what) НЕ откладываем — UI/автоперестройка трасс (AUTOREBUILD_ON и
+  // т.п.) должны узнавать об изменении сразу, откладывается только диск/индекс.
+  let persistTimer = 0, persistDirty = null;
+  function flushPersist() {
+    clearTimeout(persistTimer); persistTimer = 0;
+    const p = persistDirty; persistDirty = null;
+    if (!p) return;
+    if (!lsSet(LS_PROJECT + p.id, p)) emit("storage-full");
+    indexUpsert(p);
+  }
   function persist(what) {
     const p = S.project;
     if (p) {
       p.updatedAt = now();
-      if (!lsSet(LS_PROJECT + p.id, p)) emit("storage-full");
-      indexUpsert(p);
+      persistDirty = p;
+      clearTimeout(persistTimer);
+      persistTimer = setTimeout(flushPersist, DEFAULTS.persistDebounceMs);
     }
     cloudPushSoon();
     emit(what || "change");
   }
+  // уход со страницы/сворачивание — добить отложенную запись немедленно, чтобы
+  // не потерять последнее действие, если debounce (400мс) не успел сработать
+  try {
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushPersist(); });
+    window.addEventListener("pagehide", flushPersist);
+  } catch (e) {}
 
   // ---------- undo/redo (снимки состояния) ----------
-  function snapshot() { return JSON.stringify(S.project); }
+  // structuredClone (нативное глубокое клонирование) вместо JSON.stringify —
+  // быстрее на больших проектах (нет прохода через промежуточную строку) и
+  // избавляет undo/redo от повторного JSON.parse при восстановлении снимка.
+  // Фолбэк на JSON-клон — для старых движков без structuredClone (в т.ч.
+  // тестовый vm-сэндбокс test/harness.js, где structuredClone не пробрасывается
+  // в контекст) — то же поведение, что было раньше, без регресса.
+  const deepClone = typeof structuredClone === "function"
+    ? (o) => structuredClone(o)
+    : (o) => JSON.parse(JSON.stringify(o));
+  function snapshot() { return deepClone(S.project); }
   function commit() { // вызывать ПЕРЕД мутацией проекта
     if (!S.project) return;
     S.undo.push(snapshot());
@@ -395,14 +435,14 @@
   function undo() {
     if (!S.project || !S.undo.length) return false;
     S.redo.push(snapshot());
-    S.project = JSON.parse(S.undo.pop());
+    S.project = S.undo.pop();
     persist("undo");
     return true;
   }
   function redo() {
     if (!S.project || !S.redo.length) return false;
     S.undo.push(snapshot());
-    S.project = JSON.parse(S.redo.pop());
+    S.project = S.redo.pop();
     persist("redo");
     return true;
   }
