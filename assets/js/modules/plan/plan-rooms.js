@@ -132,6 +132,21 @@
         <button type="button" class="ep-plan-qbtn ep-clickable" data-plan-fit aria-label="Показать всё">⛶</button>
       </div>`;
   }
+  // Видимость плавающей quickbar: раньше пряталась ТОЛЬКО по режиму (скрыта в
+  // «Просмотре», видна в остальных) — просьба пользователя со скриншотом: со
+  // свёрнутой панелью инструментов (plan-mount.js, ︿/﹀) в режиме «Просмотр»
+  // НИКАКОГО другого способа сменить режим/отменить/вписать не остаётся вообще —
+  // quickbar должна оставаться видимой. Показываем, если ЛИБО активен не-view
+  // режим (как раньше — тулбар сверху далеко от пальца), ЛИБО панель
+  // инструментов свёрнута (единственный оставшийся доступ к этим действиям).
+  // EP.Plan.Mount может быть ещё не готов при первом вызове (порядок загрузки
+  // модулей) — тогда просто не учитываем её состояние, а не падаем.
+  function syncQuickbarVisibility() {
+    const qb = document.querySelector("#ep-plan-quickbar");
+    if (!qb) return;
+    const ctrlsExpanded = !EP.Plan.Mount || !EP.Plan.Mount.ctrlsOn || EP.Plan.Mount.ctrlsOn();
+    qb.hidden = R.mode === "view" && ctrlsExpanded;
+  }
   // шторка редактирования: какие инструменты держать закреплёнными на панели (кроме
   // двух динамических мест — теми панель распоряжается сама, см. qbTrack)
   function sheetQuickbar() {
@@ -172,10 +187,7 @@
     setMove(false);
     document.querySelectorAll("[data-plan-mode]").forEach((b) => b.classList.toggle("on", b.getAttribute("data-plan-mode") === mode));
     qbTrack(mode); // запомнить как «последний использованный» + перерисовать панель быстрого доступа
-    // плавающая quickbar (отмена/просмотр/вписать) снизу холста — только в активных
-    // режимах рисования/расстановки, где тулбар сверху далеко от пальца
-    const qb = document.querySelector("#ep-plan-quickbar");
-    if (qb) qb.hidden = mode === "view";
+    syncQuickbarVisibility();
     if (mode === "underlay") sheetUnderlay();
     else if (mode === "elem" && EP.Plan.Elements) EP.Plan.Elements.onModeEnter();
     else if (mode === "opening" && EP.Plan.Elements) EP.Plan.Elements.onOpeningModeEnter();
@@ -1372,6 +1384,6 @@
     soloCircuitId: () => R.soloCircuit || null,
     setSoloCircuit, clearSolo,
     canvasCmPerPx: () => (R.canvas ? R.canvas.cmPerPx() : 1),
-    mergeRooms
+    mergeRooms, syncQuickbarVisibility
   };
 })();

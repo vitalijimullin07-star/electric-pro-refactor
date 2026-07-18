@@ -158,6 +158,24 @@
     setNavHidden(true); // редактор уже имеет свою «‹ Проекты» — общая шапка не нужна
   }
 
+  // Ре-фит содержимого на весь проект — та же логика, что и у кнопки «⛶ Показать
+  // всё» (data-plan-fit). Зовётся при ЛЮБОМ ручном изменении доступного места под
+  // холст (свернуть/развернуть панель инструментов, вход/выход из fullscreen) —
+  // без этого resize() (колбэк ResizeObserver в plan-canvas.js) только подстраивал
+  // ПРОПОРЦИИ viewBox под новый размер, сохраняя прежний zoom/центр: контейнер
+  // резко меняется (обычно сильно вырастает по высоте), а содержимое остаётся
+  // того же масштаба — на экране это выглядит как «комната стала крошечной
+  // посередине большого пустого холста» (репорт пользователя со скриншотом сразу
+  // после сворачивания панели). «Настройка устаканивания» в plan-canvas.js (см.
+  // её инвариант) помогает только в первые 1.5с после монтирования — здесь же
+  // осознанное ручное действие пользователя в ЛЮБОЙ момент, поэтому вписываем
+  // явно, а не полагаемся на таймер.
+  function fitToProject() {
+    if (!V.canvas || !EP.Plan.Geometry || !core().project) return;
+    const bb = EP.Plan.Geometry.projectBBox(core().project);
+    if (bb) V.canvas.fit(bb);
+  }
+
   // свернуть/развернуть панель инструментов редактора — холст занимает освободившееся место
   function toggleTopCtrls(root) {
     V.ctrlsOn = !V.ctrlsOn;
@@ -169,7 +187,14 @@
       const lbl = V.ctrlsOn ? "Свернуть панель" : "Развернуть панель";
       btn.setAttribute("aria-label", lbl); btn.setAttribute("title", lbl);
     }
+    fitToProject();
     if (V.canvas && V.canvas.redraw) V.canvas.redraw();
+    // Плавающая quickbar раньше пряталась ТОЛЬКО по режиму (view/не-view) — если
+    // панель инструментов свёрнута, никакого другого способа сменить
+    // режим/отменить/вписать не остаётся вообще, поэтому quickbar теперь должна
+    // быть видна и в режиме «Просмотр», пока панель свёрнута (см. её видимость в
+    // plan-rooms.js setMode()/syncQuickbarVisibility()).
+    if (EP.Plan.Rooms && EP.Plan.Rooms.syncQuickbarVisibility) EP.Plan.Rooms.syncQuickbarVisibility();
   }
 
   function mountCanvas() {
@@ -178,10 +203,7 @@
     if (V.canvas) { try { V.canvas.destroy(); } catch (e) {} }
     V.canvas = EP.Plan.Canvas.create(host);
     if (EP.Plan.Rooms) EP.Plan.Rooms.attach(V.canvas);
-    if (EP.Plan.Geometry) {
-      const bb = EP.Plan.Geometry.projectBBox(core().project);
-      if (bb) V.canvas.fit(bb);
-    }
+    fitToProject();
     V.canvas.redraw();
   }
 
@@ -368,9 +390,11 @@
     box.classList.toggle("is-full");
     if (enteringFull) {
       ctrlsWasOnBeforeFull = V.ctrlsOn;
-      if (V.ctrlsOn) toggleTopCtrls(r);
+      if (V.ctrlsOn) toggleTopCtrls(r); // уже сам вписывает + синхронизирует quickbar
+      else fitToProject(); // панель и так была свёрнута — вписываем явно под сам fullscreen
     } else if (ctrlsWasOnBeforeFull != null) {
       if (V.ctrlsOn !== ctrlsWasOnBeforeFull) toggleTopCtrls(r);
+      else fitToProject(); // состояние панели не менялось — холст всё равно сменил размер
       ctrlsWasOnBeforeFull = null;
     }
   }
@@ -476,5 +500,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Mount = { mount, T };
+  EP.Plan.Mount = { mount, T, ctrlsOn: () => V.ctrlsOn };
 })();
