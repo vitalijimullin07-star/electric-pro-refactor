@@ -388,6 +388,8 @@
     p.settings = p.settings || {};
     if (!p.settings.symbolStyle) p.settings.symbolStyle = DEFAULTS.symbolStyle;
     if (p.settings.cableReserve == null) p.settings.cableReserve = DEFAULTS.cableReserve;
+    if (p.settings.tempLightingPts == null) p.settings.tempLightingPts = 0;
+    if (p.settings.tempSocketsPts == null) p.settings.tempSocketsPts = 0;
     if (p.settings.routeOffset == null) p.settings.routeOffset = DEFAULTS.routeOffset;
     if (p.settings.sleeveD == null) p.settings.sleeveD = DEFAULTS.sleeveD;
     if (!p.settings.connectorMode) p.settings.connectorMode = DEFAULTS.connectorMode;

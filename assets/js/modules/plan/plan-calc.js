@@ -17,6 +17,8 @@
     exactHint: "Штробы, подрозетники и кабель посчитаны по фактическому чертежу: длина спуска × материал стены, ёмкость штробы — из движка пула.",
     approxHint: "⚠ Приближённый счёт по комнатам. Построй трассы (🧵) — расчёт станет точным по чертежу.",
     reserve: "Запас кабеля, %",
+    tempHint: "Временные сети на время ремонта (организация — не выводится из чертежа, вводится вручную)",
+    tempLighting: "Врем. освещение, точек", tempSockets: "Врем. розетки, точек",
     noPrice: "нет цены в БД", total: "Итого по ценам БД",
     consumCfg: "⚙ Настроить расходники", consumTitle: "⚙ Логика расходников", back: "‹ Назад",
     byLines: "По линиям (QF)", secCable: "Кабель", secConsum: "Расходники",
@@ -345,12 +347,24 @@
       if (d.std) add("work", `Высверливание подрозетников обычных ${low(mat)}`, d.std, "шт");
       if (d.deep) add("work", `Высверливание подрозетников глубоких ${low(mat)}`, d.deep, "шт");
     });
+    // вклейка подрозетников — ОТДЕЛЬНАЯ работа от высверливания отверстия (просьба
+    // пользователя: список работ, которые «не падают в работу»), те же счётчики std/deep
+    Object.keys(podroz).forEach((mat) => {
+      const d = podroz[mat];
+      if (d.std) add("work", `Вклейка подрозетников обычных ${low(mat)}`, d.std, "шт");
+      if (d.deep) add("work", `Вклейка подрозетников глубоких ${low(mat)}`, d.deep, "шт");
+    });
     let pStd = 0, pDeep = 0;
     Object.keys(podroz).forEach((m) => { pStd += podroz[m].std; pDeep += podroz[m].deep; });
     if (pStd) add("material", "Подрозетник Ø68 40-50 мм", pStd, "шт");
     if (pDeep) add("material", "Подрозетник Ø68 65 мм глубокий", pDeep, "шт");
     if (junctBoxes) add("material", "Распаечная коробка (потолок)", junctBoxes, "шт");
+    if (junctBoxes) add("work", "Монтаж и расключение распределительной коробки", junctBoxes, "шт");
     Object.keys(cableBy).forEach((m) => add("material", `Кабель ${m}`, cableBy[m], "м"));
+    // прокладка кабеля — работа отдельно от материала (метраж кабеля тот же, что уже
+    // посчитан построчно выше по маркам)
+    const totalCableM = Object.keys(cableBy).reduce((sum, m) => sum + cableBy[m], 0);
+    add("work", "Прокладка кабеля", totalCableM, "м");
     // проходки через стены: Ø20, макс. 2 кабеля в гильзу; группируем по месту (~20 см)
     const sleeves = {}; // "x|y" -> { n: кабелей, wallId }
     routes.forEach((r) => {
@@ -376,7 +390,23 @@
         (EP.Plan.Scheme && EP.Plan.Scheme.neededModules ? EP.Plan.Scheme.neededModules(p) : 0);
       if (modules > 0) add("work", `Вырубка ниши под щит (${low(panelMat())})`, modules, "мод");
       add("work", "Монтаж щита в нишу/стену", 1, "шт");
+      // сборка и расключение щита — просьба пользователя: «цена складывается за
+      // установку автомата, узо, диф и т.д.», т.е. поштучно по числу реально стоящих
+      // в щите аппаратов защиты, а не одной строкой «сборка щита». Модель различает
+      // только breaker (есть всегда) и rcd (bool — УЗО/дифавтомат одной галкой, без
+      // подтипа) — раздельного «узо vs диф» поля нет, считаем их одной строкой.
+      const circAll = p.circuits || [];
+      const breakerCnt = 1 + circAll.length; // вводной + по одному на линию
+      const rcdCnt = (s.mainRcd ? 1 : 0) + circAll.filter((c) => c.rcd).length; // вводное + по линиям
+      add("work", "Установка автоматического выключателя", breakerCnt, "шт");
+      if (rcdCnt) add("work", "Установка УЗО/дифавтомата", rcdCnt, "шт");
+      if (s.meter) add("work", "Установка счётчика", 1, "шт");
     }
+    // временное освещение / временная розеточная сеть на время ремонта — организационная
+    // работа (собирается на штатных светильниках/точках проекта, но само подключение и
+    // демонтаж — отдельная услуга), количество вводится вручную (не выводится из чертежа)
+    if (s.tempLightingPts > 0) add("work", "Временное освещение (организация)", s.tempLightingPts, "точ.");
+    if (s.tempSocketsPts > 0) add("work", "Временные розеточные сети (организация)", s.tempSocketsPts, "точ.");
     // коннекторы: точное число сходящихся кабелей в распайках + разводка выключателей
     const conn = connectorsByRoutes(p, inCnt, outCnt);
     Object.keys(conn.materials).forEach((k) => add("material", connName(k), conn.materials[k], "шт"));
@@ -384,6 +414,11 @@
     // расходники (крепёж/буры/коронки/диски/мешки) — по уже посчитанным точным метрам/
     // подрозетникам/коробкам/кабелю выше; молча пропускается, если EP.CableConsum не подключен
     addConsumItems(add, p, strobe, podroz, junctBoxes, cableBy);
+    // затяжка кабеля в гофру — работа отдельно от самой гофры (материал); метраж
+    // берём из уже посчитанного addConsumItems (там же гофра ПНД/потолочная гофра
+    // считается по routeType/gofraCeil) — не пересчитываем заново, чтобы не разойтись
+    const gofraM = items.filter((it) => it.type === "material" && /^гофра/i.test(it.name)).reduce((sum, it) => sum + it.qty, 0);
+    if (gofraM > 0) add("work", "Затяжка кабеля в гофру", gofraM, "м");
     return { items, cableBy, strobe, conn, podroz, junctBoxes };
   }
 
@@ -435,7 +470,14 @@
       headHtml = `<div class="ep-plan-srow"><b>${T.exactHead}</b></div>
         <div class="ep-plan-srow ep-plan-hintrow">${T.exactHint}</div>
         <div class="ep-plan-srow"><label class="ep-plan-range" style="flex:0 0 150px">${T.reserve}
-          <input type="number" inputmode="numeric" min="0" max="50" value="${Math.round(p.settings.cableReserve == null ? 10 : p.settings.cableReserve)}" data-pc-reserve></label></div>`;
+          <input type="number" inputmode="numeric" min="0" max="50" value="${Math.round(p.settings.cableReserve == null ? 10 : p.settings.cableReserve)}" data-pc-reserve></label></div>
+        <div class="ep-plan-srow ep-plan-hintrow">${T.tempHint}</div>
+        <div class="ep-plan-srow">
+          <label class="ep-plan-range" style="flex:1 1 150px">${T.tempLighting}
+            <input type="number" inputmode="numeric" min="0" value="${Math.round(p.settings.tempLightingPts || 0)}" data-pc-templight></label>
+          <label class="ep-plan-range" style="flex:1 1 150px">${T.tempSockets}
+            <input type="number" inputmode="numeric" min="0" value="${Math.round(p.settings.tempSocketsPts || 0)}" data-pc-tempsock></label>
+        </div>`;
     } else {
       const res = runEngine(p, stats);
       items = res && res.draftItems ? res.draftItems : null;
@@ -514,6 +556,16 @@
       const c = core(); c.commit();
       c.project.settings.cableReserve = Math.max(0, Math.min(50, Number(e.target.value) || 0));
       c.persist("cable-reserve"); sheet();
+    }
+    if (e.target.getAttribute && e.target.getAttribute("data-pc-templight") != null) {
+      const c = core(); c.commit();
+      c.project.settings.tempLightingPts = Math.max(0, Number(e.target.value) || 0);
+      c.persist("temp-lighting"); sheet();
+    }
+    if (e.target.getAttribute && e.target.getAttribute("data-pc-tempsock") != null) {
+      const c = core(); c.commit();
+      c.project.settings.tempSocketsPts = Math.max(0, Number(e.target.value) || 0);
+      c.persist("temp-sockets"); sheet();
     }
   });
 
