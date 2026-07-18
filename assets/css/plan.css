@@ -279,7 +279,10 @@ body[data-visual-mode="day"] .ep-plan-room.is-sel { fill: rgba(2, 132, 199, .17)
 .ep-plan-items { display: flex; flex-direction: column; gap: 5px; max-height: 180px; overflow: auto; }
 .ep-plan-irow { display: flex; justify-content: space-between; gap: 10px; font: 500 12.5px system-ui; }
 .ep-plan-irow-r { display: flex; align-items: center; gap: 10px; flex: none; }
-.ep-plan-iprice { font-weight: 700; color: #34d399; min-width: 64px; text-align: right; }
+/* цена — теперь <button> (тап открывает sheetSetPrice — назначить/поправить цену,
+   сохраняется в БД), сброс кнопочных стилей браузера + пунктирное подчёркивание
+   как намёк на кликабельность, тот же визуальный вес, что и раньше у <span> */
+.ep-plan-iprice { border: 0; background: none; padding: 0; font: inherit; cursor: pointer; font-weight: 700; color: #34d399; min-width: 64px; text-align: right; text-decoration: underline dotted; text-underline-offset: 2px; }
 .ep-plan-iprice.is-noprice { color: var(--muted, #94a3b8); font-weight: 500; font-size: 11px; }
 .ep-plan-total { justify-content: flex-end; gap: 10px; margin-top: 4px; padding-top: 6px; border-top: 1px solid rgba(148, 163, 184, .18); }
 /* секции сметы (Кабель/Работы/Материалы/Расходники) — свои items без отдельного скролла */
