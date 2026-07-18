@@ -18,8 +18,55 @@
     approxHint: "⚠ Приближённый счёт по комнатам. Построй трассы (🧵) — расчёт станет точным по чертежу.",
     reserve: "Запас кабеля, %",
     noPrice: "нет цены в БД", total: "Итого по ценам БД",
-    consumCfg: "⚙ Настроить расходники", consumTitle: "⚙ Логика расходников", back: "‹ Назад"
+    consumCfg: "⚙ Настроить расходники", consumTitle: "⚙ Логика расходников", back: "‹ Назад",
+    byLines: "По линиям (QF)", secCable: "Кабель", secConsum: "Расходники",
+    secMaterial: "Материалы", secWork: "Работы"
   };
+  // Категории для секций сметы: имя позиции → ключ секции (порядок вывода ниже).
+  // Расходники (крепёж/гофра/лента/стяжки/буры/коронки/мешки) выносим ОТДЕЛЬНО от
+  // прочих материалов — просьба пользователя «информативно по расходке».
+  const CONSUM_RE = /гофра|лента монтажная|стяжк|площадк|клипс|гвозд|дюбел|бур |бур$|пик|коронк|диск |диск$|мешк|карандаш|термоусад|выстрел|скоб|баллон/i;
+  function sectionOf(it) {
+    const n = String(it.name || "");
+    if (it.type === "material" && /^кабель/i.test(n)) return "cable";
+    if (CONSUM_RE.test(n)) return "consum";
+    return it.type === "work" ? "work" : "material";
+  }
+  const SECTIONS = [["cable", "🔌 Кабель"], ["work", "🔨 Работы"], ["material", "📦 Материалы"], ["consum", "🧰 Расходники"]];
+
+  // Разбивка по линиям QF (информ. сводка, не пересчёт сметы): по каждой линии —
+  // автомат/УЗО, длина кабеля (марка) по трассам, число точек и подрозетников,
+  // проходок. Агрегируется прямо по p.routes/p.elements, отдельной модели не надо.
+  function perCircuit(p) {
+    const RT = EP.Plan.Routes; if (!RT) return null;
+    const routes = p.routes || [];
+    const s = p.settings, reserve = 1 + (Number(s.cableReserve == null ? 10 : s.cableReserve) || 0) / 100;
+    const byId = {};
+    const row = (id) => (byId[id] = byId[id] || { cableLen: 0, mark: null, points: 0, posts: 0, crossings: 0 });
+    (p.elements || []).forEach((e) => {
+      if (e.status === "existing" || e.type === "junction") return;
+      if (!e.circuitId) return;
+      const r = row(e.circuitId);
+      r.points++;
+      const posts = e.type === "block" ? ((e.params && e.params.items) || []).length : 1;
+      r.posts += posts;
+    });
+    routes.forEach((rt) => {
+      if (!rt.circuitId) return;
+      const el = (p.elements || []).find((e) => e.id === rt.fromId);
+      const pn = rt.toPanel ? (p.panels || []).find((x) => x.id === rt.toId) : null;
+      const L = G().polylineLen(rt.points || []) + (el ? RT.pointVert(p, el) * RT.hopVertMul(p, rt) : 0) + (rt.toPanel ? RT.panelVert(p, pn) : 0);
+      const r = row(rt.circuitId);
+      r.cableLen += L; r.crossings += (rt.throughWalls || []).length;
+      const cc = (p.circuits || []).find((c) => c.id === rt.circuitId);
+      if (!r.mark) r.mark = (cc && cc.cable) || (rt.layer === "light" ? "3×1.5" : "3×2.5");
+    });
+    return (p.circuits || []).map((c) => {
+      const r = byId[c.id] || { cableLen: 0, mark: c.cable || null, points: 0, posts: 0, crossings: 0 };
+      return { id: c.id, name: c.name, color: c.color, breaker: c.breaker, rcd: c.rcd,
+        cableLen: Math.round((r.cableLen / 100) * reserve * 10) / 10, mark: r.mark, points: r.points, posts: r.posts, crossings: r.crossings };
+    }).filter((r) => r.points > 0 || r.cableLen > 0);
+  }
   const COLS = [["sockets", "Р"], ["sw", "В"], ["light", "С"], ["tv", "ТВ"], ["internet", "И"], ["warm", "ТП"]];
 
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -398,12 +445,34 @@
     // цены — из EP.Database (по совпадению названия, priceFor); строка «нет цены»,
     // если для позиции нет подходящей записи в БД, и общий итог по найденным ценам
     const fmtRub = (n) => (window.EP.Currency && EP.Currency.format) ? EP.Currency.format(n) : (Math.round(n * 100) / 100) + " ₽";
+    // разбивка по линиям QF (информационная сводка) — только если есть трассы и линии
+    const perQF = exact && exact.items.length ? perCircuit(p) : null;
+    const perQFHtml = (perQF && perQF.length)
+      ? `<div class="ep-plan-srow"><b>${T.byLines}</b></div>` +
+        `<div class="ep-plan-qflist">${perQF.map((r) => `<div class="ep-plan-qfrow">
+            <span class="ep-plan-cdot" style="background:${esc(r.color)}"></span><b>${esc(r.name)}</b>
+            <span class="ep-plan-qfmeta">${r.breaker || "—"}A${r.rcd ? " · УЗО" : ""}</span>
+            <span class="ep-plan-flex"></span>
+            <span class="ep-plan-qfnums">${r.mark ? esc(r.mark) + " · " : ""}${r.cableLen ? G().fmtLen(r.cableLen * 100) : "—"} · ${r.points} тчк${r.crossings ? " · " + r.crossings + " прох." : ""}</span>
+          </div>`).join("")}</div>`
+      : "";
+
     let itemsHtml;
     if (items) {
-      const priced = items.map((it) => { const price = priceFor(it.name, it.type); return { it, price, lineSum: price * it.qty }; });
+      const priced = items.map((it) => { const price = priceFor(it.name, it.type); return { it, price, lineSum: price * it.qty, sec: sectionOf(it) }; });
       const total = priced.reduce((s, x) => s + (x.price > 0 ? x.lineSum : 0), 0);
       const noPriceN = priced.filter((x) => !(x.price > 0)).length;
-      itemsHtml = `${headHtml}<div class="ep-plan-items">${priced.map(({ it, price, lineSum }) => `<div class="ep-plan-irow"><span>${esc(it.name)}</span><span class="ep-plan-irow-r"><b>${it.qty} ${esc(it.unit)}</b><span class="ep-plan-iprice${price > 0 ? "" : " is-noprice"}">${price > 0 ? esc(fmtRub(lineSum)) : esc(T.noPrice)}</span></span></div>`).join("")}</div>
+      const irow = ({ it, price, lineSum }) => `<div class="ep-plan-irow"><span>${esc(it.name)}</span><span class="ep-plan-irow-r"><b>${it.qty} ${esc(it.unit)}</b><span class="ep-plan-iprice${price > 0 ? "" : " is-noprice"}">${price > 0 ? esc(fmtRub(lineSum)) : esc(T.noPrice)}</span></span></div>`;
+      // группировка по секциям (Кабель / Работы / Материалы / Расходники) —
+      // просьба пользователя «информативно по расходке», чтобы расходка читалась отдельно
+      const secHtml = SECTIONS.map(([key, label]) => {
+        const rows = priced.filter((x) => x.sec === key);
+        if (!rows.length) return "";
+        const secSum = rows.reduce((s, x) => s + (x.price > 0 ? x.lineSum : 0), 0);
+        return `<div class="ep-plan-srow ep-plan-sechead"><b>${label}</b><span class="ep-plan-flex"></span><span class="ep-plan-mshint">${secSum > 0 ? esc(fmtRub(secSum)) : ""}</span></div>
+          <div class="ep-plan-items ep-plan-secitems">${rows.map(irow).join("")}</div>`;
+      }).join("");
+      itemsHtml = `${headHtml}${secHtml}
         <div class="ep-plan-srow ep-plan-total"><b>${esc(T.total)}</b><b>${esc(fmtRub(total))}</b>${noPriceN ? `<span class="ep-plan-mshint">(${noPriceN} без цены в БД)</span>` : ""}</div>`;
     } else {
       itemsHtml = `<div class="ep-plan-srow">${T.engineMissing}</div>`;
@@ -415,6 +484,7 @@
         <span class="ep-plan-flex"></span>${consumBtn}<button type="button" class="ep-plan-mini ep-clickable" data-sheet-fs aria-label="Во весь экран">⛶</button><button type="button" class="ep-plan-mini ep-clickable" data-pc-close>✕</button></div>
       ${table}
       <div class="ep-plan-srow"><b>${T.cable}</b></div>${cable}
+      ${perQFHtml}
       ${itemsHtml}
       ${items ? `<div class="ep-plan-srow ep-plan-sbtns"><button type="button" class="btn btn-primary ep-clickable" data-plan-to-estimate>${T.toEstimate}</button></div>` : ""}`);
   }
@@ -448,5 +518,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Calc = { sheet, buildBlocks, runEngine, priceFor, calcByRoutes, estimateItems, sheetConsumSettings };
+  EP.Plan.Calc = { sheet, buildBlocks, runEngine, priceFor, calcByRoutes, estimateItems, perCircuit, sheetConsumSettings };
 })();
