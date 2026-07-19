@@ -40,7 +40,10 @@
     mergeLintelBtn: "Перемычка",
     routeTitle: "Трасса",
     routeManual: "· правлено вручную",
-    routeHint: "Тяни точку излома, чтобы подвинуть путь. Тяни середину прямого участка — добавит новый излом. Концы (у точки/щита/распайки) не двигаются.",
+    routeModePoint: "✏️ Ломать",
+    routeModeSegment: "↔ Двигать",
+    routeHintPoint: "Тяни точку излома, чтобы подвинуть путь. Тяни середину прямого участка — добавит новый излом. Концы (у точки/щита/распайки) не двигаются.",
+    routeHintSeg: "Тяни любую точку прямого участка — двигается ВЕСЬ отрезок целиком, от угла до угла. Концы (у точки/щита/распайки) не двигаются.",
     routeFlip: "🔄 Развернуть",
     routeFlipNone: "Рядом нет прямого угла — разворачивать нечего.",
     routeAuto: "↺ Авто",
@@ -73,7 +76,7 @@
     selectedRoomId: null, ruler: { a: null, b: null }, beamDraft: { a: null, b: null }, voidDraft: { a: null, b: null },
     umove: false, calib: { on: false, a: null, b: null }, mergeFirst: null, mergePending: null,
     soloCircuit: null, // работа по линиям: id единственной показанной ярко линии QF (view-состояние, не в модели)
-    segPressArmed: null // {routeId,segI,t} — долгое нажатие вооружило тягу целого сегмента трассы (onCanvasLongPress → enableRouteDrag)
+    routeDragMode: "point" // "point"|"segment" — явный переключатель режима тяги трассы (кнопки в sheetRoute), см. enableRouteDrag
   };
 
   // ---------- плавающая quickbar: быстрый доступ (просьба пользователя — редактируемая
@@ -382,44 +385,12 @@
         });
       });
     }
-    if (best) {
-      const elem = (p.elements || []).find((e) => e.id === best.elemId);
-      if (elem) { R.selectedRoomId = null; EP.Plan.Elements.openEditor(elem); return true; }
-    }
-    // Двойной тап (два ДИСКРЕТНЫХ тапа, палец отпускался между ними) на прямой
-    // участок трассы — конфликт с зумом по двойному тапу (репорт пользователя:
-    // «двойной тап по линии — увеличивает экран вместо тяги отрезка»). Раньше
-    // двойной тап включал segDrag-режим ТОЛЬКО через opts.dbl в enableRouteDrag —
-    // но тот срабатывает лишь если тяга началась ОДНИМ непрерывным движением
-    // СРАЗУ после второго тапа, без отпускания пальца между тапом и тягой; два
-    // обычных дискретных тапа (палец поднимается после второго тапа тоже) до
-    // этого места вообще не доходили — canvas.js видел «просто двойной тап» и
-    // делал зум к точке касания. Теперь двойной тап по сегменту, как и долгое
-    // нажатие (см. onCanvasLongPress), СРАЗУ вооружает R.segPressArmed И
-    // «съедает» тап (return true — cb.dbl съеден, plan-canvas.js зум не делает,
-    // см. endPointer()) — тот же одноразовый флаг с TTL 800мс, что читает
-    // enableRouteDrag() на "start". Тянуть отрезок теперь можно ОТДЕЛЬНЫМ
-    // жестом после двух тапов, а не только слитным «тап-тап-и-сразу-тянуть» —
-    // просьба пользователя: «2 раза тапнул, и могу перемещать». opts.dbl в
-    // enableRouteDrag НЕ убран (слитный жест продолжает работать как раньше,
-    // просто вооружённый флаг теперь эту работу уже сделал заранее).
-    if (R.mode === "view" && R.canvas) {
-      const rr = Math.max(18 * k, 14);
-      let bestRt = null, bestSegI = -1, bestD = rr;
-      (G().floorScoped(p).routes || []).forEach((rt) => {
-        const pts = rt.points || [];
-        for (let i = 0; i < pts.length - 1; i++) {
-          const cl = G().closestOnSeg(w, pts[i], pts[i + 1]);
-          if (cl.d <= bestD) { bestD = cl.d; bestRt = rt; bestSegI = i; }
-        }
-      });
-      if (bestRt && bestSegI >= 0) {
-        R.segPressArmed = { routeId: bestRt.id, segI: bestSegI, t: Date.now() };
-        if (R.selectedRoute !== bestRt.id) sheetRoute(bestRt, w);
-        return true;
-      }
-    }
-    return false;
+    if (!best) return false;
+    const elem = (p.elements || []).find((e) => e.id === best.elemId);
+    if (!elem) return false;
+    R.selectedRoomId = null;
+    EP.Plan.Elements.openEditor(elem);
+    return true;
   }
 
   // ---------- шторка (нижняя панель) ----------
@@ -503,58 +474,29 @@
   // Только удалить/копия — смену линии и так удобно делать в редакторе по обычному тапу.
   function closeQuickMenu() { const m = document.querySelector("#ep-plan-qmenu"); if (m) m.remove(); }
   function onCanvasLongPress(w, e) {
-    if (R.mode !== "view" || !R.canvas) return;
+    if (R.mode !== "view" || !EP.Plan.Elements || !R.canvas) return;
     const k = R.canvas.cmPerPx();
-    if (EP.Plan.Elements) {
-      const hit = EP.Plan.Elements.hitAt(w, EP.Plan.Elements.CFG.hitPx * k);
-      if (hit && hit.el) {
-        vibrate(15);
-        closeQuickMenu();
-        const host = document.querySelector("#ep-plan-canvas"); if (!host) return;
-        const hb = host.getBoundingClientRect();
-        const menu = document.createElement("div");
-        menu.id = "ep-plan-qmenu";
-        menu.className = "ep-plan-qmenu";
-        menu.style.left = Math.max(6, Math.min(hb.width - 130, e.clientX - hb.left - 60)) + "px";
-        menu.style.top = Math.max(6, Math.min(hb.height - 50, e.clientY - hb.top - 56)) + "px";
-        menu.innerHTML = `<button type="button" class="ep-plan-qmbtn ep-clickable" data-qm-dup>⧉ Копия</button><button type="button" class="ep-plan-qmbtn ep-plan-qmbtn-del ep-clickable" data-qm-del>✕ Удалить</button>`;
-        host.appendChild(menu);
-        const elId = hit.el.id;
-        menu.addEventListener("click", (ev) => {
-          const t = ev.target;
-          const el2 = (core().project.elements || []).find((x) => x.id === elId);
-          if (t.closest("[data-qm-del]")) { closeQuickMenu(); EP.Plan.Elements.deleteElement(el2); }
-          else if (t.closest("[data-qm-dup]")) { closeQuickMenu(); EP.Plan.Elements.duplicateElement(el2); }
-        });
-        setTimeout(() => { document.addEventListener("pointerdown", closeQuickMenu, { once: true, capture: true }); }, 0);
-        return;
-      }
-    }
-    // Долгое нажатие (без движения, ~550мс) на ПРЯМОЙ УЧАСТОК трассы — вооружает
-    // тягу ВСЕГО отрезка целиком, просьба пользователя: «нажал и удерживаю
-    // секунду — появляется возможность сдвинуть отрезок от угла до угла
-    // целиком». Раньше этот режим включал ТОЛЬКО двойной тап — он продолжает
-    // работать как раньше (см. enableRouteDrag, opts.dbl), долгое нажатие
-    // просто ДОБАВЛЕНО вторым триггером того же режима, ничего не убрано.
-    // R.segPressArmed — одноразовый флаг {routeId, segI}: следующий drag на
-    // ЭТОМ маршруте (палец уже не отпускался — long-press срабатывает ДО
-    // порога dragStartPx в plan-canvas.js) увидит его в enableRouteDrag()
-    // "start" и войдёт в segDrag-режим сразу, без повторного двойного тапа.
-    if (!R.canvas) return;
-    const rr = Math.max(18 * k, 14);
-    const p = core().project;
-    let bestRt = null, bestSegI = -1, bestD = rr;
-    (G().floorScoped(p).routes || []).forEach((rt) => {
-      const pts = rt.points || [];
-      for (let i = 0; i < pts.length - 1; i++) {
-        const cl = G().closestOnSeg(w, pts[i], pts[i + 1]);
-        if (cl.d <= bestD) { bestD = cl.d; bestRt = rt; bestSegI = i; }
-      }
-    });
-    if (!bestRt || bestSegI < 0) return;
+    const hit = EP.Plan.Elements.hitAt(w, EP.Plan.Elements.CFG.hitPx * k);
+    if (!hit || !hit.el) return;
     vibrate(15);
-    R.segPressArmed = { routeId: bestRt.id, segI: bestSegI, t: Date.now() };
-    if (R.selectedRoute !== bestRt.id) sheetRoute(bestRt, w);
+    closeQuickMenu();
+    const host = document.querySelector("#ep-plan-canvas"); if (!host) return;
+    const hb = host.getBoundingClientRect();
+    const menu = document.createElement("div");
+    menu.id = "ep-plan-qmenu";
+    menu.className = "ep-plan-qmenu";
+    menu.style.left = Math.max(6, Math.min(hb.width - 130, e.clientX - hb.left - 60)) + "px";
+    menu.style.top = Math.max(6, Math.min(hb.height - 50, e.clientY - hb.top - 56)) + "px";
+    menu.innerHTML = `<button type="button" class="ep-plan-qmbtn ep-clickable" data-qm-dup>⧉ Копия</button><button type="button" class="ep-plan-qmbtn ep-plan-qmbtn-del ep-clickable" data-qm-del>✕ Удалить</button>`;
+    host.appendChild(menu);
+    const elId = hit.el.id;
+    menu.addEventListener("click", (ev) => {
+      const t = ev.target;
+      const el2 = (core().project.elements || []).find((x) => x.id === elId);
+      if (t.closest("[data-qm-del]")) { closeQuickMenu(); EP.Plan.Elements.deleteElement(el2); }
+      else if (t.closest("[data-qm-dup]")) { closeQuickMenu(); EP.Plan.Elements.duplicateElement(el2); }
+    });
+    setTimeout(() => { document.addEventListener("pointerdown", closeQuickMenu, { once: true, capture: true }); }, 0);
   }
 
   function sheetCreateRect() {
@@ -808,8 +750,13 @@
     const p = core().project;
     const circ = rt.circuitId ? (p.circuits || []).find((c) => c.id === rt.circuitId) : null;
     const len = G().polylineLen(rt.points || []);
+    if (R.selectedRoute !== rt.id) R.routeDragMode = "point"; // новая трасса выбрана — сброс режима тяги на дефолт
     openSheet(`<div class="ep-plan-srow"><b>${T.routeTitle}</b>${circ ? ` · ${esc(circ.name)}` : ""} · ${G().fmtLen(len)}${rt.manual ? ` <span class="ep-plan-mshint">${T.routeManual}</span>` : ""}</div>
-      <div class="ep-plan-modehint">${T.routeHint}</div>
+      <div class="ep-plan-modehint">${R.routeDragMode === "segment" ? T.routeHintSeg : T.routeHintPoint}</div>
+      <div class="ep-plan-srow ep-plan-sbtns">
+        <button type="button" class="ep-plan-chip ep-clickable ${R.routeDragMode !== "segment" ? "on" : ""}" data-prt2-mode="point">${T.routeModePoint}</button>
+        <button type="button" class="ep-plan-chip ep-clickable ${R.routeDragMode === "segment" ? "on" : ""}" data-prt2-mode="segment">${T.routeModeSegment}</button>
+      </div>
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="ep-plan-tbtn ep-clickable" data-prt2-flip>${T.routeFlip}</button>
         ${rt.manual ? `<button type="button" class="ep-plan-tbtn ep-clickable" data-prt2-auto="${esc(rt.id)}">${T.routeAuto}</button>` : ""}
@@ -844,16 +791,21 @@
     R.selectedRouteTap = flipped;
     sheetRoute(rt, flipped);
   }
-  // Тяга трассы (два режима — просьба пользователя):
-  //  • ОБЫЧНЫЙ тап + тяга: существующий излом (не концевые — те завязаны на позицию
-  //    элемента/щита/распайки) двигаем; середина прямого участка — вставляем новый излом
-  //    и тянем его в 2D. Мимо — жест остаётся паном (return false из "start").
-  //  • ДВОЙНОЙ тап + тяга (opts.dbl из plan-canvas.js) ИЛИ долгое нажатие
-  //    (R.segPressArmed, вооружается в onCanvasLongPress выше — просьба
-  //    пользователя: «нажал и удерживаю секунду — появляется возможность
-  //    сдвинуть отрезок») + тяга: хватаем ЦЕЛЫЙ прямой участок
-  //    (сегмент между двумя изломами) и двигаем его как жёсткий отрезок ПЕРПЕНДИКУЛЯРНО
-  //    себе — обе концевые точки сегмента едут на одинаковый перпендикулярный сдвиг, а
+  // Тяга трассы — режим ВЫБИРАЕТСЯ ЯВНО кнопками в шторке (R.routeDragMode,
+  // чипы «✏️ Ломать»/«↔ Двигать» в sheetRoute), а НЕ жестами (двойной тап/долгое
+  // нажатие) — просьба пользователя: «лучше кнопку перетаскивания сделать, вместо
+  // кликабельности... одна ломает линию и перетаскивает, а вторая... от угла до
+  // угла отрезок носит». Раньше режим определялся жестом (двойной тап/долгое
+  // нажатие вооружали segDrag) — конфликтовало с зумом по двойному тапу и было
+  // неочевидно; теперь ЛЮБАЯ тяга по уже выбранной трассе идёт в режиме,
+  // подсвеченном в шторке, без угадывания жеста.
+  //  • routeDragMode="point" (дефолт): существующий излом (не концевые — те
+  //    завязаны на позицию элемента/щита/распайки) двигаем; середина прямого
+  //    участка — вставляем новый излом и тянем его в 2D. Мимо — жест остаётся
+  //    паном (return false из "start").
+  //  • routeDragMode="segment": хватаем ЦЕЛЫЙ прямой участок (сегмент между двумя
+  //    изломами) и двигаем его как жёсткий отрезок ПЕРПЕНДИКУЛЯРНО себе — обе
+  //    концевые точки сегмента едут на одинаковый перпендикулярный сдвиг, а
   //    соседние (перпендикулярные) сегменты просто удлиняются/укорачиваются, сохраняя
   //    прямые углы. Если участок упирается в КОНЦЕВУЮ точку трассы (анкер элемента/щита) —
   //    у неё вставляем короткий коннектор (копию анкера), чтобы сам анкер не двигать, а
@@ -862,27 +814,18 @@
   function enableRouteDrag() {
     if (!R.canvas) return;
     let grabbed = -1, segDrag = null;
-    R.canvas.setDragHandler((dx, dy, phase, start, opts) => {
+    R.canvas.setDragHandler((dx, dy, phase, start) => {
       const c = core(), rt = (c.project.routes || []).find((r) => r.id === R.selectedRoute);
       if (!rt || !rt.points) return false;
       if (phase === "start") {
         const k = R.canvas.cmPerPx();
         const rr = Math.max(18 * k, 14);
-        // ---- долгое нажатие (уже вооружило конкретный сегмент) ИЛИ двойной тап: тянем целый прямой участок ----
-        // Флаг живёт не дольше 800мс — если долгое нажатие сработало, но палец подняли
-        // БЕЗ последующей тяги (обычный отдельный жест позже на том же маршруте не
-        // должен неожиданно попасть в segDrag-режим по устаревшему флагу).
-        const armedFresh = R.segPressArmed && R.segPressArmed.routeId === rt.id && (Date.now() - R.segPressArmed.t) < 800;
-        const armedSegI = armedFresh ? R.segPressArmed.segI : -1;
-        R.segPressArmed = null; // одноразовый флаг — использован здесь или устарел (другой маршрут/жест/протух)
-        if ((opts && opts.dbl) || armedSegI >= 0) {
-          let segI = armedSegI;
-          if (segI < 0) {
-            let segD = rr;
-            for (let i = 0; i < rt.points.length - 1; i++) {
-              const cl = G().closestOnSeg(start, rt.points[i], rt.points[i + 1]);
-              if (cl.d <= segD) { segD = cl.d; segI = i; }
-            }
+        // ---- режим «Двигать» (R.routeDragMode==="segment"): тянем целый прямой участок ----
+        if (R.routeDragMode === "segment") {
+          let segI = -1, segD = rr;
+          for (let i = 0; i < rt.points.length - 1; i++) {
+            const cl = G().closestOnSeg(start, rt.points[i], rt.points[i + 1]);
+            if (cl.d <= segD) { segD = cl.d; segI = i; }
           }
           if (segI < 0) return false; // мимо — пан
           core().commit();
@@ -896,7 +839,7 @@
           grabbed = -2;
           return;
         }
-        // ---- обычный тап: излом или вставка излома ----
+        // ---- режим «Ломать» (дефолт): излом или вставка излома ----
         let best = -1, bestD = rr;
         for (let i = 1; i < rt.points.length - 1; i++) {
           const d = G().dist(start, rt.points[i]);
@@ -1378,6 +1321,12 @@
       return;
     }
     if (t.closest("[data-pr-mergecancel]")) { R.mergePending = null; R.selectedRoomId = null; closeSheet(); toast(T.mergeCancelled); renderScene(); return; }
+    if ((el = t.closest("[data-prt2-mode]"))) {
+      const c = core(), rt = (c.project.routes || []).find((r) => r.id === R.selectedRoute);
+      R.routeDragMode = el.getAttribute("data-prt2-mode") === "segment" ? "segment" : "point";
+      if (rt) sheetRoute(rt, R.selectedRouteTap); // перерисовать шторку с новым активным чипом+подсказкой
+      return;
+    }
     if (t.closest("[data-prt2-flip]")) { flipNearestCorner(); return; }
     if ((el = t.closest("[data-prt2-auto]"))) {
       if (EP.Plan.Routes && EP.Plan.Routes.resetRouteToAuto) EP.Plan.Routes.resetRouteToAuto(el.getAttribute("data-prt2-auto"));

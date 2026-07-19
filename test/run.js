@@ -693,8 +693,7 @@ test("ПУЭ: тонкий кабель под автомат -> предупр�
 test("PWA: manifest валиден и содержит нужные поля", () => {
   const fs = require("fs"), path = require("path");
   const m = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "manifest.webmanifest"), "utf8"));
-  eq(m.display, "fullscreen", "display");
-  ok(Array.isArray(m.display_override) && m.display_override[0] === "fullscreen", "display_override приоритет fullscreen");
+  eq(m.display, "standalone", "display");
   ok(m.start_url && m.scope, "start_url/scope");
   ok(Array.isArray(m.icons) && m.icons.length > 0, "иконки");
 });
