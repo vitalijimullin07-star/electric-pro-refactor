@@ -154,6 +154,7 @@
       p.elements.push(el);
       c.persist("elem-add");
       if (t.block) { openEditor(el); return; } // сразу открываем сборку блока
+      sheetPalette(); // счётчик «Смонтировано: N/M» в шапке палитры — иначе M устаревает с каждой новой точкой
       return;
     } else if (t.free) {
       const sp = G().snapPoint(w, p.settings.gridStep);
@@ -162,6 +163,7 @@
       p.elements.push(el);
     } else { rooms().toast(T.tapWall); return; }
     c.persist("elem-add");
+    sheetPalette(); // тот же счётчик — ветка свободной точки (свет/ТП/вывод)
   }
 
   // ---------- попадание / выбор ----------
