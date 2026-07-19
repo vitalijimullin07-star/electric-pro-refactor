@@ -382,12 +382,44 @@
         });
       });
     }
-    if (!best) return false;
-    const elem = (p.elements || []).find((e) => e.id === best.elemId);
-    if (!elem) return false;
-    R.selectedRoomId = null;
-    EP.Plan.Elements.openEditor(elem);
-    return true;
+    if (best) {
+      const elem = (p.elements || []).find((e) => e.id === best.elemId);
+      if (elem) { R.selectedRoomId = null; EP.Plan.Elements.openEditor(elem); return true; }
+    }
+    // Двойной тап (два ДИСКРЕТНЫХ тапа, палец отпускался между ними) на прямой
+    // участок трассы — конфликт с зумом по двойному тапу (репорт пользователя:
+    // «двойной тап по линии — увеличивает экран вместо тяги отрезка»). Раньше
+    // двойной тап включал segDrag-режим ТОЛЬКО через opts.dbl в enableRouteDrag —
+    // но тот срабатывает лишь если тяга началась ОДНИМ непрерывным движением
+    // СРАЗУ после второго тапа, без отпускания пальца между тапом и тягой; два
+    // обычных дискретных тапа (палец поднимается после второго тапа тоже) до
+    // этого места вообще не доходили — canvas.js видел «просто двойной тап» и
+    // делал зум к точке касания. Теперь двойной тап по сегменту, как и долгое
+    // нажатие (см. onCanvasLongPress), СРАЗУ вооружает R.segPressArmed И
+    // «съедает» тап (return true — cb.dbl съеден, plan-canvas.js зум не делает,
+    // см. endPointer()) — тот же одноразовый флаг с TTL 800мс, что читает
+    // enableRouteDrag() на "start". Тянуть отрезок теперь можно ОТДЕЛЬНЫМ
+    // жестом после двух тапов, а не только слитным «тап-тап-и-сразу-тянуть» —
+    // просьба пользователя: «2 раза тапнул, и могу перемещать». opts.dbl в
+    // enableRouteDrag НЕ убран (слитный жест продолжает работать как раньше,
+    // просто вооружённый флаг теперь эту работу уже сделал заранее).
+    if (R.mode === "view" && R.canvas) {
+      const rr = Math.max(18 * k, 14);
+      let bestRt = null, bestSegI = -1, bestD = rr;
+      (G().floorScoped(p).routes || []).forEach((rt) => {
+        const pts = rt.points || [];
+        for (let i = 0; i < pts.length - 1; i++) {
+          const cl = G().closestOnSeg(w, pts[i], pts[i + 1]);
+          if (cl.d <= bestD) { bestD = cl.d; bestRt = rt; bestSegI = i; }
+        }
+      });
+      if (bestRt && bestSegI >= 0) {
+        R.segPressArmed = { routeId: bestRt.id, segI: bestSegI, t: Date.now() };
+        if (R.selectedRoute !== bestRt.id) sheetRoute(bestRt, w);
+        return true;
+      }
+    }
+    return false;
   }
 
   // ---------- шторка (нижняя панель) ----------
