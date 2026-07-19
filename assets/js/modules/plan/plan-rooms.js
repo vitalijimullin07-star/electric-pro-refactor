@@ -114,9 +114,17 @@
   // бы одно из двух «запомненных» мест ДО того, как пользователь вообще что-то
   // сделал. «Просмотр» и так всегда доступен — закреплён по умолчанию в pinned.
   function qbTrack(mode) {
-    if (!QB_TOOLS[mode] || mode === "view") return;
-    QB.mru = [mode].concat(QB.mru.filter((m) => m !== mode)).slice(0, 2);
-    qbSave();
+    if (QB_TOOLS[mode] && mode !== "view") {
+      QB.mru = [mode].concat(QB.mru.filter((m) => m !== mode)).slice(0, 2);
+      qbSave();
+    }
+    // renderQuickbar() — ВСЕГДА, даже для "view" (в MRU он не попадает, см. выше):
+    // (1) первый setMode("view") из attach() — единственный гарантированный вызов
+    // при открытии проекта; раньше early-return оставлял #ep-plan-quickbar ПУСТЫМ
+    // контейнером до первого выбора инструмента — свернул панель (︿) сразу после
+    // открытия → плавающая панель без единой кнопки (пойман полным визуальным
+    // тестом); (2) возврат в "view" теперь тоже перерисовывает — иначе подсветка
+    // .on последнего инструмента залипала на кнопке quickbar.
     renderQuickbar();
   }
   function renderQuickbar() {
