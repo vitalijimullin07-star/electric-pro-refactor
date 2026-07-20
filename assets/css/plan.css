@@ -323,6 +323,14 @@ body[data-visual-mode="day"] .ep-plan-room.is-sel { fill: rgba(2, 132, 199, .17)
 /* «✎ Этажи» в компакт-строке — текстовая кнопка, а не квадрат 40px (базовый
    .ep-plan-mini фиксирует width:40px — текст ломался на 2 строки) */
 .ep-plan-floors .ep-plan-mini { width: auto; padding: 0 12px; white-space: nowrap; }
+
+/* магистраль трасс (⇉): полупрозрачное приоритетное направление автотрассировки;
+   черновик рисования — ярче и пунктиром, сохранённая — мягкая сплошная */
+.ep-plan-guide { stroke: #3b82f6; opacity: .35; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.ep-plan-guidedraft { stroke: #60a5fa; opacity: .55; fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 10 6; }
+.ep-plan-guidept { fill: #60a5fa; opacity: .8; }
+body[data-visual-mode="day"] .ep-plan-guide { stroke: #2563eb; }
+body[data-visual-mode="day"] .ep-plan-guidedraft { stroke: #3b82f6; }
 .ep-plan-glyph {
   width: 26px; height: 26px; border-radius: 50%; flex: none; font-style: normal;
   display: inline-flex; align-items: center; justify-content: center;

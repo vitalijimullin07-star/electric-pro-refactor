@@ -1775,6 +1775,45 @@ test("фото: deleteProject чистит кэш фото своего прое
   ok(Array.isArray(imp.voids), "бэкофилл voids");
   eq(imp.panels[0].transformer, false, "бэкофилл panel.transformer");
   eq(imp.panels[0].router, false, "бэкофилл panel.router");
+  ok(Array.isArray(imp.guides), "бэкофилл guides (магистрали трасс)");
+
+  // ===== 21. Магистраль трасс (p.guides) =====
+  test("guides: newGuide — полилиния, hidden=false, floorId", () => {
+    const g = M.newGuide([{ x: 0, y: 0 }, { x: 100, y: 0 }]);
+    ok(g.id && g.points.length === 2 && g.hidden === false, "форма объекта");
+  });
+  test("guides: межкомнатная трасса идёт ПО нарисованной магистрали", () => {
+    const r1 = M.newRoom(G.rectPoints(0, 0, 400, 300), "К1");
+    const r2 = M.newRoom(G.rectPoints(400, 0, 400, 300), "К2");
+    const q1 = M.newCircuit("QF1", "#e11", 16);
+    const guide = M.newGuide([{ x: 50, y: 400 }, { x: 750, y: 400 }]); // «коридор» ниже комнат
+    const { P } = install({ rooms: [r1, r2], circuits: [q1], panels: [M.newPanel(50, 50)], guides: [guide] });
+    const sock = M.newElement("socket", P.rooms[1].id + ":0", 100, 30); sock.circuitId = q1.id;
+    P.elements.push(sock);
+    EP.Plan.Routes.build();
+    const rt = P.routes.find((r) => r.fromId === sock.id);
+    ok(rt, "трасса построена");
+    ok((rt.points || []).some((pt) => Math.abs(pt.y - 400) < 1), "путь проходит по магистрали (y=400)");
+  });
+  test("guides: внутри ОДНОЙ комнаты магистраль НЕ применяется (обычный контур)", () => {
+    const q1 = M.newCircuit("QF1", "#e11", 16);
+    const guide = M.newGuide([{ x: 50, y: 400 }, { x: 350, y: 400 }]);
+    const { P, w } = install({ circuits: [q1], panels: [M.newPanel(50, 50)], guides: [guide] });
+    const sock = M.newElement("socket", w(0), 200, 30); sock.circuitId = q1.id;
+    P.elements.push(sock);
+    EP.Plan.Routes.build();
+    const rt = P.routes.find((r) => r.fromId === sock.id);
+    ok(rt, "трасса построена");
+    ok(!(rt.points || []).some((pt) => Math.abs(pt.y - 400) < 1), "путь НЕ уходит на магистраль вне комнаты");
+  });
+  test("guides: build() скрывает магистрали (hidden=true), но НЕ удаляет из модели", () => {
+    const guide = M.newGuide([{ x: 50, y: 400 }, { x: 750, y: 400 }]);
+    const { P, w } = install({ panels: [M.newPanel(50, 50)], guides: [guide] });
+    P.elements.push(M.newElement("socket", w(0), 200, 30));
+    EP.Plan.Routes.build();
+    eq(P.guides.length, 1, "магистраль осталась в модели");
+    eq(P.guides[0].hidden, true, "магистраль скрыта после построения");
+  });
 
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
