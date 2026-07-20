@@ -22,6 +22,9 @@
       mergeSecond: "Тапни соседнюю комнату (или ту же — отменить).",
       guide: "Магистраль: тапай точки приоритетного направления трасс (по коридору). Повторный тап в последнюю точку — сохранить линию."
     },
+    targetPickHint: "Тапни точку на плане (свет/бра/трек/вывод/24В/розетку) — она станет целью этой клавиши.",
+    targetPicked: (name) => `Клавиша → ${name} ✓`,
+    targetPickMiss: "Отменено — тап не попал в подходящую точку.",
     room: "Комната", create: "Создать", cancel: "Отмена", close: "Закрыть",
     name: "Название", width: "Ширина, см", depth: "Глубина, см", ceil: "Потолок, см",
     wet: "Влажная зона (санузел/кухня)", dup: "⧉ Копия", mirror: "⇋ Зеркало", del: "✕ Удалить",
@@ -78,7 +81,8 @@
     umove: false, calib: { on: false, a: null, b: null }, mergeFirst: null, mergePending: null,
     soloCircuit: null, // работа по линиям: id единственной показанной ярко линии QF (view-состояние, не в модели)
     routeDragMode: "point", // "point"|"segment" — явный переключатель режима тяги трассы (кнопки в sheetRoute), см. enableRouteDrag
-    guideDraft: { points: [] } // черновик рисуемой магистрали трасс (режим ⇉)
+    guideDraft: { points: [] }, // черновик рисуемой магистрали трасс (режим ⇉)
+    targetPick: null // одноразовый выбор цели клавиши выключателя тапом: {elId, ki} (armTargetPick)
   };
 
   // ---------- плавающая quickbar: быстрый доступ (просьба пользователя — редактируемая
@@ -197,6 +201,7 @@
     R.draft = { points: [] }; R.pendingRect = null; R.pendingPoly = null;
     R.ruler = { a: null, b: null }; R.beamDraft = { a: null, b: null }; R.voidDraft = { a: null, b: null };
     R.guideDraft = { points: [] };
+    R.targetPick = null; // смена режима отменяет одноразовый выбор цели клавиши
     R.calib = { on: false, a: null, b: null };
     R.selectedBeam = null; R.selectedVoid = null; R.selectedRoute = null; R.selectedRouteTap = null; R.mergeFirst = null; R.mergePending = null;
     setMove(false);
@@ -215,6 +220,14 @@
     }
     else closeSheet();
     renderScene();
+  }
+  // вооружить одноразовый выбор цели клавиши выключателя тапом по плану (кнопка 🎯 в
+  // редакторе точки, plan-elements.js): закрываем шторку, чтобы не мешала целиться, и
+  // ждём следующий onTap (перехват в начале onTap) — режим НЕ меняем (обычно view)
+  function armTargetPick(elId, ki) {
+    R.targetPick = { elId, ki: ki || 0 };
+    closeSheet();
+    toast(T.targetPickHint);
   }
   function setMove(on) {
     R.umove = on;
@@ -237,6 +250,29 @@
       const k = R.canvas.cmPerPx();
       const hit = EP.Plan.Elements.hitAt(w, EP.Plan.Elements.CFG.hitPx * k);
       if (hit && hit.el) { EP.Plan.Elements.deleteElement(hit.el); return; }
+    }
+    // одноразовый выбор цели клавиши выключателя тапом (armTargetPick из редактора
+    // точки, кнопка 🎯): следующий тап по подходящей точке — назначить и вернуться в
+    // редактор; тап мимо/по неподходящему типу — отмена (тоже с возвратом в редактор)
+    if (R.targetPick && EP.Plan.Elements) {
+      const pick = R.targetPick; R.targetPick = null;
+      const c = core();
+      const sw = (c.project.elements || []).find((x) => x.id === pick.elId);
+      const okT = EP.Plan.Elements.SW_TARGET_TYPES || {};
+      const hit = EP.Plan.Elements.hitAt(w, EP.Plan.Elements.CFG.hitPx * R.canvas.cmPerPx());
+      if (sw && hit && hit.el && hit.el.id !== sw.id && okT[hit.el.type]) {
+        c.commit();
+        sw.targetIds = sw.targetIds || [];
+        sw.targetIds[pick.ki] = hit.el.id;
+        if (pick.ki === 0) sw.targetId = hit.el.id; // legacy-алиас клавиши 0
+        c.persist("elem-target");
+        toast(T.targetPicked((EP.Plan.Elements.TYPES[hit.el.type] || {}).name || hit.el.type));
+      } else {
+        toast(T.targetPickMiss);
+      }
+      if (sw) EP.Plan.Elements.openEditor(sw);
+      renderScene();
+      return;
     }
     const step = p.settings.gridStep || 10;
     if (R.mode === "rect") {
@@ -1494,6 +1530,6 @@
     soloCircuitId: () => R.soloCircuit || null,
     setSoloCircuit, clearSolo,
     canvasCmPerPx: () => (R.canvas ? R.canvas.cmPerPx() : 1),
-    mergeRooms, syncQuickbarVisibility
+    mergeRooms, syncQuickbarVisibility, armTargetPick
   };
 })();

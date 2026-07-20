@@ -117,6 +117,7 @@
       voids: [],    // внутренние препятствия: вентшахта / мини-комната внутри комнаты
       ledStrips: [], // светодиодная лента: сегменты ВДОЛЬ стены (wallId+offsetA/offsetB)
       guides: [],   // магистрали трасс: нарисованные приоритетные направления (полилинии)
+      calcEdits: { hidden: [], renamed: {}, custom: [] }, // правки сметы Расчёта (plan-calc.js)
       manualScheme: newManualScheme(), // ручной конструктор однолинейки (Слой 7б)
       layers: blankLayers(),
       versions: [], // { at, note } — история версий (заполняется в следующих слоях)
@@ -402,6 +403,12 @@
     if (!p.settings.connectorMode) p.settings.connectorMode = DEFAULTS.connectorMode;
     if (p.settings.gofraCeil == null) p.settings.gofraCeil = DEFAULTS.gofraCeil;
     if (!p.settings.schemeMode) p.settings.schemeMode = DEFAULTS.schemeMode;
+    // правки сметы Расчёта (plan-calc.js applyCalcEdits): скрытые позиции (ключ
+    // type|имя), переименованные (замена кабеля/расходки) и добавленные вручную
+    if (!p.calcEdits || typeof p.calcEdits !== "object") p.calcEdits = {};
+    p.calcEdits.hidden = Array.isArray(p.calcEdits.hidden) ? p.calcEdits.hidden : [];
+    p.calcEdits.renamed = (p.calcEdits.renamed && typeof p.calcEdits.renamed === "object") ? p.calcEdits.renamed : {};
+    p.calcEdits.custom = Array.isArray(p.calcEdits.custom) ? p.calcEdits.custom : [];
     if (!p.manualScheme || typeof p.manualScheme !== "object") p.manualScheme = newManualScheme();
     else {
       p.manualScheme.apparatus = p.manualScheme.apparatus || newManualScheme().apparatus;

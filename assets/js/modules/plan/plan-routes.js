@@ -259,31 +259,44 @@
   // и раньше, идут к геометрически ближайшему щиту наравне с силовыми. Силовые/прочие
   // слои router-щит НЕ исключает из общего списка панелей — флаг влияет только на
   // выбор цели ДЛЯ LV-точек, не ограничивает сам щит в приёме силовых линий.
+  // Трансформатор (panel.transformer:true): ВСЕ точки «Вывод 24В» (output24) идут
+  // ТОЛЬКО к щиту с трансформатором (к ближайшему, если их несколько) — просьба
+  // пользователя: «если слаботочный вывод 24в, то они все абсолютно все идут от щита
+  // где указано (трансформаторы тока тут)». Приоритет ВЫШЕ роутера (output24 — слой
+  // lv, без этой ветки его перехватил бы router-щит). Без transformer-щита — прежнее
+  // поведение (output24 как обычная LV-точка: роутер, если есть, иначе ближайший щит).
   function routeGroups(c, p, pointsToRoute, juncts, panels, extraConnected) {
     const routerPanels = panels.filter((pn) => pn.router);
+    const trafoPanels = panels.filter((pn) => pn.transformer);
+    // «род» точки — какая группа щитов её принимает: "24" (вывод 24В -> трансформатор),
+    // "lv" (слаботочка -> роутер), "pw" (все остальные -> любой щит). Считается ОДНОЙ
+    // функцией и для группируемых точек, и для extraConnected-узлов шлейфа — чтобы
+    // шлейф 24В не мог пройти через силовую розетку и наоборот.
+    const kindOf = (el) => (trafoPanels.length && el.type === "output24") ? "24"
+      : (routerPanels.length && isLvLayer(el.layer)) ? "lv" : "pw";
     const groups = new Map();
     pointsToRoute.forEach((el) => {
       const pos = G().routeAnchor(p, el); // блок -> вход штробы (нужный подрозетник)
       if (!pos) return;
-      const lv = isLvLayer(el.layer) && routerPanels.length > 0;
-      const key = (el.circuitId || "_none") + (lv ? ":lv" : "");
-      if (!groups.has(key)) groups.set(key, { circuitId: el.circuitId || null, lv, items: [] });
+      const kind = kindOf(el);
+      const key = (el.circuitId || "_none") + (kind === "pw" ? "" : ":" + kind);
+      if (!groups.has(key)) groups.set(key, { circuitId: el.circuitId || null, kind, items: [] });
       groups.get(key).items.push({ el, pos });
     });
     groups.forEach((g) => {
-      const targetPanels = g.lv ? routerPanels : panels;
+      const targetPanels = g.kind === "24" ? trafoPanels : g.kind === "lv" ? routerPanels : panels;
       // распайки, доступные этой линии (своей QF; «без линии» — любые распайки)
       const J = g.circuitId ? juncts.filter((n) => n.circuitId === g.circuitId) : juncts.slice();
       if (J.length) {
-        // есть распайка -> каждая точка к ближайшей распайке своей линии (или щиту/роутеру)
+        // есть распайка -> каждая точка к ближайшей распайке своей линии (или щиту/роутеру/трансформатору)
         g.items.forEach(({ el, pos }) => {
           const target = nearest(pos, J.concat(targetPanels));
           if (target) addRoute(c, p, el, pos, target, el.circuitId, colorOf(p, el));
         });
       } else {
-        // НЕТ распайки -> шлейф: щит/роутер [+ уже подключённые точки той же группы] -> точка -> точка
+        // НЕТ распайки -> шлейф: щит/роутер [+ уже подключённые точки того же рода] -> точка -> точка
         const extra = extraConnected ? extraConnected.filter((n) =>
-          (g.circuitId ? n.circuitId === g.circuitId : true) && (routerPanels.length ? isLvLayer(n.el.layer) === g.lv : true)
+          (g.circuitId ? n.circuitId === g.circuitId : true) && kindOf(n.el) === g.kind
         ) : null;
         chainFromPanel(c, p, g.items, extra ? targetPanels.concat(extra) : targetPanels, g.circuitId);
       }
@@ -325,7 +338,7 @@
 
     // узлы: щиты + распайки (этого же этажа); router — флаг щита-хаба сети (LV-точки
     // предпочитают его, см. routeGroups)
-    const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, router: !!pn.router }));
+    const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, router: !!pn.router, transformer: !!pn.transformer }));
     const juncts = (fp.elements || []).filter(isJunction).map((el) => ({ kind: "junction", id: el.id, el, circuitId: el.circuitId, pos: G().elemPoint(p, el) })).filter((n) => n.pos);
 
     // pos — ЕДИНАЯ точка отрисовки (та же, что у маркера): трасса доходит до точки,
@@ -377,7 +390,7 @@
     const newJuncts = allJuncts.filter((n) => !haveRoute.has(n.id));
 
     if (newPoints.length || newJuncts.length) {
-      const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, router: !!pn.router }));
+      const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, router: !!pn.router, transformer: !!pn.transformer }));
       // уже проведённые точки — реальные узлы графа для шлейфа, не только щиты
       const existingPointNodes = points.filter((el) => haveRoute.has(el.id)).map((el) => {
         const pos = G().routeAnchor(p, el);
@@ -444,7 +457,7 @@
   // ---- автоперестройка: геометрия сдвинулась (точка/стена/перегородка) —
   // ранее построенные трассы устарели бы молча (кривые длины/штробы в Расчёте).
   // Перестраиваем тихо, только если трассы уже были построены.
-  const AUTOREBUILD_ON = { "elem-move": 1, "room-reshape": 1, "room-merge": 1, "wall-th": 1, "wall-mat": 1, "beam-move": 1, "beam-w": 1, "panel-move": 1, "panel-router": 1, "opening-move": 1 };
+  const AUTOREBUILD_ON = { "elem-move": 1, "room-reshape": 1, "room-merge": 1, "wall-th": 1, "wall-mat": 1, "beam-move": 1, "beam-w": 1, "panel-move": 1, "panel-router": 1, "panel-trafo": 1, "opening-move": 1 };
   let rebuilding = false;
   if (core().onChange) {
     core().onChange((what) => {
