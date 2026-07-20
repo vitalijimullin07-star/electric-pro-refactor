@@ -384,6 +384,60 @@ test("routing: ТВ и видеонаблюдение (isLvLayer: tv/cctv) ух�
   eq(P.routes.filter((r) => r.toPanel).length, 1, "спуск к щиту — один раз (шлейф)");
   eq(P.routes.find((r) => r.toPanel).toId, router.id, "спуск к щиту идёт именно к роутеру");
 });
+test("routing: трансформаторный щит — Вывод 24В идёт ТОЛЬКО к нему (при наличии router-щита и более близкого обычного)", () => {
+  const near = M.newPanel(10, 10, "Щит");
+  const router = M.newPanel(200, 290, "Роутер"); router.router = true;
+  const trafo = M.newPanel(390, 290, "Слаботочный"); trafo.transformer = true;
+  const { P, w } = install({ panels: [near, router, trafo] });
+  const o24 = M.newElement("output24", w(0), 20, 30, "lv");
+  P.elements.push(o24);
+  EP.Plan.Routes.build();
+  const rt = P.routes.find((r) => r.fromId === o24.id);
+  ok(rt, "трасса построена");
+  eq(rt.toId, trafo.id, "вывод 24В идёт к щиту с трансформатором, а не к роутеру/ближайшему");
+});
+test("routing: без трансформаторного щита Вывод 24В — прежнее поведение (ближайший щит)", () => {
+  const near = M.newPanel(10, 10, "Щит");
+  const far = M.newPanel(390, 290, "Далёкий");
+  const { P, w } = install({ panels: [near, far] });
+  const o24 = M.newElement("output24", w(0), 20, 30, "lv");
+  P.elements.push(o24);
+  EP.Plan.Routes.build();
+  const rt = P.routes.find((r) => r.fromId === o24.id);
+  ok(rt, "трасса построена");
+  eq(rt.toId, near.id, "как раньше — ближайший щит");
+});
+test("switchTarget: ручной целью клавиши может быть розетка (расширенные типы целей)", () => {
+  const { P, w } = install();
+  const sw = M.newElement("switch", w(0), 100, 90, "light");
+  const sock = M.newElement("socket", w(1), 50, 30, "power");
+  sw.targetIds = [sock.id];
+  P.elements.push(sw, sock);
+  const t = G.switchTarget(P, sw, 0);
+  ok(t && t.id === sock.id, "ручное назначение отдаёт розетку");
+});
+test("calcEdits: скрыть/заменить/добавить позицию сметы (applyCalcEdits внутри calcByRoutes)", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
+  const s1 = M.newElement("socket", w(0), 100, 30, "power");
+  P.elements.push(s1);
+  const r1 = M.newRoute("power", "ceiling", [{ x: 100, y: 18 }, { x: 50, y: 50 }], s1.id, pn.id); r1.toPanel = true;
+  P.routes.push(r1);
+  const base = EP.Plan.Calc.calcByRoutes(P);
+  ok(base.items.some((i) => i.name === "Прокладка кабеля"), "исходно есть «Прокладка кабеля»");
+  ok(base.items.some((i) => i.name === "Подрозетник Ø68 40-50 мм"), "исходно есть подрозетник");
+  P.calcEdits = {
+    hidden: ["work|Прокладка кабеля"],
+    renamed: { "material|Подрозетник Ø68 40-50 мм": "Подрозетник Синий-люкс" },
+    custom: [{ type: "work", name: "Вынос мусора", qty: 3, unit: "шт" }]
+  };
+  const res = EP.Plan.Calc.calcByRoutes(P);
+  ok(!res.items.some((i) => i.name === "Прокладка кабеля"), "скрытая позиция убрана из сметы");
+  const ren = res.items.find((i) => i.name === "Подрозетник Синий-люкс");
+  ok(ren && ren.origName === "Подрозетник Ø68 40-50 мм", "замена названия хранит исходное имя (стабильный ключ)");
+  const cust = res.items.find((i) => i.name === "Вынос мусора");
+  ok(cust && cust.qty === 3 && cust.type === "work", "своя позиция добавлена");
+});
 test("flipOrthoCorner: разворачивает прямой угол (P->C->N) в альтернативную вершину прямоугольника", () => {
   // сначала по Y (100,50)->(100,150), потом по X (100,150)->(200,150) — разворот: сначала по X, потом по Y
   const flipped = G.flipOrthoCorner({ x: 100, y: 50 }, { x: 100, y: 150 }, { x: 200, y: 150 });
@@ -946,7 +1000,8 @@ test("calcByRoutes: слаботочка не сливается с силово
   const lv = res.items.find((i) => i.name === "Штробление 25x30 бетон (слаботочка)");
   ok(lv, "слаботочка — своя строка");
   near(lv.qty, 2.6, 0.05, "свой спуск (140см) + спуск у щита (120см)");
-  ok(res.items.some((i) => i.name.indexOf("Слаботочный") >= 0), "марка слаботочки");
+  // интернет/ТВ/видеонаблюдение — «Витая пара» (просьба пользователя), не «Слаботочный (UTP/RG-6)»
+  ok(res.items.some((i) => i.name.indexOf("Витая пара") >= 0), "марка слаботочки — витая пара");
 });
 test("calcByRoutes: ТП — подача обычной штробой + ВСЕГДА 50×50 в пол отдельно", () => {
   const { P, w } = install();

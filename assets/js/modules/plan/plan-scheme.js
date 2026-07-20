@@ -39,6 +39,11 @@
   // по полюсам линии (1п — 3 жилы, 3п — 5 жил), сечение — ближайшее большее в
   // каталоге проекта (DEFAULTS.cables) под номинал автомата этой линии.
   function autoCable(p, c) {
+    // слаботочная линия (вся нагрузка — интернет/ТВ/видеонаблюдение) — витая пара,
+    // а не силовой кабель по номиналу автомата (просьба пользователя: «все интернет
+    // розетки и тв, это у нас Витая пара, она и должна отображаться»)
+    const els = loadEls(p, c);
+    if (els.length && els.every((e) => e.layer === "lv" || e.layer === "tv" || e.layer === "cctv")) return "Витая пара (UTP)";
     const found = SECTION_BY_AMP.find((x) => (c.breaker || 16) <= x.amp);
     const needSec = (found || SECTION_BY_AMP[SECTION_BY_AMP.length - 1]).sec;
     const prefix = c.poles === 3 ? "5×" : "3×";

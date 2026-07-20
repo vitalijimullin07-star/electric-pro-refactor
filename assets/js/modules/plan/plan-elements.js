@@ -48,6 +48,7 @@
     blockAdd: "Добавить пост:", blockTapDel: "Тап по посту в рамке — убрать",
     outLayer: "Тип вывода:", outPower: "Силовой", outLv: "Слаботочный",
     swTarget: "Свет от выключателя:", swAuto: "Авто (по линии)", swNone: "не задан",
+    swPick: "🎯 На плане",
     swKindLbl: "Тип:", swNormal: "Обычный", swPass: "Проходной", swCross: "Перекрёстный",
     swKeysLbl: "Клавиш:", swChain: "Цепочка — следующий:", swChainLast: "Это последнее звено → к лампе",
     swChainNone: "нет других выключателей в комнате для связи"
@@ -333,21 +334,33 @@
       ${[1, 2, 3].map((n) => `<button type="button" class="ep-plan-chip ep-clickable ${(el.keys || 1) === n ? "on" : ""}" data-pe-swkeys="${n}">${n}</button>`).join("")}
     </div>`;
   }
-  // куда идёт свет от каждой клавиши: ручной выбор + авто по линии (пунктир на плане)
+  // куда идёт свет от каждой клавиши: ручной выбор + авто по линии (пунктир на плане).
+  // Типы-цели РАСШИРЕНЫ (просьба пользователя: «выбор кликнуть на проекте к какому
+  // свету, бра, выводу 24, розетке, или просто выводу от клавиши идёт») — не только
+  // свет/вывод: бра/трек/розетка/блок/вывод 24В тоже могут быть целью клавиши.
+  // 🎯 «На плане» — назначение цели ТАПОМ по точке прямо на плане (armTargetPick в
+  // plan-rooms.js): шторка закрывается, следующий тап по подходящей точке (ЛЮБОЙ
+  // комнаты, не только своей) назначает её этой клавише и возвращает редактор.
+  const SW_TARGET_TYPES = { light: 1, bra: 1, track: 1, output: 1, output24: 1, socket: 1, block: 1 };
   function switchTargetRow(el) {
     const p = core().project;
     const roomId = el.wallId ? String(el.wallId).split(":")[0] : null;
     const pool = roomId ? G().elementsInRoom(p, roomId) : p.elements;
-    const opts = pool.filter((e) => e.id !== el.id && (e.type === "light" || e.type === "output"));
-    if (!opts.length) return `<div class="ep-plan-modehint">${T.swNone}</div>`;
+    const opts = pool.filter((e) => e.id !== el.id && SW_TARGET_TYPES[e.type]);
     const keys = (el.swKind || "normal") !== "normal" ? 1 : Math.max(1, el.keys || 1);
     const rows = [];
     for (let ki = 0; ki < keys; ki++) {
       const manualId = (el.targetIds && el.targetIds[ki]) || (ki === 0 ? el.targetId : null);
+      const manualEl = manualId ? (p.elements || []).find((e) => e.id === manualId) : null;
       const auto = G().switchTarget ? G().switchTarget(p, el, ki) : null; // с учётом текущего manualId
       const label = keys > 1 ? `${T.swTarget} клавиша ${ki + 1}:` : T.swTarget;
+      // ручная цель из ДРУГОЙ комнаты не попадает в opts (пул комнаты) — показываем
+      // её отдельным подсвеченным чипом, иначе назначение выглядело бы потерянным
+      const foreign = manualEl && !opts.some((e) => e.id === manualId)
+        ? `<button type="button" class="ep-plan-chip ep-clickable on" data-pe-target="${ki}:${esc(manualId)}">${esc((TYPES[manualEl.type] || {}).glyph || "?")} ✓</button>` : "";
       rows.push(`<div class="ep-plan-srow">${label}
         <button type="button" class="ep-plan-chip ep-clickable ${!manualId ? "on" : ""}" data-pe-target="${ki}:auto">${T.swAuto}${!manualId && auto ? " → " + esc((TYPES[auto.type] || {}).glyph || "") : ""}</button>
+        <button type="button" class="ep-plan-chip ep-clickable" data-pe-picktarget="${ki}">${T.swPick}</button>${foreign}
         ${opts.map((e) => `<button type="button" class="ep-plan-chip ep-clickable ${manualId === e.id ? "on" : ""}" data-pe-target="${ki}:${esc(e.id)}">${esc((TYPES[e.type] || {}).glyph || "?")} ${Math.round(e.params ? (e.params.x || 0) : e.offset)}</button>`).join("")}
       </div>`);
     }
@@ -490,6 +503,15 @@
       if (ki === 0) el.targetId = el.targetIds[0]; // старое поле — для обратной совместимости чтения
       c.persist("elem-target"); openEditor(el); rooms().renderScene(); return;
     }
+    if ((b = t.closest("[data-pe-picktarget]"))) {
+      // назначение цели клавиши ТАПОМ по плану: вооружаем одноразовый режим выбора в
+      // plan-rooms (armTargetPick), он сам закрывает шторку, ловит следующий тап и
+      // возвращает редактор этой точки с уже назначенной целью
+      const el = current(); if (!el || el.type !== "switch") return;
+      const ki = Number(b.getAttribute("data-pe-picktarget")) || 0;
+      if (rooms().armTargetPick) rooms().armTargetPick(el.id, ki);
+      return;
+    }
     if ((b = t.closest("[data-pe-swkind]"))) {
       const c = core(), el = current(); if (!el || el.type !== "switch") return;
       c.commit();
@@ -589,14 +611,16 @@
       c.commit();
       pn.name = (($("#ep-pe-pname") || {}).value || "Щит").trim() || "Щит";
       const trafo = $(`[data-pe-ptrafo="${pn.id}"]`);
+      const trafoWas = pn.transformer;
       pn.transformer = !!(trafo && trafo.checked);
       const routerChk = $(`[data-pe-prouter="${pn.id}"]`);
       const routerWas = pn.router;
       pn.router = !!(routerChk && routerChk.checked);
-      // panel-router — отдельная метка от panel-edit: только смена флага роутера должна
-      // тихо перестроить уже построенные трассы (LV-точки могли сменить целевой щит),
-      // обычное переименование щита такой перестройки не требует (см. AUTOREBUILD_ON).
-      c.persist(routerWas !== pn.router ? "panel-router" : "panel-edit");
+      // panel-router/panel-trafo — отдельные метки от panel-edit: только смена флага
+      // роутера/трансформатора должна тихо перестроить уже построенные трассы (LV-точки/
+      // выводы 24В могли сменить целевой щит), обычное переименование щита такой
+      // перестройки не требует (см. AUTOREBUILD_ON в plan-routes.js).
+      c.persist(routerWas !== pn.router ? "panel-router" : trafoWas !== pn.transformer ? "panel-trafo" : "panel-edit");
       S.selId = null; rooms().closeSheet(); rooms().renderScene(); return; // ✓ применить и закрыть
     }
     if ((b = t.closest("[data-pe-pdel]"))) {
@@ -647,5 +671,5 @@
   }
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, onModeEnter, onOpeningModeEnter, placeAt, placeOpening, openingNum, hitAt, openEditor, openPanelEditor, openOpeningEditor, selectedId, deselect, deleteElement, duplicateElement, circuitRow, assignNewCircuit };
+  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, SW_TARGET_TYPES, onModeEnter, onOpeningModeEnter, placeAt, placeOpening, openingNum, hitAt, openEditor, openPanelEditor, openOpeningEditor, selectedId, deselect, deleteElement, duplicateElement, circuitRow, assignNewCircuit };
 })();

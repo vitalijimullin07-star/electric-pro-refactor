@@ -23,6 +23,12 @@
     priceTitle: "Цена", priceLabel: "Цена за", priceSave: "✓ Сохранить в БД",
     priceHint: "Сохранится в «Мою БД» — эта же цена подставится автоматически в этом и других проектах.",
     consumCfg: "⚙ Настроить расходники", consumTitle: "⚙ Логика расходников", back: "‹ Назад",
+    addItem: "+ Добавить позицию", addTitle: "➕ Своя позиция",
+    editTitle: "✎ Заменить позицию",
+    editHint: "Количество остаётся по чертежу — меняется только название (например, другой кабель или расходник). Цена ищется в БД уже по новому названию. Пустое поле / исходное название — вернуть как было.",
+    hiddenN: (n) => `Скрыто позиций: ${n}`, restoreAll: "↩ вернуть все",
+    nameLbl: "Название", qtyLbl: "Кол-во", unitLbl: "Ед. изм.",
+    typeWork: "Работа", typeMaterial: "Материал", saveBtn: "✓ Сохранить",
     byLines: "По линиям (QF)", secCable: "Кабель", secConsum: "Расходники",
     secMaterial: "Материалы", secWork: "Работы"
   };
@@ -63,7 +69,7 @@
       const r = row(rt.circuitId);
       r.cableLen += L; r.crossings += (rt.throughWalls || []).length;
       const cc = (p.circuits || []).find((c) => c.id === rt.circuitId);
-      if (!r.mark) r.mark = (cc && cc.cable) || (rt.layer === "light" ? "3×1.5" : "3×2.5");
+      if (!r.mark) r.mark = (cc && cc.cable) || (LV_LAYERS[rt.layer] ? "Витая пара (UTP)" : rt.layer === "light" ? "3×1.5" : "3×2.5");
     });
     return (p.circuits || []).map((c) => {
       const r = byId[c.id] || { cableLen: 0, mark: c.cable || null, points: 0, posts: 0, crossings: 0 };
@@ -329,7 +335,9 @@
       if (!mark) {
         if (r.layer === "light") mark = "ВВГнг(А)-LS 3×1.5";
         else if (r.layer === "warm") mark = "Кабель тёплого пола";
-        else if (LV_LAYERS[r.layer]) mark = "Слаботочный (UTP/RG-6)";
+        // интернет/ТВ/видеонаблюдение — витая пара (просьба пользователя: «все
+        // интернет розетки и тв, это у нас Витая пара, она и должна отображаться»)
+        else if (LV_LAYERS[r.layer]) mark = "Витая пара (UTP)";
         else mark = "ВВГнг(А)-LS 3×2.5";
       }
       cableBy[mark] = (cableBy[mark] || 0) + L;
@@ -421,7 +429,32 @@
     // считается по routeType/gofraCeil) — не пересчитываем заново, чтобы не разойтись
     const gofraM = items.filter((it) => it.type === "material" && /^гофра/i.test(it.name)).reduce((sum, it) => sum + it.qty, 0);
     if (gofraM > 0) add("work", "Затяжка кабеля в гофру", gofraM, "м");
-    return { items, cableBy, strobe, conn, podroz, junctBoxes };
+    // правки пользователя (скрыть/заменить/добавить) — В САМОМ КОНЦЕ, после всего
+    // авто-счёта: gofraM выше читает items ДО правок (метраж затяжки не должен
+    // зависеть от того, скрыл ли пользователь строку гофры из сметы)
+    return { items: applyCalcEdits(p, items), cableBy, strobe, conn, podroz, junctBoxes };
+  }
+
+  // ---------- правки сметы (p.calcEdits, бэкофилл в plan-core.js): скрытые позиции,
+  // замена названия (кабель/расходка — количество остаётся по чертежу, цена ищется в
+  // БД уже по НОВОМУ названию) и добавленные вручную работы/материалы. Ключ позиции —
+  // type|ИСХОДНОЕ имя (стабилен между пересчётами: авто-счёт детерминирован по чертежу);
+  // у переименованных origName хранит исходное имя, чтобы ✎/✕ работали по тому же ключу.
+  const editKey = (type, name) => type + "|" + name;
+  function applyCalcEdits(p, items) {
+    if (!items) return items;
+    const ed = p.calcEdits || {};
+    const hidden = ed.hidden || [], renamed = ed.renamed || {}, custom = ed.custom || [];
+    const out = items
+      .filter((it) => hidden.indexOf(editKey(it.type, it.name)) < 0)
+      .map((it) => {
+        const nn = renamed[editKey(it.type, it.name)];
+        return nn ? Object.assign({}, it, { name: nn, origName: it.name }) : it;
+      });
+    custom.forEach((cIt, i) => {
+      if (cIt && cIt.name && Number(cIt.qty) > 0) out.push({ type: cIt.type === "material" ? "material" : "work", name: cIt.name, qty: Number(cIt.qty), unit: cIt.unit || "шт", custom: i });
+    });
+    return out;
   }
 
   // ---------- позиции для сметы: тот же приоритет, что и в sheet() —
@@ -430,9 +463,9 @@
     const stats = buildBlocks(p);
     if (!stats.length) return null;
     const exact = calcByRoutes(p);
-    if (exact && exact.items.length) return exact.items;
+    if (exact && exact.items.length) return exact.items; // правки уже применены внутри calcByRoutes
     const res = runEngine(p, stats);
-    return (res && res.draftItems) || null;
+    return applyCalcEdits(p, (res && res.draftItems) || null); // приближённый счёт — те же правки
   }
 
   // ---------- цены из БД ----------
@@ -482,7 +515,7 @@
         </div>`;
     } else {
       const res = runEngine(p, stats);
-      items = res && res.draftItems ? res.draftItems : null;
+      items = applyCalcEdits(p, res && res.draftItems ? res.draftItems : null);
       headHtml = `<div class="ep-plan-srow"><b>${T.workHead}</b></div>
         <div class="ep-plan-srow ep-plan-hintrow">${T.approxHint}</div>`;
     }
@@ -514,7 +547,16 @@
       // просьба пользователя «назначать стоимость, и чтобы сохранялась в БД»: тап открывает
       // sheetSetPrice(), сохранение идёт через EP.Database.addMyItem — та же запись потом
       // находится priceFor() (точное совпадение по имени, см. ниже) уже на следующий рендер
-      const irow = ({ it, price, lineSum }) => `<div class="ep-plan-irow"><span>${esc(it.name)}</span><span class="ep-plan-irow-r"><b>${it.qty} ${esc(it.unit)}</b><button type="button" class="ep-plan-iprice${price > 0 ? "" : " is-noprice"} ep-clickable" data-pc-setprice data-pc-pname="${esc(it.name)}" data-pc-ptype="${esc(it.type)}" data-pc-punit="${esc(it.unit)}" data-pc-pcur="${price > 0 ? price : ""}">${price > 0 ? esc(fmtRub(lineSum)) : esc(T.noPrice)}</button></span></div>`;
+      // ✎/✕ — правки сметы (p.calcEdits): ✎ заменяет название (кабель/расходку — кол-во
+      // остаётся по чертежу), ✕ скрывает позицию (вернуть — блок «Скрытые» под итогом);
+      // у добавленных вручную (it.custom) ✎ редактирует саму позицию, ✕ удаляет её
+      const irow = ({ it, price, lineSum }) => {
+        const k = editKey(it.type, it.origName || it.name);
+        const editBtns = it.custom != null
+          ? `<button type="button" class="ep-plan-mini ep-clickable" data-pc-editcustom="${it.custom}" aria-label="Изменить позицию">✎</button><button type="button" class="ep-plan-mini ep-clickable" data-pc-delcustom="${it.custom}" aria-label="Удалить позицию">✕</button>`
+          : `<button type="button" class="ep-plan-mini ep-clickable" data-pc-editname data-pc-ekey="${esc(k)}" data-pc-ecur="${esc(it.name)}" aria-label="Заменить позицию">✎</button><button type="button" class="ep-plan-mini ep-clickable" data-pc-hide data-pc-ekey="${esc(k)}" aria-label="Убрать из сметы">✕</button>`;
+        return `<div class="ep-plan-irow"><span>${esc(it.name)}${it.origName ? ` <span class="ep-plan-mshint">✎</span>` : ""}</span><span class="ep-plan-irow-r"><b>${it.qty} ${esc(it.unit)}</b><button type="button" class="ep-plan-iprice${price > 0 ? "" : " is-noprice"} ep-clickable" data-pc-setprice data-pc-pname="${esc(it.name)}" data-pc-ptype="${esc(it.type)}" data-pc-punit="${esc(it.unit)}" data-pc-pcur="${price > 0 ? price : ""}">${price > 0 ? esc(fmtRub(lineSum)) : esc(T.noPrice)}</button>${editBtns}</span></div>`;
+      };
       // группировка по секциям (Кабель / Работы / Материалы / Расходники) —
       // просьба пользователя «информативно по расходке», чтобы расходка читалась отдельно
       const secHtml = SECTIONS.map(([key, label]) => {
@@ -524,8 +566,16 @@
         return `<div class="ep-plan-srow ep-plan-sechead"><b>${label}</b><span class="ep-plan-flex"></span><span class="ep-plan-mshint">${secSum > 0 ? esc(fmtRub(secSum)) : ""}</span></div>
           <div class="ep-plan-items ep-plan-secitems">${rows.map(irow).join("")}</div>`;
       }).join("");
+      // скрытые позиции — под итогом, каждую можно вернуть (↩), «вернуть все» разом
+      const hid = (p.calcEdits && p.calcEdits.hidden) || [];
+      const hiddenHtml = hid.length
+        ? `<div class="ep-plan-srow"><span class="ep-plan-mshint">${T.hiddenN(hid.length)}</span><span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-pc-unhideall>${T.restoreAll}</button></div>
+           <div class="ep-plan-items ep-plan-secitems">${hid.map((k) => `<div class="ep-plan-irow"><span class="ep-plan-mshint">${esc(k.split("|").slice(1).join("|"))}</span><span class="ep-plan-irow-r"><button type="button" class="ep-plan-mini ep-clickable" data-pc-unhide data-pc-ekey="${esc(k)}">↩</button></span></div>`).join("")}</div>`
+        : "";
       itemsHtml = `${headHtml}${secHtml}
-        <div class="ep-plan-srow ep-plan-total"><b>${esc(T.total)}</b><b>${esc(fmtRub(total))}</b>${noPriceN ? `<span class="ep-plan-mshint">(${noPriceN} без цены в БД)</span>` : ""}</div>`;
+        <div class="ep-plan-srow ep-plan-total"><b>${esc(T.total)}</b><b>${esc(fmtRub(total))}</b>${noPriceN ? `<span class="ep-plan-mshint">(${noPriceN} без цены в БД)</span>` : ""}</div>
+        <div class="ep-plan-srow"><button type="button" class="ep-plan-mini ep-clickable" data-pc-additem>${T.addItem}</button></div>
+        ${hiddenHtml}`;
     } else {
       itemsHtml = `<div class="ep-plan-srow">${T.engineMissing}</div>`;
     }
@@ -568,10 +618,98 @@
     if (inp) { inp.focus(); inp.select(); }
   }
 
+  // заменить название авто-позиции (✎): p.calcEdits.renamed[ключ] = новое имя;
+  // возврат к исходному — сохранить пустым или исходным названием
+  function sheetEditName(key, curName) {
+    const origName = key.split("|").slice(1).join("|");
+    rooms().openSheet(`<div class="ep-plan-srow"><b>${T.editTitle}</b>
+        <span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-pc-priceback>${T.back}</button></div>
+      <div class="ep-plan-srow ep-plan-mshint">${esc(origName)}</div>
+      <div class="ep-plan-srow"><label class="ep-plan-range" style="flex:1 1 100%">${T.nameLbl}
+        <input type="text" value="${esc(curName)}" data-pc-editval></label></div>
+      <div class="ep-plan-srow ep-plan-hintrow">${T.editHint}</div>
+      <div class="ep-plan-srow ep-plan-sbtns"><button type="button" class="btn btn-primary ep-clickable" data-pc-editsave data-pc-ekey="${esc(key)}">${T.saveBtn}</button></div>`);
+    const inp = document.querySelector("[data-pc-editval]");
+    if (inp) { inp.focus(); inp.select(); }
+  }
+  // своя позиция (работа/материал) — добавление или правка уже добавленной (idx>=0)
+  function sheetCustomItem(idx) {
+    const p = core().project;
+    const cur = (idx != null && p.calcEdits && p.calcEdits.custom[idx]) || { type: "work", name: "", qty: 1, unit: "шт" };
+    rooms().openSheet(`<div class="ep-plan-srow"><b>${T.addTitle}</b>
+        <span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-pc-priceback>${T.back}</button></div>
+      <div class="ep-plan-srow">
+        <button type="button" class="ep-plan-chip ep-clickable ${cur.type !== "material" ? "on" : ""}" data-pc-ctype="work">${T.typeWork}</button>
+        <button type="button" class="ep-plan-chip ep-clickable ${cur.type === "material" ? "on" : ""}" data-pc-ctype="material">${T.typeMaterial}</button>
+      </div>
+      <div class="ep-plan-srow"><label class="ep-plan-range" style="flex:1 1 100%">${T.nameLbl}
+        <input type="text" value="${esc(cur.name)}" data-pc-cname></label></div>
+      <div class="ep-plan-srow">
+        <label class="ep-plan-range" style="flex:1 1 100px">${T.qtyLbl}
+          <input type="number" inputmode="decimal" min="0" step="0.1" value="${cur.qty}" data-pc-cqty></label>
+        <label class="ep-plan-range" style="flex:1 1 100px">${T.unitLbl}
+          <input type="text" value="${esc(cur.unit)}" data-pc-cunit></label>
+      </div>
+      <div class="ep-plan-srow ep-plan-sbtns"><button type="button" class="btn btn-primary ep-clickable" data-pc-customsave data-pc-cidx="${idx != null ? idx : ""}">${T.saveBtn}</button></div>`);
+    const inp = document.querySelector("[data-pc-cname]");
+    if (inp && !cur.name) inp.focus();
+  }
+  // правка модели правок сметы: commit -> мутация -> persist — обычная undo-запись
+  function editCalc(fn) {
+    const c = core(); c.commit();
+    c.project.calcEdits = c.project.calcEdits || { hidden: [], renamed: {}, custom: [] };
+    fn(c.project.calcEdits);
+    c.persist("calc-edit");
+    sheet();
+  }
+
   document.addEventListener("click", (e) => {
     if (!rooms() || !rooms().isActive()) return;
     const t = e.target;
     if (t.closest("[data-plan-calc]")) return sheet();
+    let b;
+    if ((b = t.closest("[data-pc-hide]")) && b.getAttribute("data-pc-ekey")) {
+      const k = b.getAttribute("data-pc-ekey");
+      return editCalc((ed) => { if (ed.hidden.indexOf(k) < 0) ed.hidden.push(k); });
+    }
+    if ((b = t.closest("[data-pc-unhide]"))) {
+      const k = b.getAttribute("data-pc-ekey");
+      return editCalc((ed) => { ed.hidden = ed.hidden.filter((x) => x !== k); });
+    }
+    if (t.closest("[data-pc-unhideall]")) return editCalc((ed) => { ed.hidden = []; });
+    if ((b = t.closest("[data-pc-editname]"))) return sheetEditName(b.getAttribute("data-pc-ekey"), b.getAttribute("data-pc-ecur"));
+    if ((b = t.closest("[data-pc-editsave]"))) {
+      const k = b.getAttribute("data-pc-ekey");
+      const origName = k.split("|").slice(1).join("|");
+      const val = ((document.querySelector("[data-pc-editval]") || {}).value || "").trim();
+      return editCalc((ed) => {
+        if (!val || val === origName) delete ed.renamed[k];
+        else ed.renamed[k] = val;
+      });
+    }
+    if (t.closest("[data-pc-additem]")) return sheetCustomItem(null);
+    if ((b = t.closest("[data-pc-editcustom]"))) return sheetCustomItem(Number(b.getAttribute("data-pc-editcustom")));
+    if ((b = t.closest("[data-pc-delcustom]"))) {
+      const i = Number(b.getAttribute("data-pc-delcustom"));
+      return editCalc((ed) => { ed.custom.splice(i, 1); });
+    }
+    if ((b = t.closest("[data-pc-ctype]"))) { // тумблер Работа/Материал в форме своей позиции
+      document.querySelectorAll("[data-pc-ctype]").forEach((x) => x.classList.toggle("on", x === b));
+      return;
+    }
+    if ((b = t.closest("[data-pc-customsave]"))) {
+      const idxRaw = b.getAttribute("data-pc-cidx");
+      const idx = idxRaw === "" ? null : Number(idxRaw);
+      const typeBtn = document.querySelector("[data-pc-ctype].on");
+      const item = {
+        type: typeBtn ? typeBtn.getAttribute("data-pc-ctype") : "work",
+        name: ((document.querySelector("[data-pc-cname]") || {}).value || "").trim(),
+        qty: Number((document.querySelector("[data-pc-cqty]") || {}).value) || 0,
+        unit: ((document.querySelector("[data-pc-cunit]") || {}).value || "шт").trim() || "шт"
+      };
+      if (!item.name || item.qty <= 0) { rooms().toast(T.nameLbl + " и " + T.qtyLbl.toLowerCase() + " обязательны"); return; }
+      return editCalc((ed) => { if (idx == null) ed.custom.push(item); else ed.custom[idx] = item; });
+    }
     if (t.closest("[data-pc-close]")) { rooms().closeSheet(); return; }
     if (t.closest("[data-pc-consumcfg]")) return sheetConsumSettings();
     if (t.closest("[data-pc-consumback]")) return sheet();
@@ -619,5 +757,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Calc = { sheet, buildBlocks, runEngine, priceFor, calcByRoutes, estimateItems, perCircuit, sheetConsumSettings };
+  EP.Plan.Calc = { sheet, buildBlocks, runEngine, priceFor, calcByRoutes, estimateItems, perCircuit, sheetConsumSettings, applyCalcEdits };
 })();
