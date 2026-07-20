@@ -131,7 +131,45 @@
     const horiz = Math.abs(segB.x - segA.x) >= Math.abs(segB.y - segA.y);
     return horiz ? { x: proj.x, y: pt.y } : { x: pt.x, y: proj.y };
   }
-  function guideRoute(p, a, b) {
+  // боковой разнос трасс РАЗНЫХ линий (QF), идущих по ОДНОЙ магистрали — та же логика
+  // «+2см на каждую следующую линию», что и у обычной контурной трассировки (routeOff),
+  // но БЕЗ базовых 15см: первая линия идёт ПРЯМО по нарисованной магистрали (это и есть
+  // «рекомендуемое направление» пользователя), базовый отступ от стены тут неуместен —
+  // магистраль не стена. Раньше (пакет «магистраль трасс») этого разноса не было вообще —
+  // все линии одного участка магистрали ложились ровно друг на друга (репорт пользователя:
+  // «отступ сохранился между линиями по рекомендуемому направлению?» — нет, не сохранялся).
+  const guideLaneOff = (p, circuitId) => Math.min(circuitIdx(p, circuitId), 10) * 2; // 0 для idx<=0
+  // нормаль сегмента гвайда — ФИКСИРОВАННОЙ ориентации относительно исходного порядка
+  // gd.points (не зависит от направления обхода a->b/b->a у конкретной трассы) — иначе
+  // трассы, идущие по одному и тому же куску магистрали в РАЗНЫЕ стороны, разъехались бы
+  // в РАЗНЫЕ физические стороны одной и той же линии вместо параллельного веера
+  function guideSegNormal(sA, sB) {
+    const len = Math.hypot(sB.x - sA.x, sB.y - sA.y) || 1;
+    return { x: -(sB.y - sA.y) / len, y: (sB.x - sA.x) / len };
+  }
+  // сдвиг ВЕРШИНЫ гвайда i на off вдоль нормали — с митрой на стыке двух соседних
+  // сегментов (тот же приём, что offsetRing в plan-geometry.js, но для ОТКРЫТОЙ
+  // полилинии: на концах — только один смежный сегмент, без обхода по кругу)
+  function offsetGuideVertex(gd, i, off) {
+    const pts = gd.points;
+    const segs = [];
+    if (i > 0) segs.push({ a: pts[i - 1], b: pts[i] });
+    if (i < pts.length - 1) segs.push({ a: pts[i], b: pts[i + 1] });
+    if (segs.length === 1) {
+      const n = guideSegNormal(segs[0].a, segs[0].b);
+      return { x: pts[i].x + n.x * off, y: pts[i].y + n.y * off };
+    }
+    const n0 = guideSegNormal(segs[0].a, segs[0].b), n1 = guideSegNormal(segs[1].a, segs[1].b);
+    const a0 = { x: segs[0].a.x + n0.x * off, y: segs[0].a.y + n0.y * off };
+    const d0 = { x: segs[0].b.x - segs[0].a.x, y: segs[0].b.y - segs[0].a.y };
+    const a1 = { x: segs[1].a.x + n1.x * off, y: segs[1].a.y + n1.y * off };
+    const d1 = { x: segs[1].b.x - segs[1].a.x, y: segs[1].b.y - segs[1].a.y };
+    const den = d0.x * d1.y - d0.y * d1.x;
+    if (Math.abs(den) < 1e-6) return { x: pts[i].x + n1.x * off, y: pts[i].y + n1.y * off }; // параллельны — смещённый угол
+    const t = ((a1.x - a0.x) * d1.y - (a1.y - a0.y) * d1.x) / den;
+    return { x: a0.x + d0.x * t, y: a0.y + d0.y * t };
+  }
+  function guideRoute(p, a, b, circuitId) {
     const gs = (G().floorScoped(p).guides || []).filter((gd) => (gd.points || []).length >= 2);
     if (!gs.length) return null;
     let best = null;
@@ -145,14 +183,24 @@
     const { gd, pa, pb } = best;
     const A = { x: pa.x, y: pa.y }, B = { x: pb.x, y: pb.y };
     if (G().dist(A, B) < 10) return null; // проекции сошлись в точку — магистраль не нужна
-    let trunk;
-    if (pa.segI === pb.segI) trunk = [A, B];
-    else if (pa.segI < pb.segI) trunk = [A].concat(gd.points.slice(pa.segI + 1, pb.segI + 1), [B]);
-    else trunk = [A].concat(gd.points.slice(pb.segI + 1, pa.segI + 1).reverse(), [B]);
     const sA = gd.points[pa.segI], sA2 = gd.points[pa.segI + 1];
     const sB = gd.points[pb.segI], sB2 = gd.points[pb.segI + 1];
-    const path = [{ x: a.x, y: a.y }, guideKnee(a, A, sA, sA2)]
-      .concat(trunk, [guideKnee(b, B, sB, sB2), { x: b.x, y: b.y }]);
+    const off = guideLaneOff(p, circuitId);
+    // A/B — на СЕРЕДИНЕ сегмента (не вершина), поэтому сдвигаются напрямую вдоль его
+    // нормали (без митры — митра нужна только на изломах между сегментами)
+    const Ao = off ? { x: A.x + guideSegNormal(sA, sA2).x * off, y: A.y + guideSegNormal(sA, sA2).y * off } : A;
+    const Bo = off ? { x: B.x + guideSegNormal(sB, sB2).x * off, y: B.y + guideSegNormal(sB, sB2).y * off } : B;
+    let trunk;
+    if (pa.segI === pb.segI) trunk = [Ao, Bo];
+    else if (pa.segI < pb.segI) {
+      const mid = []; for (let i = pa.segI + 1; i <= pb.segI; i++) mid.push(off ? offsetGuideVertex(gd, i, off) : gd.points[i]);
+      trunk = [Ao].concat(mid, [Bo]);
+    } else {
+      const mid = []; for (let i = pb.segI + 1; i <= pa.segI; i++) mid.push(off ? offsetGuideVertex(gd, i, off) : gd.points[i]);
+      trunk = [Ao].concat(mid.reverse(), [Bo]);
+    }
+    const path = [{ x: a.x, y: a.y }, guideKnee(a, Ao, sA, sA2)]
+      .concat(trunk, [guideKnee(b, Bo, sB, sB2), { x: b.x, y: b.y }]);
     return path.filter((q, j) => j === 0 || G().dist(q, path[j - 1]) > 0.5);
   }
   // «пропадает после трассировки»: скрыть магистрали активного этажа с плана.
@@ -175,7 +223,7 @@
     } else if (ra && rb && depth < 4) {
       // приоритет — нарисованная магистраль (только верхний вызов, не рекурсивные хвосты)
       if (depth === 0) {
-        const gp = guideRoute(p, a, b);
+        const gp = guideRoute(p, a, b, circuitId);
         if (gp) return gp;
       }
       // первая стена на прямой a→b — точка проходки, переход строго перпендикулярно стене
@@ -210,7 +258,7 @@
     // одна из сторон вне комнаты (щит в коридоре без контура и т.п.) — магистраль
     // всё равно применима, если нарисована рядом (тот же верхний-вызов гейт)
     if (depth === 0 && (!ra || !rb)) {
-      const gp = guideRoute(p, a, b);
+      const gp = guideRoute(p, a, b, circuitId);
       if (gp) return gp;
     }
     return ortho(p, a, b, fromEl && fromEl.wallId || null); // запасной вариант
