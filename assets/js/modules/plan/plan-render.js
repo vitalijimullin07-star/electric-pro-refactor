@@ -12,7 +12,14 @@
     namePx: 13,
     wallPx: 3,          // толщина линии стены на экране, px
     pointPx: 6,         // маркер точки черновика, px
-    labelOffsetPx: 14   // отступ подписи от стены, px
+    labelOffsetPx: 14,  // отступ подписи от стены, px
+    // Level-of-detail подписей (порог — см в одном экранном пикселе, k=cmPerPx):
+    // на отдалении (k больше порога) детальные подписи скрываются — иначе на
+    // проекте из многих комнат вид «вся квартира» превращался в сплошную кашу
+    // из наслаивающихся цифр (пойман полным визуальным тестом на 30 комнатах).
+    // Имена комнат НЕ скрываются никогда — это ориентир на обзорном виде.
+    lodDimK: 3.0,       // выше — скрыть размерные цепочки, «N · длина» стен, h=NN
+    lodQfK: 4.5         // выше — скрыть ещё и QF-имена над точками, «N мод» щита
   };
   // кэш собранного <g> со стенами/масками/проёмами/балками/пустотами/лентой на
   // canvas (см. buildWalls() внутри drawScaled) — WeakMap, не свойство на canvas,
@@ -169,6 +176,28 @@
     const circHidden = (id) => { if (soloC) return false; const c = id && circById(id); return !!(c && c.hidden); };
     const circDim = (id) => soloC && id !== soloC; // приглушить: solo активен и это НЕ выбранная линия
     const DIM_OP = "0.12";
+    // level-of-detail: на отдалении детальные подписи прячем (см. CFG.lodDimK/lodQfK)
+    const lodDims = k <= CFG.lodDimK, lodQf = k <= CFG.lodQfK;
+    // сдвиг подписи комнаты ВНИЗ, если свободная точка (свет/ТП/распайка) стоит
+    // практически в центроиде — оба рисуются в центре комнаты и налезали друг на
+    // друга (пойман визуальным тестом). Порог 35см — мировой, не зависит от зума,
+    // сигнатура кэша стен стабильна, пока точка реально не подвинулась к/от центра.
+    const labelNudges = (project.rooms || []).map((room) => {
+      if ((room.points || []).length < 3) return 0;
+      const c0 = G.centroid(room.points);
+      return (project.elements || []).some((e2) => {
+        if (e2.wallId) return false;
+        const q = e2.params || {};
+        return q.x != null && Math.hypot(q.x - c0.x, q.y - c0.y) < 35;
+      }) ? 1 : 0;
+    });
+    // Шрифты/толщины ВНУТРИ кэшируемого блока стен зависят от k (постоянный размер
+    // НА ЭКРАНЕ) — но сигнатура кэша не содержала зум вообще: после зума кэш
+    // переиспользовал узел со старыми размерами шрифта, и подписи стен/цепочек
+    // «плыли» по размеру до первого структурного изменения (скрытый баг, найден
+    // при разборе LOD). Квантованное ведро зума (шаг ~26%) — пересборка только на
+    // ЗАМЕТНОМ изменении зума, а не на каждом тике колеса/пинча.
+    const kBucket = Math.round(Math.log2(k || 1) * 3);
 
     // ---------- стены/маски/проёмы/балки/пустоты/лента — кэшируемый <g> ----------
     // Самая дорогая часть рендера (профилировано headless Chromium CPU-профилем на
@@ -190,7 +219,8 @@
     const structSig = JSON.stringify([
       project.rooms, project.openings, project.beams, project.voids, project.ledStrips,
       project.settings && project.settings.wallThickness, project.settings && project.settings.wallMaterial,
-      dimsOn, labelsOn, ui && ui.selectedRoomId, ui && ui.draft, ui && ui.beamDraft, ui && ui.voidDraft,
+      dimsOn, labelsOn, lodDims, kBucket, labelNudges,
+      ui && ui.selectedRoomId, ui && ui.draft, ui && ui.beamDraft, ui && ui.voidDraft,
       EP.Plan.Rooms && EP.Plan.Rooms.selectedBeamId && EP.Plan.Rooms.selectedBeamId(),
       EP.Plan.Rooms && EP.Plan.Rooms.selectedVoidId && EP.Plan.Rooms.selectedVoidId()
     ]);
@@ -210,7 +240,7 @@
     // ниже гарантирует это без переписывания каждого вызова appendChild)
     function buildWalls(wallsTarget) {
       const g = wallsTarget;
-      (project.rooms || []).forEach((room) => {
+      (project.rooms || []).forEach((room, roomI) => {
         const pts = room.points || [];
         if (pts.length < 2) return;
         const sel = ui && ui.selectedRoomId === room.id;
@@ -254,7 +284,7 @@
           g.appendChild(el("path", { d: "M" + pts.map((p) => p.x + " " + p.y).join(" L"), class: "ep-plan-wallband" + matClass, "stroke-width": th, fill: "none" }));
         }
 
-        if (closed && dimsOn) {
+        if (closed && dimsOn && lodDims) {
           const c = G.centroid(pts);
           G.walls(room).forEach((w) => {
             // подпись снаружи: нормаль от центроида
@@ -271,8 +301,9 @@
         }
         if (closed && labelsOn) {
           const c = G.centroid(pts);
+          // labelNudges: свободная точка у центроида — подпись уезжает ниже маркера
           g.appendChild(el("text", {
-            x: c.x, y: c.y, class: "ep-plan-name", "font-size": fsName,
+            x: c.x, y: c.y + (labelNudges[roomI] ? 26 * k : 0), class: "ep-plan-name", "font-size": fsName,
             "text-anchor": "middle", "dominant-baseline": "middle"
           }, room.name + " · " + G.fmtArea(G.roomNetArea(project, room))));
         }
@@ -411,8 +442,10 @@
       });
     }
 
-    // размерные цепочки: привязки точек и проёмов к углам стены (слой «Размеры»)
-    if (dimsOn) {
+    // размерные цепочки: привязки точек и проёмов к углам стены (слой «Размеры»);
+    // lodDims — на отдалении цепочки скрыты (LOD), хит-тест двойного тапа по цифре
+    // в plan-rooms.js гейтится ТЕМ ЖЕ порогом CFG.lodDimK (видимая цифра = зона тапа)
+    if (dimsOn && lodDims) {
       (project.rooms || []).forEach((room) => {
         if ((room.points || []).length < 3) return;
         const c0 = G.centroid(room.points);
@@ -571,15 +604,16 @@
         }
       }
       if (elem.status === "mounted") grp.appendChild(el("text", { x: cx + r0, y: cy - r0, "font-size": 10 * k, class: "ep-plan-eldone" }, "✓"));
-      // QF-подпись линии (обозначение автомата) над точкой
-      if (labelsOn && elem.circuitId) {
+      // QF-подпись линии (обозначение автомата) над точкой; lodQf — скрыта на сильном отдалении
+      if (labelsOn && lodQf && elem.circuitId) {
         const cc = circ(elem.circuitId);
         if (cc) grp.appendChild(el("text", { x: cx, y: cy - r0 - 5 * k, "font-size": 9 * k, "text-anchor": "middle", class: "ep-plan-qf", fill: cc.color }, cc.name));
       }
       // подпись высоты установки (h=NNN, см) под маркером — только у настенных точек
       // (у свободного света/ТП/распайки высота = потолок, подпись не нужна). Текст НЕ
       // повёрнут (всегда читается), опущен ниже маркера, как на проф. чертеже.
-      if (elem.wallId && elem.type !== "junction" && elem.height != null) {
+      // lodDims — на отдалении скрыта (первой начинает наслаиваться на соседей).
+      if (lodDims && elem.wallId && elem.type !== "junction" && elem.height != null) {
         const below = (elem.type === "block" ? 15 * k : r0 + 2 * k);
         grp.appendChild(el("text", { x: cx, y: cy + below + 7 * k, "font-size": 8.5 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-hlabel" }, "h=" + Math.round(elem.height)));
       }
@@ -641,7 +675,7 @@
       } else {
         grp.appendChild(el("text", { x: pn.x, y: pn.y, "font-size": 12 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph" }, "Щ"));
       }
-      if (pbox && pbox.modules) grp.appendChild(el("text", { x: pn.x, y: pn.y + hc / 2 + 7 * k, "font-size": 8 * k, "text-anchor": "middle", class: "ep-plan-dim" }, pbox.modules + " мод"));
+      if (pbox && pbox.modules && lodQf) grp.appendChild(el("text", { x: pn.x, y: pn.y + hc / 2 + 7 * k, "font-size": 8 * k, "text-anchor": "middle", class: "ep-plan-dim" }, pbox.modules + " мод"));
       g.appendChild(grp);
     });
 

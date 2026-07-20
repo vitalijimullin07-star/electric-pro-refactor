@@ -359,21 +359,24 @@
     const k = R.canvas.cmPerPx();
     const tol = 16 * k;
     const dimsOn = ((p.layers || []).find((l) => l.id === "dims") || {}).visible !== false;
+    // LOD: на отдалении подписи размеров/высот СКРЫТЫ (plan-render.js CFG.lodDimK) —
+    // хит-тест по невидимой цифре не должен срабатывать (видимая цифра = зона тапа)
+    const lodDims = k <= ((EP.Plan.Render && EP.Plan.Render.CFG && EP.Plan.Render.CFG.lodDimK) || 3);
     let best = null;
     const consider = (elemId, d) => { if (elemId && d < tol && (!best || d < best.d)) best = { elemId, d }; };
-    // подписи высоты h=NNN под маркерами (рисуются всегда, см. plan-render.js)
-    (p.elements || []).forEach((e) => {
+    // подписи высоты h=NNN под маркерами (видимы, пока не сработал LOD)
+    if (lodDims) (p.elements || []).forEach((e) => {
       if (!e.wallId || e.type === "junction" || e.height == null) return;
       const dp = G().elemDrawPoint(p, e); if (!dp) return;
       const lp = { x: dp.x, y: dp.y + (e.type === "block" ? 22 : 20) * k };
       consider(e.id, Math.hypot(w.x - lp.x, w.y - lp.y));
     });
-    // звенья размерной цепочки вдоль стен (только если слой «Размеры» включён — иначе
-    // их не видно). Позиция цифры считается ТЕМ ЖЕ off2, что и в plan-render.js —
-    // фиксированный отступ 5см от грани стены (не зависит от зума, просьба
-    // пользователя) — общий хелпер G.wallChainStations, чтобы хит-тест совпадал
-    // с видимой цифрой.
-    if (dimsOn) {
+    // звенья размерной цепочки вдоль стен (только если слой «Размеры» включён И
+    // цепочка не скрыта LOD'ом — иначе их не видно). Позиция цифры считается ТЕМ ЖЕ
+    // off2, что и в plan-render.js — фиксированный отступ 5см от грани стены (не
+    // зависит от зума, просьба пользователя) — общий хелпер G.wallChainStations,
+    // чтобы хит-тест совпадал с видимой цифрой.
+    if (dimsOn && lodDims) {
       const off2 = 5;
       (p.rooms || []).forEach((room) => {
         if ((room.points || []).length < 3) return;
