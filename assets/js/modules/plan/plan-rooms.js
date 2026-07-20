@@ -19,7 +19,8 @@
       ruler: "Тапни две точки — расстояние.",
       underlay: "Фото-план: загрузка, масштаб по известной длине, перенос.",
       merge: "Тапни первую комнату, потом соседнюю — объединятся в одну.",
-      mergeSecond: "Тапни соседнюю комнату (или ту же — отменить)."
+      mergeSecond: "Тапни соседнюю комнату (или ту же — отменить).",
+      guide: "Магистраль: тапай точки приоритетного направления трасс (по коридору). Повторный тап в последнюю точку — сохранить линию."
     },
     room: "Комната", create: "Создать", cancel: "Отмена", close: "Закрыть",
     name: "Название", width: "Ширина, см", depth: "Глубина, см", ceil: "Потолок, см",
@@ -76,7 +77,8 @@
     selectedRoomId: null, ruler: { a: null, b: null }, beamDraft: { a: null, b: null }, voidDraft: { a: null, b: null },
     umove: false, calib: { on: false, a: null, b: null }, mergeFirst: null, mergePending: null,
     soloCircuit: null, // работа по линиям: id единственной показанной ярко линии QF (view-состояние, не в модели)
-    routeDragMode: "point" // "point"|"segment" — явный переключатель режима тяги трассы (кнопки в sheetRoute), см. enableRouteDrag
+    routeDragMode: "point", // "point"|"segment" — явный переключатель режима тяги трассы (кнопки в sheetRoute), см. enableRouteDrag
+    guideDraft: { points: [] } // черновик рисуемой магистрали трасс (режим ⇉)
   };
 
   // ---------- плавающая quickbar: быстрый доступ (просьба пользователя — редактируемая
@@ -84,11 +86,12 @@
   // запоминаются между сессиями) ----------
   // Тот же набор, что и «режимы» в верхнем тулбаре (см. T.modes) — здесь его пилотный
   // список для панели быстрого доступа (что можно закрепить/что попадает в MRU).
-  const QB_TOOLS = { view: "☝", rect: "▭", poly: "⬠", beam: "▬", void: "▦", merge: "🔗", elem: "🔌", opening: "🚪", wall: "📐", ruler: "📏", underlay: "🖼" };
+  const QB_TOOLS = { view: "☝", rect: "▭", poly: "⬠", beam: "▬", void: "▦", merge: "🔗", elem: "🔌", opening: "🚪", wall: "📐", ruler: "📏", underlay: "🖼", guide: "⇉" };
   const QB_LABELS = {
     view: "Просмотр", rect: "Прямоугольная комната", poly: "Комната по точкам", beam: "Балка/перемычка",
     void: "Вентшахта/мини-комната", merge: "Объединить комнаты", elem: "Точки", opening: "Проёмы",
-    wall: "Развёртка стены", ruler: "Рулетка", underlay: "Подложка-фото"
+    wall: "Развёртка стены", ruler: "Рулетка", underlay: "Подложка-фото",
+    guide: "Магистраль трасс"
   };
   const QB_LS_KEY = "ep_plan_quickbar_v1";
   // localStorage — view-состояние устройства, не часть проекта (как и soloCircuit
@@ -169,7 +172,7 @@
   }
 
   // ---------- сцена ----------
-  function ui() { return { selectedRoomId: R.selectedRoomId, draft: R.draft, ruler: R.ruler, beamDraft: R.beamDraft, voidDraft: R.voidDraft, soloCircuit: R.soloCircuit }; }
+  function ui() { return { selectedRoomId: R.selectedRoomId, draft: R.draft, ruler: R.ruler, beamDraft: R.beamDraft, voidDraft: R.voidDraft, soloCircuit: R.soloCircuit, guideDraft: R.guideDraft, guideMode: R.mode === "guide" }; }
   // solo линии QF (изоляция на плане): тап по линии в шторке 🧵 Трассы — только она ярко,
   // остальные приглушены. Повторный тап по той же линии — снять solo. Не персистится.
   function setSoloCircuit(id) { R.soloCircuit = (R.soloCircuit === id) ? null : (id || null); renderScene(); }
@@ -193,6 +196,7 @@
     R.mode = mode;
     R.draft = { points: [] }; R.pendingRect = null; R.pendingPoly = null;
     R.ruler = { a: null, b: null }; R.beamDraft = { a: null, b: null }; R.voidDraft = { a: null, b: null };
+    R.guideDraft = { points: [] };
     R.calib = { on: false, a: null, b: null };
     R.selectedBeam = null; R.selectedVoid = null; R.selectedRoute = null; R.selectedRouteTap = null; R.mergeFirst = null; R.mergePending = null;
     setMove(false);
@@ -202,6 +206,13 @@
     if (mode === "underlay") sheetUnderlay();
     else if (mode === "elem" && EP.Plan.Elements) EP.Plan.Elements.onModeEnter();
     else if (mode === "opening" && EP.Plan.Elements) EP.Plan.Elements.onOpeningModeEnter();
+    else if (mode === "guide") {
+      // шторку открываем ТОЛЬКО если уже есть сохранённые магистрали (ради 🗑) —
+      // иначе она закрывает низ холста и первый же тап рисования попадает в неё,
+      // а не в план (поймано живым тестом); свежее рисование — только подсказка
+      const hasGuides = (G().floorScoped(core().project).guides || []).length > 0;
+      if (hasGuides) sheetGuide(); else closeSheet();
+    }
     else closeSheet();
     renderScene();
   }
@@ -261,6 +272,25 @@
     if (R.mode === "ruler") {
       if (!R.ruler.a || R.ruler.b) R.ruler = { a: w, b: null };
       else R.ruler.b = w;
+      renderScaled();
+      return;
+    }
+    if (R.mode === "guide") {
+      // магистраль трасс: тапы набирают полилинию (автовыравнивание до 90°, как у
+      // комнаты по точкам). Завершение — ПОВТОРНЫЙ тап в последнюю точку (паттерн
+      // замыкания poly). Шторка закрывается на первом тапе — иначе она закрывает
+      // низ холста и съедает тапы рисования по «коридору» (поймано живым тестом).
+      const pts = R.guideDraft.points;
+      if (pts.length >= 2 && G().dist(w, pts[pts.length - 1]) <= CFG.closePolyPx * R.canvas.cmPerPx()) {
+        vibrate([10, 30, 10]);
+        finishGuide();
+        return;
+      }
+      const orthoG = G().orthoAdjust(pts[pts.length - 1] || null, w);
+      const sp = G().snapSmart(p, orthoG, step, CFG.cornerSnapCm);
+      if (sp.snapped) vibrate(10);
+      pts.push({ x: sp.x, y: sp.y });
+      if (pts.length === 1) closeSheet(); // шторка не мешает рисовать; вернётся после сохранения
       renderScaled();
       return;
     }
@@ -508,6 +538,36 @@
       else if (t.closest("[data-qm-dup]")) { closeQuickMenu(); EP.Plan.Elements.duplicateElement(el2); }
     });
     setTimeout(() => { document.addEventListener("pointerdown", closeQuickMenu, { once: true, capture: true }); }, 0);
+  }
+
+  // ---------- магистраль трасс (режим ⇉): шторка рисования ----------
+  // Магистраль — нарисованное ПРИОРИТЕТНОЕ направление автотрассировки (просьба
+  // пользователя со скриншотом «каши»: трассы должны идти по нарисованному стволу
+  // по коридору, заходить в комнаты от него). Полупрозрачная линия; после
+  // «⚡ Построить» скрывается с плана (guide.hidden, см. plan-routes.js hideGuides).
+  function sheetGuide() {
+    const p = core().project;
+    const saved = (G().floorScoped(p).guides || []).length;
+    const draftN = R.guideDraft.points.length;
+    openSheet(`<div class="ep-plan-srow"><b>⇉ Магистраль трасс</b><span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-pg-close>✕</button></div>
+      <div class="ep-plan-modehint">${T.modeHint.guide} Нарисованных: ${saved}${draftN ? ` · точек в текущей: ${draftN}` : ""}. Трассы пойдут по магистрали между комнатами, внутри комнат — как обычно. После построения линия скрывается.</div>
+      <div class="ep-plan-srow ep-plan-sbtns">
+        <button type="button" class="btn btn-primary ep-clickable" data-pg-done ${draftN >= 2 ? "" : "disabled"}>✓ Готово</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pg-undo ${draftN ? "" : "disabled"}>↩ Точка</button>
+        ${saved ? `<button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pg-clear>🗑 Убрать все</button>` : ""}
+      </div>`);
+  }
+  function finishGuide() {
+    const c = core(), p = c.project;
+    if (R.guideDraft.points.length < 2) return;
+    c.commit();
+    p.guides = p.guides || [];
+    p.guides.push(c.model.newGuide(R.guideDraft.points.slice()));
+    c.persist("guide-add");
+    R.guideDraft = { points: [] };
+    toast("Магистраль добавлена — можно рисовать следующую или строить трассы");
+    sheetGuide();
+    renderScene();
   }
 
   function sheetCreateRect() {
@@ -1332,6 +1392,19 @@
       return;
     }
     if (t.closest("[data-pr-mergecancel]")) { R.mergePending = null; R.selectedRoomId = null; closeSheet(); toast(T.mergeCancelled); renderScene(); return; }
+    if (t.closest("[data-pg-done]")) { finishGuide(); return; }
+    if (t.closest("[data-pg-undo]")) { R.guideDraft.points.pop(); renderScaled(); sheetGuide(); return; }
+    if (t.closest("[data-pg-clear]")) {
+      const c = core(), p = c.project;
+      c.commit();
+      const fid0 = p.floors && p.floors[0] && p.floors[0].id;
+      const activeF = p.activeFloorId || fid0;
+      p.guides = (p.guides || []).filter((gd) => (gd.floorId || fid0) !== activeF); // только активный этаж
+      c.persist("guide-del");
+      R.guideDraft = { points: [] };
+      sheetGuide(); renderScene(); return;
+    }
+    if (t.closest("[data-pg-close]")) { setMode("view"); return; }
     if ((el = t.closest("[data-prt2-mode]"))) {
       const c = core(), rt = (c.project.routes || []).find((r) => r.id === R.selectedRoute);
       R.routeDragMode = el.getAttribute("data-prt2-mode") === "segment" ? "segment" : "point";

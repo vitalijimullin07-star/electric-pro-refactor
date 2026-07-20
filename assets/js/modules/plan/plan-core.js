@@ -116,6 +116,7 @@
       beams: [],    // перемычки/балки на потолке (свободные отрезки)
       voids: [],    // внутренние препятствия: вентшахта / мини-комната внутри комнаты
       ledStrips: [], // светодиодная лента: сегменты ВДОЛЬ стены (wallId+offsetA/offsetB)
+      guides: [],   // магистрали трасс: нарисованные приоритетные направления (полилинии)
       manualScheme: newManualScheme(), // ручной конструктор однолинейки (Слой 7б)
       layers: blankLayers(),
       versions: [], // { at, note } — история версий (заполняется в следующих слоях)
@@ -190,6 +191,11 @@
     const k = kind === "room" ? "room" : "shaft";
     return { id: uid("vd"), a: a || { x: 0, y: 0 }, b: b || { x: 0, y: 0 }, kind: k, name: k === "room" ? "Комната" : "Шахта", floorId: curFloorId() };
   }
+  // магистраль трасс: нарисованное ПРИОРИТЕТНОЕ направление (полилиния в мировых см).
+  // hidden=true после построения трасс — визуально пропадает с плана (просьба
+  // пользователя), но остаётся в модели: автоперестройка (AUTOREBUILD_ON) продолжает
+  // вести трассы по ней; в режиме рисования ⇉ скрытые магистрали снова видны.
+  function newGuide(points) { return { id: uid("gd"), points: points || [], hidden: false, floorId: curFloorId() }; }
 
   // ---------- состояние ----------
   const S = { project: null, index: [], undo: [], redo: [], cloudTimer: null, listeners: new Set() };
@@ -374,7 +380,8 @@
     if (!Array.isArray(p.floors) || !p.floors.length) p.floors = [newFloor("1 этаж")];
     if (!p.activeFloorId || !p.floors.some((f) => f.id === p.activeFloorId)) p.activeFloorId = p.floors[0].id;
     const fid0 = p.floors[0].id;
-    [p.rooms, p.panels, p.elements, p.beams, p.voids, p.ledStrips, p.openings, p.routes].forEach((arr) => {
+    p.guides = p.guides || []; // магистрали трасс (старые проекты — пусто)
+    [p.rooms, p.panels, p.elements, p.beams, p.voids, p.ledStrips, p.openings, p.routes, p.guides].forEach((arr) => {
       (arr || []).forEach((x) => { if (!x.floorId || !p.floors.some((f) => f.id === x.floorId)) x.floorId = fid0; });
     });
     p.openings = p.openings || [];
@@ -482,7 +489,7 @@
     commit();
     const p = S.project;
     p.floors = p.floors.filter((f) => f.id !== id);
-    ["rooms", "panels", "elements", "beams", "voids", "ledStrips", "openings", "routes"].forEach((key) => {
+    ["rooms", "panels", "elements", "beams", "voids", "ledStrips", "openings", "routes", "guides"].forEach((key) => {
       p[key] = (p[key] || []).filter((x) => x.floorId !== id);
     });
     if (p.activeFloorId === id) p.activeFloorId = p.floors[0].id;
@@ -611,6 +618,6 @@
     exportJSON, importJSON, cloudPullIndex,
     addFloor, renameFloor, setActiveFloor, deleteFloor,
     photoUrl, addPhoto,
-    model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening, newBeam, newVoid, newManualScheme, newSchemeGroup, newSchemeLine, newLedStrip, newFloor }
+    model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening, newBeam, newVoid, newGuide, newManualScheme, newSchemeGroup, newSchemeLine, newLedStrip, newFloor }
   };
 })();

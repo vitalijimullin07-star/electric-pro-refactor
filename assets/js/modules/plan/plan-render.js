@@ -483,6 +483,27 @@
       });
     }
 
+    // магистрали трасс (p.guides): полупрозрачное приоритетное направление —
+    // ПОД трассами (рисуются раньше). Скрытые (hidden после построения) видны
+    // ТОЛЬКО в режиме рисования ⇉ (ui.guideMode) — там их можно убрать/дополнить.
+    (project.guides || []).forEach((gd) => {
+      if (gd.hidden && !(ui && ui.guideMode)) return;
+      if ((gd.points || []).length < 2) return;
+      g.appendChild(el("polyline", {
+        points: gd.points.map((q) => q.x + "," + q.y).join(" "),
+        class: "ep-plan-guide", "stroke-width": sw * 3
+      }));
+    });
+    // черновик рисуемой магистрали (режим ⇉): ярче и пунктиром + точки
+    const gDraft = ui && ui.guideDraft;
+    if (gDraft && gDraft.points && gDraft.points.length) {
+      if (gDraft.points.length > 1) g.appendChild(el("polyline", {
+        points: gDraft.points.map((q) => q.x + "," + q.y).join(" "),
+        class: "ep-plan-guidedraft", "stroke-width": sw * 3
+      }));
+      gDraft.points.forEach((q) => g.appendChild(el("circle", { cx: q.x, cy: q.y, r: CFG.pointPx * k, class: "ep-plan-guidept" })));
+    }
+
     // трассы (Слой 4): полилинии цветом слоя + проходки
     if (layerOn(project, "routes")) {
       const layerColor = (id) => (((project.layers || []).find((l) => l.id === id) || {}).color) || "#94a3b8";

@@ -31,7 +31,7 @@
     return Object.assign({}, project, {
       rooms: on(project.rooms), elements: on(project.elements), panels: on(project.panels),
       beams: on(project.beams), voids: on(project.voids), ledStrips: on(project.ledStrips),
-      openings: on(project.openings), routes: on(project.routes)
+      openings: on(project.openings), routes: on(project.routes), guides: on(project.guides)
     });
   };
 

@@ -107,6 +107,61 @@
     return path.filter((q, j) => j === 0 || G().dist(q, path[j - 1]) > 0.5);
   }
 
+  // ---- магистраль трасс (p.guides): нарисованное ПРИОРИТЕТНОЕ направление ----
+  // Пользователь рисует полупрозрачную полилинию (режим ⇉) — МЕЖкомнатные прогоны
+  // автотрассировки идут ПО ней (от точки — перпендикулярное «колено» к магистрали,
+  // по магистрали, колено к цели), вместо прежнего перехода по прямой a→b, который
+  // на реальной квартире давал «кашу» пересекающихся линий (репорт пользователя со
+  // скриншотом). ВНУТРИ одной комнаты магистраль не применяется — там прежний обход
+  // по контуру с отступом (routeOff). Гильзы через стены на пути магистрали считает
+  // общий polylineCrossings по итоговому пути — отдельной логики не потребовалось.
+  const GUIDE_SNAP_MAX = 800; // см: дальше проекции — магистраль «не про эту трассу»
+  function nearestOnGuide(gd, pt) {
+    let best = null;
+    const pts = gd.points || [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const cl = G().closestOnSeg(pt, pts[i], pts[i + 1]);
+      if (!best || cl.d < best.d) best = { d: cl.d, x: cl.x, y: cl.y, segI: i };
+    }
+    return best;
+  }
+  // перпендикулярный заход: к горизонтальному участку магистрали подходим вертикально
+  // (и наоборот) — примыкание всегда прямым углом, как просил пользователь
+  function guideKnee(pt, proj, segA, segB) {
+    const horiz = Math.abs(segB.x - segA.x) >= Math.abs(segB.y - segA.y);
+    return horiz ? { x: proj.x, y: pt.y } : { x: pt.x, y: proj.y };
+  }
+  function guideRoute(p, a, b) {
+    const gs = (G().floorScoped(p).guides || []).filter((gd) => (gd.points || []).length >= 2);
+    if (!gs.length) return null;
+    let best = null;
+    gs.forEach((gd) => {
+      const pa = nearestOnGuide(gd, a), pb = nearestOnGuide(gd, b);
+      if (!pa || !pb || pa.d > GUIDE_SNAP_MAX || pb.d > GUIDE_SNAP_MAX) return;
+      const score = pa.d + pb.d;
+      if (!best || score < best.score) best = { gd, pa, pb, score };
+    });
+    if (!best) return null;
+    const { gd, pa, pb } = best;
+    const A = { x: pa.x, y: pa.y }, B = { x: pb.x, y: pb.y };
+    if (G().dist(A, B) < 10) return null; // проекции сошлись в точку — магистраль не нужна
+    let trunk;
+    if (pa.segI === pb.segI) trunk = [A, B];
+    else if (pa.segI < pb.segI) trunk = [A].concat(gd.points.slice(pa.segI + 1, pb.segI + 1), [B]);
+    else trunk = [A].concat(gd.points.slice(pb.segI + 1, pa.segI + 1).reverse(), [B]);
+    const sA = gd.points[pa.segI], sA2 = gd.points[pa.segI + 1];
+    const sB = gd.points[pb.segI], sB2 = gd.points[pb.segI + 1];
+    const path = [{ x: a.x, y: a.y }, guideKnee(a, A, sA, sA2)]
+      .concat(trunk, [guideKnee(b, B, sB, sB2), { x: b.x, y: b.y }]);
+    return path.filter((q, j) => j === 0 || G().dist(q, path[j - 1]) > 0.5);
+  }
+  // «пропадает после трассировки»: скрыть магистрали активного этажа с плана.
+  // НЕ удаляем из модели — автоперестройка (AUTOREBUILD_ON) продолжает вести
+  // трассы по ним; в режиме рисования ⇉ скрытые магистрали снова видны/удаляемы.
+  function hideGuides(p) {
+    (G().floorScoped(p).guides || []).forEach((gd) => { gd.hidden = true; });
+  }
+
   // общий построитель: та же комната — по контуру; другая — через перпендикулярные проходки
   function buildPath(p, fromEl, a, target, depth, circuitId) {
     depth = depth || 0;
@@ -118,6 +173,11 @@
       const path = pathInRoom(p, ra, a, b, circuitId);
       if (path) return path;
     } else if (ra && rb && depth < 4) {
+      // приоритет — нарисованная магистраль (только верхний вызов, не рекурсивные хвосты)
+      if (depth === 0) {
+        const gp = guideRoute(p, a, b);
+        if (gp) return gp;
+      }
       // первая стена на прямой a→b — точка проходки, переход строго перпендикулярно стене
       const hits = G().polylineCrossings(p, [a, b], fromEl && fromEl.wallId || null)
         .map((c) => ({ c, w: G().wallById(p, c.wallId), d: G().dist(a, c) }))
@@ -146,6 +206,12 @@
         const path = legA.concat(legB);
         return path.filter((q, j) => j === 0 || G().dist(q, path[j - 1]) > 0.5);
       }
+    }
+    // одна из сторон вне комнаты (щит в коридоре без контура и т.п.) — магистраль
+    // всё равно применима, если нарисована рядом (тот же верхний-вызов гейт)
+    if (depth === 0 && (!ra || !rb)) {
+      const gp = guideRoute(p, a, b);
+      if (gp) return gp;
     }
     return ortho(p, a, b, fromEl && fromEl.wallId || null); // запасной вариант
   }
@@ -268,6 +334,7 @@
     routeJunctionsToPanel(c, p, juncts, juncts, panels);
 
     if (savedManual.length) restoreManualRoutes(p, savedManual);
+    hideGuides(p); // магистрали визуально пропадают после построения (модель остаётся)
     c.persist("routes-build");
     if (!silent) sheet();
   }
@@ -320,6 +387,7 @@
       routeJunctionsToPanel(c, p, allJuncts, newJuncts, panels);
     }
 
+    hideGuides(p); // как и у полного build(): магистрали пропадают после построения
     c.persist("routes-build-inc");
     if (!silent) sheet();
   }
