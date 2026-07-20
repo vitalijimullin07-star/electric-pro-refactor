@@ -1861,6 +1861,27 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(rt, "трасса построена");
     ok(!(rt.points || []).some((pt) => Math.abs(pt.y - 400) < 1), "путь НЕ уходит на магистраль вне комнаты");
   });
+  test("guides: РАЗНЫЕ линии (QF) по одной магистрали разносятся по +2см на линию (не ложатся друг на друга)", () => {
+    const r1 = M.newRoom(G.rectPoints(0, 0, 400, 300), "К1");
+    const r2 = M.newRoom(G.rectPoints(400, 0, 400, 300), "К2");
+    const q1 = M.newCircuit("QF1", "#e11", 16); // idx 0 — offset 0, прямо по магистрали
+    const q2 = M.newCircuit("QF2", "#0a0", 16); // idx 1 — offset +2см
+    const guide = M.newGuide([{ x: 50, y: 400 }, { x: 750, y: 400 }]);
+    const { P } = install({ rooms: [r1, r2], circuits: [q1, q2], panels: [M.newPanel(50, 50)], guides: [guide] });
+    const s1 = M.newElement("socket", P.rooms[1].id + ":0", 100, 30); s1.circuitId = q1.id;
+    const s2 = M.newElement("socket", P.rooms[1].id + ":0", 200, 30); s2.circuitId = q2.id;
+    P.elements.push(s1, s2);
+    EP.Plan.Routes.build();
+    const rt1 = P.routes.find((r) => r.fromId === s1.id);
+    const rt2 = P.routes.find((r) => r.fromId === s2.id);
+    ok(rt1 && rt2, "обе трассы построены");
+    // QF1 (первая линия) идёт РОВНО по нарисованной магистрали (y=400, без базового отступа —
+    // магистраль не стена, это и есть «рекомендуемое направление» пользователя)
+    ok(rt1.points.some((pt) => Math.abs(pt.y - 400) < 1), "QF1 — ровно на магистрали (y=400)");
+    // QF2 (вторая линия) сдвинута на +2см перпендикулярно магистрали — НЕ совпадает с QF1
+    ok(rt2.points.some((pt) => Math.abs(pt.y - 402) < 1), "QF2 — магистраль +2см (y=402)");
+    ok(!rt2.points.some((pt) => Math.abs(pt.y - 400) < 1), "QF2 не ложится ровно на линию QF1");
+  });
   test("guides: build() скрывает магистрали (hidden=true), но НЕ удаляет из модели", () => {
     const guide = M.newGuide([{ x: 50, y: 400 }, { x: 750, y: 400 }]);
     const { P, w } = install({ panels: [M.newPanel(50, 50)], guides: [guide] });
