@@ -226,6 +226,10 @@
     [400, 1200].forEach((ms) => {
       setTimeout(() => {
         if (V.canvas !== myCanvas) return;
+        // пользователь УЖЕ сам зумил/панорамировал — не перебиваем его вид
+        // авто-вписыванием (иначе вид «отпрыгивал» через ~секунду, если начать
+        // зумить сразу после открытия проекта — пойман визуальным тестом)
+        if (myCanvas.userAdjustedView && myCanvas.userAdjustedView()) return;
         fitToProject();
         myCanvas.redraw();
       }, ms);

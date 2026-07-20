@@ -491,8 +491,12 @@
     const fmtRub = (n) => (window.EP.Currency && EP.Currency.format) ? EP.Currency.format(n) : (Math.round(n * 100) / 100) + " ₽";
     // разбивка по линиям QF (информационная сводка) — только если есть трассы и линии
     const perQF = exact && exact.items.length ? perCircuit(p) : null;
+    // пометка «с запасом» ОБЯЗАТЕЛЬНА: perCircuit() считает длины С запасом кабеля
+    // (+N%), а сводка «Кабель по трассам» выше — БЕЗ запаса; без пометки сумма по
+    // линиям не сходилась со «всего» на вид (репорт полного визуального теста:
+    // 10.4+8.4=18.8 против «17.05 всего» — оба числа верные, но выглядело ошибкой)
     const perQFHtml = (perQF && perQF.length)
-      ? `<div class="ep-plan-srow"><b>${T.byLines}</b></div>` +
+      ? `<div class="ep-plan-srow"><b>${T.byLines}</b><span class="ep-plan-flex"></span><span class="ep-plan-mshint">кабель с запасом +${Math.round(p.settings.cableReserve == null ? 10 : p.settings.cableReserve)}%</span></div>` +
         `<div class="ep-plan-qflist">${perQF.map((r) => `<div class="ep-plan-qfrow">
             <span class="ep-plan-cdot" style="background:${esc(r.color)}"></span><b>${esc(r.name)}</b>
             <span class="ep-plan-qfmeta">${r.breaker || "—"}A${r.rcd ? " · УЗО" : ""}</span>

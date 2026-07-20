@@ -87,6 +87,11 @@
     // ---------- указатели: пан / пинч / тап ----------
     const pts = new Map(); // pointerId -> {x,y}
     let pinch = null;      // { dist, cx, cy } на старте пинча
+    // пользователь САМ зумил/панорамировал (колесо/пинч/пан пальцем) — отложенные
+    // авто-вписывания (fitToProject-таймеры в plan-mount.js) больше не должны
+    // перебивать его вид (иначе «вид отпрыгивает» через ~секунду после открытия,
+    // если начать зумить сразу — пойман визуальным тестом на моём же авто-refit'e)
+    let userAdjusted = false;
     let tapStart = null;   // { x, y, t, id }
     let dragHandler = null, dragMoved = false; // перехват одиночного перетаскивания (подложка/элементы)
     let dragVeto = false; // хендлер вернул false на "start" — жест остаётся панорамой
@@ -156,6 +161,7 @@
       const prev = pts.get(e.pointerId);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pts.size === 2 && pinch) {
+        userAdjusted = true;
         const cur = pinchInfo();
         const k = pinch.dist / cur.dist; // >1 — отдаление
         const wc = toWorld(cur.cx, cur.cy);
@@ -178,11 +184,11 @@
             if (downClient && Math.hypot(e.clientX - downClient.x, e.clientY - downClient.y) < CFG.dragStartPx) return;
             // хендлер может отказаться (вернуть false) — тогда жест панорамирует
             const res = dragHandler(0, 0, "start", toWorld((downClient || e).x, (downClient || e).y), { dbl: dblDown });
-            if (res === false) { dragVeto = true; view.x -= dx; view.y -= dy; apply(); }
+            if (res === false) { dragVeto = true; userAdjusted = true; view.x -= dx; view.y -= dy; apply(); }
             else { dragMoved = true; clearLongPress(); dragHandler(dx, dy, "move"); }
           } else dragHandler(dx, dy, "move");
         }
-        else { view.x -= dx; view.y -= dy; apply(); }
+        else { userAdjusted = true; view.x -= dx; view.y -= dy; apply(); }
         if (tapStart && Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y) > CFG.tapMaxPx) { tapStart = null; clearLongPress(); }
       }
     });
@@ -208,6 +214,7 @@
             if (cb.dbl && cb.dbl(wc, e)) { lastTapInfo = null; tapStart = null; return; }
             // иначе зум к точке касания (первый тап уже отработал как обычно,
             // задержки на распознавание двойного тапа НЕТ — второй просто переосмыслен)
+            userAdjusted = true;
             view.w *= CFG.dblTapZoomK; view.h *= CFG.dblTapZoomK;
             clampView();
             const wc2 = toWorld(e.clientX, e.clientY);
@@ -227,6 +234,7 @@
 
     svg.addEventListener("wheel", (e) => {
       e.preventDefault();
+      userAdjusted = true;
       const k = e.deltaY > 0 ? 1.12 : 1 / 1.12;
       const wc = toWorld(e.clientX, e.clientY);
       view.w *= k; view.h *= k;
@@ -295,6 +303,7 @@
       cmPerPx: pxToCm,
       toWorld, fit, redraw: apply,
       panBy: (dx, dy) => { view.x += dx; view.y += dy; apply(); }, // сдвиг вида в мировых см (программный, не жестом)
+      userAdjustedView: () => userAdjusted, // юзер сам зумил/панорамировал (авто-refit больше не перебивает)
       onTap: (fn) => { cb.tap = fn; },
       onDblTap: (fn) => { cb.dbl = fn; }, // (worldPt, e) → true, если двойной тап обработан (зум не делать)
       onViewChanged: (fn) => { cb.viewChanged = fn; },
