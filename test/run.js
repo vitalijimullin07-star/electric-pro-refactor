@@ -1909,6 +1909,68 @@ test("фото: deleteProject чистит кэш фото своего прое
     eq(chain.length, 4, "все 4 точки шлейфа получили трассу");
     eq(chain.filter((r) => r.toPanel).length >= 1, true, "хотя бы одна доходит до щита (голова шлейфа)");
   });
+  test("guides: Т-магистраль (одна полилиния с ретрейсом центра) — БЕЗ лишнего крюка в тупиковую ветку", () => {
+    // Т нарисована ОДНИМ росчерком: левое плечо -> центр -> низ ножки -> центр (повтор) -> правое плечо —
+    // единственный способ нарисовать Т/Ш одной непрерывной линией в текущем UI (⇉). Раньше (до графа
+    // магистралей) trunk строился по СЫРЫМ индексам между двумя точками — путь от правого плеча к щиту
+    // (у левого плеча) зря нырял вниз по всей ножке и обратно (репорт пользователя со скриншотом).
+    const rLeft = M.newRoom(G.rectPoints(0, 200, 250, 200), "Слева");
+    const rRight = M.newRoom(G.rectPoints(600, 200, 250, 200), "Справа");
+    const q1 = M.newCircuit("QF1", "#e11", 16);
+    const gd = M.newGuide([
+      { x: 50, y: 400 }, { x: 300, y: 400 }, // левое плечо
+      { x: 300, y: 700 },                     // низ ножки (тупиковая ветка)
+      { x: 300, y: 400 },                     // ретрейс центра
+      { x: 550, y: 400 }                      // правое плечо
+    ]);
+    const { P } = install({ rooms: [rLeft, rRight], circuits: [q1], panels: [M.newPanel(30, 380)], guides: [gd] });
+    const sRight = M.newElement("socket", P.rooms[1].id + ":2", 100, 30); sRight.circuitId = q1.id;
+    P.elements.push(sRight);
+    EP.Plan.Routes.build();
+    const rt = P.routes.find((r) => r.fromId === sRight.id);
+    ok(rt, "трасса построена");
+    ok(!rt.points.some((pt) => pt.y > 500), "путь НЕ ныряет в тупиковую ножку (y>500) — идёт напрямую через центр Т");
+  });
+  test("guides: Т как ДВЕ отдельные магистрали, стыкующиеся в одной точке — граф соединяет их в один путь", () => {
+    // Т нарисована ДВУМЯ отдельными заходами в ⇉ (перекладина + ножка), касающимися в (300,400).
+    // Раньше guideRoute умел использовать только ОДНУ магистраль целиком — вторая половина пути шла
+    // напрямую БЕЗ учёта геометрии магистрали. Граф объединяет их по общей (близкой) точке.
+    const rLeft = M.newRoom(G.rectPoints(0, 200, 250, 200), "Слева");
+    const rDown = M.newRoom(G.rectPoints(200, 700, 250, 200), "Внизу");
+    const q1 = M.newCircuit("QF1", "#e11", 16);
+    const bar = M.newGuide([{ x: 50, y: 400 }, { x: 300, y: 400 }]);
+    const stem = M.newGuide([{ x: 300, y: 400 }, { x: 300, y: 700 }]);
+    const { P } = install({ rooms: [rLeft, rDown], circuits: [q1], panels: [M.newPanel(30, 380)], guides: [bar, stem] });
+    const sDown = M.newElement("socket", P.rooms[1].id + ":0", 100, 30); sDown.circuitId = q1.id;
+    P.elements.push(sDown);
+    EP.Plan.Routes.build();
+    const rt = P.routes.find((r) => r.fromId === sDown.id);
+    ok(rt, "трасса построена");
+    ok(rt.points.some((pt) => Math.abs(pt.x - 300) < 5 && pt.y > 400), "путь идёт по «ножке» (stem)");
+    ok(rt.points.some((pt) => Math.abs(pt.y - 400) < 5 && pt.x < 300), "путь идёт по «перекладине» (bar) — граф сшил обе магистрали");
+  });
+  test("guides: боковой офсет между линиями НЕ зависит от направления обхода трассы (канонический per-edge)", () => {
+    // Две трассы едут по ОДНОМУ ребру графа в ФИЗИЧЕСКИ противоположных направлениях (одна слева
+    // направо к своему щиту, другая справа налево к своему) — офсет второй линии обязан оказаться
+    // на ТОЙ ЖЕ физической стороне магистрали, что и у первой, а не зеркально (баг, пойманный при
+    // разработке графа: нормаль считалась от направления route a->b, а не от фиксированного порядка
+    // точек магистрали).
+    const r1 = M.newRoom(G.rectPoints(0, 0, 300, 300), "К1");
+    const r2 = M.newRoom(G.rectPoints(600, 0, 300, 300), "К2");
+    const cor = M.newRoom(G.rectPoints(0, 400, 900, 150), "Коридор");
+    const q1 = M.newCircuit("QF1", "#e11", 16), q2 = M.newCircuit("QF2", "#0a0", 16);
+    const gd = M.newGuide([{ x: 20, y: 420 }, { x: 880, y: 420 }]);
+    const panelLeft = M.newPanel(40, 470), panelRight = M.newPanel(860, 470);
+    const { P } = install({ rooms: [r1, r2, cor], circuits: [q1, q2], panels: [panelLeft, panelRight], guides: [gd] });
+    const s1 = M.newElement("socket", P.rooms[0].id + ":2", 100, 30); s1.circuitId = q1.id;
+    const s2 = M.newElement("socket", P.rooms[1].id + ":2", 100, 30); s2.circuitId = q2.id;
+    P.elements.push(s1, s2);
+    EP.Plan.Routes.build();
+    const rt1 = P.routes.find((r) => r.fromId === s1.id), rt2 = P.routes.find((r) => r.fromId === s2.id);
+    ok(rt1.points.some((pt) => Math.abs(pt.y - 420) < 1), "QF1 (первая линия) — ровно на магистрали");
+    ok(rt2.points.some((pt) => Math.abs(pt.y - 422) < 1), "QF2 (вторая линия) — та же СТОРОНА +2см, несмотря на обратное направление обхода");
+    ok(!rt2.points.some((pt) => Math.abs(pt.y - 418) < 1), "QF2 НЕ ушла на противоположную сторону (-2см)");
+  });
 
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }

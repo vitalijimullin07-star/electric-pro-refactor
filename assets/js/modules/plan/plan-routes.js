@@ -116,6 +116,13 @@
   // по контуру с отступом (routeOff). Гильзы через стены на пути магистрали считает
   // общий polylineCrossings по итоговому пути — отдельной логики не потребовалось.
   const GUIDE_SNAP_MAX = 800; // см: дальше проекции — магистраль «не про эту трассу»
+  // Узел графа магистралей — точки БЛИЖЕ этого расстояния считаются одним и тем же
+  // стыком (объединяет: (1) РАЗНЫЕ магистрали, нарисованные раздельно, но касающиеся в
+  // одной точке — Т/Ш-форма из нескольких заходов в ⇉; (2) ретрейс одной и той же точки
+  // ВНУТРИ одной магистрали — Т-форма, нарисованная ОДНИМ непрерывным росчерком через
+  // центр туда и обратно). 15см — с запасом покрывает шаг сетки (gridStep=10) и
+  // cornerSnapCm=20 привязки при рисовании, но не сольёт две реально разные комнаты.
+  const GUIDE_MERGE_EPS = 15;
   // Какие магистрали РЕАЛЬНО применились в текущем прогоне build()/buildIncremental() —
   // чтобы hideGuides() прятал ТОЛЬКО их (фикс №1 аудита: раньше пряталась любая
   // нарисованная магистраль безусловно, даже если она далеко/вырождена и не участвовала
@@ -123,15 +130,6 @@
   // тогда guideRoute() ничего не помечает (например, при замере длины в chainFromPanel
   // или в resetRouteToAuto), а hideGuides() при null сохраняет прежнее поведение.
   let usedGuideIds = null;
-  function nearestOnGuide(gd, pt) {
-    let best = null;
-    const pts = gd.points || [];
-    for (let i = 0; i < pts.length - 1; i++) {
-      const cl = G().closestOnSeg(pt, pts[i], pts[i + 1]);
-      if (!best || cl.d < best.d) best = { d: cl.d, x: cl.x, y: cl.y, segI: i };
-    }
-    return best;
-  }
   // перпендикулярный заход: к горизонтальному участку магистрали подходим вертикально
   // (и наоборот) — примыкание всегда прямым углом, как просил пользователь
   function guideKnee(pt, proj, segA, segB) {
@@ -142,39 +140,143 @@
   // «+2см на каждую следующую линию», что и у обычной контурной трассировки (routeOff),
   // но БЕЗ базовых 15см: первая линия идёт ПРЯМО по нарисованной магистрали (это и есть
   // «рекомендуемое направление» пользователя), базовый отступ от стены тут неуместен —
-  // магистраль не стена. Раньше (пакет «магистраль трасс») этого разноса не было вообще —
-  // все линии одного участка магистрали ложились ровно друг на друга (репорт пользователя:
-  // «отступ сохранился между линиями по рекомендуемому направлению?» — нет, не сохранялся).
+  // магистраль не стена.
   const guideLaneOff = (p, circuitId) => Math.min(circuitIdx(p, circuitId), 10) * 2; // 0 для idx<=0
-  // нормаль сегмента гвайда — ФИКСИРОВАННОЙ ориентации относительно исходного порядка
-  // gd.points (не зависит от направления обхода a->b/b->a у конкретной трассы) — иначе
-  // трассы, идущие по одному и тому же куску магистрали в РАЗНЫЕ стороны, разъехались бы
-  // в РАЗНЫЕ физические стороны одной и той же линии вместо параллельного веера
+  // нормаль отрезка ФИКСИРОВАННОЙ ориентации относительно порядка (a->b) — трассы, идущие
+  // по одному и тому же ребру графа в РАЗНЫЕ стороны, всё равно должны разъезжаться в одну
+  // и ту же физическую сторону (параллельный веер), а не в разные
   function guideSegNormal(sA, sB) {
     const len = Math.hypot(sB.x - sA.x, sB.y - sA.y) || 1;
     return { x: -(sB.y - sA.y) / len, y: (sB.x - sA.x) / len };
   }
-  // сдвиг ВЕРШИНЫ гвайда i на off вдоль нормали — с митрой на стыке двух соседних
-  // сегментов (тот же приём, что offsetRing в plan-geometry.js, но для ОТКРЫТОЙ
-  // полилинии: на концах — только один смежный сегмент, без обхода по кругу)
-  function offsetGuideVertex(gd, i, off) {
-    const pts = gd.points;
-    const segs = [];
-    if (i > 0) segs.push({ a: pts[i - 1], b: pts[i] });
-    if (i < pts.length - 1) segs.push({ a: pts[i], b: pts[i + 1] });
-    if (segs.length === 1) {
-      const n = guideSegNormal(segs[0].a, segs[0].b);
-      return { x: pts[i].x + n.x * off, y: pts[i].y + n.y * off };
+  // ---- граф магистралей (Т/Ш/Г-формы) ----
+  // Раньше guideRoute искал ОДНУ «лучшую» магистраль целиком и брал кусок её точек между
+  // двумя индексами — это ломалось на форме сложнее прямой линии: (1) если Т/Ш нарисована
+  // ОДНИМ росчерком с повтором центральной точки, путь между двумя «плечами» тупо включал
+  // ВСЕ точки массива между ними, включая лишний крюк по «ножке» туда-обратно; (2) если
+  // Т/Ш нарисована НЕСКОЛЬКИМИ отдельными магистралями, касающимися в одной точке — путь
+  // мог использовать только ОДНУ из них целиком, вторая половина шла напрямую без учёта
+  // геометрии (репорт пользователя со скриншотом — трассы зря ныряли по «ножке» Т и
+  // рвались на стыке). Теперь ВСЕ магистрали этажа собираются в ОДИН граф (общие/близкие
+  // точки — общий узел, см. GUIDE_MERGE_EPS), путь ищется кратчайшим по графу (Дейкстра) —
+  // лишняя ветка просто не выбирается (её длина только добавляла бы пути), а несколько
+  // магистралей, стыкующихся в узле, естественно продолжают друг друга.
+  function buildGuideGraph(guides) {
+    const nodes = [], edges = [];
+    const nodeAt = (pt) => {
+      for (let i = 0; i < nodes.length; i++) if (G().dist(nodes[i], pt) <= GUIDE_MERGE_EPS) return i;
+      nodes.push({ x: pt.x, y: pt.y });
+      return nodes.length - 1;
+    };
+    guides.forEach((gd) => {
+      const pts = gd.points || [];
+      for (let i = 0; i < pts.length - 1; i++) {
+        const ai = nodeAt(pts[i]), bi = nodeAt(pts[i + 1]);
+        if (ai === bi) continue; // вырожденный (нулевой длины) отрезок
+        edges.push({ a: ai, b: bi, gdId: gd.id, len: G().dist(nodes[ai], nodes[bi]) });
+      }
+    });
+    return { nodes, edges };
+  }
+  // ближайшая проекция точки на ЛЮБОЙ отрезок графа (перебор рёбер)
+  function nearestOnGraph(graph, pt) {
+    let best = null;
+    graph.edges.forEach((e, ei) => {
+      const cl = G().closestOnSeg(pt, graph.nodes[e.a], graph.nodes[e.b]);
+      if (!best || cl.d < best.d) best = { d: cl.d, x: cl.x, y: cl.y, edgeI: ei };
+    });
+    return best;
+  }
+  // кратчайший путь по графу между двумя проекциями (каждая — точка НА своём ребре, не
+  // обязательно узел): если обе на ОДНОМ ребре — прямой отрезок между ними (тривиально
+  // кратчайший, соседние узлы того же ребра не короче). Иначе — Дейкстра от узлов, к
+  // которым примыкает ребро sProj, до узлов ребра tProj, с добавкой самих проекций как
+  // концевых сегментов. Возвращает {points:[{x,y}…], segEdges:[edgeI…], edgeIds:Set<gdId>}:
+  // segEdges[i] — КАКОМУ ребру графа принадлежит отрезок points[i]->points[i+1] (нужно
+  // офсету ниже — знать канонический edgeI, а не просто координаты хопа).
+  function shortestOnGraph(graph, sProj, tProj) {
+    const sPt = { x: sProj.x, y: sProj.y }, tPt = { x: tProj.x, y: tProj.y };
+    const gdOf = (ei) => graph.edges[ei].gdId;
+    if (sProj.edgeI === tProj.edgeI) return { points: [sPt, tPt], segEdges: [sProj.edgeI], edgeIds: new Set([gdOf(sProj.edgeI)]) };
+    const se = graph.edges[sProj.edgeI], te = graph.edges[tProj.edgeI];
+    // от S до каждого узла своего ребра, от T — до каждого узла своего ребра
+    const starts = [{ node: se.a, d: G().dist(sPt, graph.nodes[se.a]) }, { node: se.b, d: G().dist(sPt, graph.nodes[se.b]) }];
+    const goals = new Map([[te.a, G().dist(tPt, graph.nodes[te.a])], [te.b, G().dist(tPt, graph.nodes[te.b])]]);
+    // Дейкстра от узлов graph.nodes, старт — оба конца ребра S разом (виртуальный источник)
+    const dist = new Array(graph.nodes.length).fill(Infinity);
+    const prevNode = new Array(graph.nodes.length).fill(-1);
+    const prevEdge = new Array(graph.nodes.length).fill(-1);
+    const visited = new Array(graph.nodes.length).fill(false);
+    starts.forEach((s) => { if (s.d < dist[s.node]) dist[s.node] = s.d; });
+    for (let iter = 0; iter < graph.nodes.length; iter++) {
+      let u = -1, best = Infinity;
+      for (let i = 0; i < graph.nodes.length; i++) if (!visited[i] && dist[i] < best) { best = dist[i]; u = i; }
+      if (u < 0) break;
+      visited[u] = true;
+      graph.edges.forEach((e, ei) => {
+        let v = -1; if (e.a === u) v = e.b; else if (e.b === u) v = e.a; else return;
+        const nd = dist[u] + e.len;
+        if (nd < dist[v]) { dist[v] = nd; prevNode[v] = u; prevEdge[v] = ei; }
+      });
     }
-    const n0 = guideSegNormal(segs[0].a, segs[0].b), n1 = guideSegNormal(segs[1].a, segs[1].b);
-    const a0 = { x: segs[0].a.x + n0.x * off, y: segs[0].a.y + n0.y * off };
-    const d0 = { x: segs[0].b.x - segs[0].a.x, y: segs[0].b.y - segs[0].a.y };
-    const a1 = { x: segs[1].a.x + n1.x * off, y: segs[1].a.y + n1.y * off };
-    const d1 = { x: segs[1].b.x - segs[1].a.x, y: segs[1].b.y - segs[1].a.y };
-    const den = d0.x * d1.y - d0.y * d1.x;
-    if (Math.abs(den) < 1e-6) return { x: pts[i].x + n1.x * off, y: pts[i].y + n1.y * off }; // параллельны — смещённый угол
-    const t = ((a1.x - a0.x) * d1.y - (a1.y - a0.y) * d1.x) / den;
-    return { x: a0.x + d0.x * t, y: a0.y + d0.y * t };
+    // лучший узел-цель среди концов ребра T
+    let bestGoal = null, bestGoalD = Infinity;
+    goals.forEach((d, node) => { const total = dist[node] + d; if (total < bestGoalD) { bestGoalD = total; bestGoal = node; } });
+    if (bestGoal == null || !isFinite(dist[bestGoal])) return null; // граф разорван (не должно случаться — все рёбра связаны построением)
+    // восстанавливаем цепочку узлов И рёбер между ними от bestGoal к источнику
+    const nodeChain = [bestGoal], edgeChain = [];
+    let cur = bestGoal;
+    while (prevNode[cur] >= 0) { edgeChain.push(prevEdge[cur]); cur = prevNode[cur]; nodeChain.push(cur); }
+    nodeChain.reverse(); edgeChain.reverse(); // от источника к bestGoal
+    const points = [sPt].concat(nodeChain.map((ni) => graph.nodes[ni]), [tPt]);
+    const segEdges = [sProj.edgeI].concat(edgeChain, [tProj.edgeI]); // segEdges[i] для points[i]->points[i+1]
+    const edgeIds = new Set(segEdges.map(gdOf));
+    // чистим совпадающие соседние точки (нулевой длины хоп — напр. S ровно в узле графа),
+    // синхронно прорежая segEdges (у выброшенной точки i её ВХОДНОЙ сегмент теряется —
+    // оставшийся сегмент i+1 сам по себе корректно описывает связь с предыдущей точкой)
+    const outPts = [points[0]], outEdges = [];
+    for (let i = 1; i < points.length; i++) {
+      if (G().dist(points[i], outPts[outPts.length - 1]) > 0.5) { outPts.push(points[i]); outEdges.push(segEdges[i - 1]); }
+    }
+    return { points: outPts, segEdges: outEdges, edgeIds };
+  }
+  // канонический (не зависящий от направления обхода КОНКРЕТНОЙ трассы) нормаль ребра —
+  // считается по ФИКСИРОВАННОМУ порядку graph.nodes[e.a]->graph.nodes[e.b], который сам
+  // граф получил из порядка точек магистрали при построении (buildGuideGraph) — одинаков
+  // для любой трассы, использующей это ребро, независимо от того, в какую сторону она
+  // по нему едет. Без этого разные трассы по одному ребру в разные стороны (a->b vs
+  // b->a) получили бы ПРОТИВОПОЛОЖНЫЙ знак нормали и разъехались бы на разные физические
+  // стороны линии вместо параллельного веера (конкретный баг, пойманный тестом).
+  function edgeNormal(graph, edgeI) {
+    const e = graph.edges[edgeI];
+    return guideSegNormal(graph.nodes[e.a], graph.nodes[e.b]);
+  }
+  // применяет боковой офсет (guideLaneOff) ко ВСЕМУ пути графа: на каждой точке — митра
+  // между каноническими нормалями соседних рёбер (если оба есть), иначе простой сдвиг
+  // вдоль единственного соседнего ребра (концы S/T). Базовые точки/направления для
+  // пересечения прямых — route-локальные (points[i-1]/points[i]/points[i+1], как раньше в
+  // offsetJoint), но САМИ нормали — канонические (см. edgeNormal) — это и есть фикс: смена
+  // знака направления обхода не может задеть нормаль, только n0/n1 определяют сторону
+  // сдвига, а они фиксированы per-edge.
+  function offsetGraphPath(graph, points, segEdges, off) {
+    if (!off) return points;
+    return points.map((pt, i) => {
+      const n0 = i > 0 ? edgeNormal(graph, segEdges[i - 1]) : null;
+      const n1 = i < segEdges.length ? edgeNormal(graph, segEdges[i]) : null;
+      if (!n0 || !n1) {
+        const n = n0 || n1;
+        return { x: pt.x + n.x * off, y: pt.y + n.y * off };
+      }
+      const prev = points[i - 1], next = points[i + 1];
+      const a0 = { x: prev.x + n0.x * off, y: prev.y + n0.y * off };
+      const d0 = { x: pt.x - prev.x, y: pt.y - prev.y };
+      const a1 = { x: pt.x + n1.x * off, y: pt.y + n1.y * off };
+      const d1 = { x: next.x - pt.x, y: next.y - pt.y };
+      const den = d0.x * d1.y - d0.y * d1.x;
+      if (Math.abs(den) < 1e-6) return { x: pt.x + n1.x * off, y: pt.y + n1.y * off }; // параллельны — смещённый угол
+      const t = ((a1.x - a0.x) * d1.y - (a1.y - a0.y) * d1.x) / den;
+      return { x: a0.x + d0.x * t, y: a0.y + d0.y * t };
+    });
   }
   // заход трассы к магистрали (фикс №2 аудита): если точка `from` и точка входа на
   // магистраль `entry` в ОДНОЙ комнате (магистраль нарисована ВНУТРИ комнаты, напр.
@@ -204,39 +306,23 @@
   function guideRoute(p, a, b, circuitId) {
     const gs = (G().floorScoped(p).guides || []).filter((gd) => (gd.points || []).length >= 2);
     if (!gs.length) return null;
-    let best = null;
-    gs.forEach((gd) => {
-      const pa = nearestOnGuide(gd, a), pb = nearestOnGuide(gd, b);
-      if (!pa || !pb || pa.d > GUIDE_SNAP_MAX || pb.d > GUIDE_SNAP_MAX) return;
-      const score = pa.d + pb.d;
-      if (!best || score < best.score) best = { gd, pa, pb, score };
-    });
-    if (!best) return null;
-    const { gd, pa, pb } = best;
-    const A = { x: pa.x, y: pa.y }, B = { x: pb.x, y: pb.y };
-    if (G().dist(A, B) < 10) return null; // проекции сошлись в точку — магистраль не нужна
-    const sA = gd.points[pa.segI], sA2 = gd.points[pa.segI + 1];
-    const sB = gd.points[pb.segI], sB2 = gd.points[pb.segI + 1];
+    const graph = buildGuideGraph(gs);
+    if (!graph.edges.length) return null;
+    const pa = nearestOnGraph(graph, a), pb = nearestOnGraph(graph, b);
+    if (!pa || !pb || pa.d > GUIDE_SNAP_MAX || pb.d > GUIDE_SNAP_MAX) return null;
+    if (G().dist({ x: pa.x, y: pa.y }, { x: pb.x, y: pb.y }) < 10) return null; // проекции сошлись — магистраль не нужна
+    const sp = shortestOnGraph(graph, pa, pb);
+    if (!sp) return null;
     const off = guideLaneOff(p, circuitId);
-    // A/B — на СЕРЕДИНЕ сегмента (не вершина), поэтому сдвигаются напрямую вдоль его
-    // нормали (без митры — митра нужна только на изломах между сегментами)
-    const Ao = off ? { x: A.x + guideSegNormal(sA, sA2).x * off, y: A.y + guideSegNormal(sA, sA2).y * off } : A;
-    const Bo = off ? { x: B.x + guideSegNormal(sB, sB2).x * off, y: B.y + guideSegNormal(sB, sB2).y * off } : B;
-    let trunk;
-    if (pa.segI === pb.segI) trunk = [Ao, Bo];
-    else if (pa.segI < pb.segI) {
-      const mid = []; for (let i = pa.segI + 1; i <= pb.segI; i++) mid.push(off ? offsetGuideVertex(gd, i, off) : gd.points[i]);
-      trunk = [Ao].concat(mid, [Bo]);
-    } else {
-      const mid = []; for (let i = pb.segI + 1; i <= pa.segI; i++) mid.push(off ? offsetGuideVertex(gd, i, off) : gd.points[i]);
-      trunk = [Ao].concat(mid.reverse(), [Bo]);
-    }
+    const trunk = offsetGraphPath(graph, sp.points, sp.segEdges, off);
+    const Ao = trunk[0], Bo = trunk[trunk.length - 1];
+    // соседние точки трасс (для направления колена — горизонтальный/вертикальный подход)
+    const segA = sp.points[1] || sp.points[0], segB = sp.points[sp.points.length - 2] || sp.points[sp.points.length - 1];
     // заход к точке — по контуру (если магистраль в той же комнате), иначе колено;
-    // сторона щита (Bo -> knee -> b) остаётся прежней. legA включает Ao, поэтому из
-    // trunk берём хвост БЕЗ первого элемента (Ao уже в legA), Bo сохраняем для колена.
-    const legA = guideApproach(p, a, Ao, circuitId, guideKnee(a, Ao, sA, sA2));
-    const path = legA.concat(trunk.slice(1), [guideKnee(b, Bo, sB, sB2), { x: b.x, y: b.y }]);
-    if (usedGuideIds) usedGuideIds.add(gd.id); // фикс №1: магистраль реально применилась
+    // сторона щита (Bo -> knee -> b) остаётся прежней.
+    const legA = guideApproach(p, a, Ao, circuitId, guideKnee(a, Ao, sp.points[0], segA));
+    const path = legA.concat(trunk.slice(1), [guideKnee(b, Bo, segB, sp.points[sp.points.length - 1]), { x: b.x, y: b.y }]);
+    if (usedGuideIds) sp.edgeIds.forEach((id) => usedGuideIds.add(id)); // фикс №1: магистраль(и) реально применились
     return path.filter((q, j) => j === 0 || G().dist(q, path[j - 1]) > 0.5);
   }
   // «пропадает после трассировки»: скрыть магистрали активного этажа с плана.
