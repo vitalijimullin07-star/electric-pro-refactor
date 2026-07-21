@@ -197,6 +197,22 @@
   // шапке 🟢/🔴 → список → «Копировать всё») — просим пользователя прислать вывод,
   // вместо того чтобы гадать вторым фиксом вслепую. Убрать после диагностики.
   let syncPlanBoxHeightDiagCount = 0;
+  // Настройка «Масштаб интерфейса» (visual-settings.js) применяется как CSS `zoom` на
+  // #app целиком (base.css: #app{zoom:var(--font-scale,1)}) — НАЙДЕНО по реальной
+  // диагностике пользователя (числа из [plan-height-diag]: заданная через
+  // box.style.height высота на экране рендерилась МЕНЬШЕ заданной ровно в
+  // --font-scale раз, независимо подтверждено воспроизведением с zoom=0.9 в headless).
+  // getBoundingClientRect() (top/vh) — уже ВИЗУАЛЬНЫЕ координаты (после зума, как на
+  // экране), а вот CSS-свойство `height`, которое мы пишем в style, — ЛОГИЧЕСКАЯ длина
+  // ВНУТРИ зумленного контейнера: браузер дополнительно умножает её на zoom при
+  // рендере. Раньше высота считалась только в визуальных пикселях и присваивалась как
+  // есть — при zoom≠1 (масштаб интерфейса не 100%) итоговый холст получался в
+  // --font-scale раз меньше нужного. `.ep-plan.is-full` (position:fixed;inset:0) этой
+  // проблемы не имело — "0" не длина, которую можно смасштабировать.
+  function currentZoom() {
+    const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--font-scale"));
+    return (Number.isFinite(v) && v > 0) ? v : 1;
+  }
   function syncPlanBoxHeight(diagTag) {
     const r = root(); if (!r) return;
     const box = r.querySelector(".ep-plan");
@@ -204,7 +220,15 @@
     const vvh = window.visualViewport && window.visualViewport.height;
     const vh = vvh || window.innerHeight;
     const top = box.getBoundingClientRect().top;
-    const h = Math.max(240, Math.round(vh - top - 8));
+    const zoom = currentZoom();
+    const h = Math.max(240, Math.round((vh - top - 8) / zoom));
+    // min-height у .ep-plan (тот же calc(dvh...), plan.css) страдает от ТОГО ЖЕ зума —
+    // при zoom>1 её отрендеренное значение может оказаться БОЛЬШЕ, чем наша (верно
+    // посчитанная) высота, а min-height по спецификации ВСЕГДА побеждает меньший height
+    // (used height = max(min-height, height)) — без сброса инлайн-высота выше молча
+    // игнорировалась бы при масштабе интерфейса >100%. min-height:0 отдаёт финальный
+    // размер целиком нашему height (то же значение, что мы только что посчитали).
+    box.style.minHeight = "0";
     box.style.height = h + "px";
     if (diagTag && syncPlanBoxHeightDiagCount < 8) {
       syncPlanBoxHeightDiagCount++;
@@ -221,7 +245,8 @@
           computedHeight: h,
           boxRectAfter: { top: afterBox.top, height: afterBox.height, bottom: afterBox.bottom },
           canvasRectAfter: afterCanvas ? { top: afterCanvas.top, height: afterCanvas.height, bottom: afterCanvas.bottom } : null,
-          dpr: window.devicePixelRatio
+          dpr: window.devicePixelRatio,
+          zoom: zoom
         }));
       } catch (e) {}
     }
@@ -516,6 +541,7 @@
       // специфичности и осталась бы висеть поверх фиксированного вьюпорта; очищаем,
       // чтобы CSS is-full полноценно взял на себя размер.
       box.style.height = "";
+      box.style.minHeight = "";
       ctrlsWasOnBeforeFull = V.ctrlsOn;
       if (V.ctrlsOn) toggleTopCtrls(r); // уже сам вписывает + синхронизирует quickbar
       else fitToProject(); // панель и так была свёрнута — вписываем явно под сам fullscreen
