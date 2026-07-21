@@ -1882,13 +1882,32 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(rt2.points.some((pt) => Math.abs(pt.y - 402) < 1), "QF2 — магистраль +2см (y=402)");
     ok(!rt2.points.some((pt) => Math.abs(pt.y - 400) < 1), "QF2 не ложится ровно на линию QF1");
   });
-  test("guides: build() скрывает магистрали (hidden=true), но НЕ удаляет из модели", () => {
-    const guide = M.newGuide([{ x: 50, y: 400 }, { x: 750, y: 400 }]);
+  test("guides: build() скрывает ПРИМЕНЁННУЮ магистраль (hidden=true), но НЕ удаляет из модели", () => {
+    const r1 = M.newRoom(G.rectPoints(0, 0, 400, 300), "К1");
+    const r2 = M.newRoom(G.rectPoints(400, 0, 400, 300), "К2");
+    const guide = M.newGuide([{ x: 50, y: 400 }, { x: 750, y: 400 }]); // коридор ниже — межкомнатная трасса пойдёт по нему
+    const { P } = install({ rooms: [r1, r2], panels: [M.newPanel(50, 50)], guides: [guide] });
+    P.elements.push(M.newElement("socket", P.rooms[1].id + ":0", 200, 30)); // в К2, щит в К1 — разные комнаты
+    EP.Plan.Routes.build();
+    eq(P.guides.length, 1, "магистраль осталась в модели");
+    eq(P.guides[0].hidden, true, "применённая магистраль скрыта после построения");
+  });
+  test("guides: фикс №1 — НЕиспользованная магистраль (далеко) остаётся ВИДИМОЙ после build", () => {
+    const guide = M.newGuide([{ x: 0, y: 5000 }, { x: 400, y: 5000 }]); // >8м от всего — не применится
     const { P, w } = install({ panels: [M.newPanel(50, 50)], guides: [guide] });
     P.elements.push(M.newElement("socket", w(0), 200, 30));
     EP.Plan.Routes.build();
-    eq(P.guides.length, 1, "магистраль осталась в модели");
-    eq(P.guides[0].hidden, true, "магистраль скрыта после построения");
+    eq(P.guides[0].hidden, false, "далёкая/неиспользованная магистраль не скрывается — пользователь видит, что она не сработала");
+  });
+  test("guides: фикс №4 — шлейф по длине пути строит все трассы без падений", () => {
+    const q1 = M.newCircuit("QF1", "#e11", 16);
+    const { P, w } = install({ circuits: [q1], panels: [M.newPanel(50, 50)] });
+    // 4 розетки одной линии без распайки -> шлейф (метрика по buildPath)
+    [80, 160, 240, 320].forEach((off) => { const s = M.newElement("socket", w(0), off, 30); s.circuitId = q1.id; P.elements.push(s); });
+    EP.Plan.Routes.build();
+    const chain = P.routes.filter((r) => r.circuitId === q1.id);
+    eq(chain.length, 4, "все 4 точки шлейфа получили трассу");
+    eq(chain.filter((r) => r.toPanel).length >= 1, true, "хотя бы одна доходит до щита (голова шлейфа)");
   });
 
   console.log("\n" + "=".repeat(48));
