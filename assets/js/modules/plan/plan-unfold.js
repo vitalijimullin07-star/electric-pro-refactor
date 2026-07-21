@@ -654,7 +654,20 @@
           return;
         }
         else if (S.drag.kind === "open") {
-          if (EL().openOpeningEditor) EL().openOpeningEditor(S.drag.op);
+          // Тап по проёму (окно/дверь) БЕЗ тяги открывает ГЛАВНЫЙ редактор проёма
+          // (openOpeningEditor → rooms().openSheet()) — тот же #ep-plan-sheet, который
+          // ⤢/🔄 развёртки могли перевести в НАСТОЯЩИЙ Fullscreen API (requestFS/
+          // enterFSLandscape выше, в отличие от чисто-CSS is-full у других шторок).
+          // Без exitFS()/close() ПЕРЕД переходом (как уже сделано у ✕/Расчёт/Схема
+          // ниже) сохранение размеров окна («Применить») закрывало бы шторку, но
+          // #ep-plan-sheet оставался БЫ document.fullscreenElement — экран визуально
+          // показывал главный план, но не реагировал на тапы, пока Android-«назад»
+          // не форсировал реальный выход из fullscreen (репорт пользователя: «задаю
+          // параметры окна, ОК, выходит из развёртки, и зависает... пока не нажмёшь
+          // назад»).
+          const op = S.drag.op;
+          exitFS(); close();
+          if (EL().openOpeningEditor) EL().openOpeningEditor(op);
         }
         else if (S.drag.kind === "panel") {
           // тап без тяги по щиту — своего редактора тут нет, просто ничего не делаем
@@ -722,7 +735,9 @@
     if (t.closest("[data-pu-close]")) { exitFS(); close(); rooms().closeSheet(); return; } // выходим и из полного экрана — иначе белый экран
     if (t.closest("[data-pu-over-close]")) { const ov = $("#ep-pu-box .ep-plan-unfover"); if (ov) ov.remove(); return; }
     if (t.closest("[data-pu-pt-close]")) { S.ptPanel = null; const pt = $("#ep-pu-box .ep-plan-unfpt"); if (pt) pt.remove(); return; }
-    if (t.closest("[data-pu-pt-edit]")) { const el2 = ptEl(); S.ptPanel = null; if (el2 && EL().openEditor) { close(); EL().openEditor(el2); } return; }
+    // exitFS() ОБЯЗАТЕЛЕН перед close() — тот же баг класса, что и у openOpeningEditor
+    // выше: close() сам НЕ гасит настоящий Fullscreen API на #ep-plan-sheet.
+    if (t.closest("[data-pu-pt-edit]")) { const el2 = ptEl(); S.ptPanel = null; if (el2 && EL().openEditor) { exitFS(); close(); EL().openEditor(el2); } return; }
     if ((b = t.closest("[data-pu-circ]"))) {
       const el2 = ptEl(); if (!el2) return;
       const id = b.getAttribute("data-pu-circ");
