@@ -291,14 +291,31 @@
   // номер = максимум существующих QF + 1 (без повторов после удалений). Общая
   // логика для главного редактора точки (data-pe-circ-new) и карточки точки
   // в развёртке (data-pu-circ-new) — не дублировать подбор цвета/номера.
+  // Префикс имени линии по слою элемента — просьба пользователя: «ютп не должен
+  // падать как qf1, а просто (Int 1) и цифра динамичная». Интернет/ТВ/видеонаблюдение —
+  // слаботочка (LV_LAYERS-паттерн, см. plan-routes.js isLvLayer/plan-calc.js LV_LAYERS),
+  // у каждого своя, НЕЗАВИСИМАЯ от "QF" последовательность номеров (Int 1, Int 2…,
+  // отдельно TV 1, TV 2…) — силовые/свет/ТП и т.п. остаются "QF" как раньше.
+  function circuitPrefixFor(el) {
+    const layer = el && el.layer;
+    if (layer === "lv") return "Int";
+    if (layer === "tv") return "TV";
+    if (layer === "cctv") return "CCTV";
+    return "QF";
+  }
   function assignNewCircuit(el) {
     const c = core();
     const colors = EP.Plan.Core.DEFAULTS.circuitColors;
     const cs = c.project.circuits;
     const used = new Set(cs.map((x) => x.color));
     const color = colors.find((col) => !used.has(col)) || colors[cs.length % colors.length];
-    const maxN = cs.reduce((m, x) => { const n = parseInt(String(x.name).replace(/\D/g, ""), 10); return Number.isFinite(n) ? Math.max(m, n) : m; }, 0);
-    const circ = c.model.newCircuit("QF" + (maxN + 1), color, 16);
+    const prefix = circuitPrefixFor(el);
+    // нумерация СВОЯ у каждого префикса — считаем максимум ТОЛЬКО среди линий,
+    // чьё имя начинается именно с этого префикса (иначе "Int"/"TV" делили бы
+    // одну последовательность номеров с "QF", как было бы при общем digit-strip)
+    const re = new RegExp("^" + prefix + "\\s*(\\d+)$");
+    const maxN = cs.reduce((m, x) => { const mm = re.exec(String(x.name)); const n = mm ? parseInt(mm[1], 10) : NaN; return Number.isFinite(n) ? Math.max(m, n) : m; }, 0);
+    const circ = c.model.newCircuit(prefix + (maxN + 1), color, 16);
     cs.push(circ); el.circuitId = circ.id;
     return circ;
   }

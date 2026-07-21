@@ -415,6 +415,10 @@ body[data-visual-mode="day"] .ep-plan-guidedraft { stroke: #3b82f6; }
 .ep-plan-qfrow b { font: 700 12.5px system-ui; }
 .ep-plan-qfmeta { color: var(--muted, #94a3b8); font-size: 11px; }
 .ep-plan-qfnums { color: var(--text, #e8eef7); font-size: 11.5px; text-align: right; }
+/* марка кабеля линии — кликабельна (просьба пользователя: менять сечение/марку прямо
+   из «По линиям»), переопределяем жирный зелёный вид .ep-plan-iprice (тот для цены) на
+   нейтральный текстовый цвет строки, тот же пунктир-намёк на кликабельность остаётся */
+.ep-plan-qfmark { color: var(--text, #e8eef7); font-weight: 500; min-width: 0; text-align: left; }
 .ep-plan-warnrow { color: #fbbf24; }
 .ep-plan-rlens { gap: 12px; }
 

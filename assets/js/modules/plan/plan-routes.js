@@ -880,6 +880,22 @@
     const target = (p.elements || []).find((e) => e.id === r.toId);
     return (target && target.type !== "junction") ? 2 : 1;
   }
+  // Выпуск кабеля на разделку/подключение — просьба пользователя: «выпуск кабеля из
+  // подрозетников… длину вывода из стены любого кабеля, и так же в распред коробках…
+  // запас в щите на расключение». Считается ОДИН раз на каждый хоп (route), как и
+  // pointVert — по типу СВОЕГО источника (fromEl): обычная точка — cableStubPoint,
+  // распайка — cableStubJunction (там разделка нескольких кабелей сразу, запас больше).
+  // Если хоп доходит до щита (r.toPanel) — ДОПОЛНИТЕЛЬНО cableStubPanel (расключение в
+  // щите нужно НЕЗАВИСИМО от того, что стоит на другом конце). Используется ТОЛЬКО там,
+  // где считается сам метраж материала (calcByRoutes/perCircuit) — «Кабель по трассам»
+  // (lengths() ниже) остаётся ЧИСТОЙ длиной трассы без запаса/выпуска, как и раньше.
+  function cableStub(p, fromEl, r) {
+    const s = p.settings;
+    const base = (fromEl && fromEl.type === "junction")
+      ? (s.cableStubJunction != null ? s.cableStubJunction : 30)
+      : (s.cableStubPoint != null ? s.cableStubPoint : 20);
+    return base + (r.toPanel ? (s.cableStubPanel != null ? s.cableStubPanel : 50) : 0);
+  }
   function lengths(p) {
     const byLayer = {}, byCircuit = {};
     let crossings = 0, total = 0;
@@ -1032,5 +1048,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { build, buildIncremental, clearRoutes, lengths, sheet, pointVert, panelVert, hopVertMul, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls };
+  EP.Plan.Routes = { build, buildIncremental, clearRoutes, lengths, sheet, pointVert, panelVert, hopVertMul, cableStub, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls };
 })();
