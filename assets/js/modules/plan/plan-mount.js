@@ -157,10 +157,43 @@
         <div class="ep-plan-sheet" id="ep-plan-sheet" hidden></div>
       </div>
     </div>`;
+    syncPlanBoxHeight(); // ДО mountCanvas() — холст должен измерить УЖЕ верную высоту .ep-plan
     mountCanvas();
     refreshToolbar();
     armBack(); // ставим «ловушку» для аппаратной кнопки Назад
     setNavHidden(true); // редактор уже имеет свою «‹ Проекты» — общая шапка не нужна
+  }
+
+  // Высота .ep-plan — ЯВНО измеряется через JS (window.innerHeight/visualViewport),
+  // а НЕ полагается только на CSS calc(100dvh...) (см. plan.css) — повторный репорт
+  // пользователя того же класса бага («первый раз открыл проект, холст не во всю зону
+  // ниже функций, нажимаю во весь экран и обратно — становится нормально») ПОСЛЕ уже
+  // нескольких предыдущих заходов (100vh→100dvh, settle-окно в plan-canvas.js, явный
+  // height у .ep-plan/.ep-plan-canvas/.ep-plan-svg вместо auto) показал: на части
+  // реальных мобильных браузеров сам `dvh` при холодном открытии вычисляется ОДНОКРАТНО
+  // (адресная строка ещё видна) и, судя по всему, НЕ пересчитывается сам по себе без
+  // скролла страницы — а у app-shell своего скролла нет (нечему скроллиться), значит
+  // браузер может вообще никогда не переоценить dvh заново. `.ep-plan.is-full`
+  // (position:fixed;inset:0, меряется относительно ФАКТИЧЕСКОГО видимого вьюпорта)
+  // побочным эффектом форсирует у браузера реальный пересчёт — отсюда и «нажал во весь
+  // экран, отжал — стало нормально» из репорта. Настоящий фикс — не полагаться на dvh
+  // ВООБЩЕ для этого измерения: `window.visualViewport.height` (точнее отражает
+  // адресную строку, если браузер её поддерживает) / `window.innerHeight` — те же API,
+  // которыми десятилетиями чинили ровно этот класс мобильных багов ДО появления dvh,
+  // и `resize`/`visualViewport.resize`/`orientationchange` — события, которые браузер
+  // ГАРАНТИРОВАННО шлёт при реальном изменении видимой области (в отличие от dvh, чьё
+  // обновление ничем не гарантировано). Инлайн `style.height` побеждает CSS calc(dvh)
+  // по специфичности — без `!important`, поэтому `.ep-plan.is-full{height:auto}`
+  // (см. plan.css) всё равно берёт верх, КОГДА мы сами очищаем инлайн при входе в
+  // fullscreen (см. toggleFullscreen ниже) — иначе зафиксированный пиксельный инлайн
+  // конфликтовал бы с `position:fixed;inset:0`, которому нужен именно `auto`.
+  function syncPlanBoxHeight() {
+    const r = root(); if (!r) return;
+    const box = r.querySelector(".ep-plan");
+    if (!box || box.classList.contains("is-full")) return;
+    const vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+    const top = box.getBoundingClientRect().top;
+    box.style.height = Math.max(240, Math.round(vh - top - 8)) + "px";
   }
 
   // Ре-фит содержимого на весь проект — та же логика, что и у кнопки «⛶ Показать
@@ -442,10 +475,20 @@
     const enteringFull = !box.classList.contains("is-full");
     box.classList.toggle("is-full");
     if (enteringFull) {
+      // is-full сам position:fixed;inset:0 с height:auto (plan.css) — инлайн-высота
+      // от syncPlanBoxHeight() (пиксельное значение) победила бы это auto по
+      // специфичности и осталась бы висеть поверх фиксированного вьюпорта; очищаем,
+      // чтобы CSS is-full полноценно взял на себя размер.
+      box.style.height = "";
       ctrlsWasOnBeforeFull = V.ctrlsOn;
       if (V.ctrlsOn) toggleTopCtrls(r); // уже сам вписывает + синхронизирует quickbar
       else fitToProject(); // панель и так была свёрнута — вписываем явно под сам fullscreen
     } else if (ctrlsWasOnBeforeFull != null) {
+      // выход из fullscreen — пересчитываем инлайн-высоту ЯВНО (см. syncPlanBoxHeight):
+      // сам возврат в обычный (не fixed) поток не обязательно даёт window.innerHeight
+      // native "resize" (высота окна физически не менялась, менялась только раскладка
+      // ВНУТРИ страницы) — событие resize могло бы не сработать вообще.
+      syncPlanBoxHeight();
       if (V.ctrlsOn !== ctrlsWasOnBeforeFull) toggleTopCtrls(r);
       else fitToProject(); // состояние панели не менялось — холст всё равно сменил размер
       ctrlsWasOnBeforeFull = null;
@@ -516,6 +559,15 @@
     // внутри планировки ничего не открыто — возвращаемся к списку проектов (не выходим)
     core().closeProject(); if (r) renderList(r);
   });
+
+  // Реальные изменения видимой области (адресная строка, поворот экрана) — держим
+  // .ep-plan синхронной высотой ВСЕГДА, не только при монтировании/fullscreen (см.
+  // инвариант syncPlanBoxHeight выше). window.resize у части мобильных браузеров не
+  // срабатывает надёжно на чистое сворачивание/разворачивание адресной строки без
+  // изменения window.innerWidth — visualViewport.resize специально для этого.
+  window.addEventListener("resize", () => { if (V.active) syncPlanBoxHeight(); });
+  window.addEventListener("orientationchange", () => { if (V.active) syncPlanBoxHeight(); });
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", () => { if (V.active) syncPlanBoxHeight(); });
 
   document.addEventListener("keydown", (e) => {
     if (!V.active || !core().project) return;
