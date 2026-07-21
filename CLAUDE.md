@@ -2048,10 +2048,12 @@ plan-rules (ПУЭ-проверки).
   масштабе интерфейса >100%. `syncPlanBoxHeight()` теперь ставит `box.style.
   minHeight="0"` перед `height`, отдавая финальный размер целиком JS-вычислению;
   `toggleFullscreen()` очищает оба инлайн-свойства (`height`/`minHeight`) при входе
-  в fullscreen (не только `height`, как было). Диагностика (`syncPlanBoxHeightDiagCount`,
-  капа 8 вызовов за сессию, тег для каждой точки вызова — mount-immediate/mount-retry-
-  400/1200/2500/window-resize/orientationchange/visualviewport-resize/fullscreen-exit)
-  оставлена ВРЕМЕННО для подтверждения фикса на реальном устройстве, затем убрать.
+  в fullscreen (не только `height`, как было). Диагностика (`console.warn`, тег для
+  каждой точки вызова — mount-immediate/mount-retry-400/1200/2500/window-resize/
+  orientationchange/visualviewport-resize/fullscreen-exit) СНЯТА после подтверждения
+  пользователем на реальном устройстве («зазор ушёл») — весь код диагностики
+  (`syncPlanBoxHeightDiagCount`, параметр `diagTag`, `console.warn`) удалён из
+  `syncPlanBoxHeight()`, функция вернулась к чистому виду без параметра.
   Проверено вживую (headless Chromium, тот же харнесс с ПРАВИЛЬНОЙ структурой —
   `#app` теперь реально оборачивает `.ep-plan-root`, чего не было в ПРЕДЫДУЩЕЙ живой
   проверке инварианта выше, поэтому та проверка физически не могла поймать зум-баг):

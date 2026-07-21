@@ -157,7 +157,7 @@
         <div class="ep-plan-sheet" id="ep-plan-sheet" hidden></div>
       </div>
     </div>`;
-    syncPlanBoxHeight("mount-immediate"); // ДО mountCanvas() — холст должен измерить УЖЕ верную высоту .ep-plan
+    syncPlanBoxHeight(); // ДО mountCanvas() — холст должен измерить УЖЕ верную высоту .ep-plan
     mountCanvas();
     refreshToolbar();
     armBack(); // ставим «ловушку» для аппаратной кнопки Назад
@@ -187,16 +187,6 @@
   // (см. plan.css) всё равно берёт верх, КОГДА мы сами очищаем инлайн при входе в
   // fullscreen (см. toggleFullscreen ниже) — иначе зафиксированный пиксельный инлайн
   // конфликтовал бы с `position:fixed;inset:0`, которому нужен именно `auto`.
-  // ВРЕМЕННАЯ диагностика (см. syncPlanBoxHeightDiagCount ниже) — повторный репорт
-  // пользователя с реального устройства показал, что зазор снизу холста остаётся
-  // ДАЖЕ после этого фикса (JS-высота вместо dvh), хотя в headless-проверке и в
-  // fullscreen (чистый position:fixed;inset:0, БЕЗ этой функции) всё сходится —
-  // значит на конкретном устройстве расходятся сами исходные числа (window.
-  // innerHeight/visualViewport.height/getBoundingClientRect().top), а не логика
-  // вокруг них. console.warn долетает до встроенного лога приложения (точка в
-  // шапке 🟢/🔴 → список → «Копировать всё») — просим пользователя прислать вывод,
-  // вместо того чтобы гадать вторым фиксом вслепую. Убрать после диагностики.
-  let syncPlanBoxHeightDiagCount = 0;
   // Настройка «Масштаб интерфейса» (visual-settings.js) применяется как CSS `zoom` на
   // #app целиком (base.css: #app{zoom:var(--font-scale,1)}) — НАЙДЕНО по реальной
   // диагностике пользователя (числа из [plan-height-diag]: заданная через
@@ -213,12 +203,11 @@
     const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--font-scale"));
     return (Number.isFinite(v) && v > 0) ? v : 1;
   }
-  function syncPlanBoxHeight(diagTag) {
+  function syncPlanBoxHeight() {
     const r = root(); if (!r) return;
     const box = r.querySelector(".ep-plan");
     if (!box || box.classList.contains("is-full")) return;
-    const vvh = window.visualViewport && window.visualViewport.height;
-    const vh = vvh || window.innerHeight;
+    const vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
     const top = box.getBoundingClientRect().top;
     const zoom = currentZoom();
     const h = Math.max(240, Math.round((vh - top - 8) / zoom));
@@ -230,26 +219,6 @@
     // размер целиком нашему height (то же значение, что мы только что посчитали).
     box.style.minHeight = "0";
     box.style.height = h + "px";
-    if (diagTag && syncPlanBoxHeightDiagCount < 8) {
-      syncPlanBoxHeightDiagCount++;
-      try {
-        const canvas = r.querySelector(".ep-plan-canvas");
-        const afterBox = box.getBoundingClientRect();
-        const afterCanvas = canvas && canvas.getBoundingClientRect();
-        console.warn("[plan-height-diag]", JSON.stringify({
-          tag: diagTag,
-          innerHeight: window.innerHeight,
-          visualViewportHeight: vvh || null,
-          docClientHeight: document.documentElement.clientHeight,
-          boxTopBefore: top,
-          computedHeight: h,
-          boxRectAfter: { top: afterBox.top, height: afterBox.height, bottom: afterBox.bottom },
-          canvasRectAfter: afterCanvas ? { top: afterCanvas.top, height: afterCanvas.height, bottom: afterCanvas.bottom } : null,
-          dpr: window.devicePixelRatio,
-          zoom: zoom
-        }));
-      } catch (e) {}
-    }
   }
 
   // Ре-фит содержимого на весь проект — та же логика, что и у кнопки «⛶ Показать
@@ -318,9 +287,8 @@
         if (V.canvas !== myCanvas) return;
         // повторяем И syncPlanBoxHeight (не только fitToProject) — та же гонка может
         // задержать САМО измерение window.innerHeight/visualViewport.height на конкретном
-        // устройстве, не только подгонку viewBox под уже готовый контейнер (см. диагностику
-        // в syncPlanBoxHeight выше — временно логирует числа на каждый из этих чекпоинтов).
-        syncPlanBoxHeight("mount-retry-" + ms);
+        // устройстве, не только подгонку viewBox под уже готовый контейнер.
+        syncPlanBoxHeight();
         // пользователь УЖЕ сам зумил/панорамировал — не перебиваем его вид
         // авто-вписыванием (иначе вид «отпрыгивал» через ~секунду, если начать
         // зумить сразу после открытия проекта — пойман визуальным тестом)
@@ -550,7 +518,7 @@
       // сам возврат в обычный (не fixed) поток не обязательно даёт window.innerHeight
       // native "resize" (высота окна физически не менялась, менялась только раскладка
       // ВНУТРИ страницы) — событие resize могло бы не сработать вообще.
-      syncPlanBoxHeight("fullscreen-exit");
+      syncPlanBoxHeight();
       if (V.ctrlsOn !== ctrlsWasOnBeforeFull) toggleTopCtrls(r);
       else fitToProject(); // состояние панели не менялось — холст всё равно сменил размер
       ctrlsWasOnBeforeFull = null;
@@ -627,9 +595,9 @@
   // инвариант syncPlanBoxHeight выше). window.resize у части мобильных браузеров не
   // срабатывает надёжно на чистое сворачивание/разворачивание адресной строки без
   // изменения window.innerWidth — visualViewport.resize специально для этого.
-  window.addEventListener("resize", () => { if (V.active) syncPlanBoxHeight("window-resize"); });
-  window.addEventListener("orientationchange", () => { if (V.active) syncPlanBoxHeight("orientationchange"); });
-  if (window.visualViewport) window.visualViewport.addEventListener("resize", () => { if (V.active) syncPlanBoxHeight("visualviewport-resize"); });
+  window.addEventListener("resize", () => { if (V.active) syncPlanBoxHeight(); });
+  window.addEventListener("orientationchange", () => { if (V.active) syncPlanBoxHeight(); });
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", () => { if (V.active) syncPlanBoxHeight(); });
 
   document.addEventListener("keydown", (e) => {
     if (!V.active || !core().project) return;
