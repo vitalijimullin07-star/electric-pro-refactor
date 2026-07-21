@@ -2068,6 +2068,31 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(rt2.points.some((pt) => Math.abs(pt.y - 422) < 1), "QF2 (вторая линия) — та же СТОРОНА +2см, несмотря на обратное направление обхода");
     ok(!rt2.points.some((pt) => Math.abs(pt.y - 418) < 1), "QF2 НЕ ушла на противоположную сторону (-2см)");
   });
+  test("guides: своя ветка магистрали предпочтительнее чужой, даже если чужая численно ближе — без лишнего перехода через соседнюю комнату", () => {
+    // Найдено ПО РЕАЛЬНОМУ ПРОЕКТУ пользователя (репорт: «должно было зайти из 3 в 1, а
+    // зашло 3-2-1»): общий коридор в комнате R3, от него отходят КОРОТКАЯ ветка в R1 и
+    // ДЛИННАЯ ветка в R2. Элемент у дальней стены R1 оказывается численно БЛИЖЕ к концу
+    // ДЛИННОЙ ветки R2 (физически лежащей в другой комнате), чем к концу своей короткой
+    // ветки — nearestOnGraph БЕЗ учёта комнаты выбирал чужую ветку, трасса шла R1→R2→R3
+    // (лишняя проходка) вместо прямого R1→R3.
+    const r1 = M.newRoom(G.rectPoints(0, 0, 300, 300), "R1");
+    const r2 = M.newRoom(G.rectPoints(300, 0, 300, 300), "R2");
+    const r3 = M.newRoom(G.rectPoints(0, 300, 600, 150), "R3");
+    const pn = M.newPanel(300, 400, "Щ");
+    const corridor = M.newGuide([{ x: 20, y: 350 }, { x: 580, y: 350 }]);
+    const legShort = M.newGuide([{ x: 150, y: 350 }, { x: 150, y: 250 }]); // короткая ветка — в R1
+    const legLong = M.newGuide([{ x: 450, y: 350 }, { x: 450, y: 50 }]); // длинная ветка — в R2
+    const { P } = install({ rooms: [r1, r2, r3], panels: [pn], guides: [corridor, legShort, legLong] });
+    const s1 = M.newElement("socket", P.rooms[0].id + ":0", 280, 30); // верхняя стена R1, у края к R2
+    P.elements.push(s1);
+    EP.Plan.Routes.build();
+    const rt = P.routes.find((r) => r.fromId === s1.id);
+    ok(rt, "трасса построена");
+    const crossedRoomIds = new Set((rt.throughWalls || []).map((tw) => String(tw.wallId).split(":")[0]));
+    eq(crossedRoomIds.size, 2, "ровно одна физическая проходка (2 записи — общая стена R1/R3, оба id стены)");
+    ok(crossedRoomIds.has(r1.id) && crossedRoomIds.has(r3.id), "переход именно между R1 и R3");
+    ok(!crossedRoomIds.has(r2.id), "НЕ идёт через R2 (не цепляет чужую, хоть и более близкую по прямой, ветку)");
+  });
 
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
