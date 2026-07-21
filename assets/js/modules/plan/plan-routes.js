@@ -341,6 +341,40 @@
       return { x: a0.x + d0.x * t, y: a0.y + d0.y * t };
     });
   }
+  // Где ветка магистрали (сырой, БЕЗ лан-офсета отрезок edgeA-edgeB) пересекает стену
+  // комнаты `room`, + стандартный отступ routeOff(circuitId) от НЕЁ (та же математика,
+  // что и у обычной перпендикулярной проходки) — просьба пользователя: «как только
+  // магистраль прошла стену, линии шли 15см от стены, с каждой новой +2см, строго 90°»,
+  // т.е. НЕ докуда физически дотянута ветка пользователем (она может уходить на середину
+  // комнаты или обратно кончаться у самой стены — как нарисовано), а где она пересекает
+  // стену, offset от ЭТОЙ точки. Раньше guideApproach ниже роутил ПРЯМО к дальнему концу
+  // ветки (offset-скорректированному Ao) через pathInRoom — если ветка физически заходила
+  // глубже в комнату, чем стандартный контурный отступ линии, contour-walk сначала доходил
+  // до ближайшей точки контура, а затем делал ЛИШНИЙ прыжок В СТОРОНУ ОТ стены до самого
+  // конца ветки — visible «скачок» на скриншоте пользователя.
+  // offVec — боковой лан-офсет (guideLaneOff), УЖЕ применённый к этой ветке в остальном
+  // трунке (Ao минус сырая точка) — складываем поверх перпендикулярного прыжка от стены,
+  // а НЕ вместо него: ветка почти всегда пересекает стену ПЕРПЕНДИКУЛЯРНО ей (иначе вход
+  // в комнату не имел бы смысла), значит offVec (вдоль НОРМАЛИ ветки) и прыжок от стены
+  // (вдоль нормали СТЕНЫ) — две НЕЗАВИСИМЫЕ оси; без сложения соседние линии, разнесённые
+  // по трунку на +2см каждая, съезжались бы обратно в одну точку у самой стены и потом
+  // шли диагональю (не строго 90°) до следующего узла трунка.
+  function guideWallEntry(p, edgeA, edgeB, room, circuitId, offVec) {
+    const hits = G().polylineCrossings(p, [edgeA, edgeB], null)
+      .map((c) => ({ c, w: G().wallById(p, c.wallId) })).filter((h) => h.w)
+      .sort((x, y) => G().dist(edgeA, x.c) - G().dist(edgeA, y.c));
+    if (!hits.length) return null;
+    const own = hits.find((h) => h.w.roomId === room.id) || hits[0];
+    const { c, w } = own;
+    const len = w.len || 1;
+    let nx = -(w.b.y - w.a.y) / len, ny = (w.b.x - w.a.x) / len;
+    const probe = { x: c.x + nx * 2, y: c.y + ny * 2 };
+    const pr = G().roomAt(p, probe);
+    if (!pr || pr.id !== room.id) { nx = -nx; ny = -ny; }
+    const jump = G().wallThOf(p, w) / 2 + routeOff(p, circuitId);
+    const ov = offVec || { x: 0, y: 0 };
+    return { x: c.x + nx * jump + ov.x, y: c.y + ny * jump + ov.y };
+  }
   // заход трассы к магистрали (фикс №2 аудита): если точка `from` и точка входа на
   // магистраль `entry` в ОДНОЙ комнате (магистраль нарисована ВНУТРИ комнаты, напр.
   // студия/большая гостиная) — ведём по контуру комнаты с отступом (как обычная трасса
@@ -348,20 +382,35 @@
   // ДРУГОЙ комнате (типовой случай: магистраль в коридоре, точка в спальне) — прежнее
   // перпендикулярное колено `[from, knee, entry]` (заход через стену неизбежен, короткий).
   // Применяется ТОЛЬКО к стороне ТОЧКИ (не к стороне щита/цели), чтобы не менять уже
-  // проверенное поведение коридорной магистрали у щита.
-  function guideApproach(p, from, entry, circuitId, knee) {
+  // проверенное поведение коридорной магистрали у щита. edgeA/edgeB (опц.) — СЫРОЙ (без
+  // лан-офсета) отрезок ветки графа, из которого получен `entry` — по нему ищем
+  // guideWallEntry (см. выше); без них (вызов без 6/7 параметров) — старое поведение.
+  function guideApproach(p, from, entry, circuitId, knee, edgeA, edgeB) {
     const straight = [{ x: from.x, y: from.y }, knee, { x: entry.x, y: entry.y }];
     const rf = roomNear(p, from), re = roomNear(p, entry);
     if (rf && re && rf.id === re.id) {
-      const pr = pathInRoom(p, rf, from, entry, circuitId);
-      if (pr && pr.length >= 2) {
-        // контур берём ТОЛЬКО если он не сильно длиннее прямого колена — иначе точка у
-        // самой магистрали (или свободный свет посреди комнаты) ушла бы в обход всей
-        // комнаты вместо короткого примыкания. Порог 1.6× + 1см: хват по стене добавляет
-        // немного длины (это ок, «как обычно»), но кругосветку по периметру отсекает.
-        let contourLen = 0; for (let i = 1; i < pr.length; i++) contourLen += G().dist(pr[i - 1], pr[i]);
-        const straightLen = G().dist(from, knee) + G().dist(knee, entry);
-        if (contourLen <= straightLen * 1.6 + 1) return pr; // [from, …контур…, entry]
+      const offVec = (edgeA && edgeB) ? { x: entry.x - edgeA.x, y: entry.y - edgeA.y } : null;
+      const wallEntry = (edgeA && edgeB) ? guideWallEntry(p, edgeA, edgeB, rf, circuitId, offVec) : null;
+      // Есть wallEntry (ветка реально пересекает стену этой комнаты) — доверяем ему БЕЗ
+      // сравнения с прямым коленом: это и есть стандартный отступ 15+2n от стены, который
+      // просил пользователь, а не эвристика «не уйти в обход всей комнаты» (она была нужна
+      // для СТАРОГО entry — произвольной точки где-то в комнате, а не гарантированно
+      // пристенной). pathInRoom сам выбирает короче направление вдоль периметра
+      // (G.polyWalk), так что кругосветки здесь не бывает по построению.
+      if (wallEntry) {
+        const pr = pathInRoom(p, rf, from, wallEntry, circuitId);
+        if (pr && pr.length >= 2) return pr;
+      } else {
+        const pr = pathInRoom(p, rf, from, entry, circuitId);
+        if (pr && pr.length >= 2) {
+          // контур берём ТОЛЬКО если он не сильно длиннее прямого колена — иначе точка у
+          // самой магистрали (или свободный свет посреди комнаты) ушла бы в обход всей
+          // комнаты вместо короткого примыкания. Порог 1.6× + 1см: хват по стене добавляет
+          // немного длины (это ок, «как обычно»), но кругосветку по периметру отсекает.
+          let contourLen = 0; for (let i = 1; i < pr.length; i++) contourLen += G().dist(pr[i - 1], pr[i]);
+          const straightLen = G().dist(from, knee) + G().dist(knee, entry);
+          if (contourLen <= straightLen * 1.6 + 1) return pr; // [from, …контур…, entry]
+        }
       }
     }
     return straight;
@@ -388,7 +437,7 @@
     const segA = sp.points[1] || sp.points[0], segB = sp.points[sp.points.length - 2] || sp.points[sp.points.length - 1];
     // заход к точке — по контуру (если магистраль в той же комнате), иначе колено;
     // сторона щита (Bo -> knee -> b) остаётся прежней.
-    const legA = guideApproach(p, a, Ao, circuitId, guideKnee(a, Ao, sp.points[0], segA));
+    const legA = guideApproach(p, a, Ao, circuitId, guideKnee(a, Ao, sp.points[0], segA), sp.points[0], segA);
     const path = legA.concat(trunk.slice(1), [guideKnee(b, Bo, segB, sp.points[sp.points.length - 1]), { x: b.x, y: b.y }]);
     if (usedGuideIds) sp.edgeIds.forEach((id) => usedGuideIds.add(id)); // фикс №1: магистраль(и) реально применились
     return path.filter((q, j) => j === 0 || G().dist(q, path[j - 1]) > 0.5);

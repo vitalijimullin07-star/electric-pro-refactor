@@ -2093,6 +2093,34 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(crossedRoomIds.has(r1.id) && crossedRoomIds.has(r3.id), "переход именно между R1 и R3");
     ok(!crossedRoomIds.has(r2.id), "НЕ идёт через R2 (не цепляет чужую, хоть и более близкую по прямой, ветку)");
   });
+  test("guides: ветка магистрали нарисована ГЛУБОКО в комнату (дальше стандартного отступа) — вход всё равно РОВНО на routeOff от стены, строго 90°, без скачка в сторону", () => {
+    // Репорт пользователя со скриншотами: «линии когда вошли в комнату, они не идут с
+    // отступом 15см... на скрине 1 видно дефект в виде скачка линий» + «как только
+    // магистраль прошла стену — линии шли 15см от стены, каждая новая +2см, строго 90°».
+    // Ветка магистрали физически дотянута ПОЛЬЗОВАТЕЛЕМ глубоко в комнату (до y=50) —
+    // намного дальше стандартного отступа (contour был бы у y≈280). Раньше guideApproach
+    // роутил ПРЯМО к дальнему концу ветки через pathInRoom — тот сначала доходил до
+    // ближайшей точки контура (y≈280), а затем делал лишний прыжок В СТОРОНУ ОТ стены
+    // до самого конца ветки (y=50) — видимый «скачок», да ещё и по диагонали.
+    const rA = M.newRoom(G.rectPoints(0, 0, 300, 300), "A");
+    const rB = M.newRoom(G.rectPoints(0, 300, 600, 150), "B");
+    const pn = M.newPanel(300, 350, "Щ");
+    const corridor = M.newGuide([{ x: 20, y: 350 }, { x: 580, y: 350 }]);
+    const leg = M.newGuide([{ x: 150, y: 350 }, { x: 150, y: 50 }]); // дотянута до y=50, отступ был бы у y≈280
+    const { P } = install({ rooms: [rA, rB], panels: [pn], guides: [corridor, leg] });
+    const s1 = M.newElement("socket", P.rooms[0].id + ":0", 260, 30); // верхняя стена A, в стороне от ветки
+    P.elements.push(s1);
+    EP.Plan.Routes.build();
+    const rt = P.routes.find((r) => r.fromId === s1.id);
+    ok(rt, "трасса построена");
+    const pts = rt.points;
+    for (let i = 1; i < pts.length; i++) {
+      const dx = Math.abs(pts[i].x - pts[i - 1].x), dy = Math.abs(pts[i].y - pts[i - 1].y);
+      ok(dx < 0.5 || dy < 0.5, `сегмент ${i} не строго по одной оси: (${pts[i - 1].x},${pts[i - 1].y})->(${pts[i].x},${pts[i].y})`);
+    }
+    ok(pts.some((pt) => Math.abs(pt.y - 280) < 1), "вход в районе y≈280 — РОВНО отступ 15см от стены (y=300)");
+    ok(!pts.some((pt) => Math.abs(pt.x - 150) < 1 && pt.y < 100), "у x=150 (ветка) путь НЕ уходит до конца нарисованной ветки (y=50)");
+  });
 
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
