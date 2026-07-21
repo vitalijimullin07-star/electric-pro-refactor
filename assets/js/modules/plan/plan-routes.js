@@ -116,6 +116,13 @@
   // по контуру с отступом (routeOff). Гильзы через стены на пути магистрали считает
   // общий polylineCrossings по итоговому пути — отдельной логики не потребовалось.
   const GUIDE_SNAP_MAX = 800; // см: дальше проекции — магистраль «не про эту трассу»
+  // Какие магистрали РЕАЛЬНО применились в текущем прогоне build()/buildIncremental() —
+  // чтобы hideGuides() прятал ТОЛЬКО их (фикс №1 аудита: раньше пряталась любая
+  // нарисованная магистраль безусловно, даже если она далеко/вырождена и не участвовала
+  // в трассировке — пользователь не мог понять, сработала ли она). null вне build() —
+  // тогда guideRoute() ничего не помечает (например, при замере длины в chainFromPanel
+  // или в resetRouteToAuto), а hideGuides() при null сохраняет прежнее поведение.
+  let usedGuideIds = null;
   function nearestOnGuide(gd, pt) {
     let best = null;
     const pts = gd.points || [];
@@ -169,6 +176,31 @@
     const t = ((a1.x - a0.x) * d1.y - (a1.y - a0.y) * d1.x) / den;
     return { x: a0.x + d0.x * t, y: a0.y + d0.y * t };
   }
+  // заход трассы к магистрали (фикс №2 аудита): если точка `from` и точка входа на
+  // магистраль `entry` в ОДНОЙ комнате (магистраль нарисована ВНУТРИ комнаты, напр.
+  // студия/большая гостиная) — ведём по контуру комнаты с отступом (как обычная трасса
+  // «внутри комнаты всё как обычно»), а не прямым коленом через середину. Если entry в
+  // ДРУГОЙ комнате (типовой случай: магистраль в коридоре, точка в спальне) — прежнее
+  // перпендикулярное колено `[from, knee, entry]` (заход через стену неизбежен, короткий).
+  // Применяется ТОЛЬКО к стороне ТОЧКИ (не к стороне щита/цели), чтобы не менять уже
+  // проверенное поведение коридорной магистрали у щита.
+  function guideApproach(p, from, entry, circuitId, knee) {
+    const straight = [{ x: from.x, y: from.y }, knee, { x: entry.x, y: entry.y }];
+    const rf = roomNear(p, from), re = roomNear(p, entry);
+    if (rf && re && rf.id === re.id) {
+      const pr = pathInRoom(p, rf, from, entry, circuitId);
+      if (pr && pr.length >= 2) {
+        // контур берём ТОЛЬКО если он не сильно длиннее прямого колена — иначе точка у
+        // самой магистрали (или свободный свет посреди комнаты) ушла бы в обход всей
+        // комнаты вместо короткого примыкания. Порог 1.6× + 1см: хват по стене добавляет
+        // немного длины (это ок, «как обычно»), но кругосветку по периметру отсекает.
+        let contourLen = 0; for (let i = 1; i < pr.length; i++) contourLen += G().dist(pr[i - 1], pr[i]);
+        const straightLen = G().dist(from, knee) + G().dist(knee, entry);
+        if (contourLen <= straightLen * 1.6 + 1) return pr; // [from, …контур…, entry]
+      }
+    }
+    return straight;
+  }
   function guideRoute(p, a, b, circuitId) {
     const gs = (G().floorScoped(p).guides || []).filter((gd) => (gd.points || []).length >= 2);
     if (!gs.length) return null;
@@ -199,15 +231,25 @@
       const mid = []; for (let i = pb.segI + 1; i <= pa.segI; i++) mid.push(off ? offsetGuideVertex(gd, i, off) : gd.points[i]);
       trunk = [Ao].concat(mid.reverse(), [Bo]);
     }
-    const path = [{ x: a.x, y: a.y }, guideKnee(a, Ao, sA, sA2)]
-      .concat(trunk, [guideKnee(b, Bo, sB, sB2), { x: b.x, y: b.y }]);
+    // заход к точке — по контуру (если магистраль в той же комнате), иначе колено;
+    // сторона щита (Bo -> knee -> b) остаётся прежней. legA включает Ao, поэтому из
+    // trunk берём хвост БЕЗ первого элемента (Ao уже в legA), Bo сохраняем для колена.
+    const legA = guideApproach(p, a, Ao, circuitId, guideKnee(a, Ao, sA, sA2));
+    const path = legA.concat(trunk.slice(1), [guideKnee(b, Bo, sB, sB2), { x: b.x, y: b.y }]);
+    if (usedGuideIds) usedGuideIds.add(gd.id); // фикс №1: магистраль реально применилась
     return path.filter((q, j) => j === 0 || G().dist(q, path[j - 1]) > 0.5);
   }
   // «пропадает после трассировки»: скрыть магистрали активного этажа с плана.
   // НЕ удаляем из модели — автоперестройка (AUTOREBUILD_ON) продолжает вести
   // трассы по ним; в режиме рисования ⇉ скрытые магистрали снова видны/удаляемы.
+  // Фикс №1 аудита: если usedGuideIds — Set (идёт build()/buildIncremental()), прячем
+  // ТОЛЬКО реально применённые магистрали; нетронутая (далёкая/вырожденная/лишняя)
+  // остаётся видимой — пользователь сразу видит, что она не сработала. Вне build()
+  // (usedGuideIds===null) — прежнее поведение (спрятать все), на всякий случай.
   function hideGuides(p) {
-    (G().floorScoped(p).guides || []).forEach((gd) => { gd.hidden = true; });
+    (G().floorScoped(p).guides || []).forEach((gd) => {
+      if (!usedGuideIds || usedGuideIds.has(gd.id)) gd.hidden = true;
+    });
   }
 
   // общий построитель: та же комната — по контуру; другая — через перпендикулярные проходки
@@ -391,11 +433,13 @@
 
     // pos — ЕДИНАЯ точка отрисовки (та же, что у маркера): трасса доходит до точки,
     // а зазор между линиями QF заложен в самой точке (полоса по номеру линии).
+    usedGuideIds = new Set(); // фикс №1: собираем реально применённые магистрали (guideRoute помечает)
     routeGroups(c, p, points, juncts, panels, null);
     routeJunctionsToPanel(c, p, juncts, juncts, panels);
 
     if (savedManual.length) restoreManualRoutes(p, savedManual);
-    hideGuides(p); // магистрали визуально пропадают после построения (модель остаётся)
+    hideGuides(p); // прячем ТОЛЬКО применённые магистрали (см. usedGuideIds/hideGuides)
+    usedGuideIds = null;
     c.persist("routes-build");
     if (!silent) sheet();
   }
@@ -437,6 +481,7 @@
     const allJuncts = (fp.elements || []).filter(isJunction).map((el) => ({ kind: "junction", id: el.id, el, circuitId: el.circuitId, pos: G().elemPoint(p, el) })).filter((n) => n.pos);
     const newJuncts = allJuncts.filter((n) => !haveRoute.has(n.id));
 
+    usedGuideIds = new Set(); // фикс №1: только магистрали, реально применённые к НОВЫМ точкам
     if (newPoints.length || newJuncts.length) {
       const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, router: !!pn.router, transformer: !!pn.transformer }));
       // уже проведённые точки — реальные узлы графа для шлейфа, не только щиты
@@ -448,7 +493,8 @@
       routeJunctionsToPanel(c, p, allJuncts, newJuncts, panels);
     }
 
-    hideGuides(p); // как и у полного build(): магистрали пропадают после построения
+    hideGuides(p); // прячем ТОЛЬКО применённые к новым точкам (уже применённые ранее — уже скрыты)
+    usedGuideIds = null;
     c.persist("routes-build-inc");
     if (!silent) sheet();
   }
@@ -519,19 +565,42 @@
 
   // шлейф от щита: каждая точка подключается к ближайшему уже подключённому узлу
   // (щиту или ранее подключённой розетке той же линии) — как реальная гирлянда.
+  // Фикс №4 аудита: метрика выбора звена — РЕАЛЬНАЯ длина трассы (buildPath), а не
+  // прямая евклидова дистанция. Прямая могла соединить точки, между которыми путь
+  // физически идёт в обход стены (крестящиеся хопы, «каша»); реальная длина это
+  // учитывает и попутно делает шлейф магистраль-осведомлённым (buildPath уже знает
+  // о guideRoute). buildPath чистая (без мутаций) — безопасно звать для замера; memo
+  // по паре id, чтобы не пересчитывать один и тот же кандидат на каждой итерации.
+  // Для БОЛЬШИХ цепей (> CHAIN_LEN_MAX точек) — прежняя прямая дистанция, чтобы не
+  // ловить O(n²·buildPath) на реально длинных линиях.
+  const CHAIN_LEN_MAX = 18;
   function chainFromPanel(c, p, items, panels, circuitId) {
     const connected = panels.slice(); // {kind:'panel', pos}
     const rest = items.slice();
+    const useLen = rest.length <= CHAIN_LEN_MAX;
+    const memo = new Map();
+    const metric = (fromEl, a, cn) => {
+      if (!useLen) return dist(a, cn.pos);
+      const key = fromEl.id + "|" + (cn.id || ("@" + Math.round(cn.pos.x) + "_" + Math.round(cn.pos.y)));
+      if (memo.has(key)) return memo.get(key);
+      const target = { kind: cn.kind, id: cn.id, pos: cn.pos, el: cn.el };
+      const save = usedGuideIds; usedGuideIds = null; // ЗАМЕР не должен помечать магистраль как использованную (фикс №1)
+      const pts = buildPath(p, fromEl, a, target, 0, circuitId);
+      usedGuideIds = save;
+      let L = 0; for (let i = 1; i < pts.length; i++) L += dist(pts[i - 1], pts[i]);
+      memo.set(key, L);
+      return L;
+    };
     while (rest.length) {
       let best = null;
       rest.forEach((it, idx) => connected.forEach((cn) => {
-        const d = dist(it.pos, cn.pos);
+        const d = metric(it.el, it.pos, cn);
         if (!best || d < best.d) best = { d, idx, cn };
       }));
       if (!best) break;
       const it = rest[best.idx];
       addRoute(c, p, it.el, it.pos, best.cn, circuitId, colorOf(p, it.el));
-      connected.push({ kind: "point", id: it.el.id, pos: it.pos });
+      connected.push({ kind: "point", id: it.el.id, el: it.el, pos: it.pos });
       rest.splice(best.idx, 1);
     }
   }
