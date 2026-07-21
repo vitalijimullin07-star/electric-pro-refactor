@@ -161,19 +161,58 @@
   // точки — общий узел, см. GUIDE_MERGE_EPS), путь ищется кратчайшим по графу (Дейкстра) —
   // лишняя ветка просто не выбирается (её длина только добавляла бы пути), а несколько
   // магистралей, стыкующихся в узле, естественно продолжают друг друга.
+  //
+  // ВАЖНОЕ ДОПОЛНЕНИЕ (найдено ПО РЕАЛЬНОМУ ПРОЕКТУ пользователя — экспорт JSON до/после
+  // build(), 2 из 3 нарисованных магистралей остались неиспользованными): первая версия
+  // графа сливала в общий узел только ВЕРШИНЫ разных магистралей между собой (concом
+  // магистрали к концу другой) — но пользователь нарисовал длинный коридор ОДНИМ прямым
+  // отрезком (2 точки), а затем ОТДЕЛЬНЫЕ короткие «ножки» в комнаты, конец которых
+  // упирается НЕ в конец коридора, а в его СЕРЕДИНУ (естественный способ нарисовать
+  // ответвление от уже нарисованного длинного коридора, не обязательно от самого его
+  // кончика). Раз у коридора нет СВОЕЙ вершины в этой точке — старый nodeAt() никогда не
+  // сливал их, ножка оставалась изолированным «островом» графа, недостижимым от коридора.
+  // Фикс: buildGuideGraph теперь СНАЧАЛА собирает все вершины ВСЕХ магистралей разом
+  // (anchors), затем для КАЖДОГО сырого отрезка ищет, какие anchor-точки лежат НА нём
+  // (closestOnSeg .d <= GUIDE_MERGE_EPS, включая его собственные концы) — и РЕЖЕТ отрезок
+  // на под-рёбра в этих точках. Место разреза становится настоящим узлом графа, и
+  // соседняя магистраль, чья вершина туда попала, дедуплицируется в ТОТ ЖЕ узел обычным
+  // nodeAt (её собственный конец — тоже anchor, попадает в тот же радиус). Работает и для
+  // прежнего случая конец-к-концу (он просто частный случай: anchor совпадает с уже
+  // имеющейся вершиной отрезка, t=0 или t=1, ничего не меняется).
   function buildGuideGraph(guides) {
-    const nodes = [], edges = [];
+    const rawSegs = [];
+    guides.forEach((gd) => {
+      const pts = gd.points || [];
+      for (let i = 0; i < pts.length - 1; i++) {
+        if (G().dist(pts[i], pts[i + 1]) < 0.5) continue; // вырожденный (нулевой длины)
+        rawSegs.push({ a: pts[i], b: pts[i + 1], gdId: gd.id });
+      }
+    });
+    if (!rawSegs.length) return { nodes: [], edges: [] };
+    const anchors = [];
+    rawSegs.forEach((s) => { anchors.push(s.a); anchors.push(s.b); });
+    const nodes = [];
     const nodeAt = (pt) => {
       for (let i = 0; i < nodes.length; i++) if (G().dist(nodes[i], pt) <= GUIDE_MERGE_EPS) return i;
       nodes.push({ x: pt.x, y: pt.y });
       return nodes.length - 1;
     };
-    guides.forEach((gd) => {
-      const pts = gd.points || [];
-      for (let i = 0; i < pts.length - 1; i++) {
-        const ai = nodeAt(pts[i]), bi = nodeAt(pts[i + 1]);
-        if (ai === bi) continue; // вырожденный (нулевой длины) отрезок
-        edges.push({ a: ai, b: bi, gdId: gd.id, len: G().dist(nodes[ai], nodes[bi]) });
+    const edges = [];
+    rawSegs.forEach((s) => {
+      const ts = new Set([0, 1]); // концы отрезка — всегда точки разреза
+      anchors.forEach((p) => {
+        const cl = G().closestOnSeg(p, s.a, s.b);
+        if (cl.d <= GUIDE_MERGE_EPS) ts.add(cl.t);
+      });
+      const sorted = Array.from(ts).sort((x, y) => x - y);
+      for (let i = 0; i < sorted.length - 1; i++) {
+        const t0 = sorted[i], t1 = sorted[i + 1];
+        const p0 = { x: s.a.x + (s.b.x - s.a.x) * t0, y: s.a.y + (s.b.y - s.a.y) * t0 };
+        const p1 = { x: s.a.x + (s.b.x - s.a.x) * t1, y: s.a.y + (s.b.y - s.a.y) * t1 };
+        if (G().dist(p0, p1) < 0.5) continue; // вырожденный кусок (совпавшие точки разреза)
+        const ai = nodeAt(p0), bi = nodeAt(p1);
+        if (ai === bi) continue;
+        edges.push({ a: ai, b: bi, gdId: s.gdId, len: G().dist(nodes[ai], nodes[bi]) });
       }
     });
     return { nodes, edges };
