@@ -416,6 +416,26 @@ test("switchTarget: ручной целью клавиши может быть �
   const t = G.switchTarget(P, sw, 0);
   ok(t && t.id === sock.id, "ручное назначение отдаёт розетку");
 });
+test("assignNewCircuit: слаботочные линии — свой префикс и НЕЗАВИСИМАЯ нумерация от QF", () => {
+  const { P, w } = install();
+  const EL = EP.Plan.Elements;
+  const power1 = M.newElement("socket", w(0), 100, 30, "power"); P.elements.push(power1);
+  const power2 = M.newElement("socket", w(1), 100, 30, "power"); P.elements.push(power2);
+  const inet1 = M.newElement("internet", w(2), 100, 30, "lv"); P.elements.push(inet1);
+  const inet2 = M.newElement("internet", w(0), 200, 30, "lv"); P.elements.push(inet2);
+  const tv1 = M.newElement("tv", w(1), 200, 130, "tv"); P.elements.push(tv1);
+  const cam1 = M.newElement("camera", w(2), 200, 250, "cctv"); P.elements.push(cam1);
+  const cQF1 = EL.assignNewCircuit(power1);
+  const cInt1 = EL.assignNewCircuit(inet1);
+  const cQF2 = EL.assignNewCircuit(power2);
+  const cInt2 = EL.assignNewCircuit(inet2);
+  const cTv1 = EL.assignNewCircuit(tv1);
+  const cCam1 = EL.assignNewCircuit(cam1);
+  eq(cQF1.name, "QF1", "силовая линия — QF1"); eq(cQF2.name, "QF2", "вторая силовая — QF2, QF-счётчик свой");
+  eq(cInt1.name, "Int1", "интернет — Int1"); eq(cInt2.name, "Int2", "второй интернет — Int2, не задет QF-счётчиком");
+  eq(cTv1.name, "TV1", "ТВ — свой префикс TV1");
+  eq(cCam1.name, "CCTV1", "видеонаблюдение — свой префикс CCTV1");
+});
 test("calcEdits: скрыть/заменить/добавить позицию сметы (applyCalcEdits внутри calcByRoutes)", () => {
   const { P, w } = install();
   const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
