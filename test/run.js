@@ -1882,6 +1882,21 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(rt2.points.some((pt) => Math.abs(pt.y - 402) < 1), "QF2 — магистраль +2см (y=402)");
     ok(!rt2.points.some((pt) => Math.abs(pt.y - 400) < 1), "QF2 не ложится ровно на линию QF1");
   });
+  test("guides: точка БЕЗ линии (circuitId=null) идёт РОВНО по магистрали (offset=0, не отрицательный)", () => {
+    // Баг: circuitIdx(p,null) возвращал -1, а guideLaneOff без guard'а (Math.min(-1,10)*2 = -2)
+    // сдвигал бы путь на -2см — на ПРОТИВОПОЛОЖНУЮ сторону от магистрали, вместо offset=0.
+    const r1 = M.newRoom(G.rectPoints(0, 0, 400, 300), "К1");
+    const r2 = M.newRoom(G.rectPoints(400, 0, 400, 300), "К2");
+    const guide = M.newGuide([{ x: 50, y: 400 }, { x: 750, y: 400 }]);
+    const { P } = install({ rooms: [r1, r2], panels: [M.newPanel(50, 50)], guides: [guide] });
+    const sock = M.newElement("socket", P.rooms[1].id + ":0", 100, 30); // circuitId не задан (null)
+    P.elements.push(sock);
+    EP.Plan.Routes.build();
+    const rt = P.routes.find((r) => r.fromId === sock.id);
+    ok(rt, "трасса построена");
+    ok(rt.points.some((pt) => Math.abs(pt.y - 400) < 1), "без линии — offset=0, путь ровно на магистрали (y=400)");
+    ok(!rt.points.some((pt) => Math.abs(pt.y - 398) < 1), "НЕ уходит на -2см (старый баг с отрицательным offset)");
+  });
   test("guides: build() скрывает ПРИМЕНЁННУЮ магистраль (hidden=true), но НЕ удаляет из модели", () => {
     const r1 = M.newRoom(G.rectPoints(0, 0, 400, 300), "К1");
     const r2 = M.newRoom(G.rectPoints(400, 0, 400, 300), "К2");
