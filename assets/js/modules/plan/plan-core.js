@@ -32,6 +32,13 @@
     tpChaseW: 50, tpChaseH: 50, // мм — штроба тёплого пола (в пол)
     symbolStyle: "gost",   // значки на плане: "simple" (кружки с буквами) | "gost" (ГОСТ 21.210)
     cableReserve: 10,      // % запаса кабеля при расчёте по трассам
+    // выпуск кабеля (концы на разделку/подключение) — см НА КАЖДЫЙ конец кабеля, добавляется
+    // в метраж по марке отдельно от самой трассы/спуска (просьба пользователя: «выпуск кабеля
+    // из подрозетников… длину вывода из стены любого кабеля, и так же в распред коробках…
+    // запас в щите на расключение»)
+    cableStubPoint: 20,    // см — выпуск у обычной точки (подрозетник и т.п.)
+    cableStubJunction: 30, // см — выпуск у распайки (несколько кабелей — разделки больше)
+    cableStubPanel: 50,    // см — запас в щите на расключение (на каждый приходящий кабель)
     routeOffset: 15,       // см — отступ трассы от грани стены (линии идут по контуру комнаты)
     sleeveD: 20,           // мм — диаметр проходки (гильзы) через стену, макс. 2 кабеля
     connectorMode: "gml",  // соединители в распайках: "wago" | "gml" (гильзы) | "siz"
@@ -105,6 +112,7 @@
         mainBreaker: DEFAULTS.mainBreaker, phases: DEFAULTS.phases, meter: false, mainRcd: false,
         panelBrand: DEFAULTS.panelBrand, panelReserve: DEFAULTS.panelReserve, panelBox: null,
         symbolStyle: DEFAULTS.symbolStyle, cableReserve: DEFAULTS.cableReserve,
+        cableStubPoint: DEFAULTS.cableStubPoint, cableStubJunction: DEFAULTS.cableStubJunction, cableStubPanel: DEFAULTS.cableStubPanel,
         routeOffset: DEFAULTS.routeOffset, sleeveD: DEFAULTS.sleeveD, connectorMode: DEFAULTS.connectorMode,
         gofraCeil: DEFAULTS.gofraCeil,
         schemeMode: DEFAULTS.schemeMode,
@@ -396,6 +404,9 @@
     p.settings = p.settings || {};
     if (!p.settings.symbolStyle) p.settings.symbolStyle = DEFAULTS.symbolStyle;
     if (p.settings.cableReserve == null) p.settings.cableReserve = DEFAULTS.cableReserve;
+    if (p.settings.cableStubPoint == null) p.settings.cableStubPoint = DEFAULTS.cableStubPoint;
+    if (p.settings.cableStubJunction == null) p.settings.cableStubJunction = DEFAULTS.cableStubJunction;
+    if (p.settings.cableStubPanel == null) p.settings.cableStubPanel = DEFAULTS.cableStubPanel;
     if (p.settings.tempLightingPts == null) p.settings.tempLightingPts = 0;
     if (p.settings.tempSocketsPts == null) p.settings.tempSocketsPts = 0;
     if (p.settings.routeOffset == null) p.settings.routeOffset = DEFAULTS.routeOffset;

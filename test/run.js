@@ -424,15 +424,16 @@ test("calcEdits: скрыть/заменить/добавить позицию �
   const r1 = M.newRoute("power", "ceiling", [{ x: 100, y: 18 }, { x: 50, y: 50 }], s1.id, pn.id); r1.toPanel = true;
   P.routes.push(r1);
   const base = EP.Plan.Calc.calcByRoutes(P);
-  ok(base.items.some((i) => i.name === "Прокладка кабеля"), "исходно есть «Прокладка кабеля»");
+  const layName0 = base.items.find((i) => i.name.indexOf("Прокладка кабеля") === 0).name;
+  ok(layName0, "исходно есть «Прокладка кабеля ...»");
   ok(base.items.some((i) => i.name === "Подрозетник Ø68 40-50 мм"), "исходно есть подрозетник");
   P.calcEdits = {
-    hidden: ["work|Прокладка кабеля"],
+    hidden: ["work|" + layName0],
     renamed: { "material|Подрозетник Ø68 40-50 мм": "Подрозетник Синий-люкс" },
     custom: [{ type: "work", name: "Вынос мусора", qty: 3, unit: "шт" }]
   };
   const res = EP.Plan.Calc.calcByRoutes(P);
-  ok(!res.items.some((i) => i.name === "Прокладка кабеля"), "скрытая позиция убрана из сметы");
+  ok(!res.items.some((i) => i.name === layName0), "скрытая позиция убрана из сметы");
   const ren = res.items.find((i) => i.name === "Подрозетник Синий-люкс");
   ok(ren && ren.origName === "Подрозетник Ø68 40-50 мм", "замена названия хранит исходное имя (стабильный ключ)");
   const cust = res.items.find((i) => i.name === "Вынос мусора");
@@ -873,10 +874,10 @@ test("calcByRoutes: штробы/подрозетники/кабель/ниша 
   const drillDeep = res.items.find((i) => i.name.indexOf("глубоких бетон") >= 0);
   ok(drillStd && drillStd.qty === 1, "1 обычный");
   ok(drillDeep && drillDeep.qty === 1, "1 глубокий");
-  // кабель: (32+50)горизонталь + 240 + 120 = 442 см × 1.1 запас = 4.9 м
+  // кабель: (32+50)горизонталь + 240 + 120 = 442 см + выпуск (20 точка + 50 щит) = 512 см × 1.1 запас = 5.6 м
   const cab = res.items.find((i) => i.name.indexOf("3×2.5") >= 0);
   ok(cab, "кабель по марке");
-  near(cab.qty, 4.9, 0.05, "метры кабеля с запасом");
+  near(cab.qty, 5.6, 0.05, "метры кабеля с запасом");
   // ниша под щит — как в конфигураторе щита
   const niche = res.items.find((i) => i.name.indexOf("Вырубка ниши") >= 0);
   ok(niche && niche.qty === 24, "вырубка × модули");
@@ -888,9 +889,9 @@ test("calcByRoutes: штробы/подрозетники/кабель/ниша 
   const glueDeep = res.items.find((i) => i.name === "Вклейка подрозетников глубоких бетон");
   ok(glueStd && glueStd.qty === 1, "вклейка обычного подрозетника отдельно от сверления");
   ok(glueDeep && glueDeep.qty === 1, "вклейка глубокого подрозетника отдельно от сверления");
-  const layCable = res.items.find((i) => i.name === "Прокладка кабеля");
-  ok(layCable, "есть работа «прокладка кабеля»");
-  near(layCable.qty, cab.qty, 0.05, "метраж прокладки = метражу материала кабеля");
+  const layCable = res.items.find((i) => i.name === "Прокладка кабеля ВВГнг(А)-LS 3×2.5");
+  ok(layCable, "есть работа «прокладка кабеля», отдельной строкой по марке");
+  near(layCable.qty, cab.qty, 0.05, "метраж прокладки = метражу материала кабеля той же марки");
   const breakers = res.items.find((i) => i.name === "Установка автоматического выключателя");
   ok(breakers && breakers.qty === 1, "только вводной — линии (p.circuits) в этом проекте не заведены");
 });
@@ -949,10 +950,10 @@ test("calcByRoutes: своя высота щита (pn.height) меняет ме
   rt.toPanel = true;
   P.routes.push(rt);
   const res = EP.Plan.Calc.calcByRoutes(P);
-  // (32+50)горизонталь + 240(точка) + 20(щит, 270-250) = 342 см × 1.1 запас = 3.76 м
+  // (32+50)горизонталь + 240(точка) + 20(щит, 270-250) = 342 см + выпуск (20 точка + 50 щит) = 412 см × 1.1 запас = 4.5 м
   const cab = res.items.find((i) => i.name.indexOf("3×2.5") >= 0);
   ok(cab, "кабель по марке");
-  near(cab.qty, 3.76, 0.05, "метры кабеля со своей (высокой) высотой щита, не с общей 150см");
+  near(cab.qty, 4.5, 0.05, "метры кабеля со своей (высокой) высотой щита, не с общей 150см");
 });
 test("calcByRoutes: расходники по кабелю/штробам (крепёж/буры/коронки/диски/мешки) из EP.CableConsum", () => {
   const { P, w } = install();
@@ -988,6 +989,23 @@ test("calcByRoutes: без EP.CableConsum — обычные позиции ес
   ok(res && res.items.length, "обычные позиции всё равно есть");
   ok(!res.items.some((i) => i.name === "Пика"), "расходников CableConsum нет без модуля");
   EP.CableConsum = saved;
+});
+test("calcByRoutes: «Прокладка кабеля» разбита ПО МАРКЕ (свет 3×1.5 и силовая 3×2.5 — отдельные строки)", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
+  const s1 = M.newElement("socket", w(0), 100, 30, "power");
+  const sw1 = M.newElement("switch", w(1), 150, 90, "light");
+  P.elements.push(s1, sw1);
+  const rt1 = M.newRoute("power", "ceiling", [{ x: 100, y: 18 }, { x: 50, y: 50 }], s1.id, pn.id); rt1.toPanel = true;
+  const rt2 = M.newRoute("light", "ceiling", [{ x: 150, y: 18 }, { x: 50, y: 50 }], sw1.id, pn.id); rt2.toPanel = true;
+  P.routes.push(rt1, rt2);
+  const res = EP.Plan.Calc.calcByRoutes(P);
+  const layPower = res.items.find((i) => i.name === "Прокладка кабеля ВВГнг(А)-LS 3×2.5");
+  const layLight = res.items.find((i) => i.name === "Прокладка кабеля ВВГнг(А)-LS 3×1.5");
+  ok(layPower && layLight, "две отдельные строки прокладки — по своей марке каждая");
+  ok(layPower.name !== layLight.name, "строки не слились в одну");
+  near(layPower.qty, res.cableBy["ВВГнг(А)-LS 3×2.5"], 0.05, "силовая прокладка = метражу материала своей марки");
+  near(layLight.qty, res.cableBy["ВВГнг(А)-LS 3×1.5"], 0.05, "световая прокладка = метражу материала своей марки");
 });
 test("calcByRoutes: слаботочка не сливается с силовой", () => {
   const { P, w } = install();
@@ -1152,6 +1170,29 @@ test("настройки: ГОСТ-значки и запас кабеля по 
   eq(p.settings.cableReserve, 10, "запас 10%");
   eq(p.settings.routeOffset, 15, "отступ трассы 15 см");
   eq(p.settings.sleeveD, 20, "гильза Ø20");
+  eq(p.settings.cableStubPoint, 20, "выпуск у точки 20см");
+  eq(p.settings.cableStubJunction, 30, "выпуск у распайки 30см");
+  eq(p.settings.cableStubPanel, 50, "запас в щите 50см");
+});
+test("backfillProject: старый проект без cableStub* — бэкофилл дефолтами", () => {
+  const old = { name: "old", settings: {}, rooms: [], elements: [], panels: [], routes: [] };
+  const imp = EP.Plan.Core.importJSON(JSON.stringify({ project: old }));
+  eq(imp.settings.cableStubPoint, 20, "бэкофилл cableStubPoint");
+  eq(imp.settings.cableStubJunction, 30, "бэкофилл cableStubJunction");
+  eq(imp.settings.cableStubPanel, 50, "бэкофилл cableStubPanel");
+});
+test("RT.cableStub: точка/распайка × щит/без щита", () => {
+  const { P } = install();
+  const el = { type: "socket" };
+  const junc = { type: "junction" };
+  eq(EP.Plan.Routes.cableStub(P, el, {}), 20, "обычная точка, без щита — 20см");
+  eq(EP.Plan.Routes.cableStub(P, junc, {}), 30, "распайка, без щита — 30см");
+  eq(EP.Plan.Routes.cableStub(P, el, { toPanel: true }), 70, "точка до щита — 20+50=70см");
+  eq(EP.Plan.Routes.cableStub(P, junc, { toPanel: true }), 80, "распайка до щита — 30+50=80см");
+  P.settings.cableStubPoint = 15;
+  P.settings.cableStubJunction = 25;
+  P.settings.cableStubPanel = 40;
+  eq(EP.Plan.Routes.cableStub(P, el, { toPanel: true }), 55, "кастомные настройки применяются");
 });
 
 // ===== 10. Трассировка v4: контур с отступом, проходки =====

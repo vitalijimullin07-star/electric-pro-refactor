@@ -17,6 +17,8 @@
     exactHint: "Штробы, подрозетники и кабель посчитаны по фактическому чертежу: длина спуска × материал стены, ёмкость штробы — из движка пула.",
     approxHint: "⚠ Приближённый счёт по комнатам. Построй трассы (🧵) — расчёт станет точным по чертежу.",
     reserve: "Запас кабеля, %",
+    stubHint: "Выпуск кабеля на разделку (добавляется к длине каждого конца кабеля отдельно от самой трассы)",
+    stubPoint: "У точки, см", stubJunction: "У распайки, см", stubPanel: "В щите, см",
     tempHint: "Временные сети на время ремонта (организация — не выводится из чертежа, вводится вручную)",
     tempLighting: "Врем. освещение, точек", tempSockets: "Врем. розетки, точек",
     noPrice: "нет цены в БД", total: "Итого по ценам БД",
@@ -30,7 +32,9 @@
     nameLbl: "Название", qtyLbl: "Кол-во", unitLbl: "Ед. изм.",
     typeWork: "Работа", typeMaterial: "Материал", saveBtn: "✓ Сохранить",
     byLines: "По линиям (QF)", secCable: "Кабель", secConsum: "Расходники",
-    secMaterial: "Материалы", secWork: "Работы"
+    secMaterial: "Материалы", secWork: "Работы",
+    cableTitle: "🔌 Кабель линии", cableLbl: "Марка/сечение",
+    cableHint: "Марка/сечение кабеля именно этой линии — поменяет и материал, и «Прокладку кабеля» в смете. Пустое поле — автоподбор по нагрузке/автомату, как раньше."
   };
   // Категории для секций сметы: имя позиции → ключ секции (порядок вывода ниже).
   // Расходники (крепёж/гофра/лента/стяжки/буры/коронки/мешки) выносим ОТДЕЛЬНО от
@@ -65,7 +69,7 @@
       if (!rt.circuitId) return;
       const el = (p.elements || []).find((e) => e.id === rt.fromId);
       const pn = rt.toPanel ? (p.panels || []).find((x) => x.id === rt.toId) : null;
-      const L = G().polylineLen(rt.points || []) + (el ? RT.pointVert(p, el) * RT.hopVertMul(p, rt) : 0) + (rt.toPanel ? RT.panelVert(p, pn) : 0);
+      const L = G().polylineLen(rt.points || []) + (el ? RT.pointVert(p, el) * RT.hopVertMul(p, rt) : 0) + (rt.toPanel ? RT.panelVert(p, pn) : 0) + RT.cableStub(p, el, rt);
       const r = row(rt.circuitId);
       r.cableLen += L; r.crossings += (rt.throughWalls || []).length;
       const cc = (p.circuits || []).find((c) => c.id === rt.circuitId);
@@ -328,8 +332,9 @@
       const e2 = elById(r.fromId);
       const pn = r.toPanel ? (p.panels || []).find((x) => x.id === r.toId) : null;
       // без распайки на конце кабель проходит штробу туда-обратно (нет коробки,
-      // принимающей горизонталь на месте) — hopVertMul=2 для такого хопа
-      const L = G2.polylineLen(r.points || []) + (e2 ? RT.pointVert(p, e2) * RT.hopVertMul(p, r) : 0) + (r.toPanel ? RT.panelVert(p, pn) : 0);
+      // принимающей горизонталь на месте) — hopVertMul=2 для такого хопа; + выпуск
+      // на разделку/подключение (RT.cableStub — см. её инвариант)
+      const L = G2.polylineLen(r.points || []) + (e2 ? RT.pointVert(p, e2) * RT.hopVertMul(p, r) : 0) + (r.toPanel ? RT.panelVert(p, pn) : 0) + RT.cableStub(p, e2, r);
       const cc = (p.circuits || []).find((c) => c.id === r.circuitId);
       let mark = (cc && cc.cable) || null;
       if (!mark) {
@@ -371,10 +376,11 @@
     if (junctBoxes) add("material", "Распаечная коробка (потолок)", junctBoxes, "шт");
     if (junctBoxes) add("work", "Монтаж и расключение распределительной коробки", junctBoxes, "шт");
     Object.keys(cableBy).forEach((m) => add("material", `Кабель ${m}`, cableBy[m], "м"));
-    // прокладка кабеля — работа отдельно от материала (метраж кабеля тот же, что уже
-    // посчитан построчно выше по маркам)
-    const totalCableM = Object.keys(cableBy).reduce((sum, m) => sum + cableBy[m], 0);
-    add("work", "Прокладка кабеля", totalCableM, "м");
+    // прокладка кабеля — работа отдельно от материала, ОТДЕЛЬНОЙ СТРОКОЙ на каждую марку
+    // (просьба пользователя: «прокладка кабеля в работах, должна разделиться (прокладка
+    // 3×1.5, 3×2.5) и так далее» — раньше была ОДНА строка суммарно по всем маркам разом);
+    // метраж каждой строки = метражу материала «Кабель N» той же марки выше, той же цифрой
+    Object.keys(cableBy).forEach((m) => add("work", `Прокладка кабеля ${m}`, cableBy[m], "м"));
     // проходки через стены: Ø20, группируем по месту (~20 см); ёмкость гильзы зависит от
     // способа прокладки (тот же признак «в гофре», что уже определяет расходку выше) —
     // просьба пользователя: «1 проходка это 2 провода без гофры, или 1 в гофре» (гофра
@@ -512,6 +518,15 @@
         <div class="ep-plan-srow ep-plan-hintrow">${T.exactHint}</div>
         <div class="ep-plan-srow"><label class="ep-plan-range" style="flex:0 0 150px">${T.reserve}
           <input type="number" inputmode="numeric" min="0" max="50" value="${Math.round(p.settings.cableReserve == null ? 10 : p.settings.cableReserve)}" data-pc-reserve></label></div>
+        <div class="ep-plan-srow ep-plan-hintrow">${T.stubHint}</div>
+        <div class="ep-plan-srow">
+          <label class="ep-plan-range" style="flex:1 1 110px">${T.stubPoint}
+            <input type="number" inputmode="numeric" min="0" max="200" value="${Math.round(p.settings.cableStubPoint == null ? 20 : p.settings.cableStubPoint)}" data-pc-stubpoint></label>
+          <label class="ep-plan-range" style="flex:1 1 110px">${T.stubJunction}
+            <input type="number" inputmode="numeric" min="0" max="200" value="${Math.round(p.settings.cableStubJunction == null ? 30 : p.settings.cableStubJunction)}" data-pc-stubjunction></label>
+          <label class="ep-plan-range" style="flex:1 1 110px">${T.stubPanel}
+            <input type="number" inputmode="numeric" min="0" max="200" value="${Math.round(p.settings.cableStubPanel == null ? 50 : p.settings.cableStubPanel)}" data-pc-stubpanel></label>
+        </div>
         <div class="ep-plan-srow ep-plan-hintrow">${T.tempHint}</div>
         <div class="ep-plan-srow">
           <label class="ep-plan-range" style="flex:1 1 150px">${T.tempLighting}
@@ -540,7 +555,7 @@
             <span class="ep-plan-cdot" style="background:${esc(r.color)}"></span><b>${esc(r.name)}</b>
             <span class="ep-plan-qfmeta">${r.breaker || "—"}A${r.rcd ? " · УЗО" : ""}</span>
             <span class="ep-plan-flex"></span>
-            <span class="ep-plan-qfnums">${r.mark ? esc(r.mark) + " · " : ""}${r.cableLen ? G().fmtLen(r.cableLen * 100) : "—"} · ${r.points} тчк${r.crossings ? " · " + r.crossings + " прох." : ""}</span>
+            <span class="ep-plan-qfnums">${r.mark ? `<button type="button" class="ep-plan-iprice ep-plan-qfmark ep-clickable" data-pc-editcable data-pc-circid="${esc(r.id)}" data-pc-curmark="${esc(r.mark)}">${esc(r.mark)}</button> · ` : ""}${r.cableLen ? G().fmtLen(r.cableLen * 100) : "—"} · ${r.points} тчк${r.crossings ? " · " + r.crossings + " прох." : ""}</span>
           </div>`).join("")}</div>`
       : "";
 
@@ -606,6 +621,22 @@
         <span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-pc-consumback>${T.back}</button></div>
       <div id="ep-consum-root"></div>`);
     if (window.EP && window.EP.ConsumablesUI && EP.ConsumablesUI.renderLogic) EP.ConsumablesUI.renderLogic("ep-consum-root");
+  }
+
+  // заменить марку/сечение кабеля КОНКРЕТНОЙ линии (QF) — прямо из списка «По линиям»
+  // (просьба пользователя: «где написано (qf4) (кабель) вот кабель менять, сечение,
+  // марку»). circuit.cable — тот же источник правды, что уже читают calcByRoutes()/
+  // perCircuit()/autoCable() в plan-scheme.js — правка сразу видна и в материале
+  // «Кабель …», и в «Прокладке кабеля …» (см. Feature B выше), и в самой однолинейке.
+  function sheetEditCable(circuitId, curMark) {
+    rooms().openSheet(`<div class="ep-plan-srow"><b>${T.cableTitle}</b>
+        <span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-pc-priceback>${T.back}</button></div>
+      <div class="ep-plan-srow"><label class="ep-plan-range" style="flex:1 1 100%">${T.cableLbl}
+        <input type="text" value="${esc(curMark || "")}" data-pc-cablemark></label></div>
+      <div class="ep-plan-srow ep-plan-hintrow">${T.cableHint}</div>
+      <div class="ep-plan-srow ep-plan-sbtns"><button type="button" class="btn btn-primary ep-clickable" data-pc-cablesave data-pc-circid="${esc(circuitId)}">${T.saveBtn}</button></div>`);
+    const inp = document.querySelector("[data-pc-cablemark]");
+    if (inp) { inp.focus(); inp.select(); }
   }
 
   // назначить/поправить цену позиции — сохраняется в «Мою БД» (EP.Database.addMyItem),
@@ -723,6 +754,16 @@
       const b = t.closest("[data-pc-setprice]");
       return sheetSetPrice(b.getAttribute("data-pc-pname"), b.getAttribute("data-pc-ptype"), b.getAttribute("data-pc-punit"), b.getAttribute("data-pc-pcur"));
     }
+    if ((b = t.closest("[data-pc-editcable]"))) return sheetEditCable(b.getAttribute("data-pc-circid"), b.getAttribute("data-pc-curmark"));
+    if ((b = t.closest("[data-pc-cablesave]"))) {
+      const circId = b.getAttribute("data-pc-circid");
+      const val = ((document.querySelector("[data-pc-cablemark]") || {}).value || "").trim();
+      const c = core(); c.commit();
+      const circ = (c.project.circuits || []).find((x) => x.id === circId);
+      if (circ) circ.cable = val || null; // пусто — сброс на автоподбор (см. T.cableHint)
+      c.persist("circuit-cable");
+      return sheet();
+    }
     if (t.closest("[data-pc-priceback]")) return sheet();
     if (t.closest("[data-pc-pricesave]")) {
       const b = t.closest("[data-pc-pricesave]");
@@ -759,6 +800,21 @@
       const c = core(); c.commit();
       c.project.settings.tempSocketsPts = Math.max(0, Number(e.target.value) || 0);
       c.persist("temp-sockets"); sheet();
+    }
+    if (e.target.getAttribute && e.target.getAttribute("data-pc-stubpoint") != null) {
+      const c = core(); c.commit();
+      c.project.settings.cableStubPoint = Math.max(0, Math.min(200, Number(e.target.value) || 0));
+      c.persist("cable-stub"); sheet();
+    }
+    if (e.target.getAttribute && e.target.getAttribute("data-pc-stubjunction") != null) {
+      const c = core(); c.commit();
+      c.project.settings.cableStubJunction = Math.max(0, Math.min(200, Number(e.target.value) || 0));
+      c.persist("cable-stub"); sheet();
+    }
+    if (e.target.getAttribute && e.target.getAttribute("data-pc-stubpanel") != null) {
+      const c = core(); c.commit();
+      c.project.settings.cableStubPanel = Math.max(0, Math.min(200, Number(e.target.value) || 0));
+      c.persist("cable-stub"); sheet();
     }
   });
 
