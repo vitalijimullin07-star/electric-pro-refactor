@@ -229,14 +229,26 @@
     });
     return { nodes, edges };
   }
-  // ближайшая проекция точки на ЛЮБОЙ отрезок графа (перебор рёбер)
-  function nearestOnGraph(graph, pt) {
-    let best = null;
+  // ближайшая проекция точки на ЛЮБОЙ отрезок графа (перебор рёбер). roomFilter (опц.) —
+  // предикат по проекции: если задан, СНАЧАЛА ищем ближайшую проекцию СРЕДИ ТЕХ, что
+  // проходят фильтр (обычно «лежит в той же комнате, что и точка a»), и берём её ДАЖЕ
+  // если она дальше глобально ближайшей — иначе «в комнату» через ветку магистрали
+  // соседней комнаты, только потому что её КОНЕЦ (ограниченный длиной ветки) численно
+  // ближе по прямой, чем конец «своей» ветки — реальный баг, пойманный на проекте
+  // пользователя (репорт «должно было зайти из 3 в 1, а зашло 3-2-1» — ветка в комнату 2
+  // технически ближе к точке в комнате 1, чем её же собственная ветка в комнату 1, если
+  // у обеих веток разная длина). Без фильтра (b — щит/цель без известной комнаты) —
+  // прежнее поведение (глобально ближайшая проекция по всему графу).
+  function nearestOnGraph(graph, pt, roomFilter) {
+    let best = null, bestIn = null;
     graph.edges.forEach((e, ei) => {
       const cl = G().closestOnSeg(pt, graph.nodes[e.a], graph.nodes[e.b]);
       if (!best || cl.d < best.d) best = { d: cl.d, x: cl.x, y: cl.y, edgeI: ei };
+      if (roomFilter && roomFilter({ x: cl.x, y: cl.y }) && (!bestIn || cl.d < bestIn.d)) {
+        bestIn = { d: cl.d, x: cl.x, y: cl.y, edgeI: ei };
+      }
     });
-    return best;
+    return bestIn || best;
   }
   // кратчайший путь по графу между двумя проекциями (каждая — точка НА своём ребре, не
   // обязательно узел): если обе на ОДНОМ ребре — прямой отрезок между ними (тривиально
@@ -359,7 +371,12 @@
     if (!gs.length) return null;
     const graph = buildGuideGraph(gs);
     if (!graph.edges.length) return null;
-    const pa = nearestOnGraph(graph, a), pb = nearestOnGraph(graph, b);
+    // Фильтр «проекция в ТОЙ ЖЕ комнате, что и точка» — см. инвариант nearestOnGraph:
+    // предпочитаем ветку магистрали СВОЕЙ комнаты, даже если чужая ветка технически ближе
+    // по прямой (иначе получаем лишний переход через соседнюю комнату вместо прямого).
+    const ra = roomNear(p, a), rb = roomNear(p, b);
+    const inRoom = (room) => room ? (proj) => { const r = G().roomAt(p, proj); return !!r && r.id === room.id; } : null;
+    const pa = nearestOnGraph(graph, a, inRoom(ra)), pb = nearestOnGraph(graph, b, inRoom(rb));
     if (!pa || !pb || pa.d > GUIDE_SNAP_MAX || pb.d > GUIDE_SNAP_MAX) return null;
     if (G().dist({ x: pa.x, y: pa.y }, { x: pb.x, y: pb.y }) < 10) return null; // проекции сошлись — магистраль не нужна
     const sp = shortestOnGraph(graph, pa, pb);
