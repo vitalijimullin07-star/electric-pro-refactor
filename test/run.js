@@ -613,6 +613,7 @@ test("buildIncremental: у ручной трассы проходки актуа
 });
 test("buildIncremental: новая точка шлейфом подключается к уже проведённой точке, а не только к щиту", () => {
   const { P, w } = install({ panels: [M.newPanel(600, 150)] }); // щит далеко от комнаты
+  P.guides.push(M.newGuide([{ x: 0, y: 150 }, { x: 700, y: 150 }])); // магистраль до щита — комната/щит не в одной комнате
   const a = M.newElement("socket", w(0), 50, 30, "power");
   P.elements.push(a);
   EP.Plan.Routes.build();
@@ -1198,7 +1199,7 @@ test("лампа: подход по контуру и под прямым угл
   const q = path[1]; // первый излом от лампы — перпендикуляр к контуру (оси комнаты)
   ok(Math.abs(q.x - 200) < 0.5 || Math.abs(q.y - 150) < 0.5, "прямой угол от лампы");
 });
-test("другая комната: перпендикулярная проходка через стену", () => {
+test("другая комната: перпендикулярная проходка через стену (по магистрали — без неё путь между комнатами не строится)", () => {
   const { P } = install();
   const roomB = M.newRoom(G.rectPoints(400, 0, 400, 300), "B");
   P.rooms.push(roomB);
@@ -1206,10 +1207,15 @@ test("другая комната: перпендикулярная проход
   const s1 = M.newElement("socket", roomB.id + ":1", 150, 30, "power"); // правая стена B
   P.elements.push(s1);
   const a = G.routeAnchor(P, s1);
-  const path = EP.Plan.Routes.buildPath(P, s1, a, { kind: "panel", pos: { x: pn.x, y: pn.y } });
+  const target = { kind: "panel", pos: { x: pn.x, y: pn.y } };
+  ok(EP.Plan.Routes.buildPath(P, s1, a, target) === null, "БЕЗ магистрали между комнатами путь не строится");
+  P.guides.push(M.newGuide([{ x: 50, y: 150 }, { x: 750, y: 150 }])); // магистраль через обе комнаты, пересекает стену x=400
+  const path = EP.Plan.Routes.buildPath(P, s1, a, target);
+  ok(path, "С магистралью путь построен");
   const hits = G.polylineCrossings(P, path, s1.wallId);
   ok(hits.length >= 1, "есть проходка");
-  // сегмент через стену x=400 — строго горизонтальный (перпендикуляр к вертикальной стене)
+  // сегмент через стену x=400 — строго горизонтальный (перпендикуляр к вертикальной стене) —
+  // магистраль нарисована прямой горизонтальной линией, поэтому и переход через стену на ней прямой
   let perp = false;
   for (let i = 0; i < path.length - 1; i++) {
     const p1 = path[i], p2 = path[i + 1];
@@ -1249,10 +1255,10 @@ test("createProject: стартовые настройки высота/пол-�
   eq(d.settings.ceilingHeight, 270, "дефолт без opts");
   eq(d.settings.routeType, "ceiling", "дефолт по потолку");
 });
-test("проходки Ø20: макс. 2 кабеля в гильзу", () => {
-  const { P, w } = install();
+test("проходки Ø20: без гофры — макс. 2 кабеля в гильзу", () => {
+  const { P, w } = install({ settings: Object.assign({}, M.newProject("t").settings, { gofraCeil: false }) });
   const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
-  // 3 кабеля через одно место стены → 2 гильзы
+  // 3 кабеля через одно место стены, БЕЗ гофры (settings.gofraCeil:false) → 2 гильзы
   for (let i = 0; i < 3; i++) {
     const e2 = M.newElement("socket", w(0), 100 + i * 5, 30, "power");
     P.elements.push(e2);
@@ -1264,7 +1270,41 @@ test("проходки Ø20: макс. 2 кабеля в гильзу", () => {
   const res = EP.Plan.Calc.calcByRoutes(P);
   const sl = res.items.find((i) => i.name.indexOf("Проходка Ø20") >= 0);
   ok(sl, "есть проходки");
-  eq(sl.qty, 2, "3 кабеля → 2 гильзы");
+  eq(sl.qty, 2, "3 кабеля без гофры → 2 гильзы");
+});
+test("проходки Ø20: в гофре (по умолчанию) — 1 кабель на гильзу", () => {
+  // просьба пользователя: «1 проходка это 2 провода без гофры, или 1 в гофре» — гофра
+  // толще, вдвоём в Ø20 уже не входят. По умолчанию settings.gofraCeil=true (потолок).
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
+  for (let i = 0; i < 3; i++) {
+    const e2 = M.newElement("socket", w(0), 100 + i * 5, 30, "power");
+    P.elements.push(e2);
+    const rt = M.newRoute("power", "ceiling", [{ x: 100, y: 20 }, { x: 200, y: 150 }], e2.id, pn.id);
+    rt.toPanel = true;
+    rt.throughWalls = [{ x: 400, y: 150, wallId: w(1) }];
+    P.routes.push(rt);
+  }
+  const res = EP.Plan.Calc.calcByRoutes(P);
+  const sl = res.items.find((i) => i.name.indexOf("Проходка Ø20") >= 0);
+  ok(sl, "есть проходки");
+  eq(sl.qty, 3, "3 кабеля в гофре → 3 гильзы (каждому своя)");
+});
+test("проходки Ø20: по полу — всегда гофра (1 кабель на гильзу), даже если gofraCeil=false", () => {
+  const { P, w } = install({ settings: Object.assign({}, M.newProject("t").settings, { routeType: "floor", gofraCeil: false }) });
+  const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
+  for (let i = 0; i < 2; i++) {
+    const e2 = M.newElement("socket", w(0), 100 + i * 5, 30, "power");
+    P.elements.push(e2);
+    const rt = M.newRoute("power", "floor", [{ x: 100, y: 20 }, { x: 200, y: 150 }], e2.id, pn.id);
+    rt.toPanel = true;
+    rt.throughWalls = [{ x: 400, y: 150, wallId: w(1) }];
+    P.routes.push(rt);
+  }
+  const res = EP.Plan.Calc.calcByRoutes(P);
+  const sl = res.items.find((i) => i.name.indexOf("Проходка Ø20") >= 0);
+  ok(sl, "есть проходки");
+  eq(sl.qty, 2, "по полу гофра всегда — 2 кабеля → 2 гильзы, gofraCeil на пол не влияет");
 });
 
 // ===== 12. Штробы в блок по видам, связь выключатель→свет, тип «Вывод» =====
@@ -1555,26 +1595,44 @@ function twoRoomsWithLamp(routeType, withDoor) {
   const lamp = M.newElement("light", null, 0, 0, "light");
   lamp.params = { x: 600, y: 150 }; // комната B; прямая к щиту идёт по y=150 (мимо двери)
   P.elements.push(lamp);
+  // межкомнатный переход теперь ТОЛЬКО по магистрали (см. инвариант buildPath) — рисуем её
+  // сами. Пол+дверь — магистраль ЧЕРЕЗ дверь (y=250), тогда дверь остаётся реальной точкой
+  // перехода (без лишней гильзы, см. floorSkip) — пользователь сам ведёт направление через
+  // проём, а не автопоиск ближайшего на прямой, как было раньше. Иначе — прямая y=150.
+  const guideY = (routeType === "floor" && withDoor) ? 250 : 150;
+  P.guides.push(M.newGuide([{ x: 50, y: guideY }, { x: 750, y: guideY }]));
   return { P, pn, lamp };
+}
+// Точка пересечения пути с линией стены x=400 — С магистралью крест стены теперь чаще
+// приходится НА середину прямого участка (по трунку магистрали), а не на явную вершину
+// пути, как было у старого прямого фолбэка — интерполируем между соседними точками.
+function crossYAt400(path) {
+  for (let i = 0; i < path.length - 1; i++) {
+    const p1 = path[i], p2 = path[i + 1];
+    if ((p1.x - 400) * (p2.x - 400) <= 0 && p1.x !== p2.x) {
+      const t = (400 - p1.x) / (p2.x - p1.x);
+      return p1.y + t * (p2.y - p1.y);
+    }
+  }
+  return null;
 }
 test("buildPath (пол): дверь на общей стене — переход через неё, а не в произвольном месте", () => {
   const { P, pn, lamp } = twoRoomsWithLamp("floor", true);
   const a = G.routeAnchor(P, lamp);
   const path = EP.Plan.Routes.buildPath(P, lamp, a, { kind: "panel", pos: { x: pn.x, y: pn.y } });
-  ok(path.some((q) => Math.abs(q.x - 400) < 25 && Math.abs(q.y - 250) < 10), "путь проходит через дверь (y≈250)");
-  ok(!path.some((q) => Math.abs(q.x - 400) < 25 && Math.abs(q.y - 150) < 10), "НЕ идёт через прямую точку пересечения — там нет проёма");
+  near(crossYAt400(path), 250, 10, "путь проходит через дверь (y≈250) — магистраль нарисована через неё");
 });
 test("buildPath (пол): без двери на стене — прежнее поведение, проходка на прямой", () => {
   const { P, pn, lamp } = twoRoomsWithLamp("floor", false);
   const a = G.routeAnchor(P, lamp);
   const path = EP.Plan.Routes.buildPath(P, lamp, a, { kind: "panel", pos: { x: pn.x, y: pn.y } });
-  ok(path.some((q) => Math.abs(q.x - 400) < 25 && Math.abs(q.y - 150) < 10), "без проёма — обычная перпендикулярная проходка на прямой");
+  near(crossYAt400(path), 150, 10, "без проёма — переход там, где нарисована магистраль (y≈150)");
 });
 test("buildPath (потолок): дверь есть, но обход применяется только к трассировке по полу", () => {
   const { P, pn, lamp } = twoRoomsWithLamp("ceiling", true);
   const a = G.routeAnchor(P, lamp);
   const path = EP.Plan.Routes.buildPath(P, lamp, a, { kind: "panel", pos: { x: pn.x, y: pn.y } });
-  ok(path.some((q) => Math.abs(q.x - 400) < 25 && Math.abs(q.y - 150) < 10), "потолок — дверь не влияет, проходка на прямой");
+  near(crossYAt400(path), 150, 10, "потолок — дверь не влияет, переход там, где нарисована магистраль (y≈150)");
 });
 test("build (пол): переход через дверь не считается гильзой-проходкой Ø20", () => {
   const { P } = twoRoomsWithLamp("floor", true);
@@ -1699,7 +1757,8 @@ test("addFloor/setActiveFloor/deleteFloor: нельзя удалить посл�
 });
 test("EP.Plan.Routes.build(): перестройка активного этажа не трогает трассы другого этажа", () => {
   const { P, w } = install();
-  const pn1 = M.newPanel(-50, -50, "Щ1"); P.panels.push(pn1);
+  const pn1 = M.newPanel(-50, -50, "Щ1"); P.panels.push(pn1); // щит вне комнаты — нужна магистраль
+  P.guides.push(M.newGuide([{ x: -50, y: -50 }, { x: 300, y: 200 }])); // магистраль этажа 1
   const s1 = M.newElement("socket", w(0), 100, 30, "power"); P.elements.push(s1);
   EP.Plan.Routes.build({ silent: true });
   eq(P.routes.length, 1, "трасса этажа 1 построена");
@@ -1708,6 +1767,7 @@ test("EP.Plan.Routes.build(): перестройка активного этаж
   EP.Plan.Core.addFloor("2 этаж");
   const roomB = M.newRoom(G.rectPoints(0, 0, 400, 300), "B"); P.rooms.push(roomB);
   const pn2 = M.newPanel(-50, -50, "Щ2"); P.panels.push(pn2);
+  P.guides.push(M.newGuide([{ x: -50, y: -50 }, { x: 300, y: 200 }])); // своя магистраль этажа 2 (addFloor уже переключил активный)
   const s2 = M.newElement("socket", roomB.id + ":0", 100, 30, "power"); P.elements.push(s2);
   EP.Plan.Routes.build({ silent: true });
 

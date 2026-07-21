@@ -19,7 +19,12 @@
     lines: "Линии (автоматы)", noLine: "Без линии", junctions: "Распаек",
     breaker: "Автомат", rcd: "УЗО",
     soloHint: "Тап по линии — показать на плане только её (повторный тап или ✕ шторки — вернуть все). 👁 — скрыть линию.",
-    soloAll: "Показать все линии"
+    soloAll: "Показать все линии",
+    unroutedToast: (n) => `Без трассы: ${n} — нет магистрали до их комнаты`,
+    unroutedBanner: (n) => `⚠ Без трассы: ${n} точ. — не нашлась магистраль (⇉) до их комнаты. Нарисуйте направление и нажмите «Построить» ещё раз.`,
+    buildConfirmTitle: "Перед трассировкой",
+    buildConfirmText: "Между комнатами трасса идёт ТОЛЬКО по нарисованной магистрали (⇉) — прямого пути через случайную стену больше нет (меньше лишних проходок). Убедитесь, что магистраль нарисована до КАЖДОЙ комнаты, где есть точки — иначе трассы в ней не построятся.",
+    buildConfirmGo: "✓ Построить", buildConfirmBack: "‹ Назад"
   };
 
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -130,6 +135,10 @@
   // тогда guideRoute() ничего не помечает (например, при замере длины в chainFromPanel
   // или в resetRouteToAuto), а hideGuides() при null сохраняет прежнее поведение.
   let usedGuideIds = null;
+  // Сколько точек/распаек остались БЕЗ трассы после последнего build()/buildIncremental()
+  // (см. инвариант buildPath: между комнатами без магистрали путь не строится) — читает
+  // sheet() для баннера-предупреждения и toast после явного нажатия «Построить».
+  let lastUnrouted = 0;
   // перпендикулярный заход: к горизонтальному участку магистрали подходим вертикально
   // (и наоборот) — примыкание всегда прямым углом, как просил пользователь
   function guideKnee(pt, proj, segA, segB) {
@@ -380,9 +389,18 @@
     });
   }
 
-  // общий построитель: та же комната — по контуру; другая — через перпендикулярные проходки
-  function buildPath(p, fromEl, a, target, depth, circuitId) {
-    depth = depth || 0;
+  // общий построитель: та же комната — по контуру с отступом. РАЗНЫЕ комнаты (или хотя
+  // бы одна сторона вне контура — щит в коридоре и т.п.) — ТОЛЬКО через нарисованную
+  // магистраль (⇉, guideRoute). Просьба пользователя: прежняя «жадная» трассировка между
+  // комнатами (к ближайшей по прямой стене, с рекурсивным обходом дальше) убрана целиком —
+  // она давала «кашу»: разные независимые точки сверлили РАЗНЫЕ места одной и той же
+  // стены вместо одного общего прохода, отсюда лишние проходки. Магистраль — ЕДИНСТВЕННЫЙ
+  // путь наружу комнаты: она задаёт одно общее место перехода для всех точек, которые к
+  // ней подключаются. Без магистрали, реально соединяющей комнаты источника и цели, путь
+  // НЕ строится — buildPath возвращает null (см. addRoute/chainFromPanel: точка остаётся
+  // без трассы, попадает в счётчик «Без трассы» после build()/buildIncremental() — вместо
+  // того чтобы молча построить кривой прямой путь через случайную стену).
+  function buildPath(p, fromEl, a, target, circuitId) {
     circuitId = circuitId || (fromEl && fromEl.circuitId) || null;
     const b = target.pos;
     const ra = fromEl ? roomOfEl(p, fromEl) : roomNear(p, a);
@@ -390,48 +408,9 @@
     if (ra && rb && ra.id === rb.id) {
       const path = pathInRoom(p, ra, a, b, circuitId);
       if (path) return path;
-    } else if (ra && rb && depth < 4) {
-      // приоритет — нарисованная магистраль (только верхний вызов, не рекурсивные хвосты)
-      if (depth === 0) {
-        const gp = guideRoute(p, a, b, circuitId);
-        if (gp) return gp;
-      }
-      // первая стена на прямой a→b — точка проходки, переход строго перпендикулярно стене
-      const hits = G().polylineCrossings(p, [a, b], fromEl && fromEl.wallId || null)
-        .map((c) => ({ c, w: G().wallById(p, c.wallId), d: G().dist(a, c) }))
-        .filter((h) => h.w).sort((x, y) => x.d - y.d);
-      if (hits.length) {
-        const { w } = hits[0];
-        let c = hits[0].c, viaOpening = false;
-        // Пол: приоритет — если на этой стене есть проём до пола (дверь/раздвижная/
-        // балконная/проём, sill=0 — НЕ окно), ведём кабель прямо через него вместо
-        // сверления новой гильзы (там уже физический разрыв стены). Берём ближайший
-        // к «a» такой проём на найденной стене.
-        if (p.settings.routeType === "floor") {
-          const door = G().wallOpeningSpans(p, w).filter((o) => o.sill === 0)
-            .map((o) => G().pointAtOffset(w, o.offset + o.width / 2))
-            .sort((x, y) => G().dist(a, x) - G().dist(a, y))[0];
-          if (door) { c = door; viaOpening = true; }
-        }
-        const len = w.len || 1;
-        let nx = -(w.b.y - w.a.y) / len, ny = (w.b.x - w.a.x) / len;
-        if ((b.x - a.x) * nx + (b.y - a.y) * ny < 0) { nx = -nx; ny = -ny; } // нормаль в сторону цели
-        const jump = viaOpening ? (G().wallThOf(p, w) / 2 + 2) : (G().wallThOf(p, w) / 2 + routeOff(p, circuitId));
-        const c1 = { x: c.x - nx * jump, y: c.y - ny * jump }; // по нашу сторону стены
-        const c2 = { x: c.x + nx * jump, y: c.y + ny * jump }; // за стеной
-        const legA = (G().roomAt(p, c1) === ra ? pathInRoom(p, ra, a, c1, circuitId) : null) || [a, c1];
-        const legB = buildPath(p, null, c2, target, depth + 1, circuitId);
-        const path = legA.concat(legB);
-        return path.filter((q, j) => j === 0 || G().dist(q, path[j - 1]) > 0.5);
-      }
+      return ortho(p, a, b, fromEl && fromEl.wallId || null); // контур не построился — крайний случай (вырожденная комната)
     }
-    // одна из сторон вне комнаты (щит в коридоре без контура и т.п.) — магистраль
-    // всё равно применима, если нарисована рядом (тот же верхний-вызов гейт)
-    if (depth === 0 && (!ra || !rb)) {
-      const gp = guideRoute(p, a, b, circuitId);
-      if (gp) return gp;
-    }
-    return ortho(p, a, b, fromEl && fromEl.wallId || null); // запасной вариант
+    return guideRoute(p, a, b, circuitId); // разные комнаты — только по магистрали, иначе null
   }
 
   // ---- ручное редактирование трасс: тяга опорных точек / разворот угла (Слой 4.1) ----
@@ -483,6 +462,19 @@
   // где указано (трансформаторы тока тут)». Приоритет ВЫШЕ роутера (output24 — слой
   // lv, без этой ветки его перехватил бы router-щит). Без transformer-щита — прежнее
   // поведение (output24 как обычная LV-точка: роутер, если есть, иначе ближайший щит).
+  // Подключает el к БЛИЖАЙШЕМУ ДОСТИЖИМОМУ узлу из nodes (по прямой дистанции, как и
+  // раньше — nearest()), но если ближайший по прямой оказался недостижим (buildPath
+  // вернул null — нет магистрали между его комнатой и комнатой el), пробует следующий
+  // по дальности, и так далее — иначе точка осталась бы без трассы вслепую, хотя более
+  // дальний, но реально соединённый магистралью узел был доступен.
+  function connectNearest(c, p, el, pos, nodes, circuitId, color) {
+    const sorted = nodes.slice().sort((x, y) => dist(pos, x.pos) - dist(pos, y.pos));
+    for (let i = 0; i < sorted.length; i++) {
+      const rt = addRoute(c, p, el, pos, sorted[i], circuitId, color);
+      if (rt) return rt;
+    }
+    return null;
+  }
   function routeGroups(c, p, pointsToRoute, juncts, panels, extraConnected) {
     const routerPanels = panels.filter((pn) => pn.router);
     const trafoPanels = panels.filter((pn) => pn.transformer);
@@ -508,8 +500,7 @@
       if (J.length) {
         // есть распайка -> каждая точка к ближайшей распайке своей линии (или щиту/роутеру/трансформатору)
         g.items.forEach(({ el, pos }) => {
-          const target = nearest(pos, J.concat(targetPanels));
-          if (target) addRoute(c, p, el, pos, target, el.circuitId, colorOf(p, el));
+          connectNearest(c, p, el, pos, J.concat(targetPanels), el.circuitId, colorOf(p, el));
         });
       } else {
         // НЕТ распайки -> шлейф: щит/роутер [+ уже подключённые точки того же рода] -> точка -> точка
@@ -529,8 +520,7 @@
     juncstToRoute.forEach((n) => {
       const d = panelDist(n.pos);
       const closerJ = js.filter((x) => x.d < d - 1 && (!n.circuitId || x.n.circuitId === n.circuitId)).map((x) => x.n);
-      const target = nearest(n.pos, panels.concat(closerJ));
-      if (target) addRoute(c, p, n.el, n.pos, target, n.circuitId, colorOf(p, n.el));
+      connectNearest(c, p, n.el, n.pos, panels.concat(closerJ), n.circuitId, colorOf(p, n.el));
     });
   }
 
@@ -568,8 +558,10 @@
     if (savedManual.length) restoreManualRoutes(p, savedManual);
     hideGuides(p); // прячем ТОЛЬКО применённые магистрали (см. usedGuideIds/hideGuides)
     usedGuideIds = null;
+    const routedIds = new Set(p.routes.filter(onActiveFloor).map((r) => r.fromId));
+    lastUnrouted = points.filter((el) => !routedIds.has(el.id)).length + juncts.filter((n) => !routedIds.has(n.id)).length;
     c.persist("routes-build");
-    if (!silent) sheet();
+    if (!silent) { if (lastUnrouted) rooms().toast(T.unroutedToast(lastUnrouted)); sheet(); }
   }
 
   // ---- инкрементальная достройка: кнопка "⚡ Построить" — раньше звала build()
@@ -623,8 +615,10 @@
 
     hideGuides(p); // прячем ТОЛЬКО применённые к новым точкам (уже применённые ранее — уже скрыты)
     usedGuideIds = null;
+    const routedIdsAfter = new Set(p.routes.map((r) => r.fromId));
+    lastUnrouted = newPoints.filter((el) => !routedIdsAfter.has(el.id)).length + newJuncts.filter((n) => !routedIdsAfter.has(n.id)).length;
     c.persist("routes-build-inc");
-    if (!silent) sheet();
+    if (!silent) { if (lastUnrouted) rooms().toast(T.unroutedToast(lastUnrouted)); sheet(); }
   }
 
   // сброс конкретной трассы к авто-варианту (кнопка "↺ Авто" в sheetRoute) — пересчитывает
@@ -657,7 +651,7 @@
     }
     if (!target || !target.pos) return;
     c.commit();
-    rt.points = buildPath(p, fromEl, a, target, 0, rt.circuitId);
+    rt.points = buildPath(p, fromEl, a, target, rt.circuitId);
     rt.manual = false;
     recomputeThroughWalls(p, rt);
     c.persist("route-reset");
@@ -713,9 +707,12 @@
       if (memo.has(key)) return memo.get(key);
       const target = { kind: cn.kind, id: cn.id, pos: cn.pos, el: cn.el };
       const save = usedGuideIds; usedGuideIds = null; // ЗАМЕР не должен помечать магистраль как использованную (фикс №1)
-      const pts = buildPath(p, fromEl, a, target, 0, circuitId);
+      const pts = buildPath(p, fromEl, a, target, circuitId);
       usedGuideIds = save;
-      let L = 0; for (let i = 1; i < pts.length; i++) L += dist(pts[i - 1], pts[i]);
+      // buildPath может вернуть null (нет магистрали между комнатами source/target —
+      // см. инвариант buildPath выше) — недостижимая пара, не участвует в выборе
+      // ближайшего звена шлейфа.
+      const L = pts ? (() => { let s = 0; for (let i = 1; i < pts.length; i++) s += dist(pts[i - 1], pts[i]); return s; })() : Infinity;
       memo.set(key, L);
       return L;
     };
@@ -727,14 +724,21 @@
       }));
       if (!best) break;
       const it = rest[best.idx];
-      addRoute(c, p, it.el, it.pos, best.cn, circuitId, colorOf(p, it.el));
-      connected.push({ kind: "point", id: it.el.id, el: it.el, pos: it.pos });
+      const rt = addRoute(c, p, it.el, it.pos, best.cn, circuitId, colorOf(p, it.el));
+      // трасса реально построена (не Infinity/недостижимая пара) — только тогда точка
+      // становится узлом для следующих звеньев шлейфа; иначе она осталась бы «фиктивно
+      // подключённой» и следующие точки могли бы тянуться к несуществующему проводу.
+      if (rt) connected.push({ kind: "point", id: it.el.id, el: it.el, pos: it.pos });
       rest.splice(best.idx, 1);
     }
   }
 
+  // Возвращает созданный route, или null — если buildPath не смог построить путь
+  // (разные комнаты без магистрали между ними, см. инвариант buildPath). В этом случае
+  // точка остаётся БЕЗ трассы (попадает в счётчик «Без трассы», см. build()).
   function addRoute(c, p, fromEl, a, target, circuitId, color) {
-    const pts = buildPath(p, fromEl, a, target, 0, circuitId);
+    const pts = buildPath(p, fromEl, a, target, circuitId);
+    if (!pts || pts.length < 2) return null;
     const rt = c.model.newRoute(fromEl.layer, p.settings.routeType, pts, fromEl.id, target.id || null);
     rt.circuitId = circuitId || null;
     rt.color = color;
@@ -749,6 +753,7 @@
     if (s.routeType === "floor") throughWalls = throughWalls.filter((cr) => !floorSkip(p, cr));
     rt.throughWalls = throughWalls;
     p.routes.push(rt);
+    return rt;
   }
 
   // При трассировке ПО ПОЛУ гильза НЕ нужна там, где кабель физически идёт понизу без
@@ -869,9 +874,10 @@
         <button type="button" class="ep-plan-chip ep-clickable ${p.settings.gofraCeil !== false ? "on" : ""}" data-prt-gofra="1">В гофре</button>
         <button type="button" class="ep-plan-chip ep-clickable ${p.settings.gofraCeil === false ? "on" : ""}" data-prt-gofra="0">На стяжки</button>
       </div>` : `<div class="ep-plan-modehint">По полу: кабель в гофре ПНД + монтажная лента (расходка считается автоматически).</div>`}
-      <div class="ep-plan-modehint">Линии идут по контуру комнаты с отступом, стены не пересекают — только перпендикулярной проходкой Ø${p.settings.sleeveD || 20} (макс. 2 кабеля в гильзу).</div>
+      <div class="ep-plan-modehint">Линии идут по контуру комнаты с отступом, стены не пересекают — только перпендикулярной проходкой Ø${p.settings.sleeveD || 20} (${p.settings.routeType === "floor" || p.settings.gofraCeil !== false ? "в гофре — 1 кабель на гильзу" : "без гофры — макс. 2 кабеля на гильзу"}).</div>
       <div class="ep-plan-modehint">Тёплый пол — штроба в пол ${p.settings.tpChaseW || 50}×${p.settings.tpChaseH || 50} мм. Штроба к посту блока — в редакторе точки.</div>
       ${!juncN ? `<div class="ep-plan-modehint">${T.hintJ}</div>` : ""}
+      ${lastUnrouted ? `<div class="ep-plan-modehint ep-plan-warnhint">${T.unroutedBanner(lastUnrouted)}</div>` : ""}
       ${p.routes.length ? `<div class="ep-plan-srow ep-plan-rlens"><span>${T.total}: <b>${G().fmtLen(st.total)}</b></span><span>${st.crossings} ${T.crossings}</span></div>` : ""}
       ${linesHtml}
       <div class="ep-plan-srow ep-plan-sbtns">
@@ -880,11 +886,27 @@
       </div>`);
   }
 
+  // Напоминание ПЕРЕД трассировкой (просьба пользователя): между комнатами трасса теперь
+  // строится ТОЛЬКО по нарисованной магистрали (⇉) — если её не хватает до какой-то
+  // комнаты, точки в ней останутся без трассы (см. lastUnrouted/баннер выше). Подсказка
+  // показывается КАЖДЫЙ раз перед явным нажатием «Построить» (тот же паттерн под-вида
+  // поверх шторки, что и sheetSetPrice/sheetConsumSettings — «‹ Назад» возвращает в sheet()).
+  function sheetBuildConfirm() {
+    rooms().openSheet(`<div class="ep-plan-srow"><b>🧭 ${T.buildConfirmTitle}</b></div>
+      <div class="ep-plan-modehint">${T.buildConfirmText}</div>
+      <div class="ep-plan-srow ep-plan-sbtns">
+        <button type="button" class="btn btn-primary ep-clickable" data-prt-build-go>${T.buildConfirmGo}</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-prt-build-back>${T.buildConfirmBack}</button>
+      </div>`);
+  }
+
   document.addEventListener("click", (e) => {
     if (!rooms() || !rooms().isActive()) return;
     const t = e.target; let b;
     if (t.closest("[data-plan-routes]")) return sheet();
-    if (t.closest("[data-prt-build]")) return buildIncremental();
+    if (t.closest("[data-prt-build]")) return sheetBuildConfirm();
+    if (t.closest("[data-prt-build-go]")) return buildIncremental();
+    if (t.closest("[data-prt-build-back]")) return sheet();
     if (t.closest("[data-prt-clear]")) return clearRoutes();
     if (t.closest("[data-prt-close]")) { rooms().closeSheet(); return; }
     // solo линии (изоляция на плане): тап по имени линии — показать только её; ✕ шторки
