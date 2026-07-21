@@ -11,8 +11,25 @@
    (6+22) + .app-shell лишние 8px в padding-top — небольшая неточность тут
    ПРИЕМЛЕМА (даёт чуть больше/меньше скролла страницы на пару px, не
    огромный пустой блок, как раньше). */
+/* height (не только min-height) ОБЯЗАН быть явным здесь — иначе .ep-plan-canvas ниже
+   (flex:1 1 auto) не имеет ОДНОЗНАЧНОГО доступного места для роста внутри auto-высоты
+   родителя: per CSS flex spec, flex-grow в контейнере с height:auto не «изобретает»
+   лишнее место — использует ГИПОТЕТИЧЕСКИЙ (контент-based) размер элементов, а тот у
+   .ep-plan-svg (height:auto + intrinsic aspect-ratio из viewBox) сам зависит от ТЕКУЩЕГО
+   viewBox. Итог — циклическая зависимость: plan-canvas.js resize()/fit() читает
+   svg.clientWidth/clientHeight, чтобы посчитать aspect и выставить НОВЫЙ viewBox, а
+   рендер этого viewBox сам влияет на то, каким svg.clientHeight измерится в СЛЕДУЮЩИЙ
+   раз. Каждый resize (в т.ч. запущенный ResizeObserver'ом на вход/выход fullscreen —
+   контейнер резко меняет размер) немного сдвигал aspect дальше от истинного, и после
+   ОДНОГО цикла ⤢→⤢ высота редактора вне fullscreen оставалась заметно больше исходной
+   (баг, пойманный живым прогоном: 706px → 896px после одного тук-тук по кнопке,
+   voспроизводится стабильно, включая ПОСЛЕ окна устаканивания canvas). Явный height
+   (та же формула, что и был у min-height) даёт .ep-plan-canvas ОДНОЗНАЧНОЕ доступное
+   место, не зависящее от содержимого — цикл разрывается. */
 .ep-plan {
   display: flex; flex-direction: column; gap: 10px;
+  height: calc(100dvh - var(--topbar-h) - 40px);
+  height: calc(100svh - var(--topbar-h) - 40px);
   min-height: calc(100dvh - var(--topbar-h) - 40px);
   min-height: calc(100svh - var(--topbar-h) - 40px);
 }
@@ -121,7 +138,12 @@ body[data-visual-mode="day"] .ep-plan-moremenu { background: rgba(255, 255, 255,
    ошибочно предполагал «холст сам не трогаем» — процентная высота работала
    ТОЛЬКО потому что достаточно было один раз получить размер при монтировании,
    а не переживала повторные изменения размера). */
-.ep-plan-svg { flex: 1 1 auto; width: auto; height: auto; display: block; cursor: grab; }
+/* height:100% (не auto) — auto на replaced-элементе (SVG) с intrinsic aspect-ratio
+   (из viewBox) может резолвиться ЧЕРЕЗ этот aspect-ratio вместо обычного flex
+   align-items:stretch, что и создавало циклическую зависимость размера от viewBox
+   (см. инвариант .ep-plan выше). height:100% — определённый процент, однозначно
+   берёт всю высоту .ep-plan-canvas, никакого intrinsic-ratio сайзинга. */
+.ep-plan-svg { flex: 1 1 auto; width: auto; height: 100%; display: block; cursor: grab; }
 .ep-plan-grid-line { stroke: rgba(148, 163, 184, .14); }
 .ep-plan-grid-major { stroke: rgba(148, 163, 184, .30); }
 .ep-plan-grid-axis { stroke: rgba(56, 189, 248, .45); }
@@ -439,10 +461,14 @@ body[data-visual-mode="day"] .ep-plan-walldot { fill: #475569; }
 body[data-visual-mode="day"] .ep-plan-wall.mat-brick { stroke: #b45309; }
 body[data-visual-mode="day"] .ep-plan-wall.mat-soft { stroke: #94a3b8; }
 
-/* полный экран */
+/* полный экран — height:auto ОБЯЗАН сбросить явный height у базового .ep-plan (см. его
+   инвариант выше): position:fixed + inset:0 (все 4 стороны) уже однозначно фиксирует
+   размер по вьюпорту сам по себе — явный height ВМЕСТЕ с inset:0 на всех сторонах создал
+   бы over-constrained систему (per CSS spec, при top+bottom+height заданных разом браузер
+   игнорирует одно из значений, обычно bottom — итог непредсказуем и не обязательно = вьюпорту). */
 .ep-plan.is-full {
   position: fixed; inset: 0; z-index: 9999; margin: 0; padding: 10px;
-  overflow: auto; background: var(--bg-a, #0b1220);
+  overflow: auto; background: var(--bg-a, #0b1220); height: auto; min-height: 0;
 }
 
 /* свернуть панель инструментов редактора — холст занимает освободившееся место.
