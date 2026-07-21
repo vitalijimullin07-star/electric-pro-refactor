@@ -375,7 +375,13 @@
     // посчитан построчно выше по маркам)
     const totalCableM = Object.keys(cableBy).reduce((sum, m) => sum + cableBy[m], 0);
     add("work", "Прокладка кабеля", totalCableM, "м");
-    // проходки через стены: Ø20, макс. 2 кабеля в гильзу; группируем по месту (~20 см)
+    // проходки через стены: Ø20, группируем по месту (~20 см); ёмкость гильзы зависит от
+    // способа прокладки (тот же признак «в гофре», что уже определяет расходку выше) —
+    // просьба пользователя: «1 проходка это 2 провода без гофры, или 1 в гофре» (гофра
+    // толще — вдвоём в Ø20 уже не входят). По полу — всегда гофра (см. addConsumItems
+    // выше, там floor не зависит от gofraCeil вообще); по потолку — settings.gofraCeil.
+    const sleeveGofra = s.routeType === "floor" || s.gofraCeil !== false;
+    const sleeveCap = sleeveGofra ? 1 : 2;
     const sleeves = {}; // "x|y" -> { n: кабелей, wallId }
     routes.forEach((r) => {
       const seen = {};
@@ -391,7 +397,7 @@
     Object.keys(sleeves).forEach((k) => {
       const w = G2.wallById(p, sleeves[k].wallId);
       const mat = w ? G2.wallMatOf(p, w) : ((s && s.wallMaterial) || "Бетон");
-      sleeveByMat[mat] = (sleeveByMat[mat] || 0) + Math.ceil(sleeves[k].n / 2);
+      sleeveByMat[mat] = (sleeveByMat[mat] || 0) + Math.ceil(sleeves[k].n / sleeveCap);
     });
     Object.keys(sleeveByMat).forEach((m) => add("work", `Проходка Ø${s.sleeveD || 20} ${low(m)}`, sleeveByMat[m], "шт"));
     // ниша под щит — как в конфигураторе щита (вырубка × модули + монтаж)
