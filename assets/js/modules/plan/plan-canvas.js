@@ -40,6 +40,15 @@
 
     const view = { ...CFG.startView };
     const cb = { tap: null, viewChanged: null, hover: null, hoverEnd: null, longPress: null };
+    // Кэш размеров холста. svg.clientWidth/Height — layout-forcing свойства: чтение
+    // ПОСЛЕ мутаций DOM синхронно флашит reflow. pxToCm() (=cmPerPx) зовётся из
+    // рендера, сетки, хит-тестов — читать clientWidth каждый раз = layout thrashing
+    // (CPU-профиль на 30 комнатах/150 точках: pxToCm ~40% времени renderScene, почти
+    // всё — форс-reflow). Размер холста меняется ТОЛЬКО на ресайз/фуллскрин/устаканивание,
+    // а ResizeObserver (resize()) их все ловит — поэтому меряем ОДИН раз и держим в
+    // кэше, обновляя в resize()/fit(). pxToCm из горячего пути больше не трогает layout.
+    let cw = 0, ch = 0;
+    function measureBox() { const w = svg.clientWidth, h = svg.clientHeight; if (w > 0) cw = w; if (h > 0) ch = h; }
 
     function clampView() {
       if (view.w < CFG.minSpanCm) scaleTo(CFG.minSpanCm);
@@ -55,7 +64,7 @@
       drawGrid();
       if (cb.viewChanged) cb.viewChanged({ ...view });
     }
-    function pxToCm() { return view.w / Math.max(1, svg.clientWidth); }
+    function pxToCm() { if (!cw) measureBox(); return view.w / Math.max(1, cw); } // читает КЭШ (см. measureBox), не форсит reflow
     function toWorld(clientX, clientY) {
       const r = svg.getBoundingClientRect();
       return { x: view.x + (clientX - r.left) * (view.w / r.width), y: view.y + (clientY - r.top) * (view.h / r.height) };
@@ -253,7 +262,8 @@
       lastFit = { bbox, padRatio };
       const pad = padRatio == null ? 0.15 : padRatio;
       const b = bbox && bbox.w > 0 && bbox.h > 0 ? bbox : { x: CFG.startView.x, y: CFG.startView.y, w: CFG.startView.w, h: CFG.startView.h };
-      const aspect = svg.clientHeight > 0 ? svg.clientWidth / svg.clientHeight : 1.5;
+      measureBox(); // холодный путь — освежаем кэш размеров
+      const aspect = ch > 0 ? cw / ch : 1.5;
       let w = b.w * (1 + pad * 2), h = b.h * (1 + pad * 2);
       if (w / h < aspect) w = h * aspect; else h = w / aspect;
       view.x = b.x + b.w / 2 - w / 2; view.y = b.y + b.h / 2 - h / 2; view.w = w; view.h = h;
@@ -285,8 +295,9 @@
     // пользователя (зум/пан вызывают fit() заново с новыми параметрами через apply()).
     const settleUntil = Date.now() + 3000;
     function resize() { // подгон пропорций viewBox под контейнер (или полный re-fit во время «устаканивания»)
+      measureBox(); // RO сработал — размер реально изменился, освежаем кэш (единая точка свежести cw/ch)
       if (lastFit && Date.now() < settleUntil) { fit(lastFit.bbox, lastFit.padRatio); return; }
-      const aspect = svg.clientHeight > 0 ? svg.clientWidth / svg.clientHeight : 1.5;
+      const aspect = ch > 0 ? cw / ch : 1.5;
       const cy = view.y + view.h / 2;
       view.h = view.w / aspect;
       view.y = cy - view.h / 2;
