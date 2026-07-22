@@ -3,7 +3,8 @@
 (() => {
   "use strict";
   const TYPE_BY_ROUTE = { materials: "material", work: "work" };
-  const expanded = {};        // состояние раскрытия папок: "type::category" -> bool
+  const expanded = {};        // раскрытие папок дерева: "type::c:Кат" и "type::c:Кат|s:Подкат" -> bool
+                              // (тот же 2-уровневый вид, что в «Базе данных»)
   let currentType = null;     // активный тип пикера (material/work)
 
   function DB() { return (window.EP && window.EP.Database) || null; }
@@ -19,6 +20,19 @@
   function money(v) {
     try { if (window.EPCurrency && window.EPCurrency.format) return window.EPCurrency.format(v); } catch (e) {}
     return (Number(v || 0).toFixed(2)) + " ₽";
+  }
+
+  // строка позиции каталога (с кнопкой «+ в смету») — общая для папок/подпапок дерева
+  function pickRow(it) {
+    return `
+      <div class="ep-db-row">
+        <div class="ep-db-row-main">
+          <div class="ep-db-row-name">${esc(it.name)}</div>
+          ${it.unit ? `<div class="ep-db-row-meta">${esc(it.unit)}</div>` : ""}
+        </div>
+        <div class="ep-db-row-price">${money(it.price)}</div>
+        <button type="button" class="ep-db-iconbtn ep-pick-add" data-pick-add="${esc(it.id)}" title="Добавить в смету">+</button>
+      </div>`;
   }
 
   /* ---------- пикер (materials / work) ---------- */
@@ -57,21 +71,39 @@
         Переключи базу кнопкой «${esc(otherLabel)} ⇄» или заполни каталог в разделе «База».
         <div style="margin-top:10px"><button type="button" class="ep-pick-btn" data-route="database">Открыть базу</button></div></div>`;
     } else {
+      // Дерево как в «Базе данных»: Категория 📁 → Подкатегория 📁 → позиции (те же
+      // CSS-классы .ep-db-folder/.ep-db-subfolder — вид 1-в-1). Позиции без подкатегории
+      // висят сразу под категорией. Ключи раскрытия — "c:Кат" и "c:Кат|s:Подкат"
+      // (тот же общий toggle-хендлер data-pick-folder, что и раньше).
       body = catNames.map(c => {
-        const key = type + "::" + c;
-        const open = !!expanded[key];
-        const rows = cats[c].map(it => `
-          <div class="ep-db-row">
-            <div class="ep-db-row-main">
-              <div class="ep-db-row-name">${esc(it.name)}</div>
-              ${it.unit ? `<div class="ep-db-row-meta">${esc(it.unit)}</div>` : ""}
-            </div>
-            <div class="ep-db-row-price">${money(it.price)}</div>
-            <button type="button" class="ep-db-iconbtn ep-pick-add" data-pick-add="${esc(it.id)}" title="Добавить в смету">+</button>
-          </div>`).join("");
+        const catItems = cats[c];
+        const ckey = "c:" + c;
+        const open = !!expanded[type + "::" + ckey];
+        const subs = Array.from(new Set(catItems.map(x => x.subcategory).filter(Boolean)))
+          .sort((a, b) => a.localeCompare(b, "ru"));
+        const noSub = catItems.filter(x => !x.subcategory);
         return `<div class="ep-db-folder ${open ? "is-open" : ""}">
-          <div class="ep-db-folder-head" data-pick-folder="${esc(c)}"><span>📁 ${esc(c)}</span><span class="ep-db-count">${cats[c].length}</span></div>
-          ${open ? `<div class="ep-db-list">${rows}</div>` : ""}
+          <button type="button" class="ep-db-folder-head" data-pick-folder="${esc(ckey)}">
+            <span class="ep-db-fold-ico">${open ? "📂" : "📁"}</span>
+            <span class="ep-db-fold-name">${esc(c)}</span>
+            <span class="ep-db-fold-count">${catItems.length}</span>
+          </button>
+          ${open ? `<div class="ep-db-folder-body">
+            ${noSub.map(pickRow).join("")}
+            ${subs.map(sub => {
+              const skey = ckey + "|s:" + sub;
+              const sopen = !!expanded[type + "::" + skey];
+              const subItems = catItems.filter(x => x.subcategory === sub);
+              return `<div class="ep-db-subfolder ${sopen ? "is-open" : ""}">
+                <button type="button" class="ep-db-subfolder-head" data-pick-folder="${esc(skey)}">
+                  <span class="ep-db-fold-ico">${sopen ? "📂" : "📁"}</span>
+                  <span class="ep-db-subfold-name">${esc(sub)}</span>
+                  <span class="ep-db-fold-count">${subItems.length}</span>
+                </button>
+                ${sopen ? `<div class="ep-db-subfolder-body">${subItems.map(pickRow).join("")}</div>` : ""}
+              </div>`;
+            }).join("")}
+          </div>` : ""}
         </div>`;
       }).join("");
     }
