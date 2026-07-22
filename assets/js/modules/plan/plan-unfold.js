@@ -431,6 +431,11 @@
     els.forEach((el, idx) => {
       const x = el.offset, y = H - el.height;
       const cc = circ(p, el);
+      // col — цвет ЛИНИИ QF (иначе акцент). Пост/блок красятся через inline STYLE, а не
+      // атрибут fill: (1) inline style побеждает любое CSS-правило класса (раньше
+      // .ep-plan-unfel circle перебивал атрибут fill и все посты были акцентными — убрано
+      // из plan.css), (2) для точки без линии "var(--accent)" в style резолвится в тему,
+      // а как presentation-атрибут — нет (стал бы чёрным).
       const col = cc ? cc.color : "var(--accent)";
       const gr = svgEl("g", { "data-pu-el": el.id, class: "ep-plan-unfel" + (el.status === "mounted" ? " is-done" : "") });
 
@@ -450,7 +455,7 @@
         const cellR = (i) => vert
           ? { x: x - bw / 2, y: y - bh / 2 + 3 * ks + step2 * i, width: bw, height: step2 }
           : { x: x - bw / 2 + 3 * ks + step2 * i, y: y - bh / 2, width: step2, height: bh };
-        gr.appendChild(svgEl("rect", { x: x - bw / 2, y: y - bh / 2, width: bw, height: bh, rx: 5 * ks, fill: col, class: "ep-plan-unfshape" }));
+        gr.appendChild(svgEl("rect", { x: x - bw / 2, y: y - bh / 2, width: bw, height: bh, rx: 5 * ks, style: "fill:" + col, class: "ep-plan-unfshape" }));
         items.forEach((it, i) => { const c = cellC(i); gr.appendChild(svgEl("text", { x: c.cx, y: c.cy, "font-size": 9 * ks, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfglyph" }, (TY[it] || {}).glyph || "?")); });
         items.forEach((it, i) => gr.appendChild(svgEl("rect", Object.assign({ "data-pu-post": i, fill: "transparent" }, cellR(i)))));
         const eIdx = G().blockEntryIndex(el), ec = cellC(eIdx);
@@ -458,7 +463,7 @@
           ? { cx: x + bw / 2 + 5 * ks, cy: ec.cy, r: 3 * ks, class: "ep-plan-unfentry" }
           : { cx: ec.cx, cy: y + bh / 2 + 5 * ks, r: 3 * ks, class: "ep-plan-unfentry" }));
       } else {
-        gr.appendChild(svgEl("circle", { cx: x, cy: y, r: 13 * ks, fill: col, class: "ep-plan-unfshape" }));
+        gr.appendChild(svgEl("circle", { cx: x, cy: y, r: 13 * ks, style: "fill:" + col, class: "ep-plan-unfshape" }));
         gr.appendChild(svgEl("text", { x, y, "font-size": 10 * ks, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfglyph" }, (TY[el.type] || {}).glyph || "?"));
       }
       if (cc) gr.appendChild(svgEl("text", { x, y: y - 18 * ks, "font-size": 8.5 * ks, "text-anchor": "middle", fill: col, class: "ep-plan-unfqf" }, cc.name));

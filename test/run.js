@@ -739,6 +739,18 @@ test("rules: badSet -> Set, ловит точку в проёме", () => {
   ok(bad && typeof bad.has === "function", "Set");
   ok(bad.has(s.id), "точка в проёме помечена");
 });
+test("rules: потолочный свет НЕ «слишком высоко», а настенное устройство выше макс — ДА", () => {
+  const { P, w } = install();
+  // свободный потолочный свет на высоте потолка (270 > дефолт maxDeviceH 250) — БЕЗ wallId
+  const light = M.newElement("light", null, 0, 270, "light"); light.params = { x: 200, y: 150 };
+  P.elements.push(light);
+  let msgs = EP.Plan.Rules.run(P).issues.map((i) => i.msg).join(" | ");
+  ok(!/слишком высоко/.test(msgs), "потолочный свет не должен флагаться как слишком высоко");
+  // а вот настенная розетка на 270 — реально слишком высоко
+  const sock = M.newElement("socket", w(0), 100, 270, "power"); P.elements.push(sock);
+  msgs = EP.Plan.Rules.run(P).issues.map((i) => i.msg).join(" | ");
+  ok(/слишком высоко/.test(msgs), "настенное устройство выше макс должно флагаться");
+});
 
 // ===== 6b. Проверки ПУЭ по линиям =====
 test("ПУЭ: розетки без УЗО -> предупреждение", () => {
