@@ -85,7 +85,12 @@
       if (el.type !== "warmfloor" && el.height < R.minSocketH) {
         issues.push({ id: el.id, msg: T.low(Math.round(el.height)) }); badIds.add(el.id);
       }
-      if (el.height > R.maxDeviceH) {
+      // «слишком высоко» — только для НАСТЕННЫХ устройств (el.wallId): у них высота
+      // установки реальна и не должна лезть выше maxDeviceH. Свободные потолочные точки
+      // (свет/трек/вывод без wallId) по определению стоят на высоте потолка
+      // (defaultHeight = settings.ceilingHeight, обычно 270) — иначе ПЕРВЫЙ же
+      // потолочный светильник в любом проекте давал ложное «Точка слишком высоко».
+      if (el.wallId && el.height > R.maxDeviceH) {
         issues.push({ id: el.id, msg: T.high(Math.round(el.height)) }); badIds.add(el.id);
       }
     });

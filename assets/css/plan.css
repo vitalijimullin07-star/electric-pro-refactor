@@ -315,7 +315,11 @@ body[data-flatshadow="1"] .ep-plan-wallhatch { display: none; }
 .ep-plan-wall { stroke: #cbd5e1; stroke-linejoin: round; }
 .ep-plan-wall.is-sel { stroke: var(--accent, #38bdf8); }
 .ep-plan-dim { fill: #94a3b8; font-family: system-ui; pointer-events: none; }
-.ep-plan-name { fill: #e2e8f0; font-family: system-ui; font-weight: 600; pointer-events: none; }
+/* halo (обводка фоном ПОД текстом, paint-order:stroke) — подпись комнаты «Имя · N м²»
+   остаётся читаемой, когда на среднем зуме налезает на размерную цепочку/трассы/подписи
+   соседней комнаты (тот же приём, что уже у номеров проёмов .ep-plan-opnum). Ничего не
+   двигаем — просто гарантируем контраст поверх любого содержимого под ней. */
+.ep-plan-name { fill: #e2e8f0; font-family: system-ui; font-weight: 600; pointer-events: none; paint-order: stroke; stroke: rgba(11,18,32,.72); stroke-width: 3px; stroke-linejoin: round; }
 .ep-plan-draft { stroke: var(--accent, #38bdf8); stroke-dasharray: 6 5; }
 .ep-plan-draftpt { fill: var(--accent, #38bdf8); }
 .ep-plan-draftpt.is-first { fill: #34d399; }
@@ -328,7 +332,7 @@ body[data-visual-mode="day"] .ep-plan-srow input[type="text"],
 body[data-visual-mode="day"] .ep-plan-srow input[type="number"] { background: #fff; border-color: #cbd5e1; color: #0f172a; }
 body[data-visual-mode="day"] .ep-plan-wall { stroke: #334155; }
 body[data-visual-mode="day"] .ep-plan-dim { fill: #64748b; }
-body[data-visual-mode="day"] .ep-plan-name { fill: #0f172a; }
+body[data-visual-mode="day"] .ep-plan-name { fill: #0f172a; stroke: rgba(255,255,255,.75); }
 body[data-visual-mode="day"] .ep-plan-room { fill: rgba(2, 132, 199, .08); }
 body[data-visual-mode="day"] .ep-plan-room.is-sel { fill: rgba(2, 132, 199, .17); }
 
@@ -386,10 +390,14 @@ body[data-visual-mode="day"] .ep-plan-guidedraft { stroke: #3b82f6; }
 .ep-plan-unfsvg { width: 100%; height: 200px; display: block; }
 .ep-plan-unfwall { fill: rgba(148, 163, 184, .08); stroke: rgba(148, 163, 184, .35); stroke-width: 1; }
 .ep-plan-unffloor { stroke: #94a3b8; }
-.ep-plan-unfel circle { fill: var(--accent, #38bdf8); }
-.ep-plan-unfel.is-done circle { fill: #34d399; }
-.ep-plan-unfel text { fill: #06121f; font-family: system-ui; font-weight: 700; }
-.ep-plan-unfel .ep-plan-unfdim { fill: #94a3b8; font-weight: 500; }
+/* ВАЖНО: НЕ задавать здесь fill у `.ep-plan-unfel circle` / `.ep-plan-unfel text`.
+   Раньше эти legacy-правила (fill: var(--accent) у круга-поста, fill: #06121f у любого
+   текста) ПЕРЕБИВАЛИ инлайн-цвет, который plan-unfold.js ставит по ЛИНИИ QF (свойство
+   fill из CSS всегда сильнее одноимённого presentation-атрибута) — из-за этого ВСЕ
+   посты в развёртке рисовались акцентным цветом, а подпись QF — тёмной, независимо от
+   реальной линии. Пост красится через inline style (см. plan-unfold.js), глиф — своим
+   классом .ep-plan-unfglyph, статус «смонтировано» — зелёным stroke у
+   .ep-plan-unfel.is-done .ep-plan-unfshape (ниже), точка-ввод — .ep-plan-unfentry. */
 .ep-plan-unftypes { overflow-x: auto; flex-wrap: nowrap; }
 
 /* таблица расчёта и списки */
