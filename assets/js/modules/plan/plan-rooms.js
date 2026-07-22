@@ -194,6 +194,25 @@
     if (sceneRaf) return;
     sceneRaf = (window.requestAnimationFrame || ((f) => setTimeout(f, 16)))(() => { sceneRaf = 0; renderScene(); });
   }
+  // Перерисовка сцены при ИЗМЕНЕНИИ ВИДА (пан/зум) — вызывается из canvas.onViewChanged
+  // на КАЖДЫЙ pointermove. КРИТИЧНО для слабых телефонов (репорт: Redmi Note 8 Pro,
+  // «фризы при перемещении плана»): drawScaled зависит ТОЛЬКО от cmPerPx (масштаб),
+  // а НЕ от позиции пана — при чистом пане (сдвиг viewBox без смены масштаба) вывод
+  // drawScaled ПОБАЙТОВО тот же, viewBox сам визуально двигает содержимое. Значит
+  // ре-рендер на пан — чистая трата (полный обход элементов/трасс/подписей каждый
+  // кадр). Раньше onViewChanged звал renderScaled() СИНХРОННО на каждый кадр пана —
+  // отсюда фризы и графический тиринг на слабом GPU. Теперь: пан (cmPerPx не менялся)
+  // пропускаем целиком; зум/ресайз контейнера (cmPerPx изменился) — через rAF, не чаще
+  // кадра. lastScaledK не мешает контент-перерисовкам (renderScene/renderScaled их зовут
+  // напрямую) — он гейтит ТОЛЬКО повторный ре-скейл от движения вида.
+  let scaledRaf = 0, lastScaledK = null;
+  function onViewChanged() {
+    const k = R.canvas ? R.canvas.cmPerPx() : null;
+    if (k !== null && lastScaledK !== null && Math.abs(k - lastScaledK) < 1e-6) return; // пан — масштаб тот же
+    lastScaledK = k;
+    if (scaledRaf) return;
+    scaledRaf = (window.requestAnimationFrame || ((f) => setTimeout(f, 16)))(() => { scaledRaf = 0; renderScaled(); });
+  }
 
   // ---------- режимы ----------
   function setMode(mode) {
@@ -1506,7 +1525,7 @@
     R.canvas = canvas;
     canvas.onTap(onTap);
     if (canvas.onDblTap) canvas.onDblTap(onDoubleTap);
-    canvas.onViewChanged(() => renderScaled());
+    canvas.onViewChanged(onViewChanged);
     canvas.onHover(onCanvasHover);
     canvas.onHoverEnd(clearHoverPreview);
     canvas.onLongPress(onCanvasLongPress);
