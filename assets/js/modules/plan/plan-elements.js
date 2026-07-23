@@ -35,6 +35,9 @@
   };
   const STATUS = [["planned", "План"], ["mounted", "Готово ✓"], ["existing", "Было"]];
   const CFG = { hitPx: 22, wallSnapPx: 26, photoMax: 4, photoSide: 640, blockMax: 6 };
+  // тактильный отклик на примыкание к стене при установке точки/проёма — тот же
+  // паттерн/интенсивность, что уже даёт снап угла при рисовании комнаты (plan-rooms.js)
+  const vibrate = (pattern) => { try { navigator.vibrate && navigator.vibrate(pattern); } catch (e) {} };
   const BLOCK_TYPES = ["socket", "switch", "tv", "internet"]; // что можно ставить в рамку
   // электропалитра — без дверей/окон (они в отдельном инструменте «Проёмы»)
   const PALETTE_TYPES = Object.keys(TYPES).filter((k) => !TYPES[k].opening);
@@ -98,11 +101,30 @@
     const pfx = (EP.Plan.Core.OPENING_KINDS[op.kind] || {}).pfx || "П";
     return pfx + (i + 1);
   }
+  // Живой предпросмотр снапа к стене ДО тапа (наведение мышью/S-Pen — hover-события
+  // приходят только у устройств, где указатель может «зависать» до касания; у пальца
+  // их физически нет, поэтому это ЕСТЕСТВЕННО работает только на мыши/стилусе, без
+  // отдельного детекта устройства). Зовётся из plan-rooms.js (onCanvasHover) для
+  // режимов "elem"/"opening" — та же математика, что реально сработает на тапе в
+  // placeAt/placeOpening ниже (WYSIWYG: превью совпадает с тем, что реально ляжет).
+  // kind — "elem" (S.selType) или "opening" (S.openType); для "opening" без стены
+  // рядом превью не показываем — реальный тап там ничего не поставит (только toast).
+  function hoverSnapPoint(w, kind) {
+    const p = core().project; if (!p) return null;
+    const k = rooms().canvasCmPerPx();
+    const hit = G().wallAt(p, w, CFG.wallSnapPx * k);
+    if (hit) return { x: hit.hit.x, y: hit.hit.y, snapped: true };
+    if (kind !== "elem") return null;
+    const t = TYPES[S.selType];
+    if (t && (t.free || t.panel)) { const sp = G().snapPoint(w, p.settings.gridStep); return { x: sp.x, y: sp.y, snapped: false }; }
+    return null; // настенный тип без стены рядом — тап ничего не поставит
+  }
   function placeOpening(w) {
     const c = core(), p = c.project;
     const k = rooms().canvasCmPerPx();
     const hit = G().wallAt(p, w, CFG.wallSnapPx * k);
     if (!hit) { rooms().toast(T.tapWall); return; }
+    vibrate(10);
     c.commit();
     const d = EP.Plan.Core.OPENING_KINDS[S.openType] || {};
     const op = c.model.newOpening(S.openType, hit.wall.id, G().snap(Math.max(0, hit.offset - (d.w || 90) / 2), p.settings.gridStep), undefined);
@@ -132,6 +154,7 @@
       return;
     }
     const hit = G().wallAt(p, w, CFG.wallSnapPx * k);
+    if (hit) vibrate(10); // примыкание к стене — тот же лёгкий отклик, что и снап угла при рисовании
     if (t.opening) { // дверь/окно — это проём в стене, не электроточка
       if (!hit) { rooms().toast(T.tapWall); return; }
       c.commit();
@@ -688,5 +711,5 @@
   }
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, SW_TARGET_TYPES, onModeEnter, onOpeningModeEnter, placeAt, placeOpening, openingNum, hitAt, openEditor, openPanelEditor, openOpeningEditor, selectedId, deselect, deleteElement, duplicateElement, circuitRow, assignNewCircuit };
+  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, SW_TARGET_TYPES, onModeEnter, onOpeningModeEnter, placeAt, placeOpening, hoverSnapPoint, openingNum, hitAt, openEditor, openPanelEditor, openOpeningEditor, selectedId, deselect, deleteElement, duplicateElement, circuitRow, assignNewCircuit };
 })();

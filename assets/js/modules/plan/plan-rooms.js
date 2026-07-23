@@ -548,15 +548,23 @@
     R.canvas.panBy(0, dyPx * R.canvas.cmPerPx());
   }
 
-  // ---------- живой предпросмотр снапа при наведении (мышь/перо до тапа) ----------
-  // Только в режимах, где вообще идёт снап на тапе (rect/poly/beam/void) — рисует
-  // направляющие + прицел через plan-render.js, без полного renderScaled на каждое
-  // движение (см. CLAUDE.md про перф во время жеста).
-  const HOVER_SNAP_MODES = { rect: 1, poly: 1, beam: 1, void: 1 };
+  // ---------- живой предпросмотр снапа при наведении (мышь/S-Pen до тапа) ----------
+  // Режимы, где вообще идёт снап на тапе (rect/poly/beam/void — к сетке/углу; elem/
+  // opening — к стене при установке точки/проёма) — рисует направляющие + прицел
+  // через plan-render.js, без полного renderScaled на каждое движение (см. CLAUDE.md
+  // про перф во время жеста). Наведение ДО касания физически существует только у
+  // мыши и стилуса (S-Pen и т.п.) — у пальца hover-событий нет, поэтому это ЕСТЕСТВЕННО
+  // работает только для этих указателей, без отдельного детекта модели устройства.
+  const HOVER_SNAP_MODES = { rect: 1, poly: 1, beam: 1, void: 1, elem: 1, opening: 1 };
   function clearHoverPreview() { if (R.canvas && EP.Plan.Render) EP.Plan.Render.clearHoverPreview(R.canvas); }
   function onCanvasHover(w) {
     if (!R.canvas || !EP.Plan.Render || !HOVER_SNAP_MODES[R.mode]) { clearHoverPreview(); return; }
     const p = core().project; if (!p) { clearHoverPreview(); return; }
+    if (R.mode === "elem" || R.mode === "opening") {
+      const sp = EP.Plan.Elements ? EP.Plan.Elements.hoverSnapPoint(w, R.mode) : null;
+      if (sp) EP.Plan.Render.hoverPreview(R.canvas, sp, R.canvas.cmPerPx()); else clearHoverPreview();
+      return;
+    }
     const step = p.settings.gridStep || 10;
     // поли-режим доводит линию от прошлой точки до 90° ПЕРЕД снапом — так же,
     // как на реальном тапе (иначе предпросмотр не совпадёт с тем, что реально ляжет)
