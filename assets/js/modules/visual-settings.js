@@ -144,6 +144,38 @@
     };
   }
 
+  // Модель GPU через WebGL (WEBGL_debug_renderer_info) — один раз, кэшируется.
+  // Нужна для isRiskyGpu(): телефоны с сильным CPU, но проблемным GPU-драйвером
+  // (репорт с Redmi Note 8 Pro: 8 ядер/6ГБ — по CPU/памяти «сильный», а Mali-G76
+  // на реальном устройстве рисует полосы-артефакты композитинга поверх холста
+  // плана при активном blur-стекле + SVG-штриховке паттернами). Контекст сразу
+  // отпускаем (WEBGL_lose_context) — не держим GPU-ресурс ради одной строки.
+  let _gpuCache = null;
+  function gpuRenderer() {
+    if (_gpuCache !== null) return _gpuCache;
+    _gpuCache = "";
+    try {
+      const cv = document.createElement("canvas");
+      const gl = cv.getContext("webgl") || cv.getContext("experimental-webgl");
+      if (gl) {
+        const ext = gl.getExtension("WEBGL_debug_renderer_info");
+        _gpuCache = String((ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)) || "");
+        const lose = gl.getExtension("WEBGL_lose_context"); if (lose) lose.loseContext();
+      }
+    } catch (e) {}
+    return _gpuCache;
+  }
+  // Известные семейства GPU с проблемными драйверами композитинга (артефакты/полосы
+  // на тяжёлых слоях): старые Mali (4xx/T-серия), средние Mali-G (G31/51/52/57/71/72/76 —
+  // включая G76 из репорта; G77+/G610+ и новее НЕ трогаем), все PowerVR (бюджетные
+  // MediaTek; Apple давно репортит «Apple GPU», не PowerVR) и Adreno 2xx-5xx (6xx+ ок).
+  // Границы цифр защищены \b — «Mali-G510»/«Adreno 610» под фильтр НЕ попадают.
+  function isRiskyGpu() {
+    const r = gpuRenderer();
+    if (!r) return false;
+    return /Mali-4|Mali-T|Mali-G(31|51|52|57|71|72|76)\b|PowerVR|Adreno[^\d]*[2-5]\d\d\b/i.test(r);
+  }
+
   let _weakCache = null;
   function isWeakDevice() {
     if (_weakCache !== null) return _weakCache;
@@ -151,7 +183,9 @@
       const cores = Number(navigator.hardwareConcurrency) || 8;
       const mem = Number(navigator.deviceMemory) || 8;
       const noBlur = !(window.CSS && CSS.supports && (CSS.supports("backdrop-filter", "blur(2px)") || CSS.supports("-webkit-backdrop-filter", "blur(2px)")));
-      _weakCache = cores <= 4 || mem <= 3 || noBlur;
+      // isRiskyGpu — ПОСЛЕДНИМ в цепочке ||: WebGL-проба запускается только если
+      // по дешёвым признакам (CPU/память/blur) устройство выглядит сильным.
+      _weakCache = cores <= 4 || mem <= 3 || noBlur || isRiskyGpu();
     } catch (e) { _weakCache = false; }
     return _weakCache;
   }
@@ -211,6 +245,12 @@
     try {
       window.addEventListener("scroll", () => kick(600), { passive: true, capture: true });
       window.addEventListener("ep:route-loaded", () => kick(500));
+      // Жесты по канвасу плана (пан/пинч/тяга) НЕ скроллят window — раньше монитор
+      // вообще не просыпался на самом тяжёлом взаимодействии приложения и не мог
+      // выучить деградацию по реальным лагам. pointerdown/wheel будят замер на время
+      // жеста; kick() дёшев (две отметки времени), passive — не тормозит сам жест.
+      window.addEventListener("pointerdown", () => kick(700), { passive: true, capture: true });
+      window.addEventListener("wheel", () => kick(600), { passive: true, capture: true });
     } catch (e) {}
   }
 
