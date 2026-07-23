@@ -676,7 +676,7 @@
   G.elemDrawPoint = (project, el) => {
     const pt = G.elemPoint(project, el);
     if (!pt || !pt.wall) return pt;
-    const fr = G.wallFrame(project, pt.wall);
+    const fr = G.wallFrame(project, pt.wall, el.beamSide);
     if (!fr) return pt;
     const th = G.wallThOf(project, pt.wall);
     // розетка в откосе проёма — маркер стоит НА кромке проёма (в самом вырезе, на
@@ -711,7 +711,7 @@
     const items = (el.params && el.params.items) || [];
     const n = Math.max(1, items.length);
     const idx = G.blockEntryIndex(el);
-    const fr = G.wallFrame(project, dp.wall);
+    const fr = G.wallFrame(project, dp.wall, el.beamSide);
     const off = (idx - (n - 1) / 2) * G.POST_SPACING;
     return { x: dp.x + fr.dir.x * off, y: dp.y + fr.dir.y * off, wall: dp.wall };
   };
@@ -746,19 +746,30 @@
 
   // Локальный «репер» стены: направление вдоль (a→b), нормаль ВНУТРЬ комнаты, угол в градусах.
   // Нужно, чтобы точки/блоки отступали от стены внутрь и поворачивались вдоль неё.
-  G.wallFrame = (project, wall) => {
+  // sideHint — ТОЛЬКО для балок/перегородок (wall.isBeam): у них нет своей комнаты
+  // (roomId:null), поэтому «внутрь» пробой через pointInPolygon определить нечем —
+  // обе стороны балки равноправны. sideHint = el.beamSide (см. plan-elements.js
+  // placeAt) — какую сторону реально тапнул пользователь при установке ЭТОГО
+  // элемента: -1 разворачивает nrm на противоположную сторону от базовой (+1/undefined).
+  // Без sideHint (старые элементы до этого фикса, ЛЕД-лента и другие вызовы без
+  // элемента) — прежняя фиксированная сторона, обратная совместимость сохранена.
+  G.wallFrame = (project, wall, sideHint) => {
     if (!wall) return null;
     const len = wall.len || 1;
     const dir = { x: (wall.b.x - wall.a.x) / len, y: (wall.b.y - wall.a.y) / len };
     let nrm = { x: -dir.y, y: dir.x };
-    const room = (project.rooms || []).find((r) => r.id === wall.roomId);
-    if (room && (room.points || []).length >= 3) {
-      // проба ТОЧКОЙ РЯДОМ со стеной, а не центроидом всей комнаты — у вогнутых
-      // контуров (Г-образная комната с вырезом под кладовку/нишу) общий центроид
-      // может физически оказаться С ДРУГОЙ стороны конкретного локального сегмента
-      // стены у вогнутого угла, разворачивая нормаль наружу вместо внутрь.
-      const probe = { x: wall.mx + nrm.x * 2, y: wall.my + nrm.y * 2 };
-      if (!G.pointInPolygon(probe, room.points)) { nrm = { x: -nrm.x, y: -nrm.y }; }
+    if (wall.isBeam) {
+      if (sideHint < 0) nrm = { x: -nrm.x, y: -nrm.y };
+    } else {
+      const room = (project.rooms || []).find((r) => r.id === wall.roomId);
+      if (room && (room.points || []).length >= 3) {
+        // проба ТОЧКОЙ РЯДОМ со стеной, а не центроидом всей комнаты — у вогнутых
+        // контуров (Г-образная комната с вырезом под кладовку/нишу) общий центроид
+        // может физически оказаться С ДРУГОЙ стороны конкретного локального сегмента
+        // стены у вогнутого угла, разворачивая нормаль наружу вместо внутрь.
+        const probe = { x: wall.mx + nrm.x * 2, y: wall.my + nrm.y * 2 };
+        if (!G.pointInPolygon(probe, room.points)) { nrm = { x: -nrm.x, y: -nrm.y }; }
+      }
     }
     let angle = Math.atan2(dir.y, dir.x) * 180 / Math.PI;
     // держим подписи/глифы «не вверх ногами»

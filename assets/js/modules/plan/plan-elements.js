@@ -54,7 +54,8 @@
     swPick: "🎯 На плане",
     swKindLbl: "Тип:", swNormal: "Обычный", swPass: "Проходной", swCross: "Перекрёстный",
     swKeysLbl: "Клавиш:", swChain: "Цепочка — следующий:", swChainLast: "Это последнее звено → к лампе",
-    swChainNone: "нет других выключателей в комнате для связи"
+    swChainNone: "нет других выключателей в комнате для связи",
+    beamSide: "Сторона перегородки:", beamSideFlip: "⇅ На другую сторону"
   };
   const OUT_LAYERS = [["power", "outPower"], ["lv", "outLv"]];
   const SW_KINDS = [["normal", "swNormal"], ["pass", "swPass"], ["cross", "swCross"]];
@@ -119,6 +120,20 @@
     if (t && (t.free || t.panel)) { const sp = G().snapPoint(w, p.settings.gridStep); return { x: sp.x, y: sp.y, snapped: false }; }
     return null; // настенный тип без стены рядом — тап ничего не поставит
   }
+  // Балка/перегородка (wall.isBeam) РАВНОПРАВНА с обеих сторон — G.wallFrame() БЕЗ
+  // подсказки даёт ФИКСИРОВАННУЮ (произвольную, по направлению beam.a→b) нормаль,
+  // ОДНУ И ТУ ЖЕ для любого тапа. Раньше это значило, что ЛЮБОЙ элемент, поставленный
+  // на балку, рисовался на ОДНОЙ и той же стороне независимо от места тапа — данные
+  // создавались корректно, но маркер всегда съезжал на прежнюю (первую) сторону,
+  // визуально накладываясь на уже стоящую там точку — баг «нарисовал балку, а с
+  // другой стороны не могу ничего поставить». Запоминаем РЕАЛЬНУЮ сторону тапа в
+  // el.beamSide (читает G.elemDrawPoint/blockEntryPoint через wallFrame(...,sideHint)) —
+  // знак не зависит от выбора опорной точки на прямой стены (mx/my — центр отрезка),
+  // т.к. dir⊥nrm, поэтому используем готовые wall.mx/my, не hit.hit.
+  function beamSideOf(w, wall) {
+    const fr0 = G().wallFrame(core().project, wall);
+    return ((w.x - wall.mx) * fr0.nrm.x + (w.y - wall.my) * fr0.nrm.y) >= 0 ? 1 : -1;
+  }
   function placeOpening(w) {
     const c = core(), p = c.project;
     const k = rooms().canvasCmPerPx();
@@ -175,6 +190,7 @@
     if (hit) {
       const el = c.model.newElement(S.selType, hit.wall.id, G().snap(hit.offset, p.settings.gridStep), defaultHeight(S.selType), t.layer);
       if (t.block) el.params = { items: ["socket"] }; // рамка начинается с одной розетки
+      if (hit.wall.isBeam) el.beamSide = beamSideOf(w, hit.wall); // см. beamSideOf выше
       p.elements.push(el);
       c.persist("elem-add");
       if (t.block) { openEditor(el); return; } // сразу открываем сборку блока
@@ -221,13 +237,21 @@
     S.selId = el.id;
     const p = core().project, t = TYPES[el.type] || { name: el.type };
     const hp = p.settings.heightPresets;
+    // балка/перегородка (wallId="beam:"+id) — НЕ "стена N" (el.wallId.split(":")[1]
+    // там не число, а id самой балки — раньше давало "стена NaN"), и у неё есть
+    // сторона (см. beamSideOf/el.beamSide выше) — ручной переключатель на случай,
+    // если авто-детект по месту тапа ошибся (тап почти точно на оси перегородки).
+    const isBeamEl = el.wallId && String(el.wallId).slice(0, 5) === "beam:";
     const wallLen = el.wallId ? Math.round((G().wallById(p, el.wallId) || { len: 0 }).len) : 0;
     rooms().openSheet(`<div class="ep-plan-srow"><b>${esc(t.name)}</b>
-        ${el.wallId ? `<span>· стена ${esc(el.wallId.split(":")[1] * 1 + 1)} (${wallLen} см)</span>` : "· свободно"}</div>
+        ${el.wallId ? `<span>· ${isBeamEl ? "перегородка" : "стена " + esc(el.wallId.split(":")[1] * 1 + 1)} (${wallLen} см)</span>` : "· свободно"}</div>
       <div class="ep-plan-srow ep-plan-s2">
         ${el.wallId ? `<label>${T.offset}<input id="ep-pe-off" type="number" inputmode="numeric" min="0" max="${wallLen}" value="${Math.round(el.offset)}"></label>` : ""}
         <label>${T.height}<input id="ep-pe-h" type="number" inputmode="numeric" min="0" value="${Math.round(el.height)}"></label>
       </div>
+      ${isBeamEl ? `<div class="ep-plan-srow">${T.beamSide}
+        <button type="button" class="ep-plan-chip ep-clickable" data-pe-beamside="1">${T.beamSideFlip}</button>
+      </div>` : ""}
       <div class="ep-plan-srow">${T.presets}
         ${[hp.socket, hp.switch, hp.kitchen].map((v) => `<button type="button" class="ep-plan-chip ep-clickable" data-pe-preset="${v}">${v}</button>`).join("")}
       </div>
@@ -526,6 +550,12 @@
     if ((b = t.closest("[data-pe-brot]"))) {
       const c = core(), el = current(); if (!el || el.type !== "block") return;
       c.commit(); el.blockVert = !el.blockVert; c.persist("block-rot"); openEditor(el);
+      if (rooms().renderScene) rooms().renderScene();
+      return;
+    }
+    if ((b = t.closest("[data-pe-beamside]"))) {
+      const c = core(), el = current(); if (!el) return;
+      c.commit(); el.beamSide = (el.beamSide || 1) * -1; c.persist("elem-beamside"); openEditor(el);
       if (rooms().renderScene) rooms().renderScene();
       return;
     }

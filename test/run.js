@@ -232,6 +232,45 @@ test("beamWall: перегородка резолвится как стена", 
   const bw = G.wallById(P, "beam:" + P.beams[0].id);
   ok(bw && bw.isBeam, "isBeam"); near(bw.len, 300, 1, "len");
 });
+// Баг (репорт пользователя): «нарисовал балку, а с другой стороны не могу ничего
+// поставить» — у балки нет своей комнаты (roomId:null), G.wallFrame() без подсказки
+// давал ОДНУ И ТУ ЖЕ (произвольную) нормаль независимо от места тапа, поэтому ЛЮБОЙ
+// элемент на балке рисовался на одной стороне: данные создавались, но маркер второй
+// точки съезжал на прежнюю сторону (визуально накладывался/пропадал). Фикс —
+// wallFrame(project, wall, sideHint) + el.beamSide, проставляемый в placeAt() по
+// РЕАЛЬНОМУ месту тапа (beamSideOf).
+test("wallFrame: sideHint у балки разворачивает нормаль на противоположную сторону", () => {
+  const { P } = install({ beams: [M.newBeam({ x: 0, y: 150 }, { x: 300, y: 150 }, "beam", 8, "ГКЛ")] });
+  const bw = G.wallById(P, "beam:" + P.beams[0].id);
+  const base = G.wallFrame(P, bw); // без sideHint — прежняя фиксированная сторона
+  eq(G.wallFrame(P, bw, 1).nrm.x, base.nrm.x, "sideHint=1 — та же сторона, что и без подсказки");
+  eq(G.wallFrame(P, bw, -1).nrm.x, -base.nrm.x, "sideHint=-1 — нормаль X развёрнута");
+  eq(G.wallFrame(P, bw, -1).nrm.y, -base.nrm.y, "sideHint=-1 — нормаль Y развёрнута");
+});
+test("elemDrawPoint: el.beamSide — элемент на балке рисуется на СВОЕЙ стороне (без поля — прежняя фикс. сторона)", () => {
+  const beam = M.newBeam({ x: 100, y: 150 }, { x: 300, y: 150 }, "beam", 10, "Бетон");
+  const { P } = install({ beams: [beam] });
+  const wallId = "beam:" + beam.id;
+  const legacy = M.newElement("socket", wallId, 50, 30, "power"); // элемент до этого фикса — без beamSide
+  const sideA = M.newElement("socket", wallId, 100, 30, "power"); sideA.beamSide = 1;
+  const sideB = M.newElement("socket", wallId, 150, 30, "power"); sideB.beamSide = -1;
+  P.elements.push(legacy, sideA, sideB);
+  near(G.elemDrawPoint(P, legacy).y, 163, 0.1, "легаси-элемент без beamSide — прежняя (базовая) сторона");
+  near(G.elemDrawPoint(P, sideA).y, 163, 0.1, "beamSide=1 совпадает с базовой стороной");
+  near(G.elemDrawPoint(P, sideB).y, 137, 0.1, "beamSide=-1 — ПРОТИВОПОЛОЖНАЯ сторона балки");
+});
+test("placeAt: тап по РАЗНЫМ сторонам балки ставит элементы на РАЗНЫХ сторонах, не один поверх другого", () => {
+  const beam = M.newBeam({ x: 100, y: 150 }, { x: 300, y: 150 }, "beam", 10, "Бетон");
+  const { P } = install({ beams: [beam] });
+  const wallId = "beam:" + beam.id;
+  EP.Plan.Elements.placeAt({ x: 150, y: 142 }); // тап ВЫШЕ оси балки (y<150), в пределах снапа
+  EP.Plan.Elements.placeAt({ x: 200, y: 158 }); // тап НИЖЕ оси балки (y>150)
+  const els = P.elements.filter((e) => e.wallId === wallId);
+  eq(els.length, 2, "оба тапа поставили точку на балке");
+  ok(els[0].beamSide !== els[1].beamSide, "разные стороны тапа — разный el.beamSide");
+  const d0 = G.elemDrawPoint(P, els[0]), d1 = G.elemDrawPoint(P, els[1]);
+  ok((d0.y - 150) * (d1.y - 150) < 0, "маркеры реально нарисованы по РАЗНЫЕ стороны от оси балки");
+});
 test("spansMinusOpenings: окно рвёт стену на 2 участка", () => {
   const { P, w } = install({ openings: [M.newOpening("window", null, 120)] });
   P.openings[0].wallId = w(0);
