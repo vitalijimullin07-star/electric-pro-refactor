@@ -5,6 +5,7 @@
   "description": "Electric Pro V29 — PWA электрика (план квартиры, трассы, щит, смета)",
   "scripts": {
     "test": "node test/run.js",
-    "check": "find assets/js -name '*.js' -exec node --check {} \\;"
+    "check": "find assets/js -name '*.js' -exec node --check {} \\;",
+    "bump-version": "node scripts/bump-cache-version.js"
   }
 }

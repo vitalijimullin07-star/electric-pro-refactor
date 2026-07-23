@@ -31,6 +31,12 @@ jobs:
       - name: Run tests (gate before deploy)
         run: node test/run.js
 
+      - name: Bump cache-busting version (?v=NNNN во всех ассетах + имя кэша SW)
+        run: |
+          node scripts/bump-cache-version.js
+          node --check sw.js
+          node --check assets/js/core/router.js
+
       - name: Deploy (hosting + rules + functions)
         uses: w9jds/firebase-action@v13.35.1
         with:
