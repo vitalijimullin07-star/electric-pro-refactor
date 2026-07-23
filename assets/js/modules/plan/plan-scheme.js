@@ -148,7 +148,6 @@
     rooms().openSheet(`<div class="ep-plan-srow"><b>▤ Однолинейная схема</b>
         <span class="ep-plan-flex"></span>
         <button type="button" class="ep-plan-mini ep-clickable" data-psc-fullplain aria-label="Во весь экран">⛶</button>
-        <button type="button" class="ep-plan-mini ep-clickable" data-psc-full aria-label="Во весь экран горизонтально" title="Во весь экран горизонтально (попытка принудительного разворота)">⤢</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-psc-close>✕</button></div>
       <div class="ep-plan-scheme ${S.full ? "is-full" : ""}" id="ep-psc-box"><div class="ep-plan-schemescroll" id="ep-psc-scroll"></div></div>
       <div id="ep-psc-edit"></div>`);
@@ -157,28 +156,24 @@
   }
   const isOpen = () => !!$("#ep-psc-box");
   function close() { S.full = false; }
-  // ЧИСТЫЙ CSS, БЕЗ нативного Fullscreen API/screen.orientation.lock — репорт
-  // пользователя со скриншотом с реального устройства: `requestFullscreen()`
-  // тихо не срабатывает (или срабатывает, но браузер продолжает показывать
-  // статус-бар и не пересчитывает 100vw синхронно с переходом), в итоге видна
-  // только чуть увеличенная max-height у .ep-plan-schemescroll, а сам лист
-  // остаётся в обычном потоке страницы — статус-бар виден, схема обрезана по
-  // ширине (тот же класс бага, что уже чинили у главного редактора/шторок/
-  // развёртки в этой сессии, здесь просто не был перенесён вместе с ними).
-  // lock=true (⤢) — горизонталь БЕЗ физического поворота телефона тем же
-  // CSS-трюком, что уже доказанно работает у 🔄 в развёртке (plan-unfold.js
-  // enterFSLandscape/.is-landscape-forced: position:fixed на весь вьюпорт +
-  // transform:rotate(90deg)) — НЕ screen.orientation.lock (не поддерживается
-  // в iOS Safari вовсе, на Android требует физически повернуть устройство).
-  // lock=false (⛶) — просто fullscreen, ориентация как физически держат телефон.
-  function toggleFull(lock) {
+  // ЧИСТЫЙ CSS, БЕЗ нативного Fullscreen API — репорт пользователя со скриншотом
+  // с реального устройства: `requestFullscreen()` тихо не срабатывает (или
+  // срабатывает, но браузер продолжает показывать статус-бар и не пересчитывает
+  // 100vw синхронно с переходом) — position:fixed;inset:0 работает надёжнее.
+  // РАНЬШЕ была ещё ⤢-кнопка «горизонтально» — принудительно разворачивала
+  // схему CSS-трансформом (.is-landscape-forced) НЕЗАВИСИМО от системной кнопки
+  // автоповорота на Android. Просьба пользователя: принудительный разворот
+  // ДОЛЖЕН оставаться ТОЛЬКО у развёртки стен (plan-unfold.js, там это осознанный
+  // повторяющийся сценарий — держать телефон вертикально и смотреть на широкий
+  // чертёж стены) — «во всех остальных местах абсолютно всех» ориентация обязана
+  // зависеть ИСКЛЮЧИТЕЛЬНО от системного автоповорота, как у любого обычного
+  // сайта. Убрана целиком — остался один ⛶ (просто fullscreen, ориентация как
+  // физически держат телефон / включён ли системный автоповорот).
+  function toggleFull() {
     S.full = !S.full;
     const box = $("#ep-psc-box"); const sheet = $("#ep-plan-sheet");
     if (box) box.classList.toggle("is-full", S.full);
-    if (sheet) {
-      sheet.classList.toggle("ep-plan-sheet-full", S.full);
-      sheet.classList.toggle("is-landscape-forced", S.full && !!lock);
-    }
+    if (sheet) sheet.classList.toggle("ep-plan-sheet-full", S.full);
   }
 
   function draw() {
@@ -279,8 +274,7 @@
       if (sh) { sh.classList.remove("ep-plan-sheet-full"); sh.classList.remove("is-landscape-forced"); }
       return;
     }
-    if (t.closest("[data-psc-fullplain]")) return toggleFull(false);
-    if (t.closest("[data-psc-full]")) return toggleFull(true);
+    if (t.closest("[data-psc-fullplain]")) return toggleFull();
     if (!isOpen()) return;
     if ((b = t.closest("[data-psc-mode]"))) { const c = core(); c.commit(); c.project.settings.schemeMode = b.getAttribute("data-psc-mode") === "manual" ? "manual" : "auto"; c.persist("scheme-mode"); refresh(); return; }
     if ((b = t.closest("[data-psc-ph]"))) { const c = core(); c.commit(); c.project.settings.phases = Number(b.getAttribute("data-psc-ph")) === 3 ? 3 : 1; c.persist("scheme-ph"); refresh(); return; }
