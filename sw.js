@@ -21,7 +21,15 @@ self.addEventListener("fetch", (e) => {
   try { url = new URL(req.url); } catch (_) { return; }
   if (url.origin !== self.location.origin) return;        // только свой origin (не gstatic/googleapis)
 
-  if (req.mode === "navigate") {                          // страница: сеть, оффлайн -> кэш index
+  // Страница И ЛЮБОЙ прямой запрос /index.html (в т.ч. fetch из pwa.js, который
+  // сверяет отпечаток версий для автообновления) — ВСЕГДА network-first.
+  // РАНЬШЕ network-first был ТОЛЬКО для req.mode==="navigate", а fetch("/index.html",
+  // {cache:"no-store"}) из pwa.js — это НЕ navigate: он падал в ветку статики ниже
+  // (cache-first) и получал СТАРЫЙ index.html из кэша SW, даже когда на сервере уже
+  // лежал новый — cache:"no-store" обходит только HTTP-кэш, но не перехват SW.
+  // Проверка новой версии «слепла» на целый цикл (баг класса «грузится старая часть
+  // вместо новой», пойман живым тестом наложения: на диске ?v=9999, fetch вернул 3182).
+  if (req.mode === "navigate" || url.pathname === "/" || url.pathname === "/index.html") {
     e.respondWith(
       fetch(req).then((r) => { const cp = r.clone(); caches.open(CACHE).then((c) => c.put("/index.html", cp)).catch(() => {}); return r; })
         .catch(() => caches.match("/index.html").then((m) => m || caches.match("/")))
