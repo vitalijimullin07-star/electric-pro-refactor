@@ -823,6 +823,12 @@ test("PWA: manifest валиден и содержит нужные поля", (
   eq(m.display, "standalone", "display");
   ok(m.start_url && m.scope, "start_url/scope");
   ok(Array.isArray(m.icons) && m.icons.length > 0, "иконки");
+  // orientation НЕ должен быть задан в манифесте — иначе установленное PWA (WebAPK)
+  // крутится по датчику в обход системного тумблера автоповорота Android
+  // ("any" → SCREEN_ORIENTATION_FULL_SENSOR). Без поля → SCREEN_ORIENTATION_UNSPECIFIED,
+  // ориентация уважает системную настройку; принудительный разворот развёртки стен
+  // остаётся через runtime screen.orientation.lock() в fullscreen (не зависит от манифеста).
+  ok(m.orientation === undefined, "orientation не задан (уважаем системный автоповорот)");
 });
 test("PWA: sw.js без синтаксических ошибок", () => {
   const { execSync } = require("child_process"), path = require("path");
