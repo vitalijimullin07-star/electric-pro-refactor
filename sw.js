@@ -3,7 +3,7 @@
    они идут напрямую в сеть. Навигация: сеть -> оффлайн-фолбэк на кэш index.html.
    Статика: cache-first + фоновое обновление (stale-while-revalidate). */
 "use strict";
-const CACHE = "ep-v29-shell-2";
+const CACHE = "ep-v29-shell-3";
 const CORE = ["/", "/index.html", "/manifest.webmanifest", "/assets/icon.svg", "/assets/icon-192.png", "/assets/icon-512.png"];
 
 self.addEventListener("install", (e) => {
