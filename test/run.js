@@ -1042,8 +1042,9 @@ test("calcByRoutes: сборка щита — автоматы/УЗО по чи�
   ok(breakers && breakers.qty === 3, "вводной + 2 линии"); // 1 вводной + cc1 + cc2
   const rcds = res.items.find((i) => i.name === "Установка УЗО/дифавтомата");
   ok(rcds && rcds.qty === 2, "вводное УЗО + УЗО линии cc1"); // mainRcd + cc1.rcd
-  const junctWork = res.items.find((i) => i.name === "Монтаж и расключение распределительной коробки");
-  ok(junctWork && junctWork.qty === 1, "монтаж распред. коробки по числу распаек");
+  // работы по распайкам разделены по МЕСТУ: коробка на потолке vs распайка в подрозетнике
+  const junctWork = res.items.find((i) => i.name === "Собрать распаянную коробку на потолке");
+  ok(junctWork && junctWork.qty === 1, "сборка потолочной коробки по числу распаек");
 });
 test("calcByRoutes: временные сети — вручную заданное число точек добавляет работу", () => {
   const { P, w } = install();
@@ -2331,6 +2332,133 @@ test("фото: deleteProject чистит кэш фото своего прое
     }
     ok(pts.some((pt) => Math.abs(pt.y - 280) < 1), "вход в районе y≈280 — РОВНО отступ 15см от стены (y=300)");
     ok(!pts.some((pt) => Math.abs(pt.x - 150) < 1 && pt.y < 100), "у x=150 (ветка) путь НЕ уходит до конца нарисованной ветки (y=50)");
+  });
+
+  // ===== 22. Аудит автотрассировки: фиксы по замерам =====
+  test("щит ВНЕ нарисованной комнаты не ломает трассировку (нет магистрали, одна комната)", () => {
+    // щит в 150см снаружи: roomNear его комнату не находит, раньше это считалось
+    // «разные комнаты» и требовало магистраль -> 0 трасс даже в одной комнате
+    const room = M.newRoom(G.rectPoints(200, 0, 400, 300), "R");
+    const cc = M.newCircuit("QF1", "#f00", 16);
+    const { P } = install({ rooms: [room], circuits: [cc], panels: [M.newPanel(50, 150, "Щ")] });
+    const s1 = M.newElement("socket", P.rooms[0].id + ":0", 100, 30);
+    const s2 = M.newElement("socket", P.rooms[0].id + ":2", 100, 30);
+    s1.circuitId = s2.circuitId = cc.id;
+    P.elements.push(s1, s2);
+    ok(!EP.Plan.Routes.roomNear(P, { x: 50, y: 150 }), "комната щита действительно не определяется");
+    EP.Plan.Routes.build();
+    eq(P.routes.length, 2, "обе точки отрассированы по контуру известной комнаты");
+  });
+  test("силовая линия НЕ уходит в слаботочный щит, если есть обычный", () => {
+    const room = M.newRoom(G.rectPoints(0, 0, 400, 300), "R");
+    const cc = M.newCircuit("QF1", "#f00", 16);
+    const main = M.newPanel(10, 150, "Щит");                       // дальше от точки
+    const lv = M.newPanel(390, 150, "Слаботочный"); lv.router = true; lv.transformer = true; // ближе
+    const { P } = install({ rooms: [room], circuits: [cc], panels: [main, lv] });
+    const s1 = M.newElement("socket", P.rooms[0].id + ":0", 380, 30); s1.circuitId = cc.id;
+    P.elements.push(s1);
+    EP.Plan.Routes.build();
+    const rt = P.routes.find((r) => r.fromId === s1.id);
+    ok(rt && rt.toPanel, "трасса до щита есть");
+    eq(rt.toId, P.panels[0].id, "силовая ушла в ОБЫЧНЫЙ щит, хоть слаботочный и ближе");
+  });
+  test("все щиты слаботочные (один комбинированный) — силовая всё равно строится", () => {
+    const room = M.newRoom(G.rectPoints(0, 0, 400, 300), "R");
+    const cc = M.newCircuit("QF1", "#f00", 16);
+    const combo = M.newPanel(20, 150, "Щит"); combo.router = true; combo.transformer = true;
+    const { P } = install({ rooms: [room], circuits: [cc], panels: [combo] });
+    const s1 = M.newElement("socket", P.rooms[0].id + ":0", 200, 30); s1.circuitId = cc.id;
+    P.elements.push(s1);
+    EP.Plan.Routes.build();
+    eq(P.routes.length, 1, "обратная совместимость: единственный комбинированный щит принимает силовую");
+  });
+  test("проходки: шторка «Трассы» и смета дают ОДНО число (общий sleeveGroups)", () => {
+    const cor = M.newRoom(G.rectPoints(0, 0, 200, 600), "Кор");
+    const rm = M.newRoom(G.rectPoints(200, 0, 400, 600), "Зал");
+    const cs = [];
+    for (let i = 0; i < 4; i++) cs.push(M.newCircuit("QF" + (i + 1), "#f00", 16));
+    const { P } = install({ rooms: [cor, rm], circuits: cs, panels: [M.newPanel(100, 50, "Щ")] });
+    cs.forEach((c) => { const e = M.newElement("socket", P.rooms[1].id + ":2", 150, 30); e.circuitId = c.id; P.elements.push(e); });
+    P.guides.push(M.newGuide([{ x: 100, y: 50 }, { x: 100, y: 300 }, { x: 350, y: 300 }]));
+    EP.Plan.Routes.build();
+    const holes = EP.Plan.Routes.sleeveHoles(P);
+    const fromCalc = EP.Plan.Calc.calcByRoutes(P).items
+      .filter((i) => /^Проходка/.test(i.name)).reduce((a, i) => a + i.qty, 0);
+    ok(holes > 0, "проходки есть");
+    eq(fromCalc, holes, "смета и шторка совпадают");
+    const raw = P.routes.reduce((n, r) => n + (r.throughWalls || []).length, 0);
+    ok(raw >= holes, "сырых кабеле-пересечений не меньше, чем физических отверстий");
+  });
+  test("«Без трассы»: список с причинами + сброс при открытии другого проекта", () => {
+    const cor = M.newRoom(G.rectPoints(0, 0, 150, 600), "Кор");
+    const rm = M.newRoom(G.rectPoints(150, 0, 400, 600), "Зал");
+    const cc = M.newCircuit("QF1", "#f00", 16);
+    const { P } = install({ rooms: [cor, rm], circuits: [cc], panels: [M.newPanel(60, 40, "Щ")] });
+    const s1 = M.newElement("socket", P.rooms[1].id + ":0", 100, 30); s1.circuitId = cc.id;
+    P.elements.push(s1);
+    EP.Plan.Routes.build();
+    const un = EP.Plan.Routes.unroutedList();
+    eq(un.length, 1, "одна точка без трассы");
+    ok(/магистрал/i.test(un[0].reason), "причина названа: " + un[0].reason);
+    ok(/Зал/.test(un[0].name), "в названии есть комната: " + un[0].name);
+    install(); // открыли ДРУГОЙ проект — счётчик прошлого не должен протечь
+    eq(EP.Plan.Routes.unroutedList().length, 0, "список сброшен при открытии другого проекта");
+  });
+  test("автопредложение магистрали: 0 трасс -> все точки отрассированы", () => {
+    const cor = M.newRoom(G.rectPoints(0, 0, 150, 600), "Коридор");
+    const liv = M.newRoom(G.rectPoints(150, 0, 450, 350), "Гостиная");
+    const bed = M.newRoom(G.rectPoints(150, 350, 450, 250), "Спальня");
+    const cc = M.newCircuit("QF1", "#f00", 16);
+    const { P } = install({ rooms: [cor, liv, bed], circuits: [cc], panels: [M.newPanel(60, 40, "Щ")] });
+    [[1, 0, 100], [1, 2, 200], [2, 0, 100], [2, 2, 200]].forEach(([ri, wi, off]) => {
+      const e = M.newElement("socket", P.rooms[ri].id + ":" + wi, off, 30); e.circuitId = cc.id; P.elements.push(e);
+    });
+    EP.Plan.Routes.build();
+    eq(P.routes.length, 0, "без магистрали межкомнатных трасс нет");
+    const n = EP.Plan.Routes.suggestGuides();
+    ok(n >= 2, "предложен ствол + минимум одна ножка, получили " + n);
+    P.routes = [];
+    EP.Plan.Routes.build();
+    eq(P.routes.length, 4, "после автомагистрали отрассированы все точки");
+  });
+  test("работы по распайкам: коробка на потолке ОТДЕЛЬНО от распайки в подрозетнике", () => {
+    const room = M.newRoom(G.rectPoints(0, 0, 600, 400), "R");
+    const cc = M.newCircuit("QF1", "#f00", 16);
+    const { P } = install({ rooms: [room], circuits: [cc], panels: [M.newPanel(30, 30, "Щ")] });
+    // 3 розетки шлейфом (транзит -> распайка в подрозетнике) + потолочная распайка
+    for (let i = 0; i < 3; i++) { const e = M.newElement("socket", P.rooms[0].id + ":" + i, 150, 30); e.circuitId = cc.id; P.elements.push(e); }
+    const j = M.newElement("junction", null, 0, 0, "power"); j.wallId = null; j.params = { x: 300, y: 200 }; j.circuitId = cc.id;
+    P.elements.push(j);
+    EP.Plan.Routes.build();
+    const items = EP.Plan.Calc.calcByRoutes(P).items;
+    const ceil = items.find((i) => i.name === "Собрать распаянную коробку на потолке");
+    ok(ceil && ceil.qty === 1, "одна потолочная коробка");
+    ok(!items.find((i) => i.name === "Монтаж и расключение распределительной коробки"), "старая общая позиция убрана");
+    // транзит шлейфа считается распайкой в подрозетнике
+    const inCnt = {}, outCnt = {};
+    P.routes.forEach((r) => { outCnt[r.fromId] = (outCnt[r.fromId] || 0) + 1; if (r.toId) inCnt[r.toId] = (inCnt[r.toId] || 0) + 1; });
+    const transit = P.elements.filter((e) => e.type !== "junction" && ((outCnt[e.id] || 0) + (inCnt[e.id] || 0)) > 1).length;
+    const box = items.find((i) => i.name === "Собрать распайку в подрозетнике");
+    eq(box ? box.qty : 0, transit, "распайки в подрозетнике = число транзитов шлейфа");
+  });
+  test("шлейф по РЕАЛЬНОЙ длине пути и на 19+ точках (порог CHAIN_LEN_MAX поднят)", () => {
+    // одна линия, точки в 2 комнатах: прямая дистанция дала бы крестящиеся хопы
+    const cor = M.newRoom(G.rectPoints(0, 0, 180, 800), "Кор");
+    const r1 = M.newRoom(G.rectPoints(180, 0, 420, 400), "К1");
+    const r2 = M.newRoom(G.rectPoints(180, 400, 420, 400), "К2");
+    const cc = M.newCircuit("QF1", "#f00", 16);
+    const { P } = install({ rooms: [cor, r1, r2], circuits: [cc], panels: [M.newPanel(90, 50, "Щ")] });
+    [1, 2].forEach((ri) => { for (let k = 0; k < 10; k++) {
+      const e = M.newElement("socket", P.rooms[ri].id + ":" + (k % 4), 60 + k * 35, 30); e.circuitId = cc.id; P.elements.push(e);
+    } });
+    P.guides.push(M.newGuide([{ x: 90, y: 50 }, { x: 90, y: 750 }]));
+    P.guides.push(M.newGuide([{ x: 90, y: 200 }, { x: 350, y: 200 }]));
+    P.guides.push(M.newGuide([{ x: 90, y: 600 }, { x: 350, y: 600 }]));
+    EP.Plan.Routes.build();
+    eq(P.routes.length, 20, "все 20 точек одной линии отрассированы");
+    const total = P.routes.reduce((a, r) => a + G.polylineLen(r.points), 0);
+    // с прямой метрикой на этой геометрии выходило вдвое больше (замерено в аудите)
+    ok(total < 12000, "суммарная длина шлейфа разумная (" + Math.round(total) + "см), не удвоенная");
   });
 
   console.log("\n" + "=".repeat(48));

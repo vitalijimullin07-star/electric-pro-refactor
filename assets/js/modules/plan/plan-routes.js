@@ -24,7 +24,11 @@
     unroutedBanner: (n) => `⚠ Без трассы: ${n} точ. — не нашлась магистраль (⇉) до их комнаты. Нарисуйте направление и нажмите «Построить» ещё раз.`,
     buildConfirmTitle: "Перед трассировкой",
     buildConfirmText: "Между комнатами трасса идёт ТОЛЬКО по нарисованной магистрали (⇉) — прямого пути через случайную стену больше нет (меньше лишних проходок). Убедитесь, что магистраль нарисована до КАЖДОЙ комнаты, где есть точки — иначе трассы в ней не построятся.",
-    buildConfirmGo: "✓ Построить", buildConfirmBack: "‹ Назад"
+    buildConfirmGo: "✓ Построить", buildConfirmBack: "‹ Назад",
+    suggestGuide: "✨ Предложить магистраль",
+    suggestNone: "Не удалось предложить: нужна хотя бы одна комната, смежная с другими, и точки в комнатах.",
+    suggestOk: (n) => `Черновик магистрали построен (${n} линий) — проверьте в режиме ⇉ и правьте как обычную`,
+    noGuideHint: "Магистрали (⇉) нет — межкомнатные трассы не построятся. Нарисуйте её или нажмите «Предложить магистраль»."
   };
 
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -140,6 +144,11 @@
   // центр туда и обратно). 15см — с запасом покрывает шаг сетки (gridStep=10) и
   // cornerSnapCm=20 привязки при рисовании, но не сольёт две реально разные комнаты.
   const GUIDE_MERGE_EPS = 15;
+  // Ниже этой доли «ствола» (участка ПО магистрали) в полной длине пути считаем, что
+  // магистраль не работает как коридор — см. фикс крюка в buildPath. 0.25 с большим
+  // запасом отделяет замеренный баг (0.11) от нормальной работы магистрали, где ствол —
+  // основная часть пути.
+  const GUIDE_TRUNK_MIN_SHARE = 0.25;
   // Какие магистрали РЕАЛЬНО применились в текущем прогоне build()/buildIncremental() —
   // чтобы hideGuides() прятал ТОЛЬКО их (фикс №1 аудита: раньше пряталась любая
   // нарисованная магистраль безусловно, даже если она далеко/вырождена и не участвовала
@@ -150,7 +159,46 @@
   // Сколько точек/распаек остались БЕЗ трассы после последнего build()/buildIncremental()
   // (см. инвариант buildPath: между комнатами без магистрали путь не строится) — читает
   // sheet() для баннера-предупреждения и toast после явного нажатия «Построить».
-  let lastUnrouted = 0;
+  // Раньше это было ЧИСЛО, и у него было две проблемы: (1) непонятно, КАКИЕ точки и
+  // почему не построились — баннер сообщал только количество; (2) счётчик модульный и не
+  // сбрасывался при смене проекта — открыл проект A с 2 неотрастрассированными, перешёл в
+  // проект B, открыл шторку «Трассы» БЕЗ build() и видел «Без трассы: 2» про чужой
+  // проект. Теперь это список {id, name, reason, projectId} + список сбрасывается при
+  // открытии проекта и в «Очистить».
+  let lastUnrouted = [];
+  let lastUnroutedPid = null;
+  // Точки, которым нужна трасса, но её нет — с ПРИЧИНОЙ (её видно в баннере шторки).
+  // Причина определяется по тем же данным, на которых buildPath принимал решение:
+  // нет комнаты у самой точки / нет щита-приёмника её рода / нет магистрали до её комнаты.
+  function unroutedReason(p, el, panels) {
+    const room = roomOfEl(p, el);
+    if (!room) return "точка вне комнат — обведите это место комнатой";
+    if (!panels.length) return "нет щита для её линии";
+    const sameRoom = panels.some((pn) => { const r = roomNear(p, pn.pos); return r && r.id === room.id; });
+    if (sameRoom) return "щит в этой же комнате, но контур трассировки не построился";
+    const gs = (G().floorScoped(p).guides || []).filter((gd) => (gd.points || []).length >= 2);
+    if (!gs.length) return "нет магистрали (⇉) — щит в другой комнате";
+    return "магистраль не доходит до её комнаты";
+  }
+  function collectUnrouted(p, points, juncts, panels) {
+    const routed = new Set((p.routes || []).map((r) => r.fromId));
+    const TY = (EP.Plan.Elements && EP.Plan.Elements.TYPES) || {};
+    const nameOf = (el) => {
+      const t = TY[el.type] || {};
+      const room = roomOfEl(p, el);
+      return (t.label || t.name || el.type) + (room ? " · " + room.name : "");
+    };
+    const out = [];
+    points.concat(juncts.map((n) => n.el)).forEach((el) => {
+      if (!el || routed.has(el.id)) return;
+      out.push({ id: el.id, name: nameOf(el), reason: unroutedReason(p, el, panels) });
+    });
+    lastUnrouted = out;
+    lastUnroutedPid = p.id || null;
+    return out;
+  }
+  // баннер актуален только для ТЕКУЩЕГО проекта (см. выше про протечку между проектами)
+  function unroutedForSheet(p) { return (lastUnroutedPid && lastUnroutedPid === (p.id || null)) ? lastUnrouted : []; }
   // перпендикулярный заход: к горизонтальному участку магистрали подходим вертикально
   // (и наоборот) — примыкание всегда прямым углом, как просил пользователь
   function guideKnee(pt, proj, segA, segB) {
@@ -205,7 +253,42 @@
   // nodeAt (её собственный конец — тоже anchor, попадает в тот же радиус). Работает и для
   // прежнего случая конец-к-концу (он просто частный случай: anchor совпадает с уже
   // имеющейся вершиной отрезка, t=0 или t=1, ничего не меняется).
+  // Кэш собранного графа. buildGuideGraph — самая горячая функция трассировки: она
+  // O(отрезки × вершины) (для каждого сырого отрезка перебирает ВСЕ вершины всех
+  // магистралей, ища точки разреза), а звалась ЗАНОВО на каждый вызов guideRoute — то
+  // есть на каждую трассу И на каждый замер-кандидат шлейфа. Измерено на 12 комнатах/
+  // 84 точках/13 магистралях: 116 000 вызовов closestOnSeg (~1377 на трассу ≈ 4
+  // пересборки графа), build() 292мс; с кэшем — 17 000 вызовов и 98мс (3× быстрее),
+  // автоперестройка на перенос точки 178мс → 67мс (на слабом телефоне ~1.4с → ~0.5с).
+  // ИНВАЛИДАЦИЯ — ПО СИГНАТУРЕ ГЕОМЕТРИИ, А НЕ ПО ССЫЛКЕ НА МАССИВ: p.guides мутируется
+  // НА МЕСТЕ (push при рисовании новой магистрали, gd.hidden в hideGuides, filter при
+  // «убрать все»), поэтому ссылка на массив НЕ меняется при добавлении магистрали.
+  // Кэш по ссылке ломает ровно этот сценарий — «нарисовал магистраль и сразу строю» —
+  // и это НЕ теоретический риск: первая (ссылочная) версия кэша уронила существующий
+  // тест «другая комната: перпендикулярная проходка через стену», который делает
+  // buildPath → push магистрали → buildPath на одном и том же массиве. Сигнатура ниже
+  // ловит и добавление/удаление магистрали, и изменение любой её точки; стоит ~30
+  // арифметических операций против 338 closestOnSeg, которые защищает. gd.hidden в
+  // сигнатуру НЕ входит — на геометрию графа он не влияет (buildGuideGraph получает уже
+  // отфильтрованный список, а скрытые магистрали продолжают работать, см. hideGuides).
+  let graphCache = null;
+  function guideSig(gs) {
+    let s = gs.length + "|", sum = 0, n = 0;
+    for (let i = 0; i < gs.length; i++) {
+      const pts = gs[i].points || [];
+      s += gs[i].id + ":" + pts.length + ";";
+      for (let j = 0; j < pts.length; j++) { sum += pts[j].x * 31 + pts[j].y * 17; n++; }
+    }
+    return s + n + "|" + Math.round(sum * 100);
+  }
   function buildGuideGraph(guides) {
+    const sig = guideSig(guides);
+    if (graphCache && graphCache.sig === sig) return graphCache.g;
+    const g = buildGuideGraphRaw(guides);
+    graphCache = { sig, g };
+    return g;
+  }
+  function buildGuideGraphRaw(guides) {
     const rawSegs = [];
     guides.forEach((gd) => {
       const pts = gd.points || [];
@@ -429,7 +512,14 @@
     }
     return straight;
   }
+  // Насколько СИЛЬНО последний guideRoute() реально использовал магистраль: доля длины
+  // «ствола» (участка ПО магистрали) в полной длине пути. Если ствол — мелочь на фоне
+  // подходов к нему, магистраль не работает как «общий коридор между комнатами», а лишь
+  // оттягивает путь к себе и обратно (см. фикс крюка в buildPath). Читает ТОЛЬКО
+  // buildPath сразу после вызова guideRoute.
+  let lastGuideTrunkShare = 1;
   function guideRoute(p, a, b, circuitId) {
+    lastGuideTrunkShare = 1;
     const gs = (G().floorScoped(p).guides || []).filter((gd) => (gd.points || []).length >= 2);
     if (!gs.length) return null;
     const graph = buildGuideGraph(gs);
@@ -454,8 +544,87 @@
     const legA = guideApproach(p, a, Ao, circuitId, guideKnee(a, Ao, sp.points[0], segA), sp.points[0], segA);
     const path = legA.concat(trunk.slice(1), [guideKnee(b, Bo, segB, sp.points[sp.points.length - 1]), { x: b.x, y: b.y }]);
     if (usedGuideIds) sp.edgeIds.forEach((id) => usedGuideIds.add(id)); // фикс №1: магистраль(и) реально применились
-    return path.filter((q, j) => j === 0 || G().dist(q, path[j - 1]) > 0.5);
+    const out = path.filter((q, j) => j === 0 || G().dist(q, path[j - 1]) > 0.5);
+    const totalLen = G().polylineLen(out);
+    lastGuideTrunkShare = totalLen > 1 ? G().polylineLen(trunk) / totalLen : 1;
+    return out;
   }
+  // ---- автопредложение магистрали (⇉), когда её нет вовсе ----
+  // Без магистрали межкомнатные трассы не строятся ВООБЩЕ (см. инвариант buildPath): на
+  // типовой 2-комн квартире «Построить» давало 0 трасс из 9 точек — тост есть, но
+  // пользователь видит пустой план и должен сам догадаться нарисовать ⇉ до КАЖДОЙ комнаты.
+  // Здесь строим черновик за него: ствол по «коридорной» комнате (у которой больше всего
+  // общих стен с другими — на реальных планах это и есть коридор/прихожая) + ножка-отросток
+  // в каждую комнату, где есть точки. Это ИМЕННО ЧЕРНОВИК: обычные записи p.guides, их
+  // видно полупрозрачным, можно удалить/дорисовать в режиме ⇉ как любую нарисованную
+  // вручную магистраль — никакой особой сущности не заводим.
+  function roomsAdjacency(p) {
+    const rs = (G().floorScoped(p).rooms || []);
+    const cnt = new Map(rs.map((r) => [r.id, 0]));
+    for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) {
+      // общая стена: у соседей совпадает centerline пары точек (тот же признак, что
+      // использует wallAt для общей стены двух комнат)
+      let share = false;
+      G().walls(rs[i]).forEach((w1) => G().walls(rs[j]).forEach((w2) => {
+        const d1 = G().dist(w1.a, w2.a) + G().dist(w1.b, w2.b);
+        const d2 = G().dist(w1.a, w2.b) + G().dist(w1.b, w2.a);
+        if (Math.min(d1, d2) < 2) share = true;
+        else { // частичное перекрытие коллинеарных стен
+          const c1 = G().closestOnSeg({ x: w1.mx, y: w1.my }, w2.a, w2.b);
+          const c2 = G().closestOnSeg({ x: w2.mx, y: w2.my }, w1.a, w1.b);
+          if (c1.d < 2 || c2.d < 2) share = true;
+        }
+      }));
+      if (share) { cnt.set(rs[i].id, cnt.get(rs[i].id) + 1); cnt.set(rs[j].id, cnt.get(rs[j].id) + 1); }
+    }
+    return cnt;
+  }
+  // строит и КЛАДЁТ в p.guides черновик магистрали; возвращает число добавленных линий
+  function suggestGuides() {
+    const c = core(), p = c.project;
+    const fp = G().floorScoped(p);
+    const rs = fp.rooms || [];
+    if (rs.length < 2) return 0;
+    const adj = roomsAdjacency(p);
+    // «коридор» — комната с максимумом смежных стен; при равенстве берём вытянутую (по
+    // отношению сторон bbox) — коридор почти всегда самый узкий и длинный
+    const scored = rs.map((r) => {
+      const bb = G().bbox(r.points);
+      const elong = Math.max(bb.w, bb.h) / Math.max(1, Math.min(bb.w, bb.h));
+      return { r, adj: adj.get(r.id) || 0, elong, bb };
+    }).sort((x, y) => (y.adj - x.adj) || (y.elong - x.elong));
+    const hub = scored[0];
+    if (!hub || hub.adj < 1) return 0;
+    // ствол — по длинной оси коридора, по его центру
+    const hb = hub.bb, horiz = hb.w >= hb.h;
+    const cx = hb.x + hb.w / 2, cy = hb.y + hb.h / 2;
+    const pad = 30; // не упираемся в самые углы
+    const trunk = horiz
+      ? [{ x: hb.x + pad, y: cy }, { x: hb.x + hb.w - pad, y: cy }]
+      : [{ x: cx, y: hb.y + pad }, { x: cx, y: hb.y + hb.h - pad }];
+    const added = [];
+    added.push(c.model.newGuide(trunk));
+    // ножка в каждую комнату, где есть точки (кроме самого коридора)
+    const withPts = new Set();
+    (fp.elements || []).forEach((el) => { const r = roomOfEl(p, el); if (r) withPts.add(r.id); });
+    rs.forEach((r) => {
+      if (r.id === hub.r.id || !withPts.has(r.id)) return;
+      const bb = G().bbox(r.points), rc = { x: bb.x + bb.w / 2, y: bb.y + bb.h / 2 };
+      // от ствола к центру комнаты — строго перпендикулярным отростком
+      const from = horiz ? { x: Math.max(trunk[0].x, Math.min(trunk[1].x, rc.x)), y: cy }
+                         : { x: cx, y: Math.max(trunk[0].y, Math.min(trunk[1].y, rc.y)) };
+      const to = horiz ? { x: from.x, y: rc.y } : { x: rc.x, y: from.y };
+      if (G().dist(from, to) < 20) return;
+      added.push(c.model.newGuide([from, to]));
+    });
+    if (added.length < 2) return 0; // один ствол без ножек — толку нет
+    c.commit();
+    p.guides = (p.guides || []).concat(added);
+    graphCache = null;
+    c.persist("guide-add");
+    return added.length;
+  }
+
   // «пропадает после трассировки»: скрыть магистрали активного этажа с плана.
   // НЕ удаляем из модели — автоперестройка (AUTOREBUILD_ON) продолжает вести
   // трассы по ним; в режиме рисования ⇉ скрытые магистрали снова видны/удаляемы.
@@ -467,6 +636,18 @@
     (G().floorScoped(p).guides || []).forEach((gd) => {
       if (!usedGuideIds || usedGuideIds.has(gd.id)) gd.hidden = true;
     });
+  }
+
+  // РЕАЛЬНОЕ число проходок пути — ровно так же, как их посчитает addRoute (включая
+  // фильтр floorSkip при разводке по полу: переход через дверь до пола гильзой не
+  // считается). Нужно для сравнения «а не больше ли проходок у короткого пути» в фиксе
+  // крюка ниже: сравнивать по СТЕНАМ нельзя — одна и та же стена, пересечённая в ДРУГОМ
+  // месте, превращает бесплатный переход через дверь в настоящую гильзу (этот случай
+  // поймал существующий тест «переход через дверь не считается гильзой»).
+  function sleeveCount(p, pts, skipWall) {
+    let tw = G().polylineCrossings(p, pts, skipWall || null);
+    if (p.settings.routeType === "floor") tw = tw.filter((cr) => !floorSkip(p, cr));
+    return tw.length;
   }
 
   // общий построитель: та же комната — по контуру с отступом. РАЗНЫЕ комнаты (или хотя
@@ -483,14 +664,51 @@
   function buildPath(p, fromEl, a, target, circuitId) {
     circuitId = circuitId || (fromEl && fromEl.circuitId) || null;
     const b = target.pos;
+    const skip = (fromEl && fromEl.wallId) || null;
     const ra = fromEl ? roomOfEl(p, fromEl) : roomNear(p, a);
     const rb = (target.el ? roomOfEl(p, target.el) : null) || roomNear(p, b);
     if (ra && rb && ra.id === rb.id) {
       const path = pathInRoom(p, ra, a, b, circuitId);
       if (path) return path;
-      return ortho(p, a, b, fromEl && fromEl.wallId || null); // контур не построился — крайний случай (вырожденная комната)
+      return ortho(p, a, b, skip); // контур не построился — крайний случай (вырожденная комната)
     }
-    return guideRoute(p, a, b, circuitId); // разные комнаты — только по магистрали, иначе null
+    // ФИКС: комната ОДНОЙ из сторон не определилась вообще. Типовой реальный случай —
+    // щит стоит в прихожей/нише, которую пользователь НЕ нарисовал комнатой (или дальше
+    // 60см от любой стены, за пределами фолбэка roomNear). Раньше это считалось «разные
+    // комнаты» и требовало магистраль — из-за чего щит в 80см вне комнаты убивал
+    // трассировку ЦЕЛИКОМ, включая точки той же единственной комнаты (измерено: 0 трасс
+    // из 2). Магистраль тут не при чём: у нас есть ровно одна известная комната, ведём по
+    // её контуру (как «внутри комнаты»), а короткий выход за её границу к щиту честно
+    // посчитается гильзой через общий polylineCrossings.
+    if (!ra !== !rb) {
+      const known = ra || rb;
+      const path = pathInRoom(p, known, a, b, circuitId);
+      if (path) return path;
+      return ortho(p, a, b, skip);
+    }
+    const gp = guideRoute(p, a, b, circuitId); // разные комнаты — только по магистрали, иначе null
+    if (!gp) return null;
+    // ФИКС «крюка». Узкий случай, замеренный на реальной форме плана: путь по магистрали
+    // почти целиком состоит из ПОДХОДОВ к ней, а сам ствол — мелочь (замерено 50см ствола
+    // из 450см пути). Магистраль тут не выполняет свою работу «общего коридора между
+    // комнатами», а лишь оттягивает путь к себе и обратно. Если при этом цель лежит МЕЖДУ точкой и этим участком, путь
+    // уходит за цель и возвращается: замерено 450см против 226см Г-образных при ОДНОЙ И
+    // ТОЙ ЖЕ гильзе (плюс 2 самопересечения с соседней трассой).
+    // Условие СПЕЦИАЛЬНО узкое — доля ствола в пути ниже GUIDE_TRUNK_MIN_SHARE: как
+    // только трасса реально ЕДЕТ по магистрали (коридор → ножка в комнату — типовой
+    // случай, ради которого магистраль и сделана единственным путём наружу), ствол
+    // составляет основную часть пути, сокращение НЕ применяется вообще, и приоритет
+    // магистрали сохраняется буквально. Признак «обе проекции на одном отрезке» для этого
+    // НЕ годится (проверено — ломает 3 теста): одна прямая магистраль по коридору — это
+    // ровно один отрезок графа, и она как раз работает по назначению. Плюс страховка по РЕАЛЬНОМУ числу
+    // проходок (sleeveCount, с учётом двери до пола) — короткий путь не должен добавить
+    // ни одной гильзы.
+    if (lastGuideTrunkShare < GUIDE_TRUNK_MIN_SHARE) {
+      const dp = ortho(p, a, b, skip);
+      if (dp && dp.length >= 2 && G().polylineLen(dp) < G().polylineLen(gp) - 1
+          && sleeveCount(p, dp, skip) <= sleeveCount(p, gp, skip)) return dp;
+    }
+    return gp;
   }
 
   // ---- ручное редактирование трасс: тяга опорных точек / разворот угла (Слой 4.1) ----
@@ -564,6 +782,19 @@
     // шлейф 24В не мог пройти через силовую розетку и наоборот.
     const kindOf = (el) => (trafoPanels.length && el.type === "output24") ? "24"
       : (routerPanels.length && isLvLayer(el.layer)) ? "lv" : "pw";
+    // Щиты, принимающие СИЛОВЫЕ линии. Раньше сюда шёл весь список panels, и силовая линия
+    // могла уйти в слаботочный щит просто потому, что он оказался геометрически ближе
+    // (поймано на реальном проекте: «QF2 Розетки К1» и «QF1 Свет» трассировались в «Щит
+    // слаботочный», стоявший на 120см ближе к комнате, чем квартирный). Физически это
+    // неверно — в слаботочном щите нет силовых автоматов, а подбор корпуса щита
+    // (neededModules) считает модули по p.circuits для ОДНОГО щита.
+    // Правило симметрично тому, как router-щит работает для слаботочки: если в проекте есть
+    // хотя бы один щит БЕЗ признаков слаботочного (router/transformer) — силовые идут
+    // только в такие. Если же ВСЕ щиты помечены router/transformer (типовой случай — один
+    // единственный комбинированный щит на квартиру), силовые идут в них, как и раньше:
+    // обратная совместимость сохранена, флаг сам по себе щит из силовых не исключает.
+    const plainPanels = panels.filter((pn) => !pn.router && !pn.transformer);
+    const powerPanels = plainPanels.length ? plainPanels : panels;
     const groups = new Map();
     pointsToRoute.forEach((el) => {
       const pos = G().routeAnchor(p, el); // блок -> вход штробы (нужный подрозетник)
@@ -574,7 +805,7 @@
       groups.get(key).items.push({ el, pos });
     });
     groups.forEach((g) => {
-      const targetPanels = g.kind === "24" ? trafoPanels : g.kind === "lv" ? routerPanels : panels;
+      const targetPanels = g.kind === "24" ? trafoPanels : g.kind === "lv" ? routerPanels : powerPanels;
       // распайки, доступные этой линии (своей QF; «без линии» — любые распайки)
       const J = g.circuitId ? juncts.filter((n) => n.circuitId === g.circuitId) : juncts.slice();
       if (J.length) {
@@ -594,7 +825,12 @@
   // распайки -> дерево к щиту (juncstToRoute — какие именно достроить; allJuncts —
   // ПОЛНЫЙ список для поиска «более близкой к щиту распайки той же линии», включая
   // уже построенные — их позиция не меняется, использовать как опорные узлы безопасно)
-  function routeJunctionsToPanel(c, p, allJuncts, juncstToRoute, panels) {
+  function routeJunctionsToPanel(c, p, allJuncts, juncstToRoute, panelsAll) {
+    // распайка — силовой узел, ей тот же приоритет щитов, что и силовым точкам
+    // (см. powerPanels в routeGroups): слаботочный щит принимает распайку только если
+    // других щитов в проекте нет вообще
+    const plain = panelsAll.filter((pn) => !pn.router && !pn.transformer);
+    const panels = plain.length ? plain : panelsAll;
     const panelDist = (pos) => { const n = nearest(pos, panels); return n ? dist(pos, n.pos) : Infinity; };
     const js = allJuncts.map((n) => ({ n, d: panelDist(n.pos) }));
     juncstToRoute.forEach((n) => {
@@ -691,10 +927,9 @@
     if (savedManual.length) restoreManualRoutes(p, savedManual);
     hideGuides(p); // прячем ТОЛЬКО применённые магистрали (см. usedGuideIds/hideGuides)
     usedGuideIds = null;
-    const routedIds = new Set(p.routes.filter(onActiveFloor).map((r) => r.fromId));
-    lastUnrouted = points.filter((el) => !routedIds.has(el.id)).length + juncts.filter((n) => !routedIds.has(n.id)).length;
+    const un = collectUnrouted(p, points, juncts, panels);
     c.persist("routes-build");
-    if (!silent) { if (lastUnrouted) rooms().toast(T.unroutedToast(lastUnrouted)); sheet(); }
+    if (!silent) { if (un.length) rooms().toast(T.unroutedToast(un.length)); sheet(); }
   }
 
   // ---- инкрементальная достройка: кнопка "⚡ Построить" — раньше звала build()
@@ -751,10 +986,10 @@
 
     hideGuides(p); // прячем ТОЛЬКО применённые к новым точкам (уже применённые ранее — уже скрыты)
     usedGuideIds = null;
-    const routedIdsAfter = new Set(p.routes.map((r) => r.fromId));
-    lastUnrouted = newPoints.filter((el) => !routedIdsAfter.has(el.id)).length + newJuncts.filter((n) => !routedIdsAfter.has(n.id)).length;
+    const unInc = collectUnrouted(p, newPoints, newJuncts,
+      (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y } })));
     c.persist("routes-build-inc");
-    if (!silent) { if (lastUnrouted) rooms().toast(T.unroutedToast(lastUnrouted)); sheet(); }
+    if (!silent) { if (unInc.length) rooms().toast(T.unroutedToast(unInc.length)); sheet(); }
   }
 
   // сброс конкретной трассы к авто-варианту (кнопка "↺ Авто" в sheetRoute) — пересчитывает
@@ -845,6 +1080,8 @@
   let rebuilding = false;
   if (core().onChange) {
     core().onChange((what) => {
+      // другой проект открыт — список «Без трассы» от прошлого проекта больше не про него
+      if (what === "open" || what === "import") { lastUnrouted = []; lastUnroutedPid = null; graphCache = null; return; }
       if (rebuilding || !AUTOREBUILD_ON[what]) return;
       const p = core().project;
       if (!p || !(p.routes || []).length) return;
@@ -863,7 +1100,21 @@
   // по паре id, чтобы не пересчитывать один и тот же кандидат на каждой итерации.
   // Для БОЛЬШИХ цепей (> CHAIN_LEN_MAX точек) — прежняя прямая дистанция, чтобы не
   // ловить O(n²·buildPath) на реально длинных линиях.
-  const CHAIN_LEN_MAX = 18;
+  // Порог, после которого метрика выбора звена шлейфа падает с РЕАЛЬНОЙ длины пути
+  // (buildPath) на прямую евклидову дистанцию — иначе O(n²·buildPath) на длинных линиях.
+  // Раньше 18 — и на 19-й точке линии качество обрывалось СКАЧКОМ. Насколько это плохо,
+  // видно только в МНОГОКОМНАТНОМ сценарии (в одной комнате прямая дистанция и длина пути
+  // почти совпадают, разницы нет вообще — первый замер именно поэтому её и не показал).
+  // Замер: одна линия, точки размазаны по 4 комнатам вокруг коридора с магистралью —
+  //   20 точек: путь 5451см / 8 гильз / 0 пересечений   ПРОТИВ   прямая 12151см / 37 / 6
+  //   32 точки: путь 6414см / 4 гильзы / 0              ПРОТИВ   прямая 13635см / 48 / 8
+  //   40 точек: путь 6753см / 4 гильзы / 0              ПРОТИВ   прямая 13977см / 48 / 8
+  // То есть прямая дистанция на 19+ точках давала ВДВОЕ больше кабеля, в 6-12 раз больше
+  // проходок и крестящиеся хопы — и это попадало прямо в смету, а не только в картинку.
+  // Порог поднят до 40 (заведомо больше любой практической бытовой группы на одном
+  // автомате); цена — 95мс против 11мс на предельных 40 точках одной линии, что после
+  // кэша графа магистралей (см. buildGuideGraph выше) приемлемо.
+  const CHAIN_LEN_MAX = 40;
   function chainFromPanel(c, p, items, panels, circuitId) {
     const connected = panels.slice(); // {kind:'panel', pos}
     const rest = items.slice();
@@ -955,6 +1206,7 @@
   function clearRoutes() {
     const c = core();
     c.commit(); c.project.routes = []; c.persist("routes-clear");
+    lastUnrouted = []; lastUnroutedPid = null; // баннер «Без трассы» относился к прошлой сборке
     sheet();
   }
 
@@ -998,6 +1250,39 @@
       : (s.cableStubPoint != null ? s.cableStubPoint : 20);
     return base + (r.toPanel ? (s.cableStubPanel != null ? s.cableStubPanel : 50) : 0);
   }
+  // ---- ФИЗИЧЕСКИЕ проходки (отверстия), а не кабеле-пересечения ----
+  // ЕДИНЫЙ источник для шторки «Трассы» И для сметы (plan-calc.js). Раньше шторка
+  // показывала СУММУ throughWalls по всем трассам (кабеле-пересечения), а смета —
+  // сгруппированные по месту отверстия с учётом ёмкости гильзы: на 6 линиях через одну
+  // стену получалось «12 проходок» в шторке против «6 шт» (в гофре) и «4 шт» (без гофры)
+  // в смете — три разных числа под одним словом «проходка». Теперь алгоритм ровно один,
+  // и разойтись они не могут.
+  // Группировка: по месту (~20см) — общая стена двух комнат хранится как ДВА wall-объекта,
+  // но это одно физическое отверстие, поэтому внутри одной трассы место считается один
+  // раз (seen). Ёмкость: «в гофре» (по полу всегда, по потолку — settings.gofraCeil) —
+  // 1 кабель на гильзу, без гофры — 2 (гофра толще, вдвоём в Ø20 не входят).
+  function sleeveGroups(p) {
+    const s = p.settings || {};
+    const cap = (s.routeType === "floor" || s.gofraCeil !== false) ? 1 : 2;
+    const groups = {}; // "x|y" -> { n: кабелей, wallId }
+    (p.routes || []).forEach((r) => {
+      const seen = {};
+      (r.throughWalls || []).forEach((c) => {
+        const key = Math.round(c.x / 20) + "|" + Math.round(c.y / 20);
+        if (seen[key]) return;
+        seen[key] = 1;
+        if (!groups[key]) groups[key] = { n: 0, wallId: c.wallId };
+        groups[key].n++;
+      });
+    });
+    return { groups, cap };
+  }
+  // сколько РЕАЛЬНЫХ отверстий сверлить (сумма по местам с учётом ёмкости гильзы)
+  function sleeveHoles(p) {
+    const { groups, cap } = sleeveGroups(p);
+    return Object.keys(groups).reduce((n, k) => n + Math.ceil(groups[k].n / cap), 0);
+  }
+
   function lengths(p) {
     const byLayer = {}, byCircuit = {};
     let crossings = 0, total = 0;
@@ -1017,6 +1302,8 @@
   function sheet() {
     const p = core().project;
     const st = lengths(p);
+    const unrouted = unroutedForSheet(p);
+    const holes = sleeveHoles(p); // ФИЗИЧЕСКИЕ отверстия — то же число, что в смете
     const rt = p.settings.routeType;
     const juncN = (p.elements || []).filter(isJunction).length;
     const circuits = p.circuits || [];
@@ -1061,8 +1348,10 @@
       <div class="ep-plan-modehint">Линии идут по контуру комнаты с отступом, стены не пересекают — только перпендикулярной проходкой Ø${p.settings.sleeveD || 20} (${p.settings.routeType === "floor" || p.settings.gofraCeil !== false ? "в гофре — 1 кабель на гильзу" : "без гофры — макс. 2 кабеля на гильзу"}).</div>
       <div class="ep-plan-modehint">Тёплый пол — штроба в пол ${p.settings.tpChaseW || 50}×${p.settings.tpChaseH || 50} мм. Штроба к посту блока — в редакторе точки.</div>
       ${!juncN ? `<div class="ep-plan-modehint">${T.hintJ}</div>` : ""}
-      ${lastUnrouted ? `<div class="ep-plan-modehint ep-plan-warnhint">${T.unroutedBanner(lastUnrouted)}</div>` : ""}
-      ${p.routes.length ? `<div class="ep-plan-srow ep-plan-rlens"><span>${T.total}: <b>${G().fmtLen(st.total)}</b></span><span>${st.crossings} ${T.crossings}</span></div>` : ""}
+      ${unrouted.length ? `<div class="ep-plan-modehint ep-plan-warnhint">${T.unroutedBanner(unrouted.length)}
+        ${!((G().floorScoped(p).guides || []).filter((gd) => (gd.points || []).length >= 2)).length ? `<div class="ep-plan-srow"><button type="button" class="ep-plan-tbtn ep-clickable" data-prt-suggest>${T.suggestGuide}</button></div>` : ""}
+        <div class="ep-plan-unrlist">${unrouted.slice(0, 12).map((u) => `<div class="ep-plan-unrrow"><button type="button" class="ep-plan-mini ep-clickable" data-prt-show="${esc(u.id)}" aria-label="Показать на плане">👁</button><b>${esc(u.name)}</b> — ${esc(u.reason)}</div>`).join("")}${unrouted.length > 12 ? `<div class="ep-plan-unrrow">…и ещё ${unrouted.length - 12}</div>` : ""}</div></div>` : ""}
+      ${p.routes.length ? `<div class="ep-plan-srow ep-plan-rlens"><span>${T.total}: <b>${G().fmtLen(st.total)}</b></span><span title="физических отверстий сверлить">${holes} ${T.crossings}</span>${st.crossings !== holes ? `<span class="ep-plan-dim">(кабеле-пересечений ${st.crossings})</span>` : ""}</div>` : ""}
       ${linesHtml}
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="btn btn-primary ep-clickable" data-prt-build>${T.build}</button>
@@ -1076,10 +1365,13 @@
   // показывается КАЖДЫЙ раз перед явным нажатием «Построить» (тот же паттерн под-вида
   // поверх шторки, что и sheetSetPrice/sheetConsumSettings — «‹ Назад» возвращает в sheet()).
   function sheetBuildConfirm() {
+    const hasGuides = ((G().floorScoped(core().project).guides || []).filter((gd) => (gd.points || []).length >= 2)).length > 0;
     rooms().openSheet(`<div class="ep-plan-srow"><b>🧭 ${T.buildConfirmTitle}</b></div>
       <div class="ep-plan-modehint">${T.buildConfirmText}</div>
+      ${!hasGuides ? `<div class="ep-plan-modehint ep-plan-warnhint">${T.noGuideHint}</div>` : ""}
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="btn btn-primary ep-clickable" data-prt-build-go>${T.buildConfirmGo}</button>
+        ${!hasGuides ? `<button type="button" class="ep-plan-tbtn ep-clickable" data-prt-suggest>${T.suggestGuide}</button>` : ""}
         <button type="button" class="ep-plan-tbtn ep-clickable" data-prt-build-back>${T.buildConfirmBack}</button>
       </div>`);
   }
@@ -1090,8 +1382,26 @@
     if (t.closest("[data-plan-routes]")) return sheet();
     if (t.closest("[data-prt-build]")) return sheetBuildConfirm();
     if (t.closest("[data-prt-build-go]")) return buildIncremental();
+    if (t.closest("[data-prt-suggest]")) { // черновик магистрали за пользователя
+      const n = suggestGuides();
+      if (!n) { rooms().toast(T.suggestNone); return; }
+      rooms().renderScene();
+      rooms().toast(T.suggestOk(n));
+      sheetBuildConfirm();
+      return;
+    }
     if (t.closest("[data-prt-build-back]")) return sheet();
     if (t.closest("[data-prt-clear]")) return clearRoutes();
+    if ((b = t.closest("[data-prt-show]"))) { // «Без трассы» -> показать точку на плане
+      const id = b.getAttribute("data-prt-show");
+      const e2 = (core().project.elements || []).find((x) => x.id === id);
+      const pt = e2 && G().elemDrawPoint(core().project, e2);
+      // подтягиваем вид к точке (тот же хелпер, что используют шторки комнаты/балки) и
+      // открываем её редактор — оттуда сразу видно линию/высоту и можно поправить
+      if (pt && rooms().ensureVisibleAboveSheet) rooms().ensureVisibleAboveSheet(pt);
+      if (e2 && EP.Plan.Elements && EP.Plan.Elements.openEditor) EP.Plan.Elements.openEditor(e2);
+      return;
+    }
     if (t.closest("[data-prt-close]")) { rooms().closeSheet(); return; }
     // solo линии (изоляция на плане): тап по имени линии — показать только её; ✕ шторки
     // или «Показать все» — вернуть. Хендлер только меняет view-состояние в Rooms + перерисовка.
@@ -1150,5 +1460,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { build, buildIncremental, clearRoutes, lengths, sheet, pointVert, panelVert, hopVertMul, cableStub, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds };
+  EP.Plan.Routes = { build, buildIncremental, clearRoutes, suggestGuides, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds };
 })();
