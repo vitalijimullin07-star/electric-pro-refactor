@@ -1355,6 +1355,49 @@ test("routeOff: у разных линий (QF) отступ от стены р�
   ok(path1.some((q) => Math.abs(q.y - 20) < 0.5), "QF1 (первая линия) — база 15 см (контур y=20)");
   ok(path2.some((q) => Math.abs(q.y - 22) < 0.5), "QF2 (вторая линия) — +2 см, 17 см (контур y=22)");
 });
+test("routeOff: НЕ схлопывается на проектах с 11+ линиями (раньше кап ×10 давал identical offset начиная с QF11)", () => {
+  const { P, w } = install();
+  const circs = [];
+  for (let i = 0; i < 15; i++) { const c = M.newCircuit("QF" + (i + 1), "#e11", 16); P.circuits.push(c); circs.push(c); }
+  const pn = M.newPanel(200, 295, "Щ"); P.panels.push(pn);
+  const target = { kind: "panel", pos: { x: pn.x, y: pn.y } };
+  const ys = new Set();
+  [9, 10, 11, 14].forEach((idx) => {
+    const el = M.newElement("socket", w(0), 100, 30, "power"); el.circuitId = circs[idx].id; P.elements.push(el);
+    const path = EP.Plan.Routes.buildPath(P, el, G.routeAnchor(P, el), target);
+    ys.add(Math.round(path[1].y));
+  });
+  eq(ys.size, 4, "линии с индексом 10, 11, 12, 15 (idx 9,10,11,14) дают 4 РАЗНЫХ отступа, не 1 общий");
+});
+test("chainRouteIds: шлейф без распайки — клик по СРЕДНЕМУ звену выделяет ВСЮ цепь от щита до конечной точки", () => {
+  const { P, w } = install();
+  const q = M.newCircuit("QF1", "#e11", 16); P.circuits.push(q);
+  const pan = M.newPanel(390, 295); P.panels.push(pan);
+  const el1 = M.newElement("socket", w(0), 60, 30, "power"); el1.circuitId = q.id;
+  const el2 = M.newElement("socket", w(0), 150, 30, "power"); el2.circuitId = q.id;
+  const el3 = M.newElement("socket", w(0), 240, 30, "power"); el3.circuitId = q.id;
+  P.elements.push(el1, el2, el3);
+  EP.Plan.Routes.build();
+  eq(P.routes.length, 3, "3 хопа шлейфа построены");
+  const mid = P.routes.find((r) => r.fromId === el2.id) || P.routes.find((r) => r.toId === el2.id);
+  const chain = EP.Plan.Routes.chainRouteIds(P, mid);
+  eq(chain.size, 3, "клик по среднему звену — вся цепь (все 3 хопа), не только кликнутый");
+});
+test("chainRouteIds: через распайку — клик по одной ветке не задевает соседнюю, клик по стволу задевает обе", () => {
+  const { P, w } = install();
+  const q = M.newCircuit("QF1", "#e11", 16); P.circuits.push(q);
+  const pan = M.newPanel(390, 295); P.panels.push(pan);
+  const junc = M.newElement("junction", null, 0, 0, "routes"); junc.params = { x: 200, y: 150 }; junc.circuitId = q.id;
+  const dev1 = M.newElement("socket", w(0), 60, 30, "power"); dev1.circuitId = q.id;
+  const dev2 = M.newElement("light", null, 0, 270, "light"); dev2.params = { x: 100, y: 250 }; dev2.circuitId = q.id;
+  P.elements.push(junc, dev1, dev2);
+  EP.Plan.Routes.build();
+  const rDev1 = P.routes.find((r) => r.fromId === dev1.id);
+  const rTrunk = P.routes.find((r) => r.fromId === junc.id);
+  eq(EP.Plan.Routes.chainRouteIds(P, rDev1).size, 2, "ветка dev1: сама + ствол распайки, БЕЗ dev2");
+  ok(!EP.Plan.Routes.chainRouteIds(P, rDev1).has(P.routes.find((r) => r.fromId === dev2.id).id), "ветка dev2 не задета");
+  eq(EP.Plan.Routes.chainRouteIds(P, rTrunk).size, 3, "клик по стволу — ствол + обе ветки (dev1 и dev2)");
+});
 test("лампа: подход по контуру и под прямым углом", () => {
   const { P } = install();
   const pn = M.newPanel(60, 60, "Щ"); P.panels.push(pn);

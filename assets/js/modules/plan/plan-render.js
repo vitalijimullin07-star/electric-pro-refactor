@@ -508,22 +508,28 @@
     if (layerOn(project, "routes")) {
       const layerColor = (id) => (((project.layers || []).find((l) => l.id === id) || {}).color) || "#94a3b8";
       const selRoute = EP.Plan.Rooms && EP.Plan.Rooms.selectedRouteId && EP.Plan.Rooms.selectedRouteId();
+      // Неоном светится ВСЯ физическая трасса (щит → … → конечный механизм), а не
+      // только кликнутый хоп шлейфа — просьба пользователя. chainRouteIds считается ОДИН
+      // раз на рендер (не по каждой трассе), ручки тяги остаются только у самого
+      // выбранного хопа (тянуть можно только его, остальные — просто светятся).
+      const selRt = selRoute && (project.routes || []).find((r) => r.id === selRoute);
+      const chainIds = selRt && EP.Plan.Routes && EP.Plan.Routes.chainRouteIds ? EP.Plan.Routes.chainRouteIds(project, selRt) : null;
       (project.routes || []).forEach((rt) => {
         if (!layerOn(project, rt.layer)) return;
         if (circHidden(rt.circuitId)) return; // скрытая линия — не рисуем её трассы
         const dimR = circDim(rt.circuitId);
-        const selR = selRoute === rt.id;
+        const inChain = chainIds ? chainIds.has(rt.id) : false;
         g.appendChild(el("polyline", Object.assign({
           points: (rt.points || []).map((p) => p.x + "," + p.y).join(" "),
-          class: "ep-plan-route" + (rt.manual ? " is-manual" : "") + (selR ? " is-sel" : ""),
+          class: "ep-plan-route" + (rt.manual ? " is-manual" : "") + (inChain ? " is-sel" : ""),
           stroke: rt.color || layerColor(rt.layer), "stroke-width": sw * 0.8
         }, dimR ? { opacity: DIM_OP } : {})));
         (rt.throughWalls || []).forEach((c) => g.appendChild(el("circle", Object.assign({
           cx: c.x, cy: c.y, r: 5 * k, class: "ep-plan-cross", "stroke-width": sw * 0.6
         }, dimR ? { opacity: DIM_OP } : {}))));
-        // ручки тяги — только у выбранной трассы, только на промежуточных изломах
-        // (концы 0 и last завязаны на позицию элемента/щита/распайки, не тянутся здесь)
-        if (selR) {
+        // ручки тяги — только у РЕАЛЬНО выбранного хопа (тот, на который тапнули), только
+        // на промежуточных изломах (концы 0/last завязаны на элемент/щит/распайку)
+        if (rt.id === selRoute) {
           const pts = rt.points || [];
           for (let i = 1; i < pts.length - 1; i++) {
             g.appendChild(el("circle", { cx: pts[i].x, cy: pts[i].y, r: CFG.pointPx * 1.1 * k, class: "ep-plan-routehandle" }));

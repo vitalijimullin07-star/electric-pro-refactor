@@ -78,10 +78,22 @@
   // трассы разных линий визуально не сливались в одну (просил пользователь:
   // QF1 15см, QF2 17см…). «Без линии» и первая QF — базовый отступ.
   function circuitIdx(p, circuitId) { return circuitId ? (p.circuits || []).findIndex((c) => c.id === circuitId) : -1; }
+  // РАНЬШЕ был кап "×10 лэйнов" (Math.min(idx, 10)) — задуман, чтобы отступ не рос
+  // безгранично на проектах с большим числом линий, но давал реальный баг: у ЛЮБОГО
+  // проекта с 11+ линиями ВСЕ линии начиная с QF11 получали ОДИН И ТОТ ЖЕ отступ (кап
+  // "залипал" на одном значении) — их трассы сливались без разноса вместо параллельного
+  // веера (репорт пользователя: «не все трассы идут с отступом друг от друга»,
+  // подтверждено тестом — 11-я/12-я/15-я линии давали identical offset). У реальных
+  // квартирных проектов 15-20+ линий — обычное дело, кап срабатывал систематически, не
+  // как редкий крайний случай. Убран целиком — отступ растёт линейно без ограничения;
+  // если для очень большого числа линий отступ превысит размер комнаты, insetContour
+  // сам возвращает null (см. её же проверку area>100), и buildPath уже умеет мягко
+  // деградировать (guideRoute/ortho) — эта деградация СУЩЕСТВОВАЛА и раньше для других
+  // причин (вырожденная комната), новый риск не появился.
   const routeOff = (p, circuitId) => {
     const base = Math.max(5, Math.min(40, Number(p.settings.routeOffset) || 15));
     const idx = circuitIdx(p, circuitId);
-    return idx > 0 ? base + Math.min(idx, 10) * 2 : base;
+    return idx > 0 ? base + idx * 2 : base;
   };
 
   // Комната для точки: строгий point-in-polygon, а если мимо (щит/точка стоит
@@ -150,9 +162,11 @@
   // но БЕЗ базовых 15см: первая линия идёт ПРЯМО по нарисованной магистрали (это и есть
   // «рекомендуемое направление» пользователя), базовый отступ от стены тут неуместен —
   // магистраль не стена.
+  // Тот же кап "×10" убран — см. подробное объяснение у routeOff выше (систематическое
+  // слияние офсетов у 11+ линий, реальный баг на проектах с большим числом линий).
   const guideLaneOff = (p, circuitId) => {
     const idx = circuitIdx(p, circuitId);
-    return idx > 0 ? Math.min(idx, 10) * 2 : 0;
+    return idx > 0 ? idx * 2 : 0;
   };
   // нормаль отрезка ФИКСИРОВАННОЙ ориентации относительно порядка (a->b) — трассы, идущие
   // по одному и тому же ребру графа в РАЗНЫЕ стороны, всё равно должны разъезжаться в одну
@@ -779,6 +793,38 @@
     c.persist("route-reset");
   }
 
+  // ВСЯ физическая трасса (одна жила кабеля), к которой относится переданный хоп rt —
+  // от щита (точка А) до конечного механизма (точка Б), просьба пользователя: «когда
+  // кликаю на трассу для сдвигов, светилось с неоном ВСЯ выбранная трасса от точки А
+  // (щит) до точки Б (конечный механизм)». Раньше подсвечивался ТОЛЬКО кликнутый хоп —
+  // при шлейфе (щит→точка1→точка2→точка3, chainFromPanel) каждое звено — ОТДЕЛЬНАЯ
+  // запись p.routes (свой fromId/toId), и клик по среднему звену светил только его,
+  // не всю физическую жилу. Топология трасс — дерево от щита (каждый узел имеет РОВНО
+  // ОДНУ исходящую «к родителю» трассу — fromId=этот узел, toId=родитель/щит): назад
+  // (к щиту) — идём по toId текущей записи, ищем запись с ТАКИМ ЖЕ fromId (это trassa
+  // родителя к ЕГО родителю), пока не дойдём до toPanel:true. Вперёд (к конечному
+  // механизму/механизмам) — ищем ВСЕ записи, чей toId совпадает с fromId текущей (это
+  // дальнейшие звенья шлейфа/распайки, для которых текущий узел — ближайший): обычно
+  // одна (линейный шлейф), но если несколько (фан-аут от распайки) — подсвечиваем ВСЕ
+  // (безопасный дефолт, не гадаем какую ветку выбрал пользователь).
+  function chainRouteIds(p, rt) {
+    if (!rt) return new Set();
+    const routes = p.routes || [];
+    const ids = new Set([rt.id]);
+    let cur = rt, guard = 0;
+    while (!cur.toPanel && guard++ < 500) {
+      const next = routes.find((r) => r.fromId === cur.toId);
+      if (!next || ids.has(next.id)) break;
+      ids.add(next.id); cur = next;
+    }
+    const frontier = [rt]; guard = 0;
+    while (frontier.length && guard++ < 500) {
+      const c = frontier.pop();
+      routes.forEach((r) => { if (r.toId === c.fromId && !ids.has(r.id)) { ids.add(r.id); frontier.push(r); } });
+    }
+    return ids;
+  }
+
   // хит-тест по уже построенным трассам (для ручного редактирования, plan-rooms.js)
   function routeAt(p, w, maxD) {
     let best = null;
@@ -1104,5 +1150,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { build, buildIncremental, clearRoutes, lengths, sheet, pointVert, panelVert, hopVertMul, cableStub, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls };
+  EP.Plan.Routes = { build, buildIncremental, clearRoutes, lengths, sheet, pointVert, panelVert, hopVertMul, cableStub, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds };
 })();
