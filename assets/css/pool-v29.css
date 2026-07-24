@@ -86,7 +86,7 @@
 
 /* модалка цены */
 .pv29-dbmodal { position: fixed; inset: 0; z-index: 10000; background: rgba(8,12,22,.62); display: flex; align-items: flex-end; justify-content: center; }
-.pv29-dbcard { width: 100%; max-width: 560px; background: rgb(var(--card-bg-rgb, 255,255,255)); color: var(--text, #0f172a); border: 1px solid rgba(120,130,150,.2); border-bottom: 0; border-radius: 16px 16px 0 0; padding: 14px; max-height: 82vh; overflow: auto; box-shadow: 0 -8px 30px rgba(0,0,0,.3); }
+.pv29-dbcard { width: 100%; max-width: 560px; background: rgb(var(--card-bg-rgb, 255,255,255)); color: var(--text, #0f172a); border: 1px solid rgba(120,130,150,.2); border-bottom: 0; border-radius: 16px 16px 0 0; padding: 14px; max-height: 82dvh; overflow: auto; box-shadow: 0 -8px 30px rgba(0,0,0,.3); }
 .pv29-dbtop { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .pv29-dbtop b { font: 800 14px/1.3 system-ui; color: var(--text, #0f172a); }
 .pv29-dbtop button { border: 0; background: rgba(120,130,150,.16); border-radius: 8px; width: 30px; height: 30px; font: 700 14px/1 system-ui; cursor: pointer; color: var(--text, #475569); }

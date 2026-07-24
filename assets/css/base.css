@@ -94,7 +94,7 @@ body.pwa-fullscreen .topbar-clock,body.pwa-fullscreen .topbar-sysinfo{display:in
 .btn{border:1px solid rgba(255,255,255,.12);border-radius:var(--button-radius);padding:11px 14px;color:var(--text);background:rgba(255,255,255,.08);cursor:pointer;font-weight:750;transition:transform calc(120ms * var(--anim-speed)) var(--anim-ease),background calc(180ms * var(--anim-speed)) var(--anim-ease),border-color calc(180ms * var(--anim-speed)) var(--anim-ease);position:relative;overflow:hidden}.btn-primary{background:rgba(from var(--button-bg) r g b / var(--button-opacity))}.btn-danger{background:color-mix(in srgb,var(--danger) 70%,#0f172a)}.btn-ghost{background:rgba(255,255,255,calc(.07 * var(--button-opacity)))}.btn-wide{width:100%;margin-top:10px}
 .btn:active,.icon-btn:active,.side-nav button:active,.tile:active,.quick-profile-grid button:active,.segmented-control button:active{transform:scale(.975)}
 body[data-electric-pulse="true"] .ep-clickable:after,body[data-electric-pulse="true"] .tile:after{content:"";position:absolute;inset:-2px;background:linear-gradient(115deg,transparent 0 42%,rgba(255,255,255,.45),transparent 58% 100%);transform:translateX(-130%);opacity:0;pointer-events:none}body[data-electric-pulse="true"] .ep-clickable:active:after,body[data-electric-pulse="true"] .tile:active:after{opacity:1;animation:pulseSweep calc(480ms * var(--anim-speed)) var(--anim-ease)}
-.modal{position:fixed;inset:0;z-index:90;display:grid;place-items:center;background:rgba(0,0,0,.45);padding:16px}.modal-card{width:min(680px,100%);max-height:88vh;overflow:auto;padding:16px;animation:epModalEnter calc(260ms * var(--anim-speed)) var(--anim-ease)}.modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.modal-head h2{margin:0}.modal-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+.modal{position:fixed;inset:0;z-index:90;display:grid;place-items:center;background:rgba(0,0,0,.45);padding:16px}.modal-card{width:min(680px,100%);max-height:88dvh;overflow:auto;padding:16px;animation:epModalEnter calc(260ms * var(--anim-speed)) var(--anim-ease)}.modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.modal-head h2{margin:0}.modal-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
 .diagnostics-box{min-height:220px;white-space:pre-wrap;overflow:auto;background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:12px;color:#dbeafe;font-size:calc(12px * var(--eff-text-scale,1))}.smart-status-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}.smart-status-card{padding:10px;border-radius:16px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.10)}.smart-status-card span{display:block;color:var(--muted);font-size:calc(11px * var(--eff-text-scale,1))}.smart-status-card strong{font-size:calc(13px * var(--eff-text-scale,1))}
 .theme-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:14px}.theme-btn{border:1px solid rgba(255,255,255,.14);border-radius:16px;padding:12px;color:#f8fafc;cursor:pointer;min-height:70px;text-align:left;background:rgba(255,255,255,.08);position:relative;overflow:hidden;text-shadow:0 1px 8px rgba(0,0,0,.55)}.theme-btn small{color:rgba(255,255,255,.76)}.theme-btn.active{outline:2px solid var(--accent)}
 .visual-section{margin-bottom:16px}.visual-section-title{color:var(--muted);font-weight:850;font-size:calc(13px * var(--eff-text-scale,1));margin:0 0 9px}.settings-grid{display:grid;gap:12px}.settings-grid label{display:grid;gap:6px;color:var(--muted);font-size:calc(13px * var(--eff-text-scale,1));font-weight:700}input,select,textarea{width:100%;border:1px solid rgba(255,255,255,.13);border-radius:var(--button-radius);color:var(--text);background:rgba(255,255,255,.08);padding:10px}
@@ -899,7 +899,7 @@ body[data-visual-mode="night"] .main-dashboard .card p:not(.badge){color:#cbd5e1
    (репорт пользователя: «такая вот ерунда» на одной из тем). Цвета здесь ЗАФИКСИРОВАНЫ
    (не привязаны к теме) — карточка всегда светлая, поэтому текст всегда тёмный. */
 .ep-card-ov { position: fixed; inset: 0; background: rgba(15,23,42,.55); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 1000; }
-.ep-card { width: 100%; max-width: 440px; max-height: 90vh; display: flex; flex-direction: column; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+.ep-card { width: 100%; max-width: 440px; max-height: 90dvh; display: flex; flex-direction: column; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
 .ep-card-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid rgba(120,130,150,.18); }
 .ep-card-head b { font: 700 calc(15px * var(--eff-text-scale,1))/1 system-ui; color: #0f172a; }
 .ep-card-x { border: none; background: transparent; font-size:calc(18px * var(--eff-text-scale,1)); color: #64748b; cursor: pointer; padding: 4px 8px; }
@@ -1033,7 +1033,7 @@ body[data-noanim="1"] *::after{animation-duration:.001s!important;transition-dur
 
 /* ── Логи/ошибки (панель по тапу на точку статуса) ── */
 #ep-log-panel{position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.55);display:none;align-items:flex-end;justify-content:center}
-#ep-log-panel .ep-log-box{width:100%;max-width:680px;max-height:80vh;display:flex;flex-direction:column;background:#11161f;border-top-left-radius:18px;border-top-right-radius:18px;border:1px solid rgba(255,255,255,.12);box-shadow:0 -8px 30px rgba(0,0,0,.5)}
+#ep-log-panel .ep-log-box{width:100%;max-width:680px;max-height:80dvh;display:flex;flex-direction:column;background:#11161f;border-top-left-radius:18px;border-top-right-radius:18px;border:1px solid rgba(255,255,255,.12);box-shadow:0 -8px 30px rgba(0,0,0,.5)}
 .ep-log-head{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.1)}
 .ep-log-head b{color:#f3f4f6;font-size:calc(16px * var(--eff-text-scale,1))}
 .ep-log-sum{font-size:calc(12px * var(--eff-text-scale,1));font-weight:700}
@@ -1178,7 +1178,7 @@ body[data-noanim="1"] *::after{animation-duration:.001s!important;transition-dur
 .ep-ai-tabs{display:flex;gap:6px;margin:12px 0 10px}
 .ep-ai-tab{flex:1;padding:9px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--muted,#cbd5e1);font:600 calc(13px * var(--eff-text-scale,1)) system-ui;cursor:pointer}
 .ep-ai-tab.on{background:var(--accent,#2f6fed);color:#fff;border-color:transparent}
-.ep-ai-msgs{min-height:160px;max-height:48vh;overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:8px}
+.ep-ai-msgs{min-height:160px;max-height:48dvh;overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:8px}
 .ep-ai-empty{color:var(--muted,#94a3b8);font:400 calc(13px * var(--eff-text-scale,1))/1.55 system-ui;text-align:center;padding:24px 12px}
 .ep-ai-msg{display:flex;flex-direction:column;max-width:88%}
 .ep-ai-msg.user{align-self:flex-end;align-items:flex-end}
@@ -1333,7 +1333,7 @@ body[data-noanim="1"] *::after{animation-duration:.001s!important;transition-dur
   display: flex; align-items: center; justify-content: center; padding: 18px;
 }
 .ep-consent-card {
-  max-width: 480px; width: 100%; max-height: 88vh; overflow-y: auto;
+  max-width: 480px; width: 100%; max-height: 88dvh; overflow-y: auto;
   background: #111a2b; color: #e8eef7; border: 1px solid rgba(148, 163, 184, .35);
   border-radius: 16px; padding: 20px 22px; box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
 }
