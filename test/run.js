@@ -446,6 +446,56 @@ test("routing: без трансформаторного щита Вывод 24�
   ok(rt, "трасса построена");
   eq(rt.toId, near.id, "как раньше — ближайший щит");
 });
+test("24В шаг2: build24Legs — трасса «до щита» (выкл→трансформатор, leg pri24) + тег «от щита» (sec24)", () => {
+  const trafo = M.newPanel(200, 280, "Слаботочный"); trafo.transformer = true;
+  const qLight = M.newCircuit("QF1", "#e11", 10);
+  const q24 = M.newCircuit("Int1", "#0af", 6); q24.cable = "2×0.75"; q24.cable220 = "ВВГ 3×1.5";
+  const { P, w } = install({ panels: [trafo], circuits: [qLight, q24] });
+  const sw = M.newElement("switch", w(0), 100, 90, "light"); sw.circuitId = qLight.id;
+  const o24 = M.newElement("output24", null, 0, 270, "lv"); o24.params = { x: 200, y: 150 }; o24.circuitId = q24.id;
+  sw.targetIds = [o24.id];
+  P.elements.push(sw, o24);
+  EP.Plan.Routes.build();
+  const pri = P.routes.find((r) => r.fromId === "sw24:" + sw.id);
+  ok(pri && pri.leg === "pri24", "трасса «до щита» sw24 построена, leg=pri24");
+  eq(pri.toId, trafo.id, "«до щита» идёт к трансформаторному щиту");
+  eq(pri.circuitId, q24.id, "«до щита» отнесена к линии 24В (не к линии выключателя)");
+  const sec = P.routes.find((r) => r.fromId === o24.id);
+  ok(sec && sec.leg === "sec24", "трасса «от щита» (output24→трансформатор) помечена sec24");
+});
+test("24В шаг2: без трансформаторного щита трасса «до щита» НЕ строится (обратная совместимость)", () => {
+  const pan = M.newPanel(200, 280, "Щит"); // без transformer
+  const q24 = M.newCircuit("Int1", "#0af", 6);
+  const { P, w } = install({ panels: [pan], circuits: [q24] });
+  const sw = M.newElement("switch", w(0), 100, 90, "light"); sw.circuitId = q24.id;
+  const o24 = M.newElement("output24", null, 0, 270, "lv"); o24.params = { x: 200, y: 150 }; o24.circuitId = q24.id;
+  sw.targetIds = [o24.id];
+  P.elements.push(sw, o24);
+  EP.Plan.Routes.build();
+  ok(!P.routes.some((r) => r.fromId === "sw24:" + sw.id), "нет трансформатора — нет трассы «до щита»");
+});
+test("24В шаг2: смета — кабель «до щита (220В)» и «от щита (24В)» отдельными позициями с маркой линии", () => {
+  const trafo = M.newPanel(200, 280, "Слаботочный"); trafo.transformer = true;
+  const q24 = M.newCircuit("Int1", "#0af", 6); q24.cable = "2×0.75"; q24.cable220 = "ВВГ 3×1.5";
+  const { P, w } = install({ panels: [trafo], circuits: [q24] });
+  const sw = M.newElement("switch", w(0), 100, 90, "light"); sw.circuitId = q24.id;
+  const o24 = M.newElement("output24", null, 0, 270, "lv"); o24.params = { x: 200, y: 150 }; o24.circuitId = q24.id;
+  sw.targetIds = [o24.id];
+  P.elements.push(sw, o24);
+  EP.Plan.Routes.build();
+  const res = EP.Plan.Calc.calcByRoutes(P);
+  const names = res.items.map((it) => it.name);
+  ok(names.some((n) => /^Кабель ВВГ 3×1\.5 · до щита \(220В\)/.test(n)), "«Кабель ВВГ 3×1.5 · до щита (220В)» отдельной строкой");
+  ok(names.some((n) => /^Кабель 2×0\.75 · от щита \(24В\)/.test(n)), "«Кабель 2×0.75 · от щита (24В)» отдельной строкой");
+});
+test("24В шаг2: cable220 бэкофилл (старый проект без поля)", () => {
+  const p = M.newProject("x");
+  const c = M.newCircuit("Int1", "#0af", 6);
+  delete c.cable220;
+  p.circuits = [c];
+  EP.Plan.Core.importJSON(JSON.stringify({ project: p }));
+  eq(EP.Plan.Core.project.circuits[0].cable220, null, "cable220 добавлен бэкофиллом = null");
+});
 test("switchTarget: ручной целью клавиши может быть розетка (расширенные типы целей)", () => {
   const { P, w } = install();
   const sw = M.newElement("switch", w(0), 100, 90, "light");

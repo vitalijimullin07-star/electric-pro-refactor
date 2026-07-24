@@ -590,6 +590,58 @@
     });
   }
 
+  // «До щита» для 24В (просьба пользователя: «от клавиши до щита, от щита до точки 24в;
+  // до щита и от щита раздельно»): если клавиша выключателя управляет точкой «Вывод 24В»
+  // (targetIds), а в проекте есть трансформаторный щит — физразводка идёт выключатель→
+  // трансформатор (220В, первичка) → точка 24В (24В, вторичка). Точка 24В УЖЕ трассируется
+  // к трансформатору (kindOf "24" в routeGroups) — это «от щита», тегируем leg="sec24".
+  // Здесь достраиваем НЕДОСТАЮЩУЮ трассу выключатель→трансформатор — «до щита», leg="pri24",
+  // с СИНТЕТИЧЕСКИМ fromId ("sw24:"+id выключателя): у выключателя уже есть СВОЯ трасса-
+  // питание (fromId = его настоящий id), а Set'ы по fromId (haveRoute/routedIds) не должны
+  // их путать. circuitId «до щита» = линия УПРАВЛЯЕМОЙ 24В-точки (обе половины под одной
+  // линией 24В в смете). buildPath строит РЕАЛЬНЫЙ путь (штроба/гильзы/метраж) — «полноценная
+  // трасса на плане» (выбор пользователя). Идемпотентна: не дублирует уже существующую
+  // "sw24:id" (для инкрементальной сборки). Без трансформаторного щита ИЛИ без магистрали
+  // между комнатами выключателя и щита — трасса не строится (как любая межкомнатная).
+  // Ручная правка sw24-трассы (drag) на rebuild НЕ восстанавливается (anchorPos не знает
+  // синтетический id) — регенерируется заново; редактировать её вручную смысла мало.
+  function build24Legs(c, p, panels) {
+    const trafo = panels.filter((pn) => pn.transformer);
+    const fp = G().floorScoped(p);
+    const byId = new Map((fp.elements || []).map((e) => [e.id, e]));
+    if (trafo.length) {
+      (fp.elements || []).forEach((sw) => {
+        if (sw.type !== "switch") return;
+        if ((p.routes || []).some((r) => r.fromId === "sw24:" + sw.id)) return;
+        const tids = (sw.targetIds || []).concat(sw.targetId ? [sw.targetId] : []);
+        const t24 = tids.map((id) => byId.get(id)).find((t) => t && t.type === "output24");
+        if (!t24) return;
+        const a = G().routeAnchor(p, sw);
+        if (!a) return;
+        const near = trafo.slice().sort((x, y) => dist(a, x.pos) - dist(a, y.pos))[0];
+        const pts = buildPath(p, sw, a, { kind: "panel", id: near.id, pos: near.pos }, t24.circuitId);
+        if (!pts || pts.length < 2) return;
+        const rt = c.model.newRoute("power", p.settings.routeType, pts, "sw24:" + sw.id, near.id);
+        rt.circuitId = t24.circuitId || null;
+        rt.leg = "pri24";
+        rt.toPanel = true;
+        rt.color = colorOf(p, t24);
+        const s = p.settings;
+        rt.chaseW = s.chaseW || 25; rt.chaseH = s.chaseH || 30; rt.chaseFloor = (s.routeType === "floor");
+        let tw = G().polylineCrossings(p, pts, sw.wallId || null);
+        if (s.routeType === "floor") tw = tw.filter((cr) => !floorSkip(p, cr));
+        rt.throughWalls = tw;
+        p.routes.push(rt);
+      });
+    }
+    // тег «от щита» на уже построенных трассах output24 -> трансформатор
+    (p.routes || []).forEach((rt) => {
+      if (rt.leg) return;
+      const fe = byId.get(rt.fromId);
+      if (fe && fe.type === "output24" && rt.toPanel && trafo.some((t) => t.id === rt.toId)) rt.leg = "sec24";
+    });
+  }
+
   function build(opts) {
     const silent = !!(opts && opts.silent); // тихая автоперестройка: без тостов/шторки
     const c = core(), p = c.project;
@@ -620,6 +672,7 @@
     usedGuideIds = new Set(); // фикс №1: собираем реально применённые магистрали (guideRoute помечает)
     routeGroups(c, p, points, juncts, panels, null);
     routeJunctionsToPanel(c, p, juncts, juncts, panels);
+    build24Legs(c, p, panels); // трасса «до щита» (выкл→трансформатор) + тег «от щита»
 
     if (savedManual.length) restoreManualRoutes(p, savedManual);
     hideGuides(p); // прячем ТОЛЬКО применённые магистрали (см. usedGuideIds/hideGuides)
@@ -678,6 +731,9 @@
       routeGroups(c, p, newPoints, allJuncts, panels, existingPointNodes);
       routeJunctionsToPanel(c, p, allJuncts, newJuncts, panels);
     }
+    // «до щита» 24В (выкл→трансформатор) — достраиваем недостающие даже если новых точек
+    // нет (напр. только-только назначили клавише 24В-цель): идемпотентна, не дублирует
+    build24Legs(c, p, (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, transformer: !!pn.transformer })));
 
     hideGuides(p); // прячем ТОЛЬКО применённые к новым точкам (уже применённые ранее — уже скрыты)
     usedGuideIds = null;
@@ -739,7 +795,7 @@
   // ---- автоперестройка: геометрия сдвинулась (точка/стена/перегородка) —
   // ранее построенные трассы устарели бы молча (кривые длины/штробы в Расчёте).
   // Перестраиваем тихо, только если трассы уже были построены.
-  const AUTOREBUILD_ON = { "elem-move": 1, "room-reshape": 1, "room-merge": 1, "wall-th": 1, "wall-mat": 1, "beam-move": 1, "beam-w": 1, "panel-move": 1, "panel-router": 1, "panel-trafo": 1, "opening-move": 1 };
+  const AUTOREBUILD_ON = { "elem-move": 1, "room-reshape": 1, "room-merge": 1, "wall-th": 1, "wall-mat": 1, "beam-move": 1, "beam-w": 1, "panel-move": 1, "panel-router": 1, "panel-trafo": 1, "opening-move": 1, "elem-target": 1 };
   let rebuilding = false;
   if (core().onChange) {
     core().onChange((what) => {

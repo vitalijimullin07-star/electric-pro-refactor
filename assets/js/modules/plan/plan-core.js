@@ -151,7 +151,12 @@
   // phase: 1/2/3 — на какую фазу L1/L2/L3 посажена 1-полюсная линия (в 3-фазном щите,
   // для баланса нагрузки); у 3-полюсной линии (poles:3) не используется — она сама
   // висит на всех трёх фазах разом.
-  function newCircuit(name, color, breaker) { return { id: uid("cc"), name: name || "Линия", color: color || DEFAULTS.circuitColors[0], breaker: breaker || 16, rcd: false, poles: 1, phase: 1, cable: null, rcdRating: 30 }; }
+  // cable — марка кабеля линии (от щита; у 24В-линии это 24В-кабель со вторички
+  // трансформатора). cable220 — ОТДЕЛЬНАЯ марка «до щита» (220В-кабель от выключателя
+  // до первички трансформатора), нужна только у 24В-линий с управлением через клавишу;
+  // у обычных линий не используется. Разделение — просьба пользователя: «линия 24в
+  // отдельным пунктом, до щита и от щита тоже отдельным пунктом».
+  function newCircuit(name, color, breaker) { return { id: uid("cc"), name: name || "Линия", color: color || DEFAULTS.circuitColors[0], breaker: breaker || 16, rcd: false, poles: 1, phase: 1, cable: null, cable220: null, rcdRating: 30 }; }
   // ручная однолинейка (Слой 7б): группы (УЗО/Диф) -> линии, линия может ссылаться
   // на линию плана (circuitId в p.circuits) — тогда она уходит из «не расставлено» в чек-листе.
   // Вводной автомат/счётчик/вводное УЗО НЕ дублируются здесь — те же settings.mainBreaker/
@@ -398,7 +403,7 @@
     p.voids = p.voids || [];
     p.ledStrips = p.ledStrips || [];
     p.circuits = p.circuits || [];
-    p.circuits.forEach((c) => { if (c.phase !== 1 && c.phase !== 2 && c.phase !== 3) c.phase = 1; });
+    p.circuits.forEach((c) => { if (c.phase !== 1 && c.phase !== 2 && c.phase !== 3) c.phase = 1; if (c.cable220 === undefined) c.cable220 = null; });
     p.panels = p.panels || [];
     p.panels.forEach((pn) => { if (pn.transformer == null) pn.transformer = false; if (pn.router == null) pn.router = false; });
     p.settings = p.settings || {};
