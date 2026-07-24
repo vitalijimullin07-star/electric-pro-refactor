@@ -275,11 +275,13 @@ body[data-flatshadow="1"] .ep-plan-unfover,
 body[data-flatshadow="1"] .ep-plan-unfpt {
   box-shadow: none !important;
 }
-body[data-flatshadow="1"] .ep-plan-route.is-sel,
 body[data-flatshadow="1"] .ep-plan-ledstrip,
 body[data-flatshadow="1"] .ep-plan-unfled {
   filter: none !important;
 }
+/* Неоновый халo выбранной трассы (.ep-plan-routeglow*) на flatshadow вообще НЕ
+   рисуется — plan-render.js сам пропускает создание этих узлов (см. flatShadow),
+   здесь ничего скрывать не нужно; .is-otherdim (grayscale) — дёшев, оставлен как есть. */
 /* штриховка материала стены (.ep-plan-wallhatch) — декоративная, поверх нею
    заливка (.ep-plan-wallfill) уже сама показывает материал цветом; штриховка
    САМАЯ дорогая часть отрисовки стены (паттерн-заливка поверх маски выреза
@@ -439,7 +441,15 @@ body[data-visual-mode="day"] .ep-plan-guidedraft { stroke: #3b82f6; }
 .ep-plan-panel rect { fill: #0ea5e9; stroke: #e0f2fe; }
 .ep-plan-route { fill: none; opacity: .85; }
 .ep-plan-route.is-manual { stroke-dasharray: 6 3; }
-.ep-plan-route.is-sel { opacity: 1; filter: drop-shadow(0 0 2px #fff); }
+.ep-plan-route.is-sel { opacity: 1; }
+/* «Другие» трассы во время выбора — черно-белые (просьба пользователя), чтобы
+   выбранная цепь однозначно выделялась на фоне остальных линий проекта. */
+.ep-plan-route.is-otherdim { opacity: .48; filter: grayscale(1) brightness(.82); }
+.ep-plan-cross.is-otherdim { opacity: .48; filter: grayscale(1); }
+/* Неоновые «ореолы» выбранной трассы (see plan-render.js) — рисуются САМИМИ
+   полилиниями с шириной в мировых единицах (масштабируются вместе с зумом
+   как и сама трасса), а не CSS-фильтром — тот при зуме визуально исчезал. */
+.ep-plan-routeglow, .ep-plan-routeglow-core { pointer-events: none; }
 .ep-plan-routehandle { fill: #38bdf8; stroke: #fff; stroke-width: 1; }
 .ep-plan-cross { fill: none; stroke: #fbbf24; }
 .ep-plan-warnring { fill: none; stroke: #fbbf24; stroke-dasharray: 4 3; }
