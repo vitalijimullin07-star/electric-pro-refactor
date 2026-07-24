@@ -664,7 +664,23 @@
         for (let ki = 0; ki < keys; ki++) {
           const target = G.switchTarget(project, elem, ki);
           const b = target && G.elemDrawPoint(project, target);
-          if (b) { g.appendChild(swLine({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: "ep-plan-swlink", stroke: col, "stroke-width": sw * 0.5 })); continue; }
+          if (b) {
+            // Цель клавиши — точка «Вывод 24В» И в проекте есть трансформаторный щит:
+            // физразводка 24В идёт НЕ напрямую, а через щит — клавиша коммутирует 220В
+            // на первичку трансформатора (выключатель→щит), со вторички 24В на точку
+            // (щит→точка). Рисуем ДВУМЯ пунктирами, как у ленты. Обычная лампа/220В-вывод —
+            // напрямую, как раньше (каждая клавиша решается по типу СВОЕЙ цели, так что
+            // на многоклавишном выключателе одна клавиша может идти на 24В через щит,
+            // а другая — прямо на свет 220В).
+            const tx24 = target.type === "output24" ? (project.panels || []).find((pn) => pn.transformer) : null;
+            if (tx24) {
+              g.appendChild(swLine({ x1: a.x, y1: a.y, x2: tx24.x, y2: tx24.y, class: "ep-plan-swlink", stroke: col, "stroke-width": sw * 0.5 }));
+              g.appendChild(swLine({ x1: tx24.x, y1: tx24.y, x2: b.x, y2: b.y, class: "ep-plan-swlink", stroke: col, "stroke-width": sw * 0.5 }));
+            } else {
+              g.appendChild(swLine({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: "ep-plan-swlink", stroke: col, "stroke-width": sw * 0.5 }));
+            }
+            continue;
+          }
           // нет лампы/вывода той же линии — пробуем светодиодную ленту. Если в проекте
           // есть щит с трансформатором (panel.transformer) — ведём ДВУМЯ отрезками
           // (выключатель→щит, щит→лента), иначе прямой линией (нет отдельного щита слаботочки).
