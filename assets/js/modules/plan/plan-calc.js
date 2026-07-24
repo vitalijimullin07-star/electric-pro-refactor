@@ -34,6 +34,8 @@
     byLines: "По линиям (QF)", secCable: "Кабель", secConsum: "Расходники",
     secMaterial: "Материалы", secWork: "Работы",
     cableTitle: "🔌 Кабель линии", cableLbl: "Марка/сечение",
+    cableFromDb: "Выбери из БД (раздел «Материалы») или впиши свою марку:",
+    cableNoDb: "В активной БД нет позиций-кабелей — впиши марку вручную (можно добавить кабели в «Базу данных»).",
     cableHint: "Марка/сечение кабеля именно этой линии — поменяет и материал, и «Прокладку кабеля» в смете. Пустое поле — автоподбор по нагрузке/автомату, как раньше."
   };
   // Категории для секций сметы: имя позиции → ключ секции (порядок вывода ниже).
@@ -56,7 +58,7 @@
     const routes = p.routes || [];
     const s = p.settings, reserve = 1 + (Number(s.cableReserve == null ? 10 : s.cableReserve) || 0) / 100;
     const byId = {};
-    const row = (id) => (byId[id] = byId[id] || { cableLen: 0, mark: null, points: 0, posts: 0, crossings: 0 });
+    const row = (id) => (byId[id] = byId[id] || { cableLen: 0, mark: null, points: 0, posts: 0, crossings: 0, has24: false });
     (p.elements || []).forEach((e) => {
       if (e.status === "existing" || e.type === "junction") return;
       if (!e.circuitId) return;
@@ -72,13 +74,15 @@
       const L = G().polylineLen(rt.points || []) + (el ? RT.pointVert(p, el) * RT.hopVertMul(p, rt) : 0) + (rt.toPanel ? RT.panelVert(p, pn) : 0) + RT.cableStub(p, el, rt);
       const r = row(rt.circuitId);
       r.cableLen += L; r.crossings += (rt.throughWalls || []).length;
+      if (rt.leg === "pri24" || rt.leg === "sec24") r.has24 = true; // линия с 24В-разводкой (до/от щита)
       const cc = (p.circuits || []).find((c) => c.id === rt.circuitId);
       if (!r.mark) r.mark = (cc && cc.cable) || (LV_LAYERS[rt.layer] ? "Витая пара (UTP)" : rt.layer === "light" ? "3×1.5" : "3×2.5");
     });
     return (p.circuits || []).map((c) => {
-      const r = byId[c.id] || { cableLen: 0, mark: c.cable || null, points: 0, posts: 0, crossings: 0 };
+      const r = byId[c.id] || { cableLen: 0, mark: c.cable || null, points: 0, posts: 0, crossings: 0, has24: false };
       return { id: c.id, name: c.name, color: c.color, breaker: c.breaker, rcd: c.rcd,
-        cableLen: Math.round((r.cableLen / 100) * reserve * 10) / 10, mark: r.mark, points: r.points, posts: r.posts, crossings: r.crossings };
+        cableLen: Math.round((r.cableLen / 100) * reserve * 10) / 10, mark: r.mark, points: r.points, posts: r.posts, crossings: r.crossings,
+        has24: r.has24, cable: c.cable || null, cable220: c.cable220 || null };
     }).filter((r) => r.points > 0 || r.cableLen > 0);
   }
   const COLS = [["sockets", "Р"], ["sw", "В"], ["light", "С"], ["tv", "ТВ"], ["internet", "И"], ["warm", "ТП"]];
@@ -336,16 +340,29 @@
       // на разделку/подключение (RT.cableStub — см. её инвариант)
       const L = G2.polylineLen(r.points || []) + (e2 ? RT.pointVert(p, e2) * RT.hopVertMul(p, r) : 0) + (r.toPanel ? RT.panelVert(p, pn) : 0) + RT.cableStub(p, e2, r);
       const cc = (p.circuits || []).find((c) => c.id === r.circuitId);
-      let mark = (cc && cc.cable) || null;
-      if (!mark) {
-        if (r.layer === "light") mark = "ВВГнг(А)-LS 3×1.5";
-        else if (r.layer === "warm") mark = "Кабель тёплого пола";
-        // интернет/ТВ/видеонаблюдение — витая пара (просьба пользователя: «все
-        // интернет розетки и тв, это у нас Витая пара, она и должна отображаться»)
-        else if (LV_LAYERS[r.layer]) mark = "Витая пара (UTP)";
-        else mark = "ВВГнг(А)-LS 3×2.5";
+      // 24В-линия: «до щита» (leg pri24, выключатель→трансформатор, 220В — марка
+      // circuit.cable220) и «от щита» (leg sec24, трансформатор→точка 24В — circuit.cable)
+      // ИДУТ ОТДЕЛЬНЫМИ ПОЗИЦИЯМИ (просьба пользователя). Метка добавляется СУФФИКСОМ после
+      // марки — priceFor() ищет цену в БД двунаправленной подстрокой (см. priceFor), поэтому
+      // «Кабель ВВГ 3×1.5 · до щита (220В)» всё равно матчит запись БД «Кабель ВВГ 3×1.5».
+      let key;
+      if (r.leg === "pri24") {
+        key = ((cc && cc.cable220) || "ВВГнг(А)-LS 3×1.5") + " · до щита (220В)";
+      } else if (r.leg === "sec24") {
+        key = ((cc && cc.cable) || "2×1.5") + " · от щита (24В)";
+      } else {
+        let mark = (cc && cc.cable) || null;
+        if (!mark) {
+          if (r.layer === "light") mark = "ВВГнг(А)-LS 3×1.5";
+          else if (r.layer === "warm") mark = "Кабель тёплого пола";
+          // интернет/ТВ/видеонаблюдение — витая пара (просьба пользователя: «все
+          // интернет розетки и тв, это у нас Витая пара, она и должна отображаться»)
+          else if (LV_LAYERS[r.layer]) mark = "Витая пара (UTP)";
+          else mark = "ВВГнг(А)-LS 3×2.5";
+        }
+        key = mark;
       }
-      cableBy[mark] = (cableBy[mark] || 0) + L;
+      cableBy[key] = (cableBy[key] || 0) + L;
     });
     Object.keys(cableBy).forEach((m) => { cableBy[m] = Math.round((cableBy[m] / 100) * reserve * 10) / 10; });
 
@@ -551,12 +568,20 @@
     // 10.4+8.4=18.8 против «17.05 всего» — оба числа верные, но выглядело ошибкой)
     const perQFHtml = (perQF && perQF.length)
       ? `<div class="ep-plan-srow"><b>${T.byLines}</b><span class="ep-plan-flex"></span><span class="ep-plan-mshint">кабель с запасом +${Math.round(p.settings.cableReserve == null ? 10 : p.settings.cableReserve)}%</span></div>` +
-        `<div class="ep-plan-qflist">${perQF.map((r) => `<div class="ep-plan-qfrow">
+        `<div class="ep-plan-qflist">${perQF.map((r) => {
+            const cbtn = (fld, mark, label) => `<button type="button" class="ep-plan-iprice ep-plan-qfmark ep-clickable" data-pc-editcable data-pc-circid="${esc(r.id)}" data-pc-cablefield="${fld}" data-pc-curmark="${esc(mark || "")}">${label ? esc(label) + ": " : ""}${esc(mark || "—")}</button>`;
+            // 24В-линия: ДВЕ кнопки марки — до щита (cable220, 220В) и от щита (cable, 24В);
+            // обычная линия — одна кнопка (cable). Просьба пользователя: до/от щита раздельно.
+            const marksHtml = r.has24
+              ? cbtn("cable220", r.cable220, "до щита") + " " + cbtn("cable", r.cable, "от щита") + " · "
+              : (r.mark ? cbtn("cable", r.mark, "") + " · " : "");
+            return `<div class="ep-plan-qfrow">
             <span class="ep-plan-cdot" style="background:${esc(r.color)}"></span><b>${esc(r.name)}</b>
             <span class="ep-plan-qfmeta">${r.breaker || "—"}A${r.rcd ? " · УЗО" : ""}</span>
             <span class="ep-plan-flex"></span>
-            <span class="ep-plan-qfnums">${r.mark ? `<button type="button" class="ep-plan-iprice ep-plan-qfmark ep-clickable" data-pc-editcable data-pc-circid="${esc(r.id)}" data-pc-curmark="${esc(r.mark)}">${esc(r.mark)}</button> · ` : ""}${r.cableLen ? G().fmtLen(r.cableLen * 100) : "—"} · ${r.points} тчк${r.crossings ? " · " + r.crossings + " прох." : ""}</span>
-          </div>`).join("")}</div>`
+            <span class="ep-plan-qfnums">${marksHtml}${r.cableLen ? G().fmtLen(r.cableLen * 100) : "—"} · ${r.points} тчк${r.crossings ? " · " + r.crossings + " прох." : ""}</span>
+          </div>`;
+          }).join("")}</div>`
       : "";
 
     let itemsHtml;
@@ -628,13 +653,39 @@
   // марку»). circuit.cable — тот же источник правды, что уже читают calcByRoutes()/
   // perCircuit()/autoCable() в plan-scheme.js — правка сразу видна и в материале
   // «Кабель …», и в «Прокладке кабеля …» (см. Feature B выше), и в самой однолинейке.
-  function sheetEditCable(circuitId, curMark) {
-    rooms().openSheet(`<div class="ep-plan-srow"><b>${T.cableTitle}</b>
+  // марки кабеля из активной БД (раздел «Материалы») — для пикера в редакторе кабеля.
+  // Кабель определяем по имени/категории; храним МАРКУ без префикса «Кабель» (смета сама
+  // добавляет «Кабель …», а priceFor двунаправленной подстрокой всё равно найдёт цену).
+  function cableDbMarks() {
+    try {
+      const items = (EP.Database && EP.Database.getItemsByType && EP.Database.getItemsByType("material")) || [];
+      const re = /кабел|ввг|nym|пвс|пугв|кспв|шввп|utp|витая пара|гибкий кабель|кг\b/i;
+      const seen = new Set(), out = [];
+      items.forEach((x) => {
+        const n = String(x.name || "");
+        if (!re.test(n) && !/кабел/i.test(String(x.category || ""))) return;
+        const mark = n.replace(/^\s*кабель\s+/i, "").trim();
+        const k = mark.toLowerCase();
+        if (mark && !seen.has(k)) { seen.add(k); out.push(mark); }
+      });
+      return out.slice(0, 40);
+    } catch (e) { return []; }
+  }
+  // field: "cable" (от щита / обычная линия) или "cable220" (до щита, 220В у 24В-линии)
+  function sheetEditCable(circuitId, curMark, field) {
+    field = field === "cable220" ? "cable220" : "cable";
+    const marks = cableDbMarks();
+    const chips = marks.length
+      ? `<div class="ep-plan-srow ep-plan-cablechips">${marks.map((m) => `<button type="button" class="ep-plan-chip ep-clickable" data-pc-cablepick="${esc(m)}">${esc(m)}</button>`).join("")}</div>`
+      : `<div class="ep-plan-srow ep-plan-hintrow">${T.cableNoDb}</div>`;
+    rooms().openSheet(`<div class="ep-plan-srow"><b>${T.cableTitle}${field === "cable220" ? " · до щита (220В)" : ""}</b>
         <span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-pc-priceback>${T.back}</button></div>
+      <div class="ep-plan-srow ep-plan-mshint">${T.cableFromDb}</div>
+      ${chips}
       <div class="ep-plan-srow"><label class="ep-plan-range" style="flex:1 1 100%">${T.cableLbl}
         <input type="text" value="${esc(curMark || "")}" data-pc-cablemark></label></div>
       <div class="ep-plan-srow ep-plan-hintrow">${T.cableHint}</div>
-      <div class="ep-plan-srow ep-plan-sbtns"><button type="button" class="btn btn-primary ep-clickable" data-pc-cablesave data-pc-circid="${esc(circuitId)}">${T.saveBtn}</button></div>`);
+      <div class="ep-plan-srow ep-plan-sbtns"><button type="button" class="btn btn-primary ep-clickable" data-pc-cablesave data-pc-circid="${esc(circuitId)}" data-pc-cablefield="${field}">${T.saveBtn}</button></div>`);
     const inp = document.querySelector("[data-pc-cablemark]");
     if (inp) { inp.focus(); inp.select(); }
   }
@@ -754,13 +805,15 @@
       const b = t.closest("[data-pc-setprice]");
       return sheetSetPrice(b.getAttribute("data-pc-pname"), b.getAttribute("data-pc-ptype"), b.getAttribute("data-pc-punit"), b.getAttribute("data-pc-pcur"));
     }
-    if ((b = t.closest("[data-pc-editcable]"))) return sheetEditCable(b.getAttribute("data-pc-circid"), b.getAttribute("data-pc-curmark"));
+    if ((b = t.closest("[data-pc-editcable]"))) return sheetEditCable(b.getAttribute("data-pc-circid"), b.getAttribute("data-pc-curmark"), b.getAttribute("data-pc-cablefield"));
+    if ((b = t.closest("[data-pc-cablepick]"))) { const inp = document.querySelector("[data-pc-cablemark]"); if (inp) inp.value = b.getAttribute("data-pc-cablepick"); return; }
     if ((b = t.closest("[data-pc-cablesave]"))) {
       const circId = b.getAttribute("data-pc-circid");
+      const field = b.getAttribute("data-pc-cablefield") === "cable220" ? "cable220" : "cable";
       const val = ((document.querySelector("[data-pc-cablemark]") || {}).value || "").trim();
       const c = core(); c.commit();
       const circ = (c.project.circuits || []).find((x) => x.id === circId);
-      if (circ) circ.cable = val || null; // пусто — сброс на автоподбор (см. T.cableHint)
+      if (circ) circ[field] = val || null; // пусто — сброс на автоподбор (см. T.cableHint)
       c.persist("circuit-cable");
       return sheet();
     }
