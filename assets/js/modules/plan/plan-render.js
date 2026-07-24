@@ -514,18 +514,53 @@
       // выбранного хопа (тянуть можно только его, остальные — просто светятся).
       const selRt = selRoute && (project.routes || []).find((r) => r.id === selRoute);
       const chainIds = selRt && EP.Plan.Routes && EP.Plan.Routes.chainRouteIds ? EP.Plan.Routes.chainRouteIds(project, selRt) : null;
+      // Раньше свечение выбранной трассы было CSS `filter: drop-shadow(0 0 2px #fff)` —
+      // «2px» здесь мировые единицы SVG-фильтра, они НЕ умножаются на k (в отличие от
+      // stroke-width, который уже умножен на k, чтобы толщина держала постоянный размер
+      // НА ЭКРАНЕ при любом зуме) — на обычном масштабе плана эффект превращался в доли
+      // экранного пикселя, визуально неотличим от обычной линии (репорт пользователя:
+      // «свечение слабое или отсутствие»). Теперь свечение — САМИ полилинии-«ореолы»
+      // ЗА крисп-линией, ширина которых посчитана ТЕМ ЖЕ множителем k, что и сама толщина
+      // линии (через sw) — гарантированно видимый, «боковой» (расходящийся вширь от
+      // линии) неон на любом зуме, цветом самой линии + яркое белое ядро поверх.
+      // На слабых устройствах (perfLevel≥2, body[data-flatshadow="1"]) халo — лишние 4
+      // полилинии на КАЖДУЮ трассу цепи — пропускается целиком (перф важнее декора там,
+      // где сам движок уже решил экономить на тенях/блюре/штриховке).
+      const flatShadow = typeof document !== "undefined" && document.body && document.body.dataset && document.body.dataset.flatshadow === "1";
       (project.routes || []).forEach((rt) => {
         if (!layerOn(project, rt.layer)) return;
         if (circHidden(rt.circuitId)) return; // скрытая линия — не рисуем её трассы
         const dimR = circDim(rt.circuitId);
         const inChain = chainIds ? chainIds.has(rt.id) : false;
+        // «Другие» трассы во время выбора — обесцвечены (просьба пользователя: «а во
+        // время выбора другие должны становится черно белые»), чтобы выбранная цепь
+        // читалась однозначно на фоне остальных линий. dimR (приглушение по solo другой
+        // линии) — отдельный, более сильный механизм, ему уступаем (не спорим за opacity).
+        const otherDim = !!(chainIds && !inChain && !dimR);
+        const ptsStr = (rt.points || []).map((p) => p.x + "," + p.y).join(" ");
+        const routeColor = rt.color || layerColor(rt.layer);
+        if (inChain && !flatShadow) {
+          const baseSw = sw * 0.8;
+          [[baseSw * 7, .09], [baseSw * 4.4, .17], [baseSw * 2.6, .30]].forEach(([w, op]) => {
+            g.appendChild(el("polyline", {
+              points: ptsStr, class: "ep-plan-routeglow", stroke: routeColor,
+              "stroke-width": w, opacity: op, fill: "none",
+              "stroke-linecap": "round", "stroke-linejoin": "round"
+            }));
+          });
+          g.appendChild(el("polyline", {
+            points: ptsStr, class: "ep-plan-routeglow-core", stroke: "#fff",
+            "stroke-width": baseSw * 0.85, opacity: .6, fill: "none",
+            "stroke-linecap": "round", "stroke-linejoin": "round"
+          }));
+        }
         g.appendChild(el("polyline", Object.assign({
-          points: (rt.points || []).map((p) => p.x + "," + p.y).join(" "),
-          class: "ep-plan-route" + (rt.manual ? " is-manual" : "") + (inChain ? " is-sel" : ""),
-          stroke: rt.color || layerColor(rt.layer), "stroke-width": sw * 0.8
+          points: ptsStr,
+          class: "ep-plan-route" + (rt.manual ? " is-manual" : "") + (inChain ? " is-sel" : "") + (otherDim ? " is-otherdim" : ""),
+          stroke: routeColor, "stroke-width": sw * 0.8
         }, dimR ? { opacity: DIM_OP } : {})));
         (rt.throughWalls || []).forEach((c) => g.appendChild(el("circle", Object.assign({
-          cx: c.x, cy: c.y, r: 5 * k, class: "ep-plan-cross", "stroke-width": sw * 0.6
+          cx: c.x, cy: c.y, r: 5 * k, class: "ep-plan-cross" + (otherDim ? " is-otherdim" : ""), "stroke-width": sw * 0.6
         }, dimR ? { opacity: DIM_OP } : {}))));
         // ручки тяги — только у РЕАЛЬНО выбранного хопа (тот, на который тапнули), только
         // на промежуточных изломах (концы 0/last завязаны на элемент/щит/распайку)
