@@ -391,7 +391,24 @@
     if (pStd) add("material", "Подрозетник Ø68 40-50 мм", pStd, "шт");
     if (pDeep) add("material", "Подрозетник Ø68 65 мм глубокий", pDeep, "шт");
     if (junctBoxes) add("material", "Распаечная коробка (потолок)", junctBoxes, "шт");
-    if (junctBoxes) add("work", "Монтаж и расключение распределительной коробки", junctBoxes, "шт");
+    // Работы по распайкам РАЗДЕЛЕНЫ по МЕСТУ распайки — просьба пользователя: «работы по
+    // распайкам (Собрать распаяную коробку на потолке / в подрозетнике)». Раньше была одна
+    // общая строка «Монтаж и расключение распределительной коробки», хотя это две разные
+    // по трудоёмкости операции: коробка на потолке (отдельная коробка, крышка, доступ с
+    // лестницы) и распайка ВНУТРИ подрозетника (тесно, без отдельной коробки).
+    // · «на потолке» = число потолочных распаечных коробок (элементы type:"junction").
+    // · «в подрозетнике» = число точек-ТРАНЗИТОВ шлейфа: в подрозетник кабель и приходит,
+    //   и уходит дальше (outCnt+inCnt > 1) — именно там физически делается соединение без
+    //   отдельной коробки. Тот же признак, по которому hopVertMul в plan-routes.js считает
+    //   штробу у такой точки дважды, и по которому connectorsByRoutes считает пины
+    //   соединителей — источник один (inCnt/outCnt по графу трасс), расходиться не могут.
+    let spliceInBox = 0;
+    (p.elements || []).forEach((e2) => {
+      if (e2.status === "existing" || e2.type === "junction") return;
+      if (((outCnt[e2.id] || 0) + (inCnt[e2.id] || 0)) > 1) spliceInBox++;
+    });
+    if (junctBoxes) add("work", "Собрать распаянную коробку на потолке", junctBoxes, "шт");
+    if (spliceInBox) add("work", "Собрать распайку в подрозетнике", spliceInBox, "шт");
     Object.keys(cableBy).forEach((m) => add("material", `Кабель ${m}`, cableBy[m], "м"));
     // прокладка кабеля — работа отдельно от материала, ОТДЕЛЬНОЙ СТРОКОЙ на каждую марку
     // (просьба пользователя: «прокладка кабеля в работах, должна разделиться (прокладка
@@ -403,19 +420,11 @@
     // просьба пользователя: «1 проходка это 2 провода без гофры, или 1 в гофре» (гофра
     // толще — вдвоём в Ø20 уже не входят). По полу — всегда гофра (см. addConsumItems
     // выше, там floor не зависит от gofraCeil вообще); по потолку — settings.gofraCeil.
-    const sleeveGofra = s.routeType === "floor" || s.gofraCeil !== false;
-    const sleeveCap = sleeveGofra ? 1 : 2;
-    const sleeves = {}; // "x|y" -> { n: кабелей, wallId }
-    routes.forEach((r) => {
-      const seen = {};
-      (r.throughWalls || []).forEach((c) => {
-        const key = Math.round(c.x / 20) + "|" + Math.round(c.y / 20);
-        if (seen[key]) return; // общая стена двух комнат — одно место, одна гильза
-        seen[key] = 1;
-        if (!sleeves[key]) sleeves[key] = { n: 0, wallId: c.wallId };
-        sleeves[key].n++;
-      });
-    });
+    // Группировку/ёмкость считает ЕДИНЫЙ хелпер EP.Plan.Routes.sleeveGroups — тот же, что
+    // показывает шторка «Трассы» (раньше алгоритм был продублирован здесь, и шторка
+    // показывала сырую сумму throughWalls: «12 проходок» против «6 шт» в смете).
+    const sg = EP.Plan.Routes.sleeveGroups(p);
+    const sleeves = sg.groups, sleeveCap = sg.cap;
     const sleeveByMat = {};
     Object.keys(sleeves).forEach((k) => {
       const w = G2.wallById(p, sleeves[k].wallId);
