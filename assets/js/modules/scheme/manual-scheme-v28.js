@@ -495,7 +495,7 @@
       .ms-addline{margin-top:4px;border:1px dashed rgba(255,255,255,.3);background:rgba(var(--card-bg-rgb),.4);color:var(--muted);border-radius:9px;padding:8px 12px;font:700 12px/1 system-ui;cursor:pointer}
       .ms-addgroup{width:100%;border:1px dashed #818cf8;background:rgba(99,102,241,.16);color:var(--text);border-radius:10px;padding:11px;font:800 13px/1 system-ui;cursor:pointer}
       .ms-empty{color:var(--muted);font:600 12px/1.4 system-ui;padding:6px 2px}
-      .ms-svgbox{overflow:auto;max-height:50vh;border:1px solid #eef2f7;border-radius:10px;background:#fff;padding:6px}
+      .ms-svgbox{overflow:auto;max-height:50dvh;border:1px solid #eef2f7;border-radius:10px;background:#fff;padding:6px}
       .ms-svgbox svg{display:block}
       .ms-foot{position:sticky;bottom:0;display:flex;gap:8px;padding:10px 0;background:linear-gradient(transparent,var(--bg-a) 30%)}
       .ms-clear{flex:none;border:1px solid rgba(255,255,255,.16);background:rgba(var(--card-bg-rgb),.5);color:var(--muted);border-radius:10px;padding:12px 14px;font:700 13px/1 system-ui;cursor:pointer}
