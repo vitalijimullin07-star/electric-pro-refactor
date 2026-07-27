@@ -284,6 +284,9 @@
         sw.targetIds = sw.targetIds || [];
         sw.targetIds[pick.ki] = hit.el.id;
         if (pick.ki === 0) sw.targetId = hit.el.id; // legacy-алиас клавиши 0
+        // линия цели — автоматически (220В-цель = линия выключателя, «Вывод 24В» — своя
+        // 24В-линия): тот же хелпер, что и у чипов выбора цели в редакторе точки
+        if (EP.Plan.Elements.syncTargetCircuit) EP.Plan.Elements.syncTargetCircuit(sw, hit.el);
         c.persist("elem-target");
         toast(T.targetPicked((EP.Plan.Elements.TYPES[hit.el.type] || {}).name || hit.el.type));
       } else {

@@ -44,6 +44,7 @@
     heavySep: (q) => `${q}: мощный потребитель смешан с другими — выдели отдельную линию`,
     tooMany: (q, n, m) => `${q}: розеток ${n} на одной линии (реком. ≤ ${m})`,
     thinCable: (q, s, br) => `${q}: кабель ${s} мм² мал для автомата ${br}A`,
+    rgb24: (q) => `${q}: укажи тип 24В-линии — монохром или RGB (от этого зависит кабель «от щита»: 2 жилы против 5). Кнопки в «🧮 Расчёт» → «По линиям (QF)»`,
     labels: {
       wetMinSocketH: "Мин. высота розетки во влажной зоне, см",
       minSocketH: "Мин. высота точки, см",
@@ -118,6 +119,10 @@
       if (R.separateHeavy && hasHeavy && others > 0) issues.push({ circuitId: c.id, msg: T.heavySep(c.name) });
       if (R.maxSocketsPerCircuit && (c.breaker || 16) >= 16 && socketN > R.maxSocketsPerCircuit) issues.push({ circuitId: c.id, msg: T.tooMany(c.name, socketN, R.maxSocketsPerCircuit) });
       if (R.cableCheck && c.cable) { const s = sectionOf(c.cable), max = CABLE_AMP[String(s)]; if (s && max && (c.breaker || 16) > max) issues.push({ circuitId: c.id, msg: T.thinCable(c.name, s, c.breaker) }); }
+      // линия 24В: тип (монохром/RGB) ОБЯЗАТЕЛЕН — просьба пользователя («что нужно указать
+      // обязательно на линии 24в»), от него зависит кабель «от щита до точки» (2 или 5 жил).
+      // Пока не указано, смета считает как монохром — поэтому это подсказка, а не блокировка.
+      if (c.rgb == null && els.every((e) => e.type === "output24")) issues.push({ circuitId: c.id, msg: T.rgb24(c.name) });
     });
 
     return { issues, badIds };

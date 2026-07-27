@@ -942,6 +942,38 @@
     }
     return null;
   }
+  // Точка, которой назначена КЛАВИША выключателя, питается ЧЕРЕЗ этот выключатель: кабель
+  // идёт щит→выключатель→точка, а НЕ щит→точка (просьба пользователя: «от щита до
+  // выключателя ВВГнг-LS 3×1.5, от выключателя до точки света 220В ВВГнг-LS 3×1.5»).
+  // Раньше управляемая лампа трассировалась к щиту НАПРЯМУЮ, мимо выключателя — на
+  // диагностическом прогоне сценария пользователя это давало 10.4м трассы лампы к щиту
+  // при 3.6м у самого выключателя, т.е. физически неверную разводку и завышенный кабель.
+  // Точки «Вывод 24В» тут НЕ участвуют — у них своя физика (клавиша коммутирует первичку
+  // трансформатора в щите, см. build24Legs): их ведёт kindOf "24" к трансформаторному щиту.
+  function switchFeedMap(p) {
+    const fp = G().floorScoped(p);
+    const byId = new Map((fp.elements || []).map((e) => [e.id, e]));
+    const out = new Map();
+    (fp.elements || []).forEach((sw) => {
+      if (sw.type !== "switch") return;
+      const tids = (sw.targetIds || []).concat(sw.targetId ? [sw.targetId] : []);
+      tids.forEach((id) => {
+        const t = id ? byId.get(id) : null;
+        if (!t || t.id === sw.id || t.type === "output24") return;
+        if (!out.has(t.id)) out.set(t.id, sw);
+      });
+    });
+    return out;
+  }
+  // сколько клавиш ЭТОГО выключателя назначено на точки «Вывод 24В» — от этого зависит
+  // марка кабеля «до щита» (первичка): 1 клавиша — 3 жилы, 2-3 клавиши — 5 жил
+  function keys24Of(p, sw) {
+    const byId = new Map((G().floorScoped(p).elements || []).map((e) => [e.id, e]));
+    const tids = ((sw && sw.targetIds) || []).concat(sw && sw.targetId ? [sw.targetId] : []);
+    const seen = new Set();
+    tids.forEach((id) => { const t = id ? byId.get(id) : null; if (t && t.type === "output24") seen.add(t.id); });
+    return seen.size;
+  }
   function routeGroups(c, p, pointsToRoute, juncts, panels, extraConnected) {
     const routerPanels = panels.filter((pn) => pn.router);
     const trafoPanels = panels.filter((pn) => pn.transformer);
@@ -965,19 +997,47 @@
     const plainPanels = panels.filter((pn) => !pn.router && !pn.transformer);
     const powerPanels = plainPanels.length ? plainPanels : panels;
     const groups = new Map();
+    const feed = switchFeedMap(p);
+    const viaSw = [];
     pointsToRoute.forEach((el) => {
       const pos = G().routeAnchor(p, el); // блок -> вход штробы (нужный подрозетник)
       if (!pos) return;
+      const sw = feed.get(el.id);
+      if (sw) {
+        const spos = G().routeAnchor(p, sw);
+        if (spos) { viaSw.push({ el, pos, sw, spos }); return; } // питание через выключатель
+      }
       const kind = kindOf(el);
       const key = (el.circuitId || "_none") + (kind === "pw" ? "" : ":" + kind);
       if (!groups.has(key)) groups.set(key, { circuitId: el.circuitId || null, kind, items: [] });
       groups.get(key).items.push({ el, pos });
     });
+    // точки, управляемые клавишей: трасса к САМОМУ ВЫКЛЮЧАТЕЛЮ (он уже подключён к щиту
+    // своей линией). Если до выключателя не добраться (нет магистрали между комнатами) —
+    // фолбэк на прежнее поведение (ближайшая распайка своей линии / щит), чтобы точка не
+    // осталась вообще без трассы.
+    viaSw.forEach(({ el, pos, sw, spos }) => {
+      // линия управляемой точки = линия ВЫКЛЮЧАТЕЛЯ (она физически питается через него).
+      // Проставляем и здесь, а не только в момент назначения клавиши в редакторе
+      // (EP.Plan.Elements.syncTargetCircuit): так автоматика догоняет проекты, где клавиши
+      // расставлены ДО этой версии, и случай «у выключателя поменяли линию после назначения».
+      if (sw.circuitId && el.circuitId !== sw.circuitId) el.circuitId = sw.circuitId;
+      const cid = el.circuitId || sw.circuitId || null;
+      const color = colorOf(p, el);
+      let rt = addRoute(c, p, el, pos, { kind: "el", id: sw.id, pos: spos, el: sw }, cid, color);
+      if (rt) return;
+      const J = cid ? juncts.filter((n) => n.circuitId === cid) : juncts.slice();
+      connectNearest(c, p, el, pos, J.concat(powerPanels), cid, color);
+    });
     groups.forEach((g) => {
       const targetPanels = g.kind === "24" ? trafoPanels : g.kind === "lv" ? routerPanels : powerPanels;
       // распайки, доступные этой линии (своей QF; «без линии» — любые распайки)
       const J = g.circuitId ? juncts.filter((n) => n.circuitId === g.circuitId) : juncts.slice();
-      if (J.length) {
+      // 24В — НИКОГДА не шлейфом: у каждого вывода 24В свой кабель от трансформаторного
+      // щита (просьба пользователя: «на каждый вывод 24В, которую назначили клавишой, от
+      // щита идёт провод до точки»); клавиши коммутируют их независимо, шлейф физически
+      // не даёт этого сделать.
+      if (J.length || g.kind === "24") {
         // есть распайка -> каждая точка к ближайшей распайке своей линии (или щиту/роутеру/трансформатору)
         g.items.forEach(({ el, pos }) => {
           connectNearest(c, p, el, pos, J.concat(targetPanels), el.circuitId, colorOf(p, el));
@@ -1401,7 +1461,9 @@
   function hopVertMul(p, r) {
     if (r.toPanel) return 1;
     const target = (p.elements || []).find((e) => e.id === r.toId);
-    return (target && target.type !== "junction") ? 2 : 1;
+    // распайка и ВЫКЛЮЧАТЕЛЬ — терминалы хопа: там есть коробка/подрозетник, принимающая
+    // кабель на месте, штроба вниз проходится один раз (у обычной точки шлейфа — дважды)
+    return (target && target.type !== "junction" && target.type !== "switch") ? 2 : 1;
   }
   // Выпуск кабеля на разделку/подключение — просьба пользователя: «выпуск кабеля из
   // подрозетников… длину вывода из стены любого кабеля, и так же в распред коробках…
@@ -1629,5 +1691,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { build, buildIncremental, clearRoutes, suggestGuides, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds };
+  EP.Plan.Routes = { build, buildIncremental, clearRoutes, suggestGuides, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, keys24Of, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds };
 })();

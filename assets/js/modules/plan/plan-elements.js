@@ -411,6 +411,33 @@
   // plan-rooms.js): шторка закрывается, следующий тап по подходящей точке (ЛЮБОЙ
   // комнаты, не только своей) назначает её этой клавише и возвращает редактор.
   const SW_TARGET_TYPES = { light: 1, bra: 1, track: 1, output: 1, output24: 1, socket: 1, block: 1 };
+  // Клавиша назначена точке → ЛИНИЯ ТОЧКИ проставляется АВТОМАТИЧЕСКИ (просьба
+  // пользователя: «если клавиша назначена на точку, то зачем на точке указывать линию,
+  // можно автоматизировать»):
+  //  · 220В-цель (свет/бра/трек/вывод/розетка) питается ЧЕРЕЗ выключатель, т.е. физически
+  //    сидит на ЛИНИИ ВЫКЛЮЧАТЕЛЯ — синхронизируем всегда, когда у выключателя линия есть
+  //    (иначе кабель «от выключателя до точки» попал бы в другую линию сметы, чем питание
+  //    самого выключателя). Своя линия у такой точки физически невозможна.
+  //  · «Вывод 24В» — на СВОЕЙ 24В-линии (её коммутирует трансформатор в щите, а не сам
+  //    выключатель): если линии нет — берём существующую 24В-линию проекта, иначе создаём
+  //    новую (префикс «24В», см. circuitPrefixFor).
+  function syncTargetCircuit(sw, target) {
+    if (!sw || !target) return null;
+    const p = core().project;
+    if (target.type === "output24") {
+      if (target.circuitId) return null;
+      const only24 = (cid) => {
+        const els = (p.elements || []).filter((e) => e.circuitId === cid && e.type !== "junction");
+        return els.length > 0 && els.every((e) => e.type === "output24");
+      };
+      const ex = (p.circuits || []).find((c) => /^24В/.test(String(c.name)) || only24(c.id));
+      if (ex) { target.circuitId = ex.id; return ex; }
+      return assignNewCircuit(target);
+    }
+    if (!sw.circuitId || target.circuitId === sw.circuitId) return null;
+    target.circuitId = sw.circuitId;
+    return (p.circuits || []).find((c) => c.id === sw.circuitId) || null;
+  }
   function switchTargetRow(el) {
     const p = core().project;
     const roomId = el.wallId ? String(el.wallId).split(":")[0] : null;
@@ -576,6 +603,7 @@
       el.targetIds = el.targetIds || [];
       el.targetIds[ki] = val === "auto" ? null : val;
       if (ki === 0) el.targetId = el.targetIds[0]; // старое поле — для обратной совместимости чтения
+      if (val !== "auto") syncTargetCircuit(el, (c.project.elements || []).find((e) => e.id === val));
       c.persist("elem-target"); openEditor(el); rooms().renderScene(); return;
     }
     if ((b = t.closest("[data-pe-picktarget]"))) {
@@ -746,5 +774,5 @@
   }
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, SW_TARGET_TYPES, onModeEnter, onOpeningModeEnter, placeAt, placeOpening, hoverSnapPoint, openingNum, hitAt, openEditor, openPanelEditor, openOpeningEditor, selectedId, deselect, deleteElement, duplicateElement, circuitRow, assignNewCircuit };
+  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, SW_TARGET_TYPES, onModeEnter, onOpeningModeEnter, placeAt, placeOpening, hoverSnapPoint, openingNum, hitAt, openEditor, openPanelEditor, openOpeningEditor, selectedId, deselect, deleteElement, duplicateElement, circuitRow, assignNewCircuit, syncTargetCircuit };
 })();

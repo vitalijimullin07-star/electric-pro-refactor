@@ -36,6 +36,9 @@
     cableTitle: "🔌 Кабель линии", cableLbl: "Марка/сечение",
     cableFromDb: "Выбери из БД (раздел «Материалы») или впиши свою марку:",
     cableNoDb: "В активной БД нет позиций-кабелей — впиши марку вручную (можно добавить кабели в «Базу данных»).",
+    rgbLbl: "Тип 24В:", rgbMono: "Монохром", rgbOn: "RGB",
+    c24Lbl: "24В от щита (монохром)", c24RgbLbl: "24В от щита (RGB)",
+    c24Hint: "Кабель «от щита до точки 24В»: у монохромного вывода 2 жилы, у RGB — 5 (общий + 3 канала). Марка «до щита» (первичка от выключателя) считается сама: 1 клавиша на 24В — 3 жилы, 2-3 клавиши — 5 жил.",
     brandLbl: "Марка кабеля по умолчанию", brandHint: "Подставляется перед сечением там, где марка линии не задана вручную (однолинейка, «По линиям», смета): ВВГнг(А)-LS, ВВГнг, КГ… Пустое поле — только сечение.",
     cableHint: "Марка/сечение кабеля именно этой линии — поменяет и материал, и «Прокладку кабеля» в смете. Пустое поле — автоподбор по нагрузке/автомату, как раньше."
   };
@@ -77,11 +80,30 @@
       r.cableLen += L; r.crossings += (rt.throughWalls || []).length;
       if (rt.leg === "pri24" || rt.leg === "sec24") r.has24 = true; // линия с 24В-разводкой (до/от щита)
       const cc = (p.circuits || []).find((c) => c.id === rt.circuitId);
-      if (!r.mark) r.mark = (cc && cc.cable) || defaultCableMark(p, rt.layer, r.has24 || is24Circuit(p, rt.circuitId));
+      if (!r.mark) {
+        const i24 = r.has24 || is24Circuit(p, rt.circuitId);
+        r.mark = (cc && cc.cable) || defaultCableMark(p, rt.layer, i24, i24 && !!(cc && cc.rgb));
+      }
     });
     return (p.circuits || []).map((c) => {
       const r = byId[c.id] || { cableLen: 0, mark: c.cable || null, points: 0, posts: 0, crossings: 0, has24: false };
-      return { id: c.id, name: c.name, color: c.color, breaker: c.breaker, rcd: c.rcd,
+      const i24 = r.has24 || is24Circuit(p, c.id);
+      // автоподбор марок для 24В-линии, чтобы кнопки «до щита»/«от щита» показывали то, что
+      // реально уйдёт в смету, а не «—», когда марка вручную не задана
+      let auto24 = null, auto220 = null;
+      if (i24) {
+        auto24 = defaultCableMark(p, "lv", true, !!c.rgb);
+        const R = EP.Plan.Routes;
+        let k = 1;
+        (p.elements || []).forEach((sw) => {
+          if (sw.type !== "switch" || !R || !R.keys24Of) return;
+          const tids = (sw.targetIds || []).concat(sw.targetId ? [sw.targetId] : []);
+          const feeds = tids.some((id) => { const t = (p.elements || []).find((e) => e.id === id); return t && t.type === "output24" && t.circuitId === c.id; });
+          if (feeds) k = Math.max(k, R.keys24Of(p, sw));
+        });
+        auto220 = EP.Plan.Core.cableMark(p, k >= 2 ? "5×1.5" : "3×1.5");
+      }
+      return { id: c.id, name: c.name, color: c.color, breaker: c.breaker, rcd: c.rcd, is24: i24, rgb: c.rgb == null ? null : !!c.rgb, auto24, auto220,
         cableLen: Math.round((r.cableLen / 100) * reserve * 10) / 10, mark: r.mark, points: r.points, posts: r.posts, crossings: r.crossings,
         has24: r.has24, cable: c.cable || null, cable220: c.cable220 || null };
     }).filter((r) => r.points > 0 || r.cableLen > 0);
@@ -158,12 +180,30 @@
   // и для блока «По линиям (QF)»: раньше смета подставляла «ВВГнг(А)-LS 3×2.5», а «По
   // линиям» на тех же данных — «3×2.5», т.е. одна линия показывала разные марки.
   // Бренд берётся из settings.cableBrand (EP.Plan.Core.cableMark), сечение — по слою.
-  function defaultCableMark(p, layer, is24) {
+  function defaultCableMark(p, layer, is24, rgb) {
     const C = EP.Plan.Core;
-    if (is24) return C.cableMark(p, "2×1.5");        // 24В — 2 жилы, земли нет
+    // 24В «от щита»: своя марка из настроек (КГ ВВГнг-LS 2×2.5), у RGB-линии — 5 жил
+    // (общий + 3 канала), просьба пользователя. rgb=null («не указано») считаем монохромом,
+    // но «Проверки» об этом напомнят (см. plan-rules.js).
+    if (is24) return rgb ? (p.settings.cable24Rgb || "КГ ВВГнг-LS 5×1.5") : (p.settings.cable24 || "КГ ВВГнг-LS 2×2.5");
     if (layer === "warm") return "Кабель тёплого пола";
     if (LV_LAYERS[layer]) return "Витая пара (UTP)"; // интернет/ТВ/видеонаблюдение
     return C.cableMark(p, layer === "light" ? "3×1.5" : "3×2.5");
+  }
+  // Марка кабеля «до щита» (первичка 24В, выключатель→трансформатор): число жил зависит от
+  // того, сколько КЛАВИШ этого выключателя назначено на выводы 24В — 1 клавиша даёт 3×1.5,
+  // 2-3 клавиши 5×1.5 (просьба пользователя). Считается по СВОЕЙ трассе (fromId "sw24:<id>").
+  function pri24Mark(p, r) {
+    const swId = String(r.fromId || "").indexOf("sw24:") === 0 ? String(r.fromId).slice(5) : null;
+    const sw = swId ? (p.elements || []).find((e) => e.id === swId) : null;
+    const R = EP.Plan.Routes;
+    const k = (sw && R && R.keys24Of) ? R.keys24Of(p, sw) : 1;
+    return EP.Plan.Core.cableMark(p, k >= 2 ? "5×1.5" : "3×1.5");
+  }
+  // у линии 24В: RGB ли она (для марки «от щита»)
+  function rgbOf(p, circuitId) {
+    const cc = (p.circuits || []).find((c) => c.id === circuitId);
+    return !!(cc && cc.rgb);
   }
   const STROBE_KIND_SUFFIX = { lv: " (слаботочка)" }; // power/warm — без суффикса (размер их обычно и так различает)
 
@@ -367,11 +407,12 @@
       // «Кабель ВВГ 3×1.5 · до щита (220В)» всё равно матчит запись БД «Кабель ВВГ 3×1.5».
       let key;
       if (r.leg === "pri24") {
-        key = ((cc && cc.cable220) || EP.Plan.Core.cableMark(p, "3×1.5")) + " · до щита (220В)";
+        key = ((cc && cc.cable220) || pri24Mark(p, r)) + " · до щита (220В)";
       } else if (r.leg === "sec24") {
-        key = ((cc && cc.cable) || EP.Plan.Core.cableMark(p, "2×1.5")) + " · от щита (24В)";
+        key = ((cc && cc.cable) || defaultCableMark(p, r.layer, true, rgbOf(p, r.circuitId))) + " · от щита (24В)";
       } else {
-        key = (cc && cc.cable) || defaultCableMark(p, r.layer, is24Circuit(p, r.circuitId));
+        const i24 = is24Circuit(p, r.circuitId);
+        key = (cc && cc.cable) || defaultCableMark(p, r.layer, i24, i24 && rgbOf(p, r.circuitId));
       }
       cableBy[key] = (cableBy[key] || 0) + L;
     });
@@ -558,6 +599,13 @@
           <label class="ep-plan-range" style="flex:1 1 180px">${T.brandLbl}
             <input type="text" value="${esc(p.settings.cableBrand == null ? "" : p.settings.cableBrand)}" data-pc-cablebrand></label></div>
         <div class="ep-plan-srow ep-plan-hintrow">${T.brandHint}</div>
+        <div class="ep-plan-srow">
+          <label class="ep-plan-range" style="flex:1 1 170px">${T.c24Lbl}
+            <input type="text" value="${esc(p.settings.cable24 == null ? "" : p.settings.cable24)}" data-pc-cable24></label>
+          <label class="ep-plan-range" style="flex:1 1 170px">${T.c24RgbLbl}
+            <input type="text" value="${esc(p.settings.cable24Rgb == null ? "" : p.settings.cable24Rgb)}" data-pc-cable24rgb></label>
+        </div>
+        <div class="ep-plan-srow ep-plan-hintrow">${T.c24Hint}</div>
         <div class="ep-plan-srow ep-plan-hintrow">${T.stubHint}</div>
         <div class="ep-plan-srow">
           <label class="ep-plan-range" style="flex:1 1 110px">${T.stubPoint}
@@ -595,15 +643,21 @@
             const cbtn = (fld, mark, label) => `<button type="button" class="ep-plan-iprice ep-plan-qfmark ep-clickable" data-pc-editcable data-pc-circid="${esc(r.id)}" data-pc-cablefield="${fld}" data-pc-curmark="${esc(mark || "")}">${label ? esc(label) + ": " : ""}${esc(mark || "—")}</button>`;
             // 24В-линия: ДВЕ кнопки марки — до щита (cable220, 220В) и от щита (cable, 24В);
             // обычная линия — одна кнопка (cable). Просьба пользователя: до/от щита раздельно.
-            const marksHtml = r.has24
-              ? cbtn("cable220", r.cable220, "до щита") + " " + cbtn("cable", r.cable, "от щита") + " · "
+            const marksHtml = (r.has24 || r.is24)
+              ? cbtn("cable220", r.cable220 || r.auto220, "до щита") + " " + cbtn("cable", r.cable || r.auto24, "от щита") + " · "
               : (r.mark ? cbtn("cable", r.mark, "") + " · " : "");
+            // линия 24В: ОБЯЗАТЕЛЬНО указать монохром/RGB — от этого зависит кабель «от щита»
+            // (2 жилы против 5). Пока не указано — «Проверки» напоминают, счёт идёт как монохром.
+            const rgbHtml = r.is24 ? `<div class="ep-plan-qfrgb">${T.rgbLbl}
+              <button type="button" class="ep-plan-chip ep-clickable ${r.rgb === false ? "on" : ""}" data-pc-rgb="0" data-pc-circid="${esc(r.id)}">${T.rgbMono}</button>
+              <button type="button" class="ep-plan-chip ep-clickable ${r.rgb === true ? "on" : ""}" data-pc-rgb="1" data-pc-circid="${esc(r.id)}">${T.rgbOn}</button>
+              ${r.rgb == null ? `<span class="ep-plan-mshint">не указано</span>` : ""}</div>` : "";
             return `<div class="ep-plan-qfrow">
             <span class="ep-plan-cdot" style="background:${esc(r.color)}"></span><b>${esc(r.name)}</b>
             <span class="ep-plan-qfmeta">${r.breaker || "—"}A${r.rcd ? " · УЗО" : ""}</span>
             <span class="ep-plan-flex"></span>
             <span class="ep-plan-qfnums">${marksHtml}${r.cableLen ? G().fmtLen(r.cableLen * 100) : "—"} · ${r.points} тчк${r.crossings ? " · " + r.crossings + " прох." : ""}</span>
-          </div>`;
+          </div>${rgbHtml}`;
           }).join("")}</div>`
       : "";
 
@@ -779,6 +833,14 @@
     const t = e.target;
     if (t.closest("[data-plan-calc]")) return sheet();
     let b;
+    // монохром/RGB у линии 24В — от этого зависит кабель «от щита» (2 жилы против 5)
+    if ((b = t.closest("[data-pc-rgb]"))) {
+      const c = core(), cid = b.getAttribute("data-pc-circid");
+      const cc = (c.project.circuits || []).find((x) => x.id === cid);
+      if (!cc) return;
+      c.commit(); cc.rgb = b.getAttribute("data-pc-rgb") === "1";
+      c.persist("circuit-rgb"); sheet(); rooms().renderScene(); return;
+    }
     if ((b = t.closest("[data-pc-hide]")) && b.getAttribute("data-pc-ekey")) {
       const k = b.getAttribute("data-pc-ekey");
       return editCalc((ed) => { if (ed.hidden.indexOf(k) < 0) ed.hidden.push(k); });
@@ -872,6 +934,16 @@
       c.project.settings.cableBrand = String(e.target.value || "").trim();
       c.persist("cable-brand"); sheet();
     }
+    if (e.target.getAttribute && e.target.getAttribute("data-pc-cable24") != null) {
+      const c = core(); c.commit();
+      c.project.settings.cable24 = String(e.target.value || "").trim();
+      c.persist("cable-24"); sheet();
+    }
+    if (e.target.getAttribute && e.target.getAttribute("data-pc-cable24rgb") != null) {
+      const c = core(); c.commit();
+      c.project.settings.cable24Rgb = String(e.target.value || "").trim();
+      c.persist("cable-24rgb"); sheet();
+    }
     if (e.target.getAttribute && e.target.getAttribute("data-pc-templight") != null) {
       const c = core(); c.commit();
       c.project.settings.tempLightingPts = Math.max(0, Number(e.target.value) || 0);
@@ -900,5 +972,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Calc = { sheet, buildBlocks, runEngine, priceFor, calcByRoutes, estimateItems, perCircuit, sheetConsumSettings, applyCalcEdits };
+  EP.Plan.Calc = { sheet, buildBlocks, runEngine, priceFor, calcByRoutes, estimateItems, perCircuit, sheetConsumSettings, applyCalcEdits, defaultCableMark, is24Circuit };
 })();

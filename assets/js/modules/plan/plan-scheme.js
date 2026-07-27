@@ -46,7 +46,13 @@
     // 24В-линия (вся нагрузка — «Вывод 24В») — это ПИТАНИЕ 24В, а не слаботочная сеть:
     // витая пара тут не при чём (у output24 слой lv, поэтому без этой ветки он попадал бы
     // в проверку ниже и линия 24В показывала бы UTP). По умолчанию 2 жилы — у 24В нет земли.
-    if (els.length && els.every((e) => e.type === "output24")) return core().cableMark(p, "2×1.5");
+    if (els.length && els.every((e) => e.type === "output24")) {
+      // марка «от щита до точки 24В» — ОДНА на всё приложение (та же, что в смете):
+      // монохром = settings.cable24, RGB = settings.cable24Rgb (см. defaultCableMark)
+      const CA = EP.Plan.Calc;
+      if (CA && CA.defaultCableMark) return CA.defaultCableMark(p, "lv", true, !!c.rgb);
+      return c.rgb ? (p.settings.cable24Rgb || "КГ ВВГнг-LS 5×1.5") : (p.settings.cable24 || "КГ ВВГнг-LS 2×2.5");
+    }
     if (els.length && els.every((e) => e.layer === "lv" || e.layer === "tv" || e.layer === "cctv")) return "Витая пара (UTP)";
     const found = SECTION_BY_AMP.find((x) => (c.breaker || 16) <= x.amp);
     const needSec = (found || SECTION_BY_AMP[SECTION_BY_AMP.length - 1]).sec;
