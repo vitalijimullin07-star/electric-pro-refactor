@@ -2234,7 +2234,10 @@ test("фото: deleteProject чистит кэш фото своего прое
     const rt = P.routes.find((r) => r.fromId === sDown.id);
     ok(rt, "трасса построена");
     ok(rt.points.some((pt) => Math.abs(pt.x - 300) < 5 && pt.y > 400), "путь идёт по «ножке» (stem)");
-    ok(rt.points.some((pt) => Math.abs(pt.y - 400) < 5 && pt.x < 300), "путь идёт по «перекладине» (bar) — граф сшил обе магистрали");
+    // допуск 25см, а не 5: «перекладина» нарисована РОВНО по оси стены комнаты «Слева»
+    // (y=400), а трассы больше не идут внутри тела стены — весь пучок отводится от неё на
+    // settings.routeOffset (см. edgeWallAdjust в plan-routes.js), т.е. ложится на y≈380/420
+    ok(rt.points.some((pt) => Math.abs(pt.y - 400) <= 25 && pt.x < 300), "путь идёт по «перекладине» (bar) — граф сшил обе магистрали");
   });
   test("guides: ответвление, упирающееся в СЕРЕДИНУ длинного прямого коридора (не в его конец) — граф всё равно сшивает", () => {
     // Найдено ПО РЕАЛЬНОМУ ПРОЕКТУ пользователя (экспорт JSON): длинный коридор нарисован
@@ -2459,6 +2462,103 @@ test("фото: deleteProject чистит кэш фото своего прое
     const total = P.routes.reduce((a, r) => a + G.polylineLen(r.points), 0);
     // с прямой метрикой на этой геометрии выходило вдвое больше (замерено в аудите)
     ok(total < 12000, "суммарная длина шлейфа разумная (" + Math.round(total) + "см), не удвоенная");
+  });
+
+  // ===== 23. Трассы не по стене + маркировка 24В + марка кабеля по умолчанию =====
+  // сколько сэмплов пути идут ВНУТРИ тела стены ВДОЛЬ неё (перпендикулярную проходку
+  // сквозь стену не считаем — она законна, ей и нужна гильза Ø20)
+  function alongWallInside(P, pts) {
+    const ws = [];
+    (P.rooms || []).forEach((r) => G.walls(r).forEach((w) => ws.push({ w, half: G.wallThOf(P, w) / 2 })));
+    (P.beams || []).forEach((b) => { const bw = G.beamWall(b); if (bw) ws.push({ w: bw, half: G.wallThOf(P, bw) / 2 }); });
+    let bad = 0;
+    for (let i = 1; i < (pts || []).length; i++) {
+      const a = pts[i - 1], b = pts[i], L = G.dist(a, b);
+      if (L < 0.5) continue;
+      const dir = { x: (b.x - a.x) / L, y: (b.y - a.y) / L };
+      const n = Math.max(1, Math.round(L / 5));
+      for (let k = 0; k <= n; k++) {
+        const t = k / n, q = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+        ws.forEach(({ w, half }) => {
+          const wl = w.len || 1, wd = { x: (w.b.x - w.a.x) / wl, y: (w.b.y - w.a.y) / wl };
+          if (Math.abs(dir.x * wd.x + dir.y * wd.y) <= 0.7) return; // это проходка, не «вдоль»
+          if (half - G.closestOnSeg(q, w.a, w.b).d > 1) bad++;
+        });
+      }
+    }
+    return bad;
+  }
+  function wallGuideCase(guidePts) {
+    const cor = M.newRoom(G.rectPoints(0, 0, 800, 100), "Коридор");
+    const r1 = M.newRoom(G.rectPoints(0, 100, 400, 400), "К1");
+    const r2 = M.newRoom(G.rectPoints(400, 100, 400, 400), "К2");
+    const cs = [];
+    for (let i = 0; i < 8; i++) cs.push(M.newCircuit("QF" + (i + 1), "#f00", 16));
+    const { P } = install({ rooms: [cor, r1, r2], circuits: cs, panels: [M.newPanel(60, 50, "Щ")] });
+    [1, 2].forEach((ri) => { for (let k = 0; k < 4; k++) {
+      const e = M.newElement("socket", P.rooms[ri].id + ":2", 60 + k * 80, 30);
+      e.circuitId = cs[(ri - 1) * 4 + k].id; P.elements.push(e);
+    } });
+    P.guides.push(M.newGuide(guidePts));
+    EP.Plan.Routes.build();
+    return P;
+  }
+  test("трассы НЕ идут внутри стены, если магистраль нарисована по её оси", () => {
+    // репорт пользователя со скриншотом: «линии рисуются прям по стене». Магистраль по оси
+    // общей стены коридора (y=100) — веер линий (+2см на линию) ложился ВНУТРЬ тела стены.
+    const P = wallGuideCase([{ x: 40, y: 100 }, { x: 760, y: 100 }]);
+    eq(P.routes.length, 8, "все 8 линий отрассированы");
+    const bad = P.routes.reduce((a, r) => a + alongWallInside(P, r.points), 0);
+    eq(bad, 0, "ни один участок не идёт внутри тела стены вдоль неё");
+  });
+  test("сторона веера линий разворачивается ОТ стены (обратный порядок точек магистрали)", () => {
+    // канонический нормаль ребра берётся из порядка точек магистрали — при рисовании
+    // справа налево веер смотрел в стену; теперь сторона выбирается по геометрии стен
+    const P = wallGuideCase([{ x: 760, y: 100 }, { x: 40, y: 100 }]);
+    const bad = P.routes.reduce((a, r) => a + alongWallInside(P, r.points), 0);
+    eq(bad, 0, "порядок рисования магистрали не заводит линии в стену");
+  });
+  test("проходка сквозь стену (перпендикулярная ветка) от фикса НЕ пострадала", () => {
+    const P = wallGuideCase([{ x: 40, y: 50 }, { x: 760, y: 50 }]);
+    const withSleeve = P.routes.filter((r) => (r.throughWalls || []).length > 0).length;
+    ok(withSleeve > 0, "трассы из комнат в коридор по-прежнему дают гильзы (" + withSleeve + ")");
+  });
+  test("линия «Вывод 24В» маркируется своим префиксом 24В, а не Int", () => {
+    const r1 = M.newRoom(G.rectPoints(0, 0, 400, 300), "К1");
+    const { P } = install({ rooms: [r1] });
+    const e24 = M.newElement("output24", r1.id + ":0", 100, 240, "lv"); P.elements.push(e24);
+    const c24 = EP.Plan.Elements.assignNewCircuit(e24);
+    eq(c24.name, "24В1", "первая 24В-линия — «24В1»");
+    const e24b = M.newElement("output24", r1.id + ":0", 200, 240, "lv"); P.elements.push(e24b);
+    eq(EP.Plan.Elements.assignNewCircuit(e24b).name, "24В2", "нумерация 24В своя");
+    const eNet = M.newElement("internet", r1.id + ":0", 300, 30, "lv"); P.elements.push(eNet);
+    eq(EP.Plan.Elements.assignNewCircuit(eNet).name, "Int1", "интернет по-прежнему Int1 (свой счётчик)");
+  });
+  test("марка кабеля по умолчанию (settings.cableBrand) — одна во всех местах", () => {
+    const r1 = M.newRoom(G.rectPoints(0, 0, 400, 300), "К1");
+    const qf = M.newCircuit("QF1", "#f00", 16);
+    const c24 = M.newCircuit("24В1", "#0ff", 10);
+    const { P } = install({ rooms: [r1], circuits: [qf, c24], panels: [M.newPanel(50, 50, "Щ")] });
+    eq(P.settings.cableBrand, "ВВГнг(А)-LS", "бэкофилл марки по умолчанию");
+    const s1 = M.newElement("socket", r1.id + ":0", 100, 30); s1.circuitId = qf.id; P.elements.push(s1);
+    const o24 = M.newElement("output24", r1.id + ":0", 200, 240, "lv"); o24.circuitId = c24.id; P.elements.push(o24);
+    eq(EP.Plan.Scheme.autoCable(P, qf), "ВВГнг(А)-LS 3×2.5", "однолинейка: марка + сечение");
+    eq(EP.Plan.Scheme.autoCable(P, c24), "ВВГнг(А)-LS 2×1.5", "линия 24В — силовой кабель 2 жилы, НЕ витая пара");
+    P.settings.cableBrand = "";
+    eq(EP.Plan.Scheme.autoCable(P, qf), "3×2.5", "пустая марка — только сечение (как было раньше)");
+    P.settings.cableBrand = "КГ";
+    eq(EP.Plan.Scheme.autoCable(P, qf), "КГ 3×2.5", "марка меняется одним полем настроек");
+  });
+  test("«По линиям (QF)» и смета показывают ОДНУ И ТУ ЖЕ марку кабеля", () => {
+    const r1 = M.newRoom(G.rectPoints(0, 0, 400, 300), "К1");
+    const qf = M.newCircuit("QF1", "#f00", 16);
+    const { P } = install({ rooms: [r1], circuits: [qf], panels: [M.newPanel(50, 50, "Щ")] });
+    const s1 = M.newElement("socket", r1.id + ":0", 100, 30); s1.circuitId = qf.id; P.elements.push(s1);
+    EP.Plan.Routes.build();
+    const per = EP.Plan.Calc.perCircuit(P).find((x) => x.id === qf.id);
+    const res = EP.Plan.Calc.calcByRoutes(P);
+    ok(per && per.mark, "марка в «По линиям» есть");
+    ok(Object.keys(res.cableBy).some((k) => k === per.mark), "та же марка в смете: " + per.mark + " / " + Object.keys(res.cableBy).join(","));
   });
 
   console.log("\n" + "=".repeat(48));

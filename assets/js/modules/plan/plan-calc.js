@@ -36,6 +36,7 @@
     cableTitle: "🔌 Кабель линии", cableLbl: "Марка/сечение",
     cableFromDb: "Выбери из БД (раздел «Материалы») или впиши свою марку:",
     cableNoDb: "В активной БД нет позиций-кабелей — впиши марку вручную (можно добавить кабели в «Базу данных»).",
+    brandLbl: "Марка кабеля по умолчанию", brandHint: "Подставляется перед сечением там, где марка линии не задана вручную (однолинейка, «По линиям», смета): ВВГнг(А)-LS, ВВГнг, КГ… Пустое поле — только сечение.",
     cableHint: "Марка/сечение кабеля именно этой линии — поменяет и материал, и «Прокладку кабеля» в смете. Пустое поле — автоподбор по нагрузке/автомату, как раньше."
   };
   // Категории для секций сметы: имя позиции → ключ секции (порядок вывода ниже).
@@ -76,7 +77,7 @@
       r.cableLen += L; r.crossings += (rt.throughWalls || []).length;
       if (rt.leg === "pri24" || rt.leg === "sec24") r.has24 = true; // линия с 24В-разводкой (до/от щита)
       const cc = (p.circuits || []).find((c) => c.id === rt.circuitId);
-      if (!r.mark) r.mark = (cc && cc.cable) || (LV_LAYERS[rt.layer] ? "Витая пара (UTP)" : rt.layer === "light" ? "3×1.5" : "3×2.5");
+      if (!r.mark) r.mark = (cc && cc.cable) || defaultCableMark(p, rt.layer, r.has24 || is24Circuit(p, rt.circuitId));
     });
     return (p.circuits || []).map((c) => {
       const r = byId[c.id] || { cableLen: 0, mark: c.cable || null, points: 0, posts: 0, crossings: 0, has24: false };
@@ -145,6 +146,25 @@
   // (не смешивается с силовой, даже когда физический размер сечения совпадает).
   // Ниша под щит — как в конфигураторе щита: вырубка × модули + монтаж.
   const LV_LAYERS = { lv: 1, tv: 1, cctv: 1 };
+  // Линия 24В: вся её нагрузка — точки «Вывод 24В». У output24 слой lv, поэтому без
+  // отдельной проверки такая линия попадала бы в LV_LAYERS и получала марку «Витая пара»
+  // (просьба пользователя: линии 24В маркировать как 24В и давать им силовой кабель).
+  function is24Circuit(p, circuitId) {
+    if (!circuitId) return false;
+    const els = (p.elements || []).filter((e) => e.circuitId === circuitId && e.type !== "junction");
+    return els.length > 0 && els.every((e) => e.type === "output24");
+  }
+  // Марка кабеля ПО УМОЛЧАНИЮ (когда circuit.cable не задан вручную) — ЕДИНАЯ для сметы
+  // и для блока «По линиям (QF)»: раньше смета подставляла «ВВГнг(А)-LS 3×2.5», а «По
+  // линиям» на тех же данных — «3×2.5», т.е. одна линия показывала разные марки.
+  // Бренд берётся из settings.cableBrand (EP.Plan.Core.cableMark), сечение — по слою.
+  function defaultCableMark(p, layer, is24) {
+    const C = EP.Plan.Core;
+    if (is24) return C.cableMark(p, "2×1.5");        // 24В — 2 жилы, земли нет
+    if (layer === "warm") return "Кабель тёплого пола";
+    if (LV_LAYERS[layer]) return "Витая пара (UTP)"; // интернет/ТВ/видеонаблюдение
+    return C.cableMark(p, layer === "light" ? "3×1.5" : "3×2.5");
+  }
   const STROBE_KIND_SUFFIX = { lv: " (слаботочка)" }; // power/warm — без суффикса (размер их обычно и так различает)
 
   // ---------- коннекторы (ВАГО/ГМЛ/СИЗ + термоусадка) — логика из EP.PoolEngine ----------
@@ -347,20 +367,11 @@
       // «Кабель ВВГ 3×1.5 · до щита (220В)» всё равно матчит запись БД «Кабель ВВГ 3×1.5».
       let key;
       if (r.leg === "pri24") {
-        key = ((cc && cc.cable220) || "ВВГнг(А)-LS 3×1.5") + " · до щита (220В)";
+        key = ((cc && cc.cable220) || EP.Plan.Core.cableMark(p, "3×1.5")) + " · до щита (220В)";
       } else if (r.leg === "sec24") {
-        key = ((cc && cc.cable) || "2×1.5") + " · от щита (24В)";
+        key = ((cc && cc.cable) || EP.Plan.Core.cableMark(p, "2×1.5")) + " · от щита (24В)";
       } else {
-        let mark = (cc && cc.cable) || null;
-        if (!mark) {
-          if (r.layer === "light") mark = "ВВГнг(А)-LS 3×1.5";
-          else if (r.layer === "warm") mark = "Кабель тёплого пола";
-          // интернет/ТВ/видеонаблюдение — витая пара (просьба пользователя: «все
-          // интернет розетки и тв, это у нас Витая пара, она и должна отображаться»)
-          else if (LV_LAYERS[r.layer]) mark = "Витая пара (UTP)";
-          else mark = "ВВГнг(А)-LS 3×2.5";
-        }
-        key = mark;
+        key = (cc && cc.cable) || defaultCableMark(p, r.layer, is24Circuit(p, r.circuitId));
       }
       cableBy[key] = (cableBy[key] || 0) + L;
     });
@@ -543,7 +554,10 @@
       headHtml = `<div class="ep-plan-srow"><b>${T.exactHead}</b></div>
         <div class="ep-plan-srow ep-plan-hintrow">${T.exactHint}</div>
         <div class="ep-plan-srow"><label class="ep-plan-range" style="flex:0 0 150px">${T.reserve}
-          <input type="number" inputmode="numeric" min="0" max="50" value="${Math.round(p.settings.cableReserve == null ? 10 : p.settings.cableReserve)}" data-pc-reserve></label></div>
+          <input type="number" inputmode="numeric" min="0" max="50" value="${Math.round(p.settings.cableReserve == null ? 10 : p.settings.cableReserve)}" data-pc-reserve></label>
+          <label class="ep-plan-range" style="flex:1 1 180px">${T.brandLbl}
+            <input type="text" value="${esc(p.settings.cableBrand == null ? "" : p.settings.cableBrand)}" data-pc-cablebrand></label></div>
+        <div class="ep-plan-srow ep-plan-hintrow">${T.brandHint}</div>
         <div class="ep-plan-srow ep-plan-hintrow">${T.stubHint}</div>
         <div class="ep-plan-srow">
           <label class="ep-plan-range" style="flex:1 1 110px">${T.stubPoint}
@@ -852,6 +866,11 @@
       const c = core(); c.commit();
       c.project.settings.cableReserve = Math.max(0, Math.min(50, Number(e.target.value) || 0));
       c.persist("cable-reserve"); sheet();
+    }
+    if (e.target.getAttribute && e.target.getAttribute("data-pc-cablebrand") != null) {
+      const c = core(); c.commit();
+      c.project.settings.cableBrand = String(e.target.value || "").trim();
+      c.persist("cable-brand"); sheet();
     }
     if (e.target.getAttribute && e.target.getAttribute("data-pc-templight") != null) {
       const c = core(); c.commit();
