@@ -43,6 +43,7 @@
   const PALETTE_TYPES = Object.keys(TYPES).filter((k) => !TYPES[k].opening);
   const T = {
     palette: "Палитра", progress: "Смонтировано",
+    paletteHint: "Выбери тип — палитра свернётся вниз, и можно ставить точки тапом по плану. Вернуть палитру — кнопка ︿ в правом нижнем углу.",
     offset: "Отступ от угла, см", height: "Высота от пола, см",
     status: "Статус", del: "✕ Удалить", apply: "✓", photo: "📷 Фото",
     confirmDel: "Удалить точку?", tapWall: "Тапни ближе к стене — элемент сядет на неё.",
@@ -71,21 +72,26 @@
 
   // ---------- палитра / размещение ----------
   function onModeEnter() { sheetPalette(); }
-  function sheetPalette() {
+  // keep=true — это ПЕРЕрисовка (счётчик «Смонтировано» после установки точки / выбор
+  // типа): если пользователь свернул палитру кнопкой в правом нижнем углу, она
+  // остаётся свёрнутой и не выпрыгивает обратно поверх холста (см. openSheet в
+  // plan-rooms.js). Вход в режим 🔌 (onModeEnter) — наоборот, всегда развёрнута.
+  function sheetPalette(keep) {
     const p = core().project;
     const total = p.elements.filter((e) => e.status !== "existing").length;
     const done = p.elements.filter((e) => e.status === "mounted").length;
     const pct = total ? Math.round((done / total) * 100) : 0;
     rooms().openSheet(`<div class="ep-plan-srow"><b>${T.palette}</b><span class="ep-plan-flex"></span>
         <span>${T.progress}: <b>${done}/${total}</b> · ${pct}%</span></div>
+      <div class="ep-plan-modehint">${esc(T.paletteHint)}</div>
       <div class="ep-plan-palette">${PALETTE_TYPES.map((k) => `
         <button type="button" class="ep-plan-pbtn ep-clickable ${S.selType === k ? "on" : ""}" data-pe-type="${k}">
           <i class="ep-plan-glyph" data-glyph="${esc(TYPES[k].glyph)}">${esc(TYPES[k].glyph)}</i>${esc(TYPES[k].name)}</button>`).join("")}
-      </div>`);
+      </div>`, { keepCollapsed: !!keep });
   }
   // ----- Проёмы (отдельный инструмент) -----
   function onOpeningModeEnter() { sheetOpenings(); }
-  function sheetOpenings() {
+  function sheetOpenings(keep) {
     const p = core().project;
     const cnt = (p.openings || []).length;
     rooms().openSheet(`<div class="ep-plan-srow"><b>🚪 Проёмы</b><span class="ep-plan-flex"></span><span>Всего: <b>${cnt}</b></span></div>
@@ -93,7 +99,7 @@
         <button type="button" class="ep-plan-pbtn ep-clickable ${S.openType === k ? "on" : ""}" data-pe-otype="${k}">
           <i class="ep-plan-glyph">${esc(OPEN_TYPES[k].glyph)}</i>${esc(OPEN_TYPES[k].name)}</button>`).join("")}
       </div>
-      <div class="ep-plan-modehint">Тапни по стене — проём сядет на неё. Номер задаётся автоматически, размеры — в редакторе.</div>`);
+      <div class="ep-plan-modehint">Тапни по стене — проём сядет на неё. Номер задаётся автоматически, размеры — в редакторе. Вернуть палитру после сворачивания — кнопка ︿ в правом нижнем углу.</div>`, { keepCollapsed: !!keep });
   }
   // Номер проёма внутри своего вида (О1..О7, Дв1..): для отображения на плане
   function openingNum(p, op) {
@@ -194,7 +200,7 @@
       p.elements.push(el);
       c.persist("elem-add");
       if (t.block) { openEditor(el); return; } // сразу открываем сборку блока
-      sheetPalette(); // счётчик «Смонтировано: N/M» в шапке палитры — иначе M устаревает с каждой новой точкой
+      sheetPalette(true); // счётчик «Смонтировано: N/M» в шапке палитры — иначе M устаревает с каждой новой точкой (свёрнутость сохраняем)
       return;
     } else if (t.free) {
       const sp = G().snapPoint(w, p.settings.gridStep);
@@ -203,7 +209,7 @@
       p.elements.push(el);
     } else { rooms().toast(T.tapWall); return; }
     c.persist("elem-add");
-    sheetPalette(); // тот же счётчик — ветка свободной точки (свет/ТП/вывод)
+    sheetPalette(true); // тот же счётчик — ветка свободной точки (свет/ТП/вывод)
   }
 
   // ---------- попадание / выбор ----------
@@ -555,8 +561,11 @@
   document.addEventListener("click", (e) => {
     if (!rooms() || !rooms().isActive()) return;
     const t = e.target; let b;
-    if ((b = t.closest("[data-pe-type]"))) { S.selType = b.getAttribute("data-pe-type"); sheetPalette(); return; }
-    if ((b = t.closest("[data-pe-otype]"))) { S.openType = b.getAttribute("data-pe-otype"); sheetOpenings(); return; }
+    // выбрал тип — палитра сворачивается вниз (просьба пользователя: «при выборе
+    // хотел чтобы окно скрывалось… сворачивалось в нижнюю часть экрана»), холст
+    // свободен для расстановки; вернуть — кнопка ︿ в правом нижнем углу
+    if ((b = t.closest("[data-pe-type]"))) { S.selType = b.getAttribute("data-pe-type"); sheetPalette(true); rooms().collapseSheet(); return; }
+    if ((b = t.closest("[data-pe-otype]"))) { S.openType = b.getAttribute("data-pe-otype"); sheetOpenings(true); rooms().collapseSheet(); return; } // как и палитра точек — свернуть вниз, холст свободен
     if ((b = t.closest("[data-pe-preset]"))) { const i = $("#ep-pe-h"); if (i) i.value = b.getAttribute("data-pe-preset"); return; }
     if ((b = t.closest("[data-pe-status]"))) {
       const c = core(), el = current(); if (!el) return;

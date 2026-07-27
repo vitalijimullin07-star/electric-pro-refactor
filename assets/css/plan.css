@@ -235,6 +235,23 @@ body[data-visual-mode="day"] .ep-plan-item-main { color: #0f172a; }
 .ep-plan-modes { gap: 6px; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .ep-plan-modes .ep-plan-tbtn { min-width: 42px; padding: 8px 10px; flex: none; }
 .ep-plan-modes .ep-plan-modesep { flex: none; }
+/* Вкладки инструментов «🏗 Планировка» / «⚡ Электрика» (просьба пользователя
+   разгруппировать функции) — переключают видимость кнопок с data-plan-grp
+   (plan-mount.js applyToolGroup). Явные [hidden]-правила — страховка от того же
+   класса бага, что ловили у шторки/quickbar (авторский display побеждает
+   UA-правило [hidden]{display:none} по каскаду); у .ep-plan-tbtn/.ep-plan-modesep
+   своего display нет, но правило дешёвое и защищает от будущих правок. */
+.ep-plan-grouptabs { display: flex; gap: 6px; padding: 0 2px 2px; }
+.ep-plan-gtab {
+  flex: 1 1 0; min-height: 34px; padding: 6px 8px; border-radius: 10px; cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, .14); background: rgba(255, 255, 255, .05);
+  color: var(--muted, #94a3b8); font: 700 13px system-ui; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.ep-plan-gtab.on { background: var(--accent, #38bdf8); border-color: transparent; color: #06121f; }
+body[data-visual-mode="day"] .ep-plan-gtab { background: #fff; border-color: #cbd5e1; color: #475569; }
+body[data-visual-mode="day"] .ep-plan-gtab.on { background: var(--accent, #0284c7); color: #fff; border-color: transparent; }
+.ep-plan-tbtn[hidden], .ep-plan-modesep[hidden] { display: none; }
 .ep-plan-tbtn.on { background: var(--accent, #38bdf8); border-color: transparent; color: #06121f; }
 .ep-plan-modehint { font: 500 12px system-ui; color: var(--muted, #94a3b8); padding: 0 2px; }
 .ep-plan-modehint.ep-plan-warnhint { color: #f59e0b; }
@@ -252,6 +269,30 @@ body[data-visual-mode="day"] .ep-plan-item-main { color: #0f172a; }
   border: 1px solid rgba(255, 255, 255, .12);
   backdrop-filter: blur(8px); color: var(--text, #e8eef7);
 }
+/* Кнопка сворачивания шторки вниз (⌄) / разворачивания обратно (︿) — ОДНА, всегда
+   в правом нижнем углу холста (просьба пользователя: «не скрывалось, а сворачивалось
+   в нижнюю часть экрана кнопкой ^, но чтобы просто была кнопка в нижнем правом
+   углу»). z-index ВЫШЕ .ep-plan-sheet-full (10000), иначе у шторки «во весь экран»
+   кнопка оказалась бы под ней. Пока шторка развёрнута, JS (placeSheetBtn в
+   plan-rooms.js) поднимает кнопку РОВНО над её верхней кромкой — иначе она висела бы
+   поверх содержимого прокручиваемой шторки; у шторки «во весь экран» кнопка остаётся
+   в углу, поэтому там добавлен нижний паддинг под неё. */
+.ep-plan-sheetbtn {
+  position: absolute; right: 14px; bottom: 14px; z-index: 10001;
+  width: 40px; height: 40px; border-radius: 50%; cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, .18); background: rgba(10, 16, 28, .92);
+  color: var(--text, #e8eef7); font: 700 18px/1 system-ui;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .35);
+}
+.ep-plan-sheetbtn[hidden] { display: none; }
+.ep-plan-sheetbtn.is-collapsed { background: var(--accent, #38bdf8); color: #06121f; border-color: transparent; }
+body[data-visual-mode="day"] .ep-plan-sheetbtn { background: rgba(255, 255, 255, .96); border-color: #cbd5e1; color: #0f172a; }
+body[data-flatshadow="1"] .ep-plan-sheetbtn { box-shadow: none !important; }
+/* свёрнутая шторка: содержимое остаётся в DOM (развернули — продолжили с того же
+   места), но холст полностью свободен. 2 класса в селекторе — сильнее базового
+   .ep-plan-sheet{display:flex}. */
+.ep-plan-sheet.is-collapsed { display: none !important; }
+.ep-plan-sheet.ep-plan-sheet-full { padding-bottom: 60px; }
 /* без этого явного правила display:flex выше (author-стиль) побеждает UA-правило
    [hidden]{display:none} независимо от специфичности (порядок происхождения в
    каскаде важнее специфичности) — закрытая шторка (closeSheet() ставит hidden=true
