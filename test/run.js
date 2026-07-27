@@ -2660,6 +2660,42 @@ test("фото: deleteProject чистит кэш фото своего прое
     eq(/укажи тип 24В/.test(iss2), false, "после выбора «Монохром» подсказка уходит");
   });
 
+  test("трассы ОДНОЙ линии, сходящиеся в выключателе, разносятся на 2см (не ложатся друг на друга)", () => {
+    // репорт пользователя со скриншотом: «линии друг на друга наложились, я думал до клавиши
+    // и от клавиши до освещения будут друг от друга 2 см». Комната 3×3, щит внизу слева,
+    // выключатель на левой стене, две лампы — всё на одной линии QF1.
+    const room = M.newRoom(G.rectPoints(0, 0, 300, 300), "Комната 1");
+    const qf = M.newCircuit("QF1", "#ef4444", 10);
+    const { P } = install({ rooms: [room], circuits: [qf], panels: [M.newPanel(30, 285, "Щ")] });
+    const sw = M.newElement("switch", P.rooms[0].id + ":3", 150, 90, "light"); sw.circuitId = qf.id; sw.keys = 2; P.elements.push(sw);
+    const l1 = M.newElement("light", null, 0, 0, "light"); l1.wallId = null; l1.params = { x: 220, y: 80 }; l1.circuitId = qf.id; P.elements.push(l1);
+    const l2 = M.newElement("light", null, 0, 0, "light"); l2.wallId = null; l2.params = { x: 220, y: 220 }; l2.circuitId = qf.id; P.elements.push(l2);
+    sw.targetIds = [l1.id, l2.id];
+    EP.Plan.Routes.build();
+    // длина коллинеарного наложения (перпендикулярно ближе 1см) между всеми парами трасс
+    const ovl = (a1, a2, b1, b2) => {
+      const L1 = G.dist(a1, a2), L2 = G.dist(b1, b2);
+      if (L1 < 1 || L2 < 1) return 0;
+      const d1 = { x: (a2.x - a1.x) / L1, y: (a2.y - a1.y) / L1 };
+      const d2 = { x: (b2.x - b1.x) / L2, y: (b2.y - b1.y) / L2 };
+      if (Math.abs(d1.x * d2.x + d1.y * d2.y) < 0.99) return 0;
+      const n = { x: -d1.y, y: d1.x };
+      if (Math.abs((b1.x - a1.x) * n.x + (b1.y - a1.y) * n.y) > 1) return 0;
+      const t = (q) => (q.x - a1.x) * d1.x + (q.y - a1.y) * d1.y;
+      const lo = Math.min(t(b1), t(b2)), hi = Math.max(t(b1), t(b2));
+      return Math.max(0, Math.min(hi, L1) - Math.max(lo, 0));
+    };
+    let total = 0;
+    for (let i = 0; i < P.routes.length; i++) for (let j = i + 1; j < P.routes.length; j++) {
+      const A = P.routes[i].points, B = P.routes[j].points;
+      for (let x = 1; x < A.length; x++) for (let y = 1; y < B.length; y++) total += ovl(A[x - 1], A[x], B[y - 1], B[y]);
+    }
+    eq(P.routes.length, 3, "три трассы: щит→выключатель и две лампы→выключатель");
+    // до фикса на этой геометрии наложение было 161см (замерено), стык у общего анкера даёт ~20см
+    ok(total < 40, "трассы не идут одна поверх другой (наложение " + Math.round(total) + "см, было 161см)");
+    ok(P.routes.some((r) => (r.lane || 0) > 0), "одна из трасс встала на следующую полосу (+2см)");
+  });
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

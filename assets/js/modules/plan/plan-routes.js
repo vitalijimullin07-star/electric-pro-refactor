@@ -94,10 +94,19 @@
   // сам возвращает null (см. её же проверку area>100), и buildPath уже умеет мягко
   // деградировать (guideRoute/ortho) — эта деградация СУЩЕСТВОВАЛА и раньше для других
   // причин (вырожденная комната), новый риск не появился.
+  // ДОП. под-полоса ВНУТРИ одной линии (QF): «до клавиши» и «от клавиши до освещения» —
+  // трассы ОДНОЙ линии, у них одинаковый offset по circuitIdx, и на общей стене они ложились
+  // РОВНО друг на друга (репорт пользователя со скриншотом: «линии друг на друга наложились,
+  // я думал до клавиши и от клавиши будут друг от друга 2 см»). curLane выставляет addRoute:
+  // строит путь, проверяет наложение с уже построенными трассами и при необходимости
+  // переносит ЭТУ трассу на следующую полосу (+2см). Модульная переменная, а не 7-й параметр
+  // через buildPath→guideRoute→pathInRoom→contourOf (тот же приём, что usedGuideIds/
+  // lastGuideTrunkShare) — иначе пришлось бы протаскивать её через пять функций.
+  let curLane = 0;
   const routeOff = (p, circuitId) => {
     const base = Math.max(5, Math.min(40, Number(p.settings.routeOffset) || 15));
     const idx = circuitIdx(p, circuitId);
-    return idx > 0 ? base + idx * 2 : base;
+    return (idx > 0 ? base + idx * 2 : base) + curLane * 2;
   };
 
   // Комната для точки: строгий point-in-polygon, а если мимо (щит/точка стоит
@@ -214,7 +223,7 @@
   // слияние офсетов у 11+ линий, реальный баг на проектах с большим числом линий).
   const guideLaneOff = (p, circuitId) => {
     const idx = circuitIdx(p, circuitId);
-    return idx > 0 ? idx * 2 : 0;
+    return (idx > 0 ? idx * 2 : 0) + curLane * 2;
   };
   // нормаль отрезка ФИКСИРОВАННОЙ ориентации относительно порядка (a->b) — трассы, идущие
   // по одному и тому же ребру графа в РАЗНЫЕ стороны, всё равно должны разъезжаться в одну
@@ -1355,6 +1364,7 @@
       if (memo.has(key)) return memo.get(key);
       const target = { kind: cn.kind, id: cn.id, pos: cn.pos, el: cn.el };
       const save = usedGuideIds; usedGuideIds = null; // ЗАМЕР не должен помечать магистраль как использованную (фикс №1)
+      curLane = 0;                                     // замер — всегда по базовой полосе линии
       const pts = buildPath(p, fromEl, a, target, circuitId, true);
       usedGuideIds = save;
       // buildPath может вернуть null (нет магистрали между комнатами source/target —
@@ -1384,12 +1394,112 @@
   // Возвращает созданный route, или null — если buildPath не смог построить путь
   // (разные комнаты без магистрали между ними, см. инвариант buildPath). В этом случае
   // точка остаётся БЕЗ трассы (попадает в счётчик «Без трассы», см. build()).
+  // Длина КОЛЛИНЕАРНОГО наложения двух отрезков (параллельны, расстояние между линиями
+  // меньше 1см) — насколько трассы физически нарисованы одна поверх другой.
+  function segOverlapLen(a1, a2, b1, b2) {
+    const L1 = dist(a1, a2), L2 = dist(b1, b2);
+    if (L1 < 1 || L2 < 1) return 0;
+    const d1 = { x: (a2.x - a1.x) / L1, y: (a2.y - a1.y) / L1 };
+    const d2 = { x: (b2.x - b1.x) / L2, y: (b2.y - b1.y) / L2 };
+    if (Math.abs(d1.x * d2.x + d1.y * d2.y) < 0.99) return 0;      // не параллельны
+    const n = { x: -d1.y, y: d1.x };
+    if (Math.abs((b1.x - a1.x) * n.x + (b1.y - a1.y) * n.y) > 1) return 0; // уже разнесены
+    const t = (q) => (q.x - a1.x) * d1.x + (q.y - a1.y) * d1.y;
+    const lo = Math.min(t(b1), t(b2)), hi = Math.max(t(b1), t(b2));
+    return Math.max(0, Math.min(hi, L1) - Math.max(lo, 0));
+  }
+  // сколько кандидат-путь идёт ПОВЕРХ уже построенных трасс (любой линии — офсет по линиям
+  // как раз и нужен, чтобы этого не было; проверяем всё, чтобы под-полоса одной линии не
+  // «села» на полосу другой). ГОРЯЧИЙ путь: зовётся на каждую пробную полосу каждой трассы,
+  // поэтому (1) bbox-отсев по трассе целиком и по каждому отрезку, (2) ранний выход, как
+  // только наложение превысило порог — точная сумма нам не нужна, только факт. Без этого
+  // build() на реальном проекте (43 трассы) уходил с 16мс на 109мс.
+  function bboxOf(pts) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const q = pts[i];
+      if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x;
+      if (q.y < y0) y0 = q.y; if (q.y > y1) y1 = q.y;
+    }
+    return { x0, y0, x1, y1 };
+  }
+  // {sum, maxLane}: сколько кандидат идёт поверх уже построенных трасс и на какой САМОЙ
+  // ДАЛЬНЕЙ полосе стоят те, с кем он слипся — новая трасса встаёт СЛЕДУЮЩЕЙ полосой за
+  // ними (а не перебирает полосы вслепую: перебор давал 4 вызова buildPath на трассу и
+  // разгонял build() на реальном проекте с 16мс до 109мс).
+  // ВАЖНО: сравниваем только с трассами СВОЕЙ линии. Разные линии и так разведены базовым
+  // офсетом (+2см на линию) — если бы новая трасса «отодвигалась» и от чужих линий, она
+  // уезжала бы с СВОЕЙ полосы на полосу соседней линии, и наложений становилось БОЛЬШЕ, а не
+  // меньше (замерено: 65 пар наложений → 79; заодно ломался тест «QF2 по магистрали ровно
+  // +2см»). Внутри же одной линии полосы и нужны: «до клавиши» и «от клавиши до освещения»
+  // имеют одинаковый базовый офсет и ложились ровно друг на друга.
+  function conflicts(built, pts, limit) {
+    const bb = bboxOf(pts);
+    let sum = 0, maxLane = 0;
+    for (let k = 0; k < built.length; k++) {
+      const it = built[k], q = it.pts, b = it.bb;
+      if (b.x1 < bb.x0 - 2 || b.x0 > bb.x1 + 2 || b.y1 < bb.y0 - 2 || b.y0 > bb.y1 + 2) continue;
+      let own = 0;
+      for (let i = 1; i < pts.length; i++) {
+        const a1 = pts[i - 1], a2 = pts[i];
+        const ax0 = Math.min(a1.x, a2.x), ax1 = Math.max(a1.x, a2.x);
+        const ay0 = Math.min(a1.y, a2.y), ay1 = Math.max(a1.y, a2.y);
+        for (let j = 1; j < q.length; j++) {
+          const b1 = q[j - 1], b2 = q[j];
+          if (Math.max(b1.x, b2.x) < ax0 - 2 || Math.min(b1.x, b2.x) > ax1 + 2) continue;
+          if (Math.max(b1.y, b2.y) < ay0 - 2 || Math.min(b1.y, b2.y) > ay1 + 2) continue;
+          own += segOverlapLen(a1, a2, b1, b2);
+        }
+      }
+      if (own > limit) { sum += own; if (it.lane > maxLane) maxLane = it.lane; }
+    }
+    return { sum, maxLane };
+  }
+  const LANE_MAX = 2;          // максимум 2 доп. полосы (+2/+4 см) — дальше не двигаем
+  const LANE_OVERLAP_MIN = 30; // см — короткий стык у общего анкера наложением не считаем
+  // Полосы ищем ТОЧЕЧНО — только у трасс, связанных с ВЫКЛЮЧАТЕЛЕМ (питание выключателя от
+  // щита и трассы точек, которые он коммутирует): именно там два кабеля ОДНОЙ линии идут к
+  // одной коробке по одной стене и ложатся друг на друга (репорт пользователя). Расширять
+  // поиск на все трассы вредно и дорого: на плотном реальном проекте (17 трасс одной линии
+  // по общему коридору) двух полос физически не хватает, трассы начинают садиться на чужие
+  // полосы, суммарное наложение РОСЛО (10168 → 11549 см), а build() дорожал 16мс → 34мс.
   function addRoute(c, p, fromEl, a, target, circuitId, color) {
-    const pts = buildPath(p, fromEl, a, target, circuitId);
+    // под-полоса: если путь ложится поверх уже построенной трассы длиннее 30см — сдвигаем
+    // ЭТУ трассу на +2см и пробуем снова (до LANE_MAX раз)
+    // Сравниваем ТОЛЬКО с трассами своей линии, которые сходятся в ТОМ ЖЕ узле (в тот же
+    // подрозетник выключателя / тот же щит): именно они физически идут рядом по одной стене
+    // и ложились друг на друга. Сравнение со ВСЕМИ трассами линии пробовал — на плотном
+    // реальном проекте (17 трасс QF1 по общему коридору) полос не хватает, трассы съезжают
+    // на чужие полосы и суммарное наложение РОСЛО (10168 → 11738 см) при +15мс к build().
+    const nodeIds = {};
+    if (fromEl && fromEl.id) nodeIds[fromEl.id] = 1;
+    if (target && target.id) nodeIds[target.id] = 1;
+    const built = (p.routes || []).filter((r) => (r.points || []).length > 1
+        && (r.circuitId || null) === (circuitId || null)
+        && (nodeIds[r.fromId] || nodeIds[r.toId]))
+      .map((r) => ({ pts: r.points, bb: bboxOf(r.points), lane: r.lane || 0 }));
+    curLane = 0;
+    let pts = buildPath(p, fromEl, a, target, circuitId), lane = 0;
+    const swLeg = fromEl.type === "switch" || (target.el && target.el.type === "switch");
+    if (swLeg && pts && pts.length >= 2 && built.length
+        && conflicts(built, pts, LANE_OVERLAP_MIN).sum > LANE_OVERLAP_MIN) {
+      // ищем СВОБОДНУЮ полосу: +2см, +4см, +6см. Если свободной нет (плотный участок, где
+      // по одному коридору идёт больше трасс, чем полос) — ОСТАЁМСЯ НА БАЗОВОЙ, а не
+      // «сваливаемся» на последнюю: иначе трассы кучей садятся на одну и ту же дальнюю
+      // полосу и наложений становится больше, чем было (замерено на реальном проекте).
+      for (let ln = 1; ln <= LANE_MAX; ln++) {
+        curLane = ln;
+        const cand = buildPath(p, fromEl, a, target, circuitId);
+        if (!cand || cand.length < 2) break;
+        if (conflicts(built, cand, LANE_OVERLAP_MIN).sum <= LANE_OVERLAP_MIN) { pts = cand; lane = ln; break; }
+      }
+    }
+    curLane = 0;
     if (!pts || pts.length < 2) return null;
     const rt = c.model.newRoute(fromEl.layer, p.settings.routeType, pts, fromEl.id, target.id || null);
     rt.circuitId = circuitId || null;
     rt.color = color;
+    rt.lane = lane;                       // под-полоса внутри линии (см. curLane выше)
     rt.toPanel = target.kind === "panel"; // спуск у щита считаем один раз
     // сечение штробы: тёплый пол — в пол (50×50), остальное — стандарт (25×30), можно менять
     const s = p.settings;
