@@ -281,10 +281,107 @@
     }
     return s + n + "|" + Math.round(sum * 100);
   }
-  function buildGuideGraph(guides) {
-    const sig = guideSig(guides);
+  // ---- «линии рисуются прямо по стене» (репорт пользователя со скриншотом) ----
+  // Магистраль (⇉) пользователь часто ведёт ВПЛОТНУЮ к стене или прямо по её оси (это
+  // самый естественный ориентир на плане), а боковой веер линий (guideLaneOff, +2см на
+  // каждую следующую QF) уходит вдоль КАНОНИЧЕСКОЙ нормали ребра — фиксированной по
+  // порядку точек магистрали, т.е. вообще без оглядки на стены. Итог: часть линий (а если
+  // нормаль смотрит в стену — то и весь пучок) ложится ВНУТРЬ тела стены. Воспроизведено
+  // детектором (сэмплирование пути + проверка «внутри тела стены И ВДОЛЬ неё», чтобы не
+  // путать с законной перпендикулярной проходкой): магистраль по оси стены — 2 трассы из
+  // 8 внутри стены, до 5см глубины.
+  // Фикс: у КАЖДОГО ребра графа своя пара {нормаль веера, базовый отвод от стены},
+  // считается ОДИН РАЗ при сборке графа:
+  //  · сторона веера выбирается так, чтобы линии уходили ОТ стены, а не в неё;
+  //  · если само ребро лежит в теле стены (или ближе стандартного отступа к её грани) —
+  //    ВЕСЬ пучок отводится на settings.routeOffset от грани, как обычная трасса в комнате.
+  // Рёбра, ПЕРЕСЕКАЮЩИЕ стену (ветка, входящая в комнату), не трогаются: кандидатами
+  // считаются только стены, ПАРАЛЛЕЛЬНЫЕ ребру (|cos| > 0.85) — проходка сквозь стену
+  // законна и нужна (гильза Ø20).
+  const GUIDE_WALL_PARALLEL = 0.85;
+  // Список стен этажа с толщинами — КЭШИРУЕТСЯ по той же сигнатуре геометрии, что и граф
+  // магистралей: его просит и сборка графа (один раз), и clearOfWalls (на КАЖДЫЙ buildPath,
+  // т.е. на каждую точку И на каждый замер-кандидат шлейфа) — без кэша сборка списка стен
+  // из комнат/балок повторялась десятки раз за build() (замерено: build 33мс → 55мс).
+  let wallsCache = null;
+  function floorWallsWithTh(p) {
+    const sig = geomSig(p);
+    if (wallsCache && wallsCache.sig === sig) return wallsCache.walls;
+    const fp = G().floorScoped(p);
+    const out = [];
+    // bbox стены кладём сразу — быстрый отсев «далеко» без closestOnSeg (горячий путь:
+    // clearOfWalls зовётся на каждый путь, а стен в квартире несколько десятков)
+    const push = (w, half) => out.push({ w, half,
+      x0: Math.min(w.a.x, w.b.x), x1: Math.max(w.a.x, w.b.x),
+      y0: Math.min(w.a.y, w.b.y), y1: Math.max(w.a.y, w.b.y) });
+    (fp.rooms || []).forEach((r) => G().walls(r).forEach((w) => push(w, G().wallThOf(p, w) / 2)));
+    (fp.beams || []).forEach((b) => { const bw = G().beamWall(b); if (bw) push(bw, G().wallThOf(p, bw) / 2); });
+    wallsCache = { sig, walls: out };
+    return out;
+  }
+  function edgeWallAdjust(p, A, B, walls, lanes, clear) {
+    const n0 = guideSegNormal(A, B);
+    const L = G().dist(A, B);
+    if (L < 1) return { n: n0, base: 0 };
+    const dir = { x: (B.x - A.x) / L, y: (B.y - A.y) / L };
+    const mid = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
+    const near = [];
+    walls.forEach((it) => {
+      const w = it.w, wl = w.len || 1;
+      const wd = { x: (w.b.x - w.a.x) / wl, y: (w.b.y - w.a.y) / wl };
+      if (Math.abs(dir.x * wd.x + dir.y * wd.y) < GUIDE_WALL_PARALLEL) return; // не параллельна — это проходка
+      const cl = G().closestOnSeg(mid, w.a, w.b);
+      if (cl.d > it.half + clear + lanes) return;                              // веер до неё не достаёт
+      near.push({ a: w.a, nw: { x: -wd.y, y: wd.x }, need: it.half + clear });
+    });
+    if (!near.length) return { n: n0, base: 0 };
+    // сколько надо отвести ВЕСЬ пучок [0..lanes] вдоль нормали n, чтобы ни одна линия не
+    // оказалась ближе need к оси стены (т.е. внутри её тела + зазор)
+    const baseFor = (n) => {
+      let b = 0;
+      near.forEach((w) => {
+        const along = w.nw.x * n.x + w.nw.y * n.y;
+        const sd = ((mid.x - w.a.x) * w.nw.x + (mid.y - w.a.y) * w.nw.y) * (along < 0 ? -1 : 1);
+        if (sd >= w.need) return;          // пучок уходит от стены — конфликта нет
+        if (sd + lanes <= -w.need) return; // пучок целиком по другую сторону, до стены не доходит
+        b = Math.max(b, w.need - sd);
+      });
+      return b;
+    };
+    const nAlt = { x: -n0.x, y: -n0.y };
+    const b0 = baseFor(n0), b1 = baseFor(nAlt);
+    if (b1 < b0 - 0.5) {
+      // выбираем противоположную сторону, но не выталкиваем пучок за пределы квартиры:
+      // если по ней конец веера уже вне комнат, а по исходной — внутри, остаёмся на исходной
+      const probe = (n, b) => G().roomAt(p, { x: mid.x + n.x * (b + lanes), y: mid.y + n.y * (b + lanes) });
+      if (probe(nAlt, b1) || !probe(n0, b0)) return { n: nAlt, base: b1 };
+    }
+    return { n: n0, base: b0 };
+  }
+  // сигнатура ГЕОМЕТРИИ КОМНАТ (не магистралей) — от неё зависят edgeAdj выше, поэтому
+  // кэш графа обязан инвалидироваться и на перенос стены/смену толщины/добавление линии
+  // (число линий = ширина веера), а не только на правку самих магистралей
+  function geomSig(p) {
+    const fp = G().floorScoped(p);
+    let sum = 0, n = 0;
+    (fp.rooms || []).forEach((r) => {
+      (r.points || []).forEach((q) => { sum += q.x * 31 + q.y * 17; n++; });
+      (r.wallTh || []).forEach((t, i) => { if (t) sum += t * (i + 7); });
+    });
+    (fp.beams || []).forEach((b) => { sum += b.a.x + b.a.y * 3 + b.b.x * 5 + b.b.y * 7 + (b.th || 0) * 11; n++; });
+    const s = p.settings || {};
+    return n + "|" + Math.round(sum * 100) + "|" + (s.wallThickness || 0) + "|" + (s.routeOffset || 0) + "|" + ((p.circuits || []).length);
+  }
+  function buildGuideGraph(guides, p) {
+    const sig = guideSig(guides) + "#" + (p ? geomSig(p) : "");
     if (graphCache && graphCache.sig === sig) return graphCache.g;
     const g = buildGuideGraphRaw(guides);
+    if (p) {
+      const walls = floorWallsWithTh(p);
+      const lanes = 2 * Math.max(0, ((p.circuits || []).length - 1));
+      const clear = Math.max(0, p.settings && p.settings.routeOffset != null ? p.settings.routeOffset : 15);
+      g.edgeAdj = g.edges.map((e) => edgeWallAdjust(p, g.nodes[e.a], g.nodes[e.b], walls, lanes, clear));
+    }
     graphCache = { sig, g };
     return g;
   }
@@ -407,9 +504,17 @@
   // по нему едет. Без этого разные трассы по одному ребру в разные стороны (a->b vs
   // b->a) получили бы ПРОТИВОПОЛОЖНЫЙ знак нормали и разъехались бы на разные физические
   // стороны линии вместо параллельного веера (конкретный баг, пойманный тестом).
+  // …плюс отвод от стены (edgeWallAdjust): нормаль может быть РАЗВЁРНУТА, чтобы веер шёл
+  // от стены, а base — общий для всех линий сдвиг этого ребра за грань стены.
   function edgeNormal(graph, edgeI) {
+    const adj = graph.edgeAdj && graph.edgeAdj[edgeI];
+    if (adj) return adj.n;
     const e = graph.edges[edgeI];
     return guideSegNormal(graph.nodes[e.a], graph.nodes[e.b]);
+  }
+  function edgeBase(graph, edgeI) {
+    const adj = graph.edgeAdj && graph.edgeAdj[edgeI];
+    return adj ? adj.base : 0;
   }
   // применяет боковой офсет (guideLaneOff) ко ВСЕМУ пути графа: на каждой точке — митра
   // между каноническими нормалями соседних рёбер (если оба есть), иначе простой сдвиг
@@ -418,22 +523,29 @@
   // offsetJoint), но САМИ нормали — канонические (см. edgeNormal) — это и есть фикс: смена
   // знака направления обхода не может задеть нормаль, только n0/n1 определяют сторону
   // сдвига, а они фиксированы per-edge.
+  // ВАЖНО: офсет теперь ПЕР-РЕБЁРНЫЙ (лан-офсет линии + свой base ребра от стены), поэтому
+  // ранний выход только когда суммарный офсет нулевой у ВСЕХ рёбер пути.
   function offsetGraphPath(graph, points, segEdges, off) {
-    if (!off) return points;
+    const offOf = (ei) => edgeBase(graph, ei) + off;
+    let any = false;
+    for (let i = 0; i < segEdges.length; i++) if (Math.abs(offOf(segEdges[i])) > 0.01) { any = true; break; }
+    if (!any) return points;
     return points.map((pt, i) => {
       const n0 = i > 0 ? edgeNormal(graph, segEdges[i - 1]) : null;
+      const o0 = i > 0 ? offOf(segEdges[i - 1]) : 0;
       const n1 = i < segEdges.length ? edgeNormal(graph, segEdges[i]) : null;
+      const o1 = i < segEdges.length ? offOf(segEdges[i]) : 0;
       if (!n0 || !n1) {
-        const n = n0 || n1;
-        return { x: pt.x + n.x * off, y: pt.y + n.y * off };
+        const n = n0 || n1, o = n0 ? o0 : o1;
+        return { x: pt.x + n.x * o, y: pt.y + n.y * o };
       }
       const prev = points[i - 1], next = points[i + 1];
-      const a0 = { x: prev.x + n0.x * off, y: prev.y + n0.y * off };
+      const a0 = { x: prev.x + n0.x * o0, y: prev.y + n0.y * o0 };
       const d0 = { x: pt.x - prev.x, y: pt.y - prev.y };
-      const a1 = { x: pt.x + n1.x * off, y: pt.y + n1.y * off };
+      const a1 = { x: pt.x + n1.x * o1, y: pt.y + n1.y * o1 };
       const d1 = { x: next.x - pt.x, y: next.y - pt.y };
       const den = d0.x * d1.y - d0.y * d1.x;
-      if (Math.abs(den) < 1e-6) return { x: pt.x + n1.x * off, y: pt.y + n1.y * off }; // параллельны — смещённый угол
+      if (Math.abs(den) < 1e-6) return { x: pt.x + n1.x * o1, y: pt.y + n1.y * o1 }; // параллельны — смещённый угол
       const t = ((a1.x - a0.x) * d1.y - (a1.y - a0.y) * d1.x) / den;
       return { x: a0.x + d0.x * t, y: a0.y + d0.y * t };
     });
@@ -522,7 +634,7 @@
     lastGuideTrunkShare = 1;
     const gs = (G().floorScoped(p).guides || []).filter((gd) => (gd.points || []).length >= 2);
     if (!gs.length) return null;
-    const graph = buildGuideGraph(gs);
+    const graph = buildGuideGraph(gs, p);
     if (!graph.edges.length) return null;
     // Фильтр «проекция в ТОЙ ЖЕ комнате, что и точка» — см. инвариант nearestOnGraph:
     // предпочитаем ветку магистрали СВОЕЙ комнаты, даже если чужая ветка технически ближе
@@ -620,7 +732,7 @@
     if (added.length < 2) return 0; // один ствол без ножек — толку нет
     c.commit();
     p.guides = (p.guides || []).concat(added);
-    graphCache = null;
+    graphCache = null; wallsCache = null;
     c.persist("guide-add");
     return added.length;
   }
@@ -661,7 +773,64 @@
   // НЕ строится — buildPath возвращает null (см. addRoute/chainFromPanel: точка остаётся
   // без трассы, попадает в счётчик «Без трассы» после build()/buildIncremental() — вместо
   // того чтобы молча построить кривой прямой путь через случайную стену).
-  function buildPath(p, fromEl, a, target, circuitId) {
+  // ---- финальная страховка: ни один участок пути не идёт ВНУТРИ тела стены ----
+  // Отвод магистрали от стены (edgeWallAdjust) закрывает свою причину, но остаётся вторая:
+  // контур комнаты (pathInRoom) отступает от СВОИХ стен, а если соседняя комната нарисована
+  // с расхождением (у пользователя два помещения разъехались на 20см — уже разбирали этот
+  // случай), контур одной комнаты попадает РОВНО на ось стены другой, и линия рисуется по
+  // штриховке. Тут проходим готовый путь и сдвигаем такие участки от чужой стены. Только
+  // участки, идущие ВДОЛЬ стены (|cos| > 0.85) — перпендикулярная проходка сквозь стену
+  // законна и нужна (гильза Ø20), её не трогаем. Концы пути — анкеры (позиция точки/щита/
+  // распайки), двигать их нельзя: у сдвинутого крайнего участка вставляется коннектор-копия
+  // анкера (тот же приём, что у ручной тяги целого сегмента в plan-rooms.js).
+  const WALL_CLEAR_MIN = 5; // см от грани стены — как фикс. отступ размерной цепочки
+  function clearOfWalls(p, pts) {
+    if (!pts || pts.length < 2) return pts;
+    const walls = floorWallsWithTh(p);
+    if (!walls.length) return pts;
+    const out = pts.map((q) => ({ x: q.x, y: q.y }));
+    for (let i = 1; i < out.length; i++) {
+      const a = out[i - 1], b = out[i];
+      const L = G().dist(a, b);
+      if (L < 2) continue;
+      const dir = { x: (b.x - a.x) / L, y: (b.y - a.y) / L };
+      const n = { x: -dir.y, y: dir.x };
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      let need = 0, sgn = 1;
+      const sx0 = Math.min(a.x, b.x), sx1 = Math.max(a.x, b.x);
+      const sy0 = Math.min(a.y, b.y), sy1 = Math.max(a.y, b.y);
+      walls.forEach((it) => {
+        const pad = it.half + WALL_CLEAR_MIN;
+        if (it.x1 < sx0 - pad || it.x0 > sx1 + pad || it.y1 < sy0 - pad || it.y0 > sy1 + pad) return; // далеко
+        const w = it.w, wl = w.len || 1;
+        const wd = { x: (w.b.x - w.a.x) / wl, y: (w.b.y - w.a.y) / wl };
+        if (Math.abs(dir.x * wd.x + dir.y * wd.y) < GUIDE_WALL_PARALLEL) return;
+        const cl = G().closestOnSeg(mid, w.a, w.b);
+        const d = it.half + WALL_CLEAR_MIN - cl.d;
+        if (d <= 0.01 || d <= need) return;
+        const s = (mid.x - cl.x) * n.x + (mid.y - cl.y) * n.y; // в какую сторону «от стены»
+        need = d; sgn = Math.abs(s) < 0.01 ? 1 : (s > 0 ? 1 : -1);
+      });
+      if (need <= 0.01) continue;
+      const probe = (sg) => G().roomAt(p, { x: mid.x + n.x * sg * need, y: mid.y + n.y * sg * need });
+      if (!probe(sgn) && probe(-sgn)) sgn = -sgn;
+      const dx = n.x * sgn * need, dy = n.y * sgn * need;
+      if (i - 1 === 0) { out.splice(0, 0, { x: a.x, y: a.y }); i++; }
+      if (i === out.length - 1) out.splice(out.length - 1, 0, { x: b.x, y: b.y });
+      out[i - 1].x += dx; out[i - 1].y += dy;
+      out[i].x += dx; out[i].y += dy;
+    }
+    return out.filter((q, j) => j === 0 || G().dist(q, out[j - 1]) > 0.5);
+  }
+  // raw:true — только ДЛИНА пути нужна (замер кандидата шлейфа): пост-проход по стенам
+  // геометрию длины почти не меняет (сдвиг на единицы см), а стоит ощутимо на O(n²)
+  // замерах — build() на реальном проекте 21мс → 64мс, если гонять его и на замерах
+  function buildPath(p, fromEl, a, target, circuitId, raw) {
+    const pts = buildPathRaw(p, fromEl, a, target, circuitId);
+    if (raw || !pts || pts.length < 2) return pts;
+    return clearOfWalls(p, pts);
+  }
+  function buildPathRaw(p, fromEl, a, target, circuitId) {
     circuitId = circuitId || (fromEl && fromEl.circuitId) || null;
     const b = target.pos;
     const skip = (fromEl && fromEl.wallId) || null;
@@ -1081,7 +1250,7 @@
   if (core().onChange) {
     core().onChange((what) => {
       // другой проект открыт — список «Без трассы» от прошлого проекта больше не про него
-      if (what === "open" || what === "import") { lastUnrouted = []; lastUnroutedPid = null; graphCache = null; return; }
+      if (what === "open" || what === "import") { lastUnrouted = []; lastUnroutedPid = null; graphCache = null; wallsCache = null; return; }
       if (rebuilding || !AUTOREBUILD_ON[what]) return;
       const p = core().project;
       if (!p || !(p.routes || []).length) return;
@@ -1126,7 +1295,7 @@
       if (memo.has(key)) return memo.get(key);
       const target = { kind: cn.kind, id: cn.id, pos: cn.pos, el: cn.el };
       const save = usedGuideIds; usedGuideIds = null; // ЗАМЕР не должен помечать магистраль как использованную (фикс №1)
-      const pts = buildPath(p, fromEl, a, target, circuitId);
+      const pts = buildPath(p, fromEl, a, target, circuitId, true);
       usedGuideIds = save;
       // buildPath может вернуть null (нет магистрали между комнатами source/target —
       // см. инвариант buildPath выше) — недостижимая пара, не участвует в выборе

@@ -32,6 +32,16 @@
     tpChaseW: 50, tpChaseH: 50, // мм — штроба тёплого пола (в пол)
     symbolStyle: "gost",   // значки на плане: "simple" (кружки с буквами) | "gost" (ГОСТ 21.210)
     cableReserve: 10,      // % запаса кабеля при расчёте по трассам
+    // марка кабеля ПО УМОЛЧАНИЮ (просьба пользователя: «кабель по умолчанию ВВГнг») —
+    // подставляется ПЕРЕД сечением всюду, где марка линии (circuit.cable) не задана вручную:
+    // однолинейка (autoCable), «По линиям (QF)» и смета. Редактируется в шапке шторки
+    // «Расчёт» (можно сократить до «ВВГнг», поставить «КГ» и т.п.); пустая строка = только
+    // сечение, как было раньше («3×2.5»). Значение по умолчанию — ИМЕННО «ВВГнг(А)-LS»
+    // (полное обозначение того же ВВГнг с индексом пожаробезопасности, как в спецификациях),
+    // потому что именно эта строка уже стояла в смете хардкодом: у пользователей, которые
+    // назначали цены кнопкой цены в «Расчёте», записи в «Моей БД» называются так же —
+    // сокращение до «ВВГнг» тихо порвало бы им сопоставление цены по имени.
+    cableBrand: "ВВГнг(А)-LS",
     // выпуск кабеля (концы на разделку/подключение) — см НА КАЖДЫЙ конец кабеля, добавляется
     // в метраж по марке отдельно от самой трассы/спуска (просьба пользователя: «выпуск кабеля
     // из подрозетников… длину вывода из стены любого кабеля, и так же в распред коробках…
@@ -111,7 +121,7 @@
         tpChaseW: DEFAULTS.tpChaseW, tpChaseH: DEFAULTS.tpChaseH,
         mainBreaker: DEFAULTS.mainBreaker, phases: DEFAULTS.phases, meter: false, mainRcd: false,
         panelBrand: DEFAULTS.panelBrand, panelReserve: DEFAULTS.panelReserve, panelBox: null,
-        symbolStyle: DEFAULTS.symbolStyle, cableReserve: DEFAULTS.cableReserve,
+        symbolStyle: DEFAULTS.symbolStyle, cableReserve: DEFAULTS.cableReserve, cableBrand: DEFAULTS.cableBrand,
         cableStubPoint: DEFAULTS.cableStubPoint, cableStubJunction: DEFAULTS.cableStubJunction, cableStubPanel: DEFAULTS.cableStubPanel,
         routeOffset: DEFAULTS.routeOffset, sleeveD: DEFAULTS.sleeveD, connectorMode: DEFAULTS.connectorMode,
         gofraCeil: DEFAULTS.gofraCeil,
@@ -409,6 +419,7 @@
     p.settings = p.settings || {};
     if (!p.settings.symbolStyle) p.settings.symbolStyle = DEFAULTS.symbolStyle;
     if (p.settings.cableReserve == null) p.settings.cableReserve = DEFAULTS.cableReserve;
+    if (p.settings.cableBrand == null) p.settings.cableBrand = DEFAULTS.cableBrand;
     if (p.settings.cableStubPoint == null) p.settings.cableStubPoint = DEFAULTS.cableStubPoint;
     if (p.settings.cableStubJunction == null) p.settings.cableStubJunction = DEFAULTS.cableStubJunction;
     if (p.settings.cableStubPanel == null) p.settings.cableStubPanel = DEFAULTS.cableStubPanel;
@@ -631,9 +642,19 @@
   loadIndex();
   if (window.EP.Cloud && EP.Cloud.onLogin) EP.Cloud.onLogin(() => { cloudPullIndex(); });
 
+  // Марка кабеля по умолчанию = settings.cableBrand + сечение. ЕДИНЫЙ источник для
+  // однолинейки (autoCable), «По линиям (QF)» и сметы: раньше каждый модуль подставлял
+  // своё — однолинейка «3×2.5», смета «ВВГнг(А)-LS 3×2.5», «По линиям» снова «3×2.5» —
+  // одна и та же линия показывала РАЗНУЮ марку в трёх местах. Пустой cableBrand — только
+  // сечение (прежнее поведение). Марка, заданная вручную (circuit.cable), всегда главнее.
+  function cableMark(p, section) {
+    const b = p && p.settings && p.settings.cableBrand != null ? String(p.settings.cableBrand).trim() : DEFAULTS.cableBrand;
+    return b ? b + " " + section : String(section);
+  }
+
   EP.Plan = EP.Plan || {};
   EP.Plan.Core = {
-    DEFAULTS, uid, OPENING_KINDS,
+    DEFAULTS, uid, OPENING_KINDS, cableMark,
     get project() { return S.project; },
     onChange,
     listProjects, createProject, openProject, closeProject, deleteProject, renameProject,

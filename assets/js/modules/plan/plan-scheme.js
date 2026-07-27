@@ -43,6 +43,10 @@
     // а не силовой кабель по номиналу автомата (просьба пользователя: «все интернет
     // розетки и тв, это у нас Витая пара, она и должна отображаться»)
     const els = loadEls(p, c);
+    // 24В-линия (вся нагрузка — «Вывод 24В») — это ПИТАНИЕ 24В, а не слаботочная сеть:
+    // витая пара тут не при чём (у output24 слой lv, поэтому без этой ветки он попадал бы
+    // в проверку ниже и линия 24В показывала бы UTP). По умолчанию 2 жилы — у 24В нет земли.
+    if (els.length && els.every((e) => e.type === "output24")) return core().cableMark(p, "2×1.5");
     if (els.length && els.every((e) => e.layer === "lv" || e.layer === "tv" || e.layer === "cctv")) return "Витая пара (UTP)";
     const found = SECTION_BY_AMP.find((x) => (c.breaker || 16) <= x.amp);
     const needSec = (found || SECTION_BY_AMP[SECTION_BY_AMP.length - 1]).sec;
@@ -51,10 +55,10 @@
       .filter((cb) => cb.indexOf(prefix) === 0)
       .map((cb) => ({ cb, sec: parseFloat(cb.split("×")[1]) }))
       .sort((a, b) => a.sec - b.sec);
-    if (cat.length) return (cat.find((o) => o.sec >= needSec) || cat[cat.length - 1]).cb;
+    if (cat.length) return core().cableMark(p, (cat.find((o) => o.sec >= needSec) || cat[cat.length - 1]).cb);
     // в каталоге нет кабелей нужного числа жил — старое поведение по типу нагрузки
     const layers = loadEls(p, c).map((e) => e.layer);
-    return (layers.length && layers.every((l) => l === "light")) ? "3×1.5" : "3×2.5";
+    return core().cableMark(p, (layers.length && layers.every((l) => l === "light")) ? "3×1.5" : "3×2.5");
   }
   // короткая метка нагрузки для символа группы (по первому типу)
   function loadKindLabel(p, c) {
