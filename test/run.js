@@ -2787,6 +2787,27 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok((P.routes || []).length > 0, "трассы при этом построены");
   });
 
+  // ===== 26. Сворачивание шторки (контракт между модулями) =====
+  // Сама механика — DOM-only (в vm-харнессе querySelector отдаёт null, шторки нет),
+  // поэтому проверяем то, что тестами вообще проверяемо: КОНТРАКТ. plan-elements.js
+  // зовёт rooms().collapseSheet() после выбора типа в палитре и openSheet(html, opts)
+  // с keepCollapsed — переименование/потеря экспорта сломала бы палитру молча (живой
+  // прогон это ловит, но только если о нём вспомнить).
+  test("шторка: экспорт collapseSheet/expandSheet/toggleSheetCollapsed", () => {
+    const R = EP.Plan.Rooms;
+    ["collapseSheet", "expandSheet", "toggleSheetCollapsed"].forEach((k) => {
+      eq(typeof R[k], "function", k + " экспортирован из plan-rooms");
+    });
+  });
+  test("шторка: openSheet(html, opts) и сворачивание без DOM не падают", () => {
+    const R = EP.Plan.Rooms;
+    // в харнессе шторки нет — все три должны тихо ничего не делать, а не бросать
+    R.openSheet("<b>x</b>", { keepCollapsed: true });
+    R.openSheet("<b>y</b>", { transient: true });
+    R.collapseSheet(); R.expandSheet(); R.toggleSheetCollapsed();
+    ok(true, "нет исключений при отсутствующем #ep-plan-sheet");
+  });
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

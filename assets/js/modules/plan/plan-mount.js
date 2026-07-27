@@ -37,7 +37,17 @@
   const $ = (sel, r) => (r || document).querySelector(sel);
   const fmtDate = (ms) => { try { return new Date(ms).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); } catch (e) { return "—"; } };
 
-  const V = { active: false, canvas: null, unsub: null, saveNote: "", ctrlsOn: true };
+  // Вкладки инструментов (просьба пользователя: «одна вкладка чисто стены, двери,
+  // окна, вторая кнопка чисто для работы с электрикой») — 17 иконок в одну строку
+  // всё равно уезжали в горизонтальный скролл, и половина из них в текущей задаче
+  // не нужна. Группа — свойство КНОПОК (data-plan-grp, через пробел можно указать
+  // обе), не отдельная разметка на группу: инструмент, полезный и там и там
+  // (📐 развёртка), просто перечисляет обе вкладки, а «общие» (☝ Просмотр, ⛶
+  // Вписать) не имеют атрибута вообще и видны всегда. Выбор вкладки — устройство,
+  // не проект (как quickbar): localStorage, не в модели.
+  const GROUP_KEY = "ep_plan_toolgroup";
+  const readGroup = () => { try { const g = localStorage.getItem(GROUP_KEY); return g === "elec" ? "elec" : "build"; } catch (e) { return "build"; } };
+  const V = { active: false, canvas: null, unsub: null, saveNote: "", ctrlsOn: true, group: readGroup() };
   const core = () => EP.Plan && EP.Plan.Core;
   // Шаблоны квартир (plan-templates.js) — временно скрыты для всех, кроме админа
   // (репорт пользователя: «шаблоны кривые» — раскладки требуют доработки перед
@@ -127,39 +137,43 @@
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-import>${T.importBtn}</button>
         <input id="ep-plan-file" type="file" accept="application/json,.json" hidden>
       </div>
+      <div class="ep-plan-grouptabs" role="tablist">
+        <button type="button" class="ep-plan-gtab ep-clickable" data-plan-group="build" aria-label="Планировка: стены, двери, окна">🏗 Планировка</button>
+        <button type="button" class="ep-plan-gtab ep-clickable" data-plan-group="elec" aria-label="Электрика: точки, трассы, смета">⚡ Электрика</button>
+      </div>
       <div class="ep-plan-toolbar ep-plan-modes">
         <button type="button" class="ep-plan-tbtn on ep-clickable" data-plan-mode="view" aria-label="Просмотр и выбор">☝</button>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="rect" aria-label="Прямоугольная комната">▭</button>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="poly" aria-label="Комната по точкам">⬠</button>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="beam" aria-label="Балка/перемычка на потолке">▬</button>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="void" aria-label="Вентшахта / мини-комната внутри комнаты">▦</button>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="merge" aria-label="Объединить две соседние комнаты в одну">🔗</button>
         <span class="ep-plan-modesep" aria-hidden="true"></span>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="elem" aria-label="Точки: розетки, свет">🔌</button>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="opening" aria-label="Проёмы: двери, окна, балкон">🚪</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="rect" aria-label="Прямоугольная комната">▭</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="poly" aria-label="Комната по точкам">⬠</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="opening" aria-label="Проёмы: двери, окна, балкон">🚪</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="beam" aria-label="Балка/перемычка на потолке">▬</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="void" aria-label="Вентшахта / мини-комната внутри комнаты">▦</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="merge" aria-label="Объединить две соседние комнаты в одну">🔗</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="ruler" aria-label="Рулетка">📏</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="underlay" aria-label="Подложка-фото">🖼</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-mode="elem" aria-label="Точки: розетки, свет">🔌</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-mode="guide" aria-label="Магистраль трасс — приоритетное направление автотрассировки" title="Нарисуй линию по коридору — трассы пойдут по ней">⇉</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-layers aria-label="Слои">🗂</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-routes aria-label="Трассы">🧵</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-calc aria-label="Расчёт и смета">🧮</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-checks aria-label="Проверки норм">✅</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-scheme aria-label="Однолинейная схема">▤</button>
         <span class="ep-plan-modesep" aria-hidden="true"></span>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="guide" aria-label="Магистраль трасс — приоритетное направление автотрассировки" title="Нарисуй линию по коридору — трассы пойдут по ней">⇉</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="wall" aria-label="Развёртка: выбрать комнату">📐</button>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="ruler" aria-label="Рулетка">📏</button>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="underlay" aria-label="Подложка-фото">🖼</button>
-        <span class="ep-plan-modesep" aria-hidden="true"></span>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-layers aria-label="Слои">🗂</button>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-routes aria-label="Трассы">🧵</button>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-calc aria-label="Расчёт и смета">🧮</button>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-checks aria-label="Проверки норм">✅</button>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-scheme aria-label="Однолинейная схема">▤</button>
-        <span class="ep-plan-modesep" aria-hidden="true"></span>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-fit aria-label="Показать всё">⛶</button>
       </div>
       <div class="ep-plan-modehint" id="ep-plan-modehint"></div>
       <div class="ep-plan-canvas" id="ep-plan-canvas">
         <div class="ep-plan-quickbar" id="ep-plan-quickbar" hidden></div>
         <div class="ep-plan-sheet" id="ep-plan-sheet" hidden></div>
+        <button type="button" class="ep-plan-sheetbtn ep-clickable" id="ep-plan-sheetbtn" data-sheet-collapse hidden aria-label="Свернуть панель вниз">⌄</button>
       </div>
     </div>`;
     syncPlanBoxHeight(); // ДО mountCanvas() — холст должен измерить УЖЕ верную высоту .ep-plan
     mountCanvas();
     refreshToolbar();
+    applyToolGroup(root); // вкладка «Планировка»/«Электрика» — сразу после вставки разметки
     armBack(); // ставим «ловушку» для аппаратной кнопки Назад
     setNavHidden(true); // редактор уже имеет свою «‹ Проекты» — общая шапка не нужна
   }
@@ -237,6 +251,32 @@
     if (!V.canvas || !EP.Plan.Geometry || !core().project) return;
     const bb = EP.Plan.Geometry.projectBBox(core().project);
     if (bb) V.canvas.fit(bb);
+  }
+
+  // Вкладки инструментов: показать только кнопки активной группы. Кнопки БЕЗ
+  // data-plan-grp (☝ Просмотр, 📐 Развёртка, ⛶ Вписать, разделители) видны всегда —
+  // они нужны в любой задаче. hidden работает потому, что ни у .ep-plan-tbtn, ни у
+  // .ep-plan-modesep нет авторского display (иначе UA-правило [hidden]{display:none}
+  // проиграло бы по каскаду — тот же класс бага, что уже ловили у шторки/quickbar;
+  // на всякий случай в plan.css добавлены явные [hidden]-правила).
+  function applyToolGroup(root) {
+    const r = root || document;
+    r.querySelectorAll("[data-plan-grp]").forEach((n) => {
+      n.hidden = (n.getAttribute("data-plan-grp") || "").split(/\s+/).indexOf(V.group) === -1;
+    });
+    r.querySelectorAll("[data-plan-group]").forEach((b) => b.classList.toggle("on", b.getAttribute("data-plan-group") === V.group));
+  }
+  function setToolGroup(root, g) {
+    if (g !== "build" && g !== "elec") return;
+    V.group = g;
+    try { localStorage.setItem(GROUP_KEY, g); } catch (e) {}
+    applyToolGroup(root);
+    // активный инструмент мог остаться из ДРУГОЙ вкладки (кнопка теперь скрыта — нечем
+    // выйти из режима, и подсветка «где я» не видна) — возвращаемся в «Просмотр»
+    const R2 = EP.Plan.Rooms;
+    const cur = R2 && R2.currentMode ? R2.currentMode() : "view";
+    const btn = document.querySelector(`[data-plan-mode="${cur}"]`);
+    if (R2 && btn && btn.hidden) R2.setMode("view");
   }
 
   // свернуть/развернуть панель инструментов редактора — холст занимает освободившееся место
@@ -449,6 +489,7 @@
     const moreMenu = document.getElementById("ep-plan-moremenu");
     if (moreMenu && !moreMenu.hidden && !t.closest("[data-plan-more]")) moreMenu.hidden = true;
     if ((el = t.closest("[data-plan-more]"))) return toggleMoreMenu(el);
+    if ((el = t.closest("[data-plan-group]"))) return setToolGroup(r, el.getAttribute("data-plan-group"));
     if ((el = t.closest("[data-plan-rt]"))) return pickNewRoute(r, el.getAttribute("data-plan-rt"));
     if ((el = t.closest("[data-plan-mt]"))) return pickNewMount(r, el.getAttribute("data-plan-mt"));
     if ((el = t.closest("[data-plan-create]"))) return doCreate(r);

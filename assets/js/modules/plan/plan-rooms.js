@@ -500,9 +500,82 @@
     const qb = $("#ep-plan-quickbar");
     if (qb) qb.style.display = sheetOpen ? "none" : "";
   }
-  function openSheet(html) { const s = sheet(); if (s) { s.innerHTML = html; s.hidden = false; } syncQuickbarForSheet(true); }
+  // ---------- сворачивание шторки (не закрытие) ----------
+  // Просьба пользователя: «когда выбираю (щит или розетка, или бра и т.д.) при выборе
+  // хотел чтобы окно скрывалось, да и в целом везде хотел так — не скрывалось, а
+  // сворачивалось в нижнюю часть экрана кнопкой ^, но чтобы просто была кнопка в
+  // нижнем правом углу». Реализовано ОДНОЙ плавающей кнопкой #ep-plan-sheetbtn в
+  // правом нижнем углу холста (plan-mount.js): пока шторка открыта — «⌄» (свернуть),
+  // пока свёрнута — «︿» (развернуть). Сворачивание НЕ трогает содержимое шторки
+  // (innerHTML остаётся) — развернули и продолжаем с того же места; закрытие
+  // (closeSheet) как раньше чистит всё. z-index кнопки выше .ep-plan-sheet-full,
+  // поэтому она доступна и у шторки «во весь экран».
+  function sheetBtn() { return $("#ep-plan-sheetbtn"); }
+  // Пока шторка РАЗВЁРНУТА, кнопка поднимается РОВНО над её верхней кромкой (шторка
+  // скроллится внутри себя — фиксированная кнопка в углу висела бы поверх её
+  // содержимого на любой позиции скролла, паддинга снизу тут не хватает). Свёрнутая
+  // шторка / «во весь экран» — кнопка на своём CSS-месте в правом нижнем углу.
+  function placeSheetBtn() {
+    const s = sheet(), b = sheetBtn(); if (!s || !b) return;
+    const overlay = s.classList.contains("ep-plan-sheet-full") || s.classList.contains("is-landscape-forced");
+    // на широком экране шторка — БОКОВАЯ панель (position:static, plan.css @media
+    // 1024px): она не закрывает низ холста и высотой равна ему, поднимать над ней
+    // кнопку нельзя (уехала бы за верх холста) — оставляем в углу
+    let side = false;
+    try { side = window.getComputedStyle(s).position !== "absolute"; } catch (e) {}
+    if (b.hidden || R.sheetCollapsed || overlay || side) { b.style.bottom = ""; return; }
+    b.style.bottom = ((s.offsetHeight || 0) + 14) + "px";
+  }
+  function syncSheetBtn() {
+    const s = sheet(), b = sheetBtn(); if (!b) return;
+    const open = !!(s && !s.hidden);
+    b.hidden = !open || !!R.sheetTransient; // у тоста (1.8с) кнопка не нужна — мигала бы
+    b.textContent = R.sheetCollapsed ? "︿" : "⌄";
+    const lbl = R.sheetCollapsed ? "Развернуть панель" : "Свернуть панель вниз";
+    b.setAttribute("aria-label", lbl); b.setAttribute("title", lbl);
+    b.classList.toggle("is-collapsed", !!R.sheetCollapsed);
+    placeSheetBtn();
+    // высота шторки меняется и БЕЗ openSheet (правка полей внутри, раскрытие блоков) —
+    // ResizeObserver держит кнопку над её кромкой; ставится один раз на элемент
+    // (renderEditor пересоздаёт #ep-plan-sheet — сравниваем узел, иначе наблюдали бы
+    // за отсоединённым старым элементом и кнопка перестала бы следить за высотой)
+    if (s && window.ResizeObserver && R.sheetROnode !== s) {
+      if (R.sheetRO) { try { R.sheetRO.disconnect(); } catch (e) {} }
+      R.sheetRO = new ResizeObserver(() => placeSheetBtn());
+      R.sheetRO.observe(s); R.sheetROnode = s;
+    }
+  }
+  function collapseSheet() {
+    const s = sheet(); if (!s || s.hidden) return;
+    R.sheetCollapsed = true;
+    s.classList.add("is-collapsed");
+    syncQuickbarForSheet(false); // низ холста свободен — quickbar снова по своему правилу
+    syncSheetBtn();
+  }
+  function expandSheet() {
+    const s = sheet(); if (!s || s.hidden) return;
+    R.sheetCollapsed = false;
+    s.classList.remove("is-collapsed");
+    syncQuickbarForSheet(true);
+    syncSheetBtn();
+  }
+  function toggleSheetCollapsed() { if (R.sheetCollapsed) expandSheet(); else collapseSheet(); }
+  // opts.keepCollapsed — ПЕРЕрисовка той же шторки (счётчик палитры после установки
+  // точки и т.п.): если пользователь свернул её, она НЕ должна выпрыгивать обратно.
+  // opts.transient — тост (сам закроется), кнопку сворачивания не показываем.
+  function openSheet(html, opts) {
+    const s = sheet();
+    const keep = !!(opts && opts.keepCollapsed) && !!R.sheetCollapsed;
+    R.sheetTransient = !!(opts && opts.transient);
+    R.sheetCollapsed = keep;
+    if (s) { s.innerHTML = html; s.hidden = false; s.classList.toggle("is-collapsed", keep); }
+    syncQuickbarForSheet(!keep);
+    syncSheetBtn();
+  }
   function closeSheet() {
     const s = sheet();
+    R.sheetCollapsed = false; R.sheetTransient = false;
+    if (s) s.classList.remove("is-collapsed");
     // is-landscape-forced — CSS-разворот на 90° (Схема ⤢, Развёртка 🔄) на ОБЩЕМ
     // #ep-plan-sheet; снимаем здесь же (единая точка закрытия ЛЮБОЙ шторки, не
     // только своим ✕) — иначе класс мог бы залипнуть на элементе и сломать вид
@@ -512,6 +585,7 @@
     // (иначе план остался бы приглушённым без видимого элемента управления)
     if (R.soloCircuit) { R.soloCircuit = null; renderScene(); }
     syncQuickbarForSheet(false);
+    syncSheetBtn();
   }
   // общая кнопка «во весь экран» для шторок БЕЗ своего fullscreen-состояния
   // (Расчёт/Трассы/Проверки/Слои) — ЧИСТЫЙ CSS toggle (position:fixed через
@@ -530,8 +604,9 @@
   function toggleSheetFullscreen() {
     const s = sheet(); if (!s) return;
     s.classList.toggle("ep-plan-sheet-full");
+    placeSheetBtn(); // во весь экран кнопка сворачивания живёт в углу, обычная — над кромкой шторки
   }
-  function toast(msg) { openSheet(`<div class="ep-plan-srow ep-plan-toast">${esc(msg)}</div>`); setTimeout(() => { if (sheet() && sheet().querySelector(".ep-plan-toast")) closeSheet(); }, 1800); }
+  function toast(msg) { openSheet(`<div class="ep-plan-srow ep-plan-toast">${esc(msg)}</div>`, { transient: true }); setTimeout(() => { if (sheet() && sheet().querySelector(".ep-plan-toast")) closeSheet(); }, 1800); }
 
   // редактируемый объект может оказаться под шторкой (она до 60% высоты холста
   // снизу) — сдвигаем вид вверх, чтобы точку/комнату было видно, пока её правишь.
@@ -1370,6 +1445,7 @@
   document.addEventListener("click", (e) => {
     if (!R.active) return;
     const t = e.target; let el;
+    if (t.closest("[data-sheet-collapse]")) { toggleSheetCollapsed(); return; }
     if ((el = t.closest("[data-plan-mode]"))) {
       const m = el.getAttribute("data-plan-mode");
       if (m === "wall") { qbTrack("wall"); return sheetPickRoomForUnfold(); } // не режим — сразу список комнат
@@ -1552,6 +1628,7 @@
     attach, detach, setActive, setMode, renderScene, T, CFG,
     // общий доступ для модулей слоёв 2-6
     openSheet, closeSheet, toast, ensureVisibleAboveSheet, toggleSheetFullscreen,
+    collapseSheet, expandSheet, toggleSheetCollapsed,
     isActive: () => R.active,
     currentMode: () => R.mode,
     selectedBeamId: () => R.selectedBeam || null,
