@@ -2772,6 +2772,21 @@ test("фото: deleteProject чистит кэш фото своего прое
     eq(EP.Plan.Core.project.settings.routeQuality, "fast", "бэкофилл старого проекта");
   });
 
+  test("noCommit: пробный/фоновый прогон не пишет undo-историю и не персистит", () => {
+    const P = optProject();
+    EP.Plan.Routes.setLaneOrder(null);
+    EP.Plan.Routes.build();               // обычная сборка — снимок в истории есть
+    const canUndoBefore = EP.Plan.Core.canUndo();
+    ok(canUndoBefore, "после обычной сборки undo доступен");
+    // сбросим историю до предела: сколько снимков добавит пробный прогон
+    let depth = 0; while (EP.Plan.Core.canUndo() && depth < 100) { EP.Plan.Core.undo(); depth++; }
+    EP.Plan.Routes.build({ silent: true, noCommit: true });
+    eq(EP.Plan.Core.canUndo(), false, "пробный build не добавил снимок в undo");
+    EP.Plan.Routes.buildIncremental({ silent: true, noCommit: true });
+    eq(EP.Plan.Core.canUndo(), false, "пробная инкрементальная сборка тоже не пишет историю");
+    ok((P.routes || []).length > 0, "трассы при этом построены");
+  });
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

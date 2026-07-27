@@ -18,6 +18,7 @@
     heavyFail: "Фоновый просчёт недоступен — построил обычным способом.",
     heavyStale: "Проект изменился во время просчёта — результат отброшен, нажми ещё раз.",
     heavyDone: (sc, ms, it) => `Готово за ${(ms / 1000).toFixed(1)}с (вариантов: ${it}). Пересечений линий: ${sc ? sc.crossings : "—"}, отверстий: ${sc ? sc.holes : "—"}`,
+    buildDone: (sc, ms) => `Трассы построены (${(ms / 1000).toFixed(1)}с). Пересечений линий: ${sc ? sc.crossings : "—"}, отверстий: ${sc ? sc.holes : "—"}`,
     title: "Трассы", build: "⚡ Построить", clear: "✕ Очистить",
     noPanel: "Поставь щит: режим 🔌, тип «Щ», тап по плану.",
     noElems: "Нет точек — добавь розетки/свет в режиме 🔌.",
@@ -1213,13 +1214,14 @@
   // сборка эквивалентна полной).
   function buildIncremental(opts) {
     const silent = !!(opts && opts.silent); // тихо — не открывать шторку «Трассы» (напр. поверх fullscreen развёртки)
+    const quiet = !!(opts && opts.noCommit); // пробный/воркерный прогон — без undo и записи на диск
     const c = core(), p = c.project;
     p.circuits = p.circuits || [];
     const fp = G().floorScoped(p); // только активный этаж — та же причина, что и в build()
     if (!(fp.panels || []).length) { if (!silent) rooms().toast(T.noPanel); return; }
     const points = (fp.elements || []).filter(isPoint);
     if (!points.length) { if (!silent) rooms().toast(T.noElems); return; }
-    c.commit();
+    if (!quiet) c.commit();
 
     // проходки уже существующих ручных трасс — актуализируем, путь НЕ трогаем
     (p.routes || []).forEach((rt) => { if (rt.manual) recomputeThroughWalls(p, rt); });
@@ -1477,7 +1479,7 @@
   // Воркер грузит ТЕ ЖЕ файлы модуля (см. solver-worker.js) — один алгоритм на оба режима.
   // Сюда он возвращает готовые трассы, а принимаем мы их ОДНОЙ транзакцией
   // (commit → подмена p.routes → persist), поэтому Undo отменяет весь тяжёлый прогон целиком.
-  let solverWorker = null, solverBusy = false;
+  let solverWorker = null, solverBusy = false, autoBusy = false;
   const QUALITY_BUDGET = { precise: 1200, max: 4000 };
   function qualityOf(p) {
     const q = p && p.settings && p.settings.routeQuality;
@@ -1535,11 +1537,26 @@
       cur.routes = d.routes.map((r) => (r.floorId ? r : Object.assign({}, r, { floorId: activeFid })));
       c.persist("routes-build");
       if (rooms().renderScene) rooms().renderScene();
-      if (!(opts && opts.silent)) { rooms().toast(T.heavyDone(d.score, d.ms || 0, d.iterations || 1)); sheet(); }
+      if (!(opts && opts.silent)) {
+        // у обычной сборки в фоне нет «вариантов» — свой короткий текст
+        rooms().toast((mode === "precise" || mode === "max")
+          ? T.heavyDone(d.score, d.ms || 0, d.iterations || 1)
+          : T.buildDone(d.score, d.ms || 0));
+        sheet();
+      }
     };
     w.addEventListener("message", onMsg);
     w.postMessage({ type: "solve", project: snapshot, mode, budgetMs: QUALITY_BUDGET[mode] || 1200, seed: 12345 });
     return true;
+  }
+  // «⚡ Построить» на большом проекте — тоже в воркер: замерено на стресс-проекте (30 комнат /
+  // 150 точек) при CPU ×8 синхронная сборка блокирует главный поток на ~300мс. Семантика та же
+  // (инкрементальная достройка только новых точек), просто считается в фоне.
+  function buildIncrementalMaybeAsync() {
+    const p = core().project;
+    if (!p) return;
+    if ((p.elements || []).length >= AUTO_ASYNC_MIN && buildHeavy("incremental")) return;
+    buildIncremental();
   }
   // «✨ Оптимизировать» — полная перестройка ВСЕХ не-ручных трасс с минимизацией пересечений.
   // ОТДЕЛЬНАЯ кнопка, а не поведение «⚡ Построить»: та по инварианту модуля достраивает
@@ -1595,15 +1612,63 @@
   // Перестраиваем тихо, только если трассы уже были построены.
   const AUTOREBUILD_ON = { "elem-move": 1, "room-reshape": 1, "room-merge": 1, "wall-th": 1, "wall-mat": 1, "beam-move": 1, "beam-w": 1, "panel-move": 1, "panel-router": 1, "panel-trafo": 1, "opening-move": 1, "elem-target": 1 };
   let rebuilding = false;
+  // ---- АВТОПЕРЕСТРОЙКА БЕЗ ФРИЗА: тяжёлый build() уходит в фоновый воркер ----
+  // Замерено на стресс-проекте (30 комнат / 150 точек / 56 трасс) с эмуляцией слабого
+  // телефона (CPU ×8): синхронный build() = 313мс — это и есть главный фриз «на отпускании
+  // пальца» после переноса точки (renderScene там же 63мс, commit 9мс, смета 15мс).
+  // Теперь: снимок проекта уходит в воркер, главный поток свободен, результат применяется
+  // по готовности. Мелкие проекты считаем как раньше синхронно — там build дешевле, чем
+  // клонирование проекта и обмен сообщениями (порог AUTO_ASYNC_MIN точек).
+  const AUTO_ASYNC_MIN = 25;
+  let autoSeq = 0;          // номер задания: результат старого задания применять нельзя
+  let autoPending = false;  // пришёл новый триггер, пока воркер считал — досчитаем после
+  function autoRebuild() {
+    const p = core().project;
+    if (!p || !(p.routes || []).length) return;
+    const many = (p.elements || []).length >= AUTO_ASYNC_MIN;
+    const w = many ? getWorker() : null;
+    if (!w) { // мало точек или воркеров нет — как раньше, синхронно
+      rebuilding = true;
+      try { build({ silent: true }); } finally { rebuilding = false; }
+      return;
+    }
+    if (autoBusy) { autoPending = true; return; } // коалесинг: важен только последний результат
+    let snapshot;
+    try { snapshot = JSON.parse(JSON.stringify(p)); } catch (e) {
+      rebuilding = true; try { build({ silent: true }); } finally { rebuilding = false; } return;
+    }
+    const seq = ++autoSeq, pid = p.id;
+    autoBusy = true;
+    const onMsg = (e) => {
+      const d = (e && e.data) || {};
+      if (d.type !== "done") return;
+      w.removeEventListener("message", onMsg);
+      autoBusy = false;
+      const cur = core().project;
+      // результат устарел (пользователь успел ещё раз подвигать / ушёл в другой проект)
+      const stale = !cur || cur.id !== pid || seq !== autoSeq;
+      if (!stale && d.ok && Array.isArray(d.routes)) {
+        const c = core();
+        rebuilding = true; // не зацикливаться на своём же persist
+        try {
+          c.commit();
+          const fid0 = cur.floors && cur.floors[0] && cur.floors[0].id;
+          cur.routes = d.routes.map((r) => (r.floorId ? r : Object.assign({}, r, { floorId: cur.activeFloorId || fid0 })));
+          c.persist("routes-build");
+          if (rooms().renderScene) rooms().renderScene();
+        } finally { rebuilding = false; }
+      }
+      if (autoPending) { autoPending = false; autoRebuild(); }
+    };
+    w.addEventListener("message", onMsg);
+    w.postMessage({ type: "solve", project: snapshot, mode: "fast" });
+  }
   if (core().onChange) {
     core().onChange((what) => {
       // другой проект открыт — список «Без трассы» от прошлого проекта больше не про него
-      if (what === "open" || what === "import") { lastUnrouted = []; lastUnroutedPid = null; graphCache = null; wallsCache = null; return; }
+      if (what === "open" || what === "import") { lastUnrouted = []; lastUnroutedPid = null; graphCache = null; wallsCache = null; autoSeq++; autoPending = false; return; }
       if (rebuilding || !AUTOREBUILD_ON[what]) return;
-      const p = core().project;
-      if (!p || !(p.routes || []).length) return;
-      rebuilding = true;
-      try { build({ silent: true }); } finally { rebuilding = false; }
+      autoRebuild();
     });
   }
 
@@ -2042,7 +2107,7 @@
     const t = e.target; let b;
     if (t.closest("[data-plan-routes]")) return sheet();
     if (t.closest("[data-prt-build]")) return sheetBuildConfirm();
-    if (t.closest("[data-prt-build-go]")) return buildIncremental();
+    if (t.closest("[data-prt-build-go]")) return buildIncrementalMaybeAsync();
     let qb;
     if ((qb = t.closest("[data-prt-quality]"))) {
       const c = core(), q = qb.getAttribute("data-prt-quality");

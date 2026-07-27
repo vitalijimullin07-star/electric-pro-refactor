@@ -76,6 +76,9 @@ self.onmessage = (e) => {
       out = RT.optimizeRoutingMax({ budgetMs: msg.budgetMs || 3000, seed: msg.seed || 12345 });
     } else if (msg.mode === "precise") {
       out = RT.optimizeRouting({ budgetMs: msg.budgetMs || 900, seed: msg.seed || 12345 });
+    } else if (msg.mode === "incremental") {
+      RT.buildIncremental({ silent: true, noCommit: true });
+      out = { score: RT.scoreRoutes(msg.project), iterations: 1 };
     } else {
       RT.build({ silent: true, noCommit: true });
       out = { score: RT.scoreRoutes(msg.project), iterations: 1 };
