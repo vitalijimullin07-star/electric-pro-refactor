@@ -45,6 +45,10 @@
     // 24В: кабель «от щита до точки» (вторичка трансформатора) — просьба пользователя,
     // отдельные марки, а не сечение из общего каталога: монохромный вывод 24В и RGB
     // (у RGB нужны общий + 3 канала, поэтому 5 жил). Редактируются в шапке шторки «Расчёт».
+    // качество автотрассировки: "fast" — как раньше (мгновенно, главный поток),
+    // "precise"/"max" — тяжёлый просчёт в фоновом воркере с минимизацией пересечений линий
+    // (просьба пользователя «готов задействовать CPU телефона для лучшего просчёта»)
+    routeQuality: "fast",
     cable24: "КГ ВВГнг-LS 2×2.5",
     cable24Rgb: "КГ ВВГнг-LS 5×1.5",
     // выпуск кабеля (концы на разделку/подключение) — см НА КАЖДЫЙ конец кабеля, добавляется
@@ -127,7 +131,7 @@
         mainBreaker: DEFAULTS.mainBreaker, phases: DEFAULTS.phases, meter: false, mainRcd: false,
         panelBrand: DEFAULTS.panelBrand, panelReserve: DEFAULTS.panelReserve, panelBox: null,
         symbolStyle: DEFAULTS.symbolStyle, cableReserve: DEFAULTS.cableReserve, cableBrand: DEFAULTS.cableBrand,
-        cable24: DEFAULTS.cable24, cable24Rgb: DEFAULTS.cable24Rgb,
+        cable24: DEFAULTS.cable24, cable24Rgb: DEFAULTS.cable24Rgb, routeQuality: DEFAULTS.routeQuality,
         cableStubPoint: DEFAULTS.cableStubPoint, cableStubJunction: DEFAULTS.cableStubJunction, cableStubPanel: DEFAULTS.cableStubPanel,
         routeOffset: DEFAULTS.routeOffset, sleeveD: DEFAULTS.sleeveD, connectorMode: DEFAULTS.connectorMode,
         gofraCeil: DEFAULTS.gofraCeil,
@@ -428,6 +432,7 @@
     if (!p.settings.symbolStyle) p.settings.symbolStyle = DEFAULTS.symbolStyle;
     if (p.settings.cableReserve == null) p.settings.cableReserve = DEFAULTS.cableReserve;
     if (p.settings.cableBrand == null) p.settings.cableBrand = DEFAULTS.cableBrand;
+    if (p.settings.routeQuality == null) p.settings.routeQuality = DEFAULTS.routeQuality;
     if (p.settings.cable24 == null) p.settings.cable24 = DEFAULTS.cable24;
     if (p.settings.cable24Rgb == null) p.settings.cable24Rgb = DEFAULTS.cable24Rgb;
     if (p.settings.cableStubPoint == null) p.settings.cableStubPoint = DEFAULTS.cableStubPoint;

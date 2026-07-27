@@ -10,6 +10,14 @@
   window.EP = window.EP || {};
 
   const T = {
+    qualityLbl: "Качество:", qFast: "Быстро", qPrecise: "Точно", qMax: "Максимум",
+    qualityHint: "«Точно»/«Максимум» — тяжёлый просчёт в фоне (телефон считает 1-4 с, экран не подвисает): подбирается порядок полос линий и переклад проблемных трасс так, чтобы линии как можно меньше пересекались. Кнопка «⚡ Построить» и автоперестройка при переносе точек всегда работают в быстром режиме.",
+    optimizeBtn: "✨ Оптимизировать",
+    heavyStart: "Считаю в фоне… (экран не подвисает)",
+    heavyBusy: "Просчёт уже идёт — подожди результат.",
+    heavyFail: "Фоновый просчёт недоступен — построил обычным способом.",
+    heavyStale: "Проект изменился во время просчёта — результат отброшен, нажми ещё раз.",
+    heavyDone: (sc, ms, it) => `Готово за ${(ms / 1000).toFixed(1)}с (вариантов: ${it}). Пересечений линий: ${sc ? sc.crossings : "—"}, отверстий: ${sc ? sc.holes : "—"}`,
     title: "Трассы", build: "⚡ Построить", clear: "✕ Очистить",
     noPanel: "Поставь щит: режим 🔌, тип «Щ», тап по плану.",
     noElems: "Нет точек — добавь розетки/свет в режиме 🔌.",
@@ -81,7 +89,17 @@
   // базовый отступ + по 2 см на каждую следующую линию (QF) — чтобы параллельные
   // трассы разных линий визуально не сливались в одну (просил пользователь:
   // QF1 15см, QF2 17см…). «Без линии» и первая QF — базовый отступ.
-  function circuitIdx(p, circuitId) { return circuitId ? (p.circuits || []).findIndex((c) => c.id === circuitId) : -1; }
+  // ПОРЯДОК ПОЛОС линий. По умолчанию = порядок в p.circuits (QF1 ближе к стене, QF2 +2см…).
+  // laneOrder (Map circuitId -> индекс) позволяет ПЕРЕСТАВИТЬ полосы, НЕ меняя порядок линий
+  // в UI/смете — это ручка для оптимизатора: перестановка полос меняет, какие линии идут
+  // ближе к стене на общих участках, а значит и число ПЕРЕСЕЧЕНИЙ линий между собой.
+  let laneOrder = null;
+  function setLaneOrder(map) { laneOrder = map || null; }
+  function circuitIdx(p, circuitId) {
+    if (!circuitId) return -1;
+    if (laneOrder && laneOrder[circuitId] != null) return laneOrder[circuitId];
+    return (p.circuits || []).findIndex((c) => c.id === circuitId);
+  }
   // РАНЬШЕ был кап "×10 лэйнов" (Math.min(idx, 10)) — задуман, чтобы отступ не рос
   // безгранично на проектах с большим числом линий, но давал реальный баг: у ЛЮБОГО
   // проекта с 11+ линиями ВСЕ линии начиная с QF11 получали ОДИН И ТОТ ЖЕ отступ (кап
@@ -1132,6 +1150,10 @@
 
   function build(opts) {
     const silent = !!(opts && opts.silent); // тихая автоперестройка: без тостов/шторки
+    // noCommit — ПРОБНЫЙ прогон (оптимизатор гоняет build() десятки раз, перебирая порядок
+    // полос): не пишем ни в undo-историю, ни на диск, иначе один клик «Построить» оставил
+    // бы десятки снимков undo и столько же записей в localStorage
+    const quiet = !!(opts && opts.noCommit);
     const c = core(), p = c.project;
     p.circuits = p.circuits || [];
     const fp = G().floorScoped(p); // щиты/точки/распайки ТОЛЬКО активного этажа — иначе
@@ -1140,7 +1162,7 @@
     if (!(fp.panels || []).length) { if (!silent) rooms().toast(T.noPanel); return; }
     const points = (fp.elements || []).filter(isPoint);
     if (!points.length) { if (!silent) rooms().toast(T.noElems); return; }
-    c.commit();
+    if (!quiet) c.commit();
     // Чистим/перестраиваем ТОЛЬКО трассы АКТИВНОГО этажа — трассы других этажей
     // изолированы (своя геометрия) и не трогаются: иначе «Построить» на этаже 2
     // незаметно стирал бы уже готовые трассы этажа 1.
@@ -1166,7 +1188,7 @@
     hideGuides(p); // прячем ТОЛЬКО применённые магистрали (см. usedGuideIds/hideGuides)
     usedGuideIds = null;
     const un = collectUnrouted(p, points, juncts, panels);
-    c.persist("routes-build");
+    if (!quiet) c.persist("routes-build");
     if (!silent) { if (un.length) rooms().toast(T.unroutedToast(un.length)); sheet(); }
   }
 
@@ -1280,6 +1302,263 @@
   // дальнейшие звенья шлейфа/распайки, для которых текущий узел — ближайший): обычно
   // одна (линейный шлейф), но если несколько (фан-аут от распайки) — подсвечиваем ВСЕ
   // (безопасный дефолт, не гадаем какую ветку выбрал пользователь).
+  // ---- МЕТРИКА КАЧЕСТВА разводки: то, что минимизирует оптимизатор (и что можно
+  // честно сравнить между вариантами). crossings — НАСТОЯЩИЕ пересечения линий друг с
+  // другом (segIntersect, общие узлы не считаем: у щита/распайки кабели физически
+  // сходятся в одну коробку, это не «каша»), sleeves — число физических отверстий,
+  // len — суммарная длина трасс (см), unrouted — сколько точек осталось без трассы.
+  function scoreRoutes(p) {
+    const rs = (p.routes || []).filter((r) => (r.points || []).length > 1);
+    const near = (a, b) => dist(a, b) < 2;
+    let crossSame = 0, crossDiff = 0, len = 0;
+    const boxes = rs.map((r) => ({ r, bb: bboxOf(r.points) }));
+    rs.forEach((r) => { len += G().polylineLen(r.points); });
+    for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+      const A = boxes[i], B = boxes[j];
+      if (A.bb.x1 < B.bb.x0 || A.bb.x0 > B.bb.x1 || A.bb.y1 < B.bb.y0 || A.bb.y0 > B.bb.y1) continue;
+      const P1 = A.r.points, P2 = B.r.points;
+      for (let x = 1; x < P1.length; x++) for (let y = 1; y < P2.length; y++) {
+        const a1 = P1[x - 1], a2 = P1[x], b1 = P2[y - 1], b2 = P2[y];
+        if (near(a1, b1) || near(a1, b2) || near(a2, b1) || near(a2, b2)) continue;
+        if (!G().segIntersect(a1, a2, b1, b2)) continue;
+        if ((A.r.circuitId || null) === (B.r.circuitId || null)) crossSame++; else crossDiff++;
+      }
+    }
+    const holes = sleeveHoles(p);
+    const unrouted = unroutedForSheet(p).length;
+    // вес: пересечение линий — главное зло (просьба пользователя), потом лишние отверстия,
+    // потом метраж; unrouted — запретительный вес, вариант без трасс не может «выиграть»
+    const cost = crossDiff * 100 + crossSame * 40 + holes * 30 + len / 100 + unrouted * 10000;
+    return { crossings: crossDiff, crossSame, holes, len: Math.round(len), unrouted, cost: Math.round(cost) };
+  }
+  // ================== ОПТИМИЗАТОР РАЗВОДКИ (тяжёлый режим) ==================
+  // Просьба пользователя: «готов дополнительно задействовать CPU телефона, если нужно
+  // больше ресурсов для лучшего просчёта» + «сделать наименьшее количество пересечений
+  // линий между друг другом». Идея: ПОРЯДОК ПОЛОС линий (какая линия идёт ближе к стене
+  // на общих участках) — свободный параметр, от которого напрямую зависит число
+  // пересечений: две линии, входящие в общий коридор в одном порядке, а выходящие в
+  // другом, ОБЯЗАНЫ пересечься. Перебираем порядок: детерминированный локальный поиск
+  // (обмен пар полос), каждый вариант оцениваем scoreRoutes и держим лучший.
+  // build({noCommit:true}) — пробный прогон без undo/записи на диск (см. quiet в build).
+  // Детерминированность (инвариант модуля: тот же вход → тот же результат) обеспечивает
+  // СВОЙ ГПСЧ с фиксированным сидом, а не Math.random.
+  function lcg(seed) { let x = (seed || 1) >>> 0; return () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296); }
+  function optimizeRouting(opts) {
+    opts = opts || {};
+    const c = core(), p = c.project;
+    if (!p) return null;
+    const budget = Math.max(50, opts.budgetMs || 900);
+    const t0 = Date.now();
+    const rnd = lcg(opts.seed || 12345);
+    const ids = (p.circuits || []).map((x) => x.id);
+    const snap = () => JSON.parse(JSON.stringify(p.routes || []));
+    const evalOrder = (order) => {
+      setLaneOrder(order);
+      build({ silent: true, noCommit: true });
+      return scoreRoutes(p);
+    };
+    const identity = {}; ids.forEach((id, i) => { identity[id] = i; });
+    let best = { order: identity, score: evalOrder(identity), routes: snap() };
+    let iterations = 1;
+    // меньше двух линий — перестраивать полосы нечего (иначе крутили бы пустой цикл
+    // весь бюджет: на проекте с одной линией живой прогон дал 6513 бессмысленных итераций)
+    if (ids.length < 2) { setLaneOrder(best.order); p.routes = best.routes; return { score: best.score, iterations, ms: Date.now() - t0, laneOrder: best.order }; }
+    // (1) СТАРТ ПО ГЕОМЕТРИИ: порядок полос по средней координате точек линии вдоль
+    // главной оси плана — «естественный» порядок, при котором линии не переплетаются
+    if (ids.length > 1) {
+      const axis = (() => { // по какой оси тянется квартира — вдоль неё и сортируем
+        const bb = G().projectBBox(G().floorScoped(p));
+        return bb && bb.h > bb.w ? "y" : "x";
+      })();
+      const keyOf = (id) => {
+        const els = (p.elements || []).filter((e) => e.circuitId === id);
+        let s = 0, n = 0;
+        els.forEach((e) => { const q = G().elemPoint(p, e); if (q) { s += q[axis]; n++; } });
+        return n ? s / n : 0;
+      };
+      const geom = {};
+      ids.slice().sort((a, b) => keyOf(a) - keyOf(b)).forEach((id, i) => { geom[id] = i; });
+      const sc = evalOrder(geom); iterations++;
+      if (sc.cost < best.score.cost) best = { order: geom, score: sc, routes: snap() };
+    }
+    // (2) ЛОКАЛЬНЫЙ ПОИСК: меняем местами полосы двух линий, оставляем если стало лучше
+    while (ids.length > 1 && Date.now() - t0 < budget) {
+      const order = Object.assign({}, best.order);
+      const i = Math.floor(rnd() * ids.length), j = Math.floor(rnd() * ids.length);
+      if (i === j) continue;
+      const a = ids[i], b = ids[j];
+      const t = order[a]; order[a] = order[b]; order[b] = t;
+      const sc = evalOrder(order); iterations++;
+      if (sc.cost < best.score.cost) best = { order, score: sc, routes: snap() };
+    }
+    // возвращаем ЛУЧШИЙ найденный вариант в проект
+    setLaneOrder(best.order);
+    p.routes = best.routes;
+    return { score: best.score, iterations, ms: Date.now() - t0, laneOrder: best.order };
+  }
+  // ---- РЕЖИМ «МАКСИМУМ»: rip-up & reroute (приём из разводки печатных плат) ----
+  // После поиска порядка полос остаются пересечения, которые порядком не лечатся (сходы к
+  // щиту/распайке). Здесь берём САМУЮ проблемную трассу (участвует в максимуме пересечений),
+  // пересобираем ТОЛЬКО ЕЁ на другой полосе и оставляем вариант, если общая метрика улучшилась;
+  // не улучшилась — честный откат и переходим к следующей по проблемности. Итерируем, пока
+  // не кончится бюджет CPU. Полный сеточный A* НАМЕРЕННО не берём: он ведёт трассы через
+  // середину комнат, а инвариант модуля — кабель идёт вдоль стен по контуру (и по нему же
+  // считается штроба), т.е. выигрыш по пересечениям пришёл бы ценой физически неверных трасс.
+  function crossPerRoute(p) {
+    const rs = (p.routes || []).filter((r) => (r.points || []).length > 1);
+    const near = (a, b) => dist(a, b) < 2;
+    const cnt = {};
+    for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) {
+      const P1 = rs[i].points, P2 = rs[j].points;
+      let n = 0;
+      for (let x = 1; x < P1.length; x++) for (let y = 1; y < P2.length; y++) {
+        const a1 = P1[x - 1], a2 = P1[x], b1 = P2[y - 1], b2 = P2[y];
+        if (near(a1, b1) || near(a1, b2) || near(a2, b1) || near(a2, b2)) continue;
+        if (G().segIntersect(a1, a2, b1, b2)) n++;
+      }
+      if (n) { cnt[rs[i].id] = (cnt[rs[i].id] || 0) + n; cnt[rs[j].id] = (cnt[rs[j].id] || 0) + n; }
+    }
+    return cnt;
+  }
+  // пересобрать ОДНУ трассу на заданной полосе (без commit/persist — это проба оптимизатора)
+  function rerouteOne(p, rt, lane) {
+    const fromEl = (p.elements || []).find((e) => e.id === rt.fromId);
+    if (!fromEl) return false;
+    const a = isJunction(fromEl) ? G().elemPoint(p, fromEl) : G().routeAnchor(p, fromEl);
+    if (!a) return false;
+    let target = null;
+    if (rt.toPanel) {
+      const pn = (p.panels || []).find((x) => x.id === rt.toId);
+      if (pn) target = { kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y } };
+    } else {
+      const toEl = (p.elements || []).find((e) => e.id === rt.toId);
+      if (toEl) target = { kind: isJunction(toEl) ? "junction" : "point", id: toEl.id, pos: isJunction(toEl) ? G().elemPoint(p, toEl) : G().routeAnchor(p, toEl) };
+    }
+    if (!target || !target.pos) return false;
+    curLane = lane;
+    const pts = buildPath(p, fromEl, a, target, rt.circuitId);
+    curLane = 0;
+    if (!pts || pts.length < 2) return false;
+    rt.points = pts; rt.lane = lane;
+    recomputeThroughWalls(p, rt);
+    return true;
+  }
+  function optimizeRoutingMax(opts) {
+    opts = opts || {};
+    const p = core().project;
+    if (!p) return null;
+    const t0 = Date.now(), budget = Math.max(200, opts.budgetMs || 3000);
+    // фаза 1 — порядок полос (примерно половина бюджета), фаза 2 — rip-up & reroute
+    const r1 = optimizeRouting({ budgetMs: Math.round(budget * 0.5), seed: opts.seed });
+    let cur = scoreRoutes(p);
+    let iterations = (r1 && r1.iterations) || 0;
+    const skip = {};
+    while (Date.now() - t0 < budget) {
+      const cnt = crossPerRoute(p);
+      const cand = Object.keys(cnt).filter((id) => !skip[id]).sort((x, y) => cnt[y] - cnt[x])[0];
+      if (!cand) break;
+      const rt = (p.routes || []).find((r) => r.id === cand);
+      if (!rt || rt.manual) { skip[cand] = 1; continue; }
+      const before = JSON.stringify(rt.points), beforeLane = rt.lane || 0, beforeTw = JSON.stringify(rt.throughWalls || []);
+      let improved = false;
+      for (let lane = 0; lane <= 4 && Date.now() - t0 < budget; lane++) {
+        if (lane === beforeLane) continue;
+        if (!rerouteOne(p, rt, lane)) continue;
+        iterations++;
+        const sc = scoreRoutes(p);
+        if (sc.cost < cur.cost) { cur = sc; improved = true; break; }
+        rt.points = JSON.parse(before); rt.lane = beforeLane; rt.throughWalls = JSON.parse(beforeTw); // откат
+      }
+      if (!improved) skip[cand] = 1;
+    }
+    return { score: cur, iterations, ms: Date.now() - t0, phase1: r1 && r1.score };
+  }
+  // ================== ФОНОВЫЙ ВОРКЕР (тяжёлый просчёт) ==================
+  // Воркер грузит ТЕ ЖЕ файлы модуля (см. solver-worker.js) — один алгоритм на оба режима.
+  // Сюда он возвращает готовые трассы, а принимаем мы их ОДНОЙ транзакцией
+  // (commit → подмена p.routes → persist), поэтому Undo отменяет весь тяжёлый прогон целиком.
+  let solverWorker = null, solverBusy = false;
+  const QUALITY_BUDGET = { precise: 1200, max: 4000 };
+  function qualityOf(p) {
+    const q = p && p.settings && p.settings.routeQuality;
+    return (q === "precise" || q === "max") ? q : "fast";
+  }
+  // URL воркера + ВЕРСИЯ ассетов из уже загруженного тега <script> plan-routes.js: воркер
+  // импортирует модули ровно той же версии, что работает в приложении (кэш-бастинг у нас
+  // общий на деплой, а сам воркер-файл в index.html не упоминается и версии не имеет)
+  function workerUrl() {
+    let base = "assets/js/modules/plan/", ver = "";
+    try {
+      const sc = document.querySelector('script[src*="plan-routes.js"]');
+      const src = sc ? String(sc.getAttribute("src") || "") : "";
+      const m = /[?&](v=\d+)/.exec(src);
+      if (m) ver = "?" + m[1];
+      if (src) base = src.split("?")[0].replace(/plan-routes\.js$/, "");
+    } catch (e) {}
+    return base + "solver-worker.js" + ver;
+  }
+  function getWorker() {
+    if (solverWorker) return solverWorker;
+    if (typeof Worker !== "function") return null;
+    try { solverWorker = new Worker(workerUrl()); } catch (e) { solverWorker = null; }
+    return solverWorker;
+  }
+  // подпись состава проекта — чтобы не применить устаревший результат, если пользователь
+  // успел что-то дорисовать/удалить, пока воркер считал
+  function projectSig(p) {
+    return [p.id, (p.rooms || []).length, (p.elements || []).length, (p.panels || []).length,
+      (p.circuits || []).length, (p.guides || []).length, (p.beams || []).length, p.activeFloorId].join("|");
+  }
+  function buildHeavy(mode, opts) {
+    const c = core(), p = c.project;
+    if (!p) return false;
+    const w = getWorker();
+    if (!w) return false;
+    if (solverBusy) { if (!(opts && opts.silent)) rooms().toast(T.heavyBusy); return true; }
+    let snapshot;
+    try { snapshot = JSON.parse(JSON.stringify(p)); } catch (e) { return false; }
+    const sig = projectSig(p);
+    solverBusy = true;
+    if (!(opts && opts.silent)) rooms().toast(T.heavyStart);
+    const onMsg = (e) => {
+      const d = (e && e.data) || {};
+      if (d.type !== "done") return;
+      w.removeEventListener("message", onMsg);
+      solverBusy = false;
+      const cur = core().project;
+      if (!cur) return;
+      if (!d.ok || !Array.isArray(d.routes)) { if (!(opts && opts.silent)) rooms().toast(T.heavyFail); build(opts); return; }
+      if (projectSig(cur) !== sig) { if (!(opts && opts.silent)) rooms().toast(T.heavyStale); return; }
+      c.commit();
+      const fid0 = cur.floors && cur.floors[0] && cur.floors[0].id;
+      const activeFid = cur.activeFloorId || fid0;
+      cur.routes = d.routes.map((r) => (r.floorId ? r : Object.assign({}, r, { floorId: activeFid })));
+      c.persist("routes-build");
+      if (rooms().renderScene) rooms().renderScene();
+      if (!(opts && opts.silent)) { rooms().toast(T.heavyDone(d.score, d.ms || 0, d.iterations || 1)); sheet(); }
+    };
+    w.addEventListener("message", onMsg);
+    w.postMessage({ type: "solve", project: snapshot, mode, budgetMs: QUALITY_BUDGET[mode] || 1200, seed: 12345 });
+    return true;
+  }
+  // «✨ Оптимизировать» — полная перестройка ВСЕХ не-ручных трасс с минимизацией пересечений.
+  // ОТДЕЛЬНАЯ кнопка, а не поведение «⚡ Построить»: та по инварианту модуля достраивает
+  // только новые точки и не трогает готовые трассы, а оптимизация по смыслу перекладывает всё.
+  function optimizeAndApply() {
+    const p = core().project;
+    if (!p) return;
+    const mode = qualityOf(p) === "fast" ? "precise" : qualityOf(p);
+    if (buildHeavy(mode)) return;
+    // воркеров нет (старый WebView) — считаем в главном потоке коротким бюджетом,
+    // чтобы не заморозить UI надолго
+    const c = core();
+    c.commit();
+    const r = mode === "max" ? optimizeRoutingMax({ budgetMs: 700 }) : optimizeRouting({ budgetMs: 500 });
+    c.persist("routes-build");
+    if (rooms().renderScene) rooms().renderScene();
+    rooms().toast(T.heavyDone(r && r.score, (r && r.ms) || 0, (r && r.iterations) || 1));
+    sheet();
+  }
   function chainRouteIds(p, rt) {
     if (!rt) return new Set();
     const routes = p.routes || [];
@@ -1463,7 +1742,43 @@
   // поиск на все трассы вредно и дорого: на плотном реальном проекте (17 трасс одной линии
   // по общему коридору) двух полос физически не хватает, трассы начинают садиться на чужие
   // полосы, суммарное наложение РОСЛО (10168 → 11549 см), а build() дорожал 16мс → 34мс.
+  // ---- «ГРЕБЁНКА» У ЩИТА ----
+  // Раньше ВСЕ трассы приходили ровно в ЦЕНТР щита (одна точка) — и перекрещивались прямо
+  // перед ним: на реальном проекте 66 из 158 пересечений линий приходились на пятно радиусом
+  // 120см вокруг щита. Физически это неверно: щит шириной 30-46см, кабели заходят в него
+  // через кромку в РАЗНЫХ местах, гребёнкой. Теперь точка входа разносится по ширине
+  // корпуса, а ПОРЯДОК входа берётся по координате источника вдоль той же оси — кабель,
+  // идущий слева, входит слева, идущий справа — справа, поэтому они не перекрещиваются.
+  // Ширина: реальный корпус из settings.panelBox.wmm (мм), иначе 36см; шаг = ширина/(N+1),
+  // не больше 6см (иначе на 1-2 кабелях гребёнка выглядела бы как разъезд в стороны).
+  const PANEL_COMB_MAX_STEP = 6;
+  function panelCombPos(p, panelId, basePos, fromPos) {
+    const box = p.settings && p.settings.panelBox;
+    const wCm = Math.max(20, Math.min(60, box && box.wmm ? box.wmm / 10 : 36));
+    // ось гребёнки — вдоль стены, на которой стоит щит (нормаль стены даёт направление);
+    // без стены рядом — вдоль X (щит в нише/на свободном месте)
+    const hit = G().wallAt(p, basePos, 80);
+    let ax = { x: 1, y: 0 };
+    if (hit && hit.wall) {
+      const w = hit.wall, L = w.len || 1;
+      ax = { x: (w.b.x - w.a.x) / L, y: (w.b.y - w.a.y) / L };
+    }
+    // все трассы ЭТОГО щита, уже построенные + текущая: сортируем по проекции источника
+    // на ось гребёнки, порядковый номер даёт смещение
+    const others = (p.routes || []).filter((r) => r.toPanel && r.toId === panelId && (r.points || []).length > 1);
+    const proj = (q) => q.x * ax.x + q.y * ax.y;
+    const mine = proj(fromPos);
+    let idx = 0;
+    others.forEach((r) => { if (proj(r.points[0]) < mine) idx++; });
+    const n = others.length + 1;
+    const step = Math.min(PANEL_COMB_MAX_STEP, wCm / (n + 1));
+    const off = (idx - (n - 1) / 2) * step;
+    return { x: basePos.x + ax.x * off, y: basePos.y + ax.y * off };
+  }
   function addRoute(c, p, fromEl, a, target, circuitId, color) {
+    if (target && target.kind === "panel" && target.pos && !target.noComb) {
+      target = Object.assign({}, target, { pos: panelCombPos(p, target.id, target.pos, a) });
+    }
     // под-полоса: если путь ложится поверх уже построенной трассы длиннее 30см — сдвигаем
     // ЭТУ трассу на +2см и пробуем снова (до LANE_MAX раз)
     // Сравниваем ТОЛЬКО с трассами своей линии, которые сходятся в ТОМ ЖЕ узле (в тот же
@@ -1694,8 +2009,13 @@
         <div class="ep-plan-unrlist">${unrouted.slice(0, 12).map((u) => `<div class="ep-plan-unrrow"><button type="button" class="ep-plan-mini ep-clickable" data-prt-show="${esc(u.id)}" aria-label="Показать на плане">👁</button><b>${esc(u.name)}</b> — ${esc(u.reason)}</div>`).join("")}${unrouted.length > 12 ? `<div class="ep-plan-unrrow">…и ещё ${unrouted.length - 12}</div>` : ""}</div></div>` : ""}
       ${p.routes.length ? `<div class="ep-plan-srow ep-plan-rlens"><span>${T.total}: <b>${G().fmtLen(st.total)}</b></span><span title="физических отверстий сверлить">${holes} ${T.crossings}</span>${st.crossings !== holes ? `<span class="ep-plan-dim">(кабеле-пересечений ${st.crossings})</span>` : ""}</div>` : ""}
       ${linesHtml}
+      <div class="ep-plan-srow">${T.qualityLbl}
+        ${["fast", "precise", "max"].map((q) => `<button type="button" class="ep-plan-chip ep-clickable ${qualityOf(p) === q ? "on" : ""}" data-prt-quality="${q}">${q === "fast" ? T.qFast : q === "precise" ? T.qPrecise : T.qMax}</button>`).join("")}
+      </div>
+      <div class="ep-plan-srow ep-plan-hintrow">${T.qualityHint}</div>
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="btn btn-primary ep-clickable" data-prt-build>${T.build}</button>
+        ${p.routes.length ? `<button type="button" class="ep-plan-tbtn ep-clickable" data-prt-optimize>${T.optimizeBtn}</button>` : ""}
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-prt-clear>${T.clear}</button>
       </div>`);
   }
@@ -1723,6 +2043,12 @@
     if (t.closest("[data-plan-routes]")) return sheet();
     if (t.closest("[data-prt-build]")) return sheetBuildConfirm();
     if (t.closest("[data-prt-build-go]")) return buildIncremental();
+    let qb;
+    if ((qb = t.closest("[data-prt-quality]"))) {
+      const c = core(), q = qb.getAttribute("data-prt-quality");
+      c.commit(); c.project.settings.routeQuality = q; c.persist("route-quality"); sheet(); return;
+    }
+    if (t.closest("[data-prt-optimize]")) return optimizeAndApply();
     if (t.closest("[data-prt-suggest]")) { // черновик магистрали за пользователя
       const n = suggestGuides();
       if (!n) { rooms().toast(T.suggestNone); return; }
@@ -1801,5 +2127,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { build, buildIncremental, clearRoutes, suggestGuides, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, keys24Of, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds };
+  EP.Plan.Routes = { build, buildIncremental, clearRoutes, suggestGuides, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, keys24Of, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds };
 })();

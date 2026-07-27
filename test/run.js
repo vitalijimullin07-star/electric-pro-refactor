@@ -2696,6 +2696,82 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(P.routes.some((r) => (r.lane || 0) > 0), "одна из трасс встала на следующую полосу (+2см)");
   });
 
+  // ===== 25. Тяжёлый просчёт: метрика, порядок полос, оптимизатор =====
+  function optProject() {
+    // коридор + две комнаты, 4 линии по 2 точки — есть что переставлять полосами
+    const cor = M.newRoom(G.rectPoints(0, 0, 700, 120), "Коридор");
+    const r1 = M.newRoom(G.rectPoints(0, 120, 350, 400), "К1");
+    const r2 = M.newRoom(G.rectPoints(350, 120, 350, 400), "К2");
+    const cs = [];
+    for (let i = 0; i < 4; i++) cs.push(M.newCircuit("QF" + (i + 1), "#f00", 16));
+    const { P } = install({ rooms: [cor, r1, r2], circuits: cs, panels: [M.newPanel(60, 60, "Щ")] });
+    [1, 2].forEach((ri) => { for (let k = 0; k < 4; k++) {
+      const e = M.newElement("socket", P.rooms[ri].id + ":" + (k % 3), 60 + k * 70, 30);
+      e.circuitId = cs[k].id; P.elements.push(e);
+    } });
+    P.guides.push(M.newGuide([{ x: 60, y: 60 }, { x: 640, y: 60 }]));
+    P.guides.push(M.newGuide([{ x: 175, y: 60 }, { x: 175, y: 300 }]));
+    P.guides.push(M.newGuide([{ x: 520, y: 60 }, { x: 520, y: 300 }]));
+    return P;
+  }
+  test("scoreRoutes: метрика качества считает пересечения/отверстия/длину", () => {
+    const P = optProject();
+    EP.Plan.Routes.setLaneOrder(null);
+    EP.Plan.Routes.build();
+    const sc = EP.Plan.Routes.scoreRoutes(P);
+    ok(sc && typeof sc.cost === "number", "метрика есть");
+    eq(sc.unrouted, 0, "все точки отрассированы");
+    eq(sc.holes, EP.Plan.Routes.sleeveHoles(P), "отверстия — тот же общий хелпер, что в шторке и смете");
+    ok(sc.len > 0, "длина считается");
+  });
+  test("setLaneOrder меняет полосы линий, НЕ меняя порядок линий в проекте", () => {
+    const P = optProject();
+    EP.Plan.Routes.setLaneOrder(null);
+    EP.Plan.Routes.build();
+    const before = JSON.stringify(P.routes.map((r) => r.points));
+    const namesBefore = P.circuits.map((c) => c.name).join(",");
+    const order = {}; P.circuits.forEach((c, i) => { order[c.id] = P.circuits.length - 1 - i; }); // развернули полосы
+    EP.Plan.Routes.setLaneOrder(order);
+    EP.Plan.Routes.build();
+    ok(JSON.stringify(P.routes.map((r) => r.points)) !== before, "геометрия трасс изменилась");
+    eq(P.circuits.map((c) => c.name).join(","), namesBefore, "порядок линий в проекте (UI/смета) не тронут");
+    EP.Plan.Routes.setLaneOrder(null);
+  });
+  test("оптимизатор: результат не хуже базового и ДЕТЕРМИНИРОВАН", () => {
+    const P = optProject();
+    EP.Plan.Routes.setLaneOrder(null);
+    EP.Plan.Routes.build();
+    const base = EP.Plan.Routes.scoreRoutes(P);
+    const r1 = EP.Plan.Routes.optimizeRouting({ budgetMs: 200, seed: 42 });
+    ok(r1 && r1.score.cost <= base.cost, `оптимизатор не хуже базы (${r1.score.cost} ≤ ${base.cost})`);
+    eq(r1.score.unrouted, 0, "все точки по-прежнему с трассами");
+    const geom1 = JSON.stringify(P.routes.map((r) => r.points));
+    // тот же сид → тот же результат (инвариант детерминизма модуля)
+    const P2 = optProject();
+    EP.Plan.Routes.setLaneOrder(null);
+    const r2 = EP.Plan.Routes.optimizeRouting({ budgetMs: 200, seed: 42 });
+    ok(r2 && Math.abs(r2.score.cost - r1.score.cost) < 1e-6, "тот же сид — та же метрика");
+    EP.Plan.Routes.setLaneOrder(null);
+    ok(geom1.length > 10, "трассы построены");
+  });
+  test("режим «Максимум»: rip-up & reroute не ухудшает результат", () => {
+    const P = optProject();
+    EP.Plan.Routes.setLaneOrder(null);
+    EP.Plan.Routes.build();
+    const base = EP.Plan.Routes.scoreRoutes(P);
+    const r = EP.Plan.Routes.optimizeRoutingMax({ budgetMs: 400, seed: 5 });
+    ok(r && r.score.cost <= base.cost, `максимум не хуже базы (${r.score.cost} ≤ ${base.cost})`);
+    eq(r.score.unrouted, 0, "ни одна точка не потеряла трассу");
+    EP.Plan.Routes.setLaneOrder(null);
+  });
+  test("качество трассировки — настройка проекта с бэкофиллом", () => {
+    const { P } = install({});
+    eq(P.settings.routeQuality, "fast", "по умолчанию быстрый режим (как раньше)");
+    const old = M.newProject("x"); delete old.settings.routeQuality;
+    EP.Plan.Core.importJSON(JSON.stringify({ project: old }));
+    eq(EP.Plan.Core.project.settings.routeQuality, "fast", "бэкофилл старого проекта");
+  });
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);
