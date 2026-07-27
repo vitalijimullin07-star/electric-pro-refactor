@@ -2543,7 +2543,10 @@ test("фото: deleteProject чистит кэш фото своего прое
     const s1 = M.newElement("socket", r1.id + ":0", 100, 30); s1.circuitId = qf.id; P.elements.push(s1);
     const o24 = M.newElement("output24", r1.id + ":0", 200, 240, "lv"); o24.circuitId = c24.id; P.elements.push(o24);
     eq(EP.Plan.Scheme.autoCable(P, qf), "ВВГнг(А)-LS 3×2.5", "однолинейка: марка + сечение");
-    eq(EP.Plan.Scheme.autoCable(P, c24), "ВВГнг(А)-LS 2×1.5", "линия 24В — силовой кабель 2 жилы, НЕ витая пара");
+    eq(EP.Plan.Scheme.autoCable(P, c24), "КГ ВВГнг-LS 2×2.5", "линия 24В — своя марка «от щита» (монохром), НЕ витая пара");
+    c24.rgb = true;
+    eq(EP.Plan.Scheme.autoCable(P, c24), "КГ ВВГнг-LS 5×1.5", "RGB-линия 24В — 5 жил (общий + 3 канала)");
+    c24.rgb = false;
     P.settings.cableBrand = "";
     eq(EP.Plan.Scheme.autoCable(P, qf), "3×2.5", "пустая марка — только сечение (как было раньше)");
     P.settings.cableBrand = "КГ";
@@ -2559,6 +2562,102 @@ test("фото: deleteProject чистит кэш фото своего прое
     const res = EP.Plan.Calc.calcByRoutes(P);
     ok(per && per.mark, "марка в «По линиям» есть");
     ok(Object.keys(res.cableBy).some((k) => k === per.mark), "та же марка в смете: " + per.mark + " / " + Object.keys(res.cableBy).join(","));
+  });
+
+  // ===== 24. Сценарии пользователя: выключатель → свет 220В + выводы 24В =====
+  // Общая фикстура: комната + прихожая, силовой щит + слаботочный (роутер+трансформатор),
+  // магистраль между комнатами, выключатель на линии света, лампа 220В и два вывода 24В.
+  function scen24(keys, rgb) {
+    const room = M.newRoom(G.rectPoints(0, 0, 500, 400), "Комната");
+    const hall = M.newRoom(G.rectPoints(0, 400, 500, 150), "Прихожая");
+    const pnMain = M.newPanel(60, 470, "Щит квартирный");
+    const pnLV = M.newPanel(200, 470, "Щит слаботочный"); pnLV.router = true; pnLV.transformer = true;
+    const qf = M.newCircuit("QF1 Свет", "#fbbf24", 10);
+    const c24 = M.newCircuit("24В1", "#14b8a6", 10); if (rgb != null) c24.rgb = rgb;
+    const { P } = install({ rooms: [room, hall], circuits: [qf, c24], panels: [pnMain, pnLV] });
+    const sw = M.newElement("switch", P.rooms[0].id + ":3", 100, 90, "light");
+    sw.circuitId = qf.id; sw.keys = keys; P.elements.push(sw);
+    const lamp = M.newElement("light", null, 0, 0, "light");
+    lamp.wallId = null; lamp.params = { x: 250, y: 200 }; P.elements.push(lamp);
+    const o24a = M.newElement("output24", P.rooms[0].id + ":0", 300, 240, "lv"); o24a.circuitId = c24.id; P.elements.push(o24a);
+    const o24b = M.newElement("output24", P.rooms[0].id + ":0", 400, 240, "lv"); o24b.circuitId = c24.id; P.elements.push(o24b);
+    sw.targetIds = keys >= 3 ? [lamp.id, o24a.id, o24b.id] : keys === 2 ? [lamp.id, o24a.id] : [o24a.id];
+    P.guides.push(M.newGuide([{ x: 130, y: 470 }, { x: 130, y: 200 }]));
+    EP.Plan.Routes.build();
+    // install() прогоняет проект через importJSON — линии/щиты внутри P это КОПИИ
+    // переданных объектов (id совпадают, ссылки нет): для мутаций берём объекты из P
+    const cP = (id) => (P.circuits || []).find((x) => x.id === id);
+    return { P, sw, lamp, o24a, o24b, qf: cP(qf.id), c24: cP(c24.id), pnMain, pnLV };
+  }
+  const markKeys = (P) => Object.keys(EP.Plan.Calc.calcByRoutes(P).cableBy);
+  test("сценарий 1: кабель идёт щит → выключатель → точка света (а не щит → точка)", () => {
+    const { P, sw, lamp, pnMain } = scen24(2, false);
+    const rLamp = P.routes.find((r) => r.fromId === lamp.id);
+    const rSw = P.routes.find((r) => r.fromId === sw.id);
+    ok(rLamp, "у точки света есть трасса");
+    eq(rLamp.toId, sw.id, "трасса точки света идёт к ВЫКЛЮЧАТЕЛЮ");
+    eq(!!rLamp.toPanel, false, "и НЕ к щиту напрямую");
+    ok(rSw && rSw.toPanel && rSw.toId === pnMain.id, "сам выключатель питается от силового щита");
+  });
+  test("линия точки света проставляется АВТОМАТИЧЕСКИ от выключателя", () => {
+    const { P, lamp, qf } = scen24(2, false);
+    eq(lamp.circuitId, qf.id, "лампа села на линию выключателя без ручного назначения");
+    const rLamp = P.routes.find((r) => r.fromId === lamp.id);
+    eq(rLamp.circuitId, qf.id, "и трасса отнесена к той же линии");
+  });
+  test("syncTargetCircuit: 220В-цель наследует линию, «Вывод 24В» получает свою 24В-линию", () => {
+    const room = M.newRoom(G.rectPoints(0, 0, 400, 300), "К1");
+    const qf = M.newCircuit("QF1", "#f00", 10);
+    const { P } = install({ rooms: [room], circuits: [qf] });
+    const sw = M.newElement("switch", room.id + ":3", 100, 90, "light"); sw.circuitId = qf.id; P.elements.push(sw);
+    const lamp = M.newElement("light", null, 0, 0, "light"); lamp.wallId = null; lamp.params = { x: 200, y: 150 }; P.elements.push(lamp);
+    const o24 = M.newElement("output24", room.id + ":0", 200, 240, "lv"); P.elements.push(o24);
+    EP.Plan.Elements.syncTargetCircuit(sw, lamp);
+    eq(lamp.circuitId, qf.id, "лампа → линия выключателя");
+    const c = EP.Plan.Elements.syncTargetCircuit(sw, o24);
+    ok(c && c.id === o24.circuitId, "у вывода 24В появилась своя линия");
+    ok(/^24В/.test(c.name), "и она названа с префиксом 24В: " + c.name);
+    const o24b = M.newElement("output24", room.id + ":0", 300, 240, "lv"); P.elements.push(o24b);
+    EP.Plan.Elements.syncTargetCircuit(sw, o24b);
+    eq(o24b.circuitId, o24.circuitId, "второй вывод 24В сел на ТУ ЖЕ существующую 24В-линию");
+  });
+  test("каждый вывод 24В — свой кабель от трансформаторного щита (без шлейфа)", () => {
+    const { P, o24a, o24b, pnLV } = scen24(3, false);
+    const ra = P.routes.find((r) => r.fromId === o24a.id);
+    const rb = P.routes.find((r) => r.fromId === o24b.id);
+    ok(ra && rb, "у обоих выводов 24В своя трасса");
+    eq(ra.toId, pnLV.id, "первый — к трансформаторному щиту");
+    eq(rb.toId, pnLV.id, "второй — тоже к щиту, а НЕ шлейфом через первый");
+    eq(ra.leg, "sec24", "тег «от щита» у первого");
+    eq(rb.leg, "sec24", "тег «от щита» у второго");
+  });
+  test("«до щита» (первичка 24В): 1 клавиша — 3 жилы, 2-3 клавиши — 5 жил", () => {
+    const one = scen24(1, false);
+    ok(markKeys(one.P).some((k) => k === "ВВГнг(А)-LS 3×1.5 · до щита (220В)"),
+      "1 клавиша на 24В → 3×1.5: " + markKeys(one.P).join(" | "));
+    const three = scen24(3, false);
+    ok(markKeys(three.P).some((k) => k === "ВВГнг(А)-LS 5×1.5 · до щита (220В)"),
+      "2-3 клавиши на 24В → 5×1.5: " + markKeys(three.P).join(" | "));
+    eq(EP.Plan.Routes.keys24Of(three.P, three.sw), 2, "клавиш на 24В посчитано верно");
+  });
+  test("«от щита» (24В): монохром 2×2.5, RGB 5×1.5", () => {
+    const mono = scen24(3, false);
+    ok(markKeys(mono.P).some((k) => k === "КГ ВВГнг-LS 2×2.5 · от щита (24В)"),
+      "монохром: " + markKeys(mono.P).join(" | "));
+    const rgb = scen24(3, true);
+    ok(markKeys(rgb.P).some((k) => k === "КГ ВВГнг-LS 5×1.5 · от щита (24В)"),
+      "RGB: " + markKeys(rgb.P).join(" | "));
+    // марки редактируются одним полем настроек
+    rgb.P.settings.cable24Rgb = "КГ 4×1.5";
+    ok(Object.keys(EP.Plan.Calc.calcByRoutes(rgb.P).cableBy).some((k) => k === "КГ 4×1.5 · от щита (24В)"), "марка RGB берётся из настроек");
+  });
+  test("Проверки: у линии 24В не указан тип (монохром/RGB) — подсказка", () => {
+    const un = scen24(3, null);
+    const iss = EP.Plan.Rules.run(un.P).issues.map((i) => i.msg).join(" | ");
+    ok(/укажи тип 24В/.test(iss), "есть напоминание: " + iss);
+    un.c24.rgb = false;
+    const iss2 = EP.Plan.Rules.run(un.P).issues.map((i) => i.msg).join(" | ");
+    eq(/укажи тип 24В/.test(iss2), false, "после выбора «Монохром» подсказка уходит");
   });
 
   console.log("\n" + "=".repeat(48));

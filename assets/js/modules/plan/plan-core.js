@@ -42,6 +42,11 @@
     // назначали цены кнопкой цены в «Расчёте», записи в «Моей БД» называются так же —
     // сокращение до «ВВГнг» тихо порвало бы им сопоставление цены по имени.
     cableBrand: "ВВГнг(А)-LS",
+    // 24В: кабель «от щита до точки» (вторичка трансформатора) — просьба пользователя,
+    // отдельные марки, а не сечение из общего каталога: монохромный вывод 24В и RGB
+    // (у RGB нужны общий + 3 канала, поэтому 5 жил). Редактируются в шапке шторки «Расчёт».
+    cable24: "КГ ВВГнг-LS 2×2.5",
+    cable24Rgb: "КГ ВВГнг-LS 5×1.5",
     // выпуск кабеля (концы на разделку/подключение) — см НА КАЖДЫЙ конец кабеля, добавляется
     // в метраж по марке отдельно от самой трассы/спуска (просьба пользователя: «выпуск кабеля
     // из подрозетников… длину вывода из стены любого кабеля, и так же в распред коробках…
@@ -122,6 +127,7 @@
         mainBreaker: DEFAULTS.mainBreaker, phases: DEFAULTS.phases, meter: false, mainRcd: false,
         panelBrand: DEFAULTS.panelBrand, panelReserve: DEFAULTS.panelReserve, panelBox: null,
         symbolStyle: DEFAULTS.symbolStyle, cableReserve: DEFAULTS.cableReserve, cableBrand: DEFAULTS.cableBrand,
+        cable24: DEFAULTS.cable24, cable24Rgb: DEFAULTS.cable24Rgb,
         cableStubPoint: DEFAULTS.cableStubPoint, cableStubJunction: DEFAULTS.cableStubJunction, cableStubPanel: DEFAULTS.cableStubPanel,
         routeOffset: DEFAULTS.routeOffset, sleeveD: DEFAULTS.sleeveD, connectorMode: DEFAULTS.connectorMode,
         gofraCeil: DEFAULTS.gofraCeil,
@@ -166,7 +172,9 @@
   // до первички трансформатора), нужна только у 24В-линий с управлением через клавишу;
   // у обычных линий не используется. Разделение — просьба пользователя: «линия 24в
   // отдельным пунктом, до щита и от щита тоже отдельным пунктом».
-  function newCircuit(name, color, breaker) { return { id: uid("cc"), name: name || "Линия", color: color || DEFAULTS.circuitColors[0], breaker: breaker || 16, rcd: false, poles: 1, phase: 1, cable: null, cable220: null, rcdRating: 30 }; }
+  // rgb: null — НЕ УКАЗАНО (для линии 24В это подсветится в «Проверках»: от него зависит
+  // кабель «от щита» — 2 жилы у монохрома, 5 у RGB), false — монохром, true — RGB
+  function newCircuit(name, color, breaker) { return { id: uid("cc"), name: name || "Линия", color: color || DEFAULTS.circuitColors[0], breaker: breaker || 16, rcd: false, poles: 1, phase: 1, cable: null, cable220: null, rcdRating: 30, rgb: null }; }
   // ручная однолинейка (Слой 7б): группы (УЗО/Диф) -> линии, линия может ссылаться
   // на линию плана (circuitId в p.circuits) — тогда она уходит из «не расставлено» в чек-листе.
   // Вводной автомат/счётчик/вводное УЗО НЕ дублируются здесь — те же settings.mainBreaker/
@@ -413,13 +421,15 @@
     p.voids = p.voids || [];
     p.ledStrips = p.ledStrips || [];
     p.circuits = p.circuits || [];
-    p.circuits.forEach((c) => { if (c.phase !== 1 && c.phase !== 2 && c.phase !== 3) c.phase = 1; if (c.cable220 === undefined) c.cable220 = null; });
+    p.circuits.forEach((c) => { if (c.phase !== 1 && c.phase !== 2 && c.phase !== 3) c.phase = 1; if (c.cable220 === undefined) c.cable220 = null; if (c.rgb === undefined) c.rgb = null; });
     p.panels = p.panels || [];
     p.panels.forEach((pn) => { if (pn.transformer == null) pn.transformer = false; if (pn.router == null) pn.router = false; });
     p.settings = p.settings || {};
     if (!p.settings.symbolStyle) p.settings.symbolStyle = DEFAULTS.symbolStyle;
     if (p.settings.cableReserve == null) p.settings.cableReserve = DEFAULTS.cableReserve;
     if (p.settings.cableBrand == null) p.settings.cableBrand = DEFAULTS.cableBrand;
+    if (p.settings.cable24 == null) p.settings.cable24 = DEFAULTS.cable24;
+    if (p.settings.cable24Rgb == null) p.settings.cable24Rgb = DEFAULTS.cable24Rgb;
     if (p.settings.cableStubPoint == null) p.settings.cableStubPoint = DEFAULTS.cableStubPoint;
     if (p.settings.cableStubJunction == null) p.settings.cableStubJunction = DEFAULTS.cableStubJunction;
     if (p.settings.cableStubPanel == null) p.settings.cableStubPanel = DEFAULTS.cableStubPanel;

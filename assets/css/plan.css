@@ -899,3 +899,7 @@ body[data-visual-mode="day"] .ep-plan-unfpt { background: rgba(255,255,255,.98);
 .ep-plan-unfpt-b.is-wide { flex: 1; }
 .ep-plan-unfpt-b:active { background: rgba(56,189,248,.25); }
 body[data-visual-mode="day"] .ep-plan-unfpt-b { background: #f1f5f9; border-color: #cbd5e1; color: #0f172a; }
+
+/* линия 24В в блоке «По линиям (QF)»: выбор монохром/RGB — от него зависит кабель «от щита» */
+.ep-plan-qfrgb { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 0 6px 6px 18px; font-size: 12px; color: var(--muted); }
+.ep-plan-qfrgb .ep-plan-chip { font-size: 12px; padding: 2px 8px; }
