@@ -6,7 +6,10 @@
   "use strict";
   window.EP = window.EP || {};
 
-  const T = { sheet: "План электрики", made: "Исполнитель", obj: "Объект", addr: "Адрес", client: "Заказчик", area: "Площадь", roomsN: "Помещений", date: "Дата", legend: "Условные обозначения", expl: "Экспликация помещений", spec: "Спецификация точек", door: "Дверь", win: "Окно", panel: "Щит", genplan: "Общий план", specSheet: "Спецификация", tracesOf: (name) => `Трассы: ${name}` };
+  const T = { sheet: "План электрики", made: "Исполнитель", obj: "Объект", addr: "Адрес", client: "Заказчик", area: "Площадь", roomsN: "Помещений", date: "Дата", legend: "Условные обозначения", expl: "Экспликация помещений", spec: "Спецификация точек", door: "Дверь", win: "Окно", panel: "Щит", genplan: "Общий план", specSheet: "Спецификация", tracesOf: (name) => `Трассы: ${name}`,
+    stage: "Стадия", stageVal: "Р", sheetNo: "Лист", sheetsN: "Листов", scaleLbl: "Масштаб",
+    album: "Состав альбома", docTitle: "Проект электроснабжения", sheetName: "Наименование листа",
+    unfolds: "Развёртки стен", scheme: "Однолинейная схема", circuits: "Линии и щит" };
   // слои-«трассы» — те, что реально прокладываются кабелем (не считая dims/labels/routes —
   // это служебные оверлеи, не самостоятельный вид работ)
   const TRACE_LAYER_IDS = ["light", "power", "lv", "tv", "cctv", "ac", "warm"];
@@ -34,17 +37,42 @@
     host.style.cssText = "position:fixed;left:-2000px;top:0;width:1050px;height:700px;";
     document.body.appendChild(host);
     const cv = EP.Plan.Canvas.create(host);
+    // ЯВНЫЙ размер офскрин-холста: .ep-plan-svg в plan.css — flex:1 1 auto; width:auto;
+    // height:auto (нужно живому редактору), а host здесь НЕ flex-контейнер, поэтому svg
+    // сжимался до интринсик-размера и fit() мерил не 1050×700, а почти вертикальный бокс —
+    // viewBox выходил портретным, и подбор масштаба давал 1:150 вместо 1:50 (поймано живым
+    // прогоном печати: план 8×4м печатался как 60×142мм вместо 160×80мм).
+    cv.svg.style.width = "1050px"; cv.svg.style.height = "700px";
     const bb = G().projectBBox(p);
     if (bb) cv.fit(bb, 0.07);
     EP.Plan.Render.draw(cv, p, {});
     ["grid", "underlay"].forEach((n) => { const gl = cv.layers[n]; while (gl.firstChild) gl.removeChild(gl.firstChild); });
-    cv.svg.setAttribute("width", "100%");
+    // ИСТИННЫЙ МАСШТАБ ЧЕРТЕЖА (признак проф. документа, а не картинки «во всю ширину»):
+    // viewBox после fit() — в САНТИМЕТРАХ проекта, поэтому физический размер на бумаге =
+    // см × 10 / знаменатель масштаба (мм). Подбираем ближайший СТАНДАРТНЫЙ масштаб, при
+    // котором чертёж влезает в поле листа, и задаём svg размер в мм — печать выходит
+    // в реальном масштабе, и он же честно пишется в штамп.
+    const vb = String(cv.svg.getAttribute("viewBox") || "").trim().split(/\s+/).map(Number);
+    let scale = null;
+    if (vb.length === 4 && vb[2] > 0 && vb[3] > 0) {
+      scale = SCALES.find((sc) => (vb[2] * 10 / sc) <= PLAN_AREA.w && (vb[3] * 10 / sc) <= PLAN_AREA.h) || SCALES[SCALES.length - 1];
+      cv.svg.setAttribute("width", (Math.round(vb[2] * 100 / scale) / 10) + "mm");
+      cv.svg.setAttribute("height", (Math.round(vb[3] * 100 / scale) / 10) + "mm");
+    } else {
+      cv.svg.setAttribute("width", "100%");
+    }
     cv.svg.removeAttribute("class");
     const html = cv.svg.outerHTML;
     cv.destroy();
     document.body.removeChild(host);
+    lastPlanScale = scale;
     return html;
   }
+  // поле чертежа внутри рамки листа A4 landscape (297×210 при полях 20/5/5/5 и штампе
+  // 185×25мм справа снизу) и стандартный ряд масштабов строительных чертежей
+  const PLAN_AREA = { w: 262, h: 146 };
+  const SCALES = [20, 25, 50, 75, 100, 150, 200, 250, 500];
+  let lastPlanScale = null; // масштаб последнего собранного плана — идёт в штамп листа
 
   // временно включает ТОЛЬКО перечисленные слои (project.layers[].visible), зовёт fn,
   // восстанавливает исходную видимость — для страниц-по-слоям альбома (не трогаем
@@ -74,32 +102,90 @@
   // r.layer, см. plan-render.js draw()).
   function buildLayerPages(p) {
     const ids = usedTraceLayers(p);
-    if (!ids.length) return "";
+    if (!ids.length) return [];
     return ids.map((id) => {
       const svg = withLayers(p, [id, "routes", "labels"], () => buildSvg(p));
-      return `<div class="unfsec"><h3>${esc(T.tracesOf(layerName(p, id)))}</h3><div class="plan">${svg}</div></div>`;
-    }).join("");
+      return { title: T.tracesOf(layerName(p, id)), body: `<div class="plan">${svg}</div>`, scale: lastPlanScale };
+    });
   }
   // титульный лист — заказчик/объект/площадь (просьба пользователя: «титульный
   // лист где информация о заказчике и квартире/доме»)
-  function buildTitlePage(p) {
+  // Общие данные проекта для титула и штампа каждого листа
+  function docMeta(p) {
     const master = (window.EP.state && EP.state.user && EP.state.user.displayName) || "";
-    const date = new Date().toLocaleDateString("ru-RU");
+    return {
+      obj: p.name || "—", addr: p.address || "—", client: p.client || "—",
+      master: master || "—", date: new Date().toLocaleDateString("ru-RU")
+    };
+  }
+  // ОСНОВНАЯ НАДПИСЬ (штамп) — на КАЖДОМ листе, правый нижний угол, как в проектной
+  // документации: объект/адрес, заказчик, исполнитель, наименование листа, стадия,
+  // номер листа из общего числа, масштаб, дата. Раньше штамп был один раз на титуле,
+  // а листы уходили заказчику без единой идентификации (просьба пользователя:
+  // «адаптируй печать PDF как проф. документ и проф. чертёж»).
+  function stampHtml(p, title, no, of, scale) {
+    const m = docMeta(p);
+    return `<table class="stamp">
+      <tr>
+        <td class="st-k">${T.obj}</td><td class="st-v" colspan="3">${esc(m.obj)}</td>
+        <td class="st-k">${T.stage}</td><td class="st-v st-c">${T.stageVal}</td>
+        <td class="st-k">${T.sheetNo}</td><td class="st-v st-c">${no}</td>
+      </tr>
+      <tr>
+        <td class="st-k">${T.addr}</td><td class="st-v" colspan="3">${esc(m.addr)}</td>
+        <td class="st-k">${T.scaleLbl}</td><td class="st-v st-c">${scale ? "1:" + scale : "—"}</td>
+        <td class="st-k">${T.sheetsN}</td><td class="st-v st-c">${of}</td>
+      </tr>
+      <tr>
+        <td class="st-k">${T.client}</td><td class="st-v" colspan="3">${esc(m.client)}</td>
+        <td class="st-k">${T.made}</td><td class="st-v" colspan="3">${esc(m.master)}</td>
+      </tr>
+      <tr>
+        <td class="st-k">${T.sheetName}</td><td class="st-v st-title" colspan="5">${esc(title)}</td>
+        <td class="st-k">${T.date}</td><td class="st-v st-c">${esc(m.date)}</td>
+      </tr>
+    </table>`;
+  }
+  // один лист альбома: поля по ГОСТ 2.301 (20мм слева под подшивку, 5мм остальные),
+  // рамка, заголовок листа и штамп внизу справа
+  function sheetWrap(p, page, no, of) {
+    return `<div class="sheet"><div class="fr">
+      <h2>${esc(page.title)}</h2>
+      <div class="body">${page.body}</div>
+      ${stampHtml(p, page.title, no, of, page.scale || null)}
+    </div></div>`;
+  }
+  // титульный лист: объект/заказчик/площадь + ВЕДОМОСТЬ листов альбома (состав) —
+  // так документ читается как альбом, а не как набор картинок
+  function buildTitlePage(p, pages, of) {
+    const m = docMeta(p);
     const roomsList = (p.rooms || []).filter((r) => (r.points || []).length >= 3);
-    const totalArea = roomsList.reduce((s, r) => s + G().roomNetArea(p, r), 0);
-    return `<div class="titlepage">
-      <div class="tpbadge">⚡</div>
-      <h1>${esc(p.name)}</h1>
-      <div class="tpsub">Проект электроснабжения</div>
-      <table class="tptable">
-        <tr><th>${T.obj}</th><td>${esc(p.name)}</td></tr>
-        <tr><th>${T.addr}</th><td>${esc(p.address || "—")}</td></tr>
-        ${p.client ? `<tr><th>${T.client}</th><td>${esc(p.client)}</td></tr>` : ""}
-        ${roomsList.length ? `<tr><th>${T.area}</th><td>${G().fmtArea(totalArea)}</td></tr><tr><th>${T.roomsN}</th><td>${roomsList.length}</td></tr>` : ""}
-        <tr><th>${T.made}</th><td>${esc(master || "—")}</td></tr>
-        <tr><th>${T.date}</th><td>${esc(date)}</td></tr>
-      </table>
-    </div>`;
+    const totalArea = roomsList.reduce((s2, r) => s2 + G().roomNetArea(p, r), 0);
+    const ved = pages.map((pg, i) => `<tr><td class="st-c">${i + 2}</td><td>${esc(pg.title)}</td><td class="st-c">${pg.scale ? "1:" + pg.scale : "—"}</td></tr>`).join("");
+    return `<div class="sheet"><div class="fr">
+      <div class="tp">
+        <div class="tp-top">
+          <div class="tp-stage">${T.stage} ${T.stageVal}</div>
+          <h1>${esc(m.obj)}</h1>
+          <div class="tp-sub">${T.docTitle}</div>
+        </div>
+        <div class="tp-cols">
+          <table class="tb tp-info">
+            <tr><th>${T.obj}</th><td>${esc(m.obj)}</td></tr>
+            <tr><th>${T.addr}</th><td>${esc(m.addr)}</td></tr>
+            <tr><th>${T.client}</th><td>${esc(m.client)}</td></tr>
+            ${roomsList.length ? `<tr><th>${T.area}</th><td>${G().fmtArea(totalArea)}</td></tr><tr><th>${T.roomsN}</th><td>${roomsList.length}</td></tr>` : ""}
+            <tr><th>${T.made}</th><td>${esc(m.master)}</td></tr>
+            <tr><th>${T.date}</th><td>${esc(m.date)}</td></tr>
+          </table>
+          <table class="tb tp-ved">
+            <thead><tr><th colspan="3">${T.album}</th></tr><tr><th>Лист</th><th>Наименование</th><th>М</th></tr></thead>
+            <tbody><tr><td class="st-c">1</td><td>Титульный лист. ${T.album}</td><td class="st-c">—</td></tr>${ved}</tbody>
+          </table>
+        </div>
+      </div>
+      ${stampHtml(p, "Титульный лист. " + T.album, 1, of, null)}
+    </div></div>`;
   }
 
   // развёртка одной стены для печати (длина × высота, точки с рулетками от угла и от пола)
@@ -261,20 +347,20 @@
         cards.push(`<div class="unfcard"><h4>${esc(room.name)} · стена ${w.n} · ${G().fmtLen(w.len)} × ${G().fmtLen(room.height || p.settings.ceilingHeight)}</h4>${unfoldSvg(p, room, w, els)}</div>`);
       });
     });
-    if (!cards.length) return "";
+    if (!cards.length) return [];
     const totalPages = Math.ceil(cards.length / UNF_PER_PAGE);
     const pages = [];
     for (let i = 0; i < cards.length; i += UNF_PER_PAGE) {
       const n = i / UNF_PER_PAGE + 1;
-      const title = totalPages > 1 ? `Развёртки стен (${n}/${totalPages})` : "Развёртки стен";
-      pages.push(`<div class="unfsec"><h3>${esc(title)}</h3><div class="unfgrid">${cards.slice(i, i + UNF_PER_PAGE).join("")}</div></div>`);
+      const title = totalPages > 1 ? `${T.unfolds} (${n}/${totalPages})` : T.unfolds;
+      pages.push({ title, body: `<div class="unfgrid">${cards.slice(i, i + UNF_PER_PAGE).join("")}</div>` });
     }
-    return pages.join("");
+    return pages;
   }
 
   // однолинейная схема в лист (тем же движком, что и в приложении)
   function buildScheme(p) {
-    if (!window.ShieldSchemeSVG || !EP.Plan.Scheme || !(p.circuits || []).length) return "";
+    if (!window.ShieldSchemeSVG || !EP.Plan.Scheme || !(p.circuits || []).length) return [];
     try {
       const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       window.ShieldSchemeSVG.render(svg, EP.Plan.Scheme.buildTree(p));
@@ -290,21 +376,21 @@
       const w0 = svg.getAttribute("width"), h0 = svg.getAttribute("height");
       if (w0 && h0) svg.setAttribute("viewBox", `0 0 ${w0} ${h0}`);
       svg.setAttribute("width", "100%");
-      return `<div class="unfsec"><h3>Однолинейная схема</h3><div class="schemebox">${svg.outerHTML}</div></div>`;
-    } catch (e) { return ""; }
+      return [{ title: T.scheme, body: `<div class="schemebox">${svg.outerHTML}</div>` }];
+    } catch (e) { return []; }
   }
   // таблица линий (QF) + щит
   function buildCircuits(p) {
     const circuits = p.circuits || [];
-    if (!circuits.length) return "";
+    if (!circuits.length) return [];
     if (EP.Plan.Scheme && EP.Plan.Scheme.recompute) { try { EP.Plan.Scheme.recompute(p); } catch (e) {} }
     const rl = EP.Plan.Routes ? EP.Plan.Routes.lengths(p) : { byCircuit: {} };
     const cableOf = (c) => c.cable || (EP.Plan.Scheme && EP.Plan.Scheme.autoCable ? EP.Plan.Scheme.autoCable(p, c) : null) || "—";
     const rows = circuits.map((c) => `<tr><td><i class="cd" style="background:${esc(c.color)}"></i>${esc(c.name)}</td><td>${(c.breaker || 16)}A${c.rcd ? " + УЗО" : ""}</td><td>${esc(cableOf(c))}</td><td>${c.poles === 3 ? "3P" : "1P"}</td><td>${rl.byCircuit && rl.byCircuit[c.id] ? G().fmtLen(rl.byCircuit[c.id]) : "—"}</td></tr>`).join("");
     const box = p.settings.panelBox;
     const panelInfo = box && box.modules ? `Щит: <b>${esc(box.brand)}</b> · ${box.modules} мод · ${box.wmm}×${box.hmm}×${box.dmm} мм` : "";
-    return `<div class="unfsec"><h3>Линии и щит</h3>${panelInfo ? `<p style="margin:2px 0 6px">${panelInfo}</p>` : ""}
-      <table><tr><th>Линия</th><th>Автомат</th><th>Кабель</th><th>Полюса</th><th>Длина</th></tr>${rows}</table></div>`;
+    return [{ title: T.circuits, body: `${panelInfo ? `<p class="note">${panelInfo}</p>` : ""}
+      <table class="tb"><thead><tr><th>Линия</th><th>Аппарат защиты</th><th>Кабель</th><th>Полюса</th><th>Длина трасс</th></tr></thead><tbody>${rows}</tbody></table>` }];
   }
 
   function counts(p) {
@@ -340,29 +426,63 @@
       + ((p.openings || []).some((o) => o.type === "door") ? `<div><i class="g">Дв</i>${T.door}</div>` : "")
       + ((p.openings || []).some((o) => o.type === "window") ? `<div><i class="g">Ок</i>${T.win}</div>` : "")
       + ((p.panels || []).length ? `<div><i class="g">Щ</i>${T.panel}</div>` : "");
+    // ---- альбом: собираем ЛИСТЫ по порядку, потом нумеруем (штамп каждого листа знает
+    // свой номер и общее число — «Лист N / Листов M», как в проектной документации) ----
+    const genplanSvg = buildSvg(p);
+    const pages = [{ title: T.genplan, body: `<div class="plan">${genplanSvg}</div>`, scale: lastPlanScale }];
+    pages.push({ title: T.specSheet, body: `<div class="cols">
+          <div><h3>${T.expl}</h3><table class="tb"><thead><tr><th>№</th><th>Помещение</th><th>S</th><th>Стены</th></tr></thead><tbody>${expl}</tbody></table></div>
+          <div><h3>${T.spec}</h3><table class="tb"><thead><tr><th></th><th>Тип</th><th>Кол-во</th></tr></thead><tbody>${spec}</tbody></table></div>
+          <div class="legend"><h3>${T.legend}</h3>${legendRows}</div>
+        </div>` });
+    buildLayerPages(p).forEach((pg) => pages.push(pg));
+    buildCircuits(p).forEach((pg) => pages.push(pg));
+    buildUnfolds(p).forEach((pg) => pages.push(pg));
+    buildScheme(p).forEach((pg) => pages.push(pg));
+    const of = pages.length + 1; // + титульный лист
+    const sheets = buildTitlePage(p, pages, of) + pages.map((pg, i) => sheetWrap(p, pg, i + 2, of)).join("");
     return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>${esc(p.name)} — ${T.sheet}</title><style>
-      @page { size: A4 landscape; margin: 8mm; }
+      /* ---- лист альбома: A4 landscape, поля по ГОСТ 2.301 (20мм слева под подшивку,
+         5мм остальные), рамка, штамп внизу справа. margin:0 у @page — поля рисуем сами,
+         иначе браузерные поля складывались бы с нашими и рамка «плыла» от принтера ---- */
+      @page { size: A4 landscape; margin: 0; }
       * { box-sizing: border-box; margin: 0; }
-      body { font: 11px/1.35 system-ui, sans-serif; color: #111; }
-      .frame { border: 2.2px solid #111; padding: 8px; min-height: 190mm; display: flex; flex-direction: column; gap: 6px; }
-      .plan { flex: 1; border: 1px solid #999; min-height: 120mm; display:flex; align-items:center; justify-content:center; }
-      .plan svg { max-width: 100%; max-height: 128mm; }
-      .cols { display: flex; gap: 8px; align-items: flex-start; }
+      body { font: 10.5px/1.3 Arial, "Helvetica Neue", Helvetica, sans-serif; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .sheet { position: relative; width: 297mm; height: 210mm; padding: 5mm 5mm 5mm 20mm; overflow: hidden; break-after: page; page-break-after: always; }
+      .sheet:last-child { break-after: auto; page-break-after: auto; }
+      .fr { position: relative; width: 100%; height: 100%; border: 0.7mm solid #000; padding: 3mm; display: flex; flex-direction: column; }
+      .fr > h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding-bottom: 1mm; border-bottom: .3mm solid #000; margin-bottom: 2mm; }
+      /* содержимое НИКОГДА не залезает под штамп (он position:absolute) */
+      .body { flex: 1 1 auto; min-height: 0; padding-bottom: 27mm; }
+      .plan { height: 100%; display: flex; align-items: center; justify-content: center; }
+      .plan svg { max-width: 100%; max-height: 100%; }
+      .cols { display: flex; gap: 4mm; align-items: flex-start; }
       .cols > div { flex: 1; }
-      h3 { font-size: 11px; margin: 2px 0 4px; border-bottom: 1px solid #111; }
+      h3 { font-size: 10.5px; font-weight: 700; margin: 0 0 1.5mm; }
       table { width: 100%; border-collapse: collapse; }
-      td, th { border: 1px solid #555; padding: 2px 5px; text-align: left; font-size: 10px; }
-      .legend div { display: flex; align-items: center; gap: 6px; padding: 1.5px 0; }
-      .g { font-style: normal; display: inline-flex; width: 17px; height: 17px; border-radius: 50%; border: 1px solid #111; align-items: center; justify-content: center; font-size: 8.5px; font-weight: 700; flex: none; }
-      /* титульный лист (заменил собой прежний .stamp внизу листа — тот же
-         Объект/Адрес/Исполнитель/Дата, но отдельной первой страницей, плюс Заказчик/Площадь) */
-      .titlepage { break-after: page; page-break-after: always; min-height: 190mm; border: 2.2px solid #111; padding: 20mm; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
-      .titlepage .tpbadge { font-size: 40px; margin-bottom: 10px; }
-      .titlepage h1 { font-size: 24px; margin-bottom: 4px; }
-      .titlepage .tpsub { color: #555; margin-bottom: 22px; font-size: 13px; }
-      .titlepage .tptable { border-collapse: collapse; }
-      .titlepage .tptable th, .titlepage .tptable td { border: 1px solid #555; padding: 5px 16px; text-align: left; font-size: 12px; }
-      .titlepage .tptable th { color: #555; font-weight: 600; white-space: nowrap; background: #f8fafc; }
+      td, th { border: .25mm solid #000; padding: .8mm 1.5mm; text-align: left; font-size: 9.5px; }
+      thead th, .tb th { background: #ececec; font-weight: 700; }
+      .note { font-size: 10px; margin-bottom: 2mm; }
+      .legend div { display: flex; align-items: center; gap: 2mm; padding: .4mm 0; font-size: 9.5px; }
+      .g { font-style: normal; display: inline-flex; width: 4.5mm; height: 4.5mm; border-radius: 50%; border: .25mm solid #000; align-items: center; justify-content: center; font-size: 7.5px; font-weight: 700; flex: none; }
+      /* ---- основная надпись (штамп) ---- */
+      .stamp { position: absolute; right: 0; bottom: 0; width: 185mm; border-collapse: collapse; table-layout: fixed; }
+      .stamp td { border: .25mm solid #000; padding: .6mm 1.2mm; height: 6mm; font-size: 8.5px; vertical-align: middle; }
+      .stamp .st-k { width: 20mm; color: #333; font-size: 7.5px; text-transform: uppercase; letter-spacing: .02em; background: #f4f4f4; }
+      .stamp .st-c { text-align: center; }
+      .stamp .st-title { font-weight: 700; font-size: 10px; }
+      /* ---- титульный лист ---- */
+      .tp { display: flex; flex-direction: column; height: 100%; padding-bottom: 27mm; }
+      .tp-top { text-align: center; padding: 6mm 0 8mm; }
+      .tp-stage { font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: #444; margin-bottom: 3mm; }
+      .tp-top h1 { font-size: 22px; font-weight: 700; letter-spacing: .01em; }
+      .tp-sub { font-size: 12px; color: #333; margin-top: 2mm; text-transform: uppercase; letter-spacing: .08em; }
+      .tp-cols { display: flex; gap: 6mm; align-items: flex-start; }
+      .tp-info { flex: 0 0 105mm; }
+      .tp-info th { width: 32mm; white-space: nowrap; }
+      .tp-ved { flex: 1 1 auto; }
+      .tp-ved th:first-child, .tp-ved td:first-child { width: 12mm; }
+      .tp-ved th:last-child, .tp-ved td:last-child { width: 16mm; text-align: center; }
       /* сцена SVG — печатные цвета */
       .gsym { flex: none; vertical-align: middle; }
       .legend .gsym { margin-right: 0; }
@@ -403,12 +523,10 @@
          в plan.css, а этот <style> — отдельный, только для печати. */
       .ep-plan-swlink, .ep-plan-swchain { fill: none; }
       /* развёртки стен */
-      .unfsec { break-before: page; page-break-before: always; margin-top: 6px; }
-      .unfsec h3 { font-size: 12px; margin-bottom: 6px; }
-      .unfgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-      .unfcard { border: 1px solid #999; padding: 4px 6px; break-inside: avoid; }
-      .unfcard h4 { font-size: 9.5px; margin-bottom: 2px; }
-      .unf { width: 100%; max-height: 160mm; }
+      .unfgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; height: 100%; }
+      .unfcard { border: .25mm solid #000; padding: 1.5mm 2mm; break-inside: avoid; display: flex; flex-direction: column; }
+      .unfcard h4 { font-size: 9px; font-weight: 700; margin-bottom: 1mm; }
+      .unf { width: 100%; flex: 1 1 auto; max-height: 145mm; }
       .unfwall { fill: #f1f5f9; stroke: #94a3b8; stroke-width: 1; }
       .unffloor { stroke: #111; stroke-width: 2; }
       .unfopen { fill: rgba(56,189,248,.12); stroke: #0891b2; stroke-width: 1; }
@@ -421,27 +539,10 @@
       .unfglyph { fill: #fff; font-weight: 700; font-family: system-ui; }
       .unfqf { font-weight: 700; font-family: system-ui; }
       /* однолинейка + линии */
-      .schemebox { border: 1px solid #999; padding: 6px; overflow: auto; }
+      .schemebox { border: .25mm solid #000; padding: 2mm; overflow: hidden; height: 100%; display: flex; align-items: center; justify-content: center; }
       .schemebox svg { max-width: 100%; height: auto; }
       .cd { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
-    </style></head><body>
-      ${buildTitlePage(p)}
-      <div class="frame">
-        <h3>${T.genplan}</h3>
-        <div class="plan">${buildSvg(p)}</div>
-      </div>
-      <div class="unfsec"><h3>${T.specSheet}</h3>
-        <div class="cols">
-          <div><h3>${T.expl}</h3><table><tr><th>№</th><th>Помещение</th><th>S</th><th>Стены</th></tr>${expl}</table></div>
-          <div><h3>${T.spec}</h3><table><tr><th></th><th>Тип</th><th>Кол-во</th></tr>${spec}</table></div>
-          <div class="legend"><h3>${T.legend}</h3>${legendRows}</div>
-        </div>
-      </div>
-      ${buildLayerPages(p)}
-      ${buildCircuits(p)}
-      ${buildUnfolds(p)}
-      ${buildScheme(p)}
-    </body></html>`;
+    </style></head><body>${sheets}</body></html>`;
   }
 
   function print() {
