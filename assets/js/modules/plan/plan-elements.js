@@ -19,8 +19,19 @@
     warmfloor: { name: "Тёплый пол",  glyph: "ТП", layer: "warm",  h: 0, free: true },
     internet:  { name: "Интернет",    glyph: "И",  layer: "lv",    h: 30 },
     tv:        { name: "ТВ",          glyph: "ТВ", layer: "tv",    h: 130 },
-    camera:    { name: "Камера",      glyph: "ВК", layer: "cctv",  h: 230 },
+    // камера: КАЖДАЯ своей линией в слаботочный щит (ownLine — placeAt сразу создаёт ей
+    // отдельную линию CCTVn), плюс уточнение питания/данных (feedChoice: PoE по витой паре
+    // ИЛИ отдельный КГ ВВГнг 3×1.5 + витая пара/оптика) — просьба пользователя
+    camera:    { name: "Камера",      glyph: "ВК", layer: "cctv",  h: 230, feedChoice: true, ownLine: true },
     sensor:    { name: "Датчик",      glyph: "Д",  layer: "lv",    h: 220 },
+    // датчик протечки — у ПОЛА; его трасса идёт к контроллеру «Нептун» (щит с флагом
+    // neptun), а не к обычному слаботочному щиту — см. kindOf в plan-routes.js
+    leak:      { name: "Датчик протечки", glyph: "ПР", layer: "lv", h: 5 },
+    intercom:  { name: "Домофон",     glyph: "ДФ", layer: "lv",    h: 150, feedChoice: true },
+    // датчики движения/освещённости назначаются НА лампу или подсветку — targets:true
+    // включает ТУ ЖЕ строку выбора цели, что у выключателя (switchTargetRow)
+    pir:       { name: "Датчик движения", glyph: "ДД", layer: "lv", h: null, free: true, targets: true },
+    lux:       { name: "Датчик освещ.",   glyph: "ДО", layer: "lv", h: null, free: true, targets: true },
     output:    { name: "Вывод",       glyph: "Вых", layer: "power", h: null, free: true, layerChoice: true },
     output24:  { name: "Вывод 24В",   glyph: "24В", layer: "lv",    h: null, free: true },
     // трёхфазный вывод: «пятижилка» (под клеммы прибора) ИЛИ силовая розетка 3ф —
@@ -210,6 +221,11 @@
       if (t.block) el.params = { items: ["socket"] }; // рамка начинается с одной розетки
       if (hit.wall.isBeam) el.beamSide = beamSideOf(w, hit.wall); // см. beamSideOf выше
       p.elements.push(el);
+      // КАЖДАЯ камера — СВОЕЙ линией в слаботочный щит (просьба пользователя: «видео камеры
+      // должны все отдельными линиями идти в слаботочный щит»): линия создаётся сразу при
+      // постановке, поэтому камеры физически не могут склеиться в один шлейф —
+      // routeGroups группирует по circuitId, и у каждой он свой (CCTV1, CCTV2…)
+      if (t.ownLine && !el.circuitId) assignNewCircuit(el);
       c.persist("elem-add");
       if (t.block) { openEditor(el); return; } // сразу открываем сборку блока
       sheetPalette(true); // счётчик «Смонтировано: N/M» в шапке палитры — иначе M устаревает с каждой новой точкой (свёрнутость сохраняем)
@@ -219,6 +235,7 @@
       const el = c.model.newElement(S.selType, null, 0, defaultHeight(S.selType), t.layer);
       el.params = { x: sp.x, y: sp.y };
       p.elements.push(el);
+      if (t.ownLine && !el.circuitId) assignNewCircuit(el); // см. комментарий выше (камеры)
     } else { rooms().toast(T.tapWall); return; }
     c.persist("elem-add");
     sheetPalette(true); // тот же счётчик — ветка свободной точки (свет/ТП/вывод)
@@ -277,6 +294,8 @@
       ${t.layerChoice ? outLayerRow(el) : ""}
       ${el.type === "output3" ? threeKindRow(el) : ""}
       ${el.type === "switch" ? switchKindRow(el) + switchKeysRow(el) + switchChainRow(el) + (el.chainNext ? "" : switchTargetRow(el)) : ""}
+      ${t.targets ? switchTargetRow(el) : ""}
+      ${t.feedChoice ? feedRow(el) : ""}
       ${el.type === "block" ? blockHtml(el) : ""}
       <div class="ep-plan-srow">${T.status}:
         ${STATUS.map(([v, l]) => `<button type="button" class="ep-plan-chip ep-clickable ${el.status === v ? "on" : ""}" data-pe-status="${v}">${l}</button>`).join("")}
@@ -352,6 +371,7 @@
       <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-ptrafo="${esc(pn.id)}" ${pn.transformer ? "checked" : ""}>Трансформатор в слаботочном щите (24В для ленты)</label></div>
       <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-prouter="${esc(pn.id)}" ${pn.router ? "checked" : ""}>Роутер — сюда идут все линии интернет/ТВ/видеонаблюдение</label></div>
       <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-pavr="${esc(pn.id)}" ${pn.avr ? "checked" : ""}>Система АВР (автоматический ввод резерва: второй ввод / генератор)</label></div>
+      <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-pneptun="${esc(pn.id)}" ${pn.neptun ? "checked" : ""}>Контроллер «Нептун» — сюда идут датчики протечки</label></div>
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pe-papply="${esc(pn.id)}">${T.apply}</button>
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pe-pdel="${esc(pn.id)}">${T.del}</button>
@@ -477,6 +497,19 @@
     target.circuitId = sw.circuitId;
     return (p.circuits || []).find((c) => c.id === sw.circuitId) || null;
   }
+  // Уточнение по слаботочке (просьба пользователя: «должно быть уточнение — питание по
+  // ютп, или отдельно кг ввгнг 3×1.5, и ютп или оптика»): чем прибор ПИТАЕТСЯ и по чему
+  // передаёт ДАННЫЕ. От этого напрямую зависит смета: PoE — один кабель (витая пара),
+  // отдельное питание — ДВА кабеля (КГ ВВГнг 3×1.5 + витая пара или оптика) на ту же длину.
+  const FEEDS = [["poe", "Питание по UTP (PoE)"], ["sep", "Питание отдельно 3×1.5"]];
+  const DATAS = [["utp", "Данные: витая пара"], ["fiber", "Данные: оптика"]];
+  function feedRow(el) {
+    const f = el.feed === "sep" ? "sep" : "poe";
+    const d = el.data === "fiber" ? "fiber" : "utp";
+    return `<div class="ep-plan-srow">${FEEDS.map(([k, nm]) => `<button type="button" class="ep-plan-chip ep-clickable ${f === k ? "on" : ""}" data-pe-feed="${k}">${esc(nm)}</button>`).join("")}</div>
+      <div class="ep-plan-srow">${DATAS.map(([k, nm]) => `<button type="button" class="ep-plan-chip ep-clickable ${d === k ? "on" : ""}" data-pe-data="${k}">${esc(nm)}</button>`).join("")}</div>`;
+  }
+
   function switchTargetRow(el) {
     const p = core().project;
     const roomId = el.wallId ? String(el.wallId).split(":")[0] : null;
@@ -751,6 +784,18 @@
       c.persist("opening-del");
       S.selId = null; rooms().closeSheet(); rooms().renderScene(); return;
     }
+    if ((b = t.closest("[data-pe-feed]"))) {
+      const el2 = current(); if (!el2) return;
+      const c = core(); c.commit();
+      el2.feed = b.getAttribute("data-pe-feed") === "sep" ? "sep" : "poe";
+      c.persist("elem-feed"); openEditor(el2); return;
+    }
+    if ((b = t.closest("[data-pe-data]"))) {
+      const el2 = current(); if (!el2) return;
+      const c = core(); c.commit();
+      el2.data = b.getAttribute("data-pe-data") === "fiber" ? "fiber" : "utp";
+      c.persist("elem-data"); openEditor(el2); return;
+    }
     if ((b = t.closest("[data-pe-3kind]"))) {
       const el2 = current(); if (!el2) return;
       const c = core(); c.commit();
@@ -769,11 +814,14 @@
       pn.router = !!(routerChk && routerChk.checked);
       const avrChk = $(`[data-pe-pavr="${pn.id}"]`);
       pn.avr = !!(avrChk && avrChk.checked); // АВР — на трассировку не влияет, только смета/подпись
+      const nepChk = $(`[data-pe-pneptun="${pn.id}"]`);
+      const nepWas = pn.neptun;
+      pn.neptun = !!(nepChk && nepChk.checked); // цель датчиков протечки — влияет на трассы
       // panel-router/panel-trafo — отдельные метки от panel-edit: только смена флага
       // роутера/трансформатора должна тихо перестроить уже построенные трассы (LV-точки/
       // выводы 24В могли сменить целевой щит), обычное переименование щита такой
       // перестройки не требует (см. AUTOREBUILD_ON в plan-routes.js).
-      c.persist(routerWas !== pn.router ? "panel-router" : trafoWas !== pn.transformer ? "panel-trafo" : "panel-edit");
+      c.persist(routerWas !== pn.router ? "panel-router" : trafoWas !== pn.transformer ? "panel-trafo" : nepWas !== pn.neptun ? "panel-neptun" : "panel-edit");
       S.selId = null; rooms().closeSheet(); rooms().renderScene(); return; // ✓ применить и закрыть
     }
     if ((b = t.closest("[data-pe-pdel]"))) {

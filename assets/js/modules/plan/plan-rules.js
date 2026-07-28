@@ -125,6 +125,29 @@
       if (c.rgb == null && els.every((e) => e.type === "output24")) issues.push({ circuitId: c.id, msg: T.rgb24(c.name) });
     });
 
+    // — СЛАБОТОЧКА: датчики протечки / камеры / датчики движения-освещённости —
+    const leaks = (p.elements || []).filter((e) => e.type === "leak" && e.status !== "existing");
+    if (leaks.length && !(p.panels || []).some((pn) => pn.neptun)) {
+      issues.push({ msg: `Датчики протечки (${leaks.length}) есть, но ни один щит не помечен как контроллер «Нептун» — трассы пойдут в обычный слаботочный щит.` });
+    }
+    const cams = (p.elements || []).filter((e) => e.type === "camera" && e.status !== "existing");
+    if (cams.length) {
+      if (!(p.panels || []).some((pn) => pn.router)) {
+        issues.push({ msg: `Камеры (${cams.length}) есть, но нет слаботочного щита (галочка «Роутер» у щита) — им некуда идти отдельными линиями.` });
+      }
+      // каждая камера — СВОЕЙ линией (просьба пользователя): ловим общие/пустые линии
+      const byCirc = new Map();
+      cams.forEach((e) => { const k = e.circuitId || "_none"; byCirc.set(k, (byCirc.get(k) || 0) + 1); });
+      const shared = [...byCirc.entries()].filter(([k, n]) => k === "_none" || n > 1);
+      if (shared.length) issues.push({ msg: "Камеры должны идти отдельными линиями: есть камеры без линии или несколько на одной." });
+    }
+    (p.elements || []).forEach((e) => {
+      if (e.type !== "pir" && e.type !== "lux") return;
+      const tid = (e.targetIds || []).find(Boolean) || e.targetId;
+      const auto = G().switchTarget ? G().switchTarget(p, e, 0) : null;
+      if (!tid && !auto) { issues.push({ id: e.id, msg: `${e.type === "pir" ? "Датчик движения" : "Датчик освещённости"}: не назначена лампа/подсветка.` }); badIds.add(e.id); }
+    });
+
     // — БЫТОВАЯ ТЕХНИКА (p.appliances, kind:"appl") —
     // просьба пользователя: «по технике понятно какая нагрузка, и какой провод нужен».
     // Считаем по мощности прибора (plan-furniture.js needFor: ток → автомат → сечение) и

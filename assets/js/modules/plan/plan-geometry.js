@@ -507,7 +507,12 @@
   // keyIdx — номер клавиши (0-based), для многоклавишных выключателей у каждой
   // клавиши своя цель; для проходных/перекрёстных клавиши не различаем (keyIdx=0).
   G.switchTarget = (project, el, keyIdx) => {
-    if (!el || el.type !== "switch") return null;
+    // не только выключатель: датчики движения/освещённости (pir/lux) назначаются НА лампу
+    // тем же targetIds (просьба пользователя «назначать их на какую лампу или подсветку»),
+    // и весь код вокруг — пунктир на плане, «Проверки», авто-поиск ближайшей лампы линии —
+    // должен работать для них так же. Список типов держим ЗДЕСЬ, а не читаем TYPES из
+    // plan-elements.js: геометрия грузится РАНЬШЕ и не должна зависеть от него.
+    if (!el || (el.type !== "switch" && el.type !== "pir" && el.type !== "lux")) return null;
     const ki = keyIdx || 0;
     const manualId = (el.targetIds && el.targetIds[ki]) || (ki === 0 ? el.targetId : null);
     if (manualId) { const t = (project.elements || []).find((e) => e.id === manualId); if (t) return t; }
