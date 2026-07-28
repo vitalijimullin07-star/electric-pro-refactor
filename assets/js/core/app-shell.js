@@ -41,6 +41,7 @@ EP.AppShell = {
             <button class="ep-clickable" type="button" data-route="main">🏠 Главная</button>
             <button class="ep-clickable" type="button" data-route="guide">📖 Гайд</button>
             <button class="ep-clickable" type="button" data-route="whatsnew">✨ Что нового <span class="menu-badge" id="whatsnewBadge" style="display:none">NEW</span></button>
+            <button class="ep-clickable" type="button" data-fb-open>💬 Общий чат</button>
             <button class="ep-clickable" type="button" data-route="database">🗂️ База данных</button>
             <button class="ep-clickable" type="button" data-route="materials">📦 Материалы</button>
             <button class="ep-clickable" type="button" data-route="work">🧰 Работа</button>

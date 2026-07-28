@@ -3253,6 +3253,31 @@ test("фото: deleteProject чистит кэш фото своего прое
     const css = fs.readFileSync(path.join(root, "assets", "css", "base.css"), "utf8");
     ok(/body\[data-kb="1"\][^{]*\.ep-fb-ov/.test(css), "оверлей чата поднимается над клавиатурой");
   });
+  test("общий ОНЛАЙН-чат: коллекция, живая подписка, офлайн-очередь, вход из меню", () => {
+    const fs = require("fs"), path = require("path"), root = path.resolve(__dirname, "..");
+    const fb = fs.readFileSync(path.join(root, "assets", "js", "modules", "ui", "feedback.js"), "utf8");
+    ok(/chat_messages/.test(fb), "пишет в общую коллекцию chat_messages");
+    ok(/onSnapshot/.test(fb), "живая подписка (сообщения других видно без перезагрузки)");
+    ok(/serverTimestamp/.test(fb), "время сообщения — серверное");
+    ok(/unsubscribe|unsub\(\)/.test(fb) && /function close\(\)\s*\{\s*unsubscribe\(\)/.test(fb), "подписка снимается при закрытии чата");
+    ok(/ep_chat_queue_v1/.test(fb) && /flushQueue/.test(fb), "офлайн-очередь и автодосылка");
+    ok(/data-fb-tab/.test(fb) && /Мои заметки/.test(fb), "локальный журнал остался отдельной вкладкой");
+    ok(/chatText/.test(fb), "чат можно скопировать целиком (у разработчика доступа к базе нет)");
+    const shell = fs.readFileSync(path.join(root, "assets", "js", "core", "app-shell.js"), "utf8");
+    ok(/data-fb-open[^>]*>💬 Общий чат/.test(shell), "пункт «💬 Общий чат» в бургер-меню (доступен не только в плане)");
+    const rules = fs.readFileSync(path.join(root, "firestore.rules"), "utf8");
+    const blk = rules.slice(rules.indexOf("match /chat_messages/"));
+    ok(rules.indexOf("match /chat_messages/") > 0, "правила для chat_messages есть");
+    ok(/allow read: if isApproved\(\) \|\| isAdmin\(\)/.test(blk), "читают одобренные — это и есть «общий» чат");
+    ok(/request\.resource\.data\.uid == request\.auth\.uid/.test(blk), "писать только от своего имени");
+    ok(/text\.size\(\) <= 2000/.test(blk), "ограничение длины сообщения");
+    ok(/allow update: if false/.test(blk), "правки задним числом запрещены");
+    ok(/allow delete: if isAdmin\(\) \|\| \(signedIn\(\) && resource\.data\.uid == request\.auth\.uid\)/.test(blk), "удаляет автор или админ");
+    ok(/match \/\{document=\*\*\} \{\s*allow read, write: if false;/.test(rules), "финальный запрет-всё на месте (не потерян)");
+    const css2 = fs.readFileSync(path.join(root, "assets", "css", "base.css"), "utf8");
+    ok(/\.ep-fb-msg\.is-mine/.test(css2), "свои сообщения отличаются визуально");
+    ok(!/\.ep-fb-msg\{[^}]*rgba\(255,\s*255,\s*255/.test(css2), "пузырь чужого сообщения не белым по белому (видно в светлой теме)");
+  });
 
   // ===== 33. Слаботочка: Нептун, домофон, датчики с целью, камеры отдельными линиями =====
   function lvFixture() {
