@@ -63,6 +63,25 @@ service cloud.firestore {
       allow read, write: if isSelf(uid) || isAdmin();
     }
 
+    /* Общий чат замечаний (кнопка 💬 внутри приложения).
+       Читают ВСЕ одобренные пользователи — в этом и смысл «общего» чата: видно
+       переписку и сообщения других тестировщиков. Тот же предикат isApproved(),
+       что и у общего каталога server_db — отдельной семантики доступа не заводим.
+       Писать — только от своего имени (uid == request.auth.uid) и в разумных
+       границах длины; правки задним числом запрещены совсем (чат — журнал, а не
+       документ), удаление — автор своего сообщения или админ (модерация). */
+    match /chat_messages/{msgId} {
+      allow read: if isApproved() || isAdmin();
+      allow create: if (isApproved() || isAdmin())
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 2000
+        && request.resource.data.ts is number;
+      allow update: if false;
+      allow delete: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
