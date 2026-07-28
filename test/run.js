@@ -880,6 +880,22 @@ test("PWA: manifest валиден и содержит нужные поля", (
   // остаётся через runtime screen.orientation.lock() в fullscreen (не зависит от манифеста).
   ok(m.orientation === undefined, "orientation не задан (уважаем системный автоповорот)");
 });
+test("UI: системное выделение текста выключено, но живо там, где копируют", () => {
+  const fs = require("fs"), path = require("path");
+  const css = fs.readFileSync(path.resolve(__dirname, "..", "assets", "css", "base.css"), "utf8");
+  // долгий тап — СВОЙ жест приложения (меню точки на плане, тяга отрезка трассы);
+  // системное выделение поднимало плашку «Искать в Google» поверх интерфейса
+  ok(/body\{[^}]*user-select:\s*none/.test(css), "глобально user-select:none на body");
+  ok(/-webkit-touch-callout:\s*none/.test(css), "callout по долгому тапу выключен");
+  const back = css.match(/[^}]*\{[^}]*user-select:\s*text[^}]*\}/g) || [];
+  const sel = back.join(" ");
+  ["input", "textarea", "contenteditable", ".guide-page", ".privacy-page", ".whatsnew-page",
+    ".ep-log-box", ".ep-ai-msgs", ".ep-selectable"].forEach((s) => {
+    ok(sel.indexOf(s) >= 0, "выделение возвращено: " + s);
+  });
+  const privacy = fs.readFileSync(path.resolve(__dirname, "..", "pages", "privacy.html"), "utf8");
+  ok(/class="page privacy-page"/.test(privacy), "у политики есть класс privacy-page для белого списка");
+});
 test("PWA: sw.js без синтаксических ошибок", () => {
   const { execSync } = require("child_process"), path = require("path");
   noThrow(() => execSync("node --check " + path.resolve(__dirname, "..", "sw.js")), "sw.js синтаксис");
