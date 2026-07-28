@@ -2998,6 +2998,49 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(svg.indexOf(">" + Math.round(L - 70 - inA) + "<") < 0, "правый пост НЕ мерится от левого угла");
   });
 
+  // ===== 29. Проёмы: тяга по плану/развёртке + подъём окон над клавиатурой =====
+  test("проём: сторона створки считается ПО КОМНАТЕ (перевес на другую стену)", () => {
+    const p = EP.Plan.Core.createProject("flip");
+    const r = M.newRoom(G.rectPoints(0, 0, 400, 300), "К1");
+    p.rooms.push(r);
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    // для КАЖДОЙ стены комнаты сторона должна смотреть ВНУТРЬ (иначе дверь открывалась
+    // бы наружу после перевеса проёма на другую стену)
+    G.walls(r).forEach((w) => {
+      const fl = EP.Plan.Elements.openingFlipFor(p, w);
+      ok(fl === 1 || fl === -1, "стена " + w.n + ": сторона определена");
+      const nx = -(w.b.y - w.a.y), ny = w.b.x - w.a.x, L = Math.hypot(nx, ny) || 1;
+      const probe = { x: w.mx + (nx / L) * fl * 2, y: w.my + (ny / L) * fl * 2 };
+      ok(G.pointInPolygon(probe, r.points), "стена " + w.n + ": сторона смотрит внутрь комнаты");
+    });
+    // балка (перегородка) своей комнаты не имеет — сторону не пересчитываем
+    const bm = M.newBeam({ x: 50, y: 50 }, { x: 250, y: 50 });
+    p.beams.push(bm);
+    eq(EP.Plan.Elements.openingFlipFor(p, G.beamWall(bm)), null, "у перегородки стороны нет — null");
+  });
+  test("проём: контракт тяги по плану (Rooms.enableOpeningDrag ⟷ Elements.openingFlipFor)", () => {
+    // plan-elements.js зовёт rooms().enableOpeningDrag(op.id) из редактора проёма, а
+    // plan-rooms.js — EL.openingFlipFor при перевесе на другую стену: переименование
+    // любой из двух молча выключило бы тягу проёма (без ошибки в консоли)
+    ok(typeof EP.Plan.Rooms.enableOpeningDrag === "function", "Rooms.enableOpeningDrag есть");
+    ok(typeof EP.Plan.Elements.openingFlipFor === "function", "Elements.openingFlipFor есть");
+    ok(typeof EP.Plan.Rooms.placeSheetBtn === "function", "Rooms.placeSheetBtn есть (клавиатура поднимает кнопку)");
+  });
+  test("UI: всплывающие окна поднимаются над экранной клавиатурой (--kb)", () => {
+    const fs = require("fs"), path = require("path"), root = path.resolve(__dirname, "..");
+    const idx = fs.readFileSync(path.join(root, "index.html"), "utf8");
+    ok(/ui\/keyboard-inset\.js/.test(idx), "keyboard-inset.js подключён в index.html");
+    const base = fs.readFileSync(path.join(root, "assets", "css", "base.css"), "utf8");
+    ok(/--kb:\s*0px/.test(base), "--kb объявлена в :root");
+    const kbRules = (base.match(/body\[data-kb="1"\][^{]*\{[^}]*\}/g) || []).join(" ");
+    [".modal", ".ep-qty-ov", ".ep-card-ov", ".ep-db-modal-ov", ".pv29-dbmodal", ".shv28-dbmodal"].forEach((s) => {
+      ok(kbRules.indexOf(s) >= 0, "оверлей поднимается над клавиатурой: " + s);
+    });
+    ok(/var\(--kb/.test(kbRules), "оверлеи используют именно --kb");
+    const plan = fs.readFileSync(path.join(root, "assets", "css", "plan.css"), "utf8");
+    ok(/body\[data-kb="1"\]\s*\.ep-plan-sheet\s*\{[^}]*var\(--kb/.test(plan), "шторка плана поднимается над клавиатурой");
+  });
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

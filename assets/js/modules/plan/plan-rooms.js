@@ -531,7 +531,11 @@
     let side = false;
     try { side = window.getComputedStyle(s).position !== "absolute"; } catch (e) {}
     if (b.hidden || R.sheetCollapsed || overlay || side) { b.style.bottom = ""; return; }
-    b.style.bottom = ((s.offsetHeight || 0) + 14) + "px";
+    // клавиатура открыта — шторка поднята на её высоту (plan.css, body[data-kb]), значит
+    // и кнопку над кромкой надо поднять на столько же: инлайн-стиль здесь ПОБЕЖДАЕТ
+    // CSS-правило, поэтому учитываем клавиатуру прямо в вычислении, а не только в CSS
+    const kb = (EP.Keyboard && EP.Keyboard.height && EP.Keyboard.height()) || 0;
+    b.style.bottom = ((s.offsetHeight || 0) + 14 + kb) + "px";
   }
   function syncSheetBtn() {
     const s = sheet(), b = sheetBtn(); if (!b) return;
@@ -925,6 +929,62 @@
         // через 1.8с закрыл её совсем; вместо этого перерисовываем ту же шторку, показав
         // сдвиг в её шапке (поймано живым прогоном: после тяги стрелки исчезали)
         sheetMoveRoom(room, { keepView: true });
+      }
+    });
+  }
+
+  // Тяга ПРОЁМА (двери/окна) пальцем ПО ПЛАНУ — просьба пользователя: «дверные проёмы и
+  // окна хотелось бы двигать по оси икс и игрик». Раньше проём на плане только тапался
+  // (открывался редактор), двигать его можно было ЧИСЛОМ в поле «Отступ» или пальцем, но
+  // ТОЛЬКО в развёртке стены. Проём физически живёт НА стене, поэтому «свободные X/Y»
+  // реализованы как «палец ведёт куда угодно, проём садится на ближайшую стену»: пока
+  // палец у своей стены — едет offset вдоль неё (для горизонтальной стены это ось X, для
+  // вертикальной — Y), а если довести до ДРУГОЙ стены (в т.ч. соседней комнаты или
+  // перегородки), проём перевешивается на неё целиком (wallId+offset+flip). Тот же
+  // veto-паттерн, что у балки/комнаты: жест, начатый НЕ на проёме, остаётся панорамой.
+  function enableOpeningDrag(openingId) {
+    if (!R.canvas) return;
+    let cur = null;
+    R.canvas.setDragHandler((dx, dy, phase, start) => {
+      const c = core(), p = c.project;
+      const op = p && (p.openings || []).find((o) => o.id === openingId);
+      if (!op || !EP.Plan.Elements) return false;
+      const EL = EP.Plan.Elements, k = R.canvas.cmPerPx();
+      if (phase === "start") {
+        // тот же хит-тест, что и у тапа (по видимой геометрии проёма) — если палец начал
+        // жест не на проёме, отдаём жест панораме
+        const hit = EL.hitAt(start, EL.CFG.hitPx * k);
+        if (!hit || !hit.opening || hit.opening.id !== op.id) return false;
+        cur = { x: start.x, y: start.y };
+        c.commit();
+        return;
+      }
+      if (!cur) return;
+      cur.x += dx; cur.y += dy;
+      const snapPx = (EL.CFG.wallSnapPx || 26) * k;
+      const hitW = G().wallAt(p, cur, snapPx);
+      if (hitW) {
+        const wl = hitW.wall;
+        if (wl.id !== op.wallId) {
+          op.wallId = wl.id;
+          // створка/откосы считаются от центроида комнаты-владельца — на новой стене
+          // сторона другая, пересчитываем (иначе дверь открывалась бы наружу)
+          const fl = EL.openingFlipFor && EL.openingFlipFor(p, wl);
+          if (fl) op.flip = fl;
+        }
+        const maxOff = Math.max(0, wl.len - op.width);
+        op.offset = Math.round(Math.max(0, Math.min(maxOff, hitW.offset - op.width / 2)));
+      }
+      // палец вне зоны любой стены — проём просто остаётся там, где был (не отвязываем
+      // его от стены: проёма «в воздухе» в модели не существует)
+      if (phase === "move") renderSceneSoon();
+      else if (phase === "end") {
+        cur = null;
+        c.persist("opening-move"); // в AUTOREBUILD_ON — построенные трассы пересчитаются
+        renderScene();
+        // перерисовываем редактор (поля «Отступ»/стена устарели после тяги), но БЕЗ
+        // наджима камеры — пользователь только что сам выбрал, куда смотреть
+        if (EL.openOpeningEditor) EL.openOpeningEditor(op, { keepView: true });
       }
     });
   }
@@ -1790,7 +1850,7 @@
     attach, detach, setActive, setMode, renderScene, T, CFG,
     // общий доступ для модулей слоёв 2-6
     openSheet, closeSheet, toast, ensureVisibleAboveSheet, toggleSheetFullscreen,
-    collapseSheet, expandSheet, toggleSheetCollapsed,
+    collapseSheet, expandSheet, toggleSheetCollapsed, placeSheetBtn, enableOpeningDrag,
     isActive: () => R.active,
     currentMode: () => R.mode,
     selectedBeamId: () => R.selectedBeam || null,

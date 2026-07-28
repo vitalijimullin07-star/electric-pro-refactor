@@ -140,6 +140,18 @@
     const fr0 = G().wallFrame(core().project, wall);
     return ((w.x - wall.mx) * fr0.nrm.x + (w.y - wall.my) * fr0.nrm.y) >= 0 ? 1 : -1;
   }
+  // в какую сторону «внутрь комнаты» смотрит проём на ЭТОЙ стене (створка двери, откосы):
+  // ту же математику раньше делал только placeOpening при создании — вынесено, потому что
+  // при ТЯГЕ проёма на ДРУГУЮ стену (enableOpeningDrag в plan-rooms.js) сторону надо
+  // пересчитать заново, иначе дверь открывалась бы наружу. null — стена не от комнаты
+  // (перегородка p.beams), там flip оставляем как был.
+  function openingFlipFor(p, wall) {
+    const room = (p.rooms || []).find((r) => r.id === String(wall.id).split(":")[0]);
+    if (!room) return null;
+    const cpt = G().centroid(room.points);
+    const nx = -(wall.b.y - wall.a.y), ny = wall.b.x - wall.a.x;
+    return (nx * (cpt.x - wall.mx) + ny * (cpt.y - wall.my)) >= 0 ? 1 : -1;
+  }
   function placeOpening(w) {
     const c = core(), p = c.project;
     const k = rooms().canvasCmPerPx();
@@ -149,12 +161,8 @@
     c.commit();
     const d = EP.Plan.Core.OPENING_KINDS[S.openType] || {};
     const op = c.model.newOpening(S.openType, hit.wall.id, G().snap(Math.max(0, hit.offset - (d.w || 90) / 2), p.settings.gridStep), undefined);
-    const room = p.rooms.find((r) => r.id === String(hit.wall.id).split(":")[0]);
-    if (room) {
-      const cpt = G().centroid(room.points);
-      const nx = -(hit.wall.b.y - hit.wall.a.y), ny = hit.wall.b.x - hit.wall.a.x;
-      op.flip = (nx * (cpt.x - hit.wall.mx) + ny * (cpt.y - hit.wall.my)) >= 0 ? 1 : -1;
-    }
+    const fl = openingFlipFor(p, hit.wall);
+    if (fl) op.flip = fl;
     p.openings.push(op);
     c.persist("opening-add");
     openOpeningEditor(op);
@@ -279,12 +287,11 @@
     const pt = G().elemPoint(p, el);
     if (pt && rooms().ensureVisibleAboveSheet) rooms().ensureVisibleAboveSheet(pt);
   }
-  function openOpeningEditor(op) {
+  function openOpeningEditor(op, opts) {
     S.selId = op.id;
     const p = core().project, wall = G().wallById(p, op.wallId);
     const kind = op.kind || (op.type === "window" ? "window" : "door");
     const meta = OPEN_TYPES[kind] || OPEN_TYPES.door;
-    const isWin = kind === "window" || kind === "balcony";
     const swingKind = kind === "door" || kind === "balcony";
     rooms().openSheet(`<div class="ep-plan-srow"><b>${esc(meta.name)} ${esc(openingNum(p, op))}</b>
         <span>· стена ${wall ? wall.n : "?"} (${wall ? Math.round(wall.len) : 0} см)</span></div>
@@ -297,7 +304,7 @@
       </div>
       <div class="ep-plan-srow ep-plan-s2">
         <label>Высота проёма, см<input id="ep-po-h" type="number" inputmode="numeric" min="40" value="${Math.round(op.height || 200)}"></label>
-        ${isWin ? `<label>Низ от пола, см<input id="ep-po-sill" type="number" inputmode="numeric" min="0" value="${Math.round(op.sill || 0)}"></label>` : ""}
+        <label>Низ от пола, см<input id="ep-po-sill" type="number" inputmode="numeric" min="0" value="${Math.round(op.sill || 0)}"></label>
       </div>
       ${swingKind ? `<div class="ep-plan-srow">
         <button type="button" class="ep-plan-chip ep-clickable" data-po-hinge>Петли: ${op.hinge === "a" ? "слева" : "справа"}</button>
@@ -308,13 +315,19 @@
         <button type="button" class="ep-plan-chip ep-clickable" data-po-reveal="b">＋ справа</button>
       </div>
       ${revealListHtml(p, op)}
-      <div class="ep-plan-modehint">Розетка в откосе стоит на кромке проёма (слева/справа), тапни её на плане для редактирования. Номера проёмов вкл/выкл — слой «Подписи» (🗂).</div>
+      <div class="ep-plan-modehint">Проём можно тянуть пальцем прямо по плану — он едет вдоль стены, а если довести до другой стены, перевесится на неё (створка развернётся сама). По высоте («Низ от пола») проём тянется в развёртке стены. Розетка в откосе стоит на кромке проёма (слева/справа), тапни её на плане для редактирования. Номера проёмов вкл/выкл — слой «Подписи» (🗂).</div>
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="ep-plan-tbtn ep-clickable" data-po-apply>${T.apply}</button>
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-po-del>${T.del}</button>
       </div>`);
     rooms().renderScene();
-    if (wall && rooms().ensureVisibleAboveSheet) rooms().ensureVisibleAboveSheet(G().pointAtOffset(wall, op.offset + op.width / 2));
+    // после ТЯГИ проёма вид не дёргаем (пользователь только что сам выбрал, куда смотреть) —
+    // подтягиваем проём из-под шторки только при обычном открытии по тапу (тот же
+    // keepView-паттерн, что у sheetMoveRoom в plan-rooms.js)
+    if (!(opts && opts.keepView) && wall && rooms().ensureVisibleAboveSheet) {
+      rooms().ensureVisibleAboveSheet(G().pointAtOffset(wall, op.offset + op.width / 2));
+    }
+    if (rooms().enableOpeningDrag) rooms().enableOpeningDrag(op.id); // тяга по плану
   }
   // розетки, привязанные к откосу этого проёма (el.reveal.openingId === op.id)
   function revealSockets(p, op) { return (p.elements || []).filter((e) => e.reveal && e.reveal.openingId === op.id); }
@@ -783,5 +796,5 @@
   }
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, SW_TARGET_TYPES, onModeEnter, onOpeningModeEnter, placeAt, placeOpening, hoverSnapPoint, openingNum, hitAt, openEditor, openPanelEditor, openOpeningEditor, selectedId, deselect, deleteElement, duplicateElement, circuitRow, assignNewCircuit, syncTargetCircuit };
+  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, SW_TARGET_TYPES, onModeEnter, onOpeningModeEnter, placeAt, placeOpening, hoverSnapPoint, openingNum, hitAt, openEditor, openPanelEditor, openOpeningEditor, openingFlipFor, selectedId, deselect, deleteElement, duplicateElement, circuitRow, assignNewCircuit, syncTargetCircuit };
 })();
