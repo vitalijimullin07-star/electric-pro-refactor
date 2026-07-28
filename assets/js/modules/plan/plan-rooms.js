@@ -7,7 +7,7 @@
   window.EP = window.EP || {};
 
   const T = {
-    modes: { view: "☝", rect: "▭", poly: "⬠", beam: "▬", void: "▦", elem: "🔌", opening: "🚪", ruler: "📏", underlay: "🖼", merge: "🔗" },
+    modes: { view: "☝", rect: "▭", poly: "⬠", beam: "▬", void: "▦", elem: "🔌", opening: "🚪", ruler: "📏", underlay: "🖼", merge: "🔗", movroom: "🧭" },
     modeHint: {
       view: "Тап: точка — редактор, стена — развёртка, комната — свойства.",
       rect: "Тапни два противоположных угла комнаты.",
@@ -19,6 +19,7 @@
       ruler: "Тапни две точки — расстояние.",
       underlay: "Фото-план: загрузка, масштаб по известной длине, перенос.",
       merge: "Тапни первую комнату, потом соседнюю — объединятся в одну.",
+      movroom: "Тапни комнату и тяни — поедет целиком: точки, проёмы, щит и балки внутри. Углы липнут к углам соседних комнат.",
       mergeSecond: "Тапни соседнюю комнату (или ту же — отменить).",
       guide: "Магистраль: тапай точки приоритетного направления трасс (по коридору). Повторный тап в последнюю точку — сохранить линию."
     },
@@ -37,6 +38,11 @@
     mergeBlocked: "На общей стене есть точки/проёмы — перенеси или удали их и повтори.",
     mergeCancelled: "Объединение отменено.",
     mergeDone: "Комнаты объединены.",
+    mvTitle: "🧭 Перенос комнаты",
+    mvHint: "Тяни комнату пальцем — она едет целиком (стены, точки на них, проёмы, свободные точки/щиты/балки внутри). Углы прилипают к углам соседних комнат, чтобы стены не расходились. Стрелки — по шагу сетки.",
+    mvTapRoom: "Тапни по комнате, которую нужно перенести.",
+    mvDone: "✓ Готово",
+    mvMoved: (dx, dy) => `Перенесена на ${dx > 0 ? "+" : ""}${Math.round(dx)} / ${dy > 0 ? "+" : ""}${Math.round(dy)} см`,
     mergeAskTitle: "Как объединить?",
     mergeAskHint: "«Полностью» — общая стена исчезает совсем. «Перегородка» — останется сплошная стена (как обычная перегородка). «Перемычка» — останется только балка сверху, низ свободен (проём/арка). Оставленное можно потом подвинуть/сменить материал/удалить, как любую балку.",
     mergeFullBtn: "Полностью",
@@ -90,10 +96,10 @@
   // запоминаются между сессиями) ----------
   // Тот же набор, что и «режимы» в верхнем тулбаре (см. T.modes) — здесь его пилотный
   // список для панели быстрого доступа (что можно закрепить/что попадает в MRU).
-  const QB_TOOLS = { view: "☝", rect: "▭", poly: "⬠", beam: "▬", void: "▦", merge: "🔗", elem: "🔌", opening: "🚪", wall: "📐", ruler: "📏", underlay: "🖼", guide: "⇉" };
+  const QB_TOOLS = { view: "☝", rect: "▭", poly: "⬠", beam: "▬", void: "▦", merge: "🔗", movroom: "🧭", elem: "🔌", opening: "🚪", wall: "📐", ruler: "📏", underlay: "🖼", guide: "⇉" };
   const QB_LABELS = {
     view: "Просмотр", rect: "Прямоугольная комната", poly: "Комната по точкам", beam: "Балка/перемычка",
-    void: "Вентшахта/мини-комната", merge: "Объединить комнаты", elem: "Точки", opening: "Проёмы",
+    void: "Вентшахта/мини-комната", merge: "Объединить комнаты", movroom: "Перенести комнату", elem: "Точки", opening: "Проёмы",
     wall: "Развёртка стены", ruler: "Рулетка", underlay: "Подложка-фото",
     guide: "Магистраль трасс"
   };
@@ -396,6 +402,7 @@
     if (R.mode === "elem") { if (EP.Plan.Elements) { EP.Plan.Elements.placeAt(w); renderScene(); } return; }
     if (R.mode === "opening") { if (EP.Plan.Elements) { EP.Plan.Elements.placeOpening(w); renderScene(); } return; }
     if (R.mode === "merge") { onMergeTap(p, w); return; }
+    if (R.mode === "movroom") { onMoveRoomTap(p, w); return; }
     // view: приоритет — элемент/щит > балка > шахта/мини-комната > трасса > стена (развёртка) > комната
     clearBeamSel(); clearVoidSel(); clearRouteSel();
     const k = R.canvas.cmPerPx();
@@ -777,6 +784,151 @@
         ${rs.map((r) => `<button type="button" class="ep-plan-tbtn ep-clickable" data-pr-pickunfold="${esc(r.id)}">${esc(r.name)}</button>`).join("")}
       </div>`);
   }
+  // ---------- 🧭 ПЕРЕНОС КОМНАТЫ ЦЕЛИКОМ ----------
+  // Просьба пользователя: «кнопку 🧭, чтобы за неё перетаскивать комнаты — при изменении
+  // размеров бывает уменьшает/увеличивает не в ту сторону». Правка размеров числом всегда
+  // тянет от одного угла, поэтому «сдвинуть готовую комнату» и «поправить размер» — разные
+  // задачи, и вторая не заменяет первую.
+  // ЧТО ЕДЕТ ВМЕСТЕ С КОМНАТОЙ: настенные точки и проёмы (wallId+offset) и лента едут САМИ
+  // — их мировая позиция считается ОТ точек комнаты, трогать их не нужно (и нельзя: сдвинув
+  // их отдельно, мы бы сдвинули их дважды). Руками переносим только то, что живёт в
+  // АБСОЛЮТНЫХ координатах и физически находится внутри контура: свободные точки
+  // (свет/ТП/распайка/вывод — params.x/y), щиты, балки/перегородки и пустоты (обе точки/
+  // оба угла внутри). Магистрали (p.guides) НЕ трогаем: это осевые линии коридоров, они
+  // рисуются по всей квартире и к одной комнате не привязаны.
+  function roomAttached(p, room) {
+    const inside = (q) => q && G().pointInPolygon(q, room.points || []);
+    const els = (p.elements || []).filter((el) => !el.wallId && el.params && el.params.x != null && inside({ x: el.params.x, y: el.params.y }));
+    const panels = (p.panels || []).filter((pn) => inside({ x: pn.x, y: pn.y }));
+    const beams = (p.beams || []).filter((bm) => inside(bm.a) && inside(bm.b));
+    const voids = (p.voids || []).filter((vd) => inside(vd.a) && inside(vd.b));
+    return { els, panels, beams, voids };
+  }
+  // снимок исходных координат — двигаем ОТ него на суммарный сдвиг (без накопления
+  // погрешности от пошаговых мутаций) и на нём же считаем магнит углов
+  function roomMoveSnapshot(p, room) {
+    const at = roomAttached(p, room);
+    return {
+      room, at,
+      pts: (room.points || []).map((q) => ({ x: q.x, y: q.y })),
+      els: at.els.map((el) => ({ x: el.params.x, y: el.params.y })),
+      panels: at.panels.map((pn) => ({ x: pn.x, y: pn.y })),
+      beams: at.beams.map((bm) => ({ a: { x: bm.a.x, y: bm.a.y }, b: { x: bm.b.x, y: bm.b.y } })),
+      voids: at.voids.map((vd) => ({ a: { x: vd.a.x, y: vd.a.y }, b: { x: vd.b.x, y: vd.b.y } }))
+    };
+  }
+  function applyRoomMove(snap, dx, dy) {
+    const { room, at } = snap;
+    (room.points || []).forEach((q, i) => { q.x = snap.pts[i].x + dx; q.y = snap.pts[i].y + dy; });
+    at.els.forEach((el, i) => { el.params.x = snap.els[i].x + dx; el.params.y = snap.els[i].y + dy; });
+    at.panels.forEach((pn, i) => { pn.x = snap.panels[i].x + dx; pn.y = snap.panels[i].y + dy; });
+    at.beams.forEach((bm, i) => {
+      bm.a = { x: snap.beams[i].a.x + dx, y: snap.beams[i].a.y + dy };
+      bm.b = { x: snap.beams[i].b.x + dx, y: snap.beams[i].b.y + dy };
+    });
+    at.voids.forEach((vd, i) => {
+      vd.a = { x: snap.voids[i].a.x + dx, y: snap.voids[i].a.y + dy };
+      vd.b = { x: snap.voids[i].b.x + dx, y: snap.voids[i].b.y + dy };
+    });
+  }
+  // сдвиг по сетке + МАГНИТ: если после сдвига какой-то угол комнаты оказался в пределах
+  // CFG.cornerSnapCm от угла ДРУГОЙ комнаты — доводим ровно на него (тот же порог и та же
+  // идея, что у snapSmart при рисовании: стены соседних помещений не должны расходиться на
+  // считанные сантиметры — именно из-за таких расхождений трассы потом идут «по стене»)
+  function snapRoomMove(p, snap, dx, dy) {
+    const step = (p.settings && p.settings.gridStep) || 10;
+    let d = { x: Math.round(dx / step) * step, y: Math.round(dy / step) * step };
+    const others = [];
+    (G().floorScoped(p).rooms || []).forEach((r) => { if (r.id !== snap.room.id) (r.points || []).forEach((q) => others.push(q)); });
+    let best = null;
+    snap.pts.forEach((q0) => {
+      const moved = { x: q0.x + d.x, y: q0.y + d.y };
+      others.forEach((o) => {
+        const dd = G().dist(o, moved);
+        if (dd <= CFG.cornerSnapCm && (!best || dd < best.dd)) best = { dd, ox: o.x - moved.x, oy: o.y - moved.y };
+      });
+    });
+    if (best) { d.x += best.ox; d.y += best.oy; }
+    return d;
+  }
+  // публичный перенос на заданный сдвиг (стрелки в шторке + тесты): одна транзакция
+  // commit → мутация → persist("room-move"), т.е. отменяется одним ↶
+  function moveRoom(roomId, dx, dy, opts) {
+    const c = core(), p = c.project;
+    const room = p && (p.rooms || []).find((r) => r.id === roomId);
+    if (!room) return null;
+    const snap = roomMoveSnapshot(p, room);
+    const d = (opts && opts.raw) ? { x: dx, y: dy } : snapRoomMove(p, snap, dx, dy);
+    if (!d.x && !d.y) return { x: 0, y: 0 };
+    c.commit();
+    applyRoomMove(snap, d.x, d.y);
+    c.persist("room-move");
+    renderScene();
+    return d;
+  }
+  function onMoveRoomTap(p, w) {
+    const room = G().roomAt(p, w);
+    if (!room) { toast(T.mvTapRoom); return; }
+    if (R.selectedRoomId !== room.id) R.mvLast = null; // другая комната — счётчик сдвига с нуля
+    R.selectedRoomId = room.id;
+    sheetMoveRoom(room);
+  }
+  function sheetMoveRoom(room, opts) {
+    const p = core().project;
+    openSheet(`<div class="ep-plan-srow"><b>${T.mvTitle}</b> · ${esc(room.name)} · ${G().fmtArea(G().roomNetArea(p, room))}${R.mvLast ? ` · <span class="ep-plan-dim">${T.mvMoved(R.mvLast.x, R.mvLast.y)}</span>` : ""}</div>
+      <div class="ep-plan-modehint">${T.mvHint}</div>
+      <div class="ep-plan-srow ep-plan-sbtns">
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-mvnudge="l" aria-label="Влево">←</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-mvnudge="u" aria-label="Вверх">↑</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-mvnudge="d" aria-label="Вниз">↓</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-mvnudge="r" aria-label="Вправо">→</button>
+        <span class="ep-plan-flex"></span>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-mvdone>${T.mvDone}</button>
+      </div>`);
+    enableWholeRoomDrag();
+    renderScene();
+    // после ТЯГИ вид не дёргаем (пользователь только что сам выбрал, куда смотреть) —
+    // подтягиваем комнату из-под шторки только при первом открытии по тапу
+    if (!(opts && opts.keepView)) ensureVisibleAboveSheet(G().centroid(room.points || []));
+  }
+  // тяга ВСЕЙ комнаты пальцем. Жест начинается ТОЛЬКО внутри выбранной комнаты — иначе
+  // return false и жест остаётся панорамой (тот же veto-паттерн, что у балки/пустоты).
+  // ИМЯ ОБЯЗАНО отличаться от enableRoomDrag(roomId) ниже (тяга УГЛОВ/СТЕН комнаты из
+  // sheetRoom): объявления функций поднимаются, и одноимённая НИЖЕ молча перекрывает
+  // верхнюю — режим 🧭 внешне работал (шторка открывалась), но тяга вызывала чужой
+  // обработчик с roomId=undefined и комната не двигалась (поймано живым прогоном).
+  function enableWholeRoomDrag() {
+    if (!R.canvas) return;
+    let snap = null, acc = null;
+    R.canvas.setDragHandler((dx, dy, phase, start) => {
+      const c = core(), p = c.project;
+      const room = p && (p.rooms || []).find((r) => r.id === R.selectedRoomId);
+      if (!room) return false;
+      if (phase === "start") {
+        if (!G().pointInPolygon(start, room.points || [])) return false; // мимо комнаты — пан
+        snap = roomMoveSnapshot(p, room); acc = { x: 0, y: 0 };
+        c.commit();
+        return;
+      }
+      if (!snap) return;
+      if (phase === "move") {
+        acc.x += dx; acc.y += dy;
+        applyRoomMove(snap, acc.x, acc.y); // от ИСХОДНОГО положения — без накопления дрейфа
+        renderSceneSoon();
+      } else if (phase === "end") {
+        const d = snapRoomMove(p, snap, acc.x, acc.y);
+        applyRoomMove(snap, d.x, d.y);
+        c.persist("room-move");
+        snap = null; acc = null;
+        R.mvLast = d;
+        // ВАЖНО: НЕ toast — он бы затёр панель со стрелками (шторка одна на модуль) и
+        // через 1.8с закрыл её совсем; вместо этого перерисовываем ту же шторку, показав
+        // сдвиг в её шапке (поймано живым прогоном: после тяги стрелки исчезали)
+        sheetMoveRoom(room, { keepView: true });
+      }
+    });
+  }
+
   function sheetRoom(room) {
     const p = core().project;
     const isR = G().isRect(room), d = isR ? G().rectDims(room) : null;
@@ -1520,6 +1672,16 @@
       }
       return;
     }
+    if ((el = t.closest("[data-pr-mvnudge]"))) {
+      const p = core().project, step = (p.settings && p.settings.gridStep) || 10;
+      const dir = el.getAttribute("data-pr-mvnudge");
+      const d = { l: [-step, 0], r: [step, 0], u: [0, -step], d: [0, step] }[dir] || [0, 0];
+      const dd = moveRoom(R.selectedRoomId, d[0], d[1], { raw: true }); // стрелка = ровно шаг сетки, без магнита
+      const room = (p.rooms || []).find((r) => r.id === R.selectedRoomId);
+      if (dd && room) { R.mvLast = { x: (R.mvLast ? R.mvLast.x : 0) + dd.x, y: (R.mvLast ? R.mvLast.y : 0) + dd.y }; sheetMoveRoom(room, { keepView: true }); }
+      return;
+    }
+    if (t.closest("[data-pr-mvdone]")) { R.selectedRoomId = null; R.mvLast = null; closeSheet(); if (R.canvas) R.canvas.setDragHandler(null); renderScene(); return; }
     if (t.closest("[data-pr-beamdone]")) { clearBeamSel(); closeSheet(); renderScene(); return; }
     if ((el = t.closest("[data-pr-mergemode]"))) {
       const mp = R.mergePending; R.mergePending = null; closeSheet();
@@ -1637,6 +1799,6 @@
     soloCircuitId: () => R.soloCircuit || null,
     setSoloCircuit, clearSolo,
     canvasCmPerPx: () => (R.canvas ? R.canvas.cmPerPx() : 1),
-    mergeRooms, syncQuickbarVisibility, armTargetPick
+    mergeRooms, moveRoom, syncQuickbarVisibility, armTargetPick
   };
 })();
