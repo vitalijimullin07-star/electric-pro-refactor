@@ -55,7 +55,8 @@
     const vb = String(cv.svg.getAttribute("viewBox") || "").trim().split(/\s+/).map(Number);
     let scale = null;
     if (vb.length === 4 && vb[2] > 0 && vb[3] > 0) {
-      scale = SCALES.find((sc) => (vb[2] * 10 / sc) <= PLAN_AREA.w && (vb[3] * 10 / sc) <= PLAN_AREA.h) || SCALES[SCALES.length - 1];
+      const AREA = planArea();
+      scale = SCALES.find((sc) => (vb[2] * 10 / sc) <= AREA.w && (vb[3] * 10 / sc) <= AREA.h) || SCALES[SCALES.length - 1];
       cv.svg.setAttribute("width", (Math.round(vb[2] * 100 / scale) / 10) + "mm");
       cv.svg.setAttribute("height", (Math.round(vb[3] * 100 / scale) / 10) + "mm");
     } else {
@@ -70,7 +71,15 @@
   }
   // поле чертежа внутри рамки листа A4 landscape (297×210 при полях 20/5/5/5 и штампе
   // 185×25мм справа снизу) и стандартный ряд масштабов строительных чертежей
-  const PLAN_AREA = { w: 262, h: 146 };
+  // Формат листа альбома (просьба пользователя: «отдельно пдф делать на формат
+  // А1-А2-А0» — на больших форматах чертёж печатается КРУПНЕЕ, вплоть до 1:20).
+  // Сессионная настройка, как pdfScale (не часть модели проекта). Поле чертежа
+  // считается от размера листа теми же полями/штампом, что были у A4 (297-35 × 210-64),
+  // поэтому автоподбор масштаба (SCALES ниже) сам выбирает более крупный масштаб.
+  const PAGE = { A4: { w: 297, h: 210 }, A3: { w: 420, h: 297 }, A2: { w: 594, h: 420 }, A1: { w: 841, h: 594 }, A0: { w: 1189, h: 841 } };
+  let pdfFormat = "A4";
+  const pg = () => PAGE[pdfFormat] || PAGE.A4;
+  const planArea = () => ({ w: pg().w - 35, h: pg().h - 64 });
   const SCALES = [20, 25, 50, 75, 100, 150, 200, 250, 500];
   let lastPlanScale = null; // масштаб последнего собранного плана — идёт в штамп листа
 
@@ -192,6 +201,28 @@
   function unfoldSvg(p, room, w, els) {
     const H = room.height || p.settings.ceilingHeight, L = w.len, pad = 45;
     const TY = EP.Plan.Elements.TYPES;
+    // «1:1» (settings.realScale): посты в РЕАЛЬНЫХ габаритах рамок и с настоящим «лицом»
+    // (гнёзда розетки, клавиши, RJ45, коаксиал) — ТА ЖЕ геометрия и ТЕ ЖЕ цвета, что в
+    // живой развёртке: примитивы из EP.Plan.Render.deviceFace + FACE_STYLE (один источник,
+    // иначе бумага и экран показывали бы прибор по-разному).
+    const RD = EP.Plan.Render, real = !!(p.settings && p.settings.realScale) && !!(RD && RD.deviceFace);
+    const fW = (n) => (RD && RD.frameWcm ? RD.frameWcm(n) : 8.4);
+    const fH = () => (RD && RD.frameHcm ? RD.frameHcm() : 8.4);
+    const hasFace = (type, keys) => (RD.deviceFace(type, keys) || []).some((o) => o.cls !== "post");
+    function faceStr(type, keys, cx, cy) {
+      const prim = RD.deviceFace(type, keys) || [], ST = RD.FACE_STYLE || {};
+      let out = "";
+      prim.forEach((o) => {
+        const st = ST[o.cls] || {};
+        const at = `fill="${st.fill || "none"}" stroke="${st.stroke || "none"}" stroke-width="${(st.sw || 0) / 10}"`;
+        if (o.t === "rect") out += `<rect x="${cx + o.x / 10}" y="${cy + o.y / 10}" width="${o.w / 10}" height="${o.h / 10}" rx="${(o.rx || 0) / 10}" ${at}/>`;
+        else if (o.t === "circle") out += `<circle cx="${cx + o.cx / 10}" cy="${cy + o.cy / 10}" r="${o.r / 10}" ${at}/>`;
+        else if (o.t === "line") out += `<line x1="${cx + o.x1 / 10}" y1="${cy + o.y1 / 10}" x2="${cx + o.x2 / 10}" y2="${cy + o.y2 / 10}" fill="none" stroke="${st.stroke || "none"}" stroke-width="${(st.sw || 0) / 10}"/>`;
+        else if (o.t === "path") out += `<path d="${o.d.replace(/-?\d+(?:\.\d+)?/g, (m2) => String(Number(m2) / 10))}" transform="translate(${cx} ${cy})" ${at}/>`;
+        else if (o.t === "text") out += `<text x="${cx + (o.x || 0) / 10}" y="${cy + (o.y || 0) / 10}" font-size="${(o.s || 12) / 10}" text-anchor="middle" dominant-baseline="central" fill="#0f172a">${esc(o.txt)}</text>`;
+      });
+      return out;
+    }
     // viewBox (физические пропорции стены) от масштаба НЕ зависит — растут только
     // символы/подписи/толщины линий (kk), просьба пользователя: «масштаб самих постов»
     const kk = (H + pad) / 200 * pdfScale;
@@ -267,10 +298,11 @@
     const symHalf = (el) => {
       if (el.type === "block") {
         const items = (el.params && el.params.items) || ["socket"];
-        const step = 18 * kk, bw = items.length * step + 6 * kk, bh = 24 * kk;
+        const bw = real ? fW(items.length) : items.length * 18 * kk + 6 * kk;
+        const bh = real ? fH() : 24 * kk;
         return { hw: bw / 2, hh: bh / 2 };
       }
-      return { hw: 13 * kk, hh: 13 * kk };
+      return real ? { hw: fW(1) / 2, hh: fH() / 2 } : { hw: 13 * kk, hh: 13 * kk };
     };
     const boxes = sorted.map((e) => { const h = symHalf(e); return { x: e.offset, y: H - e.height, hw: h.hw, hh: h.hh }; });
     // QF-имя и подпись расстояния от угла — тоже места, которые подпись высоты не
@@ -313,9 +345,25 @@
       const col = cc ? cc.color : "#1d4ed8";
       if (el.type === "block") {
         const items = (el.params && el.params.items) || ["socket"];
-        const step = 18 * kk, bw = items.length * step + 6 * kk, bh = 24 * kk;
-        s += `<rect x="${x - bw / 2}" y="${y - bh / 2}" width="${bw}" height="${bh}" rx="${5 * kk}" fill="${col}" class="unfshape"/>`;
-        items.forEach((it, i) => { s += `<text x="${x - bw / 2 + 3 * kk + step * i + step / 2}" y="${y}" font-size="${9 * kk}" text-anchor="middle" dominant-baseline="central" class="unfglyph">${esc((TY[it] || {}).glyph || "?")}</text>`; });
+        const bw = real ? fW(items.length) : items.length * 18 * kk + 6 * kk;
+        const bh = real ? fH() : 24 * kk;
+        const step = real ? bw / items.length : 18 * kk;
+        const inset = real ? 0 : 3 * kk;
+        s += `<rect x="${x - bw / 2}" y="${y - bh / 2}" width="${bw}" height="${bh}" rx="${real ? 0.4 : 5 * kk}" fill="${col}" class="unfshape"/>`;
+        items.forEach((it, i) => {
+          const ccx = x - bw / 2 + inset + step * i + step / 2;
+          if (real) {
+            s += faceStr(it, el.keys, ccx, y);
+            if (!hasFace(it, el.keys)) s += `<text x="${ccx}" y="${y}" font-size="2.6" text-anchor="middle" dominant-baseline="central" fill="#0f172a">${esc((TY[it] || {}).glyph || "?")}</text>`;
+          } else {
+            s += `<text x="${ccx}" y="${y}" font-size="${9 * kk}" text-anchor="middle" dominant-baseline="central" class="unfglyph">${esc((TY[it] || {}).glyph || "?")}</text>`;
+          }
+        });
+      } else if (real) {
+        const fw = fW(1), fh = fH();
+        s += `<rect x="${x - fw / 2}" y="${y - fh / 2}" width="${fw}" height="${fh}" rx="0.4" fill="${col}" class="unfshape"/>`;
+        s += faceStr(el.type, el.keys, x, y);
+        if (!hasFace(el.type, el.keys)) s += `<text x="${x}" y="${y}" font-size="2.6" text-anchor="middle" dominant-baseline="central" fill="#0f172a">${esc((TY[el.type] || {}).glyph || "?")}</text>`;
       } else {
         s += `<circle cx="${x}" cy="${y}" r="${13 * kk}" fill="${col}" class="unfshape"/>`;
         s += `<text x="${x}" y="${y}" font-size="${10 * kk}" text-anchor="middle" dominant-baseline="central" class="unfglyph">${esc((TY[el.type] || {}).glyph || "?")}</text>`;
@@ -453,10 +501,10 @@
       /* ---- лист альбома: A4 landscape, поля по ГОСТ 2.301 (20мм слева под подшивку,
          5мм остальные), рамка, штамп внизу справа. margin:0 у @page — поля рисуем сами,
          иначе браузерные поля складывались бы с нашими и рамка «плыла» от принтера ---- */
-      @page { size: A4 landscape; margin: 0; }
+      @page { size: ${pdfFormat} landscape; margin: 0; }
       * { box-sizing: border-box; margin: 0; }
       body { font: 10.5px/1.3 Arial, "Helvetica Neue", Helvetica, sans-serif; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      .sheet { position: relative; width: 297mm; height: 210mm; padding: 5mm 5mm 5mm 20mm; overflow: hidden; break-after: page; page-break-after: always; }
+      .sheet { position: relative; width: ${pg().w}mm; height: ${pg().h}mm; padding: 5mm 5mm 5mm 20mm; overflow: hidden; break-after: page; page-break-after: always; }
       .sheet:last-child { break-after: auto; page-break-after: auto; }
       .fr { position: relative; width: 100%; height: 100%; border: 0.7mm solid #000; padding: 3mm; display: flex; flex-direction: column; }
       .fr > h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding-bottom: 1mm; border-bottom: .3mm solid #000; margin-bottom: 2mm; }
@@ -548,7 +596,7 @@
       .unfgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; height: 100%; }
       .unfcard { border: .25mm solid #000; padding: 1.5mm 2mm; break-inside: avoid; display: flex; flex-direction: column; }
       .unfcard h4 { font-size: 9px; font-weight: 700; margin-bottom: 1mm; }
-      .unf { width: 100%; flex: 1 1 auto; max-height: 145mm; }
+      .unf { width: 100%; flex: 1 1 auto; max-height: ${pg().h - 65}mm; }
       .unfwall { fill: #f1f5f9; stroke: #94a3b8; stroke-width: 1; }
       .unffloor { stroke: #111; stroke-width: 2; }
       .unfopen { fill: rgba(56,189,248,.12); stroke: #0891b2; stroke-width: 1; }
@@ -617,6 +665,10 @@
         <b data-pxp-scaleval>${pct}%</b>
       </div>
       <div class="ep-plan-modehint">Меняет размер символов/подписей НА РАЗВЁРТКАХ СТЕН в PDF — сам план и физические размеры не меняются.</div>
+      <div class="ep-plan-srow">Формат листа:
+        ${Object.keys(PAGE).map((f) => `<button type="button" class="ep-plan-chip ep-clickable ${pdfFormat === f ? "on" : ""}" data-pxp-fmt="${f}">${f}</button>`).join("")}
+      </div>
+      <div class="ep-plan-modehint">На большом листе (A2-A0) план печатается КРУПНЕЕ — масштаб чертежа подбирается автоматически (до 1:20) и пишется в штамп.</div>
       <div id="ep-plan-pdfpreview-box">${pdfScalePreview(p)}</div>
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="btn btn-primary ep-clickable" data-pxp-print>📄 Сформировать PDF</button>
@@ -627,6 +679,8 @@
     if (!rooms() || !rooms().isActive()) return;
     if (e.target.closest("[data-plan-pdf]")) return sheetPdfScale();
     if (e.target.closest("[data-pxp-close]")) { rooms().closeSheet(); return; }
+    const fmtBtn = e.target.closest("[data-pxp-fmt]");
+    if (fmtBtn) { pdfFormat = fmtBtn.getAttribute("data-pxp-fmt") || "A4"; sheetPdfScale(); return; }
     // closeSheet() ПЕРЕД print() — иначе он тут же стёр бы тост «Строим PDF…»,
     // который print() показывает через тот же openSheet() сразу после себя.
     if (e.target.closest("[data-pxp-print]")) { rooms().closeSheet(); print(); return; }

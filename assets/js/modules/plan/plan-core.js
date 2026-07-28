@@ -31,6 +31,12 @@
     chaseW: 25, chaseH: 30,     // мм — сечение штробы под провод (стандарт), редактируется
     tpChaseW: 50, tpChaseH: 50, // мм — штроба тёплого пола (в пол)
     symbolStyle: "gost",   // значки на плане: "simple" (кружки с буквами) | "gost" (ГОСТ 21.210)
+    // РЕАЛЬНЫЙ размер значков (мм по datasheet рамок, см. FRAME_MM в plan-render.js):
+    // при true настенные приборы/блоки рисуются в НАСТОЯЩИХ габаритах (рамка 84мм,
+    // 155/226/300/368мм на 2/3/4/5 постов), а не постоянным размером на экране —
+    // просьба пользователя «масштаб точек как указано на картинках в мм, чтобы в
+    // масштабе 1:1 смотреть». Кнопка «1:1» в шапке редактора плана.
+    realScale: false,
     cableReserve: 10,      // % запаса кабеля при расчёте по трассам
     // марка кабеля ПО УМОЛЧАНИЮ (просьба пользователя: «кабель по умолчанию ВВГнг») —
     // подставляется ПЕРЕД сечением всюду, где марка линии (circuit.cable) не задана вручную:
@@ -133,7 +139,7 @@
         tpChaseW: DEFAULTS.tpChaseW, tpChaseH: DEFAULTS.tpChaseH,
         mainBreaker: DEFAULTS.mainBreaker, phases: DEFAULTS.phases, meter: false, mainRcd: false,
         panelBrand: DEFAULTS.panelBrand, panelReserve: DEFAULTS.panelReserve, panelBox: null,
-        symbolStyle: DEFAULTS.symbolStyle, cableReserve: DEFAULTS.cableReserve, cableBrand: DEFAULTS.cableBrand,
+        symbolStyle: DEFAULTS.symbolStyle, realScale: DEFAULTS.realScale, cableReserve: DEFAULTS.cableReserve, cableBrand: DEFAULTS.cableBrand,
         cable24: DEFAULTS.cable24, cable24Rgb: DEFAULTS.cable24Rgb, routeQuality: DEFAULTS.routeQuality, routePrecalc: DEFAULTS.routePrecalc,
         cableStubPoint: DEFAULTS.cableStubPoint, cableStubJunction: DEFAULTS.cableStubJunction, cableStubPanel: DEFAULTS.cableStubPanel,
         routeOffset: DEFAULTS.routeOffset, sleeveD: DEFAULTS.sleeveD, connectorMode: DEFAULTS.connectorMode,
@@ -470,6 +476,7 @@
     p.panels.forEach((pn) => { if (pn.transformer == null) pn.transformer = false; if (pn.router == null) pn.router = false; });
     p.settings = p.settings || {};
     if (!p.settings.symbolStyle) p.settings.symbolStyle = DEFAULTS.symbolStyle;
+    if (p.settings.realScale == null) p.settings.realScale = DEFAULTS.realScale;
     if (p.settings.cableReserve == null) p.settings.cableReserve = DEFAULTS.cableReserve;
     if (p.settings.cableBrand == null) p.settings.cableBrand = DEFAULTS.cableBrand;
     if (p.settings.routeQuality == null) p.settings.routeQuality = DEFAULTS.routeQuality;
