@@ -1353,13 +1353,15 @@ body[data-kb="1"] .ep-db-modal-ov,
 body[data-kb="1"] .pv29-dbmodal,
 body[data-kb="1"] .shv28-dbmodal,
 body[data-kb="1"] .ms-dbmodal,
-body[data-kb="1"] #ep-log-panel { padding-bottom: calc(var(--kb, 0px) + 12px); }
+body[data-kb="1"] #ep-log-panel,
+body[data-kb="1"] .ep-fb-ov { padding-bottom: calc(var(--kb, 0px) + 12px); }
 /* карточки внутри — не выше видимой части (иначе верх уезжает за экран) */
 body[data-kb="1"] .modal-card,
 body[data-kb="1"] .ep-db-modal,
 body[data-kb="1"] .pv29-dbcard,
 body[data-kb="1"] .shv28-dbmodal-card,
-body[data-kb="1"] .ep-consent-card { max-height: calc(100dvh - var(--kb, 0px) - 24px); }
+body[data-kb="1"] .ep-consent-card,
+body[data-kb="1"] .ep-fb-card { max-height: calc(100dvh - var(--kb, 0px) - 24px); }
 
 /* Стартовое предупреждение о тестовой версии (consent.js) */
 .ep-consent-overlay {
@@ -1395,3 +1397,22 @@ body[data-visual-mode="day"] .ep-consent-list li { color: #b91c1c; }
 .ep-prof-note { font-size: 13px; opacity: .85; margin: 4px 0; line-height: 1.4; }
 .ep-prof .ep-danger { color: #fca5a5; border-color: rgba(239, 68, 68, .5); }
 .ep-prof .ep-danger-armed { background: rgba(239, 68, 68, .22); color: #fecaca; }
+
+/* Встроенный «чат» замечаний (feedback.js): свой оверлей — работает на ЛЮБОМ экране,
+   не только в плане (кнопка 💬 стоит в шапке редактора плана рядом с «1:1»). */
+.ep-fb-ov{position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center;padding:12px}
+.ep-fb-ov[hidden]{display:none}
+.ep-fb-card{width:min(620px,100%);max-height:82dvh;display:flex;flex-direction:column;gap:8px;padding:12px}
+.ep-fb-head{display:flex;align-items:center;gap:8px}
+.ep-fb-sp{flex:1}
+.ep-fb-hint{color:var(--muted);font-size:calc(12px * var(--eff-text-scale,1));line-height:1.35}
+.ep-fb-input{width:100%;resize:vertical;font:inherit}
+.ep-fb-row{display:flex;gap:8px;flex-wrap:wrap}
+.ep-fb-list{overflow:auto;display:flex;flex-direction:column;gap:8px;padding-right:2px}
+.ep-fb-item{border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:8px}
+.ep-fb-meta{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:calc(11px * var(--eff-text-scale,1))}
+.ep-fb-meta button{margin-left:auto}
+.ep-fb-text{white-space:pre-wrap;margin-top:4px}
+.ep-fb-empty{color:var(--muted);text-align:center;padding:10px}
+.ep-fb-toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:rgba(15,23,42,.94);color:#f8fafc;padding:8px 14px;border-radius:10px;font-weight:800;z-index:10060}
+body[data-noblur="1"] .ep-fb-card{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;background:rgb(var(--card-bg-rgb))}

@@ -853,7 +853,10 @@
         const realThis = real && !!elem.wallId;
         // «хвостик» потолочного вывода (см. ниже) рисуем сами — стиль «Дизайн» не должен
         // успеть нарисовать для него рамку с выноской
-        const tailFree = !elem.wallId && (elem.type === "output" || elem.type === "output24");
+        // 3ф-вывод «пятижилкой» — тоже свободный конец кабеля (хвостик); если выбрана
+        // РОЗЕТКА 3ф (elem.threeKind==="socket") — рисуем как обычный прибор, не хвостик
+        const tailFree = !elem.wallId && (elem.type === "output" || elem.type === "output24"
+          || (elem.type === "output3" && elem.threeKind !== "socket"));
         const drewGost = !realThis && gost && drawGostEl(grp, elem, cx, cy, rot, dp, k, sw, colEl);
         const drewDesign = !realThis && !drewGost && !tailFree && design && drawDesignEl(grp, elem, pt, cx, cy, k, sw, colEl, (TY[elem.type] || {}).glyph || "?");
         // Свободный (потолочный) «Вывод»/«Вывод 24В» — ВСЕГДА «хвостик»: точка + короткий
@@ -868,7 +871,8 @@
             d: `M ${cx} ${cy + rd} Q ${cx + amp} ${cy + rd + len * 0.28} ${cx} ${cy + rd + len * 0.55} Q ${cx - amp} ${cy + rd + len * 0.82} ${cx} ${cy + rd + len}`,
             fill: "none", stroke: colEl, "stroke-width": sw * 0.8, "stroke-linecap": "round", class: "ep-plan-tail"
           }));
-          if (elem.type === "output24") grp.appendChild(el("text", { x: cx + rd + 3 * k, y: cy - rd, "font-size": 8 * k, fill: colEl, class: "ep-plan-tailtxt" }, "24В"));
+          const tailLbl = elem.type === "output24" ? "24В" : (elem.type === "output3" ? "3ф · 5×" : "");
+          if (tailLbl) grp.appendChild(el("text", { x: cx + rd + 3 * k, y: cy - rd, "font-size": 8 * k, fill: colEl, class: "ep-plan-tailtxt" }, tailLbl));
         } else if (!drewGost && !drewDesign) {
           if (realThis) {
             // РЕАЛЬНАЯ рамка одного поста 84×84 мм, повёрнутая вдоль стены. На плане прибор
@@ -975,6 +979,9 @@
         grp.appendChild(el("text", { x: pn.x, y: pn.y, "font-size": 12 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph" }, "Щ"));
       }
       if (pbox && pbox.modules && lodQf) grp.appendChild(el("text", { x: pn.x, y: pn.y + hc / 2 + 7 * k, "font-size": 8 * k, "text-anchor": "middle", class: "ep-plan-dim" }, pbox.modules + " мод"));
+      // АВР (автоматический ввод резерва) — короткая метка у щита: узел заметный,
+      // и по плану сразу видно, в каком щите он стоит
+      if (pn.avr && labelsOn) grp.appendChild(el("text", { x: pn.x, y: pn.y - hc / 2 - 4 * k, "font-size": 8.5 * k, "text-anchor": "middle", class: "ep-plan-qf", fill: "#f59e0b" }, "АВР"));
       g.appendChild(grp);
     });
 

@@ -23,6 +23,10 @@
     sensor:    { name: "Датчик",      glyph: "Д",  layer: "lv",    h: 220 },
     output:    { name: "Вывод",       glyph: "Вых", layer: "power", h: null, free: true, layerChoice: true },
     output24:  { name: "Вывод 24В",   glyph: "24В", layer: "lv",    h: null, free: true },
+    // трёхфазный вывод: «пятижилка» (под клеммы прибора) ИЛИ силовая розетка 3ф —
+    // выбор в редакторе точки (el.threeKind). Линия под него автоматически 3-полюсная,
+    // поэтому автоподбор кабеля (plan-scheme.js autoCable) сразу даёт 5-жильный.
+    output3:   { name: "Вывод 3ф",    glyph: "3ф",  layer: "power", h: null, free: true },
     panel:     { name: "Щит",         glyph: "Щ",  layer: "power", h: 150, panel: true }
   };
   // Проёмы — под ОТДЕЛЬНОЙ кнопкой (🚪): дверь / раздвижная / окно / балкон.
@@ -271,6 +275,7 @@
       </div>
       ${circuitRow(el)}
       ${t.layerChoice ? outLayerRow(el) : ""}
+      ${el.type === "output3" ? threeKindRow(el) : ""}
       ${el.type === "switch" ? switchKindRow(el) + switchKeysRow(el) + switchChainRow(el) + (el.chainNext ? "" : switchTargetRow(el)) : ""}
       ${el.type === "block" ? blockHtml(el) : ""}
       <div class="ep-plan-srow">${T.status}:
@@ -346,6 +351,7 @@
       <div class="ep-plan-srow"><input id="ep-pe-pname" type="text" value="${esc(pn.name || "Щит")}" maxlength="30"></div>
       <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-ptrafo="${esc(pn.id)}" ${pn.transformer ? "checked" : ""}>Трансформатор в слаботочном щите (24В для ленты)</label></div>
       <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-prouter="${esc(pn.id)}" ${pn.router ? "checked" : ""}>Роутер — сюда идут все линии интернет/ТВ/видеонаблюдение</label></div>
+      <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-pavr="${esc(pn.id)}" ${pn.avr ? "checked" : ""}>Система АВР (автоматический ввод резерва: второй ввод / генератор)</label></div>
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pe-papply="${esc(pn.id)}">${T.apply}</button>
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pe-pdel="${esc(pn.id)}">${T.del}</button>
@@ -387,6 +393,9 @@
     const re = new RegExp("^" + prefix + "\\s*(\\d+)$");
     const maxN = cs.reduce((m, x) => { const mm = re.exec(String(x.name)); const n = mm ? parseInt(mm[1], 10) : NaN; return Number.isFinite(n) ? Math.max(m, n) : m; }, 0);
     const circ = c.model.newCircuit(prefix + (maxN + 1), color, 16);
+    // 3-фазный вывод (пятижилка/розетка 380) — линия сразу 3-полюсная: иначе автоподбор
+    // кабеля дал бы 3 жилы, а по факту нужно 5 (см. autoCable в plan-scheme.js)
+    if (el.type === "output3") { circ.poles = 3; circ.breaker = 25; }
     cs.push(circ); el.circuitId = circ.id;
     return circ;
   }
@@ -404,6 +413,17 @@
   }
 
   // тип вывода (силовой/слаботочный) — для "Вывода" из стены/потолка/пола
+  // Вывод 3ф: как физически заканчивается линия — «пятижилкой» под клеммы прибора
+  // (варочная, котёл, каменка) или силовой РОЗЕТКОЙ 3ф. От этого зависит только
+  // подпись/смета: трасса, штроба и кабель считаются одинаково (5 жил по линии).
+  const THREE_KINDS = [["cable", "Пятижилка (под клеммы)"], ["socket", "Розетка 3ф"]];
+  function threeKindRow(el) {
+    const cur = el.threeKind === "socket" ? "socket" : "cable";
+    return `<div class="ep-plan-srow">Окончание:
+      ${THREE_KINDS.map(([k, nm]) => `<button type="button" class="ep-plan-chip ep-clickable ${cur === k ? "on" : ""}" data-pe-3kind="${k}">${esc(nm)}</button>`).join("")}
+    </div>`;
+  }
+
   function outLayerRow(el) {
     return `<div class="ep-plan-srow">${T.outLayer}
       ${OUT_LAYERS.map(([v, lk]) => `<button type="button" class="ep-plan-chip ep-clickable ${(el.layer || "power") === v ? "on" : ""}" data-pe-outlayer="${v}">${esc(T[lk])}</button>`).join("")}
@@ -731,6 +751,12 @@
       c.persist("opening-del");
       S.selId = null; rooms().closeSheet(); rooms().renderScene(); return;
     }
+    if ((b = t.closest("[data-pe-3kind]"))) {
+      const el2 = current(); if (!el2) return;
+      const c = core(); c.commit();
+      el2.threeKind = b.getAttribute("data-pe-3kind") === "socket" ? "socket" : "cable";
+      c.persist("elem-3kind"); openEditor(el2); return;
+    }
     if ((b = t.closest("[data-pe-papply]"))) {
       const c = core(), pn = c.project.panels.find((x) => x.id === b.getAttribute("data-pe-papply")); if (!pn) return;
       c.commit();
@@ -741,6 +767,8 @@
       const routerChk = $(`[data-pe-prouter="${pn.id}"]`);
       const routerWas = pn.router;
       pn.router = !!(routerChk && routerChk.checked);
+      const avrChk = $(`[data-pe-pavr="${pn.id}"]`);
+      pn.avr = !!(avrChk && avrChk.checked); // АВР — на трассировку не влияет, только смета/подпись
       // panel-router/panel-trafo — отдельные метки от panel-edit: только смена флага
       // роутера/трансформатора должна тихо перестроить уже построенные трассы (LV-точки/
       // выводы 24В могли сменить целевой щит), обычное переименование щита такой
