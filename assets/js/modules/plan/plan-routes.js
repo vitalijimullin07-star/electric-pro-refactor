@@ -817,15 +817,27 @@
   // распайки), двигать их нельзя: у сдвинутого крайнего участка вставляется коннектор-копия
   // анкера (тот же приём, что у ручной тяги целого сегмента в plan-rooms.js).
   const WALL_CLEAR_MIN = 5; // см от грани стены — как фикс. отступ размерной цепочки
+  // ВАЖНО (баг с зависанием, поймано на реальном проекте пользователя — «не строит трассы»):
+  // сдвиги считаются в ДВА ПРОХОДА и НЕ мутируют путь во время обхода. Первая версия
+  // splice-ила коннектор-«ступеньку» прямо в массив, по которому шёл цикл: длина массива
+  // росла, индекс оставался в конце — и если сама вставленная ступенька снова оказывалась
+  // вдоль какой-нибудь стены, она сдвигалась, вставляла следующую, и так БЕЗ КОНЦА. Внешне
+  // это выглядело как «трассировка ничего не строит»: воркер уходил в бесконечный цикл и
+  // просто никогда не отвечал (ни ошибки, ни результата — поэтому и фолбэк на синхронную
+  // сборку не срабатывал). Теперь: (1) считаем сдвиг для каждого ИСХОДНОГО сегмента,
+  // (2) собираем путь заново. Вставленные ступеньки по стенам НЕ проверяются вообще —
+  // рекурсии больше нет по построению, число точек ≤ 2·(n−1)+2.
   function clearOfWalls(p, pts) {
     if (!pts || pts.length < 2) return pts;
     const walls = floorWallsWithTh(p);
     if (!walls.length) return pts;
-    const out = pts.map((q) => ({ x: q.x, y: q.y }));
-    for (let i = 1; i < out.length; i++) {
-      const a = out[i - 1], b = out[i];
+    const src = pts.map((q) => ({ x: q.x, y: q.y }));
+    // ---- проход 1: сдвиг каждого исходного сегмента (мутаций пути нет) ----
+    const shift = [];
+    for (let i = 1; i < src.length; i++) {
+      const a = src[i - 1], b = src[i];
       const L = G().dist(a, b);
-      if (L < 2) continue;
+      if (L < 2) { shift.push({ x: 0, y: 0 }); continue; }
       const dir = { x: (b.x - a.x) / L, y: (b.y - a.y) / L };
       const n = { x: -dir.y, y: dir.x };
       const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
@@ -841,19 +853,27 @@
         const cl = G().closestOnSeg(mid, w.a, w.b);
         const d = it.half + WALL_CLEAR_MIN - cl.d;
         if (d <= 0.01 || d <= need) return;
-        const s = (mid.x - cl.x) * n.x + (mid.y - cl.y) * n.y; // в какую сторону «от стены»
-        need = d; sgn = Math.abs(s) < 0.01 ? 1 : (s > 0 ? 1 : -1);
+        const sd = (mid.x - cl.x) * n.x + (mid.y - cl.y) * n.y; // в какую сторону «от стены»
+        need = d; sgn = Math.abs(sd) < 0.01 ? 1 : (sd > 0 ? 1 : -1);
       });
-      if (need <= 0.01) continue;
+      if (need <= 0.01) { shift.push({ x: 0, y: 0 }); continue; }
       const probe = (sg) => G().roomAt(p, { x: mid.x + n.x * sg * need, y: mid.y + n.y * sg * need });
       if (!probe(sgn) && probe(-sgn)) sgn = -sgn;
-      const dx = n.x * sgn * need, dy = n.y * sgn * need;
-      if (i - 1 === 0) { out.splice(0, 0, { x: a.x, y: a.y }); i++; }
-      if (i === out.length - 1) out.splice(out.length - 1, 0, { x: b.x, y: b.y });
-      out[i - 1].x += dx; out[i - 1].y += dy;
-      out[i].x += dx; out[i].y += dy;
+      shift.push({ x: n.x * sgn * need, y: n.y * sgn * need });
     }
-    return out.filter((q, j) => j === 0 || G().dist(q, out[j - 1]) > 0.5);
+    if (!shift.some((sh) => sh.x || sh.y)) return pts; // ничего не задело стены — путь как был
+    // ---- проход 2: сборка. Концы (анкеры точки/щита/распайки) НЕ двигаются: у сдвинутого
+    // крайнего участка появляется коннектор-копия анкера. На стыке сегментов с РАЗНЫМИ
+    // сдвигами общая вершина выходит дважды — это и есть короткая «ступенька».
+    const out = [];
+    const push = (q) => { if (!out.length || G().dist(out[out.length - 1], q) > 0.5) out.push(q); };
+    push({ x: src[0].x, y: src[0].y });
+    for (let i = 0; i < shift.length; i++) {
+      push({ x: src[i].x + shift[i].x, y: src[i].y + shift[i].y });
+      push({ x: src[i + 1].x + shift[i].x, y: src[i + 1].y + shift[i].y });
+    }
+    push({ x: src[src.length - 1].x, y: src[src.length - 1].y });
+    return out;
   }
   // raw:true — только ДЛИНА пути нужна (замер кандидата шлейфа): пост-проход по стенам
   // геометрию длины почти не меняет (сдвиг на единицы см), а стоит ощутимо на O(n²)
