@@ -6,6 +6,7 @@
   --card-opacity:.72; --card-bg-rgb:15,23,42;
   --radius:22px; --button-radius:15px; --blur:16px;
   --space:8px; --topbar-h:32px; --shadow:0 18px 55px rgba(0,0,0,.38);
+  --kb:0px; /* высота экранной клавиатуры, ставит keyboard-inset.js (см. правила ниже) */
   --font-scale:1; --text-scale:1; --eff-text-scale:var(--text-scale,1); --card-text-scale:1; --anim-speed:1; --anim-enter-y:10px; --anim-scale:.985;
   --anim-ease:cubic-bezier(.16,1,.3,1); --menu-transition-ms:320ms;
 }
@@ -1336,6 +1337,29 @@ body[data-noanim="1"] *::after{animation-duration:.001s!important;transition-dur
     scroll-behavior: auto !important;
   }
 }
+
+/* ЭКРАННАЯ КЛАВИАТУРА (--kb ставит keyboard-inset.js; жалоба пользователя: «когда в эти
+   всплывшие окна сдвигает клавиатура, окно слишком высоко забирается, или наоборот
+   перекрываются клавиатурой»). Браузер по умолчанию НЕ уменьшает layout-вьюпорт при
+   открытии клавиатуры, поэтому всё, что стоит по центру/у низа фиксированного оверлея,
+   уезжает ПОД неё. Лечится однообразно: нижний паддинг оверлея = высота клавиатуры —
+   для центрированных карточек это сдвигает центр в ВИДИМУЮ часть, для «нижних» шторок
+   поднимает их ровно на клавиатуру. Один список селекторов на все оверлеи приложения —
+   новый оверлей достаточно дописать сюда (или дать ему один из этих классов). */
+body[data-kb="1"] .modal,
+body[data-kb="1"] .ep-qty-ov,
+body[data-kb="1"] .ep-card-ov,
+body[data-kb="1"] .ep-db-modal-ov,
+body[data-kb="1"] .pv29-dbmodal,
+body[data-kb="1"] .shv28-dbmodal,
+body[data-kb="1"] .ms-dbmodal,
+body[data-kb="1"] #ep-log-panel { padding-bottom: calc(var(--kb, 0px) + 12px); }
+/* карточки внутри — не выше видимой части (иначе верх уезжает за экран) */
+body[data-kb="1"] .modal-card,
+body[data-kb="1"] .ep-db-modal,
+body[data-kb="1"] .pv29-dbcard,
+body[data-kb="1"] .shv28-dbmodal-card,
+body[data-kb="1"] .ep-consent-card { max-height: calc(100dvh - var(--kb, 0px) - 24px); }
 
 /* Стартовое предупреждение о тестовой версии (consent.js) */
 .ep-consent-overlay {

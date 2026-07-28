@@ -222,6 +222,14 @@
     const r = root(); if (!r) return;
     const box = r.querySelector(".ep-plan");
     if (!box || box.classList.contains("is-full")) return;
+    // КЛАВИАТУРА ОТКРЫТА — высоту НЕ пересчитываем (жалоба пользователя: «окно слишком
+    // высоко забирается»). visualViewport.height при открытой клавиатуре меньше на её
+    // высоту, и формула ниже схлопывала .ep-plan до полоски: холст исчезал, а шторка,
+    // приклеенная к его низу, подскакивала к самой шапке. Правильное поведение — холст
+    // остаётся как был, а шторку поднимает на высоту клавиатуры CSS (body[data-kb="1"]
+    // в plan.css). Когда клавиатура закрывается, keyboard-inset.js шлёт ep:keyboard с
+    // kb=0 — тогда пересчёт снова разрешён и вызывается (см. слушатель ниже).
+    if (EP.Keyboard && EP.Keyboard.isOpen && EP.Keyboard.isOpen()) return;
     const vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
     const top = box.getBoundingClientRect().top;
     const zoom = currentZoom();
@@ -640,6 +648,15 @@
   window.addEventListener("resize", () => { if (V.active) syncPlanBoxHeight(); });
   window.addEventListener("orientationchange", () => { if (V.active) syncPlanBoxHeight(); });
   if (window.visualViewport) window.visualViewport.addEventListener("resize", () => { if (V.active) syncPlanBoxHeight(); });
+  // клавиатура закрылась (kb=0) — вернуть холсту полную высоту (пока она была открыта,
+  // syncPlanBoxHeight() намеренно ничего не делал, см. гвард выше); порядок важен —
+  // keyboard-inset.js снимает body[data-kb] ДО того, как шлёт событие, поэтому к моменту
+  // пересчёта шторка уже вернулась к своему обычному положению
+  window.addEventListener("ep:keyboard", (e) => {
+    if (!V.active) return;
+    if (!e.detail || !e.detail.kb) syncPlanBoxHeight();
+    if (EP.Plan.Rooms && EP.Plan.Rooms.placeSheetBtn) EP.Plan.Rooms.placeSheetBtn();
+  });
 
   document.addEventListener("keydown", (e) => {
     if (!V.active || !core().project) return;

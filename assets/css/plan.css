@@ -300,6 +300,13 @@ body[data-flatshadow="1"] .ep-plan-sheetbtn { box-shadow: none !important; }
    ВСЕГДА, даже «закрытая»; просто малозаметно на тёмном фоне за блюром. Найдено
    при подготовке десктоп-сайдбара ниже — правится универсально, для любого экрана. */
 .ep-plan-sheet[hidden] { display: none; }
+/* Клавиатура открыта (--kb, keyboard-inset.js): шторка поднимается РОВНО на её высоту и
+   ограничивается видимой частью холста. syncPlanBoxHeight() (plan-mount.js) при открытой
+   клавиатуре НЕ пересчитывает высоту .ep-plan — иначе холст схлопывался бы до полоски и
+   шторка «забиралась слишком высоко» (жалоба пользователя); шторку поднимаем здесь, CSS. */
+body[data-kb="1"] .ep-plan-sheet { bottom: calc(8px + var(--kb, 0px)); max-height: calc(100% - var(--kb, 0px) - 24px); }
+body[data-kb="1"] .ep-plan-sheet.ep-plan-sheet-full { bottom: var(--kb, 0px) !important; max-height: calc(100% - var(--kb, 0px)) !important; }
+body[data-kb="1"] .ep-plan-sheetbtn { bottom: calc(14px + var(--kb, 0px)); }
 
 /* Экономия на слабых устройствах — переиспользуем существующий perfLevel
    (visual-settings.js: авто-детект слабого телефона + самообучение по

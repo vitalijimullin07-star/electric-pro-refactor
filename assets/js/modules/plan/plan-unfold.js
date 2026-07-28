@@ -521,7 +521,9 @@
     // плавная тяга: обновляем позицию узлов без пересборки всего SVG
     function updateDragVisual() {
       const d = S.drag; if (!d) return;
-      if (d.kind === "open") { if (d.g) d.g.setAttribute("transform", `translate(${d.op.offset - d.x0} 0)`); return; }
+      // проём: X — вдоль стены (offset), Y — низ от пола (sill). Рект проёма нарисован от
+      // y = H - (sill + oh), значит рост sill двигает его ВВЕРХ: dy = sill0 - sill.
+      if (d.kind === "open") { if (d.g) d.g.setAttribute("transform", `translate(${d.op.offset - d.x0} ${d.y0 - (d.op.sill || 0)})`); return; }
       if (d.kind === "panel") { if (d.g) d.g.setAttribute("transform", `translate(${d.curPx - d.x0} ${(H - d.curHeight) - d.y0})`); return; }
       if (d.kind === "led") { if (d.g) d.g.setAttribute("transform", `translate(${Math.min(d.ls.offsetA, d.ls.offsetB) - d.x0} 0)`); return; }
       const x = d.el.offset, yTrue = H - d.el.height;
@@ -572,7 +574,7 @@
         const op = (p.openings || []).find((x) => x.id === og.getAttribute("data-pu-open"));
         if (!op) return;
         core().commit();
-        S.drag = { kind: "open", op, moved: false, g: og, x0: op.offset };
+        S.drag = { kind: "open", op, moved: false, g: og, x0: op.offset, y0: op.sill || 0 };
         return;
       }
       const lg = e.target.closest && e.target.closest("[data-pu-led]");
@@ -625,8 +627,15 @@
         const pt = toWorld(svg, e.clientX, e.clientY);
         S.drag.moved = true;
         if (S.drag.kind === "open") {
-          const maxOff = Math.max(0, w.len - S.drag.op.width);
-          S.drag.op.offset = Math.round(Math.max(0, Math.min(maxOff, pt.x - S.drag.op.width / 2))); // тянем за центр проёма
+          const op2 = S.drag.op;
+          const maxOff = Math.max(0, w.len - op2.width);
+          op2.offset = Math.round(Math.max(0, Math.min(maxOff, pt.x - op2.width / 2))); // тянем за центр проёма
+          // ВТОРАЯ ось (просьба пользователя «двигать по оси икс и игрик»): низ от пола.
+          // Раньше проём в развёртке ехал ТОЛЬКО вдоль стены, а подоконник менялся лишь
+          // числом в редакторе. Тянем за центр по высоте, тем же принципом, что и по X;
+          // oh считается ТАК ЖЕ, как в отрисовке проёма выше, иначе рект «прыгал» бы.
+          const oh = op2.height || (op2.type === "window" ? 140 : 200);
+          op2.sill = Math.round(Math.max(0, Math.min(Math.max(0, H - oh), (H - pt.y) - oh / 2)));
         } else if (S.drag.kind === "panel") {
           const px = Math.round(Math.max(0, Math.min(w.len, pt.x)));
           S.drag.curPx = px;
