@@ -1808,7 +1808,7 @@
   // ---- автоперестройка: геометрия сдвинулась (точка/стена/перегородка) —
   // ранее построенные трассы устарели бы молча (кривые длины/штробы в Расчёте).
   // Перестраиваем тихо, только если трассы уже были построены.
-  const AUTOREBUILD_ON = { "elem-move": 1, "room-reshape": 1, "room-merge": 1, "wall-th": 1, "wall-mat": 1, "beam-move": 1, "beam-w": 1, "panel-move": 1, "panel-router": 1, "panel-trafo": 1, "opening-move": 1, "elem-target": 1 };
+  const AUTOREBUILD_ON = { "elem-move": 1, "room-reshape": 1, "room-merge": 1, "room-move": 1, "wall-th": 1, "wall-mat": 1, "beam-move": 1, "beam-w": 1, "panel-move": 1, "panel-router": 1, "panel-trafo": 1, "opening-move": 1, "elem-target": 1 };
   let rebuilding = false;
   // ---- АВТОПЕРЕСТРОЙКА БЕЗ ФРИЗА: тяжёлый build() уходит в фоновый воркер ----
   // Замерено на стресс-проекте (30 комнат / 150 точек / 56 трасс) с эмуляцией слабого

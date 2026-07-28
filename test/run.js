@@ -2900,6 +2900,55 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(true, "нет исключений при отсутствующем #ep-plan-sheet");
   });
 
+  // ===== 27. 🧭 Перенос комнаты целиком =====
+  test("перенос комнаты: контур и всё внутри едут вместе, чужое — нет", () => {
+    const p = EP.Plan.Core.createProject("move");
+    const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "A");
+    const B = M.newRoom(G.rectPoints(600, 0, 300, 300), "B"); // далеко — магнит не должен сработать
+    p.rooms.push(A, B);
+    const wallEl = M.newElement("socket", A.id + ":0", 100, 30, "power");   // настенная — едет САМА
+    const freeEl = M.newElement("light", null, 0, 270, "light");
+    freeEl.params = { x: 200, y: 150 };                                      // свободная внутри A
+    const otherEl = M.newElement("light", null, 0, 270, "light");
+    otherEl.params = { x: 700, y: 150 };                                     // внутри B — не двигать
+    p.elements.push(wallEl, freeEl, otherEl);
+    const pn = M.newPanel(50, 250, "Щит"); p.panels.push(pn);                 // щит внутри A
+    const bm = M.newBeam({ x: 100, y: 100 }, { x: 300, y: 100 }); p.beams.push(bm); // балка внутри A
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+
+    const before = { wall: G.elemPoint(p, wallEl), free: { x: freeEl.params.x, y: freeEl.params.y } };
+    const d = EP.Plan.Rooms.moveRoom(A.id, 50, 30, { raw: true });
+    eq(d.x, 50, "сдвиг по X применён"); eq(d.y, 30, "сдвиг по Y применён");
+    eq(A.points[0].x, 50, "контур поехал"); eq(A.points[0].y, 30, "контур поехал по Y");
+    const wallAfter = G.elemPoint(p, wallEl);
+    eq(Math.round(wallAfter.x - before.wall.x), 50, "настенная точка поехала вместе со стеной");
+    eq(Math.round(wallAfter.y - before.wall.y), 30, "настенная точка поехала по Y");
+    eq(freeEl.params.x, before.free.x + 50, "свободная точка внутри поехала");
+    eq(pn.x, 100, "щит внутри поехал"); eq(pn.y, 280, "щит внутри поехал по Y");
+    eq(bm.a.x, 150, "балка внутри поехала");
+    eq(otherEl.params.x, 700, "точка ДРУГОЙ комнаты не тронута");
+    eq(B.points[0].x, 600, "соседняя комната не тронута");
+  });
+  test("перенос комнаты: магнит углов приклеивает к соседней комнате", () => {
+    const p = EP.Plan.Core.createProject("move2");
+    const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "A");
+    const B = M.newRoom(G.rectPoints(414, 0, 300, 300), "B"); // щель 14см (< cornerSnapCm=20)
+    p.rooms.push(A, B);
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    // тянем A вправо на 10см — правый край окажется в 4см от левого края B, магнит должен доклеить
+    EP.Plan.Rooms.moveRoom(A.id, 10, 0);
+    const rightX = Math.max.apply(null, A.points.map((q) => q.x));
+    eq(rightX, 414, "правый край A прилип к левому краю B (стены не расходятся)");
+  });
+  test("перенос комнаты: неизвестный id безопасен, нулевой сдвиг ничего не пишет", () => {
+    const p = EP.Plan.Core.createProject("move3");
+    p.rooms.push(M.newRoom(G.rectPoints(0, 0, 300, 300), "A"));
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    eq(EP.Plan.Rooms.moveRoom("нет-такого", 50, 50), null, "нет комнаты — null, без исключения");
+    const d = EP.Plan.Rooms.moveRoom(p.rooms[0].id, 2, 2); // округлится до 0 по сетке 10см
+    eq(d.x, 0, "сдвиг меньше половины шага сетки — ноль");
+  });
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);
