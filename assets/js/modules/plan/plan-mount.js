@@ -119,6 +119,7 @@
           <button type="button" class="ep-plan-mini ep-clickable" data-plan-meta aria-label="${T.metaTitle}" title="${T.metaTitle}">${T.meta}</button>
         </div>
         <button type="button" class="ep-plan-mini ep-clickable" data-plan-full aria-label="Во весь экран">⤢</button>
+        <button type="button" class="ep-plan-mini ep-clickable${p.settings.realScale ? " on" : ""}" data-plan-realscale aria-label="Значки в реальном размере (1:1)" title="Значки в реальном размере, мм — рамки 84/155/226/300/368 мм (1:1)">1:1</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-plan-ctrls aria-label="${V.ctrlsOn ? "Свернуть панель" : "Развернуть панель"}" title="Свернуть/развернуть панель инструментов">${V.ctrlsOn ? "︿" : "﹀"}</button>
       </div>
       <div class="ep-plan-compactrow">
@@ -289,6 +290,33 @@
   }
 
   // свернуть/развернуть панель инструментов редактора — холст занимает освободившееся место
+  // «1:1» — значки настенных приборов/блоков в РЕАЛЬНЫХ габаритах (мм, FRAME_MM в
+  // plan-render.js) вместо постоянного размера на экране. При ВКЛЮЧЕНИИ дополнительно
+  // ставим истинный масштаб вида (1 см проекта = 1 см на экране, CM_PER_PX_1TO1) —
+  // просьба пользователя «чтобы в масштабе 1:1 смотреть»; при выключении зум не трогаем
+  // (пользователь мог сам его подобрать). Точность 1:1 — на уровне соглашения CSS
+  // (96 px = 1 дюйм): у части устройств физический размер может отличаться на несколько
+  // процентов, поэтому в тосте это честно оговорено.
+  function toggleRealScale(root) {
+    const c = core(), p = c.project; if (!p) return;
+    const on = !p.settings.realScale;
+    c.commit();
+    p.settings.realScale = on;
+    c.persist("realscale");
+    const btn = (root || document).querySelector("[data-plan-realscale]");
+    if (btn) btn.classList.toggle("on", on);
+    if (on && V.canvas && V.canvas.setCmPerPx && EP.Plan.Render.CM_PER_PX_1TO1) {
+      V.canvas.setCmPerPx(EP.Plan.Render.CM_PER_PX_1TO1);
+    }
+    if (EP.Plan.Rooms) {
+      EP.Plan.Rooms.renderScene();
+      if (EP.Plan.Rooms.toast) {
+        EP.Plan.Rooms.toast(on
+          ? "Реальный размер приборов (рамка 84 мм). Вид — 1:1, точность зависит от экрана."
+          : "Значки снова постоянного размера на экране.");
+      }
+    }
+  }
   function toggleTopCtrls(root) {
     V.ctrlsOn = !V.ctrlsOn;
     const box = root.querySelector(".ep-plan");
@@ -506,6 +534,7 @@
     if ((el = t.closest("[data-plan-del]"))) return doDelete(r, el.getAttribute("data-plan-del"));
     if (t.closest("[data-plan-back]")) { core().closeProject(); return renderList(r); }
     if (t.closest("[data-plan-ctrls]")) return toggleTopCtrls(r);
+    if (t.closest("[data-plan-realscale]")) return toggleRealScale(r);
     if (t.closest("[data-plan-rename]")) return doRename();
     if (t.closest("[data-plan-meta]")) return doMeta();
     if (t.closest("[data-plan-meta-close]")) { EP.Plan.Rooms.closeSheet(); return; }

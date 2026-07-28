@@ -3041,6 +3041,58 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/body\[data-kb="1"\]\s*\.ep-plan-sheet\s*\{[^}]*var\(--kb/.test(plan), "шторка плана поднимается над клавиатурой");
   });
 
+  // ===== 30. Реальный масштаб приборов (1:1): габариты рамок + «лица» =====
+  test("1:1: габариты рамок по datasheet (84/155/226/300/368 мм)", () => {
+    const R = EP.Plan.Render;
+    eq(R.frameWmm(1), 84, "1 пост"); eq(R.frameWmm(2), 155, "2 поста");
+    eq(R.frameWmm(3), 226, "3 поста"); eq(R.frameWmm(4), 300, "4 поста");
+    eq(R.frameWmm(5), 368, "5 постов");
+    eq(R.frameHcm(), 8.4, "высота рамки 84 мм");
+    eq(R.frameWcm(3), 22.6, "см для 3 постов");
+    ok(R.frameWmm(6) > R.frameWmm(5), "6+ постов — экстраполяция, не схлопывание в 84мм");
+    ok(Math.abs(R.CM_PER_PX_1TO1 - 2.54 / 96) < 1e-9, "истинный 1:1 = 2.54/96 см на пиксель");
+  });
+  test("1:1: «лицо» прибора — розетка с гнёздами, выключатель клавишами, RJ45, ТВ", () => {
+    const R = EP.Plan.Render;
+    const sock = R.deviceFace("socket", 1);
+    eq(sock.filter((o) => o.cls === "hole").length, 2, "у розетки два гнезда");
+    eq(sock.filter((o) => o.cls === "earth").length, 2, "и заземляющие усики");
+    eq(R.deviceFace("switch", 3).filter((o) => o.cls === "key").length, 3, "3 клавиши — три качельки");
+    eq(R.deviceFace("switch", 1).filter((o) => o.cls === "key").length, 1, "1 клавиша — одна");
+    ok(R.deviceFace("internet", 1).some((o) => o.t === "path" && o.cls === "jack"), "интернет — гнездо RJ45");
+    ok(R.deviceFace("tv", 1).some((o) => o.cls === "pin"), "ТВ — коаксиал со штырьком");
+    // у типов без «лица» остаётся только рамка поста (букву дорисует вызывающий)
+    eq(R.deviceFace("ac", 1).filter((o) => o.cls !== "post").length, 0, "кондиционер — без лица");
+    // все примитивы — в пределах окна поста 58×58 (иначе «лицо» вылезло бы за рамку)
+    sock.forEach((o) => {
+      const m = o.t === "circle" ? Math.abs(o.cx) + o.r : (o.t === "rect" ? Math.max(Math.abs(o.x), Math.abs(o.x + o.w)) : 0);
+      ok(m <= R.POST_MM / 2 + 0.01, "примитив внутри окна поста");
+    });
+  });
+  test("1:1: настройка realScale — дефолт выключена, бэкофилл у старых проектов", () => {
+    const p = EP.Plan.Core.createProject("rs");
+    eq(p.settings.realScale, false, "по умолчанию выключено (обычный вид)");
+    const old = JSON.stringify({ project: { id: "x", name: "old", rooms: [], elements: [], settings: {} } });
+    const imp = EP.Plan.Core.importJSON(old);
+    eq(imp.settings.realScale, false, "старый проект получает поле, а не undefined");
+  });
+  test("1:1: реальные габариты и «лица» доходят до ПЕЧАТНОЙ развёртки", () => {
+    const p = EP.Plan.Core.createProject("rspdf");
+    const r = M.newRoom(G.rectPoints(0, 0, 500, 300), "К1");
+    p.rooms.push(r);
+    const wid = r.id + ":0";
+    const blk = M.newElement("block", wid, 200, 30, "power");
+    blk.params = { items: ["socket", "socket", "socket"] };
+    p.elements.push(blk, M.newElement("internet", wid, 350, 30, "lv"));
+    p.settings.realScale = true;
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    const html = EP.Plan.Export.sheetHtml(p);
+    ok(html.indexOf('width="22.6"') >= 0, "рамка блока из 3 постов — 226 мм и в PDF");
+    ok(/fill="#0f172a"/.test(html) || /fill="#111827"/.test(html), "«лицо» (гнёзда) нарисовано в PDF");
+    ok(/@page \{ size: A4 landscape/.test(html), "формат листа по умолчанию A4");
+    ok(/\.sheet \{[^}]*width: 297mm/.test(html), "и его физический размер");
+  });
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

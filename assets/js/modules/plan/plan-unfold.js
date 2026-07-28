@@ -384,6 +384,26 @@
     }
 
     const TY = EL().TYPES;
+    // «1:1» (settings.realScale, кнопка в шапке плана): посты рисуются в РЕАЛЬНЫХ
+    // габаритах рамок (мм из FRAME_MM, plan-render.js) и с настоящим «лицом» —
+    // розетка с гнёздами, выключатель клавишами, интернет RJ45, ТВ коаксиалом
+    // (просьба пользователя). Развёртка — фронтальный вид, тут это и видно.
+    const RD = EP.Plan.Render, real = !!(p.settings && p.settings.realScale) && !!(RD && RD.deviceFace);
+    const fW = (n) => (RD && RD.frameWcm ? RD.frameWcm(n) : 8.4);
+    const fH = () => (RD && RD.frameHcm ? RD.frameHcm() : 8.4);
+    // примитивы «лица» (в мм, центр 0,0) → SVG-узлы в см на месте поста
+    function drawFace(parent, type, keys, cx, cy) {
+      const prim = RD.deviceFace(type, keys) || [], ST = RD.FACE_STYLE || {};
+      prim.forEach((o) => {
+        const st = ST[o.cls] || {};
+        const base = { fill: st.fill || "none", stroke: st.stroke || "none", "stroke-width": (st.sw || 0) / 10, class: "ep-plan-unfface" };
+        if (o.t === "rect") parent.appendChild(svgEl("rect", Object.assign({ x: cx + o.x / 10, y: cy + o.y / 10, width: o.w / 10, height: o.h / 10, rx: (o.rx || 0) / 10 }, base)));
+        else if (o.t === "circle") parent.appendChild(svgEl("circle", Object.assign({ cx: cx + o.cx / 10, cy: cy + o.cy / 10, r: o.r / 10 }, base)));
+        else if (o.t === "line") parent.appendChild(svgEl("line", Object.assign({ x1: cx + o.x1 / 10, y1: cy + o.y1 / 10, x2: cx + o.x2 / 10, y2: cy + o.y2 / 10 }, base, { fill: "none" })));
+        else if (o.t === "path") parent.appendChild(svgEl("path", Object.assign({ d: o.d.replace(/-?\d+(?:\.\d+)?/g, (m2) => String(Number(m2) / 10)), transform: `translate(${cx} ${cy})` }, base)));
+        else if (o.t === "text") parent.appendChild(svgEl("text", { x: cx + (o.x || 0) / 10, y: cy + (o.y || 0) / 10, "font-size": (o.s || 12) / 10, "text-anchor": "middle", "dominant-baseline": "central", fill: "#0f172a", class: "ep-plan-unfface" }, o.txt));
+      });
+    }
     // AABB символов постов — подпись высоты кладём РЯДОМ с постом, а если она
     // ложится на другой пост (точки на одном offset, разной высоте) — сдвигаем,
     // чтобы не пересекалось (просьба пользователя).
@@ -391,10 +411,11 @@
       if (el.type === "block") {
         const items = (el.params && el.params.items) || ["socket"];
         const vert = !!el.blockVert;
-        const step2 = 18 * ks, along = items.length * step2 + 6 * ks, across = 24 * ks;
+        const along = real ? fW(items.length) : items.length * 18 * ks + 6 * ks;
+        const across = real ? fH() : 24 * ks;
         return { hw: (vert ? across : along) / 2, hh: (vert ? along : across) / 2 };
       }
-      return { hw: 13 * ks, hh: 13 * ks };
+      return real ? { hw: fW(1) / 2, hh: fH() / 2 } : { hw: 13 * ks, hh: 13 * ks };
     };
     const elBoxes = els.map((e) => { const s = symHalf(e); return { x: e.offset, y: H - e.height, hw: s.hw, hh: s.hh }; });
     // QF-имя (текст над постом) и подпись расстояния от угла (текст на горизонтали
@@ -452,24 +473,40 @@
         // горизонтальный — в ряд (вдоль x); просил пользователь. Развёртка — вид фасада,
         // так что вертикальный блок здесь именно по высоте, а не поворот графики.
         const vert = !!el.blockVert;
-        const step2 = 18 * ks, along = items.length * step2 + 6 * ks, across = 24 * ks;
+        // realScale: рамка настоящей ширины (84/155/226/300/368 мм) и высоты 84 мм,
+        // посты внутри — с равным шагом; иначе прежняя «экранная» раскладка
+        const along = real ? fW(items.length) : items.length * 18 * ks + 6 * ks;
+        const across = real ? fH() : 24 * ks;
+        const step2 = real ? along / items.length : 18 * ks;
+        const inset = real ? 0 : 3 * ks;
         const bw = vert ? across : along, bh = vert ? along : across;
         const cellC = (i) => vert
-          ? { cx: x, cy: y - bh / 2 + 3 * ks + step2 * i + step2 / 2 }
-          : { cx: x - bw / 2 + 3 * ks + step2 * i + step2 / 2, cy: y };
+          ? { cx: x, cy: y - bh / 2 + inset + step2 * i + step2 / 2 }
+          : { cx: x - bw / 2 + inset + step2 * i + step2 / 2, cy: y };
         const cellR = (i) => vert
-          ? { x: x - bw / 2, y: y - bh / 2 + 3 * ks + step2 * i, width: bw, height: step2 }
-          : { x: x - bw / 2 + 3 * ks + step2 * i, y: y - bh / 2, width: step2, height: bh };
-        gr.appendChild(svgEl("rect", { x: x - bw / 2, y: y - bh / 2, width: bw, height: bh, rx: 5 * ks, style: "fill:" + col, class: "ep-plan-unfshape" }));
-        items.forEach((it, i) => { const c = cellC(i); gr.appendChild(svgEl("text", { x: c.cx, y: c.cy, "font-size": 9 * ks, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfglyph" }, (TY[it] || {}).glyph || "?")); });
+          ? { x: x - bw / 2, y: y - bh / 2 + inset + step2 * i, width: bw, height: step2 }
+          : { x: x - bw / 2 + inset + step2 * i, y: y - bh / 2, width: step2, height: bh };
+        gr.appendChild(svgEl("rect", { x: x - bw / 2, y: y - bh / 2, width: bw, height: bh, rx: real ? 0.4 : 5 * ks, style: "fill:" + col, class: "ep-plan-unfshape" }));
+        if (real) items.forEach((it, i) => { const c = cellC(i); drawFace(gr, it, el.keys, c.cx, c.cy); if (!(RD.deviceFace(it, el.keys) || []).some((o) => o.cls !== "post")) gr.appendChild(svgEl("text", { x: c.cx, y: c.cy, "font-size": 2.6, "text-anchor": "middle", "dominant-baseline": "central", fill: "#0f172a", class: "ep-plan-unfface" }, (TY[it] || {}).glyph || "?")); });
+        else items.forEach((it, i) => { const c = cellC(i); gr.appendChild(svgEl("text", { x: c.cx, y: c.cy, "font-size": 9 * ks, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfglyph" }, (TY[it] || {}).glyph || "?")); });
         items.forEach((it, i) => gr.appendChild(svgEl("rect", Object.assign({ "data-pu-post": i, fill: "transparent" }, cellR(i)))));
         const eIdx = G().blockEntryIndex(el), ec = cellC(eIdx);
         gr.appendChild(svgEl("circle", vert
           ? { cx: x + bw / 2 + 5 * ks, cy: ec.cy, r: 3 * ks, class: "ep-plan-unfentry" }
           : { cx: ec.cx, cy: y + bh / 2 + 5 * ks, r: 3 * ks, class: "ep-plan-unfentry" }));
       } else {
-        gr.appendChild(svgEl("circle", { cx: x, cy: y, r: 13 * ks, style: "fill:" + col, class: "ep-plan-unfshape" }));
-        gr.appendChild(svgEl("text", { x, y, "font-size": 10 * ks, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfglyph" }, (TY[el.type] || {}).glyph || "?"));
+        if (real) {
+          const fw = fW(1), fh = fH();
+          gr.appendChild(svgEl("rect", { x: x - fw / 2, y: y - fh / 2, width: fw, height: fh, rx: 0.4, style: "fill:" + col, class: "ep-plan-unfshape" }));
+          drawFace(gr, el.type, el.keys, x, y);
+          // у типов без «лица» (кондиционер/камера/бра/трек/ТП) в окне поста остаётся буква
+          if (!(RD.deviceFace(el.type, el.keys) || []).some((o) => o.cls !== "post")) {
+            gr.appendChild(svgEl("text", { x, y, "font-size": 2.6, "text-anchor": "middle", "dominant-baseline": "central", fill: "#0f172a", class: "ep-plan-unfface" }, (TY[el.type] || {}).glyph || "?"));
+          }
+        } else {
+          gr.appendChild(svgEl("circle", { cx: x, cy: y, r: 13 * ks, style: "fill:" + col, class: "ep-plan-unfshape" }));
+          gr.appendChild(svgEl("text", { x, y, "font-size": 10 * ks, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfglyph" }, (TY[el.type] || {}).glyph || "?"));
+        }
       }
       if (cc) gr.appendChild(svgEl("text", { x, y: y - 18 * ks, "font-size": 8.5 * ks, "text-anchor": "middle", fill: col, class: "ep-plan-unfqf" }, cc.name));
       svg.appendChild(gr);

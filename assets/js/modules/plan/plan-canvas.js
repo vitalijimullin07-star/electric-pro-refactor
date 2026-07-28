@@ -314,6 +314,19 @@
       cmPerPx: pxToCm,
       toWorld, fit, redraw: apply,
       panBy: (dx, dy) => { view.x += dx; view.y += dy; apply(); }, // сдвиг вида в мировых см (программный, не жестом)
+      // ЖЁСТКО задать масштаб (см в одном экранном пикселе), сохраняя центр вида —
+      // нужно для истинного 1:1 (кнопка «1:1» в шапке плана): 1 CSS-пиксель по
+      // спецификации CSS = 1/96 дюйма, значит 1см = 96/2.54 px, т.е. cmPerPx = 2.54/96.
+      setCmPerPx: (v) => {
+        const t = Number(v);
+        if (!isFinite(t) || t <= 0 || !cw) return;
+        const cxw = view.x + view.w / 2, cyw = view.y + view.h / 2;
+        view.w = t * cw; view.h = t * (ch || cw / 1.5);
+        view.x = cxw - view.w / 2; view.y = cyw - view.h / 2;
+        userAdjusted = true; // осознанный масштаб — авто-refit не должен его перебить
+        apply();
+        if (cb.viewChanged) cb.viewChanged();
+      },
       userAdjustedView: () => userAdjusted, // юзер сам зумил/панорамировал (авто-refit больше не перебивает)
       onTap: (fn) => { cb.tap = fn; },
       onDblTap: (fn) => { cb.dbl = fn; }, // (worldPt, e) → true, если двойной тап обработан (зум не делать)

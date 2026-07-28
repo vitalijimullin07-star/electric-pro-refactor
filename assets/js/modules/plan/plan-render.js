@@ -21,6 +21,89 @@
     lodDimK: 3.0,       // выше — скрыть размерные цепочки, «N · длина» стен, h=NN
     lodQfK: 4.5         // выше — скрыть ещё и QF-имена над точками, «N мод» щита
   };
+  // РЕАЛЬНЫЕ ГАБАРИТЫ РАМОК, мм (datasheet Systeme Electric / Schneider AtlasDesign,
+  // скриншоты пользователя): 1 пост 84×84, 2 — 155×84, 3 — 226×84, 4 — 300×84,
+  // 5 — 368×84; «окно» одного поста 58×58, толщина рамки 11.5. Работает, когда включён
+  // settings.realScale (кнопка «1:1» в шапке плана) — И на плане, И в развёртке
+  // (plan-unfold.js), И в печатной развёртке (plan-export.js): ОДНА таблица на все три
+  // вида, чтобы размеры физически не могли разъехаться между ними.
+  const FRAME_MM = { 1: 84, 2: 155, 3: 226, 4: 300, 5: 368 };
+  const FRAME_H_MM = 84, POST_MM = 58;
+  // >5 постов таблицей не описаны — линейная экстраполяция шагом 71мм (средний шаг
+  // 1→5 по таблице), иначе блок из 6+ постов «схлопнулся» бы в 84мм
+  const frameWmm = (n) => FRAME_MM[Math.max(1, n | 0)] || (84 + (Math.max(1, n | 0) - 1) * 71);
+  const frameWcm = (n) => frameWmm(n) / 10;
+  const frameHcm = () => FRAME_H_MM / 10;
+  // истинный 1:1 — CSS-пиксель по спецификации = 1/96 дюйма, значит 1см = 96/2.54 px,
+  // т.е. в одном пикселе 2.54/96 см
+  const CM_PER_PX_1TO1 = 2.54 / 96;
+
+  // «Лицо» прибора — как он выглядит спереди (просьба пользователя: «на развёртках где
+  // розетки импровизировано (вилка), клавиши как клавиши, интернет и ТВ как должны в
+  // реальности выглядеть»). Возвращает ПРИМИТИВЫ в локальных координатах (центр 0,0,
+  // размеры в мм), а не DOM-узлы — рисовать их надо в ТРЁХ местах и ДВУМЯ способами:
+  // живая развёртка/план строят SVG-узлы (createElementNS), печатная развёртка — СТРОКУ.
+  // Один источник геометрии на всех, как FRAME_MM выше.
+  function deviceFace(type, keys) {
+    const o = [];
+    const w = POST_MM, h = POST_MM;                        // окно поста 58×58
+    o.push({ t: "rect", x: -w / 2, y: -h / 2, w, h, rx: 4, cls: "post" }); // сам механизм
+    if (type === "socket" || type === "output" || type === "output24") {
+      // евро-розетка: круглое углубление, два гнезда Ø11 на ±13мм, заземляющие «усики»
+      // сверху и снизу — именно так она выглядит в жизни
+      o.push({ t: "circle", cx: 0, cy: 0, r: 26, cls: "dish" });
+      o.push({ t: "circle", cx: -13, cy: 0, r: 5.5, cls: "hole" });
+      o.push({ t: "circle", cx: 13, cy: 0, r: 5.5, cls: "hole" });
+      o.push({ t: "rect", x: -9, y: -25, w: 18, h: 3.5, rx: 1.5, cls: "earth" });
+      o.push({ t: "rect", x: -9, y: 21.5, w: 18, h: 3.5, rx: 1.5, cls: "earth" });
+      // «24» — НИЖЕ гнёзд (на центре она ложилась ровно на них, проверено скриншотом)
+      if (type === "output24") o.push({ t: "text", x: 0, y: 14, s: 11, txt: "24" });
+      return o;
+    }
+    if (type === "switch") {
+      // клавиши — как клавиши: N вертикальных качелек в окне поста, с зазором
+      const n = Math.max(1, Math.min(3, keys || 1));
+      const gap = 2, kw = (w - 6 - gap * (n - 1)) / n;
+      for (let i = 0; i < n; i++) {
+        const x = -w / 2 + 3 + i * (kw + gap);
+        o.push({ t: "rect", x, y: -h / 2 + 4, w: kw, h: h - 8, rx: 2, cls: "key" });
+        o.push({ t: "line", x1: x + 2, y1: -3, x2: x + kw - 2, y2: -3, cls: "keyline" }); // риска нажатия
+      }
+      return o;
+    }
+    if (type === "internet" || type === "sensor") {
+      // RJ45: прямоугольное гнездо с ключом-выступом снизу
+      o.push({ t: "path", d: "M -11 -9 L 11 -9 L 11 7 L 4 7 L 4 11 L -4 11 L -4 7 L -11 7 Z", cls: "jack" });
+      o.push({ t: "line", x1: -7, y1: -9, x2: -7, y2: -3, cls: "keyline" });
+      o.push({ t: "line", x1: 7, y1: -9, x2: 7, y2: -3, cls: "keyline" });
+      return o;
+    }
+    if (type === "tv") {
+      // ТВ (коаксиал): круглое гнездо с центральным штырьком
+      o.push({ t: "circle", cx: 0, cy: 0, r: 11, cls: "jack" });
+      o.push({ t: "circle", cx: 0, cy: 0, r: 2.2, cls: "pin" });
+      return o;
+    }
+    // кондиционер/камера/бра/трек/ТП и т.п. — «лица» у них нет, это вывод ПОД прибор:
+    // рисуем только рамку поста, букву добавит вызывающий
+    return o;
+  }
+
+  // Стили «лица» прибора — ОДНИ И ТЕ ЖЕ в живой развёртке (SVG-узлы) и в печатной
+  // (строка), иначе один и тот же прибор выглядел бы на бумаге иначе, чем на экране.
+  // Цвета намеренно «пластиковые» (белый механизм, тёмные гнёзда) и НЕ зависят от темы:
+  // сам прибор в реальности белый, а рамка вокруг красится по линии QF.
+  const FACE_STYLE = {
+    post: { fill: "#f8fafc", stroke: "#475569", sw: 0.6 },
+    dish: { fill: "#eaeef4", stroke: "#94a3b8", sw: 0.4 },
+    hole: { fill: "#0f172a", stroke: "none", sw: 0 },
+    earth: { fill: "#94a3b8", stroke: "none", sw: 0 },
+    key: { fill: "#f1f5f9", stroke: "#64748b", sw: 0.5 },
+    keyline: { fill: "none", stroke: "#94a3b8", sw: 0.6 },
+    jack: { fill: "#111827", stroke: "#475569", sw: 0.4 },
+    pin: { fill: "#e2e8f0", stroke: "none", sw: 0 }
+  };
+
   // кэш собранного <g> со стенами/масками/проёмами/балками/пустотами/лентой на
   // canvas (см. buildWalls() внутри drawScaled) — WeakMap, не свойство на canvas,
   // чтобы не полагаться на форму объекта canvas (в т.ч. в тестовом fakeCanvas())
@@ -617,6 +700,10 @@
     const circ = (id) => (project.circuits || []).find((c) => c.id === id);
     const gost = (project.settings && project.settings.symbolStyle) === "gost";
     const design = (project.settings && project.settings.symbolStyle) === "design";
+    // «1:1» — настенные приборы/блоки в НАСТОЯЩИХ габаритах рамок (мм, FRAME_MM), а не
+    // постоянным размером на экране. Свободные потолочные точки (свет/ТП/распайка/трек)
+    // НЕ трогаем — у них нет рамки, физического габарита в плане у них не существует.
+    const real = !!(project.settings && project.settings.realScale);
     // цвет элемента = цвет линии (QF), если она назначена; иначе цвет слоя. Блоки/посты
     // и одиночные точки красятся по линии, как на профессиональном чертеже (просил
     // пользователь: «цвет естественно должен зависеть от линии QF»).
@@ -661,13 +748,21 @@
         // (elem.blockVert) — та же рамка, повёрнутая ещё на 90° (посты «столбиком»
         // на плане), просил пользователь: «кнопку развернуть на 90°».
         const items = (elem.params && elem.params.items) || ["socket"];
-        const step2 = 16 * k, bw = items.length * step2 + 8 * k, bh = 22 * k;
+        // realScale: ширина = реальная рамка на N постов (84/155/226/300/368 мм),
+        // высота = 84 мм, шаг постов внутри = ширина/N (посты с равным шагом)
+        const bw = real ? frameWcm(items.length) : items.length * 16 * k + 8 * k;
+        const bh = real ? frameHcm() : 22 * k;
+        const step2 = real ? (bw - 0.8) / items.length : 16 * k;
         const rotB = (rot || 0) + (elem.blockVert ? 90 : 0);
         const tr = rotB ? `rotate(${rotB} ${cx} ${cy})` : null;
         // ГОСТ: групповая розетка (все посты блока — розетки) — концентрические полукруги
         // по числу постов вместо прямоугольника с буквами, максимум 6 колец (тот же предел,
         // что уже есть у самой возможности добавить пост в блок, см. plan-unfold.js p+/p-)
-        const gostGroup = gost && items.length > 1 && items.every((it) => it === "socket");
+        // в режиме «1:1» физический габарит важнее условного ГОСТ-символа: групповая
+        // розетка рисуется настоящей рамкой (её ширина и есть смысл режима), а не
+        // концентрическими полукругами — иначе кнопка «1:1» на ГОСТ-стиле (он по
+        // умолчанию!) не давала бы вообще никакого эффекта на блоках
+        const gostGroup = gost && !real && items.length > 1 && items.every((it) => it === "socket");
         if (gostGroup) {
           const sub = el("g", { class: "ep-plan-gost", stroke: elemColor(elem), transform: `translate(${cx} ${cy})` + (rotB ? ` rotate(${rotB})` : "") });
           let sgn = 1;
@@ -696,23 +791,39 @@
           }
           if (bad.has(elem.id)) grp.appendChild(el("rect", Object.assign({ x: cx - bw / 2 - 4 * k, y: cy - bh / 2 - 4 * k, width: bw + 8 * k, height: bh + 8 * k, rx: 6 * k, class: "ep-plan-warnring", fill: "none", "stroke-width": sw * 0.7 }, tr ? { transform: tr } : {})));
           grp.appendChild(el("rect", Object.assign({ x: cx - bw / 2, y: cy - bh / 2, width: bw, height: bh, rx: 5 * k, fill: elemColor(elem), class: "ep-plan-blockrect", "stroke-width": sw * 0.7 }, tr ? { transform: tr } : {})));
+          const inset = real ? 0.4 : 4 * k;
+          const gfs = real ? Math.min(bh * 0.5, step2 * 0.8) : 9 * k;
           items.forEach((it, i) => grp.appendChild(el("text", Object.assign({
-            x: cx - bw / 2 + 4 * k + step2 * i + step2 / 2, y: cy,
-            "font-size": 9 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph"
+            x: cx - bw / 2 + inset + step2 * i + step2 / 2, y: cy,
+            "font-size": gfs, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph"
           }, tr ? { transform: tr } : {}), (TY[it] || {}).glyph || "?")));
           // метка входа штробы (к какому подрозетнику идёт трасса)
           const eIdx = EP.Plan.Geometry.blockEntryIndex(elem);
-          const ex = cx - bw / 2 + 4 * k + step2 * Math.min(eIdx, items.length - 1) + step2 / 2;
+          const ex = cx - bw / 2 + inset + step2 * Math.min(eIdx, items.length - 1) + step2 / 2;
           grp.appendChild(el("circle", Object.assign({ cx: ex, cy: cy + bh / 2 + 3 * k, r: 2.6 * k, class: "ep-plan-entrymark" }, tr ? { transform: tr } : {})));
         }
       } else {
         if (bad.has(elem.id)) grp.appendChild(el("circle", { cx, cy, r: r0 * 1.55, class: "ep-plan-warnring", "stroke-width": sw * 0.7 }));
         const colEl = elem.circuitId && circ(elem.circuitId) ? circ(elem.circuitId).color : layerColor2(elem.layer);
-        const drewGost = gost && drawGostEl(grp, elem, cx, cy, rot, dp, k, sw, colEl);
-        const drewDesign = !drewGost && design && drawDesignEl(grp, elem, pt, cx, cy, k, sw, colEl, (TY[elem.type] || {}).glyph || "?");
+        // «1:1» перебивает стиль значков, но ТОЛЬКО у настенных приборов (у них есть
+        // физическая рамка); свободные потолочные точки продолжают рисоваться ГОСТ/
+        // Дизайн-символом, как раньше — у них габарита не существует
+        const realThis = real && !!elem.wallId;
+        const drewGost = !realThis && gost && drawGostEl(grp, elem, cx, cy, rot, dp, k, sw, colEl);
+        const drewDesign = !realThis && !drewGost && design && drawDesignEl(grp, elem, pt, cx, cy, k, sw, colEl, (TY[elem.type] || {}).glyph || "?");
         if (!drewGost && !drewDesign) {
-          grp.appendChild(el("circle", { cx, cy, r: r0, fill: colEl, "stroke-width": sw * 0.7 }));
-          grp.appendChild(el("text", { x: cx, y: cy, "font-size": 10 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph" }, (TY[elem.type] || {}).glyph || "?"));
+          if (realThis) {
+            // РЕАЛЬНАЯ рамка одного поста 84×84 мм, повёрнутая вдоль стены. На плане прибор
+            // виден СВЕРХУ, поэтому «лицо» (гнёзда/клавиши) здесь не рисуем — оно во
+            // фронтальном виде (развёртка); тут нужен именно верный ГАБАРИТ.
+            const fw = frameWcm(1), fh = frameHcm();
+            const trS = rot ? `rotate(${rot} ${cx} ${cy})` : null;
+            grp.appendChild(el("rect", Object.assign({ x: cx - fw / 2, y: cy - fh / 2, width: fw, height: fh, rx: 0.6, fill: colEl, class: "ep-plan-blockrect", "stroke-width": sw * 0.7 }, trS ? { transform: trS } : {})));
+            grp.appendChild(el("text", Object.assign({ x: cx, y: cy, "font-size": fh * 0.5, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph" }, trS ? { transform: trS } : {}), (TY[elem.type] || {}).glyph || "?"));
+          } else {
+            grp.appendChild(el("circle", { cx, cy, r: r0, fill: colEl, "stroke-width": sw * 0.7 }));
+            grp.appendChild(el("text", { x: cx, y: cy, "font-size": 10 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph" }, (TY[elem.type] || {}).glyph || "?"));
+          }
         }
       }
       if (elem.status === "mounted") grp.appendChild(el("text", { x: cx + r0, y: cy - r0, "font-size": 10 * k, class: "ep-plan-eldone" }, "✓"));
@@ -847,5 +958,9 @@
   }
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Render = { draw, drawScaled, CFG, hoverPreview, clearHoverPreview };
+  EP.Plan.Render = {
+    draw, drawScaled, CFG, hoverPreview, clearHoverPreview,
+    // реальные габариты и «лица» приборов — общие для плана, развёртки и PDF
+    FRAME_MM, FRAME_H_MM, POST_MM, frameWmm, frameWcm, frameHcm, deviceFace, FACE_STYLE, CM_PER_PX_1TO1
+  };
 })();
