@@ -150,6 +150,7 @@
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="opening" aria-label="Проёмы: двери, окна, балкон">🚪</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="beam" aria-label="Балка/перемычка на потолке">▬</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="void" aria-label="Вентшахта / мини-комната внутри комнаты">▦</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="furn" aria-label="Мебель и бытовая техника">🛋</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="merge" aria-label="Объединить две соседние комнаты в одну">🔗</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="movroom" aria-label="Перенести комнату целиком" title="Тяни комнату — поедет целиком, с точками и проёмами">🧭</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="ruler" aria-label="Рулетка">📏</button>

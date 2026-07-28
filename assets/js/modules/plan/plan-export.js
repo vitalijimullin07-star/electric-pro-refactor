@@ -583,6 +583,14 @@
          умолчанию заливает её чёрным — новый вид линии, добавленный когда-нибудь позже,
          больше не сможет молча дать чёрные пятна в PDF. */
       polyline { fill: none; }
+      /* мебель/техника на печати — тонким контуром, техника с подписью нагрузки */
+      .ep-plan-furnrect { fill: none; stroke: #666; stroke-dasharray: 6 4; }
+      .ep-plan-furn.is-appl .ep-plan-furnrect { stroke: #333; stroke-dasharray: none; }
+      .ep-plan-furntext { fill: #333; font-family: system-ui; }
+      .ep-plan-furnload { fill: #111; font-family: system-ui; }
+      .ep-plan-furnlink { stroke: #666; stroke-dasharray: 4 3; fill: none; }
+      .ep-plan-tail { fill: none; }
+      .ep-plan-tailtxt { fill: #111; font-family: system-ui; }
       /* Магистрали (⇉, p.guides) — ЧЕРТЁЖНЫЙ АИД РЕДАКТОРА (приоритетное направление
          для автотрассировки), не монтажная информация: на печатном листе они не нужны
          (кабель показан самими трассами), а как polyline без fill:none давали ровно те

@@ -12,7 +12,7 @@ const PLAN_DIR = path.join(ROOT, "assets/js/modules/plan");
 const PLAN_ORDER = [
   "plan-core", "plan-geometry", "plan-canvas", "plan-render", "plan-rooms",
   "plan-elements", "plan-unfold", "plan-routes", "plan-calc", "plan-rules",
-  "plan-scheme", "plan-manualscheme", "plan-export", "plan-templates"
+  "plan-scheme", "plan-manualscheme", "plan-export", "plan-templates", "plan-furniture"
 ];
 
 const noop = () => {};

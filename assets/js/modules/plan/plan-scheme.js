@@ -54,6 +54,14 @@
       return c.rgb ? (p.settings.cable24Rgb || "КГ ВВГнг-LS 5×1.5") : (p.settings.cable24 || "КГ ВВГнг-LS 2×2.5");
     }
     if (els.length && els.every((e) => e.layer === "lv" || e.layer === "tv" || e.layer === "cctv")) return "Витая пара (UTP)";
+    // ОСВЕЩЕНИЕ — 3×1.5 (прямая просьба пользователя: «плюс освещение питание должно
+    // быть 3×1.5»). Раньше сечение подбиралось ТОЛЬКО по номиналу автомата, и линия
+    // света с автоматом 16А получала 3×2.5. Кап по безопасности: если на линии стоит
+    // автомат ВЫШЕ 16А, 1.5мм² под него нельзя (plan-rules.js это и пометит) — тогда
+    // работает обычный подбор по номиналу ниже.
+    if (els.length && els.every((e) => e.layer === "light") && (c.breaker || 16) <= 16) {
+      return core().cableMark(p, c.poles === 3 ? "5×1.5" : "3×1.5");
+    }
     const found = SECTION_BY_AMP.find((x) => (c.breaker || 16) <= x.amp);
     const needSec = (found || SECTION_BY_AMP[SECTION_BY_AMP.length - 1]).sec;
     const prefix = c.poles === 3 ? "5×" : "3×";

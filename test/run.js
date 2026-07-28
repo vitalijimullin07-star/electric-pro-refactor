@@ -3093,6 +3093,97 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/\.sheet \{[^}]*width: 297mm/.test(html), "и его физический размер");
   });
 
+  // ===== 31. Мебель и бытовая техника (p.appliances) =====
+  test("техника: каталог валиден (габариты, мощность, уникальные id)", () => {
+    const F = EP.Plan.Furniture, seen = new Set();
+    ["appl", "furn"].forEach((k) => F.CATALOG[k].forEach((c) => {
+      ok(!seen.has(c.id), "id уникален: " + c.id); seen.add(c.id);
+      ok(c.name && c.w > 0 && c.d > 0, c.id + ": имя и габариты заданы");
+      if (k === "appl") ok(c.kw > 0, c.id + ": у техники есть мощность");
+      else ok(c.kw == null, c.id + ": у мебели мощности нет");
+    }));
+    ok(F.CATALOG.appl.length >= 15 && F.CATALOG.furn.length >= 15, "каталог не обрезан");
+  });
+  test("техника: нагрузка → ток → автомат/кабель/УЗО", () => {
+    const F = EP.Plan.Furniture;
+    const nd = (id, o) => F.needFor(Object.assign({ kind: "appl", catId: id, watt: null, phases: 1 }, o || {}));
+    const wash = nd("washer");
+    eq(wash.breaker, 16, "стиралка 2.2кВт → автомат 16A");
+    eq(wash.cable, "3×2.5", "и кабель 2.5 (выделенная линия — практический минимум)");
+    ok(wash.rcd && wash.own, "мокрая зона → УЗО, и своя линия");
+    const wh = nd("waterheater");
+    eq(wh.amps, 10.9, "водонагреватель 2.5кВт → 10.9 А");
+    eq(wh.cable, "3×2.5", "кабель 2.5");
+    const hob = nd("hob");
+    eq(hob.breaker, 32, "варочная 7.2кВт в 1 фазу → 32A");
+    eq(hob.cable, "3×6", "и кабель 6 мм²");
+    const hob3 = nd("hob", { phases: 3 });
+    ok(hob3.amps < hob.amps && hob3.cable.indexOf("5×") === 0, "в 3 фазы ток меньше и кабель 5-жильный");
+    const mw = nd("microwave");
+    eq(mw.cable, "3×1.5", "СВЧ 1.4кВт — 1.5 мм² (не выделенная линия)");
+    ok(!mw.own, "СВЧ отдельной линии не требует");
+    eq(F.needFor({ kind: "furn", catId: "sofa" }), null, "у мебели нагрузки нет");
+  });
+  test("техника/мебель: модель, бэкофилл, фильтр по этажу, каскад удаления", () => {
+    const p = EP.Plan.Core.createProject("ap");
+    ok(Array.isArray(p.appliances), "массив есть у нового проекта");
+    const a = M.newAppliance("appl", "washer", 100, 200, 60, 60);
+    p.appliances.push(a);
+    eq(a.kind, "appl"); eq(a.rot, 0); eq(a.phases, 1);
+    ok(a.floorId, "floorId проставлен (этажи)");
+    // второй этаж — предмет первого не должен попадать в его геометрию
+    const f2 = EP.Plan.Core.addFloor("2 этаж");
+    EP.Plan.Core.setActiveFloor(f2.id);
+    eq(G.floorScoped(EP.Plan.Core.project).appliances.length, 0, "на другом этаже мебели нет");
+    EP.Plan.Core.setActiveFloor(p.floors[0].id);
+    eq(G.floorScoped(EP.Plan.Core.project).appliances.length, 1, "на своём — есть");
+    EP.Plan.Core.setActiveFloor(f2.id);
+    EP.Plan.Core.deleteFloor(p.floors[0].id);
+    eq(EP.Plan.Core.project.appliances.length, 0, "удаление этажа уносит его мебель");
+    // старый проект без поля — бэкофилл
+    const imp = EP.Plan.Core.importJSON(JSON.stringify({ project: { name: "old", rooms: [], elements: [], settings: {} } }));
+    ok(Array.isArray(imp.appliances), "у старого проекта поле появилось");
+  });
+  test("техника: проверки ловят слабую линию, отсутствие УЗО и точки питания", () => {
+    const p = EP.Plan.Core.createProject("apchk");
+    const r = M.newRoom(G.rectPoints(0, 0, 400, 300), "Кухня");
+    p.rooms.push(r);
+    const c = M.newCircuit("QF1", "#ef4444", 10); c.rcd = false; c.cable = "ВВГ 3×1.5";
+    p.circuits.push(c);
+    const hob = M.newAppliance("appl", "hob", 100, 100, 60, 52);
+    hob.circuitId = c.id;
+    p.appliances.push(hob);
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    const msgs = EP.Plan.Rules.run(p).issues.map((i) => i.msg).join(" | ");
+    ok(/автомат 10A мал/.test(msgs), "слабый автомат под варочную");
+    ok(/кабель ВВГ 3×1.5 тонкий/.test(msgs), "тонкий кабель");
+    ok(/без УЗО/.test(msgs), "нет УЗО у мощного прибора");
+    ok(/не указана точка питания/.test(msgs), "не привязана точка питания");
+    // правильная линия — претензий по прибору нет
+    c.breaker = 32; c.cable = "ВВГ 3×6"; c.rcd = true;
+    hob.elementId = "x";
+    const ok2 = EP.Plan.Rules.run(p).issues.map((i) => i.msg).filter((m) => /Варочная/.test(m));
+    eq(ok2.length, 0, "на верной линии претензий к прибору нет: " + ok2.join(","));
+  });
+  test("свет: автокабель линии освещения — 3×1.5", () => {
+    const p = EP.Plan.Core.createProject("lightcab");
+    const r = M.newRoom(G.rectPoints(0, 0, 300, 300), "К");
+    p.rooms.push(r);
+    const cl = M.newCircuit("QF1", "#facc15", 16); p.circuits.push(cl);
+    const lamp = M.newElement("light", null, 0, 270, "light");
+    lamp.circuitId = cl.id; lamp.params = { x: 150, y: 150 };
+    const sock = M.newElement("socket", r.id + ":0", 100, 30, "power");
+    const cp = M.newCircuit("QF2", "#ef4444", 16); p.circuits.push(cp);
+    sock.circuitId = cp.id;
+    p.elements.push(lamp, sock);
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    ok(/3×1\.5/.test(EP.Plan.Scheme.autoCable(p, cl)), "свет — 3×1.5");
+    ok(/3×2\.5/.test(EP.Plan.Scheme.autoCable(p, cp)), "розетки — по номиналу автомата (2.5)");
+    // кап по безопасности: под автомат 25А 1.5мм² нельзя
+    cl.breaker = 25;
+    ok(!/3×1\.5/.test(EP.Plan.Scheme.autoCable(p, cl)), "при автомате 25A свет уже не 1.5");
+  });
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);
