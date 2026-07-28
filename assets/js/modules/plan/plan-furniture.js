@@ -14,9 +14,11 @@
   window.EP = window.EP || {};
 
   // ---- каталог: [id, имя, ширина, глубина, Вт, флаги] ----
-  // own — техника ТРЕБУЕТ отдельную линию (ПУЭ/практика: стиралка, посудомойка,
+  // own — техника ТРЕБУЕТ отдельную линию (практика/ПУЭ: стиралка, посудомойка,
   // духовка, варочная, водонагреватель…); wet — стоит во влажной зоне (санузел/
-  // кухня у воды) → УЗО обязательно; p3 — бывает трёхфазной (варочная/каменка).
+  // кухня у воды) → УЗО обязательно; p3 — бывает трёхфазной (варочная/каменка/
+  // проточный водонагреватель — в палитре помечено «1ф/3ф»); plug — включается
+  // в розетку (розеточная группа = минимум 16A/2.5, см. needFor).
   const CATALOG = {
     appl: [
       { id: "fridge", name: "Холодильник", w: 60, d: 65, kw: 300, own: true },
@@ -26,18 +28,26 @@
       { id: "dishwasher", name: "Посудомоечная машина", w: 60, d: 60, kw: 2100, own: true, wet: true },
       { id: "oven", name: "Духовой шкаф", w: 60, d: 60, kw: 3500, own: true },
       { id: "hob", name: "Варочная панель", w: 60, d: 52, kw: 7200, own: true, p3: true },
-      { id: "hood", name: "Вытяжка", w: 60, d: 50, kw: 250 },
-      { id: "microwave", name: "СВЧ", w: 50, d: 40, kw: 1400 },
-      { id: "coffee", name: "Кофемашина", w: 40, d: 45, kw: 1500 },
-      { id: "waterheater", name: "Водонагреватель", w: 45, d: 45, kw: 2500, own: true, wet: true },
+      { id: "hood", name: "Вытяжка", w: 60, d: 50, kw: 250, plug: true },
+      { id: "microwave", name: "СВЧ", w: 50, d: 40, kw: 1400, plug: true },
+      { id: "coffee", name: "Кофемашина", w: 40, d: 45, kw: 1500, plug: true },
+      { id: "waterheater", name: "Водонагреватель накопительный", w: 45, d: 45, kw: 2500, own: true, wet: true },
+      { id: "waterheaterflow", name: "Водонагреватель проточный", w: 30, d: 20, kw: 11000, own: true, wet: true, p3: true },
       { id: "boiler", name: "Котёл электрический", w: 50, d: 30, kw: 6000, own: true, p3: true },
       { id: "towel", name: "Полотенцесушитель эл.", w: 50, d: 12, kw: 500, wet: true },
       { id: "acin", name: "Кондиционер (внутр. блок)", w: 90, d: 25, kw: 1200, own: true },
       { id: "pump", name: "Насос / станция", w: 40, d: 25, kw: 800, own: true, wet: true },
       { id: "jacuzzi", name: "Гидромассажная ванна", w: 170, d: 80, kw: 2000, own: true, wet: true },
       { id: "sauna", name: "Каменка / сауна", w: 60, d: 40, kw: 4500, own: true, p3: true },
-      { id: "tvset", name: "ТВ (панель)", w: 120, d: 10, kw: 200 },
-      { id: "pc", name: "ПК / рабочее место", w: 60, d: 60, kw: 600 }
+      { id: "tvset", name: "ТВ (панель)", w: 120, d: 10, kw: 200, plug: true },
+      { id: "pc", name: "ПК / рабочее место", w: 60, d: 60, kw: 600, plug: true },
+      { id: "bell", name: "Звонок", w: 10, d: 4, kw: 15 },
+      { id: "neptun", name: "Защита от протечек (Нептун)", w: 20, d: 12, kw: 30, own: true, wet: true },
+      { id: "handdryer", name: "Сушилка для рук", w: 25, d: 30, kw: 2000, own: true, wet: true },
+      { id: "fancoil", name: "Фанкойл", w: 100, d: 25, kw: 250, own: true },
+      { id: "disposer", name: "Измельчитель под раковиной", w: 20, d: 20, kw: 560, own: true, wet: true },
+      { id: "kettle", name: "Чайник", w: 22, d: 22, kw: 2200, plug: true },
+      { id: "fanduct", name: "Вентилятор встраиваемый (в вытяжку)", w: 15, d: 15, kw: 60, wet: true }
     ],
     furn: [
       { id: "kitchen", name: "Кухонный шкаф", w: 60, d: 60 },
@@ -81,7 +91,12 @@
     // даже если по току хватило бы 10A/1.5 — иначе советы модуля расходились бы с
     // реальной практикой монтажа.
     const nextB = BREAKERS.find((b) => b >= amps) || BREAKERS[BREAKERS.length - 1];
-    const breaker = Math.max(nextB, c.own ? 16 : 0);
+    // Практический минимум 16A/2.5 — для техники с ОТДЕЛЬНОЙ линией (own) и для всего,
+    // что включается В РОЗЕТКУ (plug: чайник, СВЧ, кофемашина, вытяжка, ТВ, ПК):
+    // розеточные группы по факту всегда делают 16A кабелем 2.5, и совет «чайнику хватит
+    // 3×1.5» ввёл бы в заблуждение. Приборы с ПРЯМЫМ подключением и малой мощностью
+    // (звонок, канальный вентилятор, полотенцесушитель) считаются честно по току.
+    const breaker = Math.max(nextB, (c.own || c.plug) ? 16 : 0);
     const sec = (SEC_BY_AMP.find((x) => breaker <= x.amp) || SEC_BY_AMP[SEC_BY_AMP.length - 1]).sec;
     return {
       watt, amps: Math.round(amps * 10) / 10, breaker,
@@ -110,7 +125,7 @@
       </div>
       <div class="ep-plan-palette">${list.map((c) => `
         <button type="button" class="ep-plan-pbtn ep-clickable ${S.catId === c.id ? "on" : ""}" data-pf-cat="${esc(c.id)}">
-          <i class="ep-plan-glyph">${c.kw ? "⚡" : "▭"}</i>${esc(c.name)}<br><small>${c.w}×${c.d}${c.kw ? " · " + (c.kw >= 1000 ? (c.kw / 1000).toFixed(1) + " кВт" : c.kw + " Вт") : ""}</small></button>`).join("")}
+          <i class="ep-plan-glyph">${c.kw ? "⚡" : "▭"}</i>${esc(c.name)}<br><small>${c.w}×${c.d}${c.kw ? " · " + (c.kw >= 1000 ? (c.kw / 1000).toFixed(1) + " кВт" : c.kw + " Вт") : ""}${c.p3 ? " · 1ф/3ф" : ""}</small></button>`).join("")}
       </div>
       <div class="ep-plan-modehint">Выбери и тапни по плану — предмет встанет центром в точку тапа. Размеры/поворот — в его редакторе (тап по предмету). У техники сразу видно нагрузку, ток и какой кабель/автомат нужен.</div>`, { keepCollapsed: !!keep });
   }
