@@ -3120,8 +3120,20 @@ test("фото: deleteProject чистит кэш фото своего прое
     const hob3 = nd("hob", { phases: 3 });
     ok(hob3.amps < hob.amps && hob3.cable.indexOf("5×") === 0, "в 3 фазы ток меньше и кабель 5-жильный");
     const mw = nd("microwave");
-    eq(mw.cable, "3×1.5", "СВЧ 1.4кВт — 1.5 мм² (не выделенная линия)");
-    ok(!mw.own, "СВЧ отдельной линии не требует");
+    eq(mw.cable, "3×2.5", "СВЧ включается в розетку → розеточная группа 2.5");
+    ok(!mw.own, "но отдельной линии не требует");
+    // прямое подключение малой мощности считается честно по току, без «розеточного» минимума
+    const bell = nd("bell");
+    eq(bell.cable, "3×1.5", "звонок 15Вт — 1.5 мм²");
+    ok(bell.breaker <= 10 && !bell.own, "и малый автомат, без выделенной линии");
+    const flow1 = nd("waterheaterflow"), flow3 = nd("waterheaterflow", { phases: 3 });
+    eq(flow1.breaker, 50, "проточный ВН 11кВт в 1 фазу → 50A");
+    eq(flow1.cable, "3×10", "и кабель 10 мм²");
+    eq(flow3.cable, "5×2.5", "он же в 3 фазы — 5×2.5");
+    ok(flow1.rcd && flow1.own && flow1.p3ok, "мокрая зона, своя линия, возможны 3 фазы");
+    ["bell", "waterheaterflow", "neptun", "handdryer", "fancoil", "disposer", "kettle", "fanduct"].forEach((id) => {
+      ok(F.byId(id), "прибор есть в каталоге: " + id);
+    });
     eq(F.needFor({ kind: "furn", catId: "sofa" }), null, "у мебели нагрузки нет");
   });
   test("техника/мебель: модель, бэкофилл, фильтр по этажу, каскад удаления", () => {
