@@ -14,10 +14,15 @@
     qualityHint: "«Точно»/«Максимум» — тяжёлый просчёт в фоне (телефон считает 1-4 с, экран не подвисает): подбирается порядок полос линий и переклад проблемных трасс так, чтобы линии как можно меньше пересекались. Кнопка «⚡ Построить» и автоперестройка при переносе точек всегда работают в быстром режиме.",
     optimizeBtn: "✨ Оптимизировать",
     heavyStart: "Считаю в фоне… (экран не подвисает)",
+    heavyStartN: (n) => `Считаю в фоне на ${n} ядрах — беру лучший вариант…`,
+    precalcLbl: "Предрасчёт в фоне:", precalcOn: "Вкл", precalcOff: "Выкл",
+    precalcHint: "Пока рисуешь, свободные ядра считают трассы и смету заранее — «✨ Оптимизировать» и шторки «Расчёт»/«Проверки» открываются мгновенно. Расходует батарею.",
+    precalcHintReady: "✓ Вариант уже посчитан в фоне — «✨ Оптимизировать» применит его мгновенно.",
+    precalcDone: (sc) => `Готово мгновенно (посчитано заранее). Пересечений линий: ${sc ? sc.crossings : "—"}, отверстий: ${sc ? sc.holes : "—"}`,
     heavyBusy: "Просчёт уже идёт — подожди результат.",
     heavyFail: "Фоновый просчёт недоступен — построил обычным способом.",
     heavyStale: "Проект изменился во время просчёта — результат отброшен, нажми ещё раз.",
-    heavyDone: (sc, ms, it) => `Готово за ${(ms / 1000).toFixed(1)}с (вариантов: ${it}). Пересечений линий: ${sc ? sc.crossings : "—"}, отверстий: ${sc ? sc.holes : "—"}`,
+    heavyDone: (sc, ms, it, cores) => `Готово за ${(ms / 1000).toFixed(1)}с (вариантов: ${it}${cores > 1 ? ", ядер: " + cores : ""}). Пересечений линий: ${sc ? sc.crossings : "—"}, отверстий: ${sc ? sc.holes : "—"}`,
     buildDone: (sc, ms) => `Трассы построены (${(ms / 1000).toFixed(1)}с). Пересечений линий: ${sc ? sc.crossings : "—"}, отверстий: ${sc ? sc.holes : "—"}`,
     title: "Трассы", build: "⚡ Построить", clear: "✕ Очистить",
     noPanel: "Поставь щит: режим 🔌, тип «Щ», тап по плану.",
@@ -1360,8 +1365,20 @@
       return scoreRoutes(p);
     };
     const identity = {}; ids.forEach((id, i) => { identity[id] = i; });
-    let best = { order: identity, score: evalOrder(identity), routes: snap() };
+    // РАЗНЫЕ СТАРТЫ для multistart (opts.start): «auto» — как раньше (identity + порядок по
+    // геометрии), «reverse» — геометрия наоборот, «shuffle» — случайная перестановка от сида.
+    // Без этого multistart не давал НИЧЕГО: замер 1 воркер против 3 дал цену 3114 у обоих —
+    // подъём по склону из ОДНОГО И ТОГО ЖЕ старта сходится в тот же локальный минимум, каким
+    // бы ни был сид (он влиял только на порядок пробуемых обменов, а бюджета хватало
+    // перебрать почти все пары). Разные старты = разные «бассейны» — вот они и расходятся.
+    const shuffled = () => {
+      const arr = ids.slice();
+      for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const t = arr[i]; arr[i] = arr[j]; arr[j] = t; }
+      const o = {}; arr.forEach((id, i) => { o[id] = i; }); return o;
+    };
+    const startMode = opts.start || "auto";
     let iterations = 1;
+    let best = { order: identity, score: evalOrder(identity), routes: snap() };
     // меньше двух линий — перестраивать полосы нечего (иначе крутили бы пустой цикл
     // весь бюджет: на проекте с одной линией живой прогон дал 6513 бессмысленных итераций)
     if (ids.length < 2) { setLaneOrder(best.order); p.routes = best.routes; return { score: best.score, iterations, ms: Date.now() - t0, laneOrder: best.order }; }
@@ -1378,20 +1395,41 @@
         els.forEach((e) => { const q = G().elemPoint(p, e); if (q) { s += q[axis]; n++; } });
         return n ? s / n : 0;
       };
+      const sorted = ids.slice().sort((a, b) => keyOf(a) - keyOf(b));
+      if (startMode === "reverse") sorted.reverse();
       const geom = {};
-      ids.slice().sort((a, b) => keyOf(a) - keyOf(b)).forEach((id, i) => { geom[id] = i; });
-      const sc = evalOrder(geom); iterations++;
-      if (sc.cost < best.score.cost) best = { order: geom, score: sc, routes: snap() };
+      sorted.forEach((id, i) => { geom[id] = i; });
+      const startOrder = startMode === "shuffle" ? shuffled() : geom;
+      const sc = evalOrder(startOrder); iterations++;
+      if (sc.cost < best.score.cost) best = { order: startOrder, score: sc, routes: snap() };
     }
-    // (2) ЛОКАЛЬНЫЙ ПОИСК: меняем местами полосы двух линий, оставляем если стало лучше
+    // (2) ЛОКАЛЬНЫЙ ПОИСК с РЕСТАРТАМИ: меняем местами полосы двух линий; стало лучше — идём
+    // дальше от нового варианта, долго нет улучшений (STALL_LIMIT подряд) — прыгаем в
+    // случайный порядок и продолжаем оттуда, храня ГЛОБАЛЬНО лучший. Раньше поиск всегда
+    // мутировал только best и застревал в первом локальном минимуме навсегда.
+    // РЕСТАРТЫ включаются ТОЛЬКО для дополнительных воркеров multistart (opts.restart):
+    // воркер №0 (start:"auto") намеренно считает РОВНО тем же алгоритмом, что и до этого
+    // пакета — иначе на устройстве с 1-2 ядрами (единственный воркер) рестарты УХУДШАЛИ
+    // результат (замер: 25→28 пересечений — каждый прыжок стоит полного build(), а бюджета
+    // и без того хватало едва-едва). Так «лучший из N» гарантированно НЕ ХУЖЕ прежнего.
+    const STALL_LIMIT = 12, allowRestart = !!opts.restart;
+    let cur = best, stall = 0;
     while (ids.length > 1 && Date.now() - t0 < budget) {
-      const order = Object.assign({}, best.order);
+      const order = Object.assign({}, cur.order);
       const i = Math.floor(rnd() * ids.length), j = Math.floor(rnd() * ids.length);
       if (i === j) continue;
       const a = ids[i], b = ids[j];
       const t = order[a]; order[a] = order[b]; order[b] = t;
       const sc = evalOrder(order); iterations++;
-      if (sc.cost < best.score.cost) best = { order, score: sc, routes: snap() };
+      if (sc.cost < cur.score.cost) {
+        cur = { order, score: sc, routes: snap() }; stall = 0;
+        if (sc.cost < best.score.cost) best = cur;
+      } else if (allowRestart && ++stall >= STALL_LIMIT) {
+        const sh = shuffled();
+        const sc2 = evalOrder(sh); iterations++;
+        cur = { order: sh, score: sc2, routes: snap() }; stall = 0;
+        if (sc2.cost < best.score.cost) best = cur;
+      }
     }
     // возвращаем ЛУЧШИЙ найденный вариант в проект
     setLaneOrder(best.order);
@@ -1451,7 +1489,7 @@
     if (!p) return null;
     const t0 = Date.now(), budget = Math.max(200, opts.budgetMs || 3000);
     // фаза 1 — порядок полос (примерно половина бюджета), фаза 2 — rip-up & reroute
-    const r1 = optimizeRouting({ budgetMs: Math.round(budget * 0.5), seed: opts.seed });
+    const r1 = optimizeRouting({ budgetMs: Math.round(budget * 0.5), seed: opts.seed, start: opts.start, restart: opts.restart });
     let cur = scoreRoutes(p);
     let iterations = (r1 && r1.iterations) || 0;
     const skip = {};
@@ -1479,8 +1517,25 @@
   // Воркер грузит ТЕ ЖЕ файлы модуля (см. solver-worker.js) — один алгоритм на оба режима.
   // Сюда он возвращает готовые трассы, а принимаем мы их ОДНОЙ транзакцией
   // (commit → подмена p.routes → persist), поэтому Undo отменяет весь тяжёлый прогон целиком.
-  let solverWorker = null, solverBusy = false, autoBusy = false;
+  let solverPool = [], solverBusy = false, autoBusy = false;
   const QUALITY_BUDGET = { precise: 1200, max: 4000 };
+  // MULTISTART: тяжёлые режимы («Точно»/«Максимум») запускаются в НЕСКОЛЬКИХ воркерах
+  // одновременно — берём вариант с лучшей метрикой (scoreRoutes.cost). Просьба
+  // пользователя «задействовать CPU телефона на максимум»: время ожидания то же (считают
+  // параллельно), вариантов перебирается в N раз больше. ВАЖНО: разные СИДЫ сами по себе
+  // не дают ничего — замер (1 воркер против 3) показал одинаковую цену 3114, потому что
+  // подъём по склону из ОДНОГО старта сходится в тот же локальный минимум. Поэтому у
+  // каждого воркера ещё и свой СТАРТОВЫЙ порядок полос (HEAVY_STARTS) и рестарты — после
+  // этого 3 воркера дали 24 пересечения против 25 у одного.
+  const HEAVY_SEEDS = [12345, 22345, 32345, 42345, 52345, 62345];
+  const HEAVY_STARTS = ["auto", "reverse", "shuffle", "shuffle", "shuffle", "shuffle"];
+  function heavyWorkerCount() {
+    let cores = 2;
+    try { cores = navigator.hardwareConcurrency || 2; } catch (e) {}
+    // минус одно ядро — главному потоку (рендер/жесты), иначе UI начнёт подтормаживать
+    // ровно тогда, когда мы «ускоряемся»
+    return Math.max(1, Math.min(HEAVY_SEEDS.length, cores - 1));
+  }
   function qualityOf(p) {
     const q = p && p.settings && p.settings.routeQuality;
     return (q === "precise" || q === "max") ? q : "fast";
@@ -1499,55 +1554,173 @@
     } catch (e) {}
     return base + "solver-worker.js" + ver;
   }
-  function getWorker() {
-    if (solverWorker) return solverWorker;
-    if (typeof Worker !== "function") return null;
-    try { solverWorker = new Worker(workerUrl()); } catch (e) { solverWorker = null; }
-    return solverWorker;
+  // Пул создаётся лениво и переиспользуется (создание воркера — десятки мс, плюс каждый
+  // заново импортирует модули плана). solverPool[0] — «интерактивный» (автоперестройка,
+  // «Построить», предрасчёт), остальные добавляются только под multistart.
+  function getPool(n) {
+    if (typeof Worker !== "function") return [];
+    while (solverPool.length < n) {
+      let w = null;
+      try { w = new Worker(workerUrl()); } catch (e) { break; }
+      if (!w) break;
+      solverPool.push(w);
+    }
+    return solverPool.slice(0, n);
   }
+  function getWorker() { return getPool(1)[0] || null; }
   // подпись состава проекта — чтобы не применить устаревший результат, если пользователь
   // успел что-то дорисовать/удалить, пока воркер считал
   function projectSig(p) {
     return [p.id, (p.rooms || []).length, (p.elements || []).length, (p.panels || []).length,
       (p.circuits || []).length, (p.guides || []).length, (p.beams || []).length, p.activeFloorId].join("|");
   }
+  // применить пришедшие из воркера трассы ОДНОЙ транзакцией (commit → подмена → persist):
+  // Undo отменяет весь тяжёлый прогон целиком. floorId доштамповываем — в воркере состояние
+  // ядра пусто, curFloorId() там вернул бы null (см. solver-worker.js).
+  function applyWorkerRoutes(routes) {
+    const c = core(), cur = c.project;
+    if (!cur || !Array.isArray(routes)) return false;
+    c.commit();
+    const fid0 = cur.floors && cur.floors[0] && cur.floors[0].id;
+    const activeFid = cur.activeFloorId || fid0;
+    cur.routes = routes.map((r) => (r.floorId ? r : Object.assign({}, r, { floorId: activeFid })));
+    c.persist("routes-build");
+    if (rooms().renderScene) rooms().renderScene();
+    return true;
+  }
+  // ЕДИНАЯ точка запуска пула: раскидываем ОДИН И ТОТ ЖЕ снимок по всем воркерам (свой сид
+  // и свой стартовый порядок каждому) и отдаём в cb ЛУЧШИЙ вариант по метрике. Используют и
+  // кнопка «✨ Оптимизировать» (buildHeavy), и фоновый предрасчёт (runPrecalc) — поэтому
+  // посчитанный заранее вариант ИДЕНТИЧЕН тому, что дала бы кнопка на том же состоянии
+  // (иначе «мгновенно» тихо означало бы «хуже», что хуже ожидания).
+  function postSolve(pool, snapshot, mode, cb) {
+    let pending = pool.length, best = null, totalIter = 0;
+    const t0 = Date.now();
+    pool.forEach((w, i) => {
+      const onMsg = (e) => {
+        const d = (e && e.data) || {};
+        if (d.type !== "done") return;
+        w.removeEventListener("message", onMsg);
+        totalIter += (d.iterations || 0);
+        // строгое «<» = при равной цене выигрывает воркер с МЕНЬШИМ индексом (детерминизм:
+        // порядок сидов/стартов фиксирован)
+        if (d.ok && Array.isArray(d.routes) && (!best || (d.score && best.score && d.score.cost < best.score.cost))) {
+          best = { routes: d.routes, score: d.score, ms: d.ms || 0 };
+        }
+        if (--pending === 0) cb(best, { ms: Date.now() - t0, iterations: totalIter, cores: pool.length });
+      };
+      w.addEventListener("message", onMsg);
+      w.postMessage({ type: "solve", project: snapshot, mode, budgetMs: QUALITY_BUDGET[mode] || 1200,
+        seed: HEAVY_SEEDS[i] || HEAVY_SEEDS[0], start: HEAVY_STARTS[i] || "shuffle", restart: i > 0 });
+    });
+  }
+  function heavyPool(mode) {
+    const heavy = mode === "precise" || mode === "max";
+    return getPool(heavy ? heavyWorkerCount() : 1);
+  }
   function buildHeavy(mode, opts) {
     const c = core(), p = c.project;
     if (!p) return false;
-    const w = getWorker();
-    if (!w) return false;
+    const pool = heavyPool(mode);
+    if (!pool.length) return false;
     if (solverBusy) { if (!(opts && opts.silent)) rooms().toast(T.heavyBusy); return true; }
     let snapshot;
     try { snapshot = JSON.parse(JSON.stringify(p)); } catch (e) { return false; }
     const sig = projectSig(p);
     solverBusy = true;
-    if (!(opts && opts.silent)) rooms().toast(T.heavyStart);
-    const onMsg = (e) => {
-      const d = (e && e.data) || {};
-      if (d.type !== "done") return;
-      w.removeEventListener("message", onMsg);
+    if (!(opts && opts.silent)) rooms().toast(pool.length > 1 ? T.heavyStartN(pool.length) : T.heavyStart);
+    postSolve(pool, snapshot, mode, (best, info) => {
       solverBusy = false;
       const cur = core().project;
       if (!cur) return;
-      if (!d.ok || !Array.isArray(d.routes)) { if (!(opts && opts.silent)) rooms().toast(T.heavyFail); build(opts); return; }
+      if (!best) { if (!(opts && opts.silent)) rooms().toast(T.heavyFail); build(opts); return; }
       if (projectSig(cur) !== sig) { if (!(opts && opts.silent)) rooms().toast(T.heavyStale); return; }
-      c.commit();
-      const fid0 = cur.floors && cur.floors[0] && cur.floors[0].id;
-      const activeFid = cur.activeFloorId || fid0;
-      cur.routes = d.routes.map((r) => (r.floorId ? r : Object.assign({}, r, { floorId: activeFid })));
-      c.persist("routes-build");
-      if (rooms().renderScene) rooms().renderScene();
+      applyWorkerRoutes(best.routes);
       if (!(opts && opts.silent)) {
         // у обычной сборки в фоне нет «вариантов» — свой короткий текст
         rooms().toast((mode === "precise" || mode === "max")
-          ? T.heavyDone(d.score, d.ms || 0, d.iterations || 1)
-          : T.buildDone(d.score, d.ms || 0));
+          ? T.heavyDone(best.score, info.ms, info.iterations || 1, info.cores)
+          : T.buildDone(best.score, best.ms || 0));
         sheet();
       }
+      if (autoPending) { autoPending = false; autoRebuild(); } // геометрия менялась, пока считали
+    });
+    return true;
+  }
+  // ---- СПЕКУЛЯТИВНЫЙ ПРЕДРАСЧЁТ (settings.routePrecalc) ----
+  // Через 1.5с ПРОСТОЯ (пользователь перестал рисовать) пул считает ТОТ ЖЕ вариант, который
+  // дала бы кнопка «✨ Оптимизировать» — тем же postSolve, тем же числом воркеров/сидов,
+  // поэтому «мгновенно» НЕ означает «хуже»: на одном и том же состоянии результат тот же,
+  // что после нажатия кнопки. Кэш хранится вместе с подписью состава проекта; совпала —
+  // применяем МГНОВЕННО, не совпала (успел дорисовать) — обычный путь через buildHeavy.
+  // К «⚡ Построить» кэш НЕ применяется: у неё другая семантика (достроить только новые
+  // точки, не перекладывать готовые трассы), а предрасчёт — полная перекладка.
+  const PRECALC_IDLE_MS = 1500;
+  let precalcTimer = 0, precalcBusy = false, precalc = null; // {sig, routes, score, mode}
+  const precalcOn = (p) => !!(p && p.settings && p.settings.routePrecalc);
+  function schedulePrecalc() {
+    if (precalcTimer) { clearTimeout(precalcTimer); precalcTimer = 0; }
+    const p = core().project;
+    if (!p || !precalcOn(p)) return;
+    precalcTimer = setTimeout(runPrecalc, PRECALC_IDLE_MS);
+  }
+  function runPrecalc() {
+    precalcTimer = 0;
+    const p = core().project;
+    if (!p || !precalcOn(p)) return;
+    if (solverBusy || autoBusy || precalcBusy) { schedulePrecalc(); return; } // занят — позже
+    if (!(p.elements || []).length) return;
+    const sig = projectSig(p);
+    if (precalc && precalc.sig === sig) return; // на это состояние уже посчитано
+    const mode = qualityOf(p) === "fast" ? "precise" : qualityOf(p);
+    const pool = heavyPool(mode);
+    if (!pool.length) return;
+    let snapshot;
+    try { snapshot = JSON.parse(JSON.stringify(p)); } catch (e) { return; }
+    precalcBusy = true;
+    postSolve(pool, snapshot, mode, (best) => {
+      precalcBusy = false;
+      if (best) precalc = { sig, routes: best.routes, score: best.score, mode };
+      prefetchEstimate(); // тем же простоем греем смету и проверки (см. ниже)
+    });
+  }
+  // ---- ФОНОВЫЙ ПРЕДРАСЧЁТ СМЕТЫ И ПУЭ-ПРОВЕРОК ----
+  // Замер (стресс-проект 30 комнат/150 точек, CPU ×8): calcByRoutes 12мс + perCircuit 4мс +
+  // ПУЭ-проверки 12мс на КАЖДУЮ перерисовку шторки. Мемо-кэш в plan-calc/plan-rules убирает
+  // повторный счёт внутри одного состояния, а этот предрасчёт — и первый: пока пользователь
+  // рисует, другое ядро уже посчитало смету на текущее состояние, и шторка «Расчёт»/
+  // «Проверки» открывается вообще без вычислений на главном потоке. Под тем же тумблером
+  // «Предрасчёт в фоне» (это ровно то же «использовать свободное ядро»).
+  // ВАЖНО: нормы расходников (EP.CableConsum) живут в localStorage, которого в воркере нет —
+  // отправляем их снимком, иначе метраж гофры/стяжек в предрасчёте разошёлся бы с тем, что
+  // видит пользователь (поймано живым прогоном, см. ветку "estimate" в solver-worker.js).
+  function prefetchEstimate() {
+    const p = core().project;
+    if (!p || !precalcOn(p)) return;
+    const CALC = EP.Plan.Calc, RULES = EP.Plan.Rules;
+    if (!CALC || !CALC.setPrefetched || !RULES || !RULES.setPrefetched) return;
+    if (!(p.elements || []).length) return;
+    const w = getWorker(); if (!w) return;
+    let snapshot, consum = null;
+    try { snapshot = JSON.parse(JSON.stringify(p)); } catch (e) { return; }
+    try { consum = (EP.CableConsum && EP.CableConsum.get) ? EP.CableConsum.get() : null; } catch (e) {}
+    const tokC = CALC.memoToken(), tokR = RULES.memoToken();
+    const onMsg = (e) => {
+      const d = (e && e.data) || {};
+      if (d.type !== "done" || d.mode !== "estimate") return;
+      w.removeEventListener("message", onMsg);
+      if (!d.ok) return;
+      CALC.setPrefetched(tokC, d.items, d.per);   // токен не совпал (проект изменился) — мимо
+      RULES.setPrefetched(tokR, d.checks);
     };
     w.addEventListener("message", onMsg);
-    w.postMessage({ type: "solve", project: snapshot, mode, budgetMs: QUALITY_BUDGET[mode] || 1200, seed: 12345 });
-    return true;
+    w.postMessage({ type: "solve", project: snapshot, mode: "estimate", consum });
+  }
+  // есть ли готовый фоновый результат РОВНО на текущее состояние (подсказка в шторке и
+  // живые проверки)
+  function precalcReady() {
+    const p = core().project;
+    return !!(p && precalc && precalc.sig === projectSig(p) && Array.isArray(precalc.routes));
   }
   // «⚡ Построить» на большом проекте — тоже в воркер: замерено на стресс-проекте (30 комнат /
   // 150 точек) при CPU ×8 синхронная сборка блокирует главный поток на ~300мс. Семантика та же
@@ -1565,6 +1738,11 @@
     const p = core().project;
     if (!p) return;
     const mode = qualityOf(p) === "fast" ? "precise" : qualityOf(p);
+    // готовый результат фонового предрасчёта на РОВНО это состояние — применяем сразу
+    if (precalc && precalc.sig === projectSig(p) && precalc.mode === mode && Array.isArray(precalc.routes)) {
+      const sc = precalc.score;
+      if (applyWorkerRoutes(precalc.routes)) { rooms().toast(T.precalcDone(sc)); sheet(); return; }
+    }
     if (buildHeavy(mode)) return;
     // воркеров нет (старый WebView) — считаем в главном потоке коротким бюджетом,
     // чтобы не заморозить UI надолго
@@ -1632,7 +1810,11 @@
       try { build({ silent: true }); } finally { rebuilding = false; }
       return;
     }
-    if (autoBusy) { autoPending = true; return; } // коалесинг: важен только последний результат
+    // коалесинг: важен только последний результат. solverBusy — воркеры заняты тяжёлым
+    // просчётом («✨ Оптимизировать»); дождёмся его — он всё равно перестроит трассы, а если
+    // геометрия к тому моменту уедет, projectSig отбракует результат и autoPending поднимет
+    // автоперестройку заново (см. finish() в buildHeavy)
+    if (autoBusy || solverBusy) { autoPending = true; return; }
     let snapshot;
     try { snapshot = JSON.parse(JSON.stringify(p)); } catch (e) {
       rebuilding = true; try { build({ silent: true }); } finally { rebuilding = false; } return;
@@ -1666,7 +1848,10 @@
   if (core().onChange) {
     core().onChange((what) => {
       // другой проект открыт — список «Без трассы» от прошлого проекта больше не про него
-      if (what === "open" || what === "import") { lastUnrouted = []; lastUnroutedPid = null; graphCache = null; wallsCache = null; autoSeq++; autoPending = false; return; }
+      if (what === "open" || what === "import") { lastUnrouted = []; lastUnroutedPid = null; graphCache = null; wallsCache = null; autoSeq++; autoPending = false; precalc = null; schedulePrecalc(); return; }
+      // ЛЮБОЕ изменение обесценивает фоновый предрасчёт (он был на прошлом состоянии) —
+      // сбрасываем кэш и переводим таймер на новую точку простоя
+      if (!rebuilding) { precalc = null; schedulePrecalc(); }
       if (rebuilding || !AUTOREBUILD_ON[what]) return;
       autoRebuild();
     });
@@ -2078,6 +2263,10 @@
         ${["fast", "precise", "max"].map((q) => `<button type="button" class="ep-plan-chip ep-clickable ${qualityOf(p) === q ? "on" : ""}" data-prt-quality="${q}">${q === "fast" ? T.qFast : q === "precise" ? T.qPrecise : T.qMax}</button>`).join("")}
       </div>
       <div class="ep-plan-srow ep-plan-hintrow">${T.qualityHint}</div>
+      <div class="ep-plan-srow">${T.precalcLbl}
+        ${[true, false].map((on) => `<button type="button" class="ep-plan-chip ep-clickable ${precalcOn(p) === on ? "on" : ""}" data-prt-precalc="${on ? 1 : 0}">${on ? T.precalcOn : T.precalcOff}</button>`).join("")}
+      </div>
+      <div class="ep-plan-srow ep-plan-hintrow">${precalcOn(p) && precalcReady() ? T.precalcHintReady : T.precalcHint}</div>
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="btn btn-primary ep-clickable" data-prt-build>${T.build}</button>
         ${p.routes.length ? `<button type="button" class="ep-plan-tbtn ep-clickable" data-prt-optimize>${T.optimizeBtn}</button>` : ""}
@@ -2109,6 +2298,12 @@
     if (t.closest("[data-prt-build]")) return sheetBuildConfirm();
     if (t.closest("[data-prt-build-go]")) return buildIncrementalMaybeAsync();
     let qb;
+    if ((qb = t.closest("[data-prt-precalc]"))) {
+      const c = core(), on = qb.getAttribute("data-prt-precalc") === "1";
+      if (precalcOn(c.project) !== on) { c.commit(); c.project.settings.routePrecalc = on; c.persist("route-precalc"); }
+      if (on) schedulePrecalc(); else { precalc = null; if (precalcTimer) { clearTimeout(precalcTimer); precalcTimer = 0; } }
+      sheet(); return;
+    }
     if ((qb = t.closest("[data-prt-quality]"))) {
       const c = core(), q = qb.getAttribute("data-prt-quality");
       c.commit(); c.project.settings.routeQuality = q; c.persist("route-quality"); sheet(); return;
@@ -2192,5 +2387,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { build, buildIncremental, clearRoutes, suggestGuides, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, keys24Of, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds };
+  EP.Plan.Routes = { build, buildIncremental, clearRoutes, suggestGuides, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, keys24Of, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds };
 })();

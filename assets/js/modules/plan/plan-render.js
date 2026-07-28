@@ -25,6 +25,30 @@
   // canvas (см. buildWalls() внутри drawScaled) — WeakMap, не свойство на canvas,
   // чтобы не полагаться на форму объекта canvas (в т.ч. в тестовом fakeCanvas())
   const wallsCache = new WeakMap();
+  // ---- кэш УЗЛОВ отдельных точек и трасс (частичный рендер) ----
+  // Раньше drawScaled() пересобирал ВСЕ узлы точек/трасс на каждый вызов: на стресс-проекте
+  // (30 комнат / 150 точек / 150 трасс) это 55-59мс при CPU ×8 — доминанта того, что осталось
+  // ощущаться после переноса трассировки в воркер. При этом типичное действие меняет ОДИН
+  // объект: подвинул розетку — остальные 149 точек рисуются заново байт-в-байт. Теперь у
+  // каждой точки/трассы свой <g> с подписью входов рендера: совпала — узел ПЕРЕИСПОЛЬЗУЕТСЯ
+  // целиком (ни одного createElementNS/setAttribute), не совпала — пересобирается только он.
+  // Тот же принцип и та же самокорректирующаяся JSON-подпись, что уже проверены на кэше стен
+  // ниже (а НЕ dirty-флаг, который легко забыть проставить в новом месте мутации).
+  // ЗАМЕР A/B (git stash, один и тот же прогретый скрипт): CPU ×1 — 5.5→3.4мс, CPU ×8
+  // (слабый телефон) — 59.4→23мс повторный рендер и 55.4→22.9мс после сдвига одной точки.
+  const nodeCache = new WeakMap(); // canvas -> { els: Map(id -> {sig,node}), routes: Map }
+  function cacheFor(canvas) {
+    let c = nodeCache.get(canvas);
+    if (!c) { c = { els: new Map(), routes: new Map() }; nodeCache.set(canvas, c); }
+    return c;
+  }
+  // выкинуть из кэша узлы удалённых объектов (иначе Map росла бы весь сеанс)
+  function pruneCache(map, seen) {
+    if (map.size <= seen.size) return;
+    const dead = [];
+    map.forEach((v, id) => { if (!seen.has(id)) dead.push(id); });
+    dead.forEach((id) => map.delete(id));
+  }
 
   function el(tag, attrs, text) {
     const n = document.createElementNS(NS, tag);
@@ -235,6 +259,8 @@
     }
     clear(g);
     g.appendChild(wallsGroup);
+    const nc = cacheFor(canvas);
+    const seenEls = new Set(), seenRoutes = new Set();
 
     // содержимое — ДОСЛОВНО тот же код, что был раньше напрямую в g (тень имени g
     // ниже гарантирует это без переписывания каждого вызова appendChild)
@@ -532,6 +558,7 @@
         if (circHidden(rt.circuitId)) return; // скрытая линия — не рисуем её трассы
         const dimR = circDim(rt.circuitId);
         const inChain = chainIds ? chainIds.has(rt.id) : false;
+        seenRoutes.add(rt.id);
         // «Другие» трассы во время выбора — обесцвечены (просьба пользователя: «а во
         // время выбора другие должны становится черно белые»), чтобы выбранная цепь
         // читалась однозначно на фоне остальных линий. dimR (приглушение по solo другой
@@ -539,27 +566,35 @@
         const otherDim = !!(chainIds && !inChain && !dimR);
         const ptsStr = (rt.points || []).map((p) => p.x + "," + p.y).join(" ");
         const routeColor = rt.color || layerColor(rt.layer);
+        // подпись входов рендера ЭТОЙ трассы: совпала — переиспользуем готовый <g>
+        const rSig = ptsStr + "|" + routeColor + "|" + (rt.manual ? 1 : 0) + (inChain ? 1 : 0)
+          + (otherDim ? 1 : 0) + (dimR ? 1 : 0) + (rt.id === selRoute ? 1 : 0) + (flatShadow ? 1 : 0)
+          + "|" + k + "|" + JSON.stringify(rt.throughWalls || []);
+        const rCached = nc.routes.get(rt.id);
+        if (rCached && rCached.sig === rSig) { g.appendChild(rCached.node); return; }
+        const rg = el("g", { "data-r": rt.id });
+        nc.routes.set(rt.id, { sig: rSig, node: rg });
         if (inChain && !flatShadow) {
           const baseSw = sw * 0.8;
           [[baseSw * 7, .09], [baseSw * 4.4, .17], [baseSw * 2.6, .30]].forEach(([w, op]) => {
-            g.appendChild(el("polyline", {
+            rg.appendChild(el("polyline", {
               points: ptsStr, class: "ep-plan-routeglow", stroke: routeColor,
               "stroke-width": w, opacity: op, fill: "none",
               "stroke-linecap": "round", "stroke-linejoin": "round"
             }));
           });
-          g.appendChild(el("polyline", {
+          rg.appendChild(el("polyline", {
             points: ptsStr, class: "ep-plan-routeglow-core", stroke: "#fff",
             "stroke-width": baseSw * 0.85, opacity: .6, fill: "none",
             "stroke-linecap": "round", "stroke-linejoin": "round"
           }));
         }
-        g.appendChild(el("polyline", Object.assign({
+        rg.appendChild(el("polyline", Object.assign({
           points: ptsStr,
           class: "ep-plan-route" + (rt.manual ? " is-manual" : "") + (inChain ? " is-sel" : "") + (otherDim ? " is-otherdim" : ""),
           stroke: routeColor, "stroke-width": sw * 0.8
         }, dimR ? { opacity: DIM_OP } : {})));
-        (rt.throughWalls || []).forEach((c) => g.appendChild(el("circle", Object.assign({
+        (rt.throughWalls || []).forEach((c) => rg.appendChild(el("circle", Object.assign({
           cx: c.x, cy: c.y, r: 5 * k, class: "ep-plan-cross" + (otherDim ? " is-otherdim" : ""), "stroke-width": sw * 0.6
         }, dimR ? { opacity: DIM_OP } : {}))));
         // ручки тяги — только у РЕАЛЬНО выбранного хопа (тот, на который тапнули), только
@@ -567,9 +602,10 @@
         if (rt.id === selRoute) {
           const pts = rt.points || [];
           for (let i = 1; i < pts.length - 1; i++) {
-            g.appendChild(el("circle", { cx: pts[i].x, cy: pts[i].y, r: CFG.pointPx * 1.1 * k, class: "ep-plan-routehandle" }));
+            rg.appendChild(el("circle", { cx: pts[i].x, cy: pts[i].y, r: CFG.pointPx * 1.1 * k, class: "ep-plan-routehandle" }));
           }
         }
+        g.appendChild(rg);
       });
     }
 
@@ -595,7 +631,21 @@
       const dp = pt.wall ? EP.Plan.Geometry.elemDrawPoint(project, elem) : pt;
       const cx = dp.x, cy = dp.y;
       const rot = dp.angle || 0;
+      seenEls.add(elem.id);
+      // подпись входов рендера ЭТОЙ точки: сам элемент + посчитанная позиция/поворот +
+      // масштаб + всё, что влияет на вид извне (выделение, предупреждение ПУЭ, стиль значков,
+      // LOD-подписи, цвет линии/слоя, приглушение solo). Совпала — переиспользуем готовый <g>.
+      // Масштаб k входит ТОЧНЫМ значением (не ведром, как у стен): размеры значков/шрифтов
+      // считаются от k напрямую, приблизительное совпадение дало бы «плывущие» символы при
+      // зуме — тот же баг, что уже ловили на кэше стен.
+      const cc0 = elem.circuitId && circ(elem.circuitId);
+      const eSig = JSON.stringify([elem, cx, cy, rot, k, elem.id === selId, bad.has(elem.id),
+        gost, design, labelsOn, lodQf, lodDims, cc0 ? [cc0.color, cc0.name] : null,
+        layerColor2(elem.layer), circDim(elem.circuitId)]);
+      const eCached = nc.els.get(elem.id);
+      if (eCached && eCached.sig === eSig) { g.appendChild(eCached.node); return; }
       const grp = el("g", { class: "ep-plan-el" + (elem.status === "mounted" ? " is-done" : "") + (elem.status === "existing" ? " is-exist" : "") + (elem.id === selId ? " is-sel" : "") });
+      nc.els.set(elem.id, { sig: eSig, node: grp });
       if (elem.type === "junction") {
         if (gost) {
           // ГОСТ: соединительная коробка — закрашенный кружок
@@ -682,6 +732,8 @@
       if (circDim(elem.circuitId)) grp.setAttribute("opacity", DIM_OP); // solo другой линии — приглушить точку
       g.appendChild(grp);
     });
+    pruneCache(nc.els, seenEls);
+    pruneCache(nc.routes, seenRoutes);
     // пунктир: какой выключатель к какой лампе/выводу идёт (по линии QF или назначено вручную).
     // Цепочка проходных/перекрёстных: провод к СЛЕДУЮЩЕМУ звену (chainNext) —
     // к лампе идёт только ОТ ПОСЛЕДНЕГО звена (без chainNext), не от каждого.

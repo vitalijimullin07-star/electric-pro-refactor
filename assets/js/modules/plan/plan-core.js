@@ -49,6 +49,9 @@
     // "precise"/"max" — тяжёлый просчёт в фоновом воркере с минимизацией пересечений линий
     // (просьба пользователя «готов задействовать CPU телефона для лучшего просчёта»)
     routeQuality: "fast",
+    // считать трассы/смету в фоне, пока рисуешь (свободные ядра CPU). Расходует батарею,
+    // поэтому по умолчанию ВЫКЛ — тумблер в шторке «🧵 Трассы»
+    routePrecalc: false,
     cable24: "КГ ВВГнг-LS 2×2.5",
     cable24Rgb: "КГ ВВГнг-LS 5×1.5",
     // выпуск кабеля (концы на разделку/подключение) — см НА КАЖДЫЙ конец кабеля, добавляется
@@ -131,7 +134,7 @@
         mainBreaker: DEFAULTS.mainBreaker, phases: DEFAULTS.phases, meter: false, mainRcd: false,
         panelBrand: DEFAULTS.panelBrand, panelReserve: DEFAULTS.panelReserve, panelBox: null,
         symbolStyle: DEFAULTS.symbolStyle, cableReserve: DEFAULTS.cableReserve, cableBrand: DEFAULTS.cableBrand,
-        cable24: DEFAULTS.cable24, cable24Rgb: DEFAULTS.cable24Rgb, routeQuality: DEFAULTS.routeQuality,
+        cable24: DEFAULTS.cable24, cable24Rgb: DEFAULTS.cable24Rgb, routeQuality: DEFAULTS.routeQuality, routePrecalc: DEFAULTS.routePrecalc,
         cableStubPoint: DEFAULTS.cableStubPoint, cableStubJunction: DEFAULTS.cableStubJunction, cableStubPanel: DEFAULTS.cableStubPanel,
         routeOffset: DEFAULTS.routeOffset, sleeveD: DEFAULTS.sleeveD, connectorMode: DEFAULTS.connectorMode,
         gofraCeil: DEFAULTS.gofraCeil,
@@ -260,19 +263,56 @@
   // (лимит на порядки больше localStorage, запись асинхронная — не блокирует
   // поток на каждый commit()/persist()).
   const IDB_NAME = "ep_plan_photos", IDB_STORE = "photos";
+  // ---- IndexedDB как страховка для БОЛЬШИХ проектов (пункт 5 «CPU на максимум») ----
+  // ЗАМЕР (реальный проект, CPU ×8): JSON.stringify всего проекта — 6мс, запись в
+  // localStorage — единицы мс. То есть выигрыш по СКОРОСТИ от переноса записи в воркер/IDB
+  // был бы в пределах погрешности (честно: это не про производительность). Реальная
+  // проблема localStorage — КВОТА ~5-10МБ НА ORIGIN, ОБЩАЯ на все модули приложения:
+  // при её пробое lsSet() тихо возвращает false, и проект перестаёт сохраняться целиком
+  // (раньше пользователь видел только маленькую подсказку в тулбаре и мог не заметить).
+  // Теперь у больших проектов есть ВТОРАЯ, независимая копия в IndexedDB (лимит на
+  // порядки выше, запись асинхронная — главный поток не блокирует), а localStorage
+  // остаётся ОСНОВНЫМ (синхронный, гарантированно доживает до закрытия вкладки, в
+  // отличие от асинхронной IDB-транзакции). Читаем: localStorage → если пусто/битое → IDB.
+  const IDB_PSTORE = "projects";
+  const IDB_BIG_BYTES = 400 * 1024; // от какого размера JSON дублируем в IDB (мелким незачем)
   let idbPromise = null;
   function idbOpen() {
     if (idbPromise) return idbPromise;
     idbPromise = new Promise((resolve) => {
       if (!window.indexedDB) { resolve(null); return; }
       try {
-        const req = indexedDB.open(IDB_NAME, 1);
-        req.onupgradeneeded = () => { try { req.result.createObjectStore(IDB_STORE); } catch (e) {} };
+        const req = indexedDB.open(IDB_NAME, 2); // 2 — добавлен стор "projects" (см. IDB_PSTORE)
+        const req0 = req;
+        req.onupgradeneeded = () => {
+          try { if (!req0.result.objectStoreNames.contains(IDB_STORE)) req0.result.createObjectStore(IDB_STORE); } catch (e) {}
+          try { if (!req0.result.objectStoreNames.contains(IDB_PSTORE)) req0.result.createObjectStore(IDB_PSTORE); } catch (e) {}
+        };
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => resolve(null);
       } catch (e) { resolve(null); }
     });
     return idbPromise;
+  }
+  // структурированное клонирование внутри IDB делает БРАУЗЕР (в своём потоке) — здесь
+  // JSON.stringify не нужен вообще, кладём объект как есть
+  function idbPutProject(id, project) {
+    idbOpen().then((db) => { if (!db) return; try { db.transaction(IDB_PSTORE, "readwrite").objectStore(IDB_PSTORE).put(project, id); } catch (e) {} });
+  }
+  function idbDeleteProject(id) {
+    idbOpen().then((db) => { if (!db) return; try { db.transaction(IDB_PSTORE, "readwrite").objectStore(IDB_PSTORE).delete(id); } catch (e) {} });
+  }
+  function idbGetProject(id) {
+    return idbOpen().then((db) => {
+      if (!db) return null;
+      return new Promise((resolve) => {
+        try {
+          const req = db.transaction(IDB_PSTORE, "readonly").objectStore(IDB_PSTORE).get(id);
+          req.onsuccess = () => resolve(req.result || null);
+          req.onerror = () => resolve(null);
+        } catch (e) { resolve(null); }
+      });
+    });
   }
   const photoCache = new Map(); // id -> data:URL, в памяти на время открытого проекта (синхронное чтение для рендера)
   function idbPutPhoto(id, dataUrl) {
@@ -433,6 +473,7 @@
     if (p.settings.cableReserve == null) p.settings.cableReserve = DEFAULTS.cableReserve;
     if (p.settings.cableBrand == null) p.settings.cableBrand = DEFAULTS.cableBrand;
     if (p.settings.routeQuality == null) p.settings.routeQuality = DEFAULTS.routeQuality;
+    if (p.settings.routePrecalc == null) p.settings.routePrecalc = DEFAULTS.routePrecalc;
     if (p.settings.cable24 == null) p.settings.cable24 = DEFAULTS.cable24;
     if (p.settings.cable24Rgb == null) p.settings.cable24Rgb = DEFAULTS.cable24Rgb;
     if (p.settings.cableStubPoint == null) p.settings.cableStubPoint = DEFAULTS.cableStubPoint;
@@ -469,6 +510,7 @@
 
   async function openProject(id) {
     let p = lsGet(LS_PROJECT + id, null);
+    if (!p) p = await idbGetProject(id);    // квота localStorage была пробита — берём копию из IDB
     if (!p) p = await cloudPullProject(id); // проект, созданный на другом устройстве
     if (!p) return null;
     backfillProject(p);
@@ -490,6 +532,7 @@
     // почистить и байты фото в IndexedDB, в отличие от удаления ОДНОГО фото у точки
     purgeProjectPhotos((S.project && S.project.id === id) ? S.project : lsGet(LS_PROJECT + id, null) || { elements: [] });
     try { localStorage.removeItem(LS_PROJECT + id); } catch (e) {}
+    idbDeleteProject(id); // и вторую копию (см. IDB_PSTORE) — удаление проекта не отменяемо
     S.index = S.index.filter((x) => x.id !== id);
     saveIndex(); cloudPushSoon();
     if (S.project && S.project.id === id) closeProject(); else emit("index");
@@ -562,7 +605,17 @@
     clearTimeout(persistTimer); persistTimer = 0;
     const p = persistDirty; persistDirty = null;
     if (!p) return;
-    if (!lsSet(LS_PROJECT + p.id, p)) emit("storage-full");
+    // размер считаем ОДИН раз (он же нужен и для решения «дублировать ли в IDB»)
+    let json = null;
+    try { json = JSON.stringify(p); } catch (e) {}
+    let ok = false;
+    if (json != null) { try { localStorage.setItem(LS_PROJECT + p.id, json); ok = true; } catch (e) { ok = false; } }
+    const big = json != null && json.length >= IDB_BIG_BYTES;
+    // копия в IndexedDB: у больших проектов ВСЕГДА (страховка от пробоя квоты в любой
+    // момент, в т.ч. другими модулями приложения), у остальных — только если запись в
+    // localStorage не удалась. «storage-full» теперь предупреждение, а не потеря данных.
+    if (!ok || big) idbPutProject(p.id, p);
+    if (!ok) emit("storage-full");
     indexUpsert(p);
   }
   function persist(what) {
@@ -674,6 +727,7 @@
     onChange,
     listProjects, createProject, openProject, closeProject, deleteProject, renameProject,
     commit, undo, redo, canUndo, canRedo, persist,
+    flushPersist, // добить отложенную запись немедленно (уход со страницы, тесты)
     exportJSON, importJSON, cloudPullIndex,
     addFloor, renameFloor, setActiveFloor, deleteFloor,
     photoUrl, addPhoto,
