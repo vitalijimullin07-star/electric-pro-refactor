@@ -19,6 +19,23 @@
 "use strict";
 self.window = self;
 
+// localStorage в воркере НЕ существует, а модулям он нужен на ЧТЕНИЕ настроек: например
+// EP.CableConsum.get() перечитывает нормы расходников ИЗ localStorage на КАЖДЫЙ вызов и
+// использует их внутри своей calc() через локальную функцию — подменить экспортированный
+// get() снаружи НЕДОСТАТОЧНО (поймано живым прогоном: смета в воркере считалась по
+// ДЕФОЛТНЫМ нормам — площадки 900 вместо 2500). Кладём минимальную in-memory заглушку —
+// тогда присланные главным потоком настройки пишутся ШТАТНЫМ API (set), без патча
+// внутренностей модуля. Записи ядра плана (persist) в воркере всё равно no-op.
+const memLS = {};
+self.localStorage = {
+  getItem: (k) => (Object.prototype.hasOwnProperty.call(memLS, k) ? memLS[k] : null),
+  setItem: (k, v) => { memLS[k] = String(v); },
+  removeItem: (k) => { delete memLS[k]; },
+  clear: () => { Object.keys(memLS).forEach((k) => { delete memLS[k]; }); },
+  key: (i) => Object.keys(memLS)[i] || null,
+  get length() { return Object.keys(memLS).length; }
+};
+
 const stubNode = () => ({
   style: {}, classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
   setAttribute() {}, getAttribute: () => null, removeAttribute() {}, appendChild() {}, removeChild() {},
@@ -36,7 +53,12 @@ self.document = {
 // что уже загружена в приложении (иначе воркер мог бы взять из кэша старый алгоритм)
 const ver = (self.location.search || "").replace(/^\?/, "");
 const q = ver ? "?" + ver : "";
-importScripts("plan-core.js" + q, "plan-geometry.js" + q, "plan-routes.js" + q);
+// cable-consum.js — движок расходников, его читает plan-calc.js (addConsumItems); лежит в
+// другой папке модулей. Расчёт/проверки нужны для режима "estimate" (предрасчёт сметы и
+// ПУЭ-проверок в фоне) — оба чистые вычисления, DOM не трогают (обработчики шторок
+// регистрируются на заглушку document выше и просто никогда не сработают).
+importScripts("plan-core.js" + q, "plan-geometry.js" + q, "plan-routes.js" + q,
+  "../consumables/cable-consum.js" + q, "plan-calc.js" + q, "plan-rules.js" + q);
 
 // ВАЖНО: НЕ объявлять здесь `const EP` — топ-левел lexical-объявление в воркере
 // затеняет глобальное свойство self.EP, которое создают сами модули, и любой их
@@ -71,11 +93,21 @@ self.onmessage = (e) => {
     prepare(msg.project);
     const RT = self.EP.Plan.Routes;
     RT.setLaneOrder(null);
+    // ---- смета + ПУЭ-проверки (фоновый предрасчёт; трассы здесь НЕ строим) ----
+    if (msg.mode === "estimate") {
+      if (msg.consum && self.EP.CableConsum && self.EP.CableConsum.set) self.EP.CableConsum.set(msg.consum);
+      const C = self.EP.Plan.Calc, R = self.EP.Plan.Rules;
+      const items = C && C.estimateItems ? C.estimateItems(msg.project) : null;
+      const per = C && C.perCircuit ? C.perCircuit(msg.project) : null;
+      const checks = R && R.run ? R.run(msg.project) : null;
+      self.postMessage({ type: "done", ok: true, mode: "estimate", items, per, checks, ms: Date.now() - t0 });
+      return;
+    }
     let out = null;
     if (msg.mode === "max" && RT.optimizeRoutingMax) {
-      out = RT.optimizeRoutingMax({ budgetMs: msg.budgetMs || 3000, seed: msg.seed || 12345 });
+      out = RT.optimizeRoutingMax({ budgetMs: msg.budgetMs || 3000, seed: msg.seed || 12345, start: msg.start, restart: msg.restart });
     } else if (msg.mode === "precise") {
-      out = RT.optimizeRouting({ budgetMs: msg.budgetMs || 900, seed: msg.seed || 12345 });
+      out = RT.optimizeRouting({ budgetMs: msg.budgetMs || 900, seed: msg.seed || 12345, start: msg.start, restart: msg.restart });
     } else if (msg.mode === "incremental") {
       RT.buildIncremental({ silent: true, noCommit: true });
       out = { score: RT.scoreRoutes(msg.project), iterations: 1 };

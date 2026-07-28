@@ -127,16 +127,17 @@
 
     return { issues, badIds };
   }
-  // кэш для рендера (пересчитывается при каждом draw — объёмы малые)
+  // подсветка проблемных точек — зовётся на КАЖДЫЙ рендер сцены, поэтому через мемо-кэш
+  // (runCached ниже: сбрасывается на любое изменение проекта)
   function badSet() {
     const p = core().project;
-    return p ? run(p).badIds : new Set();
+    return p ? runCached(p).badIds : new Set();
   }
 
   // ---------- шторка ----------
   function sheet() {
     const p = core().project, R = rules(p);
-    const { issues } = run(p);
+    const { issues } = runCached(p);
     rooms().openSheet(`<div class="ep-plan-srow"><b>✅ ${T.title}</b>
         <span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-sheet-fs aria-label="Во весь экран">⛶</button><button type="button" class="ep-plan-mini ep-clickable" data-pl-close>✕</button></div>
       ${issues.length
@@ -168,5 +169,23 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Rules = { run, rules, badSet, sheet, RULES_DEFAULTS };
+  // ---------- МЕМО-КЭШ проверок ----------
+  // run(p) — чистая функция от проекта (12мс на стресс-проекте при CPU ×8), а шторка
+  // «Проверки» и подсветка проблемных точек (badSet) зовут её на каждый рендер. Кэш
+  // сбрасывается на ЛЮБОЕ изменение проекта; фоновый предрасчёт из воркера
+  // (plan-routes.js prefetchEstimate) наполняет его заранее — шторка открывается без счёта.
+  let memo = null, memoTok = 0;
+  function runCached(p) {
+    if (memo) return memo;
+    memo = run(p);
+    return memo;
+  }
+  function setPrefetched(tok, res) {
+    if (tok !== memoTok || !res) return false;
+    memo = res;
+    return true;
+  }
+  if (core().onChange) core().onChange(() => { memo = null; memoTok++; });
+
+  EP.Plan.Rules = { run, runCached, rules, badSet, sheet, RULES_DEFAULTS, setPrefetched, memoToken: () => memoTok };
 })();

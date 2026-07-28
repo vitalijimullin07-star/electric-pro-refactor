@@ -552,11 +552,48 @@
   function estimateItems(p) {
     const stats = buildBlocks(p);
     if (!stats.length) return null;
-    const exact = calcByRoutes(p);
+    const exact = exactOf(p);
     if (exact && exact.items.length) return exact.items; // правки уже применены внутри calcByRoutes
     const res = runEngine(p, stats);
     return applyCalcEdits(p, (res && res.draftItems) || null); // приближённый счёт — те же правки
   }
+
+  // ---------- МЕМО-КЭШ расчёта ----------
+  // calcByRoutes/perCircuit — чистые функции от проекта, но шторка «Расчёт» перерисовывается
+  // ЧАСТО (каждый вход в под-вид «цена/название/расходники» и возврат назад зовут sheet()
+  // заново), и каждый раз считала всё с нуля: замер на стресс-проекте (30 комнат/150 точек,
+  // CPU ×8) — calcByRoutes 12мс + perCircuit 4мс на КАЖДУЮ перерисовку. Кэш сбрасывается на
+  // ЛЮБОЕ изменение проекта (core().onChange — через него проходит любая мутация модели),
+  // поэтому устареть не может; цены НЕ кэшируются (priceFor читает БД на каждый рендер —
+  // правка цены видна сразу).
+  let memo = null;      // { exact, per }
+  let memoTok = 0;      // токен состояния: результат воркера с чужим токеном не принимаем
+  function exactOf(p) {
+    if (memo && memo.exact !== undefined) return memo.exact;
+    const v = calcByRoutes(p);
+    memo = memo || {}; memo.exact = v;
+    return v;
+  }
+  function perOf(p) {
+    if (memo && memo.per !== undefined) return memo.per;
+    const v = perCircuit(p);
+    memo = memo || {}; memo.per = v;
+    return v;
+  }
+  // фоновый предрасчёт из воркера (plan-routes.js prefetchEstimate): готовые items/perCircuit
+  // на ТЕКУЩЕЕ состояние — шторка «Расчёт» открывается без счёта на главном потоке
+  function setPrefetched(tok, items, per) {
+    if (tok !== memoTok) return false; // проект успел измениться — данные уже не про него
+    memo = memo || {};
+    // из результата calcByRoutes и шторка, и estimateItems читают ТОЛЬКО .items
+    // (cableBy/strobe/conn/podroz/junctBoxes используются внутри самой calcByRoutes) —
+    // поэтому предрасчёту достаточно вернуть items; форму специально не раздуваем
+    if (Array.isArray(items)) memo.exact = { items, prefetched: true };
+    if (per) memo.per = per;
+    return true;
+  }
+  const memoToken = () => memoTok;
+  if (core().onChange) core().onChange(() => { memo = null; memoTok++; });
 
   // ---------- цены из БД ----------
   function priceFor(name, type) {
@@ -588,7 +625,7 @@
       : `<div class="ep-plan-srow">${T.cable}: ${T.noRoutes}</div>`;
 
     // приоритет — ТОЧНЫЙ счёт по построенным трассам; иначе — движок пула по комнатам
-    const exact = calcByRoutes(p);
+    const exact = exactOf(p);
     let items, headHtml;
     if (exact && exact.items.length) {
       items = exact.items;
@@ -632,7 +669,7 @@
     // если для позиции нет подходящей записи в БД, и общий итог по найденным ценам
     const fmtRub = (n) => (window.EP.Currency && EP.Currency.format) ? EP.Currency.format(n) : (Math.round(n * 100) / 100) + " ₽";
     // разбивка по линиям QF (информационная сводка) — только если есть трассы и линии
-    const perQF = exact && exact.items.length ? perCircuit(p) : null;
+    const perQF = exact && exact.items.length ? perOf(p) : null;
     // пометка «с запасом» ОБЯЗАТЕЛЬНА: perCircuit() считает длины С запасом кабеля
     // (+N%), а сводка «Кабель по трассам» выше — БЕЗ запаса; без пометки сумма по
     // линиям не сходилась со «всего» на вид (репорт полного визуального теста:
@@ -972,5 +1009,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Calc = { sheet, buildBlocks, runEngine, priceFor, calcByRoutes, estimateItems, perCircuit, sheetConsumSettings, applyCalcEdits, defaultCableMark, is24Circuit };
+  EP.Plan.Calc = { sheet, buildBlocks, runEngine, priceFor, calcByRoutes, estimateItems, perCircuit, setPrefetched, memoToken, sheetConsumSettings, applyCalcEdits, defaultCableMark, is24Circuit };
 })();
