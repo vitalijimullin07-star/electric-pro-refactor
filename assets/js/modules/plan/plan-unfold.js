@@ -405,10 +405,15 @@
       const cc = circ(p, e); if (!cc) return null;
       return { x: e.offset, y: H - e.height - 18 * ks, hw: Math.max(14, cc.name.length * 4.2) * ks, hh: 7 * ks };
     }).filter(Boolean);
+    // размер поста берётся от БЛИЖАЙШЕГО внутреннего угла стены (просьба пользователя:
+    // «от ближайшего угла брались размеры, и строилась туда линейка») — раньше ВСЕГДА от
+    // левого (inA), из-за чего у поста у правого края через всю стену тянулась длинная
+    // размерная линия поверх остальных постов, хотя до правого угла было 20 см.
+    const cornerOf = (x) => (x - inA <= inB - x ? inA : inB);
     const offBoxes = els.map((e) => {
-      const x = e.offset, y = H - e.height;
-      if (x - inA <= 2) return null;
-      return { x: (inA + x) / 2, y: y - 3 * ks, hw: 14 * ks, hh: 8 * ks };
+      const x = e.offset, y = H - e.height, c = cornerOf(x);
+      if (Math.abs(x - c) <= 2) return null;
+      return { x: (c + x) / 2, y: y - 3 * ks, hw: 14 * ks, hh: 8 * ks };
     }).filter(Boolean);
     const obstacles = elBoxes.concat(qfBoxes, offBoxes);
     const placeHLabel = (idx) => {
@@ -473,12 +478,14 @@
     dimJobs.forEach(({ el, x, y, idx }) => {
       // вертикаль: высота от пола до точки (синим)
       svg.appendChild(svgEl("line", { "data-pu-diml": el.id, x1: x, y1: H, x2: x, y2: y, class: "ep-plan-unfdimL", "stroke-width": kk }));
-      // горизонталь: от левого внутреннего угла до поста НА ЕГО ВЫСОТЕ (синим, с засечками)
-      // и число — расстояние от угла (это те «размеры», что просил пользователь на скрине)
-      if (x - inA > 2) {
-        svg.appendChild(svgEl("line", { x1: inA, y1: y, x2: x, y2: y, class: "ep-plan-unfdimE", "stroke-width": kk * 0.7 }));
-        svg.appendChild(svgEl("line", { x1: inA, y1: y - 3 * ks, x2: inA, y2: y + 3 * ks, class: "ep-plan-unfdimE", "stroke-width": kk * 0.7 }));
-        svg.appendChild(svgEl("text", { x: (inA + x) / 2, y: y - 3 * ks, "font-size": 9.5 * ks, "text-anchor": "middle", class: "ep-plan-unfdimT" }, Math.round(x - inA) + ""));
+      // горизонталь: от БЛИЖАЙШЕГО внутреннего угла до поста НА ЕГО ВЫСОТЕ (синим, с
+      // засечкой у угла) и число — расстояние до этого угла (те «размеры», что просил
+      // пользователь; ближний угол — чтобы линейка была короткой и не шла через всю стену)
+      const cx0 = cornerOf(x);
+      if (Math.abs(x - cx0) > 2) {
+        svg.appendChild(svgEl("line", { x1: cx0, y1: y, x2: x, y2: y, class: "ep-plan-unfdimE", "stroke-width": kk * 0.7 }));
+        svg.appendChild(svgEl("line", { x1: cx0, y1: y - 3 * ks, x2: cx0, y2: y + 3 * ks, class: "ep-plan-unfdimE", "stroke-width": kk * 0.7 }));
+        svg.appendChild(svgEl("text", { x: (cx0 + x) / 2, y: y - 3 * ks, "font-size": 9.5 * ks, "text-anchor": "middle", class: "ep-plan-unfdimT" }, Math.round(Math.abs(x - cx0)) + ""));
       }
       // подпись высоты — РЯДОМ с постом, с антиналожением (тап — карточка точки)
       const hl = placeHLabel(idx);

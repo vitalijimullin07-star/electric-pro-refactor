@@ -2949,6 +2949,39 @@ test("фото: deleteProject чистит кэш фото своего прое
     eq(d.x, 0, "сдвиг меньше половины шага сетки — ноль");
   });
 
+  // ===== 28. PDF: артефакты печати + размер от БЛИЖАЙШЕГО угла в развёртке =====
+  test("PDF: у печатного листа заглушена заливка polyline и скрыты магистрали", () => {
+    const p = EP.Plan.Core.createProject("pdfart");
+    const r = M.newRoom(G.rectPoints(0, 0, 400, 300), "К1");
+    p.rooms.push(r);
+    const gd = M.newGuide([{ x: 20, y: 20 }, { x: 380, y: 20 }, { x: 380, y: 280 }]);
+    p.guides.push(gd);                       // видимая (не hidden) — как у пользователя до сборки
+    p.elements.push(M.newElement("socket", r.id + ":0", 100, 30, "power"));
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    const html = EP.Plan.Export.sheetHtml(p);
+    // SVG по умолчанию ЗАЛИВАЕТ многоточечный polyline чёрным — в печатном <style>
+    // (у него нет доступа к plan.css) это давало чёрные пятна поверх плана.
+    ok(/polyline\s*\{\s*fill:\s*none/.test(html), "в печатном <style> есть общее polyline{fill:none}");
+    ok(/\.ep-plan-guide[^{]*\{[^}]*display:\s*none/.test(html), "магистрали (⇉) на печатном листе скрыты");
+    ok(/\.ep-plan-swlink[^{]*\{[^}]*stroke-dasharray/.test(html), "связи выключатель→свет в печати пунктиром");
+  });
+  test("развёртка (PDF): размер поста считается от БЛИЖАЙШЕГО внутреннего угла", () => {
+    const p = EP.Plan.Core.createProject("nearcorner");
+    const r = M.newRoom(G.rectPoints(0, 0, 500, 300), "К1");
+    p.rooms.push(r);
+    const wid = r.id + ":0", w = G.wallById(p, wid), L = w.len, th = G.wallThOf(p, w);
+    const inA = Math.min(th / 2, L / 2), inB = Math.max(L - th / 2, L / 2);
+    const eL = M.newElement("socket", wid, 60, 30, "power");        // ближе к ЛЕВОМУ углу
+    const eR = M.newElement("socket", wid, L - 70, 90, "power");    // ближе к ПРАВОМУ углу
+    p.elements.push(eL, eR);
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    const svg = EP.Plan.Export.sheetHtml(p);
+    // числа размеров: от своего ближайшего угла, НЕ от левого для обоих
+    ok(svg.indexOf(">" + Math.round(60 - inA) + "<") >= 0, "левый пост: расстояние до левого угла");
+    ok(svg.indexOf(">" + Math.round(inB - (L - 70)) + "<") >= 0, "правый пост: расстояние до ПРАВОГО угла");
+    ok(svg.indexOf(">" + Math.round(L - 70 - inA) + "<") < 0, "правый пост НЕ мерится от левого угла");
+  });
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);
