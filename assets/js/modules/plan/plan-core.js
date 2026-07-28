@@ -94,7 +94,8 @@
       { id: "warm",   name: "Тёплый пол",      color: "#fb923c" },
       { id: "routes", name: "Трассы",          color: "#94a3b8" },
       { id: "dims",   name: "Размеры",         color: "#cbd5e1" },
-      { id: "labels", name: "Подписи",         color: "#e2e8f0" }
+      { id: "labels", name: "Подписи",         color: "#e2e8f0" },
+      { id: "furn",   name: "Мебель/техника", color: "#a78bfa" }
     ]
   };
 
@@ -153,6 +154,7 @@
       beams: [],    // перемычки/балки на потолке (свободные отрезки)
       voids: [],    // внутренние препятствия: вентшахта / мини-комната внутри комнаты
       ledStrips: [], // светодиодная лента: сегменты ВДОЛЬ стены (wallId+offsetA/offsetB)
+      appliances: [], // мебель и бытовая техника (прямоугольники на полу, см. newAppliance)
       guides: [],   // магистрали трасс: нарисованные приоритетные направления (полилинии)
       calcEdits: { hidden: [], renamed: {}, custom: [] }, // правки сметы Расчёта (plan-calc.js)
       manualScheme: newManualScheme(), // ручной конструктор однолинейки (Слой 7б)
@@ -235,6 +237,20 @@
   function newVoid(a, b, kind) {
     const k = kind === "room" ? "room" : "shaft";
     return { id: uid("vd"), a: a || { x: 0, y: 0 }, b: b || { x: 0, y: 0 }, kind: k, name: k === "room" ? "Комната" : "Шахта", floorId: curFloorId() };
+  }
+  // Мебель и бытовая техника (p.appliances) — свободный прямоугольник на полу с
+  // ПОВОРОТОМ (в отличие от p.voids, где просто две точки: мебель почти всегда стоит
+  // под углом к стене). kind: "furn" — мебель (без электрики), "appl" — техника
+  // (watt/phases → ток → рекомендуемый кабель и автомат, см. needFor в
+  // plan-furniture.js). circuitId/elementId — на какой линии и от какой точки она
+  // питается; расхождения с этой линией показывают «Проверки» (plan-rules.js).
+  function newAppliance(kind, catId, x, y, w, d) {
+    return {
+      id: uid("ap"), kind: kind === "appl" ? "appl" : "furn", catId: catId || "",
+      x: x || 0, y: y || 0, w: w || 60, d: d || 60, rot: 0,
+      name: "", watt: null, phases: 1, circuitId: null, elementId: null,
+      floorId: curFloorId()
+    };
   }
   // магистраль трасс: нарисованное ПРИОРИТЕТНОЕ направление (полилиния в мировых см).
   // hidden=true после построения трасс — визуально пропадает с плана (просьба
@@ -463,13 +479,15 @@
     if (!p.activeFloorId || !p.floors.some((f) => f.id === p.activeFloorId)) p.activeFloorId = p.floors[0].id;
     const fid0 = p.floors[0].id;
     p.guides = p.guides || []; // магистрали трасс (старые проекты — пусто)
-    [p.rooms, p.panels, p.elements, p.beams, p.voids, p.ledStrips, p.openings, p.routes, p.guides].forEach((arr) => {
+    p.appliances = p.appliances || []; // мебель/техника (старые проекты — пусто)
+    [p.rooms, p.panels, p.elements, p.beams, p.voids, p.ledStrips, p.openings, p.routes, p.guides, p.appliances].forEach((arr) => {
       (arr || []).forEach((x) => { if (!x.floorId || !p.floors.some((f) => f.id === x.floorId)) x.floorId = fid0; });
     });
     p.openings = p.openings || [];
     p.beams = p.beams || [];
     p.voids = p.voids || [];
     p.ledStrips = p.ledStrips || [];
+    p.appliances = p.appliances || [];
     p.circuits = p.circuits || [];
     p.circuits.forEach((c) => { if (c.phase !== 1 && c.phase !== 2 && c.phase !== 3) c.phase = 1; if (c.cable220 === undefined) c.cable220 = null; if (c.rgb === undefined) c.rgb = null; });
     p.panels = p.panels || [];
@@ -588,7 +606,7 @@
     commit();
     const p = S.project;
     p.floors = p.floors.filter((f) => f.id !== id);
-    ["rooms", "panels", "elements", "beams", "voids", "ledStrips", "openings", "routes", "guides"].forEach((key) => {
+    ["rooms", "panels", "elements", "beams", "voids", "ledStrips", "openings", "routes", "guides", "appliances"].forEach((key) => {
       p[key] = (p[key] || []).filter((x) => x.floorId !== id);
     });
     if (p.activeFloorId === id) p.activeFloorId = p.floors[0].id;
@@ -738,6 +756,6 @@
     exportJSON, importJSON, cloudPullIndex,
     addFloor, renameFloor, setActiveFloor, deleteFloor,
     photoUrl, addPhoto,
-    model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening, newBeam, newVoid, newGuide, newManualScheme, newSchemeGroup, newSchemeLine, newLedStrip, newFloor }
+    model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening, newBeam, newVoid, newAppliance, newGuide, newManualScheme, newSchemeGroup, newSchemeLine, newLedStrip, newFloor }
   };
 })();

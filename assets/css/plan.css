@@ -951,3 +951,19 @@ body[data-visual-mode="day"] .ep-plan-unfpt-b { background: #f1f5f9; border-colo
 /* линия 24В в блоке «По линиям (QF)»: выбор монохром/RGB — от него зависит кабель «от щита» */
 .ep-plan-qfrgb { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 0 6px 6px 18px; font-size: 12px; color: var(--muted); }
 .ep-plan-qfrgb .ep-plan-chip { font-size: 12px; padding: 2px 8px; }
+
+/* Мебель и бытовая техника (p.appliances, слой «furn») — прямоугольник на полу:
+   мебель тонким контуром без заливки (не должна конкурировать с электрикой),
+   техника — заметнее (штрих + лёгкая заливка) и с подписью нагрузки/кабеля под ней.
+   Электрика рисуется ПОВЕРХ (порядок в plan-render.js), поэтому мебель намеренно
+   бледная: это подложка «что где стоит», а не самостоятельный чертёж. */
+.ep-plan-furnrect { fill: rgba(167, 139, 250, .10); stroke: #a78bfa; stroke-dasharray: 8 5; }
+.ep-plan-furn.is-appl .ep-plan-furnrect { fill: rgba(56, 189, 248, .12); stroke: #38bdf8; stroke-dasharray: none; }
+.ep-plan-furn.is-sel .ep-plan-furnrect { stroke-width: 2; filter: drop-shadow(0 0 3px rgba(56,189,248,.65)); }
+.ep-plan-furntext { fill: var(--muted, #a7b0c0); font-family: system-ui; font-weight: 700; }
+.ep-plan-furnload { fill: #38bdf8; font-family: system-ui; font-weight: 700; }
+.ep-plan-furnlink { stroke: #38bdf8; stroke-dasharray: 5 4; opacity: .7; fill: none; }
+.ep-plan-tail { fill: none; }
+.ep-plan-tailtxt { font-family: system-ui; font-weight: 700; }
+body[data-visual-mode="day"] .ep-plan-furntext { fill: #475569; }
+body[data-flatshadow="1"] .ep-plan-furn.is-sel .ep-plan-furnrect { filter: none; }

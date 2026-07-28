@@ -613,6 +613,48 @@
       gDraft.points.forEach((q) => g.appendChild(el("circle", { cx: q.x, cy: q.y, r: CFG.pointPx * k, class: "ep-plan-guidept" })));
     }
 
+    // мебель и бытовая техника (p.appliances) — прямоугольник на полу с поворотом,
+    // свой слой "furn" (можно выключить). Рисуется ДО точек и трасс, чтобы электрика
+    // всегда была ПОВЕРХ мебели (она главная на этом чертеже).
+    if (layerOn(project, "furn")) {
+      const FN = EP.Plan.Furniture;
+      const selAp = FN && FN.selectedId && FN.selectedId();
+      (project.appliances || []).forEach((a) => {
+        const isAp = a.kind === "appl";
+        const grpA = el("g", { class: "ep-plan-furn" + (isAp ? " is-appl" : "") + (a.id === selAp ? " is-sel" : "") });
+        const tr = a.rot ? `rotate(${a.rot} ${a.x} ${a.y})` : null;
+        grpA.appendChild(el("rect", Object.assign({
+          x: a.x - a.w / 2, y: a.y - a.d / 2, width: a.w, height: a.d, rx: 2,
+          class: "ep-plan-furnrect", "stroke-width": sw * 0.6
+        }, tr ? { transform: tr } : {})));
+        // техника — маркер ⚡ и мощность; мебель — только имя (если влезает)
+        const cat = FN && FN.byId ? FN.byId(a.catId) : null;
+        const nm = a.name || (cat ? cat.name : "");
+        const fs = Math.max(6 * k, Math.min(a.d * 0.3, 11 * k));
+        if (nm && a.w > fs * 2.2) {
+          grpA.appendChild(el("text", Object.assign({
+            x: a.x, y: a.y, "font-size": fs, "text-anchor": "middle", "dominant-baseline": "central",
+            class: "ep-plan-furntext"
+          }, tr ? { transform: tr } : {}), nm.length > 16 ? nm.slice(0, 15) + "…" : nm));
+        }
+        if (isAp) {
+          const nd = FN && FN.needFor ? FN.needFor(a) : null;
+          if (nd && labelsOn && lodDims) {
+            grpA.appendChild(el("text", {
+              x: a.x, y: a.y + a.d / 2 + 8 * k, "font-size": 8 * k, "text-anchor": "middle",
+              class: "ep-plan-furnload"
+            }, (nd.watt >= 1000 ? (nd.watt / 1000).toFixed(1) + " кВт" : nd.watt + " Вт") + " · " + nd.cable));
+          }
+          // связь техники с её точкой питания — тонкий пунктир (видно, что уже привязано)
+          if (a.elementId) {
+            const pe = (project.elements || []).find((e) => e.id === a.elementId);
+            const pp = pe && G.elemDrawPoint(project, pe);
+            if (pp) grpA.appendChild(el("line", { x1: a.x, y1: a.y, x2: pp.x, y2: pp.y, class: "ep-plan-furnlink", "stroke-width": sw * 0.5 }));
+          }
+        }
+        g.appendChild(grpA);
+      });
+    }
     // трассы (Слой 4): полилинии цветом слоя + проходки
     if (layerOn(project, "routes")) {
       const layerColor = (id) => (((project.layers || []).find((l) => l.id === id) || {}).color) || "#94a3b8";
@@ -809,9 +851,25 @@
         // физическая рамка); свободные потолочные точки продолжают рисоваться ГОСТ/
         // Дизайн-символом, как раньше — у них габарита не существует
         const realThis = real && !!elem.wallId;
+        // «хвостик» потолочного вывода (см. ниже) рисуем сами — стиль «Дизайн» не должен
+        // успеть нарисовать для него рамку с выноской
+        const tailFree = !elem.wallId && (elem.type === "output" || elem.type === "output24");
         const drewGost = !realThis && gost && drawGostEl(grp, elem, cx, cy, rot, dp, k, sw, colEl);
-        const drewDesign = !realThis && !drewGost && design && drawDesignEl(grp, elem, pt, cx, cy, k, sw, colEl, (TY[elem.type] || {}).glyph || "?");
-        if (!drewGost && !drewDesign) {
+        const drewDesign = !realThis && !drewGost && !tailFree && design && drawDesignEl(grp, elem, pt, cx, cy, k, sw, colEl, (TY[elem.type] || {}).glyph || "?");
+        // Свободный (потолочный) «Вывод»/«Вывод 24В» — ВСЕГДА «хвостик»: точка + короткий
+        // волнистый конец провода, независимо от стиля значков (просьба пользователя:
+        // «возможность с потолка вывода 24в в виде хвостика»). Раньше хвостик рисовался
+        // ТОЛЬКО в ГОСТ-стиле (drawGostEl), а в «Простом»/«Дизайне» это была обычная
+        // пилюля с буквой — на потолке она читалась как светильник, а не как вывод.
+        if (tailFree && !drewGost) {
+          const rd = 2.6 * k, len = 12 * k, amp = 3 * k;
+          grp.appendChild(el("circle", { cx, cy, r: rd, fill: colEl, "stroke-width": 0 }));
+          grp.appendChild(el("path", {
+            d: `M ${cx} ${cy + rd} Q ${cx + amp} ${cy + rd + len * 0.28} ${cx} ${cy + rd + len * 0.55} Q ${cx - amp} ${cy + rd + len * 0.82} ${cx} ${cy + rd + len}`,
+            fill: "none", stroke: colEl, "stroke-width": sw * 0.8, "stroke-linecap": "round", class: "ep-plan-tail"
+          }));
+          if (elem.type === "output24") grp.appendChild(el("text", { x: cx + rd + 3 * k, y: cy - rd, "font-size": 8 * k, fill: colEl, class: "ep-plan-tailtxt" }, "24В"));
+        } else if (!drewGost && !drewDesign) {
           if (realThis) {
             // РЕАЛЬНАЯ рамка одного поста 84×84 мм, повёрнутая вдоль стены. На плане прибор
             // виден СВЕРХУ, поэтому «лицо» (гнёзда/клавиши) здесь не рисуем — оно во

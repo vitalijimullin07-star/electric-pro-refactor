@@ -7,10 +7,11 @@
   window.EP = window.EP || {};
 
   const T = {
-    modes: { view: "☝", rect: "▭", poly: "⬠", beam: "▬", void: "▦", elem: "🔌", opening: "🚪", ruler: "📏", underlay: "🖼", merge: "🔗", movroom: "🧭" },
+    modes: { view: "☝", rect: "▭", poly: "⬠", beam: "▬", void: "▦", furn: "🛋", elem: "🔌", opening: "🚪", ruler: "📏", underlay: "🖼", merge: "🔗", movroom: "🧭" },
     modeHint: {
       view: "Тап: точка — редактор, стена — развёртка, комната — свойства.",
       rect: "Тапни два противоположных угла комнаты.",
+      furn: "Выбери мебель/технику и тапни по плану — встанет центром в точку тапа.",
       poly: "Ставь точки по контуру. Замкни тапом в первую точку.",
       beam: "Балка/перегородка: тапни начало и конец, потом тяни концы.",
       void: "Вентшахта / мини-комната внутри комнаты: тапни два противоположных угла.",
@@ -96,7 +97,7 @@
   // запоминаются между сессиями) ----------
   // Тот же набор, что и «режимы» в верхнем тулбаре (см. T.modes) — здесь его пилотный
   // список для панели быстрого доступа (что можно закрепить/что попадает в MRU).
-  const QB_TOOLS = { view: "☝", rect: "▭", poly: "⬠", beam: "▬", void: "▦", merge: "🔗", movroom: "🧭", elem: "🔌", opening: "🚪", wall: "📐", ruler: "📏", underlay: "🖼", guide: "⇉" };
+  const QB_TOOLS = { view: "☝", rect: "▭", poly: "⬠", beam: "▬", void: "▦", furn: "🛋", merge: "🔗", movroom: "🧭", elem: "🔌", opening: "🚪", wall: "📐", ruler: "📏", underlay: "🖼", guide: "⇉" };
   const QB_LABELS = {
     view: "Просмотр", rect: "Прямоугольная комната", poly: "Комната по точкам", beam: "Балка/перемычка",
     void: "Вентшахта/мини-комната", merge: "Объединить комнаты", movroom: "Перенести комнату", elem: "Точки", opening: "Проёмы",
@@ -234,6 +235,7 @@
     qbTrack(mode); // запомнить как «последний использованный» + перерисовать панель быстрого доступа
     syncQuickbarVisibility();
     if (mode === "underlay") sheetUnderlay();
+    else if (mode === "furn" && EP.Plan.Furniture) EP.Plan.Furniture.onModeEnter();
     else if (mode === "elem" && EP.Plan.Elements) EP.Plan.Elements.onModeEnter();
     else if (mode === "opening" && EP.Plan.Elements) EP.Plan.Elements.onOpeningModeEnter();
     else if (mode === "guide") {
@@ -401,6 +403,7 @@
     }
     if (R.mode === "elem") { if (EP.Plan.Elements) { EP.Plan.Elements.placeAt(w); renderScene(); } return; }
     if (R.mode === "opening") { if (EP.Plan.Elements) { EP.Plan.Elements.placeOpening(w); renderScene(); } return; }
+    if (R.mode === "furn") { if (EP.Plan.Furniture) { EP.Plan.Furniture.placeAt(w); } return; }
     if (R.mode === "merge") { onMergeTap(p, w); return; }
     if (R.mode === "movroom") { onMoveRoomTap(p, w); return; }
     // view: приоритет — элемент/щит > балка > шахта/мини-комната > трасса > стена (развёртка) > комната
@@ -423,6 +426,11 @@
     // вентшахта / мини-комната
     const vhit = voidAt(p, w);
     if (vhit) { R.selectedRoomId = null; sheetVoid(vhit); renderScene(); return; }
+    // мебель / бытовая техника
+    if (EP.Plan.Furniture) {
+      const ahit = EP.Plan.Furniture.hitAt(w);
+      if (ahit) { R.selectedRoomId = null; EP.Plan.Furniture.openEditor(ahit); return; }
+    }
     // трасса (ручное редактирование)
     const rHit = routeAt(p, w, CFG.hitWallPx * k);
     if (rHit) { R.selectedRoomId = null; sheetRoute(rHit.route, rHit.pt); renderScene(); return; }
@@ -1859,6 +1867,11 @@
     soloCircuitId: () => R.soloCircuit || null,
     setSoloCircuit, clearSolo,
     canvasCmPerPx: () => (R.canvas ? R.canvas.cmPerPx() : 1),
+    // для plan-furniture.js: своего доступа к канвасу у модулей слоёв нет (инвариант —
+    // вся drag-инфраструктура живёт в plan-rooms.js), поэтому тягу мебели ставим через
+    // этот тонкий проброс, а сам обработчик (что двигать) остаётся в модуле мебели
+    canvasSetDrag: (fn) => { if (R.canvas) R.canvas.setDragHandler(fn || null); },
+    renderSceneSoon,
     mergeRooms, moveRoom, syncQuickbarVisibility, armTargetPick
   };
 })();

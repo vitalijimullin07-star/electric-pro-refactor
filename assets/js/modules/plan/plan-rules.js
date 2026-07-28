@@ -125,6 +125,34 @@
       if (c.rgb == null && els.every((e) => e.type === "output24")) issues.push({ circuitId: c.id, msg: T.rgb24(c.name) });
     });
 
+    // — БЫТОВАЯ ТЕХНИКА (p.appliances, kind:"appl") —
+    // просьба пользователя: «по технике понятно какая нагрузка, и какой провод нужен».
+    // Считаем по мощности прибора (plan-furniture.js needFor: ток → автомат → сечение) и
+    // сверяем с ЛИНИЕЙ, на которую его посадили: тонкий кабель, слабый автомат, отсутствие
+    // УЗО у мокрой/мощной техники, отсутствие точки питания, чужая компания на своей линии.
+    const FN = EP.Plan.Furniture;
+    if (FN && FN.needFor) {
+      (p.appliances || []).forEach((a) => {
+        if (a.kind !== "appl") return;
+        const nd = FN.needFor(a);
+        if (!nd) return;
+        const nm = a.name || ((FN.byId(a.catId) || {}).name) || "Прибор";
+        if (!a.elementId) issues.push({ applId: a.id, msg: `${nm}: не указана точка питания (розетка/вывод).` });
+        const c = (p.circuits || []).find((x) => x.id === a.circuitId);
+        if (!c) { issues.push({ applId: a.id, msg: `${nm} (${(nd.watt / 1000).toFixed(1)} кВт, ${nd.amps} А): не назначена линия. Нужен кабель ${nd.cable}, автомат ${nd.breaker}A${nd.rcd ? " + УЗО" : ""}.` }); return; }
+        if ((c.breaker || 16) < nd.breaker) issues.push({ circuitId: c.id, applId: a.id, msg: `${nm}: автомат ${c.breaker || 16}A мал под ${nd.amps} А — нужен ${nd.breaker}A.` });
+        const sec = c.cable ? sectionOf(c.cable) : null;
+        const needSec = parseFloat(String(nd.cable).split("×")[1]);
+        if (sec && needSec && sec < needSec) issues.push({ circuitId: c.id, applId: a.id, msg: `${nm}: кабель ${c.cable} тонкий — нужен ${nd.cable}.` });
+        if (nd.rcd && !c.rcd) issues.push({ circuitId: c.id, applId: a.id, msg: `${nm}: линия ${c.name} без УЗО (мокрая зона / мощный прибор).` });
+        if (nd.own) {
+          const others = (p.appliances || []).filter((b) => b.kind === "appl" && b.id !== a.id && b.circuitId === c.id).length;
+          const pts = (p.elements || []).filter((e) => e.circuitId === c.id && e.status !== "existing" && e.type !== "junction").length;
+          if (others > 0 || pts > 2) issues.push({ circuitId: c.id, applId: a.id, msg: `${nm}: должен быть на ОТДЕЛЬНОЙ линии (сейчас на ${c.name} ещё ${others + Math.max(0, pts - 1)} потребителей).` });
+        }
+      });
+    }
+
     return { issues, badIds };
   }
   // подсветка проблемных точек — зовётся на КАЖДЫЙ рендер сцены, поэтому через мемо-кэш
