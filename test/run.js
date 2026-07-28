@@ -3196,6 +3196,64 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(!/3×1\.5/.test(EP.Plan.Scheme.autoCable(p, cl)), "при автомате 25A свет уже не 1.5");
   });
 
+  // ===== 32. Вывод 3ф, котлы, АВР, журнал замечаний =====
+  test("вывод 3ф: тип, окончание (пятижилка/розетка), линия сразу 3-полюсная", () => {
+    const T3 = EP.Plan.Elements.TYPES.output3;
+    ok(T3 && T3.free && T3.layer === "power", "тип есть, свободный, силовой");
+    const p = EP.Plan.Core.createProject("o3");
+    const r = M.newRoom(G.rectPoints(0, 0, 400, 300), "К");
+    p.rooms.push(r);
+    const el = M.newElement("output3", null, 0, 270, "power");
+    el.params = { x: 200, y: 150 };
+    p.elements.push(el);
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    const c = EP.Plan.Elements.assignNewCircuit(el);
+    eq(c.poles, 3, "новая линия под 3ф-вывод — трёхполюсная");
+    ok(/5×/.test(EP.Plan.Scheme.autoCable(p, c)), "и кабель 5-жильный: " + EP.Plan.Scheme.autoCable(p, c));
+    // «розетка 3ф» — то же питание, отличается только окончанием
+    el.threeKind = "socket";
+    eq(EP.Plan.Elements.TYPES.output3.glyph, "3ф", "глиф на плане");
+  });
+  test("котлы: газовый и электрический — отдельные позиции каталога", () => {
+    const F = EP.Plan.Furniture;
+    const el = F.byId("boiler"), gas = F.byId("boilergas");
+    eq(el.name, "Котёл электрический"); eq(gas.name, "Котёл газовый");
+    ok(el.kw > 1000 && gas.kw < 1000, "электрический — киловатты, газовый — плата+насос");
+    const ndGas = F.needFor({ kind: "appl", catId: "boilergas", watt: null, phases: 1 });
+    ok(ndGas.own, "газовому тоже нужна своя линия (чистое питание)");
+    eq(ndGas.cable, "3×2.5", "розеточная группа — 2.5");
+    const ndEl = F.needFor({ kind: "appl", catId: "boiler", watt: null, phases: 1 });
+    eq(ndEl.breaker, 32, "электрический 6кВт → 32A");
+  });
+  test("АВР: флаг щита, бэкофилл и позиции в смете (оба пути расчёта)", () => {
+    const p = EP.Plan.Core.createProject("avr");
+    const r = M.newRoom(G.rectPoints(0, 0, 400, 300), "К");
+    p.rooms.push(r);
+    const pn = M.newPanel(50, 250, "Щит");
+    eq(pn.avr, false, "по умолчанию АВР нет");
+    pn.avr = true; p.panels.push(pn);
+    p.elements.push(M.newElement("socket", r.id + ":0", 100, 30, "power"));
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    const names = (EP.Plan.Calc.estimateItems(p) || []).map((i) => i.name).join(" | ");
+    ok(/Монтаж и настройка системы АВР/.test(names), "работа по АВР в смете");
+    ok(/Комплект АВР/.test(names), "и материал");
+    // старый проект без поля — бэкофилл
+    const imp = EP.Plan.Core.importJSON(JSON.stringify({ project: { name: "o", rooms: [], elements: [], panels: [{ id: "pn1", x: 0, y: 0, name: "Щит" }], settings: {} } }));
+    eq(imp.panels[0].avr, false, "у старого щита поле появилось");
+  });
+  test("журнал замечаний (чат): подключён и кнопка есть в шапке плана", () => {
+    const fs = require("fs"), path = require("path"), root = path.resolve(__dirname, "..");
+    const idx = fs.readFileSync(path.join(root, "index.html"), "utf8");
+    ok(/ui\/feedback\.js/.test(idx), "feedback.js подключён");
+    const mount = fs.readFileSync(path.join(root, "assets", "js", "modules", "plan", "plan-mount.js"), "utf8");
+    ok(/data-fb-open/.test(mount), "кнопка 💬 в шапке редактора плана");
+    ok(mount.indexOf("data-fb-open") < mount.indexOf("data-plan-realscale"), "стоит рядом с «1:1» (перед ней)");
+    const fb = fs.readFileSync(path.join(root, "assets", "js", "modules", "ui", "feedback.js"), "utf8");
+    ok(/localStorage/.test(fb) && /clipboard/.test(fb), "хранит локально и умеет копировать в буфер");
+    const css = fs.readFileSync(path.join(root, "assets", "css", "base.css"), "utf8");
+    ok(/body\[data-kb="1"\][^{]*\.ep-fb-ov/.test(css), "оверлей чата поднимается над клавиатурой");
+  });
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

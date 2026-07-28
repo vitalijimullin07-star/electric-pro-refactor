@@ -490,6 +490,10 @@
         (EP.Plan.Scheme && EP.Plan.Scheme.neededModules ? EP.Plan.Scheme.neededModules(p) : 0);
       if (modules > 0) add("work", `Вырубка ниши под щит (${low(panelMat())})`, modules, "мод");
       add("work", "Монтаж щита в нишу/стену", 1, "шт");
+      // система АВР (автоматический ввод резерва: второй ввод/генератор) — отмечается
+      // галочкой у КОНКРЕТНОГО щита (panel.avr), считается по числу таких щитов:
+      // это отдельный узел (контакторы с механической блокировкой + логика/реле, ввод
+      // резервного питания), а не часть обычной сборки щита
       // сборка и расключение щита — просьба пользователя: «цена складывается за
       // установку автомата, узо, диф и т.д.», т.е. поштучно по числу реально стоящих
       // в щите аппаратов защиты, а не одной строкой «сборка щита». Модель различает
@@ -522,7 +526,7 @@
     // правки пользователя (скрыть/заменить/добавить) — В САМОМ КОНЦЕ, после всего
     // авто-счёта: gofraM выше читает items ДО правок (метраж затяжки не должен
     // зависеть от того, скрыл ли пользователь строку гофры из сметы)
-    return { items: applyCalcEdits(p, items), cableBy, strobe, conn, podroz, junctBoxes };
+    return { items: applyCalcEdits(p, addAvrItems(p, items)), cableBy, strobe, conn, podroz, junctBoxes };
   }
 
   // ---------- правки сметы (p.calcEdits, бэкофилл в plan-core.js): скрытые позиции,
@@ -549,13 +553,29 @@
 
   // ---------- позиции для сметы: тот же приоритет, что и в sheet() —
   // точный счёт по построенным трассам, иначе приближённый по движку пула ----------
+  // Система АВР (автоматический ввод резерва) — отмечается галочкой у КОНКРЕТНОГО щита
+  // (panel.avr, редактор щита). Это отдельный узел (реверсивные контакторы с механической
+  // блокировкой + логика/реле переключения на второй ввод или генератор), а не часть
+  // обычной сборки щита. Добавляется В ОБА пути сметы — и в точный счёт по трассам, и в
+  // приближённый по комнатам: наличие АВР от трассировки не зависит вообще (поймано живым
+  // прогоном: на проекте без трасс строка АВР не появлялась).
+  function addAvrItems(p, items) {
+    const n = (p.panels || []).filter((pn) => pn.avr).length;
+    if (!n) return items;
+    // items может быть null («считать нечего»: нет ни трасс, ни движка приближённого
+    // счёта) — но сам АВР посчитать НУЖНО, он не зависит ни от того, ни от другого
+    if (!Array.isArray(items)) items = [];
+    items.push({ type: "work", name: "Монтаж и настройка системы АВР (ввод резерва)", qty: n, unit: "шт" });
+    items.push({ type: "material", name: "Комплект АВР (реверсивный контактор + логика)", qty: n, unit: "компл" });
+    return items;
+  }
   function estimateItems(p) {
     const stats = buildBlocks(p);
     if (!stats.length) return null;
     const exact = exactOf(p);
     if (exact && exact.items.length) return exact.items; // правки уже применены внутри calcByRoutes
     const res = runEngine(p, stats);
-    return applyCalcEdits(p, (res && res.draftItems) || null); // приближённый счёт — те же правки
+    return applyCalcEdits(p, addAvrItems(p, (res && res.draftItems) || null)); // приближённый счёт — те же правки
   }
 
   // ---------- МЕМО-КЭШ расчёта ----------
@@ -661,7 +681,7 @@
         </div>`;
     } else {
       const res = runEngine(p, stats);
-      items = applyCalcEdits(p, res && res.draftItems ? res.draftItems : null);
+      items = applyCalcEdits(p, addAvrItems(p, res && res.draftItems ? res.draftItems : null));
       headHtml = `<div class="ep-plan-srow"><b>${T.workHead}</b></div>
         <div class="ep-plan-srow ep-plan-hintrow">${T.approxHint}</div>`;
     }
