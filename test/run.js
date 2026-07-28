@@ -3254,6 +3254,97 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/body\[data-kb="1"\][^{]*\.ep-fb-ov/.test(css), "оверлей чата поднимается над клавиатурой");
   });
 
+  // ===== 33. Слаботочка: Нептун, домофон, датчики с целью, камеры отдельными линиями =====
+  function lvFixture() {
+    const p = EP.Plan.Core.createProject("lv" + Math.random().toString(36).slice(2, 6));
+    const r = M.newRoom(G.rectPoints(0, 0, 600, 400), "К");
+    p.rooms.push(r);
+    const wid = r.id + ":0";
+    const pw = M.newPanel(20, 380, "Щит"); p.panels.push(pw);
+    const lv = M.newPanel(560, 380, "Слаботочный"); lv.router = true; lv.neptun = true; p.panels.push(lv);
+    return { p, r, wid, pw, lv };
+  }
+  test("Нептун: датчики протечки идут к контроллеру, а не в роутер-щит", () => {
+    const { p, wid, lv } = lvFixture();
+    const leak = M.newElement("leak", wid, 100, 5, "lv");
+    p.elements.push(leak);
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    EP.Plan.Routes.build({ silent: true });
+    const rt = (EP.Plan.Core.project.routes || []).find((x) => x.fromId === leak.id);
+    ok(rt && rt.toPanel && rt.toId === lv.id, "трасса датчика протечки — в щит с флагом neptun");
+    // без флага neptun поведение прежнее (обычная слаботочка) — обратная совместимость
+    lv.neptun = false;
+    EP.Plan.Routes.build({ silent: true });
+    const rt2 = (EP.Plan.Core.project.routes || []).find((x) => x.fromId === leak.id);
+    ok(rt2 && rt2.toPanel, "без Нептуна датчик всё равно доходит до щита");
+    eq(EP.Plan.Core.project.panels[1].neptun, false, "флаг сброшен");
+  });
+  test("камеры: каждая своей линией в слаботочный щит", () => {
+    const { p, wid, lv } = lvFixture();
+    const c1 = M.newElement("camera", wid, 300, 230, "cctv");
+    const c2 = M.newElement("camera", wid, 400, 230, "cctv");
+    p.elements.push(c1, c2);
+    EP.Plan.Elements.assignNewCircuit(c1);
+    EP.Plan.Elements.assignNewCircuit(c2);
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    ok(c1.circuitId && c2.circuitId && c1.circuitId !== c2.circuitId, "линии разные");
+    const names = p.circuits.map((c) => c.name);
+    ok(names.indexOf("CCTV1") >= 0 && names.indexOf("CCTV2") >= 0, "нумерация CCTV: " + names.join(","));
+    ok(EP.Plan.Elements.TYPES.camera.ownLine, "тип помечен ownLine (линия создаётся при постановке)");
+    EP.Plan.Routes.build({ silent: true });
+    const rts = (EP.Plan.Core.project.routes || []).filter((x) => x.fromId === c1.id || x.fromId === c2.id);
+    eq(rts.length, 2, "две отдельные трассы");
+    ok(rts.every((x) => x.toPanel && x.toId === lv.id), "обе — в слаботочный щит, не шлейфом");
+  });
+  test("камера/домофон: питание PoE или отдельно 3×1.5, данные UTP или оптика", () => {
+    const { p, wid } = lvFixture();
+    const cam = M.newElement("camera", wid, 300, 230, "cctv");
+    cam.feed = "sep"; cam.data = "utp";
+    const dom = M.newElement("intercom", wid, 500, 150, "lv");
+    dom.feed = "poe"; dom.data = "fiber";
+    p.elements.push(cam, dom);
+    EP.Plan.Elements.assignNewCircuit(cam);
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    EP.Plan.Routes.build({ silent: true });
+    const names = EP.Plan.Calc.calcByRoutes(EP.Plan.Core.project).items.map((i) => i.name).join(" | ");
+    ok(/КГ ВВГнг-LS 3×1\.5 · питание/.test(names), "отдельное питание — своя строка: " + names);
+    ok(/Витая пара \(UTP\) · данные/.test(names), "и данные витой парой отдельной строкой");
+    ok(/Оптический кабель · данные\+PoE/.test(names), "домофон по оптике с PoE — одной строкой");
+    ok(EP.Plan.Elements.TYPES.intercom.feedChoice && EP.Plan.Elements.TYPES.camera.feedChoice, "у обоих есть выбор питания");
+  });
+  test("датчики движения/освещённости: назначаются на лампу, проверки ловят «без цели»", () => {
+    const { p, wid } = lvFixture();
+    const lamp = M.newElement("light", null, 0, 270, "light"); lamp.params = { x: 300, y: 120 };
+    const pir = M.newElement("pir", null, 0, 270, "lv"); pir.params = { x: 300, y: 200 };
+    const lux = M.newElement("lux", null, 0, 270, "lv"); lux.params = { x: 100, y: 200 };
+    p.elements.push(lamp, pir, lux);
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    ok(EP.Plan.Elements.TYPES.pir.targets && EP.Plan.Elements.TYPES.lux.targets, "оба типа умеют назначать цель");
+    let msgs = EP.Plan.Rules.run(EP.Plan.Core.project).issues.map((i) => i.msg).join(" | ");
+    ok(/Датчик движения: не назначена/.test(msgs), "без цели — предупреждение: " + msgs);
+    pir.targetIds = [lamp.id];
+    eq(G.switchTarget(EP.Plan.Core.project, pir, 0).id, lamp.id, "назначенная лампа читается той же switchTarget");
+    msgs = EP.Plan.Rules.run(EP.Plan.Core.project).issues.map((i) => i.msg).join(" | ");
+    ok(!/Датчик движения: не назначена/.test(msgs), "после назначения претензии нет");
+    ok(/Датчик освещённости: не назначена/.test(msgs), "а по второму датчику осталась");
+  });
+  test("слаботочка: проверки про Нептун и общие линии камер", () => {
+    const p = EP.Plan.Core.createProject("lvchk");
+    const r = M.newRoom(G.rectPoints(0, 0, 400, 300), "К");
+    p.rooms.push(r);
+    const wid = r.id + ":0";
+    p.panels.push(M.newPanel(20, 280, "Щит")); // ни роутера, ни Нептуна
+    p.elements.push(M.newElement("leak", wid, 100, 5, "lv"));
+    const c1 = M.newElement("camera", wid, 200, 230, "cctv");
+    const c2 = M.newElement("camera", wid, 300, 230, "cctv"); // обе без линии
+    p.elements.push(c1, c2);
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    const msgs = EP.Plan.Rules.run(p).issues.map((i) => i.msg).join(" | ");
+    ok(/контроллер «Нептун»/.test(msgs), "нет Нептуна — предупреждение");
+    ok(/нет слаботочного щита/.test(msgs), "нет роутер-щита для камер");
+    ok(/отдельными линиями/.test(msgs), "камеры без своих линий");
+  });
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

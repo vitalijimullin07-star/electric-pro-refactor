@@ -1030,11 +1030,17 @@
   function routeGroups(c, p, pointsToRoute, juncts, panels, extraConnected) {
     const routerPanels = panels.filter((pn) => pn.router);
     const trafoPanels = panels.filter((pn) => pn.transformer);
+    const neptunPanels = panels.filter((pn) => pn.neptun);
     // «род» точки — какая группа щитов её принимает: "24" (вывод 24В -> трансформатор),
     // "lv" (слаботочка -> роутер), "pw" (все остальные -> любой щит). Считается ОДНОЙ
     // функцией и для группируемых точек, и для extraConnected-узлов шлейфа — чтобы
     // шлейф 24В не мог пройти через силовую розетку и наоборот.
+    // «leak» ПЕРЕД «lv»: у датчика протечки слой lv, и без этой ветки он ушёл бы в
+    // роутер-щит вместе с интернетом, а физически его шлейф идёт в контроллер «Нептун»
+    // (просьба пользователя: «добавь датчики на нептун, линии должны идти к нептуну»).
+    // Нет щита с флагом neptun — прежнее поведение (как обычная слаботочка).
     const kindOf = (el) => (trafoPanels.length && el.type === "output24") ? "24"
+      : (neptunPanels.length && el.type === "leak") ? "leak"
       : (routerPanels.length && isLvLayer(el.layer)) ? "lv" : "pw";
     // Щиты, принимающие СИЛОВЫЕ линии. Раньше сюда шёл весь список panels, и силовая линия
     // могла уйти в слаботочный щит просто потому, что он оказался геометрически ближе
@@ -1083,7 +1089,7 @@
       connectNearest(c, p, el, pos, J.concat(powerPanels), cid, color);
     });
     groups.forEach((g) => {
-      const targetPanels = g.kind === "24" ? trafoPanels : g.kind === "lv" ? routerPanels : powerPanels;
+      const targetPanels = g.kind === "24" ? trafoPanels : g.kind === "leak" ? neptunPanels : g.kind === "lv" ? routerPanels : powerPanels;
       // распайки, доступные этой линии (своей QF; «без линии» — любые распайки)
       const J = g.circuitId ? juncts.filter((n) => n.circuitId === g.circuitId) : juncts.slice();
       // 24В — НИКОГДА не шлейфом: у каждого вывода 24В свой кабель от трансформаторного
@@ -1200,7 +1206,7 @@
 
     // узлы: щиты + распайки (этого же этажа); router — флаг щита-хаба сети (LV-точки
     // предпочитают его, см. routeGroups)
-    const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, router: !!pn.router, transformer: !!pn.transformer }));
+    const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, router: !!pn.router, neptun: !!pn.neptun, transformer: !!pn.transformer }));
     const juncts = (fp.elements || []).filter(isJunction).map((el) => ({ kind: "junction", id: el.id, el, circuitId: el.circuitId, pos: G().elemPoint(p, el) })).filter((n) => n.pos);
 
     // pos — ЕДИНАЯ точка отрисовки (та же, что у маркера): трасса доходит до точки,
@@ -1258,7 +1264,7 @@
 
     usedGuideIds = new Set(); // фикс №1: только магистрали, реально применённые к НОВЫМ точкам
     if (newPoints.length || newJuncts.length) {
-      const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, router: !!pn.router, transformer: !!pn.transformer }));
+      const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, router: !!pn.router, neptun: !!pn.neptun, transformer: !!pn.transformer }));
       // уже проведённые точки — реальные узлы графа для шлейфа, не только щиты
       const existingPointNodes = points.filter((el) => haveRoute.has(el.id)).map((el) => {
         const pos = G().routeAnchor(p, el);
@@ -1808,7 +1814,7 @@
   // ---- автоперестройка: геометрия сдвинулась (точка/стена/перегородка) —
   // ранее построенные трассы устарели бы молча (кривые длины/штробы в Расчёте).
   // Перестраиваем тихо, только если трассы уже были построены.
-  const AUTOREBUILD_ON = { "elem-move": 1, "room-reshape": 1, "room-merge": 1, "room-move": 1, "wall-th": 1, "wall-mat": 1, "beam-move": 1, "beam-w": 1, "panel-move": 1, "panel-router": 1, "panel-trafo": 1, "opening-move": 1, "elem-target": 1 };
+  const AUTOREBUILD_ON = { "elem-move": 1, "room-reshape": 1, "room-merge": 1, "room-move": 1, "wall-th": 1, "wall-mat": 1, "beam-move": 1, "beam-w": 1, "panel-move": 1, "panel-router": 1, "panel-neptun": 1, "panel-trafo": 1, "opening-move": 1, "elem-target": 1 };
   let rebuilding = false;
   // ---- АВТОПЕРЕСТРОЙКА БЕЗ ФРИЗА: тяжёлый build() уходит в фоновый воркер ----
   // Замерено на стресс-проекте (30 комнат / 150 точек / 56 трасс) с эмуляцией слабого

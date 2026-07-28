@@ -913,7 +913,11 @@
     // Многоклавишный обычный выключатель — своя связь на каждую клавишу.
     if (layerOn(project, "light")) {
       (project.elements || []).forEach((elem) => {
-        if (elem.type !== "switch") return;
+        // связь «управляет светом» рисуем и у ДАТЧИКОВ движения/освещённости — они
+        // назначаются на лампу/подсветку тем же targetIds, что клавиши выключателя
+        // (просьба пользователя), поэтому и пунктир к цели тот же
+        const TYr = (EP.Plan.Elements && EP.Plan.Elements.TYPES) || {};
+        if (elem.type !== "switch" && !(TYr[elem.type] && TYr[elem.type].targets)) return;
         if (circHidden(elem.circuitId)) return; // связь скрытой линии не рисуем
         const a = G.elemDrawPoint(project, elem);
         if (!a) return;

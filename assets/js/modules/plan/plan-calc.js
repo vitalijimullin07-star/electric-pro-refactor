@@ -414,6 +414,21 @@
         const i24 = is24Circuit(p, r.circuitId);
         key = (cc && cc.cable) || defaultCableMark(p, r.layer, i24, i24 && rgbOf(p, r.circuitId));
       }
+      // Камера/домофон с ОТДЕЛЬНЫМ питанием (el.feed === "sep") — это ДВА кабеля на одну
+      // трассу: питание КГ ВВГнг 3×1.5 и данные (витая пара или оптика). При PoE
+      // (feed по умолчанию) кабель ОДИН — витая пара, как и было. Просьба пользователя:
+      // «должно быть уточнение — питание по ютп, или отдельно кг ввгнг 3×1.5, и ютп или оптика».
+      const srcEl = (p.elements || []).find((e) => e.id === r.fromId);
+      if (srcEl && (srcEl.type === "camera" || srcEl.type === "intercom") && srcEl.feed === "sep") {
+        const dataMark = srcEl.data === "fiber" ? "Оптический кабель" : "Витая пара (UTP)";
+        cableBy["КГ ВВГнг-LS 3×1.5 · питание"] = (cableBy["КГ ВВГнг-LS 3×1.5 · питание"] || 0) + L;
+        cableBy[dataMark + " · данные"] = (cableBy[dataMark + " · данные"] || 0) + L;
+        return; // общий key для этой трассы не нужен — обе марки уже учтены
+      }
+      if (srcEl && (srcEl.type === "camera" || srcEl.type === "intercom") && srcEl.data === "fiber") {
+        cableBy["Оптический кабель · данные+PoE"] = (cableBy["Оптический кабель · данные+PoE"] || 0) + L;
+        return;
+      }
       cableBy[key] = (cableBy[key] || 0) + L;
     });
     Object.keys(cableBy).forEach((m) => { cableBy[m] = Math.round((cableBy[m] / 100) * reserve * 10) / 10; });
