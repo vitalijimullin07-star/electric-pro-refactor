@@ -19,7 +19,7 @@ const noop = () => {};
 
 function fakeNode() {
   const n = {
-    _html: "", setAttribute: noop, getAttribute: () => null, hasAttribute: () => false,
+    _html: "", setAttribute: noop, getAttribute: () => null, hasAttribute: () => false, removeAttribute: noop,
     appendChild: noop, removeChild: noop, insertBefore: noop, firstChild: null, style: {}, textContent: "",
     classList: { add: noop, remove: noop, toggle: noop, contains: () => false },
     setPointerCapture: noop, addEventListener: noop, removeEventListener: noop,

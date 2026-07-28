@@ -279,10 +279,17 @@
       const cc = (p.circuits || []).find((c) => c.id === e.circuitId); if (!cc) return null;
       return { x: e.offset, y: H - e.height - 18 * kk, hw: Math.max(14, cc.name.length * 4.2) * kk, hh: 7 * kk };
     }).filter(Boolean);
+    // размер поста — от БЛИЖАЙШЕГО ВНУТРЕННЕГО угла стены (та же логика, что и в живой
+    // развёртке plan-unfold.js — оба вида ОБЯЗАНЫ совпадать; просьба пользователя «от
+    // ближайшего угла брались размеры, и строилась туда линейка»). Раньше в PDF размер
+    // шёл ВСЕГДА от x=0, т.е. даже не от внутренней грани, а от оси стены.
+    const th = G().wallThOf ? G().wallThOf(p, w) : 0;
+    const inA = Math.min(th / 2, L / 2), inB = Math.max(L - th / 2, L / 2);
+    const cornerOf = (x) => (x - inA <= inB - x ? inA : inB);
     const offBoxes = sorted.map((e) => {
-      const x = e.offset, y = H - e.height;
-      if (x <= 2) return null;
-      return { x: x / 2, y: y - 3 * kk, hw: 14 * kk, hh: 8 * kk };
+      const x = e.offset, y = H - e.height, c = cornerOf(x);
+      if (Math.abs(x - c) <= 2) return null;
+      return { x: (c + x) / 2, y: y - 3 * kk, hw: 14 * kk, hh: 8 * kk };
     }).filter(Boolean);
     const obstacles = boxes.concat(qfBoxes, offBoxes);
     const placeHLabel = (idx) => {
@@ -319,10 +326,11 @@
     sorted.forEach((el, idx) => {
       const x = el.offset, y = H - el.height;
       s += `<line x1="${x}" y1="${H}" x2="${x}" y2="${y}" class="unfdim"/>`;
-      if (x > 2) {
-        s += `<line x1="0" y1="${y}" x2="${x}" y2="${y}" class="unfdimh"/>`;
-        s += `<line x1="0" y1="${y - 3 * kk}" x2="0" y2="${y + 3 * kk}" class="unfdimh"/>`;
-        s += `<text x="${x / 2}" y="${y - 3 * kk}" font-size="${9.5 * kk}" text-anchor="middle" class="unfdimt">${Math.round(el.offset)}</text>`;
+      const cx0 = cornerOf(x);
+      if (Math.abs(x - cx0) > 2) {
+        s += `<line x1="${cx0}" y1="${y}" x2="${x}" y2="${y}" class="unfdimh"/>`;
+        s += `<line x1="${cx0}" y1="${y - 3 * kk}" x2="${cx0}" y2="${y + 3 * kk}" class="unfdimh"/>`;
+        s += `<text x="${(cx0 + x) / 2}" y="${y - 3 * kk}" font-size="${9.5 * kk}" text-anchor="middle" class="unfdimt">${Math.round(Math.abs(x - cx0))}</text>`;
       }
       const hl = placeHLabel(idx);
       s += `<text x="${hl.x}" y="${hl.y}" font-size="${11 * kk}" text-anchor="middle" dominant-baseline="middle" class="unfdimt">${Math.round(el.height)}</text>`;
@@ -522,6 +530,20 @@
          пользователя, скриншот) — в живом плане это НЕ видно, там fill:none уже есть
          в plan.css, а этот <style> — отдельный, только для печати. */
       .ep-plan-swlink, .ep-plan-swchain { fill: none; }
+      /* ГЛУШИМ ВЕСЬ КЛАСС бага разом, а не по одному классу: НИ ОДНА polyline в сцене
+         плана (трассы, магистрали, черновик комнаты) заливки не требует, а SVG по
+         умолчанию заливает её чёрным — новый вид линии, добавленный когда-нибудь позже,
+         больше не сможет молча дать чёрные пятна в PDF. */
+      polyline { fill: none; }
+      /* Магистрали (⇉, p.guides) — ЧЕРТЁЖНЫЙ АИД РЕДАКТОРА (приоритетное направление
+         для автотрассировки), не монтажная информация: на печатном листе они не нужны
+         (кабель показан самими трассами), а как polyline без fill:none давали ровно те
+         чёрные пятна из репорта пользователя. */
+      .ep-plan-guide, .ep-plan-guidedraft, .ep-plan-guidept { display: none; }
+      /* связи выключатель→свет в печати — пунктиром и бледнее: это ЛОГИЧЕСКАЯ связь,
+         а не кабель; сплошными яркими линиями (dash задан только в plan.css, которого
+         у печатного <style> нет) они читались как посторонние диагонали через комнаты. */
+      .ep-plan-swlink, .ep-plan-swchain { stroke-dasharray: 7 5; opacity: .45; }
       /* развёртки стен */
       .unfgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; height: 100%; }
       .unfcard { border: .25mm solid #000; padding: 1.5mm 2mm; break-inside: avoid; display: flex; flex-direction: column; }
