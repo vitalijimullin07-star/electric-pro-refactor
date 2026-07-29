@@ -29,16 +29,33 @@ self.addEventListener("notificationclick", (e) => {
     try { await self.clients.openWindow("/"); } catch (_) {}
   })());
 });
+/* PUSH из Cloud Function (functions/index.js) — приходит, даже когда приложение
+   ПОЛНОСТЬЮ закрыто. Отправляем ТОЛЬКО data-сообщения (без поля notification), поэтому
+   показывает уведомление этот обработчик, а не библиотека firebase-messaging в SW —
+   её importScripts здесь не нужен вовсе (меньше зависимостей, и sw.js остаётся один
+   на кэш и на push). Формат FCM для data-only: { data: {...}, from, ... }, поэтому
+   читаем сначала payload.data, потом верхний уровень (совместимость с ручным push). */
 self.addEventListener("push", (e) => {
-  let data = {};
-  try { data = e.data ? e.data.json() : {}; } catch (_) { data = { body: e.data ? e.data.text() : "" }; }
+  let raw = {};
+  try { raw = e.data ? e.data.json() : {}; } catch (_) { raw = { body: e.data ? e.data.text() : "" }; }
+  const data = (raw && typeof raw.data === "object" && raw.data) ? raw.data : raw;
   const title = data.title || "Electric Pro";
-  e.waitUntil(self.registration.showNotification(title, {
-    body: data.body || "Новое сообщение в чате",
-    tag: data.tag || "ep-chat",
-    icon: "/assets/icon-192.png",
-    badge: "/assets/icon-192.png"
-  }));
+  e.waitUntil((async () => {
+    // если приложение ОТКРЫТО и видно на экране — уведомление рисует сама страница
+    // (feedback.js notify(): там свой звук, метка и переход в нужный чат), иначе на
+    // одно сообщение пришло бы ДВА уведомления
+    try {
+      const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      if (wins.some((c) => c.visibilityState === "visible")) return;
+    } catch (_) {}
+    await self.registration.showNotification(title, {
+      body: data.body || "Новое сообщение в чате",
+      tag: data.tag || "ep-chat",
+      icon: "/assets/icon-192.png",
+      badge: "/assets/icon-192.png",
+      data: { chat: 1 }
+    });
+  })());
 });
 
 self.addEventListener("fetch", (e) => {

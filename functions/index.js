@@ -406,3 +406,118 @@ exports.adminSetUserAccess = onCall({ secrets: [ACCESS_SIGNING_SECRET] }, async 
   const fresh = await getUser(targetUid);
   return { ok: true, user: normalizeAccessDoc(targetUid, fresh || {}) };
 });
+
+/* ============================================================================
+   PUSH-уведомления чата при ПОЛНОСТЬЮ закрытом приложении.
+
+   Клиент (assets/js/modules/ui/feedback.js) кладёт FCM-токен устройства в
+   chat_tokens/{token} = {uid, name, mute, ua, at}. Триггер на создание сообщения
+   собирает токены получателей и отправляет DATA-ONLY сообщение — показывает его наш
+   собственный обработчик push в sw.js (без библиотеки firebase-messaging в SW).
+
+   ПОЧЕМУ v1-триггеры, а не v2: у v2-триггеров Firestore регион функции обязан
+   совпадать с регионом базы (для мультирегиона eur3 — europe-west4), и промах по
+   региону валит ДЕПЛОЙ. v1-триггеры к этому не привязаны и живут в том же
+   europe-west1, где уже успешно деплоятся вызываемые функции выше. Деплой hosting
+   при этом всё равно отделён от functions отдельным шагом CI — падение функции не
+   должно мешать выкату самого приложения.
+   ============================================================================ */
+const functionsV1 = require("firebase-functions/v1");
+const REGION = "europe-west1";
+const PUSH_BATCH = 450;          // sendEachForMulticast принимает максимум 500 токенов
+
+function cut(s, n) {
+  const t = String(s == null ? "" : s);
+  return t.length > n ? t.slice(0, n - 1) + "…" : t;
+}
+
+/* Токены получателей. uids === null означает «общий чат» — все, кроме автора.
+   mute (зеркало статуса «не беспокоить») фильтруем В КОДЕ, а не запросом: иначе
+   пришлось бы держать составной индекс, а выигрыша нет — токенов немного. */
+async function tokensFor(uids, exceptUid) {
+  const docs = [];
+  if (uids === null) {
+    const snap = await db.collection("chat_tokens").get();
+    snap.forEach((d) => docs.push({ id: d.id, ...d.data() }));
+  } else {
+    const list = Array.from(new Set(uids.filter((u) => u && u !== exceptUid)));
+    if (!list.length) return [];
+    // whereIn принимает до 30 значений за запрос — режем на куски
+    for (let i = 0; i < list.length; i += 30) {
+      const part = list.slice(i, i + 30);
+      const snap = await db.collection("chat_tokens").where("uid", "in", part).get();
+      snap.forEach((d) => docs.push({ id: d.id, ...d.data() }));
+    }
+  }
+  return docs.filter((t) => t.uid && t.uid !== exceptUid && t.mute !== true).map((t) => t.id);
+}
+
+/* Мёртвые токены (переустановили приложение, отозвали разрешение) удаляем — иначе
+   они копятся навсегда и каждая отправка тратит квоту на заведомый отказ. */
+async function dropDeadTokens(tokens, responses) {
+  const dead = [];
+  responses.forEach((r, i) => {
+    const code = r && r.error && r.error.code ? String(r.error.code) : "";
+    if (/registration-token-not-registered|invalid-argument|invalid-registration-token/.test(code)) dead.push(tokens[i]);
+  });
+  if (!dead.length) return;
+  await Promise.all(dead.map((t) => db.collection("chat_tokens").doc(t).delete().catch(() => null)));
+  logger.info("chatPush: удалено мёртвых токенов", { count: dead.length });
+}
+
+async function sendChatPush(uids, exceptUid, title, body, tag) {
+  const tokens = await tokensFor(uids, exceptUid);
+  if (!tokens.length) return 0;
+  let sent = 0;
+  for (let i = 0; i < tokens.length; i += PUSH_BATCH) {
+    const part = tokens.slice(i, i + PUSH_BATCH);
+    // ТОЛЬКО data: поле notification заставило бы FCM показать уведомление своими
+    // силами в обход нашего обработчика в sw.js (и мы потеряли бы проверку «окно
+    // открыто — не дублировать»)
+    const res = await admin.messaging().sendEachForMulticast({
+      tokens: part,
+      data: { title: cut(title, 80), body: cut(body, 160), tag: String(tag || "ep-chat") },
+      android: { priority: "high" },
+      webpush: { headers: { Urgency: "high", TTL: "86400" } }
+    });
+    sent += res.successCount;
+    await dropDeadTokens(part, res.responses);
+  }
+  logger.info("chatPush", { tokens: tokens.length, sent: sent, tag: tag });
+  return sent;
+}
+
+exports.chatPushPublic = functionsV1.region(REGION)
+  .firestore.document("chat_messages/{msgId}")
+  .onCreate(async (snap) => {
+    const m = snap.data() || {};
+    if (!m.text) return null;
+    return sendChatPush(null, m.uid, m.name || "Мастер", m.text, "ep-chat-pub").catch((e) => {
+      logger.error("chatPushPublic", e); return null;
+    });
+  });
+
+exports.chatPushDm = functionsV1.region(REGION)
+  .firestore.document("chat_dm/{msgId}")
+  .onCreate(async (snap) => {
+    const m = snap.data() || {};
+    if (!m.text || !m.to) return null;
+    return sendChatPush([m.to], m.from, (m.name || "Мастер") + " · лично", m.text, "ep-chat-dm-" + m.from).catch((e) => {
+      logger.error("chatPushDm", e); return null;
+    });
+  });
+
+exports.chatPushGroup = functionsV1.region(REGION)
+  .firestore.document("chat_group/{msgId}")
+  .onCreate(async (snap) => {
+    const m = snap.data() || {};
+    if (!m.text || !Array.isArray(m.uids)) return null;
+    let room = "Группа";
+    try {
+      const r = await db.collection("chat_rooms").doc(String(m.roomId || "")).get();
+      if (r.exists && r.data().name) room = r.data().name;
+    } catch (_) {}
+    return sendChatPush(m.uids, m.from, (m.name || "Мастер") + " · " + room, m.text, "ep-chat-room-" + (m.roomId || "")).catch((e) => {
+      logger.error("chatPushGroup", e); return null;
+    });
+  });

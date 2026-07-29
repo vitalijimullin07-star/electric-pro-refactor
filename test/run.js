@@ -3513,6 +3513,54 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/const where = view === "dm" \? \("dm:" \+ dmUid\)[\s\S]{0,90}"pub"/.test(fb), "«печатает…» помечено местом (общий/личка/группа) — иначе показывалось бы во всех чатах разом");
     ok(/data-fb-setstatus/.test(fb) && /data-fb-setavatar/.test(fb), "выбор статуса и аватарки в шапке чата");
   });
+  test("чат: push при закрытом приложении — токен, правила, функция, sw", () => {
+    const fs = require("fs"), path = require("path"), root = path.resolve(__dirname, "..");
+    // ключ VAPID — ПУБЛИЧНЫЙ (браузер отдаёт его push-сервису открыто), поэтому лежит
+    // рядом с остальным клиентским конфигом Firebase, а не в секретах
+    const cfg = fs.readFileSync(path.join(root, "config", "firebase-config.js"), "utf8");
+    const key = /EP_VAPID_KEY\s*=\s*"([^"]+)"/.exec(cfg);
+    ok(key && key[1].length > 80, "публичный ключ Web Push прошит в конфиг");
+    const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+    ok(/firebase-messaging-compat\.js/.test(html), "SDK messaging подключён");
+    const csp = /Content-Security-Policy[^>]*content="([^"]+)"/.exec(html);
+    ok(csp && /connect-src[^;]*https:\/\/\*\.googleapis\.com/.test(csp[1]),
+      "CSP разрешает запрос токена (fcmregistrations.googleapis.com попадает под *.googleapis.com)");
+    const fb = fs.readFileSync(path.join(root, "assets", "js", "modules", "ui", "feedback.js"), "utf8");
+    ok(/function registerPush/.test(fb) && /vapidKey: window\.EP_VAPID_KEY/.test(fb), "клиент запрашивает токен по этому ключу");
+    ok(/serviceWorkerRegistration: reg/.test(fb),
+      "передаём СВОЙ sw.js — иначе SDK ищет отдельный firebase-messaging-sw.js, которого нет");
+    ok(/collection\(TOKENS\)\.doc\(token\)/.test(fb), "id документа = сам токен (повторный вход не плодит дубли)");
+    ok(/mute: quiet\(\)/.test(fb) && /function syncPushMute/.test(fb),
+      "«не беспокоить» зеркалится на сервер — он не видит localStorage");
+    ok(/function dropPushToken/.test(fb) && /dropPushToken\(\);/.test(fb),
+      "при смене аккаунта токен прежнего владельца удаляется");
+    ok(/if \(ok\) registerPush\(\)/.test(fb), "после выдачи разрешения токен берётся сразу");
+    const rules = fs.readFileSync(path.join(root, "firestore.rules"), "utf8");
+    const tk = rules.slice(rules.indexOf("match /chat_tokens/"), rules.indexOf("match /{document=**}"));
+    ok(rules.indexOf("match /chat_tokens/") > 0, "правила для токенов есть");
+    ok(/allow read: if false/.test(tk), "КЛИЕНТ не читает токены вообще (это список устройств людей)");
+    ok(/request\.resource\.data\.uid == request\.auth\.uid/.test(tk), "писать можно только свой токен");
+    ok(/match \/\{document=\*\*\} \{\s*allow read, write: if false;/.test(rules), "финальный запрет-всё на месте");
+    const fn = fs.readFileSync(path.join(root, "functions", "index.js"), "utf8");
+    ok(/chat_messages\/\{msgId\}/.test(fn) && /chat_dm\/\{msgId\}/.test(fn) && /chat_group\/\{msgId\}/.test(fn),
+      "триггеры на все три вида сообщений");
+    ok(/functionsV1\.region\(REGION\)/.test(fn),
+      "v1-триггеры: у v2 регион функции обязан совпасть с регионом базы, промах валит деплой");
+    ok(/sendEachForMulticast/.test(fn) && !/notification:/.test(fn),
+      "отправляем ТОЛЬКО data — иначе FCM покажет уведомление в обход нашего sw.js");
+    ok(/function dropDeadTokens/.test(fn) && /registration-token-not-registered/.test(fn), "мёртвые токены удаляются");
+    ok(/t\.mute !== true/.test(fn), "функция уважает «не беспокоить»");
+    ok(/for \(let i = 0; i < list\.length; i \+= 30\)/.test(fn), "whereIn режется по 30 значений — предел Firestore");
+    const sw = fs.readFileSync(path.join(root, "sw.js"), "utf8");
+    ok(/raw\.data === "object"/.test(sw), "sw читает формат FCM (payload.data) и ручной push (верхний уровень)");
+    ok(/visibilityState === "visible"/.test(sw),
+      "приложение открыто — sw НЕ дублирует уведомление (его рисует страница со своим звуком/меткой)");
+    const wf = fs.readFileSync(path.join(root, ".github", "workflows", "firebase-deploy.yml"), "utf8");
+    ok(/--only hosting,firestore:rules /.test(wf) && /--only functions /.test(wf),
+      "деплой разделён: падение функции больше не блокирует выкат приложения");
+    ok(wf.indexOf("--only hosting,firestore:rules") < wf.indexOf("--only functions"),
+      "и приложение уезжает ПЕРВЫМ");
+  });
   test("чат: вложения клиент/щит/фото и поиск по переписке", () => {
     const fs = require("fs"), path = require("path"), root = path.resolve(__dirname, "..");
     const fb = fs.readFileSync(path.join(root, "assets", "js", "modules", "ui", "feedback.js"), "utf8");

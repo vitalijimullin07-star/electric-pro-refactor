@@ -8,3 +8,11 @@ window.EP_FIREBASE_CONFIG = {
   appId: "1:674960586951:web:522b0557e75bb97dea26e2",
   measurementId: "G-VF6HF9FTWT"
 };
+
+// Публичный ключ Web Push (VAPID) из консоли Firebase: Настройки проекта → Cloud
+// Messaging → Web configuration → Web Push certificates. Он ПУБЛИЧНЫЙ по устройству
+// протокола (браузер отдаёт его серверу push-сервиса открыто) — секретная половина
+// пары остаётся в Firebase и в код никогда не попадает. Нужен, чтобы приложение могло
+// получить FCM-токен устройства и получать уведомления о сообщениях чата, когда оно
+// ПОЛНОСТЬЮ закрыто (пока приложение открыто/свёрнуто, уведомление рисует сам клиент).
+window.EP_VAPID_KEY = "BHpDzoPifNVOsD7gd41nvXMCuLMJZmOjVxQN9FkgJEAAp8GKwqcdOsVEIXtyxwW5iRaTMkD7aIYuofOmwOqsvaw";
