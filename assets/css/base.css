@@ -1410,9 +1410,40 @@ body[data-visual-mode="day"] .ep-consent-list li { color: #b91c1c; }
 .ep-fb-row{display:flex;gap:8px;flex-wrap:wrap}
 .ep-fb-list{overflow:auto;display:flex;flex-direction:column;gap:8px;padding-right:2px;flex:1 1 auto;min-height:90px}
 .ep-fb-item{border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:8px}
+/* ---- «Во весь экран» окна чата (кнопка ⛶ в шапке, feedback.js setFull) ----
+   Оверлей .ep-fb-ov И БЕЗ ЭТОГО position:fixed;inset:0 — то есть уже точно по границам
+   вьюпорта; «не во весь экран» его делали только паддинги и лимиты карточки. Поэтому
+   здесь СНИМАЕМ ограничения, а не задаём заново размеры: НИКАКИХ 100vw/100vh/dvh —
+   inset:0 честнее (в этой сессии уже ловили, как явные vh/vw с !important СЖИМАЛИ
+   шторку плана на устройствах, где vh недооценивает настоящий вьюпорт в PWA).
+   Нативный requestFullscreen поверх этого убирает адресную строку — см. комментарий
+   в feedback.js: он желателен, но НЕ обязателен для покрытия экрана. */
+.ep-fb-ov.is-full{padding:0;align-items:stretch;background:rgb(var(--card-bg-rgb))}
+.ep-fb-ov.is-full .ep-fb-card{width:100%;max-width:none;max-height:none;height:100%;border-radius:0;border-left:0;border-right:0}
+/* при открытой клавиатуре низ оверлея уже поднят (body[data-kb]) — карточке лимит
+   высоты в фуллскрине не нужен, иначе она вычиталась бы дважды и уезжала вверх */
+body[data-kb="1"] .ep-fb-ov.is-full .ep-fb-card{max-height:none}
+/* сам фуллскрин-элемент (оверлей) — сплошной фон: полупрозрачный скрим поверх пустоты
+   в нативном фуллскрине выглядел бы как серая заливка, показывать сквозь него нечего */
+.ep-fb-ov:fullscreen{background:rgb(var(--card-bg-rgb))}
+.ep-fb-ov:-webkit-full-screen{background:rgb(var(--card-bg-rgb))}
+/* ПРЕИМУЩЕСТВА развёрнутого окна: списку достаётся вся высота, сообщения читаются
+   шире, поле ввода может вырасти выше (JS-кап grow() не мешает — он в px от экрана) */
+.ep-fb-ov.is-full .ep-fb-list{min-height:0}
+.ep-fb-ov.is-full .ep-fb-msg{max-width:min(92%,900px)}
+.ep-fb-ov.is-full .ep-fb-input{max-height:45dvh}
+/* ретро-облик: в фуллскрине убираем «оконную» рамку и скругления шапки */
+.ep-fb-ov.is-full .ep-fb-card.is-retro{border:0;border-radius:0}
+.ep-fb-ov.is-full .ep-fb-card.is-retro .ep-fb-head{border-radius:0}
 /* общий ОНЛАЙН-чат: свои сообщения справа акцентом, чужие слева */
 .ep-fb-tabs{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .ep-fb-st{color:var(--muted);font-size:calc(11px * var(--eff-text-scale,1));white-space:nowrap}
+/* .ep-fb-status — подпись «онлайн/офлайн» И кнопки 🔔🔊 статуса/аватарки в одном span.
+   Был обычный inline-контейнер: на узкой шапке подпись и кнопки НАЕЗЖАЛИ друг на друга
+   (видно на скриншоте — «онлайн» уходило под 🔔). Flex с gap раскладывает их честно, а
+   подписи разрешаем сжаться с многоточием, чтобы кнопки не выдавливались за край. */
+.ep-fb-status{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:flex-end;min-width:0}
+.ep-fb-status .ep-fb-st{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .ep-fb-st.is-live{color:var(--accent)}
 .ep-fb-st.is-err{color:var(--danger,#ef4444)}
 /* нейтральный серо-синий (slate) — читается и на тёмной, и на светлой теме,
