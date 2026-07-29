@@ -3408,12 +3408,15 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/function reportMsg/.test(fb) && /data-fb-report/.test(fb), "жалоба на сообщение у обычного мастера");
     ok(/view === "mod"/.test(fb) && /🛡 Модерация/.test(fb), "вкладка модерации (только админу)");
     ok(/iAmBanned\(\)/.test(fb) && /ep-fb-banned/.test(fb), "забаненному вместо поля ввода — честная плашка");
-    ok(/const skin = \(\)/.test(fb) && /is-icq/.test(fb), "ретро-облик ICQ с переключателем");
-    ok(/is-icq" : " card glass"/.test(fb), "в ретро-облике не вешаем card/glass (их !important-фон перебил бы окно)");
+    ok(/const skin = \(\)/.test(fb) && /is-retro/.test(fb), "ретро-облик «Классика» с переключателем");
+    ok(/is-retro" : " card glass"/.test(fb), "в ретро-облике не вешаем card/glass (их !important-фон перебил бы окно)");
     const css = fs.readFileSync(path.join(root, "assets", "css", "base.css"), "utf8");
-    ok(/\.ep-fb-ov \.ep-fb-card\.is-icq\{[^}]*background:#ece9d8/.test(css), "ретро-окно: непрозрачный бежевый фон");
-    ok(/\.ep-fb-ov \.ep-fb-card\.is-icq \.ep-fb-msg\.is-mine \.ep-fb-msgtop b\{color:#b91c1c\}/.test(css), "свои подписи красным (как в истории ICQ)");
+    ok(/\.ep-fb-ov \.ep-fb-card\.is-retro\{[^}]*background:#ece9d8/.test(css), "ретро-окно: непрозрачный бежевый фон");
+    ok(/\.ep-fb-ov \.ep-fb-card\.is-retro \.ep-fb-msg\.is-mine \.ep-fb-msgtop b\{color:#b91c1c\}/.test(css), "свои подписи красным (как в старых мессенджерах)");
     ok(/\.ep-fb-banned\{/.test(css) && /\.ep-fb-flower/.test(css), "плашка бана и цветок статуса");
+    // имя чужого продукта не должно попадать в интерфейс/стили приложения (товарный знак)
+    const shipped = [fb, css, fs.readFileSync(path.join(root, "pages", "guide.html"), "utf8")].join("\n");
+    ok(!/\bICQ\b/i.test(shipped.replace(/\[старому мессенджеру\]/g, "")), "в поставляемом коде нет названия чужого мессенджера");
   });
 
   // ===== 33. Слаботочка: Нептун, домофон, датчики с целью, камеры отдельными линиями =====

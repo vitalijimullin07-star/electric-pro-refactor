@@ -1444,38 +1444,39 @@ body[data-visual-mode="day"] .ep-consent-list li { color: #b91c1c; }
 .ep-fb-modsec{margin-top:4px;color:var(--muted);font-size:calc(11px * var(--eff-text-scale,1));text-transform:uppercase;letter-spacing:.04em}
 .ep-fb-flower{filter:grayscale(1) opacity(.55);font-size:14px;line-height:1;flex:none}
 .ep-fb-flower.is-on{filter:none}
-/* ---- РЕТРО-ОБЛИК «как ICQ» (селекторы с .ep-fb-ov — чтобы перебить общий
+/* ---- РЕТРО-ОБЛИК «Классика» — вид старых мессенджеров 2000-х (селекторы с
+   .ep-fb-ov — чтобы перебить общий
    noblur-фикс .ep-fb-card, у которого равная специфичность и позиция ниже) (просьба пользователя): непрозрачное окно с синим
    заголовком, белая «история», подписи авторов цветом (свои красным, чужие синим).
-   Окно НАМЕРЕННО светлое в обеих темах — так узнаётся ICQ, и текст всегда читаем
+   Окно НАМЕРЕННО светлое в обеих темах — так узнаётся ретро-вид, и текст всегда читаем
    (тот же принцип, что у печатного листа и «Карточки позиции»). ---- */
-.ep-fb-ov .ep-fb-card.is-icq{background:#ece9d8;backdrop-filter:none;-webkit-backdrop-filter:none;border:1px solid #7f9db9;border-radius:6px;color:#0f172a;padding:0;gap:0}
-.ep-fb-ov .ep-fb-card.is-icq .ep-fb-head{background:linear-gradient(#3f7fbf,#215a9c);color:#fff;padding:6px 8px;border-radius:5px 5px 0 0}
-.ep-fb-ov .ep-fb-card.is-icq .ep-fb-head b{color:#fff;font-size:calc(13px * var(--eff-text-scale,1))}
-.ep-fb-ov .ep-fb-card.is-icq .ep-plan-mini{background:#d6d3c4;border:1px solid #7f9db9;color:#0f172a}
-.ep-fb-ov .ep-fb-card.is-icq .ep-fb-tabs{padding:6px 8px 0;gap:4px}
-.ep-fb-ov .ep-fb-card.is-icq .ep-plan-chip{background:#dcd9ca;border:1px solid #a9a48f;color:#0f172a;border-radius:4px 4px 0 0}
-.ep-fb-ov .ep-fb-card.is-icq .ep-plan-chip.on{background:#fffef8;border-bottom-color:#fffef8;color:#0f172a}
-.ep-fb-ov .ep-fb-card.is-icq .ep-fb-hint{padding:4px 8px;color:#4b5563}
-.ep-fb-ov .ep-fb-card.is-icq .ep-fb-dmhead{padding:4px 8px;color:#0f172a}
-.ep-fb-ov .ep-fb-card.is-icq .ep-fb-dmhead b{color:#0f172a}
-.ep-fb-ov .ep-fb-card.is-icq .ep-fb-list{background:#fffef8;border:1px solid #7f9db9;margin:4px 8px;padding:6px;border-radius:3px;gap:5px}
-.ep-fb-ov .ep-fb-card.is-icq .ep-fb-msg{max-width:100%;align-self:stretch;background:transparent;border:none;border-radius:0;padding:1px 0}
-.ep-fb-ov .ep-fb-card.is-icq .ep-fb-msg.is-mine{background:transparent;border:none}
-.ep-fb-ov .ep-fb-card.is-icq .ep-fb-msgtop b{color:#1d4ed8}                 /* чужие — синим */
-.ep-fb-ov .ep-fb-card.is-icq .ep-fb-msg.is-mine .ep-fb-msgtop b{color:#b91c1c}  /* свои — красным */
-.ep-fb-ov .ep-fb-card.is-icq .ep-fb-text{color:#0f172a}
-.ep-fb-ov .ep-fb-card.is-icq .ep-fb-meta{color:#6b7280;font-family:ui-monospace,Menlo,Consolas,monospace}
-.ep-fb-ov .ep-fb-card.is-icq .ep-fb-quote{border-left-color:#215a9c;color:#4b5563}
-.ep-fb-ov .ep-fb-card.is-icq .ep-fb-quote b{color:#1d4ed8}
-.ep-fb-ov .ep-fb-card.is-icq .ep-fb-item{background:#fffef8;border-color:#a9a48f}
-.ep-fb-ov .ep-fb-card.is-icq .ep-fb-person{background:#fffef8;border:1px solid #a9a48f;color:#0f172a}
-.ep-fb-ov .ep-fb-card.is-icq .ep-fb-pname i,.ep-fb-ov .ep-fb-card.is-icq .ep-fb-st{color:#6b7280}
-.ep-fb-ov .ep-fb-card.is-icq .ep-fb-st.is-live{color:#15803d}
-.ep-fb-ov .ep-fb-card.is-icq .ep-fb-input{margin:0 8px;background:#fff;border:1px solid #7f9db9;color:#0f172a;border-radius:3px}
-.ep-fb-ov .ep-fb-card.is-icq .ep-fb-row{padding:6px 8px 8px}
-.ep-fb-ov .ep-fb-card.is-icq .ep-fb-empty,.ep-fb-ov .ep-fb-card.is-icq .ep-fb-modsec{color:#6b7280}
-.ep-fb-ov .ep-fb-card.is-icq .btn{border-radius:4px}
+.ep-fb-ov .ep-fb-card.is-retro{background:#ece9d8;backdrop-filter:none;-webkit-backdrop-filter:none;border:1px solid #7f9db9;border-radius:6px;color:#0f172a;padding:0;gap:0}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-head{background:linear-gradient(#3f7fbf,#215a9c);color:#fff;padding:6px 8px;border-radius:5px 5px 0 0}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-head b{color:#fff;font-size:calc(13px * var(--eff-text-scale,1))}
+.ep-fb-ov .ep-fb-card.is-retro .ep-plan-mini{background:#d6d3c4;border:1px solid #7f9db9;color:#0f172a}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-tabs{padding:6px 8px 0;gap:4px}
+.ep-fb-ov .ep-fb-card.is-retro .ep-plan-chip{background:#dcd9ca;border:1px solid #a9a48f;color:#0f172a;border-radius:4px 4px 0 0}
+.ep-fb-ov .ep-fb-card.is-retro .ep-plan-chip.on{background:#fffef8;border-bottom-color:#fffef8;color:#0f172a}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-hint{padding:4px 8px;color:#4b5563}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-dmhead{padding:4px 8px;color:#0f172a}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-dmhead b{color:#0f172a}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-list{background:#fffef8;border:1px solid #7f9db9;margin:4px 8px;padding:6px;border-radius:3px;gap:5px}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-msg{max-width:100%;align-self:stretch;background:transparent;border:none;border-radius:0;padding:1px 0}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-msg.is-mine{background:transparent;border:none}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-msgtop b{color:#1d4ed8}                 /* чужие — синим */
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-msg.is-mine .ep-fb-msgtop b{color:#b91c1c}  /* свои — красным */
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-text{color:#0f172a}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-meta{color:#6b7280;font-family:ui-monospace,Menlo,Consolas,monospace}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-quote{border-left-color:#215a9c;color:#4b5563}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-quote b{color:#1d4ed8}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-item{background:#fffef8;border-color:#a9a48f}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-person{background:#fffef8;border:1px solid #a9a48f;color:#0f172a}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-pname i,.ep-fb-ov .ep-fb-card.is-retro .ep-fb-st{color:#6b7280}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-st.is-live{color:#15803d}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-input{margin:0 8px;background:#fff;border:1px solid #7f9db9;color:#0f172a;border-radius:3px}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-row{padding:6px 8px 8px}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-empty,.ep-fb-ov .ep-fb-card.is-retro .ep-fb-modsec{color:#6b7280}
+.ep-fb-ov .ep-fb-card.is-retro .btn{border-radius:4px}
 /* плавающая кнопка вызова чата — на любом экране */
 .ep-chat-fab{position:fixed;right:14px;bottom:calc(16px + var(--kb,0px));z-index:9000;width:48px;height:48px;border-radius:50%;border:1px solid rgba(148,163,184,.4);background:rgb(var(--card-bg-rgb));color:var(--text);font-size:22px;line-height:1;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.35)}
 .ep-chat-fab[hidden]{display:none}

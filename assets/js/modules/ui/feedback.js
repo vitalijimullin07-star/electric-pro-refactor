@@ -5,10 +5,15 @@
      тестит, а после копировать и присылать тебе» → локальный журнал («Заметки»);
    · «чат хотел сделать онлайн, и видеть переписку и сообщения других, общий скажем так»
      → общая коллекция chat_messages с живой подпиской;
-   · «практически полноценный чат, я бы наверное как icq согласился» → эта версия: поле
+   · «практически полноценный чат, я бы наверное как [старый мессенджер] согласился» →
+     эта версия: поле
      ввода растёт по тексту, правка своего сообщения, ответ на сообщение, кто в сети,
      личная переписка, автопрокрутка к последнему, звук, красная метка у иконки, вызов
-     чата с ЛЮБОГО экрана (плавающая кнопка), история «загрузить предыдущие».
+     чата с ЛЮБОГО экрана (плавающая кнопка), история «загрузить предыдущие»;
+   · «экран чата хочется ближе к [старому мессенджеру]» → облик «Классика» (retro):
+     ретро-окно, подписи авторов цветом, цветок статуса. НАЗВАНИЕ чужого продукта в
+     интерфейсе НЕ используем — только свой ярлык «Классика» (товарный знак остаётся
+     за правообладателем и после закрытия сервиса), чужих картинок/звуков тоже нет.
 
    Коллекции (правила — firestore.rules):
    · chat_messages — общий чат: читают одобренные, пишут от своего uid, автор правит
@@ -36,7 +41,7 @@
   const SNDK = "ep_chat_sound_v1";   // "0" — звук выключен
   const COL = "chat_messages", DMC = "chat_dm", PRES = "chat_presence";
   const BANS = "chat_bans", REPS = "chat_reports";
-  const SKINK = "ep_chat_skin_v1";   // "icq" (по умолчанию) | "modern"
+  const SKINK = "ep_chat_skin_v1";   // "retro" (по умолчанию) | "modern"
   const MAX = 300;    // локальный журнал устройства
   const LIMIT = 120;  // сколько последних сообщений держим живыми
   const DM_LIMIT = 500;
@@ -153,9 +158,12 @@
   function seenRead() { try { const v = JSON.parse(localStorage.getItem(SEENK) || "{}"); return v && typeof v === "object" ? v : {}; } catch (e) { return {}; } }
   function seenWrite(v) { try { localStorage.setItem(SEENK, JSON.stringify(v)); } catch (e) {} }
   const soundOn = () => localStorage.getItem(SNDK) !== "0";
-  // облик чата: "icq" — ретро-окно (просьба пользователя «экран чата ближе к icq»),
-  // "modern" — прежние пузыри; переключается 🌼/💬 в шапке, помнится на устройстве
-  const skin = () => (localStorage.getItem(SKINK) === "modern" ? "modern" : "icq");
+  // облик чата: "retro" — «Классика», окно в духе мессенджеров 2000-х (просьба
+  // пользователя про вид старого мессенджера), "modern" — прежние пузыри. Переключается
+  // 🌼/💬 в шапке, помнится на устройстве. ИМЯ ЧУЖОГО ПРОДУКТА В ИНТЕРФЕЙСЕ НЕ
+  // ИСПОЛЬЗУЕМ (товарный знак живёт и после закрытия сервиса) — только свой «Классика»;
+  // старое сохранённое значение прежнего ярлыка тоже читается как retro (всё, что не "modern").
+  const skin = () => (localStorage.getItem(SKINK) === "modern" ? "modern" : "retro");
   const isBanned = (uid) => bans.some((b) => b.uid === uid);
   const iAmBanned = () => isBanned(myUid());
 
@@ -543,8 +551,8 @@
         <button type="button" class="ep-plan-chip ep-clickable" data-fb-purge="${esc(r.uid)}">🧹 Все сообщения</button>` : ""}
     </div>` : "";
     // в ретро-облике подпись автора идёт «Имя (14:32):» одной строкой цветом (свои —
-    // красным, чужие — синим), как в истории ICQ; в современном — как было
-    const head = skin() === "icq"
+    // красным, чужие — синим), как в истории старых мессенджеров; в современном — как было
+    const head = skin() === "retro"
       ? `<div class="ep-fb-msgtop"><b>${nm} (${esc(fmtTime(atMs(r)))}):</b></div>`
       : `<div class="ep-fb-msgtop"><b>${nm}</b></div>`;
     return `<div class="ep-fb-msg${mine ? " is-mine" : ""}" data-fb-msg="${esc(r.id)}">
@@ -583,9 +591,9 @@
     return list.map((p) => {
       const last = dmAll.filter((m) => m.from === p.uid || m.to === p.uid).slice(-1)[0];
       const n = un[p.uid] || 0;
-      const icq = skin() === "icq";
+      const retro = skin() === "retro";
       return `<button type="button" class="ep-fb-person ep-clickable" data-fb-dm="${esc(p.uid)}">
-        ${icq ? `<span class="ep-fb-flower${isOnline(p) ? " is-on" : ""}">🌼</span>` : `<span class="ep-fb-dot${isOnline(p) ? " is-on" : ""}"></span>`}
+        ${retro ? `<span class="ep-fb-flower${isOnline(p) ? " is-on" : ""}">🌼</span>` : `<span class="ep-fb-dot${isOnline(p) ? " is-on" : ""}"></span>`}
         <span class="ep-fb-pname">${esc(p.name)}${last ? `<i>${esc(cut(last.text, 40))}</i>` : ""}</span>
         ${n ? `<span class="ep-fb-cnt">${n}</span>` : `<span class="ep-fb-st">${isBanned(p.uid) ? "🚫 в чате ограничен" : (isOnline(p) ? "в сети" : (p.at ? "был " + fmtTime(p.at) : ""))}</span>`}
       </button>`;
@@ -632,9 +640,9 @@
   function tabsHtml() {
     const un = unreadDmBy(), dmN = Object.keys(un).reduce((s, k) => s + un[k], 0), pubN = unreadPub();
     const t = (id, label, n) => `<button type="button" class="ep-plan-chip ep-clickable${view === id ? " on" : ""}" data-fb-tab="${id}">${label}${n ? ` <i class="ep-fb-cnt">${n}</i>` : ""}</button>`;
-    const icq = skin() === "icq";
-    return t("chat", icq ? "Общий" : "Общий", view === "chat" ? 0 : pubN)
-      + t("people", icq ? "🌼 Контакты" : "Люди", dmN)
+    const retro = skin() === "retro";
+    return t("chat", "Общий", view === "chat" ? 0 : pubN)
+      + t("people", retro ? "🌼 Контакты" : "Люди", dmN)
       + t("notes", "Заметки", 0)
       + (isAdm() ? t("mod", "🛡 Модерация", reports.length) : "");
   }
@@ -668,15 +676,15 @@
       : (view === "people" ? "Тапни человека — откроется личная переписка. Зелёная точка — в сети (заходил в приложение за последние 5 минут)."
         : (view === "dm" ? "Личная переписка — видите только вы двое, даже админ её не читает. Тапни сообщение: ответить, изменить своё, удалить."
           : "Тапни сообщение — ответить, изменить своё, удалить или написать лично. К сообщению подшивается экран, проект и версия сборки."));
-    const icq = skin() === "icq";
+    const retro = skin() === "retro";
     // в ретро-облике НЕ вешаем классы card/glass: у них в base.css есть
     // background: ... !important под body[data-noblur] (перф-деградация), который
     // перебил бы ретро-фон окна (поймано живым замером: computed бело-белый)
-    ov.innerHTML = `<div class="ep-fb-card${icq ? " is-icq" : " card glass"}">
+    ov.innerHTML = `<div class="ep-fb-card${retro ? " is-retro" : " card glass"}">
       <div class="ep-fb-head">
-        <b>${icq ? "🌼 ICQ · Electric Pro" : "💬 Чат"}</b>
+        <b>${retro ? "🌼 Чат · Классика" : "💬 Чат"}</b>
         <span class="ep-fb-sp"></span>
-        <button type="button" class="ep-plan-mini ep-clickable" data-fb-skin aria-label="Облик чата">${icq ? "💬" : "🌼"}</button>
+        <button type="button" class="ep-plan-mini ep-clickable" data-fb-skin aria-label="Облик чата">${retro ? "💬" : "🌼"}</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-fb-close aria-label="Закрыть">✕</button>
       </div>
       <div class="ep-fb-tabs"><span class="ep-fb-tabs-in">${tabsHtml()}</span><span class="ep-fb-sp"></span><span class="ep-fb-status">${isNotes ? "" : statusHtml()}</span></div>
@@ -818,7 +826,7 @@
     const cr = t.closest("[data-fb-closerep]");
     if (cr) { closeReport(cr.getAttribute("data-fb-closerep")).then((ok) => { if (!ok) toast("Не удалось закрыть"); }); return; }
     if (t.closest("[data-fb-skin]")) {
-      localStorage.setItem(SKINK, skin() === "icq" ? "modern" : "icq");
+      localStorage.setItem(SKINK, skin() === "retro" ? "modern" : "retro");
       render(true); return;
     }
     const dl = t.closest("[data-fb-del2]");
