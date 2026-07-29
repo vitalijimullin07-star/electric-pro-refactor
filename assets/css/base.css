@@ -1490,6 +1490,12 @@ body[data-visual-mode="day"] .ep-consent-list li { color: #b91c1c; }
 .ep-fb-ov .ep-fb-card.is-retro .ep-fb-att{background:#fff;border-color:#a9a48f}
 .ep-fb-ov .ep-fb-card.is-retro .ep-fb-attpane{margin:0 8px;border-color:#a9a48f}
 .ep-fb-ov .ep-fb-card.is-retro .ep-fb-attsearch{background:#fff;border:1px solid #7f9db9;color:#0f172a}
+.ep-fb-msg.is-hit{outline:2px solid rgba(250,204,21,.75)}
+.ep-fb-msg.is-cur{outline:2px solid #f59e0b;background:rgba(250,204,21,.14)}
+.ep-fb-ava{font-size:16px;line-height:1;flex:none}
+.ep-fb-typing{color:var(--muted);font-size:calc(11px * var(--eff-text-scale,1));padding:0 2px;font-style:italic}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-typing{color:#6b7280;padding:0 8px}
+.ep-fb-kick{border:none;background:transparent;color:inherit;font:inherit;cursor:pointer;padding:0 0 0 4px}
 /* плавающая кнопка вызова чата — на любом экране */
 .ep-chat-fab{position:fixed;right:14px;bottom:calc(16px + var(--kb,0px));z-index:9000;width:48px;height:48px;border-radius:50%;border:1px solid rgba(148,163,184,.4);background:rgb(var(--card-bg-rgb));color:var(--text);font-size:22px;line-height:1;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.35)}
 .ep-chat-fab[hidden]{display:none}

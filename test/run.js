@@ -3045,7 +3045,29 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(row, "ряд масштабов найден");
     const list = row[1].split(",").map((x) => Number(x.trim()));
     [30, 40, 60, 125].forEach((sc) => ok(list.indexOf(sc) >= 0, "в ряду есть промежуточный 1:" + sc + " (чертёж плотнее заполняет лист)"));
+    [10, 15].forEach((sc) => ok(list.indexOf(sc) >= 0, "в ряду есть крупный 1:" + sc + " — иначе на A1/A0 «стандартный» режим упирался в 1:20 (45% листа)"));
     ok(list.every((v, i) => i === 0 || v > list[i - 1]), "ряд строго по возрастанию — find() берёт САМЫЙ крупный подходящий");
+  });
+  test("PDF: размер чертежа не перебивается инлайн-стилем офскрин-обмера", () => {
+    // Репорт пользователя (дважды: «выбрал A1, а проект как будто в A4 остался», затем
+    // «общий план не во весь лист»): buildSvg выставляет svg.style.width/height = 1050×700px
+    // ДЛЯ ОФСКРИН-ОБМЕРА (fit() должен мерить ландшафтный бокс), а физический размер по
+    // масштабу — атрибутами width/height. Инлайн-стиль СИЛЬНЕЕ одноимённых атрибутов, и
+    // чертёж на ЛЮБОМ формате печатался в неизменном боксе 1050×700px ≈ 278×185мм (поле A4).
+    const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-export.js"), "utf8");
+    const fn = /function buildSvg\(pRaw\)[\s\S]*?\n  \}/.exec(src);
+    ok(fn, "buildSvg найдена");
+    const body = fn[0];
+    ok(/cv\.svg\.style\.width = "";\s*cv\.svg\.style\.height = "";/.test(body),
+      "инлайн-стиль px снимается перед outerHTML");
+    const clearAt = body.indexOf('cv.svg.style.width = ""');
+    const htmlAt = body.indexOf("const html = cv.svg.outerHTML");
+    ok(clearAt > 0 && htmlAt > clearAt, "снятие стиля идёт ДО чтения outerHTML");
+    // физический размер ставится в px (1px = 1/96 дюйма — точный перевод из мм): именно
+    // так svg печатался всё время до фикса, только размер был фиксированный
+    ok(/96 \/ 25\.4/.test(body), "мм переводятся в px по 96/25.4");
+    ok(/boxMm\.w \* MM/.test(body) && /boxMm\.h \* MM/.test(body), "в атрибуты идёт посчитанный по масштабу размер");
+    ok(!/setAttribute\("width", [^)]*"mm"\)/.test(body), "физических «мм» на самом svg не остаётся (печатный композитор Chromium их смещает)");
   });
   test("развёртка (PDF): размер поста считается от БЛИЖАЙШЕГО внутреннего угла", () => {
     const p = EP.Plan.Core.createProject("nearcorner");
@@ -3454,6 +3476,64 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/async function exportJSONById/.test(core), "экспорт ЛЮБОГО проекта по id (не переключая открытый)");
     ok(/exportJSONById[\s\S]{0,400}preloadPhotos/.test(core), "у неактивного проекта фото догружаются из IndexedDB");
     ok(/exportJSON, exportJSONById, importJSON/.test(core), "и он экспортирован из модуля");
+  });
+  test("чат: групповые чаты (комнаты и сообщения со снимком участников)", () => {
+    const fs = require("fs"), path = require("path"), root = path.resolve(__dirname, "..");
+    const rules = fs.readFileSync(path.join(root, "firestore.rules"), "utf8");
+    const rooms = rules.slice(rules.indexOf("match /chat_rooms/"), rules.indexOf("match /chat_group/"));
+    const grp = rules.slice(rules.indexOf("match /chat_group/"), rules.indexOf("match /{document=**}"));
+    ok(rules.indexOf("match /chat_rooms/") > 0 && rules.indexOf("match /chat_group/") > 0, "правила групп есть");
+    ok(/allow read: if signedIn\(\) && request\.auth\.uid in resource\.data\.uids/.test(rooms), "комнату видят только её участники");
+    ok(/uids\.size\(\) <= 50/.test(rooms), "участников не больше 50");
+    ok(/request\.resource\.data\.by == resource\.data\.by/.test(rooms), "создателя комнаты подменить нельзя");
+    ok(/allow delete: if isAdmin\(\) \|\| \(signedIn\(\) && resource\.data\.by == request\.auth\.uid\)/.test(rooms), "удалить комнату — создатель или админ");
+    // сообщение НЕСЁТ свой снимок uids: доступ проверяется БЕЗ get() комнаты на каждое чтение
+    ok(/allow read: if signedIn\(\) && request\.auth\.uid in resource\.data\.uids/.test(grp), "сообщение группы читают по снимку uids в самом сообщении");
+    ok(!/get\(\/databases/.test(grp), "никаких get() комнаты в правилах сообщений (дешевле и не ломается при удалении комнаты)");
+    ok(/request\.resource\.data\.roomId is string/.test(grp), "сообщение привязано к комнате");
+    ok(/request\.resource\.data\.ts == resource\.data\.ts/.test(grp), "при правке текста время не подменить");
+    const fb = fs.readFileSync(path.join(root, "assets", "js", "modules", "ui", "feedback.js"), "utf8");
+    ok(/function createRoom/.test(fb) && /function roomAdd/.test(fb) && /function roomKick/.test(fb), "создать группу / добавить / убрать участника");
+    ok(/function sendGroup/.test(fb), "отправка в группу");
+    ok(/uids: \(r\.uids \|\| \[\]\)\.slice\(\)/.test(fb), "сообщение сохраняет СНИМОК списка участников на момент отправки");
+    ok(/data-fb-roomnew/.test(fb) && /data-fb-room=/.test(fb) && /data-fb-roompeople/.test(fb), "UI: новая группа, вход в группу, состав");
+    ok(/seenR\[r\.id\]/.test(fb), "непрочитанное считается по каждой группе отдельно");
+    ok(/r\.by === uid/.test(fb), "выкидывать участников может только создатель");
+  });
+  test("чат: статусы, аватарки и «печатает…»", () => {
+    const fs = require("fs"), path = require("path"), root = path.resolve(__dirname, "..");
+    const fb = fs.readFileSync(path.join(root, "assets", "js", "modules", "ui", "feedback.js"), "utf8");
+    ok(/const STATUSES = \{[\s\S]{0,300}dnd/.test(fb), "три статуса, включая «не беспокоить»");
+    ok(/const AVATARS = \[/.test(fb), "набор аватарок-эмодзи (файлы не грузим — presence должен остаться крошечным)");
+    ok(/localStorage\.getItem\(STK\)/.test(fb) && /localStorage\.getItem\(AVK\)/.test(fb), "статус и аватарка живут на устройстве");
+    ok(/status: myStatus\(\)/.test(fb) && /avatar: myAvatar\(\)/.test(fb), "оба уходят в presence вместе с сердцебиением");
+    ok(/const quiet = \(\) => myStatus\(\) === "dnd"/.test(fb), "«не беспокоить» — отдельный предикат");
+    ok(/quiet\(\)/.test(fb) && /function notify/.test(fb), "он глушит уведомления/звук, но НЕ скрывает сообщения");
+    ok(/function markTyping/.test(fb) && /TYPING_MS/.test(fb), "«печатает…» с временем жизни");
+    ok(/const where = view === "dm" \? \("dm:" \+ dmUid\)[\s\S]{0,90}"pub"/.test(fb), "«печатает…» помечено местом (общий/личка/группа) — иначе показывалось бы во всех чатах разом");
+    ok(/data-fb-setstatus/.test(fb) && /data-fb-setavatar/.test(fb), "выбор статуса и аватарки в шапке чата");
+  });
+  test("чат: вложения клиент/щит/фото и поиск по переписке", () => {
+    const fs = require("fs"), path = require("path"), root = path.resolve(__dirname, "..");
+    const fb = fs.readFileSync(path.join(root, "assets", "js", "modules", "ui", "feedback.js"), "utf8");
+    ok(/data-fb-attclient/.test(fb) && /data-fb-attshield/.test(fb) && /data-fb-attfile/.test(fb), "три новых вида вложений в панели 📎");
+    // EP.Clients.addClient принимает ИМЯ (строка), не запись: объект давал клиента
+    // «[object Object]» — поймано живым прогоном
+    ok(/kind === "client"[\s\S]{0,600}EP\.Clients\.addClient\(nm\)/.test(fb), "клиент добавляется по ИМЕНИ (API клиентов принимает строку)");
+    ok(/kind === "shield"[\s\S]{0,300}confirm\(/.test(fb), "щит спрашивает подтверждение — он ЗАМЕНЯЕТ текущую сборку");
+    ok(/kind === "shield"[\s\S]{0,400}ep_shield_v28_config/.test(fb), "щит пишется в тот же ключ, что читает конфигуратор");
+    ok(/kind === "photo" \|\| f\.kind === "file"[\s\S]{0,300}download/.test(fb), "фото/файл скачиваются, а не «применяются»");
+    ok(/function readAsAttach/.test(fb) && /1280/.test(fb), "фото сжимается перед отправкой (снимок с телефона иначе не влезет в документ)");
+    ok(/function searchHits/.test(fb) && /searchQ/.test(fb), "поиск по загруженной переписке");
+    ok(/view === "dm" \? dmMsgs\(\) : \(view === "room" \? roomMsgs\(\) : older\.concat\(msgs\)\)/.test(fb), "поиск идёт по ТЕКУЩЕЙ переписке (общий/личка/группа)");
+    ok(/is-hit/.test(fb) && /is-cur/.test(fb), "найденные подсвечиваются, текущая — отдельно");
+    ok(/data-fb-searchnext/.test(fb) && /scrollIntoView/.test(fb), "переход «к следующему» прокручивает к находке");
+    // строка поиска перерисовывается ЦЕЛИКОМ своей обёрткой: иначе кнопка «↓ к следующему»
+    // не появлялась, пока не случится полный render() из другого места (поймано живым прогоном)
+    ok(/ep-fb-searchwrap/.test(fb), "у строки поиска своя обёртка для точечной перерисовки");
+    ok(/wrap\.innerHTML = searchBarHtml\(\)/.test(fb), "по вводу перерисовывается вся строка поиска, а не только счётчик");
+    const css = fs.readFileSync(path.join(root, "assets", "css", "base.css"), "utf8");
+    ok(/\.ep-fb-msg\.is-hit/.test(css) && /\.ep-fb-msg\.is-cur/.test(css), "подсветка находок в стилях");
   });
 
   // ===== 33. Слаботочка: Нептун, домофон, датчики с целью, камеры отдельными линиями =====

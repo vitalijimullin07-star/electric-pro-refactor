@@ -42,8 +42,14 @@
   const COL = "chat_messages", DMC = "chat_dm", PRES = "chat_presence";
   const BANS = "chat_bans", REPS = "chat_reports";
   const CONT = "chat_contacts", FILES = "chat_files";
+  const ROOMS = "chat_rooms", GRP = "chat_group";
   const FILE_MAX = 900000;   // предел тела вложения (лимит документа Firestore — 1 МиБ)
   const SKINK = "ep_chat_skin_v1";   // "retro" (по умолчанию) | "modern"
+  const STK = "ep_chat_status_v1";   // мой статус: "online" | "away" | "dnd"
+  const AVK = "ep_chat_avatar_v1";   // моя «аватарка» — эмодзи (файлы не грузим)
+  const TYPING_MS = 8000;            // «печатает…» живёт 8с, обновляем не чаще 4с
+  const AVATARS = ["⚡", "🔧", "🔌", "🧰", "💡", "🪛", "🛠", "🧑‍🔧", "🙂", "😎", "🐱", "🦊"];
+  const STATUSES = { online: { ico: "🟢", name: "в сети" }, away: { ico: "🌙", name: "отошёл" }, dnd: { ico: "⛔", name: "не беспокоить" } };
   const MAX = 300;    // локальный журнал устройства
   const LIMIT = 120;  // сколько последних сообщений держим живыми
   const DM_LIMIT = 500;
@@ -131,11 +137,18 @@
   // «первый снапшот получен» — ИМЕННО флаг, а не проверка «msgs пуст»: на пустом чате
   // самое первое сообщение приходило вторым снапшотом при msgs.length === 0 и молча
   // не давало ни звука, ни уведомления (поймано живым прогоном)
-  let gotPub = false, gotDm = false;
+  let gotPub = false, gotDm = false, gotGrp = false;
   const seenPending = new Set();   // какие личные уже помечаем прочитанными (без петли)
   let bans = [], reports = [];     // модерация: кто забанен и на что жалуются
   let unsubBans = null, unsubReps = null;
   let contacts = [], unsubCont = null;   // контакты: заявки и принятые
+  let rooms = [], grpAll = [], unsubRooms = null, unsubGrp = null;  // группы и их сообщения
+  let roomId = "";                       // открытая группа
+  let roomShowPeople = false;            // в окне группы раскрыт список участников
+  let statusPane = null;                 // раскрытая панель: "status" | "avatar"
+  let searchOn = false;                  // раскрыта строка поиска
+  let searchQ = "";                      // строка поиска по переписке
+  let hitId = "";                        // найденное сообщение, к которому прокрутились
   let attachPane = null;                 // открытая панель 📎 ("menu"|"plan"|"db"|"est")
   let attachQ = "";                      // строка поиска в пикере позиций БД
   let attachPick = null;                 // выбранное вложение — уйдёт со сообщением
@@ -164,6 +177,17 @@
   function seenRead() { try { const v = JSON.parse(localStorage.getItem(SEENK) || "{}"); return v && typeof v === "object" ? v : {}; } catch (e) { return {}; } }
   function seenWrite(v) { try { localStorage.setItem(SEENK, JSON.stringify(v)); } catch (e) {} }
   const soundOn = () => localStorage.getItem(SNDK) !== "0";
+  const myStatus = () => (STATUSES[localStorage.getItem(STK)] ? localStorage.getItem(STK) : "online");
+  const myAvatar = () => localStorage.getItem(AVK) || AVATARS[0];
+  // «не беспокоить» глушит ТОЛЬКО звук и всплывающие уведомления — сами сообщения,
+  // метка и переписка работают как обычно (иначе легко пропустить рабочую задачу)
+  const quiet = () => myStatus() === "dnd";
+  const statusOf = (p) => (p && STATUSES[p.status] ? p.status : "online");
+  const avatarOf = (uid) => { const p = people.find((x) => x.uid === uid); return (p && p.avatar) || "⚡"; };
+  const isTyping = (uid, where) => {
+    const p = people.find((x) => x.uid === uid);
+    return !!(p && p.typing && p.typing.at && Date.now() - p.typing.at < TYPING_MS && (!where || p.typing.where === where));
+  };
   // облик чата: "retro" — «Классика», окно в духе мессенджеров 2000-х (просьба
   // пользователя про вид старого мессенджера), "modern" — прежние пузыри. Переключается
   // 🌼/💬 в шапке, помнится на устройстве. ИМЯ ЧУЖОГО ПРОДУКТА В ИНТЕРФЕЙСЕ НЕ
@@ -361,13 +385,41 @@
       }, () => {});
     } catch (e) {}
   }
+  // группы: комнаты и сообщения — по array-contains (equality-only, без составного индекса).
+  // Сообщение несёт СВОЙ снимок uids, поэтому правило доступа не делает get() комнаты.
+  function subRooms() {
+    if (unsubRooms) return;
+    const d = fdb(), uid = myUid(); if (!d || !uid) return;
+    try {
+      unsubRooms = d.collection(ROOMS).where("uids", "array-contains", uid).limit(100).onSnapshot((snap) => {
+        const arr = []; snap.forEach((doc) => arr.push(Object.assign({ id: doc.id }, doc.data())));
+        rooms = arr.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+        if (isOpen()) patch();
+      }, () => {});
+    } catch (e) {}
+  }
+  function subGroups() {
+    if (unsubGrp) return;
+    const d = fdb(), uid = myUid(); if (!d || !uid) return;
+    try {
+      unsubGrp = d.collection(GRP).where("uids", "array-contains", uid).limit(DM_LIMIT).onSnapshot((snap) => {
+        const arr = []; snap.forEach((doc) => arr.push(Object.assign({ id: doc.id }, doc.data())));
+        const prevIds = new Set(grpAll.map((m) => m.id));
+        const first = !gotGrp; gotGrp = true;
+        grpAll = arr.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+        if (!first) onIncoming(null, grpAll.filter((m) => !prevIds.has(m.id) && m.from !== uid));
+        if (isOpen()) patch();
+        paintBadge();
+      }, () => {});
+    } catch (e) {}
+  }
   function unsubAll() {
-    [unsubPub, unsubDm, unsubPres, unsubBans, unsubReps, unsubCont].forEach((f) => { if (f) { try { f(); } catch (e) {} } });
-    unsubPub = unsubDm = unsubPres = unsubBans = unsubReps = unsubCont = null;
+    [unsubPub, unsubDm, unsubPres, unsubBans, unsubReps, unsubCont, unsubRooms, unsubGrp].forEach((f) => { if (f) { try { f(); } catch (e) {} } });
+    unsubPub = unsubDm = unsubPres = unsubBans = unsubReps = unsubCont = unsubRooms = unsubGrp = null;
   }
   function startAll() {
     if (!myUid() || !fdb()) { chatState = "off"; return; }
-    subPublic(); subDm(); subPresence(); subBans(); subReports(); subContacts(); heartbeat();
+    subPublic(); subDm(); subPresence(); subBans(); subReports(); subContacts(); subRooms(); subGroups(); heartbeat();
     flushQueue().then(paintBadge);
   }
   // «сердцебиение» присутствия: пока страница видима — раз в 2 минуты
@@ -375,7 +427,8 @@
     const d = fdb(), uid = myUid();
     if (!d || !uid || document.visibilityState === "hidden") return;
     try {
-      d.collection(PRES).doc(uid).set({ name: myName(), at: Date.now(), route: (EP.state && EP.state.currentRoute) || "" }, { merge: true }).catch(() => {});
+      d.collection(PRES).doc(uid).set({ name: myName(), at: Date.now(), status: myStatus(), avatar: myAvatar(),
+        route: (EP.state && EP.state.currentRoute) || "" }, { merge: true }).catch(() => {});
     } catch (e) {}
   }
   function heartbeat() {
@@ -385,6 +438,27 @@
   }
   const isOnline = (p) => !!(p && p.at && Date.now() - p.at < ONLINE_MS);
 
+  // «печатает…» — отметка в СВОЁМ документе присутствия (не отдельная коллекция: одна
+  // запись на 4 секунды набора, и читатели уже подписаны на присутствие)
+  let typingSentAt = 0;
+  function markTyping() {
+    const d = fdb(), uid = myUid();
+    if (!d || !uid) return;
+    const now = Date.now();
+    if (now - typingSentAt < 4000) return;
+    typingSentAt = now;
+    const where = view === "dm" ? ("dm:" + dmUid) : (view === "room" ? ("room:" + roomId) : "pub");
+    try { d.collection(PRES).doc(uid).set({ typing: { at: now, where: where }, at: now }, { merge: true }).catch(() => {}); } catch (e) {}
+  }
+  // кто сейчас печатает в ЭТОЙ ветке (себя не считаем)
+  function typingHtml() {
+    const uid = myUid();
+    const where = view === "dm" ? ("dm:" + dmUid) : (view === "room" ? ("room:" + roomId) : "pub");
+    const who = people.filter((p) => p.uid !== uid && isTyping(p.uid, where)).map((p) => p.name || nameOf(p.uid));
+    if (!who.length) return "";
+    return `<div class="ep-fb-typing">${esc(who.slice(0, 3).join(", "))} печата${who.length > 1 ? "ют" : "ет"}…</div>`;
+  }
+
   // новое сообщение (не моё) — звук + уведомление + «↓ N новых», если список не внизу
   function onIncoming(freshPub, freshDm) {
     const pub = freshPub || [], dm = freshDm || [];
@@ -392,8 +466,8 @@
     const openHere = isOpen() && ((pub.length && view === "chat") || (dm.length && view === "dm" && dm.some((m) => m.from === dmUid)));
     const last = dm.length ? dm[dm.length - 1] : pub[pub.length - 1];
     const who = dm.length ? ("✉ " + nameOf(last.from)) : (last.name || "Чат");
-    ping();
-    if (!openHere || document.visibilityState === "hidden") notify(who, cut(last.text, 120), dm.length ? "ep-dm-" + last.from : "ep-chat");
+    if (!quiet()) ping();
+    if (!quiet() && (!openHere || document.visibilityState === "hidden")) notify(who, cut(last.text, 120), dm.length ? "ep-dm-" + last.from : "ep-chat");
     if (openHere) {
       const box = listEl();
       if (box && !nearBottom(box)) pendingNew += pub.length + dm.length;
@@ -434,18 +508,19 @@
     try { return d.collection(DMC).add(doc).then(() => ({ ok: true })).catch(() => ({ ok: false })); }
     catch (e) { return Promise.resolve({ ok: false }); }
   }
-  function editMsg(id, text, isDm) {
+  const colOf = () => (view === "room" ? GRP : (view === "dm" ? DMC : COL));
+  function editMsg(id, text) {
     const d = fdb(), t = String(text || "").trim();
     if (!d || !id || !t) return Promise.resolve(false);
     try {
-      return d.collection(isDm ? DMC : COL).doc(id)
+      return d.collection(colOf()).doc(id)
         .update({ text: t.slice(0, MAXLEN), editedAt: Date.now() })
         .then(() => true).catch(() => false);
     } catch (e) { return Promise.resolve(false); }
   }
-  function removeMsg(id, isDm) {
+  function removeMsg(id) {
     const d = fdb(); if (!d || !id) return Promise.resolve(false);
-    try { return d.collection(isDm ? DMC : COL).doc(id).delete().then(() => true).catch(() => false); }
+    try { return d.collection(colOf()).doc(id).delete().then(() => true).catch(() => false); }
     catch (e) { return Promise.resolve(false); }
   }
   // ---------- модерация (только админ) ----------
@@ -511,6 +586,41 @@
     catch (e) { return Promise.resolve(false); }
   }
 
+  // ---------- группы ----------
+  const roomMsgs = () => grpAll.filter((m) => m.roomId === roomId);
+  const roomOf = (id) => rooms.find((r) => r.id === id);
+  function createRoom(name, uids) {
+    const d = fdb(), meU = myUid();
+    if (!d || !meU) return Promise.resolve(null);
+    const list = [meU].concat((uids || []).filter((x) => x && x !== meU)).slice(0, 50);
+    const doc = { name: String(name || "Группа").slice(0, 80), by: meU, byName: myName(), uids: list, ts: Date.now(), at: stamp() };
+    try { return d.collection(ROOMS).add(doc).then((ref) => ref.id).catch(() => null); }
+    catch (e) { return Promise.resolve(null); }
+  }
+  function roomAdd(id, uid) {
+    const d = fdb(), r = roomOf(id);
+    if (!d || !r || !uid || (r.uids || []).indexOf(uid) >= 0) return Promise.resolve(false);
+    try { return d.collection(ROOMS).doc(id).update({ uids: (r.uids || []).concat([uid]).slice(0, 50) }).then(() => true).catch(() => false); }
+    catch (e) { return Promise.resolve(false); }
+  }
+  function roomKick(id, uid) {
+    const d = fdb(), r = roomOf(id);
+    if (!d || !r) return Promise.resolve(false);
+    try { return d.collection(ROOMS).doc(id).update({ uids: (r.uids || []).filter((x) => x !== uid) }).then(() => true).catch(() => false); }
+    catch (e) { return Promise.resolve(false); }
+  }
+  function sendGroup(text) {
+    const t = String(text || "").trim();
+    const d = fdb(), uid = myUid(), r = roomOf(roomId);
+    if (!t || !d || !uid || !r) return Promise.resolve({ ok: false });
+    const doc = { roomId: roomId, uids: (r.uids || []).slice(), from: uid, name: myName(),
+      text: t.slice(0, MAXLEN), ts: Date.now(), at: stamp() };
+    if (replyTo) doc.replyTo = { id: replyTo.id, name: replyTo.name, text: cut(replyTo.text, 90) };
+    if (attachPick) doc.attach = attachPick;
+    try { return d.collection(GRP).add(doc).then(() => ({ ok: true })).catch(() => ({ ok: false })); }
+    catch (e) { return Promise.resolve({ ok: false }); }
+  }
+
   // ---------- вложения: проект / позиция БД / предварительная смета ----------
   // тело кладём ОТДЕЛЬНЫМ документом chat_files, в сообщение — только ссылка: сообщение
   // остаётся маленьким, тяжёлое тело читается лишь когда получатель нажал «применить»
@@ -552,6 +662,35 @@
             category: it.category || "Из чата", subcategory: it.subcategory || "" });
           return "Позиция добавлена в «Мою БД»";
         }
+        if (f.kind === "client") {
+          const c = JSON.parse(f.data);
+          if (!EP.Clients || !EP.Clients.addClient) return "Клиенты недоступны";
+          // ВАЖНО: EP.Clients.addClient принимает ИМЯ (строку), а не запись клиента —
+          // модуль клиентов хранит только {id,name,createdAt} и сам генерирует id, чтобы
+          // чужой id не затёр локальную запись. Передача объекта давала String(obj) и
+          // клиента с именем «[object Object]» (поймано живым прогоном).
+          const nm = String(c && c.name || "").trim();
+          if (!nm) return "В вложении нет имени клиента";
+          EP.Clients.addClient(nm);
+          return "Клиент «" + nm + "» добавлен";
+        }
+        if (f.kind === "shield") {
+          // конфигурация щита живёт одним ключом localStorage — ЗАМЕНА чужой на свою,
+          // поэтому спрашиваем подтверждение (в отличие от проекта, который добавляется копией)
+          if (!confirm("Загрузить конфигурацию щита? Текущая сборка в конфигураторе будет заменена.")) return "Отменено";
+          try { localStorage.setItem("ep_shield_v28_config", f.data); } catch (e) { return "Не удалось сохранить"; }
+          try { EP.Router.go("shield"); } catch (e) {}
+          return "Конфигурация щита загружена";
+        }
+        if (f.kind === "photo" || f.kind === "file") {
+          // фото/файл не «применяются» — их скачивают (data:-ссылка, без сервера)
+          try {
+            const a = document.createElement("a");
+            a.href = f.data; a.download = f.title || (f.kind === "photo" ? "photo.jpg" : "file");
+            document.body.appendChild(a); a.click(); a.remove();
+            return "Скачивание началось";
+          } catch (e) { return "Не удалось скачать"; }
+        }
         if (f.kind === "estimate") {
           const items = JSON.parse(f.data) || [];
           if (!EP.EstimateDraft) return "Смета недоступна";
@@ -572,6 +711,12 @@
       const last = msgs.length ? atMs(msgs[msgs.length - 1]) : Date.now();
       s.pub = Math.max(s.pub || 0, last);
       seenWrite(s);
+    }
+    if (view === "room" && roomId) {
+      const s2 = seenRead(); s2.rooms = s2.rooms || {};
+      const ms = roomMsgs();
+      s2.rooms[roomId] = Math.max(s2.rooms[roomId] || 0, ms.length ? (ms[ms.length - 1].ts || 0) : Date.now());
+      seenWrite(s2);
     }
     if (view === "dm" && dmUid) {
       const d = fdb();
@@ -620,10 +765,12 @@
     const q = qread().length;
     const bell = canNotify() ? "" : `<button type="button" class="ep-plan-mini ep-clickable" data-fb-notify aria-label="Включить уведомления">🔔</button>`;
     const snd = `<button type="button" class="ep-plan-mini ep-clickable" data-fb-sound aria-label="Звук сообщений">${soundOn() ? "🔊" : "🔇"}</button>`;
+    const st2 = `<button type="button" class="ep-plan-mini ep-clickable" data-fb-status aria-label="Мой статус">${STATUSES[myStatus()].ico}</button>`
+      + `<button type="button" class="ep-plan-mini ep-clickable" data-fb-avatar aria-label="Моя аватарка">${esc(myAvatar())}</button>`;
     let st = `<span class="ep-fb-st">⚪ офлайн${q ? " · в очереди " + q : ""}</span>`;
     if (chatState === "live") st = `<span class="ep-fb-st is-live">🟢 онлайн</span>${q ? ` · <span class="ep-fb-st">${q} в очереди</span>` : ""}`;
     else if (chatState === "err") st = `<span class="ep-fb-st is-err">🔴 нет доступа (${esc(chatErr)})</span>`;
-    return st + bell + snd;
+    return st + bell + snd + st2;
   }
   function msgHtml(r, isDm) {
     const uid = myUid(), mine = !!uid && (isDm ? r.from === uid : r.uid === uid);
@@ -633,8 +780,9 @@
       ? esc(fmtTime(atMs(r))) + (r.editedAt ? " · изменено" : "") + (mine && r.seen ? " · прочитано" : "")
       : esc(fmtTime(atMs(r))) + " · " + esc(r.route || "—") + (r.project ? " · " + esc(r.project) : "") + " · v" + esc(r.build || "—") + (r.editedAt ? " · изменено" : "");
     const quote = r.replyTo ? `<div class="ep-fb-quote"><b>${esc(r.replyTo.name || "")}</b> ${esc(r.replyTo.text || "")}</div>` : "";
-    const ATT_ICO = { plan: "🏗", dbitem: "📦", estimate: "📋" };
-    const ATT_BTN = { plan: "⤒ Импортировать проект", dbitem: "+ В мою БД", estimate: "+ В смету" };
+    const ATT_ICO = { plan: "🏗", dbitem: "📦", estimate: "📋", client: "👤", shield: "🛡", photo: "🖼", file: "📄" };
+    const ATT_BTN = { plan: "⤒ Импортировать проект", dbitem: "+ В мою БД", estimate: "+ В смету",
+      client: "+ В клиентов", shield: "⤒ Загрузить в конфигуратор", photo: "⤓ Скачать", file: "⤓ Скачать" };
     const att = (r.attach && r.attach.fileId) ? `<div class="ep-fb-att">
       <span class="ep-fb-attico">${ATT_ICO[r.attach.kind] || "📄"}</span>
       <span class="ep-fb-attname">${esc(r.attach.title || "вложение")}${r.attach.note ? `<i>${esc(r.attach.note)}</i>` : ""}</span>
@@ -662,7 +810,9 @@
     const head = skin() === "retro"
       ? `<div class="ep-fb-msgtop"><b>${nm} (${esc(fmtTime(atMs(r)))}):</b></div>`
       : `<div class="ep-fb-msgtop"><b>${nm}</b></div>`;
-    return `<div class="ep-fb-msg${mine ? " is-mine" : ""}" data-fb-msg="${esc(r.id)}">
+    const q = String(searchQ || "").trim();
+    const hit = q && String(r.text || "").toLowerCase().indexOf(q.toLowerCase()) >= 0;
+    return `<div class="ep-fb-msg${mine ? " is-mine" : ""}${hit ? " is-hit" : ""}${hitId === r.id ? " is-cur" : ""}" data-fb-msg="${esc(r.id)}">
       ${head}${quote}<div class="ep-fb-text">${esc(r.text || "")}</div>${att}
       <div class="ep-fb-meta">${meta}</div>${acts}</div>`;
   }
@@ -670,6 +820,25 @@
     return qread().map((r) => `<div class="ep-fb-msg is-mine is-pending">
       <div class="ep-fb-msgtop"><b>${esc(r.name || "Я")}</b><span class="ep-fb-st">⏳ не отправлено</span></div>
       <div class="ep-fb-text">${esc(r.text || "")}</div></div>`).join("");
+  }
+  // поиск по загруженной переписке: подсветка совпадений + переход к сообщению.
+  // Ищем ПО КЛИЕНТУ, а не запросом в Firestore: у Firestore нет полнотекстового поиска
+  // (только префикс по одному полю), а история чата и так уже в памяти — 120 последних
+  // плюс всё, что дотянули «Загрузить предыдущие».
+  function searchHits() {
+    const q = String(searchQ || "").trim().toLowerCase();
+    if (!q) return [];
+    const pool = view === "dm" ? dmMsgs() : (view === "room" ? roomMsgs() : older.concat(msgs));
+    return pool.filter((m) => String(m.text || "").toLowerCase().indexOf(q) >= 0);
+  }
+  function searchBarHtml() {
+    if (!searchOn) return "";
+    const hits = searchHits();
+    return `<div class="ep-fb-attpane">
+      <input type="text" class="ep-fb-attsearch" data-fb-searchq placeholder="поиск по переписке…" value="${esc(searchQ)}">
+      <span class="ep-fb-st">${searchQ ? (hits.length ? "найдено: " + hits.length : "не найдено") : ""}</span>
+      ${hits.length ? `<button type="button" class="ep-plan-chip ep-clickable" data-fb-searchnext>↓ к следующему</button>` : ""}
+      <button type="button" class="ep-plan-mini ep-clickable" data-fb-searchclose>✕</button></div>`;
   }
   function chatListHtml() {
     const all = older.concat(msgs);
@@ -710,9 +879,10 @@
       const n = un[p.uid] || 0;
       const retro = skin() === "retro";
       return `<div class="ep-fb-prow"><button type="button" class="ep-fb-person ep-clickable" data-fb-dm="${esc(p.uid)}">
-        ${retro ? `<span class="ep-fb-flower${isOnline(p) ? " is-on" : ""}">🌼</span>` : `<span class="ep-fb-dot${isOnline(p) ? " is-on" : ""}"></span>`}
+        <span class="ep-fb-ava">${esc(p.avatar || "⚡")}</span>
+        ${retro ? `<span class="ep-fb-flower${isOnline(p) ? " is-on" : ""}">${isOnline(p) ? STATUSES[statusOf(p)].ico : "🌼"}</span>` : `<span class="ep-fb-dot${isOnline(p) ? " is-on" : ""}"></span>`}
         <span class="ep-fb-pname">${esc(p.name)}${last ? `<i>${esc(cut(last.text, 40))}</i>` : ""}</span>
-        ${n ? `<span class="ep-fb-cnt">${n}</span>` : `<span class="ep-fb-st">${isBanned(p.uid) ? "🚫 в чате ограничен" : (isOnline(p) ? "в сети" : (p.at ? "был " + fmtTime(p.at) : ""))}</span>`}
+        ${n ? `<span class="ep-fb-cnt">${n}</span>` : `<span class="ep-fb-st">${isBanned(p.uid) ? "🚫 в чате ограничен" : (isTyping(p.uid) ? "печатает…" : (isOnline(p) ? STATUSES[statusOf(p)].name : (p.at ? "был " + fmtTime(p.at) : "")))}</span>`}
       </button>${contactBtnHtml(p, outReq)}</div>`;
     };
     const mineC = list.filter((p) => isContact(p.uid)), rest = list.filter((p) => !isContact(p.uid));
@@ -734,7 +904,10 @@
       return `<div class="ep-fb-attpane">
         <button type="button" class="ep-plan-chip ep-clickable" data-fb-attkind="plan">🏗 Проект</button>
         <button type="button" class="ep-plan-chip ep-clickable" data-fb-attkind="db">📦 Позиция БД</button>
-        <button type="button" class="ep-plan-chip ep-clickable" data-fb-attkind="est">📋 Смета</button>${close}</div>`;
+        <button type="button" class="ep-plan-chip ep-clickable" data-fb-attkind="est">📋 Смета</button>
+        <button type="button" class="ep-plan-chip ep-clickable" data-fb-attkind="client">👤 Клиент</button>
+        <button type="button" class="ep-plan-chip ep-clickable" data-fb-attkind="shield">🛡 Щит</button>
+        <label class="ep-plan-chip ep-clickable">🖼 Фото/файл<input type="file" data-fb-attfile accept="image/*,application/pdf" hidden></label>${close}</div>`;
     }
     if (attachPane === "plan") {
       let list = [];
@@ -753,6 +926,19 @@
         ? found.map((it) => `<button type="button" class="ep-plan-chip ep-clickable" data-fb-attdb="${esc(it.id)}">${esc(cut(it.name, 34))}${it.price ? " · " + it.price + "₽" : ""}</button>`).join("")
         : `<span class="ep-fb-st">Ничего не найдено.</span>`;
       return `<div class="ep-fb-attpane"><input type="text" class="ep-fb-attsearch" data-fb-attq placeholder="поиск по БД…" value="${esc(attachQ || "")}">${rows}${close}</div>`;
+    }
+    if (attachPane === "client") {
+      let list = [];
+      try { list = (EP.Clients && EP.Clients.listClients && EP.Clients.listClients()) || []; } catch (e) {}
+      const rows = list.length ? list.slice(0, 20).map((c) => `<button type="button" class="ep-plan-chip ep-clickable" data-fb-attclient="${esc(c.id)}">${esc(cut(c.name || "клиент", 30))}</button>`).join("")
+        : `<span class="ep-fb-st">Клиентов пока нет.</span>`;
+      return `<div class="ep-fb-attpane"><span class="ep-fb-st">Какого клиента отправить:</span>${rows}${close}</div>`;
+    }
+    if (attachPane === "shield") {
+      let has = false;
+      try { has = !!localStorage.getItem("ep_shield_v28_config"); } catch (e) {}
+      return `<div class="ep-fb-attpane"><span class="ep-fb-st">${has ? "Отправить текущую сборку щита:" : "В конфигураторе пока ничего нет."}</span>
+        ${has ? `<button type="button" class="ep-plan-chip on ep-clickable" data-fb-attshield>🛡 Прикрепить конфигурацию</button>` : ""}${close}</div>`;
     }
     if (attachPane === "est") {
       let n = 0;
@@ -793,7 +979,55 @@
       </div></div>`).join("") : `<div class="ep-fb-empty">Жалоб нет.</div>`;
     return `<div class="ep-fb-modsec"><b>Жалобы</b></div>` + repRows + `<div class="ep-fb-modsec"><b>Ограничен доступ к чату</b></div>` + banRows;
   }
+  function roomsListHtml() {
+    const uid = myUid(), sn = seenRead(), seenR = sn.rooms || {};
+    const add = `<button type="button" class="btn btn-ghost ep-clickable ep-fb-more" data-fb-roomnew>＋ Новая группа</button>`;
+    if (!rooms.length) return add + `<div class="ep-fb-empty">Групп пока нет. Группа — чат по объекту или бригаде: участников добавляешь сам.</div>`;
+    return add + rooms.map((r) => {
+      const ms = grpAll.filter((m) => m.roomId === r.id);
+      const last = ms[ms.length - 1];
+      const n = ms.filter((m) => m.from !== uid && (m.ts || 0) > (seenR[r.id] || 0)).length;
+      return `<div class="ep-fb-prow"><button type="button" class="ep-fb-person ep-clickable" data-fb-room="${esc(r.id)}">
+        <span class="ep-fb-attico">👥</span>
+        <span class="ep-fb-pname">${esc(r.name || "Группа")}<i>${esc((r.uids || []).length + " участн." + (last ? " · " + cut(last.text, 30) : ""))}</i></span>
+        ${n ? `<span class="ep-fb-cnt">${n}</span>` : ""}
+      </button></div>`;
+    }).join("");
+  }
+  function roomBodyHtml() {
+    const r = roomOf(roomId);
+    if (!r) return `<div class="ep-fb-empty">Группа недоступна.</div>`;
+    const rows = roomMsgs().map((m) => msgHtml(m, true)).join("");
+    return rows || `<div class="ep-fb-empty">Пока никто не писал. Участников: ${(r.uids || []).length}.</div>`;
+  }
+  function roomPeopleHtml() {
+    const r = roomOf(roomId); if (!r) return "";
+    const uid = myUid(), owner = r.by === uid;
+    const inRoom = (r.uids || []).map((u) => `<span class="ep-plan-chip">${esc(nameOf(u))}${(owner && u !== uid) ? ` <button type="button" class="ep-fb-kick ep-clickable" data-fb-roomkick="${esc(u)}" aria-label="Убрать">✕</button>` : ""}</span>`).join("");
+    const cand = people.concat(contacts.filter((c) => c.status === "ok").map((c) => ({ uid: (c.uids || []).filter((x) => x !== uid)[0], name: c.fromName || c.toName })))
+      .filter((x) => x && x.uid && x.uid !== uid && (r.uids || []).indexOf(x.uid) < 0);
+    const seen2 = {};
+    const addBtns = cand.filter((x) => (seen2[x.uid] ? false : (seen2[x.uid] = true))).slice(0, 20)
+      .map((x) => `<button type="button" class="ep-plan-chip ep-clickable" data-fb-roomadd="${esc(x.uid)}">＋ ${esc(nameOf(x.uid))}</button>`).join("");
+    return `<div class="ep-fb-attpane"><span class="ep-fb-st">В группе:</span>${inRoom}</div>
+      ${addBtns ? `<div class="ep-fb-attpane"><span class="ep-fb-st">Добавить:</span>${addBtns}</div>` : ""}`;
+  }
+  function statusPaneHtml() {
+    if (statusPane === "status") {
+      return `<div class="ep-fb-attpane"><span class="ep-fb-st">Мой статус:</span>` + Object.keys(STATUSES).map((k) =>
+        `<button type="button" class="ep-plan-chip ep-clickable${myStatus() === k ? " on" : ""}" data-fb-setstatus="${k}">${STATUSES[k].ico} ${STATUSES[k].name}</button>`).join("")
+        + `<button type="button" class="ep-plan-mini ep-clickable" data-fb-statusclose>✕</button></div>`;
+    }
+    if (statusPane === "avatar") {
+      return `<div class="ep-fb-attpane"><span class="ep-fb-st">Аватарка:</span>` + AVATARS.map((a) =>
+        `<button type="button" class="ep-plan-chip ep-clickable${myAvatar() === a ? " on" : ""}" data-fb-setavatar="${esc(a)}">${esc(a)}</button>`).join("")
+        + `<button type="button" class="ep-plan-mini ep-clickable" data-fb-statusclose>✕</button></div>`;
+    }
+    return "";
+  }
   function bodyHtml() {
+    if (view === "rooms") return roomsListHtml();
+    if (view === "room") return (roomShowPeople ? roomPeopleHtml() : "") + roomBodyHtml();
     if (view === "mod") return modListHtml();
     if (view === "people") return peopleListHtml();
     if (view === "dm") return dmListHtml();
@@ -804,8 +1038,11 @@
     const un = unreadDmBy(), dmN = Object.keys(un).reduce((s, k) => s + un[k], 0), pubN = unreadPub();
     const t = (id, label, n) => `<button type="button" class="ep-plan-chip ep-clickable${view === id ? " on" : ""}" data-fb-tab="${id}">${label}${n ? ` <i class="ep-fb-cnt">${n}</i>` : ""}</button>`;
     const retro = skin() === "retro";
+    const uid = myUid(), sn = seenRead(), seenR = sn.rooms || {};
+    const grpN = grpAll.filter((m) => m.from !== uid && (m.ts || 0) > (seenR[m.roomId] || 0)).length;
     return t("chat", "Общий", view === "chat" ? 0 : pubN)
       + t("people", retro ? "🌼 Контакты" : "Люди", dmN)
+      + t("rooms", "👥 Группы", view === "room" ? 0 : grpN)
       + t("notes", "Заметки", 0)
       + (isAdm() ? t("mod", "🛡 Модерация", reports.length) : "");
   }
@@ -830,6 +1067,10 @@
     if (!ov) { ov = document.createElement("div"); ov.id = "ep-fb-ov"; ov.className = "ep-fb-ov"; document.body.appendChild(ov); }
     const prevTop = keepScroll && listEl() ? listEl().scrollTop : null;
     const isNotes = view === "notes";
+    const rm = view === "room" ? roomOf(roomId) : null;
+    const roomHead = rm ? `<div class="ep-fb-dmhead"><button type="button" class="ep-plan-mini ep-clickable" data-fb-tab="rooms">‹</button>
+      <span class="ep-fb-attico">👥</span><b>${esc(rm.name || "Группа")}</b>
+      <button type="button" class="ep-plan-mini ep-clickable" data-fb-roompeople>${(rm.uids || []).length} участн.</button></div>` : "";
     const dmHead = view === "dm"
       ? `<div class="ep-fb-dmhead"><button type="button" class="ep-plan-mini ep-clickable" data-fb-tab="people">‹</button>
          <span class="ep-fb-dot${isOnline(people.find((p) => p.uid === dmUid)) ? " is-on" : ""}"></span>
@@ -847,18 +1088,22 @@
       <div class="ep-fb-head">
         <b>${retro ? "🌼 Чат · Классика" : "💬 Чат"}</b>
         <span class="ep-fb-sp"></span>
+        <button type="button" class="ep-plan-mini ep-clickable" data-fb-search aria-label="Поиск по переписке">🔍</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-fb-skin aria-label="Облик чата">${retro ? "💬" : "🌼"}</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-fb-close aria-label="Закрыть">✕</button>
       </div>
       <div class="ep-fb-tabs"><span class="ep-fb-tabs-in">${tabsHtml()}</span><span class="ep-fb-sp"></span><span class="ep-fb-status">${isNotes ? "" : statusHtml()}</span></div>
-      ${dmHead}
+      ${dmHead}${roomHead}
+      <div class="ep-fb-searchwrap">${searchBarHtml()}</div>
       <div class="ep-fb-hint">${hint}</div>
       <div class="ep-fb-list">${bodyHtml()}</div>
+      ${typingHtml()}
+      ${statusPane ? statusPaneHtml() : ""}
       <button type="button" class="ep-fb-newchip ep-clickable" data-fb-tobottom ${pendingNew ? "" : "hidden"}>↓ ${pendingNew} новых</button>
       ${attachPane ? attachPaneHtml() : ""}
       ${attachPick ? `<div class="ep-fb-replybar"><span>📎 ${esc(attachPick.title)}</span><button type="button" class="ep-plan-mini ep-clickable" data-fb-attcancel>✕</button></div>` : ""}
       ${replyTo ? `<div class="ep-fb-replybar"><span>↩ ${esc(replyTo.name)}: ${esc(cut(replyTo.text, 60))}</span><button type="button" class="ep-plan-mini ep-clickable" data-fb-replycancel>✕</button></div>` : ""}
-      ${(view === "people" || view === "mod") ? "" : (iAmBanned() && view !== "notes" ? `<div class="ep-fb-banned">🚫 Доступ к чату ограничен администратором. Читать можно, писать — нет.</div>` : `<textarea id="ep-fb-input" class="ep-fb-input" rows="1" placeholder="${isNotes ? "Например: при тапе по проёму зависает экран…" : (view === "dm" ? "Сообщение — " + esc(dmName) : "Сообщение в общий чат…")}"></textarea>
+      ${(view === "people" || view === "mod" || view === "rooms") ? "" : (iAmBanned() && view !== "notes" ? `<div class="ep-fb-banned">🚫 Доступ к чату ограничен администратором. Читать можно, писать — нет.</div>` : `<textarea id="ep-fb-input" class="ep-fb-input" rows="1" placeholder="${isNotes ? "Например: при тапе по проёму зависает экран…" : (view === "dm" ? "Сообщение — " + esc(dmName) : (view === "room" ? "Сообщение в группу…" : "Сообщение в общий чат…"))}"></textarea>
       <div class="ep-fb-row">
         ${isNotes
           ? `<button type="button" class="btn btn-primary ep-clickable" data-fb-add>+ Записать</button>
@@ -939,7 +1184,8 @@
     const tb = t.closest("[data-fb-tab]");
     if (tb) {
       const v = tb.getAttribute("data-fb-tab");
-      view = (v === "notes" || v === "people" || v === "dm" || v === "mod") ? v : "chat";
+      view = (v === "notes" || v === "people" || v === "dm" || v === "mod" || v === "rooms" || v === "room") ? v : "chat";
+      if (view !== "room") roomShowPeople = false;
       openMsgId = null; editId = null; pendingNew = 0;
       startAll(); render(); return;
     }
@@ -953,7 +1199,7 @@
     const rep = t.closest("[data-fb-reply]");
     if (rep) {
       const id = rep.getAttribute("data-fb-reply");
-      const src = older.concat(msgs, dmAll).find((m) => m.id === id);
+      const src = older.concat(msgs, dmAll, grpAll).find((m) => m.id === id);
       if (src) replyTo = { id: id, name: src.name || nameOf(src.from), text: src.text || "" };
       openMsgId = null; render(true); return;
     }
@@ -964,7 +1210,7 @@
     if (sv) {
       const inp2 = ov.querySelector("[data-fb-editinput]");
       const id = sv.getAttribute("data-fb-editsave");
-      editMsg(id, inp2 ? inp2.value : "", view === "dm").then((ok) => { toast(ok ? "Изменено" : "Не удалось изменить"); editId = null; render(true); });
+      editMsg(id, inp2 ? inp2.value : "").then((ok) => { toast(ok ? "Изменено" : "Не удалось изменить"); editId = null; render(true); });
       return;
     }
     const rp = t.closest("[data-fb-report]");
@@ -1002,6 +1248,42 @@
     if (cok) { acceptContact(cok.getAttribute("data-fb-cok")).then((ok) => toast(ok ? "Теперь вы в контактах" : "Не удалось")); return; }
     const cdel = t.closest("[data-fb-cdel]");
     if (cdel) { dropContact(cdel.getAttribute("data-fb-cdel")).then((ok) => { if (!ok) toast("Не удалось"); }); return; }
+    // ---- поиск по переписке ----
+    if (t.closest("[data-fb-search]")) { searchOn = !searchOn; if (!searchOn) { searchQ = ""; hitId = ""; } render(true); return; }
+    if (t.closest("[data-fb-searchclose]")) { searchOn = false; searchQ = ""; hitId = ""; render(true); return; }
+    if (t.closest("[data-fb-searchnext]")) {
+      const hits = searchHits();
+      if (!hits.length) return;
+      const i = hits.findIndex((m) => m.id === hitId);
+      hitId = hits[(i + 1) % hits.length].id;
+      patch();
+      const el = ovEl().querySelector(`[data-fb-msg="${hitId}"]`);
+      if (el && el.scrollIntoView) el.scrollIntoView({ block: "center" });
+      return;
+    }
+    // ---- статус / аватарка ----
+    if (t.closest("[data-fb-status]")) { statusPane = statusPane === "status" ? null : "status"; render(true); return; }
+    if (t.closest("[data-fb-avatar]")) { statusPane = statusPane === "avatar" ? null : "avatar"; render(true); return; }
+    if (t.closest("[data-fb-statusclose]")) { statusPane = null; render(true); return; }
+    const sst = t.closest("[data-fb-setstatus]");
+    if (sst) { localStorage.setItem(STK, sst.getAttribute("data-fb-setstatus")); beat(); statusPane = null; render(true); return; }
+    const sav = t.closest("[data-fb-setavatar]");
+    if (sav) { localStorage.setItem(AVK, sav.getAttribute("data-fb-setavatar")); beat(); statusPane = null; render(true); return; }
+    // ---- группы ----
+    if (t.closest("[data-fb-roomnew]")) {
+      const nm = prompt("Название группы (объект, бригада):", "Объект");
+      if (!nm) return;
+      createRoom(nm, contacts.filter((c) => c.status === "ok").map((c) => (c.uids || []).filter((x) => x !== myUid())[0]))
+        .then((id) => { if (!id) { toast("Не удалось создать"); return; } roomId = id; view = "room"; render(); toast("Группа создана — добавь участников"); });
+      return;
+    }
+    const rmBtn = t.closest("[data-fb-room]");
+    if (rmBtn) { roomId = rmBtn.getAttribute("data-fb-room"); view = "room"; roomShowPeople = false; render(); return; }
+    if (t.closest("[data-fb-roompeople]")) { roomShowPeople = !roomShowPeople; render(true); return; }
+    const radd = t.closest("[data-fb-roomadd]");
+    if (radd) { roomAdd(roomId, radd.getAttribute("data-fb-roomadd")).then((ok) => toast(ok ? "Добавлен" : "Не удалось")); return; }
+    const rkick = t.closest("[data-fb-roomkick]");
+    if (rkick) { roomKick(roomId, rkick.getAttribute("data-fb-roomkick")).then((ok) => { if (!ok) toast("Не удалось"); }); return; }
     // ---- вложения ----
     if (t.closest("[data-fb-attach]")) { attachPane = attachPane ? null : "menu"; render(true); return; }
     if (t.closest("[data-fb-attclose]")) { attachPane = null; render(true); return; }
@@ -1050,10 +1332,34 @@
       });
       return;
     }
+    const ac = t.closest("[data-fb-attclient]");
+    if (ac) {
+      const id = ac.getAttribute("data-fb-attclient");
+      let c = null;
+      try { c = (EP.Clients.listClients() || []).find((x) => x.id === id); } catch (e) {}
+      if (!c) { toast("Клиент не найден"); return; }
+      putFile("client", c.name || "клиент", JSON.stringify(c), view === "dm" ? dmUid : null).then((res) => {
+        if (!res || res.tooBig) { toast("Не удалось подготовить вложение"); return; }
+        attachPick = { kind: "client", title: cut(c.name || "клиент", 60), fileId: res.id, note: c.phone || c.address || "" };
+        attachPane = null; render(true);
+      });
+      return;
+    }
+    if (t.closest("[data-fb-attshield]")) {
+      let cfg = "";
+      try { cfg = localStorage.getItem("ep_shield_v28_config") || ""; } catch (e) {}
+      if (!cfg) { toast("В конфигураторе пусто"); return; }
+      putFile("shield", "Сборка щита", cfg, view === "dm" ? dmUid : null).then((res) => {
+        if (!res || res.tooBig) { toast("Не удалось подготовить вложение"); return; }
+        attachPick = { kind: "shield", title: "Сборка щита", fileId: res.id, note: "конфигуратор" };
+        attachPane = null; render(true);
+      });
+      return;
+    }
     const apl = t.closest("[data-fb-apply]");
     if (apl) {
       const id = apl.getAttribute("data-fb-apply");
-      const m2 = older.concat(msgs, dmAll).find((x) => x.id === id);
+      const m2 = older.concat(msgs, dmAll, grpAll).find((x) => x.id === id);
       if (!m2 || !m2.attach) { toast("Вложение не найдено"); return; }
       toast("Применяю…");
       applyAttach(m2.attach).then((msg) => toast(msg));
@@ -1062,7 +1368,7 @@
     const dl = t.closest("[data-fb-del2]");
     if (dl) {
       if (!confirm("Удалить сообщение?")) return;
-      removeMsg(dl.getAttribute("data-fb-del2"), view === "dm").then((ok) => { if (!ok) toast("Не удалось удалить"); openMsgId = null; });
+      removeMsg(dl.getAttribute("data-fb-del2")).then((ok) => { if (!ok) toast("Не удалось удалить"); openMsgId = null; });
       return;
     }
     const mg = t.closest("[data-fb-msg]");
@@ -1072,7 +1378,7 @@
       const v = inp3 ? inp3.value : "";
       if (!String(v).trim()) { toast("Напиши сообщение"); return; }
       if (inp3) { inp3.value = ""; grow(inp3); }
-      const p = view === "dm" ? sendDm(v) : sendPub(v);
+      const p = view === "room" ? sendGroup(v) : (view === "dm" ? sendDm(v) : sendPub(v));
       replyTo = null; attachPick = null; attachPane = null;
       p.then((r) => {
         toast(r.ok ? "Отправлено" : (r.queued ? "Сохранено — уйдёт при входе" : "Не удалось отправить"));
@@ -1098,10 +1404,72 @@
     }
     if (t === ov) close();     // клик по затемнению
   });
+  // фото сжимаем до 1280px/JPEG q0.72 (иначе снимок с телефона — 3-5 МБ и в документ
+  // Firestore не влезет), остальные файлы берём как есть и проверяем предел
+  function readAsAttach(file) {
+    return new Promise((resolve) => {
+      if (!file) { resolve(null); return; }
+      const fr = new FileReader();
+      fr.onerror = () => resolve(null);
+      fr.onload = () => {
+        const data = String(fr.result || "");
+        if (!/^image\//.test(file.type)) { resolve({ kind: "file", title: file.name || "файл", data: data }); return; }
+        const img = new Image();
+        img.onerror = () => resolve({ kind: "photo", title: file.name || "фото", data: data });
+        img.onload = () => {
+          try {
+            const side = 1280, k = Math.min(1, side / Math.max(img.width, img.height));
+            const cv = document.createElement("canvas");
+            cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+            cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+            resolve({ kind: "photo", title: file.name || "фото", data: cv.toDataURL("image/jpeg", 0.72) });
+          } catch (e2) { resolve({ kind: "photo", title: file.name || "фото", data: data }); }
+        };
+        img.src = data;
+      };
+      fr.readAsDataURL(file);
+    });
+  }
+  document.addEventListener("change", (e) => {
+    const t = e.target;
+    if (!t || !t.hasAttribute || !t.hasAttribute("data-fb-attfile")) return;
+    const file = t.files && t.files[0];
+    t.value = "";
+    if (!file) return;
+    toast("Готовлю вложение…");
+    readAsAttach(file).then((att) => {
+      if (!att) { toast("Не удалось прочитать файл"); return; }
+      return putFile(att.kind, att.title, att.data, view === "dm" ? dmUid : null).then((res) => {
+        if (!res) { toast("Не удалось подготовить вложение"); return; }
+        if (res.tooBig) { toast("Файл слишком большой для чата (до ~0.9 МБ)"); return; }
+        attachPick = { kind: att.kind, title: cut(att.title, 60), fileId: res.id, note: Math.round(att.data.length / 1024) + " КБ" };
+        attachPane = null; render(true);
+      });
+    });
+  });
   document.addEventListener("input", (e) => {
     const t = e.target;
     if (!t) return;
     if (t.id === "ep-fb-input" || (t.hasAttribute && t.hasAttribute("data-fb-editinput"))) grow(t);
+    if (t.id === "ep-fb-input" && String(t.value || "").trim()) markTyping();
+    if (t.hasAttribute && t.hasAttribute("data-fb-searchq")) {
+      searchQ = t.value; hitId = "";
+      patch();
+      // САМУ строку поиска перерисовываем ЦЕЛИКОМ (её отдельная обёртка .ep-fb-searchwrap),
+      // а не только счётчик найденного: раньше правился текст первого .ep-fb-attpane .ep-fb-st
+      // в оверлее — из-за этого (а) кнопка «↓ к следующему» не появлялась вообще, пока не
+      // случится полный render() из другого места (набрал запрос — «найдено: 2», а
+      // переходить к находкам нечем), и (б) при открытой панели 📎/статуса счётчик писался
+      // в ЧУЖУЮ панель (первый .ep-fb-attpane в DOM — не обязательно поиск).
+      const wrap = ovEl() && ovEl().querySelector(".ep-fb-searchwrap");
+      if (wrap) {
+        wrap.innerHTML = searchBarHtml();
+        const bar = wrap.querySelector("[data-fb-searchq]");
+        // курсор ставим в конец: перерисовка узла сбрасывает фокус и каретку
+        if (bar) { bar.focus(); try { bar.setSelectionRange(bar.value.length, bar.value.length); } catch (e2) {} }
+      }
+      return;
+    }
     if (t.hasAttribute && t.hasAttribute("data-fb-attq")) {
       attachQ = t.value;
       const pane = ovEl() && ovEl().querySelector(".ep-fb-attpane");
@@ -1121,8 +1489,8 @@
 
   window.addEventListener("ep:auth-changed", () => {
     unsubAll();
-    msgs = []; older = []; dmAll = []; people = []; bans = []; reports = []; contacts = []; noMoreOlder = false;
-    gotPub = false; gotDm = false; seenPending.clear();
+    msgs = []; older = []; dmAll = []; people = []; bans = []; reports = []; contacts = []; rooms = []; grpAll = []; noMoreOlder = false;
+    gotPub = false; gotDm = false; gotGrp = false; seenPending.clear();
     if (myUid()) startAll();
     ensureFab();
     if (isOpen()) render(true);
@@ -1139,9 +1507,12 @@
     queue: qread, flushQueue, state: () => chatState, unread: unreadTotal, people: () => people.slice(),
     openDm, setView: (v) => { view = v; if (isOpen()) render(); }, isOnline, notifyAsk: askNotify,
     banUser, unbanUser, purgeUser, reportMsg, closeReport, bans: () => bans.slice(), reports: () => reports.slice(),
-    isBanned, skin,
+    isBanned, skin, myStatus, myAvatar, isTyping, STATUSES,
+    search: (q) => { searchOn = true; searchQ = q || ""; if (isOpen()) render(true); return searchHits().length; },
     addContact, acceptContact, dropContact, contacts: () => contacts.slice(), isContact,
-    putFile, getFile, applyAttach
+    putFile, getFile, applyAttach,
+    rooms: () => rooms.slice(), createRoom, roomAdd, roomKick, openRoom: (id) => { roomId = id; view = "room"; if (isOpen()) render(); },
+    roomMessages: () => roomMsgs()
   };
   EP.Chat = EP.Feedback;
 })();
