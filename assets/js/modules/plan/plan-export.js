@@ -56,9 +56,23 @@
     let scale = null;
     if (vb.length === 4 && vb[2] > 0 && vb[3] > 0) {
       const AREA = planArea();
-      scale = SCALES.find((sc) => (vb[2] * 10 / sc) <= AREA.w && (vb[3] * 10 / sc) <= AREA.h) || SCALES[SCALES.length - 1];
-      cv.svg.setAttribute("width", (Math.round(vb[2] * 100 / scale) / 10) + "mm");
-      cv.svg.setAttribute("height", (Math.round(vb[3] * 100 / scale) / 10) + "mm");
+      if (pdfFit) {
+        // мм на сантиметр проекта: сколько влезает по узкой стороне поля (пропорции целы)
+        // k — миллиметров бумаги на ДЕЦИМЕТР проекта (viewBox в см), берём меньшее из
+        // двух, чтобы пропорции чертежа не искажались
+        const k = Math.min(AREA.w / (vb[2] / 10), AREA.h / (vb[3] / 10));
+        cv.svg.setAttribute("width", (Math.round(vb[2] / 10 * k * 10) / 10) + "mm");
+        cv.svg.setAttribute("height", (Math.round(vb[3] / 10 * k * 10) / 10) + "mm");
+        // знаменатель масштаба: см проекта × 10 / мм бумаги = 100 / k (НЕ 10/k — на
+        // этом первый прогон дал бессмысленные «1:3»/«1:9», поймано замером)
+        scale = Math.max(1, Math.round(100 / k));
+        lastPlanFit = true;
+      } else {
+        scale = SCALES.find((sc) => (vb[2] * 10 / sc) <= AREA.w && (vb[3] * 10 / sc) <= AREA.h) || SCALES[SCALES.length - 1];
+        cv.svg.setAttribute("width", (Math.round(vb[2] * 100 / scale) / 10) + "mm");
+        cv.svg.setAttribute("height", (Math.round(vb[3] * 100 / scale) / 10) + "mm");
+        lastPlanFit = false;
+      }
     } else {
       cv.svg.setAttribute("width", "100%");
     }
@@ -87,6 +101,14 @@
   // масштабы — такие же стандартные, и они честно пишутся в штамп.
   const SCALES = [20, 25, 30, 40, 50, 60, 75, 100, 125, 150, 200, 250, 500];
   let lastPlanScale = null; // масштаб последнего собранного плана — идёт в штамп листа
+  let lastPlanFit = false;  // он получен «вписыванием в лист» (нестандартный) — пометка в штампе
+  // «Во весь лист» (репорт пользователя: «выбрал формат а1, а проект как будто в а4
+  // остался»): стандартный ряд масштабов оставляет 10-40% поля пустыми, потому что
+  // берётся ближайший СТАНДАРТНЫЙ масштаб, при котором чертёж влезает. В этом режиме
+  // чертёж растягивается точно на поле листа, а в штамп идёт получившийся (нестандартный)
+  // масштаб с пометкой «впис.» — честнее, чем молча печатать мелко. Сессионная настройка,
+  // как pdfScale/pdfFormat (не часть модели проекта).
+  let pdfFit = true;
 
   // временно включает ТОЛЬКО перечисленные слои (project.layers[].visible), зовёт fn,
   // восстанавливает исходную видимость — для страниц-по-слоям альбома (не трогаем
@@ -147,7 +169,7 @@
       </tr>
       <tr>
         <td class="st-k">${T.addr}</td><td class="st-v" colspan="3">${esc(m.addr)}</td>
-        <td class="st-k">${T.scaleLbl}</td><td class="st-v st-c">${scale ? "1:" + scale : "—"}${" · " + pdfFormat}</td>
+        <td class="st-k">${T.scaleLbl}</td><td class="st-v st-c">${scale ? "1:" + scale + (lastPlanFit ? " впис." : "") : "—"}${" · " + pdfFormat}</td>
         <td class="st-k">${T.sheetsN}</td><td class="st-v st-c">${of}</td>
       </tr>
       <tr>
@@ -714,11 +736,16 @@
       <div class="ep-plan-srow">Формат листа:
         ${Object.keys(PAGE).map((f) => `<button type="button" class="ep-plan-chip ep-clickable ${pdfFormat === f ? "on" : ""}" data-pxp-fmt="${f}">${f}</button>`).join("")}
       </div>
+      <div class="ep-plan-srow">Масштаб чертежа:
+        <button type="button" class="ep-plan-chip ep-clickable ${pdfFit ? "on" : ""}" data-pxp-fit="1">⤢ Во весь лист</button>
+        <button type="button" class="ep-plan-chip ep-clickable ${pdfFit ? "" : "on"}" data-pxp-fit="0">📐 Стандартный (1:20…1:500)</button>
+      </div>
+      <div class="ep-plan-modehint">«Во весь лист» — чертёж занимает всё поле листа (в штамп идёт получившийся масштаб с пометкой «впис.»). «Стандартный» — ближайший масштаб из ряда 1:20…1:500, чертёж может занять не весь лист, зато масштаб истинный и его можно мерить линейкой.</div>
       <div class="ep-plan-modehint">На большом листе (A2-A0) план печатается КРУПНЕЕ — масштаб чертежа подбирается автоматически (до 1:20) и пишется в штамп вместе с форматом.
       <b>Важно:</b> в диалоге печати выбери ТУ ЖЕ бумагу. На Android диалог сам решает размер: если оставить A4, лист впишется со сжатием — чертёж будет читаемым, но масштаб в штампе перестанет быть истинным.</div>
       <div id="ep-plan-pdfpreview-box">${pdfScalePreview(p)}</div>
       <div class="ep-plan-srow ep-plan-sbtns">
-        <button type="button" class="btn btn-primary ep-clickable" data-pxp-print>📄 Сформировать PDF</button>
+        <button type="button" class="btn btn-primary ep-clickable" data-pxp-print>📄 Сформировать PDF (${pdfFormat}${pdfFit ? " · во весь лист" : ""})</button>
       </div>`);
   }
 
@@ -728,6 +755,8 @@
     if (e.target.closest("[data-pxp-close]")) { rooms().closeSheet(); return; }
     const fmtBtn = e.target.closest("[data-pxp-fmt]");
     if (fmtBtn) { pdfFormat = fmtBtn.getAttribute("data-pxp-fmt") || "A4"; sheetPdfScale(); return; }
+    const fitBtn = e.target.closest("[data-pxp-fit]");
+    if (fitBtn) { pdfFit = fitBtn.getAttribute("data-pxp-fit") === "1"; sheetPdfScale(); return; }
     // closeSheet() ПЕРЕД print() — иначе он тут же стёр бы тост «Строим PDF…»,
     // который print() показывает через тот же openSheet() сразу после себя.
     if (e.target.closest("[data-pxp-print]")) { rooms().closeSheet(); print(); return; }

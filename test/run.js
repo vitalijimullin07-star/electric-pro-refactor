@@ -3033,6 +3033,13 @@ test("фото: deleteProject чистит кэш фото своего прое
     // атрибуты, buildSvg читает viewBox через DOM) — это покрыто живым прогоном;
     // здесь проверяем ряд масштабов и то, что формат листа попал в штамп
     ok(/· A4/.test(html), "в штампе рядом с масштабом стоит формат листа");
+    const src0 = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-export.js"), "utf8");
+    ok(/⤢ Во весь лист/.test(src0), "есть режим «во весь лист»");
+    ok(/let pdfFit = true;/.test(src0), "по умолчанию — во весь лист (репорт «выбрал A1, а проект как в A4»)");
+    ok(/data-pxp-fit/.test(src0), "переключатель режима масштаба в шторке");
+    ok(/Math\.round\(100 \/ k\)/.test(src0), "знаменатель масштаба при вписывании = 100/k (не 10/k — на этом первый прогон дал «1:3»)");
+    ok(/lastPlanFit \? " впис\." : ""/.test(src0), "вписанный масштаб честно помечен в штампе");
+    ok(/Сформировать PDF \(\$\{pdfFormat\}/.test(src0), "формат листа видно прямо на кнопке печати");
     const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-export.js"), "utf8");
     const row = /const SCALES = \[([^\]]+)\]/.exec(src);
     ok(row, "ряд масштабов найден");
