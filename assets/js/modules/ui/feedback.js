@@ -150,6 +150,19 @@
   let searchOn = false;                  // раскрыта строка поиска
   let searchQ = "";                      // строка поиска по переписке
   let hitId = "";                        // найденное сообщение, к которому прокрутились
+  /* «Пользователь сам начал печатать» — окно ВРЕМЕНИ, а не одноразовый флаг («↩ Ответить»,
+     «✎ Изменить», отправка). Одноразовый флаг съедала ГОНКА ДВУХ РЕНДЕРОВ: отправка
+     сообщения тут же будит подписку Firestore, та перерисовывает окно и потребляет флаг, а
+     следующий render() из промиса отправки уже видит его пустым и заменяет innerHTML —
+     отложенный focus() уходил в узел, которого больше нет в документе (поймано живым
+     прогоном). Метка времени переживает любое число перерисовок и гаснет сама. */
+  let focusUntil = 0;
+  const wantFocus = () => { focusUntil = Date.now() + 1200; };
+  // когда поле ввода последний раз теряло фокус. Нужно ради «Отправить»: тап по кнопке
+  // ЗАБИРАЕТ фокус у поля (браузер), поэтому в момент обработки клика activeElement уже
+  // кнопка, и по нему не отличить «человек печатал и отправил» от «нажал кнопку с
+  // закрытой клавиатурой». По свежести blur — отличаем.
+  let inpBlurAt = 0;
   let attachPane = null;                 // открытая панель 📎 ("menu"|"plan"|"db"|"est")
   let attachQ = "";                      // строка поиска в пикере позиций БД
   let attachPick = null;                 // выбранное вложение — уйдёт со сообщением
@@ -977,7 +990,14 @@
     const uid = myUid(), un = unreadDmBy();
     // всех, кого знаем: присутствие + авторы сообщений (мог не «биться», но писал)
     const map = {};
-    people.forEach((p) => { if (p.uid !== uid) map[p.uid] = { uid: p.uid, name: p.name || "Мастер", at: p.at || 0 }; });
+    // ВАЖНО: переносим ВСЮ запись присутствия, а не только имя со временем. Раньше здесь
+    // собиралось { uid, name, at } — и status/avatar/typing ТЕРЯЛИСЬ по дороге, а rowOf
+    // ниже читает именно p.avatar и statusOf(p): у всех до единого показывались ⚡ и
+    // «в сети», какой бы статус и аватарку человек себе ни поставил (репорт пользователя
+    // «статусы, аватарки не видят другие когда изменил»; в моём же прогоне это было
+    // видно в выводе — у мастера со статусом «отошёл» и котом стояли ⚡ и «в сети», —
+    // но проверка смотрела лишь «аватарка непустая» и пропустила баг).
+    people.forEach((p) => { if (p.uid !== uid) map[p.uid] = Object.assign({}, p, { name: p.name || "Мастер", at: p.at || 0 }); });
     msgs.concat(dmAll).forEach((m) => {
       const id = m.uid || m.from;
       if (!id || id === uid) return;
@@ -1187,6 +1207,10 @@
     let ov = ovEl();
     if (!ov) { ov = document.createElement("div"); ov.id = "ep-fb-ov"; ov.className = "ep-fb-ov"; document.body.appendChild(ov); }
     const prevTop = keepScroll && listEl() ? listEl().scrollTop : null;
+    // печатал ли пользователь ПРЯМО СЕЙЧАС: проверяем ДО пересборки innerHTML, иначе
+    // activeElement уже сбросится на body и мы не отличим «печатал» от «просто смотрел»
+    const ae = document.activeElement;
+    const keepFocus = !!(ae && (ae.id === "ep-fb-input" || (ae.hasAttribute && ae.hasAttribute("data-fb-editinput"))));
     const isNotes = view === "notes";
     const rm = view === "room" ? roomOf(roomId) : null;
     const roomHead = rm ? `<div class="ep-fb-dmhead"><button type="button" class="ep-plan-mini ep-clickable" data-fb-tab="rooms">‹</button>
@@ -1246,8 +1270,22 @@
       if (prevTop != null) box.scrollTop = prevTop;
       else if (view === "chat" || view === "dm") box.scrollTop = box.scrollHeight;   // автопрокрутка к последнему
     }
-    const inp = document.getElementById("ep-fb-input");
-    if (inp) { grow(inp); setTimeout(() => { try { inp.focus(); } catch (e) {} }, 30); }
+    /* КЛАВИАТУРА — ТОЛЬКО ПО ТАПУ В ПОЛЕ (просьба пользователя: «иначе раздражает»).
+       Раньше здесь стоял безусловный focus() на КАЖДЫЙ render() — а render() случается
+       не только при открытии чата: смена вкладки, облик, статус, «во весь экран», ответ,
+       правка, отправка. На телефоне каждый такой раз выезжала клавиатура и съедала
+       пол-экрана переписки. Фокус ставим ровно в двух случаях:
+       (1) поле УЖЕ было в фокусе до перерисовки — пользователь печатал, и отправка
+           сообщения (после неё render(false)) не должна захлопывать клавиатуру;
+       (2) пользователь сам начал текстовое действие («↩ Ответить», «✎ Изменить»,
+           отправка) — там появление клавиатуры и есть ожидаемое поведение.
+       Во всех остальных случаях поле просто ждёт тапа. */
+    const editBox = ov.querySelector("[data-fb-editinput]");
+    const inp = editBox || document.getElementById("ep-fb-input");
+    if (inp) {
+      grow(inp);
+      if (keepFocus || Date.now() < focusUntil) setTimeout(() => { try { inp.focus(); } catch (e) {} }, 30);
+    }
     markSeen();
     paintBadge();
   }
@@ -1348,11 +1386,11 @@
     if (rep) {
       const id = rep.getAttribute("data-fb-reply");
       const src = older.concat(msgs, dmAll, grpAll).find((m) => m.id === id);
-      if (src) replyTo = { id: id, name: src.name || nameOf(src.from), text: src.text || "" };
+      if (src) { replyTo = { id: id, name: src.name || nameOf(src.from), text: src.text || "" }; wantFocus(); }
       openMsgId = null; render(true); return;
     }
     const ed = t.closest("[data-fb-edit]");
-    if (ed) { editId = ed.getAttribute("data-fb-edit"); openMsgId = null; render(true); return; }
+    if (ed) { editId = ed.getAttribute("data-fb-edit"); openMsgId = null; wantFocus(); render(true); return; }
     if (t.closest("[data-fb-editcancel]")) { editId = null; render(true); return; }
     const sv = t.closest("[data-fb-editsave]");
     if (sv) {
@@ -1530,6 +1568,9 @@
       const inp3 = document.getElementById("ep-fb-input");
       const v = inp3 ? inp3.value : "";
       if (!String(v).trim()) { toast("Напиши сообщение"); return; }
+      // печатал прямо сейчас (или фокус только что ушёл на саму кнопку «Отправить») —
+      // клавиатуру НЕ захлопываем, обычно пишут следующее сообщение подряд
+      if (document.activeElement === inp3 || Date.now() - inpBlurAt < 2500) wantFocus();
       if (inp3) { inp3.value = ""; grow(inp3); }
       const p = view === "room" ? sendGroup(v) : (view === "dm" ? sendDm(v) : sendPub(v));
       replyTo = null; attachPick = null; attachPane = null;
@@ -1600,6 +1641,9 @@
       });
     });
   });
+  document.addEventListener("focusout", (e) => {
+    if (e.target && e.target.id === "ep-fb-input") inpBlurAt = Date.now();
+  }, true);
   document.addEventListener("input", (e) => {
     const t = e.target;
     if (!t) return;
