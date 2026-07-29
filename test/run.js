@@ -3513,6 +3513,32 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/const where = view === "dm" \? \("dm:" \+ dmUid\)[\s\S]{0,90}"pub"/.test(fb), "«печатает…» помечено местом (общий/личка/группа) — иначе показывалось бы во всех чатах разом");
     ok(/data-fb-setstatus/.test(fb) && /data-fb-setavatar/.test(fb), "выбор статуса и аватарки в шапке чата");
   });
+  test("чат: клавиатура только по тапу в поле + чужие статусы/аватарки видны", () => {
+    const fs = require("fs"), path = require("path"), root = path.resolve(__dirname, "..");
+    const fb = fs.readFileSync(path.join(root, "assets", "js", "modules", "ui", "feedback.js"), "utf8");
+    // РАНЬШЕ в render() стоял безусловный focus() — клавиатура выезжала на КАЖДУЮ
+    // перерисовку (смена вкладки, облик, статус, «во весь экран», входящее сообщение)
+    ok(!/if \(inp\) \{ grow\(inp\); setTimeout\(\(\) => \{ try \{ inp\.focus\(\)/.test(fb),
+      "безусловного автофокуса в render() больше нет");
+    ok(/if \(keepFocus \|\| Date\.now\(\) < focusUntil\) setTimeout/.test(fb),
+      "фокус только если человек печатал ИЛИ сам начал текстовое действие");
+    ok(/const keepFocus = !!\(ae &&/.test(fb) && fb.indexOf("const keepFocus") < fb.indexOf("ov.innerHTML ="),
+      "«печатал ли сейчас» проверяется ДО пересборки innerHTML (иначе activeElement уже body)");
+    // окно времени, а не одноразовый флаг: отправку сопровождают ДВА рендера (подписка
+    // Firestore + промис отправки), и одноразовый флаг съедал первый из них
+    ok(/let focusUntil = 0;/.test(fb) && /const wantFocus = \(\) => \{ focusUntil = Date\.now\(\) \+ /.test(fb),
+      "намерение печатать — окно времени, его не съедает гонка двух рендеров");
+    ok(/inpBlurAt = Date\.now\(\)/.test(fb) && /Date\.now\(\) - inpBlurAt < 2500\) wantFocus\(\)/.test(fb),
+      "после «Отправить» клавиатура остаётся, если человек только что печатал (тап по кнопке забирает фокус у поля)");
+    // статусы/аватарки: в список людей должна попадать ВСЯ запись присутствия
+    ok(/map\[p\.uid\] = Object\.assign\(\{\}, p, \{ name: p\.name/.test(fb),
+      "в список людей переносится вся запись присутствия — иначе status/avatar теряются и у всех показывались ⚡ и «в сети»");
+    const peopleFn = /function peopleListHtml\(\)[\s\S]*?\n  \}/.exec(fb);
+    ok(peopleFn && !/map\[p\.uid\] = \{ uid: p\.uid, name: p\.name \|\| "Мастер", at: p\.at \|\| 0 \}/.test(peopleFn[0]),
+      "прежней «обрезки» полей в peopleListHtml не осталось");
+    ok(/<span class="ep-fb-ava">\$\{esc\(p\.avatar/.test(fb) && /STATUSES\[statusOf\(p\)\]/.test(fb),
+      "строка человека рисует ЕГО аватарку и статус");
+  });
   test("чат: «во весь экран» — класс + нативный фуллскрин, безопасно для чужого", () => {
     const fs = require("fs"), path = require("path"), root = path.resolve(__dirname, "..");
     const fb = fs.readFileSync(path.join(root, "assets", "js", "modules", "ui", "feedback.js"), "utf8");
