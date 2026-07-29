@@ -35,6 +35,8 @@
   const SEENK = "ep_chat_seen_v1";   // что уже прочитано { pub: ts }
   const SNDK = "ep_chat_sound_v1";   // "0" — звук выключен
   const COL = "chat_messages", DMC = "chat_dm", PRES = "chat_presence";
+  const BANS = "chat_bans", REPS = "chat_reports";
+  const SKINK = "ep_chat_skin_v1";   // "icq" (по умолчанию) | "modern"
   const MAX = 300;    // локальный журнал устройства
   const LIMIT = 120;  // сколько последних сообщений держим живыми
   const DM_LIMIT = 500;
@@ -124,6 +126,8 @@
   // не давало ни звука, ни уведомления (поймано живым прогоном)
   let gotPub = false, gotDm = false;
   const seenPending = new Set();   // какие личные уже помечаем прочитанными (без петли)
+  let bans = [], reports = [];     // модерация: кто забанен и на что жалуются
+  let unsubBans = null, unsubReps = null;
 
   function fdb() { try { return (window.EP && EP.Firebase && EP.Firebase.db) || null; } catch (e) { return null; } }
   function me() {
@@ -149,6 +153,11 @@
   function seenRead() { try { const v = JSON.parse(localStorage.getItem(SEENK) || "{}"); return v && typeof v === "object" ? v : {}; } catch (e) { return {}; } }
   function seenWrite(v) { try { localStorage.setItem(SEENK, JSON.stringify(v)); } catch (e) {} }
   const soundOn = () => localStorage.getItem(SNDK) !== "0";
+  // облик чата: "icq" — ретро-окно (просьба пользователя «экран чата ближе к icq»),
+  // "modern" — прежние пузыри; переключается 🌼/💬 в шапке, помнится на устройстве
+  const skin = () => (localStorage.getItem(SKINK) === "modern" ? "modern" : "icq");
+  const isBanned = (uid) => bans.some((b) => b.uid === uid);
+  const iAmBanned = () => isBanned(myUid());
 
   // ---------- офлайн-очередь ----------
   function qread() { try { const v = JSON.parse(localStorage.getItem(QKEY) || "[]"); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
@@ -297,13 +306,37 @@
       }, () => {});
     } catch (e) {}
   }
+  // баны читают ВСЕ одобренные (клиент должен честно сказать «доступ ограничен»),
+  // жалобы — только админ (правило read: isAdmin), поэтому подписка на них лишь у него
+  function subBans() {
+    if (unsubBans) return;
+    const d = fdb(); if (!d || !myUid()) return;
+    try {
+      unsubBans = d.collection(BANS).limit(500).onSnapshot((snap) => {
+        const arr = []; snap.forEach((doc) => arr.push(Object.assign({ uid: doc.id }, doc.data())));
+        bans = arr;
+        if (isOpen()) render(true);
+      }, () => {});
+    } catch (e) {}
+  }
+  function subReports() {
+    if (unsubReps || !isAdm()) return;
+    const d = fdb(); if (!d) return;
+    try {
+      unsubReps = d.collection(REPS).limit(200).onSnapshot((snap) => {
+        const arr = []; snap.forEach((doc) => arr.push(Object.assign({ id: doc.id }, doc.data())));
+        reports = arr.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+        if (isOpen() && view === "mod") patch();
+      }, () => {});
+    } catch (e) {}
+  }
   function unsubAll() {
-    [unsubPub, unsubDm, unsubPres].forEach((f) => { if (f) { try { f(); } catch (e) {} } });
-    unsubPub = unsubDm = unsubPres = null;
+    [unsubPub, unsubDm, unsubPres, unsubBans, unsubReps].forEach((f) => { if (f) { try { f(); } catch (e) {} } });
+    unsubPub = unsubDm = unsubPres = unsubBans = unsubReps = null;
   }
   function startAll() {
     if (!myUid() || !fdb()) { chatState = "off"; return; }
-    subPublic(); subDm(); subPresence(); heartbeat();
+    subPublic(); subDm(); subPresence(); subBans(); subReports(); heartbeat();
     flushQueue().then(paintBadge);
   }
   // «сердцебиение» присутствия: пока страница видима — раз в 2 минуты
@@ -382,6 +415,47 @@
     try { return d.collection(isDm ? DMC : COL).doc(id).delete().then(() => true).catch(() => false); }
     catch (e) { return Promise.resolve(false); }
   }
+  // ---------- модерация (только админ) ----------
+  function banUser(uid, name, reason) {
+    const d = fdb(); if (!d || !uid || !isAdm()) return Promise.resolve(false);
+    try {
+      return d.collection(BANS).doc(uid).set({
+        name: name || nameOf(uid), at: Date.now(), by: myUid(), byName: myName(), reason: reason || ""
+      }).then(() => true).catch(() => false);
+    } catch (e) { return Promise.resolve(false); }
+  }
+  function unbanUser(uid) {
+    const d = fdb(); if (!d || !uid || !isAdm()) return Promise.resolve(false);
+    try { return d.collection(BANS).doc(uid).delete().then(() => true).catch(() => false); }
+    catch (e) { return Promise.resolve(false); }
+  }
+  // удалить ВСЕ сообщения человека в общем чате: тянем по uid отдельным запросом
+  // (в живой подписке только последние LIMIT — старые она не видит) и удаляем пачкой
+  function purgeUser(uid) {
+    const d = fdb(); if (!d || !uid || !isAdm()) return Promise.resolve(0);
+    try {
+      return d.collection(COL).where("uid", "==", uid).limit(500).get().then((snap) => {
+        const ids = []; snap.forEach((doc) => ids.push(doc.id));
+        return Promise.all(ids.map((id) => d.collection(COL).doc(id).delete().catch(() => {}))).then(() => ids.length);
+      }).catch(() => 0);
+    } catch (e) { return Promise.resolve(0); }
+  }
+  // жалоба: пишет любой одобренный, читает и закрывает только админ
+  function reportMsg(m) {
+    const d = fdb(); if (!d || !m) return Promise.resolve(false);
+    try {
+      return d.collection(REPS).add({
+        by: myUid(), byName: myName(), uid: m.uid || m.from || "", name: m.name || "",
+        msgId: m.id || "", text: cut(m.text || "", 500), ts: Date.now(), at: stamp()
+      }).then(() => true).catch(() => false);
+    } catch (e) { return Promise.resolve(false); }
+  }
+  function closeReport(id) {
+    const d = fdb(); if (!d || !id || !isAdm()) return Promise.resolve(false);
+    try { return d.collection(REPS).doc(id).delete().then(() => true).catch(() => false); }
+    catch (e) { return Promise.resolve(false); }
+  }
+
   // прочитано: публичный — метка времени в localStorage, личка — seen у документов
   function markSeen() {
     const uid = myUid();
@@ -464,10 +538,17 @@
       ${mine ? `<button type="button" class="ep-plan-chip ep-clickable" data-fb-edit="${esc(r.id)}">✎ Изменить</button>` : ""}
       ${canDel ? `<button type="button" class="ep-plan-chip ep-clickable" data-fb-del2="${esc(r.id)}">🗑 Удалить</button>` : ""}
       ${(!isDm && !mine && r.uid) ? `<button type="button" class="ep-plan-chip ep-clickable" data-fb-dm="${esc(r.uid)}">✉ Лично</button>` : ""}
+      ${(!isDm && !mine && r.uid && !isAdm()) ? `<button type="button" class="ep-plan-chip ep-clickable" data-fb-report="${esc(r.id)}">⚠ Жалоба</button>` : ""}
+      ${(!isDm && !mine && r.uid && isAdm()) ? `<button type="button" class="ep-plan-chip ep-clickable" data-fb-ban="${esc(r.uid)}">🚫 Забанить</button>
+        <button type="button" class="ep-plan-chip ep-clickable" data-fb-purge="${esc(r.uid)}">🧹 Все сообщения</button>` : ""}
     </div>` : "";
+    // в ретро-облике подпись автора идёт «Имя (14:32):» одной строкой цветом (свои —
+    // красным, чужие — синим), как в истории ICQ; в современном — как было
+    const head = skin() === "icq"
+      ? `<div class="ep-fb-msgtop"><b>${nm} (${esc(fmtTime(atMs(r)))}):</b></div>`
+      : `<div class="ep-fb-msgtop"><b>${nm}</b></div>`;
     return `<div class="ep-fb-msg${mine ? " is-mine" : ""}" data-fb-msg="${esc(r.id)}">
-      <div class="ep-fb-msgtop"><b>${nm}</b></div>
-      ${quote}<div class="ep-fb-text">${esc(r.text || "")}</div>
+      ${head}${quote}<div class="ep-fb-text">${esc(r.text || "")}</div>
       <div class="ep-fb-meta">${meta}</div>${acts}</div>`;
   }
   function pendingHtml() {
@@ -502,10 +583,11 @@
     return list.map((p) => {
       const last = dmAll.filter((m) => m.from === p.uid || m.to === p.uid).slice(-1)[0];
       const n = un[p.uid] || 0;
+      const icq = skin() === "icq";
       return `<button type="button" class="ep-fb-person ep-clickable" data-fb-dm="${esc(p.uid)}">
-        <span class="ep-fb-dot${isOnline(p) ? " is-on" : ""}"></span>
+        ${icq ? `<span class="ep-fb-flower${isOnline(p) ? " is-on" : ""}">🌼</span>` : `<span class="ep-fb-dot${isOnline(p) ? " is-on" : ""}"></span>`}
         <span class="ep-fb-pname">${esc(p.name)}${last ? `<i>${esc(cut(last.text, 40))}</i>` : ""}</span>
-        ${n ? `<span class="ep-fb-cnt">${n}</span>` : `<span class="ep-fb-st">${isOnline(p) ? "в сети" : (p.at ? "был " + fmtTime(p.at) : "")}</span>`}
+        ${n ? `<span class="ep-fb-cnt">${n}</span>` : `<span class="ep-fb-st">${isBanned(p.uid) ? "🚫 в чате ограничен" : (isOnline(p) ? "в сети" : (p.at ? "был " + fmtTime(p.at) : ""))}</span>`}
       </button>`;
     }).join("");
   }
@@ -519,7 +601,29 @@
         <div class="ep-fb-text">${esc(r.text)}</div>
       </div>`).join("");
   }
+  function modListHtml() {
+    if (!isAdm()) return `<div class="ep-fb-empty">Модерация доступна администратору.</div>`;
+    const banRows = bans.length ? bans.map((b) => `<div class="ep-fb-item">
+      <div class="ep-fb-meta">🚫 забанен ${esc(fmtDate(b.at || 0))}${b.byName ? " · " + esc(b.byName) : ""}</div>
+      <div class="ep-fb-text"><b>${esc(b.name || nameOf(b.uid))}</b>${b.reason ? " — " + esc(b.reason) : ""}</div>
+      <div class="ep-fb-acts">
+        <button type="button" class="ep-plan-chip ep-clickable" data-fb-unban="${esc(b.uid)}">✓ Разбанить</button>
+        <button type="button" class="ep-plan-chip ep-clickable" data-fb-purge="${esc(b.uid)}">🧹 Удалить все сообщения</button>
+      </div></div>`).join("") : `<div class="ep-fb-empty">Забаненных нет.</div>`;
+    const repRows = reports.length ? reports.map((r) => `<div class="ep-fb-item">
+      <div class="ep-fb-meta">⚠ жалоба от ${esc(r.byName || "мастера")} · ${esc(fmtDate(r.ts || 0))}</div>
+      <div class="ep-fb-text"><b>${esc(r.name || nameOf(r.uid))}:</b> ${esc(cut(r.text, 300))}</div>
+      <div class="ep-fb-acts">
+        ${isBanned(r.uid) ? `<button type="button" class="ep-plan-chip ep-clickable" data-fb-unban="${esc(r.uid)}">✓ Разбанить</button>`
+          : `<button type="button" class="ep-plan-chip ep-clickable" data-fb-ban="${esc(r.uid)}">🚫 Забанить</button>`}
+        ${r.msgId ? `<button type="button" class="ep-plan-chip ep-clickable" data-fb-del2="${esc(r.msgId)}">🗑 Удалить сообщение</button>` : ""}
+        <button type="button" class="ep-plan-chip ep-clickable" data-fb-purge="${esc(r.uid)}">🧹 Все сообщения</button>
+        <button type="button" class="ep-plan-chip ep-clickable" data-fb-closerep="${esc(r.id)}">✓ Закрыть жалобу</button>
+      </div></div>`).join("") : `<div class="ep-fb-empty">Жалоб нет.</div>`;
+    return `<div class="ep-fb-modsec"><b>Жалобы</b></div>` + repRows + `<div class="ep-fb-modsec"><b>Ограничен доступ к чату</b></div>` + banRows;
+  }
   function bodyHtml() {
+    if (view === "mod") return modListHtml();
     if (view === "people") return peopleListHtml();
     if (view === "dm") return dmListHtml();
     if (view === "notes") return notesListHtml();
@@ -528,7 +632,11 @@
   function tabsHtml() {
     const un = unreadDmBy(), dmN = Object.keys(un).reduce((s, k) => s + un[k], 0), pubN = unreadPub();
     const t = (id, label, n) => `<button type="button" class="ep-plan-chip ep-clickable${view === id ? " on" : ""}" data-fb-tab="${id}">${label}${n ? ` <i class="ep-fb-cnt">${n}</i>` : ""}</button>`;
-    return t("chat", "Общий", view === "chat" ? 0 : pubN) + t("people", "Люди", dmN) + t("notes", "Заметки", 0);
+    const icq = skin() === "icq";
+    return t("chat", icq ? "Общий" : "Общий", view === "chat" ? 0 : pubN)
+      + t("people", icq ? "🌼 Контакты" : "Люди", dmN)
+      + t("notes", "Заметки", 0)
+      + (isAdm() ? t("mod", "🛡 Модерация", reports.length) : "");
   }
   // обновляем ТОЛЬКО список/статус/вкладки — иначе приходящее сообщение стирало бы
   // набранный, но не отправленный текст в поле ввода (и сбивало фокус)
@@ -560,10 +668,15 @@
       : (view === "people" ? "Тапни человека — откроется личная переписка. Зелёная точка — в сети (заходил в приложение за последние 5 минут)."
         : (view === "dm" ? "Личная переписка — видите только вы двое, даже админ её не читает. Тапни сообщение: ответить, изменить своё, удалить."
           : "Тапни сообщение — ответить, изменить своё, удалить или написать лично. К сообщению подшивается экран, проект и версия сборки."));
-    ov.innerHTML = `<div class="ep-fb-card card glass">
+    const icq = skin() === "icq";
+    // в ретро-облике НЕ вешаем классы card/glass: у них в base.css есть
+    // background: ... !important под body[data-noblur] (перф-деградация), который
+    // перебил бы ретро-фон окна (поймано живым замером: computed бело-белый)
+    ov.innerHTML = `<div class="ep-fb-card${icq ? " is-icq" : " card glass"}">
       <div class="ep-fb-head">
-        <b>💬 Чат</b>
+        <b>${icq ? "🌼 ICQ · Electric Pro" : "💬 Чат"}</b>
         <span class="ep-fb-sp"></span>
+        <button type="button" class="ep-plan-mini ep-clickable" data-fb-skin aria-label="Облик чата">${icq ? "💬" : "🌼"}</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-fb-close aria-label="Закрыть">✕</button>
       </div>
       <div class="ep-fb-tabs"><span class="ep-fb-tabs-in">${tabsHtml()}</span><span class="ep-fb-sp"></span><span class="ep-fb-status">${isNotes ? "" : statusHtml()}</span></div>
@@ -572,7 +685,7 @@
       <div class="ep-fb-list">${bodyHtml()}</div>
       <button type="button" class="ep-fb-newchip ep-clickable" data-fb-tobottom ${pendingNew ? "" : "hidden"}>↓ ${pendingNew} новых</button>
       ${replyTo ? `<div class="ep-fb-replybar"><span>↩ ${esc(replyTo.name)}: ${esc(cut(replyTo.text, 60))}</span><button type="button" class="ep-plan-mini ep-clickable" data-fb-replycancel>✕</button></div>` : ""}
-      ${view === "people" ? "" : `<textarea id="ep-fb-input" class="ep-fb-input" rows="1" placeholder="${isNotes ? "Например: при тапе по проёму зависает экран…" : (view === "dm" ? "Сообщение — " + esc(dmName) : "Сообщение в общий чат…")}"></textarea>
+      ${(view === "people" || view === "mod") ? "" : (iAmBanned() && view !== "notes" ? `<div class="ep-fb-banned">🚫 Доступ к чату ограничен администратором. Читать можно, писать — нет.</div>` : `<textarea id="ep-fb-input" class="ep-fb-input" rows="1" placeholder="${isNotes ? "Например: при тапе по проёму зависает экран…" : (view === "dm" ? "Сообщение — " + esc(dmName) : "Сообщение в общий чат…")}"></textarea>
       <div class="ep-fb-row">
         ${isNotes
           ? `<button type="button" class="btn btn-primary ep-clickable" data-fb-add>+ Записать</button>
@@ -580,7 +693,7 @@
              ${read().length ? `<button type="button" class="btn btn-ghost ep-clickable" data-fb-clear>Очистить</button>` : ""}`
           : `<button type="button" class="btn btn-primary ep-clickable" data-fb-send>Отправить</button>
              <button type="button" class="btn btn-ghost ep-clickable" data-fb-copychat>📋 Скопировать</button>`}
-      </div>`}
+      </div>`)}
     </div>`;
     ov.hidden = false;
     const box = listEl();
@@ -652,7 +765,7 @@
     const tb = t.closest("[data-fb-tab]");
     if (tb) {
       const v = tb.getAttribute("data-fb-tab");
-      view = (v === "notes" || v === "people" || v === "dm") ? v : "chat";
+      view = (v === "notes" || v === "people" || v === "dm" || v === "mod") ? v : "chat";
       openMsgId = null; editId = null; pendingNew = 0;
       startAll(); render(); return;
     }
@@ -679,6 +792,34 @@
       const id = sv.getAttribute("data-fb-editsave");
       editMsg(id, inp2 ? inp2.value : "", view === "dm").then((ok) => { toast(ok ? "Изменено" : "Не удалось изменить"); editId = null; render(true); });
       return;
+    }
+    const rp = t.closest("[data-fb-report]");
+    if (rp) {
+      const m = older.concat(msgs).find((x) => x.id === rp.getAttribute("data-fb-report"));
+      if (m) reportMsg(m).then((ok) => toast(ok ? "Жалоба отправлена — админ разберётся" : "Не удалось отправить жалобу"));
+      openMsgId = null; patch(); return;
+    }
+    const bn = t.closest("[data-fb-ban]");
+    if (bn) {
+      const uid = bn.getAttribute("data-fb-ban");
+      if (!confirm("Ограничить доступ к чату для «" + nameOf(uid) + "»? Писать он больше не сможет (читать — да).")) return;
+      banUser(uid, nameOf(uid)).then((ok) => { toast(ok ? "Доступ к чату ограничен" : "Не удалось (нужны права админа)"); openMsgId = null; });
+      return;
+    }
+    const ub = t.closest("[data-fb-unban]");
+    if (ub) { unbanUser(ub.getAttribute("data-fb-unban")).then((ok) => toast(ok ? "Доступ вернули" : "Не удалось")); return; }
+    const pg = t.closest("[data-fb-purge]");
+    if (pg) {
+      const uid = pg.getAttribute("data-fb-purge");
+      if (!confirm("Удалить ВСЕ сообщения «" + nameOf(uid) + "» из общего чата? Отменить нельзя.")) return;
+      purgeUser(uid).then((n) => { toast(n ? "Удалено сообщений: " + n : "Сообщений не нашлось"); openMsgId = null; });
+      return;
+    }
+    const cr = t.closest("[data-fb-closerep]");
+    if (cr) { closeReport(cr.getAttribute("data-fb-closerep")).then((ok) => { if (!ok) toast("Не удалось закрыть"); }); return; }
+    if (t.closest("[data-fb-skin]")) {
+      localStorage.setItem(SKINK, skin() === "icq" ? "modern" : "icq");
+      render(true); return;
     }
     const dl = t.closest("[data-fb-del2]");
     if (dl) {
@@ -737,7 +878,7 @@
 
   window.addEventListener("ep:auth-changed", () => {
     unsubAll();
-    msgs = []; older = []; dmAll = []; people = []; noMoreOlder = false;
+    msgs = []; older = []; dmAll = []; people = []; bans = []; reports = []; noMoreOlder = false;
     gotPub = false; gotDm = false; seenPending.clear();
     if (myUid()) startAll();
     ensureFab();
@@ -753,7 +894,9 @@
     open, close, add, read, asText, copyAll, count: () => read().length,
     send: sendPub, sendDm, messages: () => msgs.slice(), dmMessages: () => dmMsgs(), chatText,
     queue: qread, flushQueue, state: () => chatState, unread: unreadTotal, people: () => people.slice(),
-    openDm, setView: (v) => { view = v; if (isOpen()) render(); }, isOnline, notifyAsk: askNotify
+    openDm, setView: (v) => { view = v; if (isOpen()) render(); }, isOnline, notifyAsk: askNotify,
+    banUser, unbanUser, purgeUser, reportMsg, closeReport, bans: () => bans.slice(), reports: () => reports.slice(),
+    isBanned, skin
   };
   EP.Chat = EP.Feedback;
 })();
