@@ -45,6 +45,7 @@
   const ROOMS = "chat_rooms", GRP = "chat_group", TOKENS = "chat_tokens";
   const FILE_MAX = 900000;   // предел тела вложения (лимит документа Firestore — 1 МиБ)
   const SKINK = "ep_chat_skin_v1";   // "retro" (по умолчанию) | "modern"
+  const FULLK = "ep_chat_full_v1";   // "1" — окно чата развёрнуто во весь экран
   const STK = "ep_chat_status_v1";   // мой статус: "online" | "away" | "dnd"
   const AVK = "ep_chat_avatar_v1";   // моя «аватарка» — эмодзи (файлы не грузим)
   const TYPING_MS = 8000;            // «печатает…» живёт 8с, обновляем не чаще 4с
@@ -182,6 +183,58 @@
   // «не беспокоить» глушит ТОЛЬКО звук и всплывающие уведомления — сами сообщения,
   // метка и переписка работают как обычно (иначе легко пропустить рабочую задачу)
   const quiet = () => myStatus() === "dnd";
+  /* «Во весь экран» окна чата. ДВА независимых механизма разом, и это осознанно:
+     (1) КЛАСС is-full на оверлее — чистый CSS (оверлей и так position:fixed;inset:0,
+         снимаем только паддинги и лимиты карточки). Работает ВСЕГДА, в том числе там,
+         где нативный Fullscreen API молча не срабатывает (старый WebView, встроенный
+         браузер мессенджера без allow="fullscreen") — в этой сессии на такое уже
+         наступали со шторками плана.
+     (2) НАТИВНЫЙ requestFullscreen — только он убирает адресную строку браузера и
+         системные панели, то есть даёт «прям реально во весь экран». Не обязателен:
+         если промахнётся, пункт (1) уже гарантировал покрытие вьюпорта.
+     ВАЖНО: фуллскрин запрашиваем на ОВЕРЛЕЕ, а не на карточке — у карточки в
+     «современном» облике есть backdrop-filter, а элемент, который САМ является
+     нативным fullscreen-элементом, из-за blur на части реальных устройств рисуется
+     плоским серым (уже пойманный в этой сессии баг шторок плана). */
+  const fullOn = () => localStorage.getItem(FULLK) === "1";
+  let nativeFsMine = false;                 // нативный фуллскрин включили МЫ, не план
+  const fsEl = () => (document.fullscreenElement || document.webkitFullscreenElement || null);
+  let fsPending = false;                    // запрос уже в полёте — не дублируем
+  function enterNativeFs(ov) {
+    if (!ov || fsEl() || fsPending) return; // чужой фуллскрин не перебиваем
+    const req = ov.requestFullscreen || ov.webkitRequestFullscreen;
+    if (!req) return;
+    fsPending = true;
+    // requestFullscreen возвращает промис, и между вызовом и его разрешением render()
+    // успевает пройти ещё раз (сначала setFull, потом перерисовка) — без флага туда
+    // уходил бы второй запрос на тот же элемент
+    try { Promise.resolve(req.call(ov)).then(() => { nativeFsMine = true; fsPending = false; }, () => { fsPending = false; }); }
+    catch (e) { fsPending = false; }
+  }
+  function exitNativeFs() {
+    // ТОЛЬКО если в фуллскрине именно НАШ оверлей: иначе закрытие чата погасило бы
+    // фуллскрин плана/развёртки, открытый по другому поводу
+    const ov = ovEl();
+    if (!nativeFsMine || !ov || fsEl() !== ov) { nativeFsMine = false; return; }
+    nativeFsMine = false;
+    try { (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch (e) {}
+  }
+  function setFull(on) {
+    localStorage.setItem(FULLK, on ? "1" : "0");
+    const ov = ovEl();
+    if (ov) ov.classList.toggle("is-full", !!on);
+    if (on) enterNativeFs(ov); else exitNativeFs();
+    // высота списка/поля ввода считается от новых размеров — перерисуем поле
+    const inp = ov && ov.querySelector("#ep-fb-input");
+    if (inp) grow(inp);
+  }
+  // системный выход (жест «назад», Esc) — синхронизируем и класс, и запомненный выбор,
+  // иначе чат остался бы «развёрнутым» без нативного фуллскрина и наоборот
+  ["fullscreenchange", "webkitfullscreenchange"].forEach((ev) => document.addEventListener(ev, () => {
+    const ov = ovEl();
+    if (!nativeFsMine || !ov) return;
+    if (fsEl() !== ov) { nativeFsMine = false; localStorage.setItem(FULLK, "0"); ov.classList.remove("is-full"); }
+  }));
   const statusOf = (p) => (p && STATUSES[p.status] ? p.status : "online");
   const avatarOf = (uid) => { const p = people.find((x) => x.uid === uid); return (p && p.avatar) || "⚡"; };
   const isTyping = (uid, where) => {
@@ -1141,6 +1194,7 @@
         <span class="ep-fb-sp"></span>
         <button type="button" class="ep-plan-mini ep-clickable" data-fb-search aria-label="Поиск по переписке">🔍</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-fb-skin aria-label="Облик чата">${retro ? "💬" : "🌼"}</button>
+        <button type="button" class="ep-plan-mini ep-clickable" data-fb-full aria-label="${fullOn() ? "Свернуть окно чата" : "Во весь экран"}">${fullOn() ? "🗗" : "⛶"}</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-fb-close aria-label="Закрыть">✕</button>
       </div>
       <div class="ep-fb-tabs"><span class="ep-fb-tabs-in">${tabsHtml()}</span><span class="ep-fb-sp"></span><span class="ep-fb-status">${isNotes ? "" : statusHtml()}</span></div>
@@ -1166,6 +1220,10 @@
       </div>`)}
     </div>`;
     ov.hidden = false;
+    // класс восстанавливаем на КАЖДЫЙ рендер (render() пересобирает innerHTML, но сам
+    // оверлей переиспользуется — иначе после любой перерисовки чат «сворачивался»)
+    ov.classList.toggle("is-full", fullOn());
+    if (fullOn()) enterNativeFs(ov);
     const box = listEl();
     if (box) {
       if (prevTop != null) box.scrollTop = prevTop;
@@ -1180,7 +1238,10 @@
   function grow(t) {
     try {
       t.style.height = "auto";
-      t.style.height = Math.min(t.scrollHeight + 2, Math.round(window.innerHeight * 0.35)) + "px";
+      // в развёрнутом окне поле ввода может занять почти половину экрана: длинное
+      // сообщение видно целиком, а не через щёлку в три строки
+      const cap = fullOn() ? 0.45 : 0.35;
+      t.style.height = Math.min(t.scrollHeight + 2, Math.round(window.innerHeight * cap)) + "px";
     } catch (e) {}
   }
   function open(opts) {
@@ -1191,7 +1252,10 @@
     flushQueue().then((n) => { if (n && isOpen()) patch(); });
   }
   function close() {
-    const ov = ovEl(); if (ov) { ov.hidden = true; ov.innerHTML = ""; }
+    // сначала гасим нативный фуллскрин: иначе браузер остался бы в нём с пустой
+    // страницей (тот же класс бага, что уже чинили у шторок плана)
+    exitNativeFs();
+    const ov = ovEl(); if (ov) { ov.hidden = true; ov.innerHTML = ""; ov.classList.remove("is-full"); }
     replyTo = null; editId = null; openMsgId = null; pendingNew = 0; attachPick = null; attachPane = null;
     paintBadge();
   }
@@ -1293,6 +1357,9 @@
     }
     const cr = t.closest("[data-fb-closerep]");
     if (cr) { closeReport(cr.getAttribute("data-fb-closerep")).then((ok) => { if (!ok) toast("Не удалось закрыть"); }); return; }
+    // ВАЖНО: setFull() зовём ИЗ обработчика клика — requestFullscreen разрешён браузером
+    // только внутри стека вызовов пользовательского жеста (из таймера он тихо откажет)
+    if (t.closest("[data-fb-full]")) { setFull(!fullOn()); render(true); return; }
     if (t.closest("[data-fb-skin]")) {
       localStorage.setItem(SKINK, skin() === "retro" ? "modern" : "retro");
       render(true); return;

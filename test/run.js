@@ -3513,6 +3513,39 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/const where = view === "dm" \? \("dm:" \+ dmUid\)[\s\S]{0,90}"pub"/.test(fb), "«печатает…» помечено местом (общий/личка/группа) — иначе показывалось бы во всех чатах разом");
     ok(/data-fb-setstatus/.test(fb) && /data-fb-setavatar/.test(fb), "выбор статуса и аватарки в шапке чата");
   });
+  test("чат: «во весь экран» — класс + нативный фуллскрин, безопасно для чужого", () => {
+    const fs = require("fs"), path = require("path"), root = path.resolve(__dirname, "..");
+    const fb = fs.readFileSync(path.join(root, "assets", "js", "modules", "ui", "feedback.js"), "utf8");
+    ok(/data-fb-full/.test(fb) && /function setFull/.test(fb), "кнопка ⛶ и переключатель");
+    ok(/const fullOn = \(\) => localStorage\.getItem\(FULLK\) === "1"/.test(fb), "выбор запоминается на устройстве");
+    // ДВА механизма: класс покрывает вьюпорт всегда, нативный API убирает адресную строку
+    ok(/classList\.toggle\("is-full"/.test(fb) && /function enterNativeFs/.test(fb),
+      "и CSS-класс, и нативный requestFullscreen — на устройствах, где API молча не работает, класс уже даёт полный экран");
+    ok(/ov\.requestFullscreen \|\| ov\.webkitRequestFullscreen/.test(fb),
+      "фуллскрин запрашивается на ОВЕРЛЕЕ, а не на карточке (у карточки backdrop-filter — на нём нативный фуллскрин давал плоский серый)");
+    ok(/if \(!ov \|\| fsEl\(\) \|\| fsPending\) return/.test(fb),
+      "чужой фуллскрин (план/развёртка) не перебиваем и не дублируем запрос");
+    ok(/if \(!nativeFsMine \|\| !ov \|\| fsEl\(\) !== ov\)/.test(fb),
+      "выходим ТОЛЬКО из своего фуллскрина — иначе закрытие чата гасило бы фуллскрин плана");
+    ok(/exitNativeFs\(\);\s*\n\s*const ov = ovEl\(\)/.test(fb), "close() гасит фуллскрин ДО очистки окна");
+    ok(/fullscreenchange/.test(fb) && /localStorage\.setItem\(FULLK, "0"\)/.test(fb),
+      "системный выход (жест «назад»/Esc) синхронизирует класс и запомненный выбор");
+    ok(/if \(fullOn\(\)\) enterNativeFs\(ov\)/.test(fb), "переоткрытый чат восстанавливает режим");
+    ok(/const cap = fullOn\(\) \? 0\.45 : 0\.35/.test(fb), "в развёрнутом окне поле ввода может стать выше");
+    const css = fs.readFileSync(path.join(root, "assets", "css", "base.css"), "utf8");
+    const blk = css.slice(css.indexOf(".ep-fb-ov.is-full{"), css.indexOf(".ep-fb-ov.is-full{") + 1400);
+    ok(css.indexOf(".ep-fb-ov.is-full{") > 0, "стили развёрнутого окна есть");
+    ok(/padding:0/.test(blk) && /max-height:none/.test(blk) && /max-width:none/.test(blk),
+      "снимаем паддинги и лимиты — оверлей и так position:fixed;inset:0");
+    // НИКАКИХ 100vw/100vh/dvh: на устройствах, где vh недооценивает вьюпорт в PWA, явные
+    // размеры СЖИМАЛИ бы окно — этот класс бага в сессии уже ловили у шторок плана
+    ok(!/100vw|100vh|100dvw/.test(blk), "размеры не задаются через vh/vw — только снятие ограничений");
+    ok(/\.ep-fb-ov:fullscreen\{background:rgb\(var\(--card-bg-rgb\)\)\}/.test(css),
+      "фон фуллскрин-элемента непрозрачный (полупрозрачный скрим выглядел бы серой заливкой)");
+    ok(/body\[data-kb="1"\] \.ep-fb-ov\.is-full \.ep-fb-card\{max-height:none\}/.test(css),
+      "при клавиатуре лимит высоты не вычитается дважды");
+    ok(/\.ep-fb-status\{display:inline-flex/.test(css), "подпись статуса и кношки в шапке больше не наезжают друг на друга");
+  });
   test("чат: push при закрытом приложении — токен, правила, функция, sw", () => {
     const fs = require("fs"), path = require("path"), root = path.resolve(__dirname, "..");
     // ключ VAPID — ПУБЛИЧНЫЙ (браузер отдаёт его push-сервису открыто), поэтому лежит
