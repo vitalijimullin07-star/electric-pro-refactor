@@ -3539,6 +3539,31 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/<span class="ep-fb-ava">\$\{esc\(p\.avatar/.test(fb) && /STATUSES\[statusOf\(p\)\]/.test(fb),
       "строка человека рисует ЕГО аватарку и статус");
   });
+  test("чат: поле ввода в одной строке с 📎 и «Отправить», без чужого стиля", () => {
+    const fs = require("fs"), path = require("path"), root = path.resolve(__dirname, "..");
+    const css = fs.readFileSync(path.join(root, "assets", "css", "base.css"), "utf8");
+    const inp = /\.ep-fb-input\{([^}]+)\}/.exec(css);
+    ok(inp, "стиль поля ввода найден");
+    // РАНЬШЕ было width:100%;resize:vertical;font:inherit — поле брало ОБЩИЙ стиль
+    // input/textarea: чужой радиус, почти невидимый фон, уголок ресайза, без line-height
+    ok(/resize:none/.test(inp[1]), "уголка ресайза нет (высота растёт сама)");
+    ok(/line-height:/.test(inp[1]), "задан line-height — иначе при масштабе интерфейса >100% текст обрезался");
+    ok(/min-height:/.test(inp[1]), "минимальная высота на одну строку — поле не может стать ниже строки");
+    ok(/border-radius:12px/.test(inp[1]), "радиус как у пузырей сообщений (было 15px от кнопок)");
+    ok(/background:rgba\(148, ?163, ?184/.test(inp[1]) && /border:1px solid/.test(inp[1]),
+      "своя рамка и фон — поле читается как поле, а не сливается с карточкой");
+    ok(/\.ep-fb-inrow\{[^}]*align-items:flex-end/.test(css),
+      "📎 · поле · «Отправить» одной строкой, кнопки прижаты к низу выросшего поля");
+    ok(/\.ep-fb-row2 button\{[^}]*white-space:nowrap/.test(css),
+      "«Скопировать переписку» — своя тонкая строка (класс .ep-plan-mini ломал подпись на две строки)");
+    const fb = fs.readFileSync(path.join(root, "assets", "js", "modules", "ui", "feedback.js"), "utf8");
+    ok(/class="ep-fb-inrow"><button[^>]*data-fb-attach/.test(fb), "📎 внутри строки поля");
+    ok(/ep-fb-sendbtn" data-fb-send/.test(fb), "кнопка отправки помечена своим классом");
+    ok(/ep-fb-row2"><button[^>]*data-fb-copychat/.test(fb), "копирование переписки — отдельной строкой");
+    // ретро-облик не должен потерять «оконный» вид поля
+    ok(/is-retro \.ep-fb-inrow\{/.test(css) && /is-retro \.ep-fb-clip\{/.test(css),
+      "у ретро-облика свои отступы строки и стиль 📎");
+  });
   test("чат: «во весь экран» — класс + нативный фуллскрин, безопасно для чужого", () => {
     const fs = require("fs"), path = require("path"), root = path.resolve(__dirname, "..");
     const fb = fs.readFileSync(path.join(root, "assets", "js", "modules", "ui", "feedback.js"), "utf8");

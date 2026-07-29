@@ -1249,16 +1249,15 @@
       ${attachPane ? attachPaneHtml() : ""}
       ${attachPick ? `<div class="ep-fb-replybar"><span>📎 ${esc(attachPick.title)}</span><button type="button" class="ep-plan-mini ep-clickable" data-fb-attcancel>✕</button></div>` : ""}
       ${replyTo ? `<div class="ep-fb-replybar"><span>↩ ${esc(replyTo.name)}: ${esc(cut(replyTo.text, 60))}</span><button type="button" class="ep-plan-mini ep-clickable" data-fb-replycancel>✕</button></div>` : ""}
-      ${(view === "people" || view === "mod" || view === "rooms") ? "" : (iAmBanned() && view !== "notes" ? `<div class="ep-fb-banned">🚫 Доступ к чату ограничен администратором. Читать можно, писать — нет.</div>` : `<textarea id="ep-fb-input" class="ep-fb-input" rows="1" placeholder="${isNotes ? "Например: при тапе по проёму зависает экран…" : (view === "dm" ? "Сообщение — " + esc(dmName) : (view === "room" ? "Сообщение в группу…" : "Сообщение в общий чат…"))}"></textarea>
+      ${(view === "people" || view === "mod" || view === "rooms") ? "" : (iAmBanned() && view !== "notes" ? `<div class="ep-fb-banned">🚫 Доступ к чату ограничен администратором. Читать можно, писать — нет.</div>` : `${isNotes ? "" : `<div class="ep-fb-inrow"><button type="button" class="ep-fb-clip ep-clickable" data-fb-attach aria-label="Вложение">📎</button>`}<textarea id="ep-fb-input" class="ep-fb-input" rows="1" placeholder="${isNotes ? "Например: при тапе по проёму зависает экран…" : (view === "dm" ? "Сообщение — " + esc(dmName) : (view === "room" ? "Сообщение в группу…" : "Сообщение в общий чат…"))}"></textarea>${isNotes ? "" : "</div>"}
       <div class="ep-fb-row">
         ${isNotes
           ? `<button type="button" class="btn btn-primary ep-clickable" data-fb-add>+ Записать</button>
              <button type="button" class="btn btn-ghost ep-clickable" data-fb-copy>📋 Скопировать всё</button>
              ${read().length ? `<button type="button" class="btn btn-ghost ep-clickable" data-fb-clear>Очистить</button>` : ""}`
-          : `<button type="button" class="btn btn-primary ep-clickable" data-fb-send>Отправить</button>
-             <button type="button" class="btn btn-ghost ep-clickable" data-fb-attach aria-label="Вложение">📎</button>
-             <button type="button" class="btn btn-ghost ep-clickable" data-fb-copychat>📋 Скопировать</button>`}
-      </div>`)}
+          : `<button type="button" class="btn btn-primary ep-clickable ep-fb-sendbtn" data-fb-send>Отправить</button>`}
+      </div>
+      ${isNotes ? "" : `<div class="ep-fb-row2"><button type="button" class="ep-clickable" data-fb-copychat>📋 Скопировать переписку</button></div>`}`)}
     </div>`;
     ov.hidden = false;
     // класс восстанавливаем на КАЖДЫЙ рендер (render() пересобирает innerHTML, но сам
