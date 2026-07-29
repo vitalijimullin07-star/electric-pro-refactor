@@ -41,6 +41,8 @@
   const SNDK = "ep_chat_sound_v1";   // "0" — звук выключен
   const COL = "chat_messages", DMC = "chat_dm", PRES = "chat_presence";
   const BANS = "chat_bans", REPS = "chat_reports";
+  const CONT = "chat_contacts", FILES = "chat_files";
+  const FILE_MAX = 900000;   // предел тела вложения (лимит документа Firestore — 1 МиБ)
   const SKINK = "ep_chat_skin_v1";   // "retro" (по умолчанию) | "modern"
   const MAX = 300;    // локальный журнал устройства
   const LIMIT = 120;  // сколько последних сообщений держим живыми
@@ -133,6 +135,10 @@
   const seenPending = new Set();   // какие личные уже помечаем прочитанными (без петли)
   let bans = [], reports = [];     // модерация: кто забанен и на что жалуются
   let unsubBans = null, unsubReps = null;
+  let contacts = [], unsubCont = null;   // контакты: заявки и принятые
+  let attachPane = null;                 // открытая панель 📎 ("menu"|"plan"|"db"|"est")
+  let attachQ = "";                      // строка поиска в пикере позиций БД
+  let attachPick = null;                 // выбранное вложение — уйдёт со сообщением
 
   function fdb() { try { return (window.EP && EP.Firebase && EP.Firebase.db) || null; } catch (e) { return null; } }
   function me() {
@@ -178,6 +184,7 @@
       route: rec.route || "", project: rec.project || "", build: rec.build || "", screen: rec.screen || "", ua: rec.ua || ""
     };
     if (rec.replyTo) d.replyTo = rec.replyTo;
+    if (rec.attach) d.attach = rec.attach;
     return d;
   }
   function flushQueue() {
@@ -338,13 +345,29 @@
       }, () => {});
     } catch (e) {}
   }
+  // контакты — одна подписка по array-contains (equality-only, составной индекс не нужен)
+  function subContacts() {
+    if (unsubCont) return;
+    const d = fdb(), uid = myUid(); if (!d || !uid) return;
+    try {
+      unsubCont = d.collection(CONT).where("uids", "array-contains", uid).limit(300).onSnapshot((snap) => {
+        const arr = []; snap.forEach((doc) => arr.push(Object.assign({ id: doc.id }, doc.data())));
+        const before = contacts.filter((c) => c.to === uid && c.status === "pending").length;
+        contacts = arr;
+        const after = contacts.filter((c) => c.to === uid && c.status === "pending").length;
+        if (after > before) { ping(); notify("Заявка в контакты", "Мастер хочет добавить тебя в контакты", "ep-cont"); }
+        if (isOpen()) patch();
+        paintBadge();
+      }, () => {});
+    } catch (e) {}
+  }
   function unsubAll() {
-    [unsubPub, unsubDm, unsubPres, unsubBans, unsubReps].forEach((f) => { if (f) { try { f(); } catch (e) {} } });
-    unsubPub = unsubDm = unsubPres = unsubBans = unsubReps = null;
+    [unsubPub, unsubDm, unsubPres, unsubBans, unsubReps, unsubCont].forEach((f) => { if (f) { try { f(); } catch (e) {} } });
+    unsubPub = unsubDm = unsubPres = unsubBans = unsubReps = unsubCont = null;
   }
   function startAll() {
     if (!myUid() || !fdb()) { chatState = "off"; return; }
-    subPublic(); subDm(); subPresence(); subBans(); subReports(); heartbeat();
+    subPublic(); subDm(); subPresence(); subBans(); subReports(); subContacts(); heartbeat();
     flushQueue().then(paintBadge);
   }
   // «сердцебиение» присутствия: пока страница видима — раз в 2 минуты
@@ -390,6 +413,7 @@
     if (!t) return Promise.resolve({ ok: false, queued: false });
     const rec = Object.assign({ uid: myUid(), name: myName(), text: t.slice(0, MAXLEN), ts: Date.now() }, ctx());
     if (replyTo) rec.replyTo = { id: replyTo.id, name: replyTo.name, text: cut(replyTo.text, 90) };
+    if (attachPick) rec.attach = attachPick;
     const d = fdb(), uid = myUid();
     if (!d || !uid) { qAdd(rec); return Promise.resolve({ ok: false, queued: true }); }
     try {
@@ -406,6 +430,7 @@
       ts: Date.now(), at: stamp(), seen: false
     };
     if (replyTo) doc.replyTo = { id: replyTo.id, name: replyTo.name, text: cut(replyTo.text, 90) };
+    if (attachPick) doc.attach = attachPick;
     try { return d.collection(DMC).add(doc).then(() => ({ ok: true })).catch(() => ({ ok: false })); }
     catch (e) { return Promise.resolve({ ok: false }); }
   }
@@ -462,6 +487,81 @@
     const d = fdb(); if (!d || !id || !isAdm()) return Promise.resolve(false);
     try { return d.collection(REPS).doc(id).delete().then(() => true).catch(() => false); }
     catch (e) { return Promise.resolve(false); }
+  }
+
+  // ---------- контакты ----------
+  const pairId = (a, b) => [a, b].sort().join("__");
+  const contactWith = (uid) => contacts.find((c) => (c.uids || []).indexOf(uid) >= 0);
+  const isContact = (uid) => { const c = contactWith(uid); return !!(c && c.status === "ok"); };
+  function addContact(uid) {
+    const d = fdb(), meU = myUid();
+    if (!d || !uid || uid === meU) return Promise.resolve(false);
+    const doc = { from: meU, to: uid, uids: [meU, uid], fromName: myName(), toName: nameOf(uid), status: "pending", ts: Date.now(), at: stamp() };
+    try { return d.collection(CONT).doc(pairId(meU, uid)).set(doc).then(() => true).catch(() => false); }
+    catch (e) { return Promise.resolve(false); }
+  }
+  function acceptContact(id) {
+    const d = fdb(); if (!d || !id) return Promise.resolve(false);
+    try { return d.collection(CONT).doc(id).update({ status: "ok" }).then(() => true).catch(() => false); }
+    catch (e) { return Promise.resolve(false); }
+  }
+  function dropContact(id) {
+    const d = fdb(); if (!d || !id) return Promise.resolve(false);
+    try { return d.collection(CONT).doc(id).delete().then(() => true).catch(() => false); }
+    catch (e) { return Promise.resolve(false); }
+  }
+
+  // ---------- вложения: проект / позиция БД / предварительная смета ----------
+  // тело кладём ОТДЕЛЬНЫМ документом chat_files, в сообщение — только ссылка: сообщение
+  // остаётся маленьким, тяжёлое тело читается лишь когда получатель нажал «применить»
+  function putFile(kind, title, data, forUid) {
+    const d = fdb(), meU = myUid();
+    if (!d || !meU) return Promise.resolve(null);
+    const body = String(data || "");
+    if (body.length > FILE_MAX) return Promise.resolve({ tooBig: true });
+    const doc = {
+      by: meU, byName: myName(), kind: kind, title: String(title || "").slice(0, 200),
+      data: body, ts: Date.now(), at: stamp(),
+      pub: !forUid, uids: forUid ? [meU, forUid] : [meU]
+    };
+    try { return d.collection(FILES).add(doc).then((ref) => ({ id: ref.id })).catch(() => null); }
+    catch (e) { return Promise.resolve(null); }
+  }
+  function getFile(id) {
+    const d = fdb(); if (!d || !id) return Promise.resolve(null);
+    try { return d.collection(FILES).doc(id).get().then((sn) => (sn && sn.exists ? sn.data() : null)).catch(() => null); }
+    catch (e) { return Promise.resolve(null); }
+  }
+  // применить вложение у ПОЛУЧАТЕЛЯ теми же публичными API, что и обычные экраны:
+  // проект → импорт в «Проект квартиры», позиция → в «Мою БД», смета → в предварительную
+  function applyAttach(att) {
+    if (!att || !att.fileId) return Promise.resolve("Вложение не найдено");
+    return getFile(att.fileId).then((f) => {
+      if (!f || !f.data) return "Вложение недоступно";
+      try {
+        if (f.kind === "plan") {
+          const pr = EP.Plan && EP.Plan.Core && EP.Plan.Core.importJSON(f.data);
+          if (!pr) return "Не удалось прочитать проект";
+          try { EP.Router.go("plan"); } catch (e) {}
+          return "Проект «" + (pr.name || "") + "» добавлен";
+        }
+        if (f.kind === "dbitem") {
+          const it = JSON.parse(f.data);
+          if (!EP.Database || !EP.Database.addMyItem) return "База данных недоступна";
+          EP.Database.addMyItem({ name: it.name, type: it.type, price: it.price, unit: it.unit,
+            category: it.category || "Из чата", subcategory: it.subcategory || "" });
+          return "Позиция добавлена в «Мою БД»";
+        }
+        if (f.kind === "estimate") {
+          const items = JSON.parse(f.data) || [];
+          if (!EP.EstimateDraft) return "Смета недоступна";
+          if (EP.EstimateDraft.setSourceItems) EP.EstimateDraft.setSourceItems("chat", items);
+          else items.forEach((x) => EP.EstimateDraft.addItem(x));
+          return "Позиций в предварительной смете: " + items.length;
+        }
+      } catch (e) { return "Не удалось применить вложение"; }
+      return "Неизвестный тип вложения";
+    });
   }
 
   // прочитано: публичный — метка времени в localStorage, личка — seen у документов
@@ -533,6 +633,13 @@
       ? esc(fmtTime(atMs(r))) + (r.editedAt ? " · изменено" : "") + (mine && r.seen ? " · прочитано" : "")
       : esc(fmtTime(atMs(r))) + " · " + esc(r.route || "—") + (r.project ? " · " + esc(r.project) : "") + " · v" + esc(r.build || "—") + (r.editedAt ? " · изменено" : "");
     const quote = r.replyTo ? `<div class="ep-fb-quote"><b>${esc(r.replyTo.name || "")}</b> ${esc(r.replyTo.text || "")}</div>` : "";
+    const ATT_ICO = { plan: "🏗", dbitem: "📦", estimate: "📋" };
+    const ATT_BTN = { plan: "⤒ Импортировать проект", dbitem: "+ В мою БД", estimate: "+ В смету" };
+    const att = (r.attach && r.attach.fileId) ? `<div class="ep-fb-att">
+      <span class="ep-fb-attico">${ATT_ICO[r.attach.kind] || "📄"}</span>
+      <span class="ep-fb-attname">${esc(r.attach.title || "вложение")}${r.attach.note ? `<i>${esc(r.attach.note)}</i>` : ""}</span>
+      ${mine ? "" : `<button type="button" class="ep-plan-chip ep-clickable" data-fb-apply="${esc(r.id)}">${ATT_BTN[r.attach.kind] || "Применить"}</button>`}
+    </div>` : "";
     if (editId === r.id) {
       return `<div class="ep-fb-msg is-mine"><div class="ep-fb-msgtop"><b>${nm}</b></div>
         <textarea class="ep-fb-input" data-fb-editinput rows="2">${esc(r.text || "")}</textarea>
@@ -556,7 +663,7 @@
       ? `<div class="ep-fb-msgtop"><b>${nm} (${esc(fmtTime(atMs(r)))}):</b></div>`
       : `<div class="ep-fb-msgtop"><b>${nm}</b></div>`;
     return `<div class="ep-fb-msg${mine ? " is-mine" : ""}" data-fb-msg="${esc(r.id)}">
-      ${head}${quote}<div class="ep-fb-text">${esc(r.text || "")}</div>
+      ${head}${quote}<div class="ep-fb-text">${esc(r.text || "")}</div>${att}
       <div class="ep-fb-meta">${meta}</div>${acts}</div>`;
   }
   function pendingHtml() {
@@ -588,16 +695,72 @@
     });
     const list = Object.keys(map).map((k) => map[k]).sort((a, b) => (isOnline(b) - isOnline(a)) || String(a.name).localeCompare(String(b.name)));
     if (!list.length) return `<div class="ep-fb-empty">Пока никого — как только кто-то войдёт, появится здесь.</div>`;
-    return list.map((p) => {
+    // заявки в контакты (мне) — сверху, как в старых мессенджерах
+    const inReq = contacts.filter((c) => c.to === uid && c.status === "pending");
+    const outReq = contacts.filter((c) => c.from === uid && c.status === "pending");
+    const otherOf = (c) => (c.uids || []).filter((x) => x !== uid)[0] || "";
+    const reqHtml = inReq.length ? `<div class="ep-fb-modsec"><b>Заявки в контакты</b></div>` + inReq.map((c) => `<div class="ep-fb-item">
+      <div class="ep-fb-text"><b>${esc(c.fromName || nameOf(otherOf(c)))}</b> хочет добавить тебя в контакты</div>
+      <div class="ep-fb-acts">
+        <button type="button" class="ep-plan-chip on ep-clickable" data-fb-cok="${esc(c.id)}">✓ Принять</button>
+        <button type="button" class="ep-plan-chip ep-clickable" data-fb-cdel="${esc(c.id)}">✕ Отклонить</button>
+      </div></div>`).join("") : "";
+    const rowOf = (p) => {
       const last = dmAll.filter((m) => m.from === p.uid || m.to === p.uid).slice(-1)[0];
       const n = un[p.uid] || 0;
       const retro = skin() === "retro";
-      return `<button type="button" class="ep-fb-person ep-clickable" data-fb-dm="${esc(p.uid)}">
+      return `<div class="ep-fb-prow"><button type="button" class="ep-fb-person ep-clickable" data-fb-dm="${esc(p.uid)}">
         ${retro ? `<span class="ep-fb-flower${isOnline(p) ? " is-on" : ""}">🌼</span>` : `<span class="ep-fb-dot${isOnline(p) ? " is-on" : ""}"></span>`}
         <span class="ep-fb-pname">${esc(p.name)}${last ? `<i>${esc(cut(last.text, 40))}</i>` : ""}</span>
         ${n ? `<span class="ep-fb-cnt">${n}</span>` : `<span class="ep-fb-st">${isBanned(p.uid) ? "🚫 в чате ограничен" : (isOnline(p) ? "в сети" : (p.at ? "был " + fmtTime(p.at) : ""))}</span>`}
-      </button>`;
-    }).join("");
+      </button>${contactBtnHtml(p, outReq)}</div>`;
+    };
+    const mineC = list.filter((p) => isContact(p.uid)), rest = list.filter((p) => !isContact(p.uid));
+    return reqHtml
+      + (mineC.length ? `<div class="ep-fb-modsec"><b>Мои контакты</b></div>` + mineC.map(rowOf).join("") : "")
+      + (rest.length ? `<div class="ep-fb-modsec"><b>Все мастера</b></div>` + rest.map(rowOf).join("") : "");
+  }
+  // кнопка контакта рядом с человеком: добавить / «заявка отправлена» / убрать
+  function contactBtnHtml(p, outReq) {
+    const c = contactWith(p.uid);
+    if (c && c.status === "ok") return `<button type="button" class="ep-plan-mini ep-clickable ep-fb-cbtn" data-fb-cdel="${esc(c.id)}" aria-label="Убрать из контактов">✕</button>`;
+    if ((outReq || []).some((x) => (x.uids || []).indexOf(p.uid) >= 0)) return `<span class="ep-fb-st ep-fb-cbtn">заявка</span>`;
+    return `<button type="button" class="ep-plan-mini ep-clickable ep-fb-cbtn" data-fb-cadd="${esc(p.uid)}" aria-label="Добавить в контакты">＋</button>`;
+  }
+  // панель 📎: что отправить — проект квартиры, позицию БД или предварительную смету
+  function attachPaneHtml() {
+    const close = `<button type="button" class="ep-plan-mini ep-clickable" data-fb-attclose>✕</button>`;
+    if (attachPane === "menu") {
+      return `<div class="ep-fb-attpane">
+        <button type="button" class="ep-plan-chip ep-clickable" data-fb-attkind="plan">🏗 Проект</button>
+        <button type="button" class="ep-plan-chip ep-clickable" data-fb-attkind="db">📦 Позиция БД</button>
+        <button type="button" class="ep-plan-chip ep-clickable" data-fb-attkind="est">📋 Смета</button>${close}</div>`;
+    }
+    if (attachPane === "plan") {
+      let list = [];
+      try { list = (EP.Plan && EP.Plan.Core && EP.Plan.Core.listProjects()) || []; } catch (e) {}
+      const rows = list.length
+        ? list.slice(0, 30).map((pr) => `<button type="button" class="ep-plan-chip ep-clickable" data-fb-attplan="${esc(pr.id)}">${esc(cut(pr.name || "проект", 28))}</button>`).join("")
+        : `<span class="ep-fb-st">Проектов пока нет.</span>`;
+      return `<div class="ep-fb-attpane"><span class="ep-fb-st">Какой проект отправить:</span>${rows}${close}</div>`;
+    }
+    if (attachPane === "db") {
+      let items = [];
+      try { items = (EP.Database && EP.Database.getItems && EP.Database.getItems()) || []; } catch (e) {}
+      const q = String(attachQ || "").toLowerCase();
+      const found = (q ? items.filter((x) => String(x.name || "").toLowerCase().indexOf(q) >= 0) : items).slice(0, 15);
+      const rows = found.length
+        ? found.map((it) => `<button type="button" class="ep-plan-chip ep-clickable" data-fb-attdb="${esc(it.id)}">${esc(cut(it.name, 34))}${it.price ? " · " + it.price + "₽" : ""}</button>`).join("")
+        : `<span class="ep-fb-st">Ничего не найдено.</span>`;
+      return `<div class="ep-fb-attpane"><input type="text" class="ep-fb-attsearch" data-fb-attq placeholder="поиск по БД…" value="${esc(attachQ || "")}">${rows}${close}</div>`;
+    }
+    if (attachPane === "est") {
+      let n = 0;
+      try { n = ((EP.EstimateDraft && EP.EstimateDraft.getItems && EP.EstimateDraft.getItems()) || []).length; } catch (e) {}
+      return `<div class="ep-fb-attpane"><span class="ep-fb-st">В предварительной смете позиций: ${n}</span>
+        ${n ? `<button type="button" class="ep-plan-chip on ep-clickable" data-fb-attest>📋 Прикрепить</button>` : `<span class="ep-fb-st">Сначала собери смету.</span>`}${close}</div>`;
+    }
+    return "";
   }
   function notesListHtml() {
     const list = read().slice().reverse();
@@ -692,6 +855,8 @@
       <div class="ep-fb-hint">${hint}</div>
       <div class="ep-fb-list">${bodyHtml()}</div>
       <button type="button" class="ep-fb-newchip ep-clickable" data-fb-tobottom ${pendingNew ? "" : "hidden"}>↓ ${pendingNew} новых</button>
+      ${attachPane ? attachPaneHtml() : ""}
+      ${attachPick ? `<div class="ep-fb-replybar"><span>📎 ${esc(attachPick.title)}</span><button type="button" class="ep-plan-mini ep-clickable" data-fb-attcancel>✕</button></div>` : ""}
       ${replyTo ? `<div class="ep-fb-replybar"><span>↩ ${esc(replyTo.name)}: ${esc(cut(replyTo.text, 60))}</span><button type="button" class="ep-plan-mini ep-clickable" data-fb-replycancel>✕</button></div>` : ""}
       ${(view === "people" || view === "mod") ? "" : (iAmBanned() && view !== "notes" ? `<div class="ep-fb-banned">🚫 Доступ к чату ограничен администратором. Читать можно, писать — нет.</div>` : `<textarea id="ep-fb-input" class="ep-fb-input" rows="1" placeholder="${isNotes ? "Например: при тапе по проёму зависает экран…" : (view === "dm" ? "Сообщение — " + esc(dmName) : "Сообщение в общий чат…")}"></textarea>
       <div class="ep-fb-row">
@@ -700,6 +865,7 @@
              <button type="button" class="btn btn-ghost ep-clickable" data-fb-copy>📋 Скопировать всё</button>
              ${read().length ? `<button type="button" class="btn btn-ghost ep-clickable" data-fb-clear>Очистить</button>` : ""}`
           : `<button type="button" class="btn btn-primary ep-clickable" data-fb-send>Отправить</button>
+             <button type="button" class="btn btn-ghost ep-clickable" data-fb-attach aria-label="Вложение">📎</button>
              <button type="button" class="btn btn-ghost ep-clickable" data-fb-copychat>📋 Скопировать</button>`}
       </div>`)}
     </div>`;
@@ -730,7 +896,7 @@
   }
   function close() {
     const ov = ovEl(); if (ov) { ov.hidden = true; ov.innerHTML = ""; }
-    replyTo = null; editId = null; openMsgId = null; pendingNew = 0;
+    replyTo = null; editId = null; openMsgId = null; pendingNew = 0; attachPick = null; attachPane = null;
     paintBadge();
   }
   function toast(msg) {
@@ -829,6 +995,70 @@
       localStorage.setItem(SKINK, skin() === "retro" ? "modern" : "retro");
       render(true); return;
     }
+    // ---- контакты ----
+    const cadd = t.closest("[data-fb-cadd]");
+    if (cadd) { addContact(cadd.getAttribute("data-fb-cadd")).then((ok) => toast(ok ? "Заявка отправлена" : "Не удалось")); return; }
+    const cok = t.closest("[data-fb-cok]");
+    if (cok) { acceptContact(cok.getAttribute("data-fb-cok")).then((ok) => toast(ok ? "Теперь вы в контактах" : "Не удалось")); return; }
+    const cdel = t.closest("[data-fb-cdel]");
+    if (cdel) { dropContact(cdel.getAttribute("data-fb-cdel")).then((ok) => { if (!ok) toast("Не удалось"); }); return; }
+    // ---- вложения ----
+    if (t.closest("[data-fb-attach]")) { attachPane = attachPane ? null : "menu"; render(true); return; }
+    if (t.closest("[data-fb-attclose]")) { attachPane = null; render(true); return; }
+    if (t.closest("[data-fb-attcancel]")) { attachPick = null; render(true); return; }
+    const ak = t.closest("[data-fb-attkind]");
+    if (ak) { attachPane = ak.getAttribute("data-fb-attkind"); attachQ = ""; render(true); return; }
+    const ap = t.closest("[data-fb-attplan]");
+    if (ap) {
+      const id = ap.getAttribute("data-fb-attplan");
+      let nm = id;
+      try { const f2 = (EP.Plan.Core.listProjects() || []).find((x) => x.id === id); if (f2) nm = f2.name || id; } catch (e) {}
+      toast("Готовлю проект…");
+      Promise.resolve(EP.Plan.Core.exportJSONById(id)).then((json) => {
+        if (!json) { toast("Проект не найден"); return; }
+        return putFile("plan", nm, json, view === "dm" ? dmUid : null).then((res) => {
+          if (!res) { toast("Не удалось подготовить вложение"); return; }
+          if (res.tooBig) { toast("Проект слишком большой для чата (фото) — отправь файлом через ⤓ Экспорт"); return; }
+          attachPick = { kind: "plan", title: nm, fileId: res.id, note: "проект квартиры" };
+          attachPane = null; render(true);
+        });
+      });
+      return;
+    }
+    const ad = t.closest("[data-fb-attdb]");
+    if (ad) {
+      const id = ad.getAttribute("data-fb-attdb");
+      let it = null;
+      try { it = (EP.Database.getItems() || []).find((x) => x.id === id); } catch (e) {}
+      if (!it) { toast("Позиция не найдена"); return; }
+      putFile("dbitem", it.name, JSON.stringify(it), view === "dm" ? dmUid : null).then((res) => {
+        if (!res || res.tooBig) { toast("Не удалось подготовить вложение"); return; }
+        attachPick = { kind: "dbitem", title: cut(it.name, 60), fileId: res.id, note: (it.price ? it.price + "₽" : "") + (it.unit ? "/" + it.unit : "") };
+        attachPane = null; render(true);
+      });
+      return;
+    }
+    if (t.closest("[data-fb-attest]")) {
+      let items = [];
+      try { items = (EP.EstimateDraft.getItems() || []); } catch (e) {}
+      if (!items.length) { toast("Смета пуста"); return; }
+      putFile("estimate", "Предварительная смета (" + items.length + ")", JSON.stringify(items), view === "dm" ? dmUid : null).then((res) => {
+        if (!res) { toast("Не удалось подготовить вложение"); return; }
+        if (res.tooBig) { toast("Смета слишком большая для чата"); return; }
+        attachPick = { kind: "estimate", title: "Смета: " + items.length + " поз.", fileId: res.id, note: "предварительная" };
+        attachPane = null; render(true);
+      });
+      return;
+    }
+    const apl = t.closest("[data-fb-apply]");
+    if (apl) {
+      const id = apl.getAttribute("data-fb-apply");
+      const m2 = older.concat(msgs, dmAll).find((x) => x.id === id);
+      if (!m2 || !m2.attach) { toast("Вложение не найдено"); return; }
+      toast("Применяю…");
+      applyAttach(m2.attach).then((msg) => toast(msg));
+      return;
+    }
     const dl = t.closest("[data-fb-del2]");
     if (dl) {
       if (!confirm("Удалить сообщение?")) return;
@@ -843,7 +1073,7 @@
       if (!String(v).trim()) { toast("Напиши сообщение"); return; }
       if (inp3) { inp3.value = ""; grow(inp3); }
       const p = view === "dm" ? sendDm(v) : sendPub(v);
-      replyTo = null;
+      replyTo = null; attachPick = null; attachPane = null;
       p.then((r) => {
         toast(r.ok ? "Отправлено" : (r.queued ? "Сохранено — уйдёт при входе" : "Не удалось отправить"));
         render(false);
@@ -872,6 +1102,11 @@
     const t = e.target;
     if (!t) return;
     if (t.id === "ep-fb-input" || (t.hasAttribute && t.hasAttribute("data-fb-editinput"))) grow(t);
+    if (t.hasAttribute && t.hasAttribute("data-fb-attq")) {
+      attachQ = t.value;
+      const pane = ovEl() && ovEl().querySelector(".ep-fb-attpane");
+      if (pane) { pane.outerHTML = attachPaneHtml(); const inp5 = ovEl().querySelector("[data-fb-attq]"); if (inp5) { inp5.focus(); inp5.setSelectionRange(inp5.value.length, inp5.value.length); } }
+    }
   });
   document.addEventListener("scroll", (e) => {
     const box = e.target;
@@ -886,7 +1121,7 @@
 
   window.addEventListener("ep:auth-changed", () => {
     unsubAll();
-    msgs = []; older = []; dmAll = []; people = []; bans = []; reports = []; noMoreOlder = false;
+    msgs = []; older = []; dmAll = []; people = []; bans = []; reports = []; contacts = []; noMoreOlder = false;
     gotPub = false; gotDm = false; seenPending.clear();
     if (myUid()) startAll();
     ensureFab();
@@ -904,7 +1139,9 @@
     queue: qread, flushQueue, state: () => chatState, unread: unreadTotal, people: () => people.slice(),
     openDm, setView: (v) => { view = v; if (isOpen()) render(); }, isOnline, notifyAsk: askNotify,
     banUser, unbanUser, purgeUser, reportMsg, closeReport, bans: () => bans.slice(), reports: () => reports.slice(),
-    isBanned, skin
+    isBanned, skin,
+    addContact, acceptContact, dropContact, contacts: () => contacts.slice(), isContact,
+    putFile, getFile, applyAttach
   };
   EP.Chat = EP.Feedback;
 })();

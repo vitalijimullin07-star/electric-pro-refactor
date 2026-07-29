@@ -3418,6 +3418,36 @@ test("фото: deleteProject чистит кэш фото своего прое
     const shipped = [fb, css, fs.readFileSync(path.join(root, "pages", "guide.html"), "utf8")].join("\n");
     ok(!/\bICQ\b/i.test(shipped.replace(/\[старому мессенджеру\]/g, "")), "в поставляемом коде нет названия чужого мессенджера");
   });
+  test("чат: контакты (заявка → принятие) и вложения проект/БД/смета", () => {
+    const fs = require("fs"), path = require("path"), root = path.resolve(__dirname, "..");
+    const rules = fs.readFileSync(path.join(root, "firestore.rules"), "utf8");
+    const cont = rules.slice(rules.indexOf("match /chat_contacts/"), rules.indexOf("match /chat_files/"));
+    ok(rules.indexOf("match /chat_contacts/") > 0, "правила контактов есть");
+    ok(/allow read: if signedIn\(\) && request\.auth\.uid in resource\.data\.uids/.test(cont), "контакт видят только двое");
+    ok(/request\.resource\.data\.status == "pending"/.test(cont), "заявка создаётся только как pending");
+    ok(/resource\.data\.to == request\.auth\.uid[\s\S]{0,300}status == "ok"/.test(cont), "принять может ТОЛЬКО адресат");
+    ok(/allow delete: if signedIn\(\) && request\.auth\.uid in resource\.data\.uids/.test(cont), "отклонить/убрать — любая сторона");
+    const files = rules.slice(rules.indexOf("match /chat_files/"));
+    ok(/resource\.data\.pub == true && \(isApproved\(\) \|\| isAdmin\(\)\)/.test(files), "вложение общего чата видят одобренные");
+    ok(/request\.auth\.uid in resource\.data\.uids/.test(files), "вложение лички — только участники");
+    ok(/data\.size\(\) <= 900000/.test(files), "ограничение размера вложения (лимит документа Firestore)");
+    ok(/allow update: if false/.test(files), "вложение неизменяемо — это снимок");
+    ok(/match \/\{document=\*\*\} \{\s*allow read, write: if false;/.test(rules), "финальный запрет-всё на месте");
+    const fb = fs.readFileSync(path.join(root, "assets", "js", "modules", "ui", "feedback.js"), "utf8");
+    ok(/function addContact/.test(fb) && /function acceptContact/.test(fb) && /function dropContact/.test(fb), "заявка/принятие/удаление контакта");
+    ok(/pairId = \(a, b\) => \[a, b\]\.sort\(\)\.join\("__"\)/.test(fb), "id пары отсортирован — повторная заявка не плодит дубли");
+    ok(/data-fb-cadd/.test(fb) && /Заявки в контакты/.test(fb) && /Мои контакты/.test(fb), "секции людей: заявки, контакты, все мастера");
+    ok(/function putFile/.test(fb) && /function getFile/.test(fb) && /function applyAttach/.test(fb), "вложения: положить/прочитать/применить");
+    ok(/kind === "plan"[\s\S]{0,200}importJSON/.test(fb), "проект применяется штатным importJSON");
+    ok(/kind === "dbitem"[\s\S]{0,300}addMyItem/.test(fb), "позиция уходит в «Мою БД» штатным addMyItem");
+    ok(/kind === "estimate"[\s\S]{0,300}EstimateDraft/.test(fb), "смета уходит в предварительную смету");
+    ok(/tooBig/.test(fb), "слишком большое вложение (фото) не отправляется молча");
+    ok(/data-fb-attach/.test(fb) && /data-fb-apply/.test(fb), "кнопка 📎 и кнопка применения у получателя");
+    const core = fs.readFileSync(path.join(root, "assets", "js", "modules", "plan", "plan-core.js"), "utf8");
+    ok(/async function exportJSONById/.test(core), "экспорт ЛЮБОГО проекта по id (не переключая открытый)");
+    ok(/exportJSONById[\s\S]{0,400}preloadPhotos/.test(core), "у неактивного проекта фото догружаются из IndexedDB");
+    ok(/exportJSON, exportJSONById, importJSON/.test(core), "и он экспортирован из модуля");
+  });
 
   // ===== 33. Слаботочка: Нептун, домофон, датчики с целью, камеры отдельными линиями =====
   function lvFixture() {

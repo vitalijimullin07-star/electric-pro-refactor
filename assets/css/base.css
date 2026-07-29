@@ -1477,6 +1477,19 @@ body[data-visual-mode="day"] .ep-consent-list li { color: #b91c1c; }
 .ep-fb-ov .ep-fb-card.is-retro .ep-fb-row{padding:6px 8px 8px}
 .ep-fb-ov .ep-fb-card.is-retro .ep-fb-empty,.ep-fb-ov .ep-fb-card.is-retro .ep-fb-modsec{color:#6b7280}
 .ep-fb-ov .ep-fb-card.is-retro .btn{border-radius:4px}
+/* контакты (заявка/принятие) и вложения чата */
+.ep-fb-prow{display:flex;align-items:center;gap:6px}
+.ep-fb-prow .ep-fb-person{flex:1}
+.ep-fb-cbtn{flex:none}
+.ep-fb-att{display:flex;align-items:center;gap:6px;margin-top:6px;padding:6px;border:1px solid rgba(148,163,184,.45);border-radius:10px;background:rgba(148,163,184,.10)}
+.ep-fb-attico{font-size:18px;line-height:1;flex:none}
+.ep-fb-attname{flex:1;display:flex;flex-direction:column;font-weight:700;font-size:calc(12px * var(--eff-text-scale,1));overflow:hidden}
+.ep-fb-attname i{font-weight:400;font-style:normal;color:var(--muted);font-size:calc(11px * var(--eff-text-scale,1))}
+.ep-fb-attpane{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px;border:1px dashed rgba(148,163,184,.45);border-radius:10px}
+.ep-fb-attsearch{flex:1 1 120px;min-width:120px;font:inherit}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-att{background:#fff;border-color:#a9a48f}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-attpane{margin:0 8px;border-color:#a9a48f}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-attsearch{background:#fff;border:1px solid #7f9db9;color:#0f172a}
 /* плавающая кнопка вызова чата — на любом экране */
 .ep-chat-fab{position:fixed;right:14px;bottom:calc(16px + var(--kb,0px));z-index:9000;width:48px;height:48px;border-radius:50%;border:1px solid rgba(148,163,184,.4);background:rgb(var(--card-bg-rgb));color:var(--text);font-size:22px;line-height:1;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.35)}
 .ep-chat-fab[hidden]{display:none}

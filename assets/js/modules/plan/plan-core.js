@@ -711,6 +711,22 @@
     });
     return JSON.stringify({ type: "ep-plan-project", exportedAt: new Date().toISOString(), project: p }, null, 2);
   }
+  // экспорт ЛЮБОГО проекта по id, НЕ переключая открытый (нужно для отправки проекта в
+  // чат): активный отдаём через exportJSON(), остальные читаем из localStorage и
+  // ДОГРУЖАЕМ их фото из IndexedDB (photoCache держит только текущий проект) — поэтому
+  // функция асинхронная, иначе у неактивного проекта уехали бы фото.
+  async function exportJSONById(id) {
+    if (!id || (S.project && S.project.id === id)) return exportJSON();
+    const raw = lsGet(LS_PROJECT + id, null);
+    if (!raw) return null;
+    const p = deepClone(raw);
+    try { await preloadPhotos(p); } catch (e) {}
+    (p.elements || []).forEach((el) => {
+      if (!Array.isArray(el.photos)) return;
+      el.photos = el.photos.map((pid) => (typeof pid === "string" && !pid.startsWith("data:")) ? (photoCache.get(pid) || pid) : pid);
+    });
+    return JSON.stringify({ type: "ep-plan-project", exportedAt: new Date().toISOString(), project: p }, null, 2);
+  }
   function importJSON(text) {
     try {
       const d = JSON.parse(text);
@@ -753,7 +769,7 @@
     listProjects, createProject, openProject, closeProject, deleteProject, renameProject,
     commit, undo, redo, canUndo, canRedo, persist,
     flushPersist, // добить отложенную запись немедленно (уход со страницы, тесты)
-    exportJSON, importJSON, cloudPullIndex,
+    exportJSON, exportJSONById, importJSON, cloudPullIndex,
     addFloor, renameFloor, setActiveFloor, deleteFloor,
     photoUrl, addPhoto,
     model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening, newBeam, newVoid, newAppliance, newGuide, newManualScheme, newSchemeGroup, newSchemeLine, newLedStrip, newFloor }
