@@ -1406,8 +1406,33 @@ body[data-visual-mode="day"] .ep-consent-list li { color: #b91c1c; }
 .ep-fb-head{display:flex;align-items:center;gap:8px}
 .ep-fb-sp{flex:1}
 .ep-fb-hint{color:var(--muted);font-size:calc(12px * var(--eff-text-scale,1));line-height:1.35}
-.ep-fb-input{width:100%;resize:vertical;font:inherit}
+/* Поле ввода (репорт пользователя: «поле ввода текста как не гармонично»). Было
+   width:100%;resize:vertical;font:inherit — то есть поле брало ОБЩИЙ стиль
+   input/textarea из base.css: почти невидимый фон на карточке, чужой радиус
+   (var(--button-radius)=15px против 12px у пузырей сообщений), уголок ресайза в правом
+   нижнем углу (на телефоне бесполезен — высота и так растёт сама) и никакого line-height,
+   из-за чего при масштабе интерфейса >100% строка не влезала в посчитанную ранее
+   инлайновую высоту и текст обрезался. Теперь поле — часть той же визуальной системы,
+   что и пузыри: тот же радиус, читаемая рамка, свой фон, min-height на одну строку. */
+.ep-fb-input{flex:1 1 auto;min-width:0;resize:none;font:inherit;line-height:1.35;
+  padding:9px 12px;border-radius:12px;border:1px solid rgba(148,163,184,.38);
+  background:rgba(148,163,184,.12);color:var(--text);min-height:40px;max-height:35dvh;overflow-y:auto}
+.ep-fb-input::placeholder{color:var(--muted)}
+.ep-fb-input:focus{outline:none;border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
+/* 📎 · поле · «Отправить» — одной строкой, как в мессенджере (кнопки прижаты к низу,
+   чтобы при выросшем в несколько строк поле они не «плавали» по центру) */
+.ep-fb-inrow{display:flex;align-items:flex-end;gap:8px}
+.ep-fb-clip{flex:none;width:40px;height:40px;border-radius:12px;border:1px solid rgba(148,163,184,.3);
+  background:rgba(148,163,184,.1);color:var(--text);font-size:calc(17px * var(--eff-text-scale,1));
+  display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
 .ep-fb-row{display:flex;gap:8px;flex-wrap:wrap}
+.ep-fb-sendbtn{flex:1 1 auto}
+/* редкое действие — тонкой строкой ниже, а не кнопкой в вес «Отправить» */
+.ep-fb-row2{display:flex;justify-content:center}
+/* свой скромный стиль, а НЕ .ep-plan-mini: тот рассчитан на квадратные иконки тулбара
+   плана и текстовую подпись ломал на две строки (иконка над текстом) */
+.ep-fb-row2 button{background:none;border:0;color:var(--muted);font:inherit;
+  font-size:calc(11.5px * var(--eff-text-scale,1));padding:4px 10px;cursor:pointer;white-space:nowrap}
 .ep-fb-list{overflow:auto;display:flex;flex-direction:column;gap:8px;padding-right:2px;flex:1 1 auto;min-height:90px}
 .ep-fb-item{border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:8px}
 /* ---- «Во весь экран» окна чата (кнопка ⛶ в шапке, feedback.js setFull) ----
@@ -1504,8 +1529,11 @@ body[data-kb="1"] .ep-fb-ov.is-full .ep-fb-card{max-height:none}
 .ep-fb-ov .ep-fb-card.is-retro .ep-fb-person{background:#fffef8;border:1px solid #a9a48f;color:#0f172a}
 .ep-fb-ov .ep-fb-card.is-retro .ep-fb-pname i,.ep-fb-ov .ep-fb-card.is-retro .ep-fb-st{color:#6b7280}
 .ep-fb-ov .ep-fb-card.is-retro .ep-fb-st.is-live{color:#15803d}
-.ep-fb-ov .ep-fb-card.is-retro .ep-fb-input{margin:0 8px;background:#fff;border:1px solid #7f9db9;color:#0f172a;border-radius:3px}
-.ep-fb-ov .ep-fb-card.is-retro .ep-fb-row{padding:6px 8px 8px}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-input{margin:0;background:#fff;border:1px solid #7f9db9;color:#0f172a;border-radius:3px}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-inrow{padding:6px 8px 0}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-clip{background:#d6d3c4;border:1px solid #7f9db9;color:#0f172a;border-radius:3px}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-row{padding:6px 8px 4px}
+.ep-fb-ov .ep-fb-card.is-retro .ep-fb-row2{padding:0 8px 8px}
 .ep-fb-ov .ep-fb-card.is-retro .ep-fb-empty,.ep-fb-ov .ep-fb-card.is-retro .ep-fb-modsec{color:#6b7280}
 .ep-fb-ov .ep-fb-card.is-retro .btn{border-radius:4px}
 /* контакты (заявка/принятие) и вложения чата */
