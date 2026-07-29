@@ -197,6 +197,50 @@ service cloud.firestore {
       allow delete: if isAdmin() || (signedIn() && resource.data.by == request.auth.uid);
     }
 
+    /* ГРУППОВЫЕ ЧАТЫ (по объекту/бригаде). Комната — список участников; сообщение
+       НЕСЁТ СВОЙ СНИМОК uids, поэтому правило проверяет доступ БЕЗ get() комнаты на
+       каждое чтение (дешевле и не ломается, если комнату переименовали/удалили).
+       Следствие, раскрытое пользователю: добавленный позже участник видит переписку
+       С МОМЕНТА ДОБАВЛЕНИЯ — старые сообщения несут прежний список uids. */
+    match /chat_rooms/{roomId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.uids;
+      allow create: if (isApproved() || isAdmin()) && !chatBanned()
+        && request.resource.data.by == request.auth.uid
+        && request.resource.data.uids is list
+        && request.auth.uid in request.resource.data.uids
+        && request.resource.data.uids.size() <= 50
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 80;
+      allow update: if signedIn()
+        && request.auth.uid in resource.data.uids
+        && request.resource.data.by == resource.data.by
+        && request.resource.data.uids is list
+        && request.resource.data.uids.size() <= 50
+        && request.resource.data.name.size() <= 80;
+      allow delete: if isAdmin() || (signedIn() && resource.data.by == request.auth.uid);
+    }
+    match /chat_group/{msgId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.uids;
+      allow create: if (isApproved() || isAdmin()) && !chatBanned()
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.uids is list
+        && request.auth.uid in request.resource.data.uids
+        && request.resource.data.roomId is string
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 2000
+        && request.resource.data.ts is number;
+      allow update: if signedIn()
+        && resource.data.from == request.auth.uid
+        && request.resource.data.from == resource.data.from
+        && request.resource.data.ts == resource.data.ts
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 2000;
+      allow delete: if isAdmin() || (signedIn() && resource.data.from == request.auth.uid);
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

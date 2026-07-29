@@ -53,7 +53,7 @@
     // котором чертёж влезает в поле листа, и задаём svg размер в мм — печать выходит
     // в реальном масштабе, и он же честно пишется в штамп.
     const vb = String(cv.svg.getAttribute("viewBox") || "").trim().split(/\s+/).map(Number);
-    let scale = null;
+    let scale = null, boxMm = null;
     if (vb.length === 4 && vb[2] > 0 && vb[3] > 0) {
       const AREA = planArea();
       if (pdfFit) {
@@ -61,22 +61,43 @@
         // k — миллиметров бумаги на ДЕЦИМЕТР проекта (viewBox в см), берём меньшее из
         // двух, чтобы пропорции чертежа не искажались
         const k = Math.min(AREA.w / (vb[2] / 10), AREA.h / (vb[3] / 10));
-        cv.svg.setAttribute("width", (Math.round(vb[2] / 10 * k * 10) / 10) + "mm");
-        cv.svg.setAttribute("height", (Math.round(vb[3] / 10 * k * 10) / 10) + "mm");
+        boxMm = { w: Math.round(vb[2] / 10 * k * 10) / 10, h: Math.round(vb[3] / 10 * k * 10) / 10 };
         // знаменатель масштаба: см проекта × 10 / мм бумаги = 100 / k (НЕ 10/k — на
         // этом первый прогон дал бессмысленные «1:3»/«1:9», поймано замером)
         scale = Math.max(1, Math.round(100 / k));
         lastPlanFit = true;
       } else {
         scale = SCALES.find((sc) => (vb[2] * 10 / sc) <= AREA.w && (vb[3] * 10 / sc) <= AREA.h) || SCALES[SCALES.length - 1];
-        cv.svg.setAttribute("width", (Math.round(vb[2] * 100 / scale) / 10) + "mm");
-        cv.svg.setAttribute("height", (Math.round(vb[3] * 100 / scale) / 10) + "mm");
+        boxMm = { w: Math.round(vb[2] * 100 / scale) / 10, h: Math.round(vb[3] * 100 / scale) / 10 };
         lastPlanFit = false;
       }
+    }
+    // Физический размер чертежа ставим В ПИКСЕЛЯХ (1px = 1/96 дюйма — точный перевод из
+    // мм), а НЕ в «мм» и не процентами от обёртки. Это не косметика: печатный компositор
+    // Chromium рисовал содержимое такого svg со сдвигом (левый верхний угол чертежа
+    // попадал в ЦЕНТР своего бокса) и в масштабе ×4/3 (96/72 dpi) — половина плана
+    // уезжала за край листа и обрезалась. Проверено печатью в PDF на A1 и A3: с «мм» и
+    // с процентами — сдвиг и обрезка, с px — чертёж ровно в поле листа. Именно в px
+    // (1050×700) svg и печатался всё время до этой правки — просто размер был
+    // ФИКСИРОВАННЫЙ, от формата листа и масштаба не зависел.
+    if (boxMm) {
+      const MM = 96 / 25.4;
+      cv.svg.setAttribute("width", Math.round(boxMm.w * MM));
+      cv.svg.setAttribute("height", Math.round(boxMm.h * MM));
     } else {
       cv.svg.setAttribute("width", "100%");
     }
     cv.svg.removeAttribute("class");
+    // КРИТИЧНО: снять ИНЛАЙН-стиль width/height 1050×700px, который выставлен выше ТОЛЬКО
+    // для офскрин-обмера (fit() должен мерить ландшафтный бокс, см. комментарий там). В
+    // печатный лист уходит cv.svg.outerHTML вместе с этим style, а инлайн-стиль ВСЕГДА
+    // сильнее одноимённых презентационных атрибутов width/height — те самые «мм», которые
+    // мы только что посчитали по масштабу, молча игнорировались, и чертёж на ЛЮБОМ формате
+    // печатался в неизменном боксе 1050×700px ≈ 278×185мм (поле листа A4!). Именно это
+    // видел пользователь: «выбрал А1, а проект как будто в А4 остался» и «общий план не во
+    // весь лист» — формат листа и масштаб в штампе менялись, физический размер чертежа нет.
+    cv.svg.style.width = ""; cv.svg.style.height = "";
+    if (!cv.svg.getAttribute("style")) cv.svg.removeAttribute("style");
     const html = cv.svg.outerHTML;
     cv.destroy();
     document.body.removeChild(host);
@@ -99,7 +120,10 @@
   // часто занимал 60% поля листа и вокруг оставалась пустота — «проект не
   // масштабируется под печать» (репорт пользователя). Промежуточные метрические
   // масштабы — такие же стандартные, и они честно пишутся в штамп.
-  const SCALES = [20, 25, 30, 40, 50, 60, 75, 100, 125, 150, 200, 250, 500];
+  // 1:10 и 1:15 (тоже стандартные по ГОСТ 2.302) добавлены ради БОЛЬШИХ форматов: ряд
+  // начинался с 1:20, и на A1/A0 «стандартный» режим упирался в него — чертёж квартиры
+  // занимал 45% листа A1 и 32% A0, дальше крупнее было просто нечем (замер раскладки).
+  const SCALES = [10, 15, 20, 25, 30, 40, 50, 60, 75, 100, 125, 150, 200, 250, 500];
   let lastPlanScale = null; // масштаб последнего собранного плана — идёт в штамп листа
   let lastPlanFit = false;  // он получен «вписыванием в лист» (нестандартный) — пометка в штампе
   // «Во весь лист» (репорт пользователя: «выбрал формат а1, а проект как будто в а4
@@ -571,7 +595,7 @@
       /* содержимое НИКОГДА не залезает под штамп (он position:absolute) */
       .body { flex: 1 1 auto; min-height: 0; padding-bottom: 27mm; }
       .plan { height: 100%; display: flex; align-items: center; justify-content: center; }
-      .plan svg { max-width: 100%; max-height: 100%; }
+      .plan svg { display: block; max-width: 100%; max-height: 100%; }
       .cols { display: flex; gap: 4mm; align-items: flex-start; }
       .cols > div { flex: 1; }
       h3 { font-size: 10.5px; font-weight: 700; margin: 0 0 1.5mm; }
