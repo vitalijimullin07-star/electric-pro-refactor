@@ -80,7 +80,12 @@
   let pdfFormat = "A4";
   const pg = () => PAGE[pdfFormat] || PAGE.A4;
   const planArea = () => ({ w: pg().w - 35, h: pg().h - 64 });
-  const SCALES = [20, 25, 50, 75, 100, 150, 200, 250, 500];
+  // Ряд подбирается «первый, при котором влезает» = САМЫЙ КРУПНЫЙ из подходящих.
+  // Шагов стало больше (добавлены 30/40/60/125): на грубой лестнице 25→50→75 чертёж
+  // часто занимал 60% поля листа и вокруг оставалась пустота — «проект не
+  // масштабируется под печать» (репорт пользователя). Промежуточные метрические
+  // масштабы — такие же стандартные, и они честно пишутся в штамп.
+  const SCALES = [20, 25, 30, 40, 50, 60, 75, 100, 125, 150, 200, 250, 500];
   let lastPlanScale = null; // масштаб последнего собранного плана — идёт в штамп листа
 
   // временно включает ТОЛЬКО перечисленные слои (project.layers[].visible), зовёт fn,
@@ -142,7 +147,7 @@
       </tr>
       <tr>
         <td class="st-k">${T.addr}</td><td class="st-v" colspan="3">${esc(m.addr)}</td>
-        <td class="st-k">${T.scaleLbl}</td><td class="st-v st-c">${scale ? "1:" + scale : "—"}</td>
+        <td class="st-k">${T.scaleLbl}</td><td class="st-v st-c">${scale ? "1:" + scale : "—"}${" · " + pdfFormat}</td>
         <td class="st-k">${T.sheetsN}</td><td class="st-v st-c">${of}</td>
       </tr>
       <tr>
@@ -226,6 +231,29 @@
     // viewBox (физические пропорции стены) от масштаба НЕ зависит — растут только
     // символы/подписи/толщины линий (kk), просьба пользователя: «масштаб самих постов»
     const kk = (H + pad) / 200 * pdfScale;
+    // ЕДИНАЯ геометрия блока постов — ею ОБЯЗАНЫ пользоваться и символ, и ШТРОБА, и
+    // AABB для подписей. Раньше штробы считали габарит блока по ЛЕГАСИ-раскладке
+    // (18*kk на пост), а символ в режиме «1:1» — по РЕАЛЬНЫМ рамкам (мм из FRAME_MM):
+    // на 5-постовом блоке легаси-габарит выходил ~150см против настоящих 36.8см, и
+    // штробы уезжали по сторонам, «не доходя до точек» (репорт пользователя с PDF).
+    // vert (el.blockVert) — посты столбиком по высоте, как в живой развёртке
+    // (раньше печатная его игнорировала и рисовала вертикальный блок в ряд).
+    const blockGeom = (el) => {
+      const items = (el.params && el.params.items) || ["socket"];
+      const vert = !!el.blockVert;
+      const along = real ? fW(items.length) : items.length * 18 * kk + 6 * kk;
+      const across = real ? fH() : 24 * kk;
+      const step = real ? along / items.length : 18 * kk;
+      const inset = real ? 0 : 3 * kk;
+      const bw = vert ? across : along, bh = vert ? along : across;
+      const x = el.offset, y = H - el.height;
+      return {
+        items, vert, bw, bh, step, inset,
+        cell: (i) => (vert
+          ? { cx: x, cy: y - bh / 2 + inset + step * i + step / 2 }
+          : { cx: x - bw / 2 + inset + step * i + step / 2, cy: y })
+      };
+    };
     let s = `<svg viewBox="${-pad} ${-pad} ${L + pad * 1.5} ${H + pad * 1.9}" preserveAspectRatio="xMidYMid meet" class="unf">`;
     s += `<rect x="0" y="0" width="${L}" height="${H}" class="unfwall"/>`;
     s += `<line x1="0" y1="${H}" x2="${L}" y2="${H}" class="unffloor"/>`;
@@ -265,23 +293,35 @@
         warm: `${Math.round(p.settings.tpChaseW || 50)}×${Math.round(p.settings.tpChaseH || 50)}`
       };
       const chaseKindOf = (layer) => (layer === "warm" ? "warm" : (layer === "lv" || layer === "tv" || layer === "cctv" ? "lv" : (layer === "light" ? "light" : "power")));
+      // подписи сечения у соседних штроб (блок постов) вставали друг на друга —
+      // «25×3025×25×30» на скриншоте печатного листа. Одинаковую подпись рядом
+      // (ближе 22см на той же высоте) рисуем ОДИН раз: сечение у них всё равно одно.
+      const lbls = [];
       const drawChase = (cx, cy0, cy1, kind) => {
         if (Math.abs(cy1 - cy0) < 1) return;
         const col = CHASE_COL[kind] || CHASE_COL.power;
         s += `<line x1="${cx}" y1="${cy0}" x2="${cx}" y2="${cy1}" stroke="${col}" stroke-width="${kk * 5}" opacity="0.28"/>`;
         s += `<line x1="${cx}" y1="${cy0}" x2="${cx}" y2="${cy1}" stroke="${col}" stroke-width="${kk * 1.4}" stroke-dasharray="${3 * kk} ${2 * kk}"/>`;
-        const labelY = cy0 + (cy1 > cy0 ? 12 * kk : -6 * kk);
-        s += `<text x="${cx + 3 * kk}" y="${labelY}" font-size="${8 * kk}" fill="${col}">${SIZE_LBL[kind] || ""}</text>`;
+        const txt = SIZE_LBL[kind] || "";
+        if (!txt) return;
+        let labelY = cy0 + (cy1 > cy0 ? 12 * kk : -6 * kk);
+        // порог по X — от РЕАЛЬНОЙ ширины подписи (шрифт 8*kk), а не магических 22см:
+        // на «1:1» подписи крупные и рядом стоящие штробы блока сливались в «25×3025×30»
+        const lw2 = Math.max(22, txt.length * 4.6 * kk);
+        const near = (ly, t) => lbls.some((l) => (t === undefined || l.txt === t) && Math.abs(l.x - cx) < lw2 && Math.abs(l.y - ly) < 9 * kk);
+        if (near(labelY, txt)) return;              // такое же сечение рядом уже подписано
+        for (let i = 0; i < 3 && near(labelY); i++) labelY += 10 * kk; // разное — разносим по высоте
+        lbls.push({ txt, x: cx, y: labelY });
+        s += `<text x="${cx + 3 * kk}" y="${labelY}" font-size="${8 * kk}" fill="${col}">${txt}</text>`;
       };
       sorted.forEach((el2) => {
         const xx = el2.offset, yy = H - el2.height;
         if (el2.type === "block") {
-          const items = (el2.params && el2.params.items) || [];
-          const step2 = 18 * kk, bw = items.length * step2 + 6 * kk;
+          const bg = blockGeom(el2);
           (G().blockChaseEntries ? G().blockChaseEntries(el2) : []).forEach((en) => {
-            const ex = xx - bw / 2 + 3 * kk + step2 * en.idx + step2 / 2;
+            const c = bg.cell(en.idx);
             const y0 = (en.kind === "light" && floorRoute) ? 0 : chaseY0;
-            drawChase(ex, y0, yy, en.kind);
+            drawChase(c.cx, y0, c.cy, en.kind);
           });
         } else if (el2.layer === "warm") {
           drawChase(xx, chaseY0, yy, "power");
@@ -296,12 +336,7 @@
     // AABB символов — подпись высоты кладём РЯДОМ с постом, сдвигая, если она
     // ложится на другой пост (просьба пользователя: высота у поста, не пересекать)
     const symHalf = (el) => {
-      if (el.type === "block") {
-        const items = (el.params && el.params.items) || ["socket"];
-        const bw = real ? fW(items.length) : items.length * 18 * kk + 6 * kk;
-        const bh = real ? fH() : 24 * kk;
-        return { hw: bw / 2, hh: bh / 2 };
-      }
+      if (el.type === "block") { const bg = blockGeom(el); return { hw: bg.bw / 2, hh: bg.bh / 2 }; }
       return real ? { hw: fW(1) / 2, hh: fH() / 2 } : { hw: 13 * kk, hh: 13 * kk };
     };
     const boxes = sorted.map((e) => { const h = symHalf(e); return { x: e.offset, y: H - e.height, hw: h.hw, hh: h.hh }; });
@@ -344,19 +379,15 @@
       const cc = (p.circuits || []).find((c) => c.id === el.circuitId);
       const col = cc ? cc.color : "#1d4ed8";
       if (el.type === "block") {
-        const items = (el.params && el.params.items) || ["socket"];
-        const bw = real ? fW(items.length) : items.length * 18 * kk + 6 * kk;
-        const bh = real ? fH() : 24 * kk;
-        const step = real ? bw / items.length : 18 * kk;
-        const inset = real ? 0 : 3 * kk;
-        s += `<rect x="${x - bw / 2}" y="${y - bh / 2}" width="${bw}" height="${bh}" rx="${real ? 0.4 : 5 * kk}" fill="${col}" class="unfshape"/>`;
-        items.forEach((it, i) => {
-          const ccx = x - bw / 2 + inset + step * i + step / 2;
+        const bg = blockGeom(el);
+        s += `<rect x="${x - bg.bw / 2}" y="${y - bg.bh / 2}" width="${bg.bw}" height="${bg.bh}" rx="${real ? 0.4 : 5 * kk}" fill="${col}" class="unfshape"/>`;
+        bg.items.forEach((it, i) => {
+          const c = bg.cell(i);
           if (real) {
-            s += faceStr(it, el.keys, ccx, y);
-            if (!hasFace(it, el.keys)) s += `<text x="${ccx}" y="${y}" font-size="2.6" text-anchor="middle" dominant-baseline="central" fill="#0f172a">${esc((TY[it] || {}).glyph || "?")}</text>`;
+            s += faceStr(it, el.keys, c.cx, c.cy);
+            if (!hasFace(it, el.keys)) s += `<text x="${c.cx}" y="${c.cy}" font-size="2.6" text-anchor="middle" dominant-baseline="central" fill="#0f172a">${esc((TY[it] || {}).glyph || "?")}</text>`;
           } else {
-            s += `<text x="${ccx}" y="${y}" font-size="${9 * kk}" text-anchor="middle" dominant-baseline="central" class="unfglyph">${esc((TY[it] || {}).glyph || "?")}</text>`;
+            s += `<text x="${c.cx}" y="${c.cy}" font-size="${9 * kk}" text-anchor="middle" dominant-baseline="central" class="unfglyph">${esc((TY[it] || {}).glyph || "?")}</text>`;
           }
         });
       } else if (real) {
@@ -378,7 +409,14 @@
       if (Math.abs(x - cx0) > 2) {
         s += `<line x1="${cx0}" y1="${y}" x2="${x}" y2="${y}" class="unfdimh"/>`;
         s += `<line x1="${cx0}" y1="${y - 3 * kk}" x2="${cx0}" y2="${y + 3 * kk}" class="unfdimh"/>`;
-        s += `<text x="${(cx0 + x) / 2}" y="${y - 3 * kk}" font-size="${9.5 * kk}" text-anchor="middle" class="unfdimt">${Math.round(Math.abs(x - cx0))}</text>`;
+        // цифра «от угла» стоит на середине выноски — а там часто оказывается ДРУГОЙ пост
+        // (соседняя точка на близкой высоте) или его имя QF: на скриншотах пользователя
+        // цифры сливались в «1236»/«1387». Приподнимаем её, пока не выйдет из чужих габаритов.
+        const lx = (cx0 + x) / 2;
+        let ly = y - 3 * kk;
+        const bad = (yy2) => boxes.concat(qfBoxes).some((o) => Math.abs(lx - o.x) < 12 * kk + o.hw && Math.abs(yy2 - o.y) < 6 * kk + o.hh);
+        for (let i = 0; i < 2 && bad(ly); i++) ly -= 7 * kk; // не больше двух шагов — иначе цифра уедет от своей выноски
+        s += `<text x="${lx}" y="${ly}" font-size="${9.5 * kk}" text-anchor="middle" class="unfdimt">${Math.round(Math.abs(x - cx0))}</text>`;
       }
       const hl = placeHLabel(idx);
       s += `<text x="${hl.x}" y="${hl.y}" font-size="${11 * kk}" text-anchor="middle" dominant-baseline="middle" class="unfdimt">${Math.round(el.height)}</text>`;
@@ -676,7 +714,8 @@
       <div class="ep-plan-srow">Формат листа:
         ${Object.keys(PAGE).map((f) => `<button type="button" class="ep-plan-chip ep-clickable ${pdfFormat === f ? "on" : ""}" data-pxp-fmt="${f}">${f}</button>`).join("")}
       </div>
-      <div class="ep-plan-modehint">На большом листе (A2-A0) план печатается КРУПНЕЕ — масштаб чертежа подбирается автоматически (до 1:20) и пишется в штамп.</div>
+      <div class="ep-plan-modehint">На большом листе (A2-A0) план печатается КРУПНЕЕ — масштаб чертежа подбирается автоматически (до 1:20) и пишется в штамп вместе с форматом.
+      <b>Важно:</b> в диалоге печати выбери ТУ ЖЕ бумагу. На Android диалог сам решает размер: если оставить A4, лист впишется со сжатием — чертёж будет читаемым, но масштаб в штампе перестанет быть истинным.</div>
       <div id="ep-plan-pdfpreview-box">${pdfScalePreview(p)}</div>
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="btn btn-primary ep-clickable" data-pxp-print>📄 Сформировать PDF</button>

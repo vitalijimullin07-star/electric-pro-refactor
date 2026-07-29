@@ -341,6 +341,37 @@
     // ШТРОБЫ (по кнопке 〰): откуда физически идёт кабель (потолок/пол) до поста;
     // вход в блок — раздельно по видам (силовая/свет/слаботочка), см. blockChaseEntries.
     // Символично: широкая полупрозрачная "канавка" + пунктирный центр + подпись сечения.
+    // «1:1» (settings.realScale) и ЕДИНАЯ геометрия блока постов — объявлены ДО штроб,
+    // потому что штробы ОБЯЗАНЫ идти в те же посты, что нарисованы: раньше штробы
+    // считали габарит блока по легаси-раскладке (18*ks на пост), а сами посты в режиме
+    // «1:1» — по реальным рамкам (мм), и штробы уезжали в стороны, «не доходя до точек».
+    const RD = EP.Plan.Render, real = !!(p.settings && p.settings.realScale) && !!(RD && RD.deviceFace);
+    const fW = (n) => (RD && RD.frameWcm ? RD.frameWcm(n) : 8.4);
+    const fH = () => (RD && RD.frameHcm ? RD.frameHcm() : 8.4);
+    const blockGeom = (el) => {
+      const items = (el.params && el.params.items) || ["socket"];
+      // вертикальный блок (el.blockVert) — посты «столбиком» по высоте (вдоль y),
+      // горизонтальный — в ряд (вдоль x); просил пользователь. Развёртка — вид фасада,
+      // так что вертикальный блок здесь именно по высоте, а не поворот графики.
+      const vert = !!el.blockVert;
+      // realScale: рамка настоящей ширины (84/155/226/300/368 мм) и высоты 84 мм,
+      // посты внутри — с равным шагом; иначе прежняя «экранная» раскладка
+      const along = real ? fW(items.length) : items.length * 18 * ks + 6 * ks;
+      const across = real ? fH() : 24 * ks;
+      const step = real ? along / items.length : 18 * ks;
+      const inset = real ? 0 : 3 * ks;
+      const bw = vert ? across : along, bh = vert ? along : across;
+      const x = el.offset, y = H - el.height;
+      return {
+        items, vert, bw, bh, step, inset,
+        cell: (i) => (vert
+          ? { cx: x, cy: y - bh / 2 + inset + step * i + step / 2 }
+          : { cx: x - bw / 2 + inset + step * i + step / 2, cy: y }),
+        rect: (i) => (vert
+          ? { x: x - bw / 2, y: y - bh / 2 + inset + step * i, width: bw, height: step }
+          : { x: x - bw / 2 + inset + step * i, y: y - bh / 2, width: step, height: bh })
+      };
+    };
     if (S.showChases) {
       const floorRoute = p.settings.routeType === "floor";
       const chaseY0 = floorRoute ? H : 0;
@@ -352,24 +383,35 @@
         warm: `${Math.round(p.settings.tpChaseW || 50)}×${Math.round(p.settings.tpChaseH || 50)}`
       };
       const chaseKindOf = (layer) => (layer === "warm" ? "warm" : (layer === "lv" || layer === "tv" || layer === "cctv" ? "lv" : (layer === "light" ? "light" : "power")));
+      // одинаковые подписи сечения у соседних штроб блока сливались в «25×3025×30» —
+      // рисуем такую подпись рядом (ближе 22см на той же высоте) ОДИН раз
+      const lbls = [];
       const drawChase = (cx, cy0, cy1, kind) => {
         if (Math.abs(cy1 - cy0) < 1) return;
         const col = CHASE_COL[kind] || CHASE_COL.power;
         svg.appendChild(svgEl("line", { x1: cx, y1: cy0, x2: cx, y2: cy1, class: "ep-plan-unfchasebg", stroke: col, "stroke-width": kk * 5 }));
         svg.appendChild(svgEl("line", { x1: cx, y1: cy0, x2: cx, y2: cy1, class: "ep-plan-unfchase", stroke: col, "stroke-width": kk * 1.6 }));
-        const labelY = cy0 + (cy1 > cy0 ? 12 * ks : -6 * ks);
-        svg.appendChild(svgEl("text", { x: cx + 3 * ks, y: labelY, "font-size": 8 * ks, class: "ep-plan-unfchaselbl", fill: col }, SIZE_LBL[kind] || ""));
+        const txt = SIZE_LBL[kind] || "";
+        if (!txt) return;
+        let labelY = cy0 + (cy1 > cy0 ? 12 * ks : -6 * ks);
+        // порог по X — от РЕАЛЬНОЙ ширины подписи (шрифт 8*ks), а не магических 22см:
+        // на «1:1» подписи крупные и рядом стоящие штробы блока сливались в «25×3025×30»
+        const lw2 = Math.max(22, txt.length * 4.6 * ks);
+        const near = (ly, t) => lbls.some((l) => (t === undefined || l.txt === t) && Math.abs(l.x - cx) < lw2 && Math.abs(l.y - ly) < 9 * ks);
+        if (near(labelY, txt)) return;              // такое же сечение рядом уже подписано
+        for (let i = 0; i < 3 && near(labelY); i++) labelY += 10 * ks; // разное — разносим по высоте
+        lbls.push({ txt, x: cx, y: labelY });
+        svg.appendChild(svgEl("text", { x: cx + 3 * ks, y: labelY, "font-size": 8 * ks, class: "ep-plan-unfchaselbl", fill: col }, txt));
       };
       els.forEach((el2) => {
         const xx = el2.offset, yy = H - el2.height;
         if (el2.type === "block") {
-          const items = (el2.params && el2.params.items) || [];
-          const step2 = 18 * ks, bw = items.length * step2 + 6 * ks;
+          const bg = blockGeom(el2);
           (G().blockChaseEntries ? G().blockChaseEntries(el2) : []).forEach((en) => {
-            const ex = xx - bw / 2 + 3 * ks + step2 * en.idx + step2 / 2;
+            const c = bg.cell(en.idx);
             // выключатель в блоке при разводке по полу — штроба тянется до потолка (дальше к лампе)
             const y0 = (en.kind === "light" && floorRoute) ? 0 : chaseY0;
-            drawChase(ex, y0, yy, en.kind);
+            drawChase(c.cx, y0, c.cy, en.kind);
           });
         } else if (el2.layer === "warm") {
           // ТП: подача обычной штробой к термостату + ОТДЕЛЬНО всегда 50×50 от термостата в пол
@@ -384,13 +426,10 @@
     }
 
     const TY = EL().TYPES;
-    // «1:1» (settings.realScale, кнопка в шапке плана): посты рисуются в РЕАЛЬНЫХ
-    // габаритах рамок (мм из FRAME_MM, plan-render.js) и с настоящим «лицом» —
-    // розетка с гнёздами, выключатель клавишами, интернет RJ45, ТВ коаксиалом
-    // (просьба пользователя). Развёртка — фронтальный вид, тут это и видно.
-    const RD = EP.Plan.Render, real = !!(p.settings && p.settings.realScale) && !!(RD && RD.deviceFace);
-    const fW = (n) => (RD && RD.frameWcm ? RD.frameWcm(n) : 8.4);
-    const fH = () => (RD && RD.frameHcm ? RD.frameHcm() : 8.4);
+    // RD/real/fW/fH/blockGeom объявлены ВЫШЕ (перед блоком штроб) — «1:1» рисует посты
+    // в РЕАЛЬНЫХ габаритах рамок (мм из FRAME_MM, plan-render.js) и с настоящим «лицом»
+    // (розетка с гнёздами, выключатель клавишами, RJ45, коаксиал), а штробы обязаны
+    // считать габарит блока ТОЙ ЖЕ функцией, иначе не приходят в свои посты.
     // примитивы «лица» (в мм, центр 0,0) → SVG-узлы в см на месте поста
     function drawFace(parent, type, keys, cx, cy) {
       const prim = RD.deviceFace(type, keys) || [], ST = RD.FACE_STYLE || {};
@@ -408,13 +447,7 @@
     // ложится на другой пост (точки на одном offset, разной высоте) — сдвигаем,
     // чтобы не пересекалось (просьба пользователя).
     const symHalf = (el) => {
-      if (el.type === "block") {
-        const items = (el.params && el.params.items) || ["socket"];
-        const vert = !!el.blockVert;
-        const along = real ? fW(items.length) : items.length * 18 * ks + 6 * ks;
-        const across = real ? fH() : 24 * ks;
-        return { hw: (vert ? across : along) / 2, hh: (vert ? along : across) / 2 };
-      }
+      if (el.type === "block") { const bg = blockGeom(el); return { hw: bg.bw / 2, hh: bg.bh / 2 }; }
       return real ? { hw: fW(1) / 2, hh: fH() / 2 } : { hw: 13 * ks, hh: 13 * ks };
     };
     const elBoxes = els.map((e) => { const s = symHalf(e); return { x: e.offset, y: H - e.height, hw: s.hw, hh: s.hh }; });
@@ -468,24 +501,12 @@
       dimJobs.push({ el, x, y, idx });
 
       if (el.type === "block") {
-        const items = (el.params && el.params.items) || ["socket"];
-        // вертикальный блок (el.blockVert) — посты «столбиком» по высоте (вдоль y),
-        // горизонтальный — в ряд (вдоль x); просил пользователь. Развёртка — вид фасада,
-        // так что вертикальный блок здесь именно по высоте, а не поворот графики.
-        const vert = !!el.blockVert;
-        // realScale: рамка настоящей ширины (84/155/226/300/368 мм) и высоты 84 мм,
-        // посты внутри — с равным шагом; иначе прежняя «экранная» раскладка
-        const along = real ? fW(items.length) : items.length * 18 * ks + 6 * ks;
-        const across = real ? fH() : 24 * ks;
-        const step2 = real ? along / items.length : 18 * ks;
-        const inset = real ? 0 : 3 * ks;
-        const bw = vert ? across : along, bh = vert ? along : across;
-        const cellC = (i) => vert
-          ? { cx: x, cy: y - bh / 2 + inset + step2 * i + step2 / 2 }
-          : { cx: x - bw / 2 + inset + step2 * i + step2 / 2, cy: y };
-        const cellR = (i) => vert
-          ? { x: x - bw / 2, y: y - bh / 2 + inset + step2 * i, width: bw, height: step2 }
-          : { x: x - bw / 2 + inset + step2 * i, y: y - bh / 2, width: step2, height: bh };
+        // ЕДИНАЯ геометрия с штробами (blockGeom выше) — раньше раскладка постов была
+        // продублирована здесь и в блоке штроб, и в режиме «1:1» они разъезжались
+        const bg = blockGeom(el);
+        const items = bg.items, vert = bg.vert, bw = bg.bw, bh = bg.bh;
+        const cellC = (i) => bg.cell(i);
+        const cellR = (i) => bg.rect(i);
         gr.appendChild(svgEl("rect", { x: x - bw / 2, y: y - bh / 2, width: bw, height: bh, rx: real ? 0.4 : 5 * ks, style: "fill:" + col, class: "ep-plan-unfshape" }));
         if (real) items.forEach((it, i) => { const c = cellC(i); drawFace(gr, it, el.keys, c.cx, c.cy); if (!(RD.deviceFace(it, el.keys) || []).some((o) => o.cls !== "post")) gr.appendChild(svgEl("text", { x: c.cx, y: c.cy, "font-size": 2.6, "text-anchor": "middle", "dominant-baseline": "central", fill: "#0f172a", class: "ep-plan-unfface" }, (TY[it] || {}).glyph || "?")); });
         else items.forEach((it, i) => { const c = cellC(i); gr.appendChild(svgEl("text", { x: c.cx, y: c.cy, "font-size": 9 * ks, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfglyph" }, (TY[it] || {}).glyph || "?")); });
@@ -522,7 +543,14 @@
       if (Math.abs(x - cx0) > 2) {
         svg.appendChild(svgEl("line", { x1: cx0, y1: y, x2: x, y2: y, class: "ep-plan-unfdimE", "stroke-width": kk * 0.7 }));
         svg.appendChild(svgEl("line", { x1: cx0, y1: y - 3 * ks, x2: cx0, y2: y + 3 * ks, class: "ep-plan-unfdimE", "stroke-width": kk * 0.7 }));
-        svg.appendChild(svgEl("text", { x: (cx0 + x) / 2, y: y - 3 * ks, "font-size": 9.5 * ks, "text-anchor": "middle", class: "ep-plan-unfdimT" }, Math.round(Math.abs(x - cx0)) + ""));
+        // цифра «от угла» стоит на середине выноски — а там часто оказывается ДРУГОЙ пост
+        // (соседняя точка на близкой высоте) или его имя QF, и цифры сливались. Приподнимаем,
+        // пока не выйдет из чужих габаритов (тот же приём, что у подписи высоты).
+        const lx = (cx0 + x) / 2;
+        let ly = y - 3 * ks;
+        const bad = (yy2) => elBoxes.concat(qfBoxes).some((o) => Math.abs(lx - o.x) < 12 * ks + o.hw && Math.abs(yy2 - o.y) < 6 * ks + o.hh);
+        for (let i = 0; i < 2 && bad(ly); i++) ly -= 7 * ks; // не больше двух шагов — иначе цифра уедет от своей выноски
+        svg.appendChild(svgEl("text", { x: lx, y: ly, "font-size": 9.5 * ks, "text-anchor": "middle", class: "ep-plan-unfdimT" }, Math.round(Math.abs(x - cx0)) + ""));
       }
       // подпись высоты — РЯДОМ с постом, с антиналожением (тап — карточка точки)
       const hl = placeHLabel(idx);
