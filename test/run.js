@@ -3383,6 +3383,38 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/notificationclick/.test(sw) && /clients\.matchAll/.test(sw), "клик по уведомлению поднимает открытое приложение");
     ok(/addEventListener\("push"/.test(sw), "обработчик push готов (для будущего серверного пуша)");
   });
+  test("чат: писать может только одобренный, модерация — бан/жалобы/чистка", () => {
+    const fs = require("fs"), path = require("path"), root = path.resolve(__dirname, "..");
+    const rules = fs.readFileSync(path.join(root, "firestore.rules"), "utf8");
+    ok(/function chatBanned\(\)[\s\S]{0,200}chat_bans/.test(rules), "бан проверяется прямо в правилах (chat_bans)");
+    const pub = rules.slice(rules.indexOf("match /chat_messages/"), rules.indexOf("match /chat_presence/"));
+    ok(/allow create: if \(isApproved\(\) \|\| isAdmin\(\)\)[\s\S]{0,80}!chatBanned\(\)/.test(pub),
+      "в общий чат пишет ТОЛЬКО одобренный и не забаненный");
+    const dm = rules.slice(rules.indexOf("match /chat_dm/"));
+    ok(/allow create: if \(isApproved\(\) \|\| isAdmin\(\)\)[\s\S]{0,80}!chatBanned\(\)/.test(dm),
+      "в личку — тоже только одобренный и не забаненный (не просто signedIn)");
+    const pres = rules.slice(rules.indexOf("match /chat_presence/"), rules.indexOf("match /chat_dm/"));
+    ok(/isSelf\(uid\) && \(isApproved\(\) \|\| isAdmin\(\)\)/.test(pres), "присутствие пишет только одобренный сам за себя");
+    const bans = rules.slice(rules.indexOf("match /chat_bans/"), rules.indexOf("match /chat_reports/"));
+    ok(/allow read: if isApproved\(\) \|\| isAdmin\(\)/.test(bans) && /allow create, update, delete: if isAdmin\(\)/.test(bans),
+      "бан ставит/снимает только админ, видят все одобренные (чтобы честно показать «ограничен»)");
+    const reps = rules.slice(rules.indexOf("match /chat_reports/"), rules.indexOf("match /chat_messages/"));
+    ok(/allow read: if isAdmin\(\)/.test(reps), "жалобы читает только админ");
+    ok(/request\.resource\.data\.by == request\.auth\.uid/.test(reps), "жалоба пишется только от своего имени");
+    ok(/match \/\{document=\*\*\} \{\s*allow read, write: if false;/.test(rules), "финальный запрет-всё на месте");
+    const fb = fs.readFileSync(path.join(root, "assets", "js", "modules", "ui", "feedback.js"), "utf8");
+    ok(/function banUser/.test(fb) && /function unbanUser/.test(fb), "бан/разбан из чата");
+    ok(/function purgeUser/.test(fb) && /where\("uid", "==", uid\)/.test(fb), "удалить ВСЕ сообщения человека (в т.ч. старые, вне живого лимита)");
+    ok(/function reportMsg/.test(fb) && /data-fb-report/.test(fb), "жалоба на сообщение у обычного мастера");
+    ok(/view === "mod"/.test(fb) && /🛡 Модерация/.test(fb), "вкладка модерации (только админу)");
+    ok(/iAmBanned\(\)/.test(fb) && /ep-fb-banned/.test(fb), "забаненному вместо поля ввода — честная плашка");
+    ok(/const skin = \(\)/.test(fb) && /is-icq/.test(fb), "ретро-облик ICQ с переключателем");
+    ok(/is-icq" : " card glass"/.test(fb), "в ретро-облике не вешаем card/glass (их !important-фон перебил бы окно)");
+    const css = fs.readFileSync(path.join(root, "assets", "css", "base.css"), "utf8");
+    ok(/\.ep-fb-ov \.ep-fb-card\.is-icq\{[^}]*background:#ece9d8/.test(css), "ретро-окно: непрозрачный бежевый фон");
+    ok(/\.ep-fb-ov \.ep-fb-card\.is-icq \.ep-fb-msg\.is-mine \.ep-fb-msgtop b\{color:#b91c1c\}/.test(css), "свои подписи красным (как в истории ICQ)");
+    ok(/\.ep-fb-banned\{/.test(css) && /\.ep-fb-flower/.test(css), "плашка бана и цветок статуса");
+  });
 
   // ===== 33. Слаботочка: Нептун, домофон, датчики с целью, камеры отдельными линиями =====
   function lvFixture() {

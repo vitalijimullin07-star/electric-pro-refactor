@@ -63,6 +63,30 @@ service cloud.firestore {
       allow read, write: if isSelf(uid) || isAdmin();
     }
 
+    /* Бан в чате (модерация): документ существует — человек НЕ может писать ни в общий
+       чат, ни в личку. Ставит и снимает ТОЛЬКО админ; читают все одобренные, чтобы
+       клиент честно показал «доступ к чату ограничен» вместо молчаливой ошибки. */
+    function chatBanned() {
+      return signedIn() && exists(/databases/$(database)/documents/chat_bans/$(request.auth.uid));
+    }
+    match /chat_bans/{uid} {
+      allow read: if isApproved() || isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    /* Жалобы на сообщения: «клиенты жалуются, а админ решает». Пишет любой одобренный
+       (только от своего имени), читает и закрывает — только админ. */
+    match /chat_reports/{repId} {
+      allow read: if isAdmin();
+      allow create: if (isApproved() || isAdmin())
+        && request.resource.data.by == request.auth.uid
+        && request.resource.data.uid is string
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 2000;
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
     /* Общий чат замечаний (кнопка 💬 внутри приложения).
        Читают ВСЕ одобренные пользователи — в этом и смысл «общего» чата: видно
        переписку и сообщения других тестировщиков. Тот же предикат isApproved(),
@@ -73,6 +97,7 @@ service cloud.firestore {
     match /chat_messages/{msgId} {
       allow read: if isApproved() || isAdmin();
       allow create: if (isApproved() || isAdmin())
+        && !chatBanned()
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.text is string
         && request.resource.data.text.size() > 0
@@ -96,7 +121,7 @@ service cloud.firestore {
        одобренные — из этого и складывается список людей с зелёной точкой. */
     match /chat_presence/{uid} {
       allow read: if isApproved() || isAdmin();
-      allow create, update: if isSelf(uid) && request.resource.data.at is number;
+      allow create, update: if isSelf(uid) && (isApproved() || isAdmin()) && request.resource.data.at is number;
       allow delete: if isSelf(uid) || isAdmin();
     }
 
@@ -106,7 +131,8 @@ service cloud.firestore {
        получатель может лишь отметить прочтение (seen) — текст при этом не меняется. */
     match /chat_dm/{msgId} {
       allow read: if signedIn() && request.auth.uid in resource.data.uids;
-      allow create: if signedIn()
+      allow create: if (isApproved() || isAdmin())
+        && !chatBanned()
         && request.resource.data.from == request.auth.uid
         && request.resource.data.uids is list
         && request.resource.data.uids.size() == 2
