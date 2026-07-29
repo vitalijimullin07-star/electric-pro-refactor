@@ -275,7 +275,9 @@
       l = qread();
       if (!l.length) return Promise.resolve();
       const rec = l[0];
-      return d.collection(COL).add(docOf(Object.assign({}, rec, { uid: uid }))).then(() => {
+      return d.collection(COL).add(docOf(Object.assign({}, rec, { uid: uid }))).then((r) => {
+        // отложенное сообщение из офлайн-очереди тоже должно дать push получателям
+        askServerPush("pub", r && r.id);
         const cur = qread(); cur.shift(); qwrite(cur); sent++;
         return step();
       }).catch(() => undefined);      // не смогли — оставляем в очереди
@@ -325,15 +327,30 @@
       }, { merge: true }).catch(() => {});
     } catch (e) {}
   }
+  /* Регистрация НАШЕГО sw.js. `ready` умеет висеть вечно, если SW почему-то не
+     зарегистрирован (тогда getToken не вызовется вовсе), поэтому сначала спрашиваем
+     getRegistration() и лишь при отсутствии ждём ready — с таймаутом. */
+  function swReg() {
+    const sw = navigator.serviceWorker;
+    if (!sw) return Promise.resolve(null);
+    const wait = new Promise((res) => setTimeout(() => res(null), 8000));
+    return Promise.resolve()
+      .then(() => (sw.getRegistration ? sw.getRegistration("/") : null))
+      .then((r) => r || Promise.race([sw.ready, wait]))
+      .catch(() => null);
+  }
   function registerPush() {
     if (!pushSupported() || !canNotify() || !myUid()) return;
     if (!window.EP_VAPID_KEY) return;                 // ключ не прошит — тихо выходим
     if (!navigator.serviceWorker) return;
-    navigator.serviceWorker.ready.then((reg) => {
-      // ВАЖНО: передаём СВОЮ регистрацию sw.js — иначе SDK ищет отдельный
-      // firebase-messaging-sw.js в корне, которого у нас нет (и который дублировал бы
-      // логику кэша/оффлайна). Сообщения посылаем data-only, показывает их наш
-      // собственный обработчик push в sw.js.
+    swReg().then((reg) => {
+      // КРИТИЧНО: без своей регистрации getToken НЕ зовём вообще. SDK в этом случае
+      // регистрирует «дефолтный» /firebase-messaging-sw.js, которого у нас нет, а
+      // hosting на любой несуществующий путь отдаёт index.html — и SDK падал с
+      // «unsupported MIME type ('text/html')» (реальный лог с устройства
+      // пользователя). Своя регистрация нужна и по делу: push должен приходить в наш
+      // sw.js, где живёт проверка «окно открыто — не дублировать уведомление».
+      if (!reg || typeof ServiceWorkerRegistration === "undefined" || !(reg instanceof ServiceWorkerRegistration)) return null;
       return firebase.messaging().getToken({ vapidKey: window.EP_VAPID_KEY, serviceWorkerRegistration: reg });
     }).then((token) => {
       if (!token) return;
@@ -595,7 +612,7 @@
     const d = fdb(), uid = myUid();
     if (!d || !uid) { qAdd(rec); return Promise.resolve({ ok: false, queued: true }); }
     try {
-      return d.collection(COL).add(docOf(rec)).then(() => ({ ok: true, queued: false }))
+      return d.collection(COL).add(docOf(rec)).then((r) => { askServerPush("pub", r && r.id); return { ok: true, queued: false }; })
         .catch((e) => { qAdd(rec); chatErr = String((e && (e.code || e.message)) || ""); return { ok: false, queued: true }; });
     } catch (e) { qAdd(rec); return Promise.resolve({ ok: false, queued: true }); }
   }
@@ -609,7 +626,7 @@
     };
     if (replyTo) doc.replyTo = { id: replyTo.id, name: replyTo.name, text: cut(replyTo.text, 90) };
     if (attachPick) doc.attach = attachPick;
-    try { return d.collection(DMC).add(doc).then(() => ({ ok: true })).catch(() => ({ ok: false })); }
+    try { return d.collection(DMC).add(doc).then((r) => { askServerPush("dm", r && r.id); return { ok: true }; }).catch(() => ({ ok: false })); }
     catch (e) { return Promise.resolve({ ok: false }); }
   }
   const colOf = () => (view === "room" ? GRP : (view === "dm" ? DMC : COL));
@@ -721,7 +738,7 @@
       text: t.slice(0, MAXLEN), ts: Date.now(), at: stamp() };
     if (replyTo) doc.replyTo = { id: replyTo.id, name: replyTo.name, text: cut(replyTo.text, 90) };
     if (attachPick) doc.attach = attachPick;
-    try { return d.collection(GRP).add(doc).then(() => ({ ok: true })).catch(() => ({ ok: false })); }
+    try { return d.collection(GRP).add(doc).then((r) => { askServerPush("group", r && r.id); return { ok: true }; }).catch(() => ({ ok: false })); }
     catch (e) { return Promise.resolve({ ok: false }); }
   }
 
@@ -1235,6 +1252,17 @@
     paintBadge();
   }
   // поле ввода растёт по тексту (просьба пользователя), но не выше 35% экрана
+  /* Просим сервер разослать push по этому сообщению. Функция САМА читает сообщение и
+     проверяет, что зовущий — его автор (подсунуть чужой id нельзя), поэтому передаём
+     только вид и id. Best-effort: не смогли позвать — сообщение всё равно на месте и
+     придёт получателю при открытии приложения. */
+  function askServerPush(kind, id) {
+    if (!id) return;
+    try {
+      if (!window.EP || !EP.Auth || !EP.Auth.callFunction) return;
+      EP.Auth.callFunction("chatPush", { kind: kind, id: id }).catch(() => {});
+    } catch (e) {}
+  }
   function grow(t) {
     try {
       t.style.height = "auto";

@@ -3575,15 +3575,36 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/request\.resource\.data\.uid == request\.auth\.uid/.test(tk), "писать можно только свой токен");
     ok(/match \/\{document=\*\*\} \{\s*allow read, write: if false;/.test(rules), "финальный запрет-всё на месте");
     const fn = fs.readFileSync(path.join(root, "functions", "index.js"), "utf8");
-    ok(/chat_messages\/\{msgId\}/.test(fn) && /chat_dm\/\{msgId\}/.test(fn) && /chat_group\/\{msgId\}/.test(fn),
-      "триггеры на все три вида сообщений");
-    ok(/functionsV1\.region\(REGION\)/.test(fn),
-      "v1-триггеры: у v2 регион функции обязан совпасть с регионом базы, промах валит деплой");
+    // ПОЧЕМУ НЕ ТРИГГЕР НА FIRESTORE: деплой упал с «Resource .../chat_messages/{msgId}
+    // is in region eur3-europe-west1 which is not supported» — база в мультирегионе eur3,
+    // и триггер обязан жить в совместимом с ней регионе. onCall от региона базы не зависит.
+    ok(/exports\.chatPush = onCall/.test(fn), "рассылка — вызываемая функция (у неё нет привязки к региону базы)");
+    ok(!/firebase-functions\/v1/.test(fn) && !/\.firestore\.document\(/.test(fn),
+      "триггеров на Firestore нет — именно на них падал деплой (регион базы eur3)");
+    ok(/const author = kind === "pub" \? m\.uid : m\.from;[\s\S]{0,200}permission-denied/.test(fn),
+      "функция САМА читает сообщение и проверяет авторство — чужой id подсунуть нельзя");
+    ok(/if \(m\.pushedAt\) return \{ sent: 0, already: true \}/.test(fn),
+      "повторный вызов не рассылает второй раз (защита от ретрая и от спама)");
     ok(/sendEachForMulticast/.test(fn) && !/notification:/.test(fn),
       "отправляем ТОЛЬКО data — иначе FCM покажет уведомление в обход нашего sw.js");
     ok(/function dropDeadTokens/.test(fn) && /registration-token-not-registered/.test(fn), "мёртвые токены удаляются");
     ok(/t\.mute !== true/.test(fn), "функция уважает «не беспокоить»");
     ok(/for \(let i = 0; i < list\.length; i \+= 30\)/.test(fn), "whereIn режется по 30 значений — предел Firestore");
+    ok(/function askServerPush/.test(fb) && /EP\.Auth\.callFunction\("chatPush"/.test(fb),
+      "клиент просит рассылку после отправки");
+    ["pub", "dm", "group"].forEach((k) => ok(new RegExp('askServerPush\\("' + k + '"').test(fb), "запрос push для вида: " + k));
+    ok((fb.match(/askServerPush\("pub"/g) || []).length >= 2,
+      "и для отложенного сообщения из офлайн-очереди тоже");
+    // страховка: hosting на любой НЕсуществующий путь отдаёт index.html, из-за чего SDK
+    // падал на «unsupported MIME type ('text/html')» при попытке дефолтного SW
+    const fms = fs.readFileSync(path.join(root, "firebase-messaging-sw.js"), "utf8");
+    ok(/importScripts\("\/sw\.js"\)/.test(fms), "дефолтный путь FCM существует и переиспользует логику sw.js");
+    const fj = JSON.parse(fs.readFileSync(path.join(root, "firebase.json"), "utf8"));
+    ok(fj.hosting.headers.some((h) => h.source === "/firebase-messaging-sw.js"),
+      "у него no-cache, как у sw.js — иначе браузер держал бы старую копию");
+    ok(/function swReg/.test(fb) && /instanceof ServiceWorkerRegistration/.test(fb),
+      "без своей регистрации getToken НЕ зовётся — иначе SDK уходит за дефолтным SW");
+    ok(/Promise\.race\(\[sw\.ready, wait\]\)/.test(fb), "ready не может подвесить регистрацию навсегда");
     const sw = fs.readFileSync(path.join(root, "sw.js"), "utf8");
     ok(/raw\.data === "object"/.test(sw), "sw читает формат FCM (payload.data) и ручной push (верхний уровень)");
     ok(/visibilityState === "visible"/.test(sw),

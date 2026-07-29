@@ -411,20 +411,27 @@ exports.adminSetUserAccess = onCall({ secrets: [ACCESS_SIGNING_SECRET] }, async 
    PUSH-уведомления чата при ПОЛНОСТЬЮ закрытом приложении.
 
    Клиент (assets/js/modules/ui/feedback.js) кладёт FCM-токен устройства в
-   chat_tokens/{token} = {uid, name, mute, ua, at}. Триггер на создание сообщения
-   собирает токены получателей и отправляет DATA-ONLY сообщение — показывает его наш
-   собственный обработчик push в sw.js (без библиотеки firebase-messaging в SW).
+   chat_tokens/{token} = {uid, name, mute, ua, at} и СРАЗУ ПОСЛЕ отправки сообщения
+   зовёт эту функцию. Она сама читает сообщение из Firestore, убеждается, что зовущий
+   — его АВТОР, собирает токены получателей и отправляет DATA-ONLY сообщение (показывает
+   его наш обработчик push в sw.js).
 
-   ПОЧЕМУ v1-триггеры, а не v2: у v2-триггеров Firestore регион функции обязан
-   совпадать с регионом базы (для мультирегиона eur3 — europe-west4), и промах по
-   региону валит ДЕПЛОЙ. v1-триггеры к этому не привязаны и живут в том же
-   europe-west1, где уже успешно деплоятся вызываемые функции выше. Деплой hosting
-   при этом всё равно отделён от functions отдельным шагом CI — падение функции не
-   должно мешать выкату самого приложения.
+   ПОЧЕМУ ВЫЗЫВАЕМАЯ ФУНКЦИЯ, А НЕ ТРИГГЕР НА FIRESTORE. Первая версия была на триггерах
+   (onCreate для chat_messages/chat_dm/chat_group) — и ДЕПЛОЙ УПАЛ:
+     Resource .../documents/chat_messages/{msgId} is in region eur3-europe-west1
+     which is not supported
+   База этого проекта в мультирегионе eur3, и триггер обязан жить в регионе, который с
+   ним совместим — europe-west1 (где успешно работают все остальные функции проекта) в
+   эту пару не годится. Подбирать регион наугад значит гадать с ценой «красный деплой»
+   каждый раз, поэтому переехали на onCall: у вызываемых функций ограничения по региону
+   базы НЕТ вообще, и они уже проверены в этом проекте.
+   ЦЕНА (осознанная): push уходит, пока приложение отправителя ещё живо (сразу после
+   успешной записи сообщения). Если телефон отправителя умрёт ровно между записью и
+   вызовом — получатель push не увидит, но само сообщение на месте и придёт при открытии
+   приложения. Взамен: никаких Eventarc/регионов и явная проверка авторства.
    ============================================================================ */
-const functionsV1 = require("firebase-functions/v1");
-const REGION = "europe-west1";
 const PUSH_BATCH = 450;          // sendEachForMulticast принимает максимум 500 токенов
+const PUSH_COLS = { pub: "chat_messages", dm: "chat_dm", group: "chat_group" };
 
 function cut(s, n) {
   const t = String(s == null ? "" : s);
@@ -487,37 +494,45 @@ async function sendChatPush(uids, exceptUid, title, body, tag) {
   return sent;
 }
 
-exports.chatPushPublic = functionsV1.region(REGION)
-  .firestore.document("chat_messages/{msgId}")
-  .onCreate(async (snap) => {
-    const m = snap.data() || {};
-    if (!m.text) return null;
-    return sendChatPush(null, m.uid, m.name || "Мастер", m.text, "ep-chat-pub").catch((e) => {
-      logger.error("chatPushPublic", e); return null;
-    });
-  });
+exports.chatPush = onCall(async (request) => {
+  assertSignedIn(request);
+  const uid = request.auth.uid;
+  const input = request.data || {};
+  const kind = String(input.kind || "");
+  const id = String(input.id || "");
+  const col = PUSH_COLS[kind];
+  if (!col || !id) throw new HttpsError("invalid-argument", "Нужны kind (pub|dm|group) и id сообщения.");
 
-exports.chatPushDm = functionsV1.region(REGION)
-  .firestore.document("chat_dm/{msgId}")
-  .onCreate(async (snap) => {
-    const m = snap.data() || {};
-    if (!m.text || !m.to) return null;
-    return sendChatPush([m.to], m.from, (m.name || "Мастер") + " · лично", m.text, "ep-chat-dm-" + m.from).catch((e) => {
-      logger.error("chatPushDm", e); return null;
-    });
-  });
+  // Сообщение читаем САМИ и проверяем авторство по СОХРАНЁННОМУ документу: подсунуть
+  // чужой id и разослать от чужого имени нельзя, текст тоже берём из базы, а не из
+  // аргументов — клиент не может отправить в уведомлении то, чего нет в чате.
+  const ref = db.collection(col).doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError("not-found", "Сообщение не найдено.");
+  const m = snap.data() || {};
+  const author = kind === "pub" ? m.uid : m.from;
+  if (author !== uid) throw new HttpsError("permission-denied", "Это не ваше сообщение.");
+  if (!m.text) return { sent: 0 };
+  // защита от повторной рассылки: даже если клиент вызовет функцию несколько раз
+  // (ретрай, злой умысел), уведомление по одному сообщению уйдёт ОДИН раз
+  if (m.pushedAt) return { sent: 0, already: true };
+  await ref.set({ pushedAt: Date.now() }, { merge: true });
 
-exports.chatPushGroup = functionsV1.region(REGION)
-  .firestore.document("chat_group/{msgId}")
-  .onCreate(async (snap) => {
-    const m = snap.data() || {};
-    if (!m.text || !Array.isArray(m.uids)) return null;
+  const name = m.name || "Мастер";
+  let sent = 0;
+  if (kind === "pub") {
+    sent = await sendChatPush(null, uid, name, m.text, "ep-chat-pub");
+  } else if (kind === "dm") {
+    if (!m.to) return { sent: 0 };
+    sent = await sendChatPush([m.to], uid, name + " · лично", m.text, "ep-chat-dm-" + uid);
+  } else {
+    if (!Array.isArray(m.uids)) return { sent: 0 };
     let room = "Группа";
     try {
       const r = await db.collection("chat_rooms").doc(String(m.roomId || "")).get();
       if (r.exists && r.data().name) room = r.data().name;
     } catch (_) {}
-    return sendChatPush(m.uids, m.from, (m.name || "Мастер") + " · " + room, m.text, "ep-chat-room-" + (m.roomId || "")).catch((e) => {
-      logger.error("chatPushGroup", e); return null;
-    });
-  });
+    sent = await sendChatPush(m.uids, uid, name + " · " + room, m.text, "ep-chat-room-" + (m.roomId || ""));
+  }
+  return { sent: sent };
+});
