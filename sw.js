@@ -14,6 +14,33 @@ self.addEventListener("activate", (e) => {
 });
 self.addEventListener("message", (e) => { if (e.data === "skipWaiting") self.skipWaiting(); });
 
+/* Уведомления чата. showNotification() зовёт сам клиент (feedback.js), пока приложение
+   живо — здесь только КЛИК: открываем/поднимаем уже открытую вкладку приложения, а не
+   плодим новую. Обработчик "push" оставлен на будущее (настоящий push при полностью
+   закрытом приложении требует ключа Web Push/VAPID и серверного триггера — их пока
+   нет; без подписки событие просто никогда не приходит, вреда от обработчика ноль). */
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  e.waitUntil((async () => {
+    const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const c of all) {
+      if (c.url.indexOf(self.location.origin) === 0) { try { await c.focus(); return; } catch (_) {} }
+    }
+    try { await self.clients.openWindow("/"); } catch (_) {}
+  })());
+});
+self.addEventListener("push", (e) => {
+  let data = {};
+  try { data = e.data ? e.data.json() : {}; } catch (_) { data = { body: e.data ? e.data.text() : "" }; }
+  const title = data.title || "Electric Pro";
+  e.waitUntil(self.registration.showNotification(title, {
+    body: data.body || "Новое сообщение в чате",
+    tag: data.tag || "ep-chat",
+    icon: "/assets/icon-192.png",
+    badge: "/assets/icon-192.png"
+  }));
+});
+
 self.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET") return;                       // POST (Firestore/Auth) — мимо SW

@@ -1,47 +1,58 @@
-/* Electric Pro V29 — встроенный чат замечаний (💬).
+/* Electric Pro V29 — чат (💬): общий онлайн-чат, личные сообщения, журнал замечаний.
 
-   Просьба пользователя: «добавь пожалуйста внутрь кнопку (чат) — я прям там косяки
-   буду писать, или те кто тестит, а после копировать и присылать тебе», затем —
-   «чат хотел сделать онлайн, и видеть переписку и сообщения других, общий скажем так».
+   История просьб пользователя:
+   · «добавь пожалуйста внутрь кнопку (чат) — я прям там косяки буду писать, или те кто
+     тестит, а после копировать и присылать тебе» → локальный журнал («Заметки»);
+   · «чат хотел сделать онлайн, и видеть переписку и сообщения других, общий скажем так»
+     → общая коллекция chat_messages с живой подпиской;
+   · «практически полноценный чат, я бы наверное как icq согласился» → эта версия: поле
+     ввода растёт по тексту, правка своего сообщения, ответ на сообщение, кто в сети,
+     личная переписка, автопрокрутка к последнему, звук, красная метка у иконки, вызов
+     чата с ЛЮБОГО экрана (плавающая кнопка), история «загрузить предыдущие».
 
-   Поэтому здесь ДВЕ вкладки:
-   · «Общий чат» — ОНЛАЙН, Firestore-коллекция chat_messages, одна на всех:
-     каждый одобренный пользователь читает сообщения остальных и пишет свои
-     (onSnapshot → живое обновление без перезагрузки). Правила доступа —
-     firestore.rules: читать может isApproved()/админ, писать — только от своего
-     uid, править задним числом нельзя вообще, удалять — автор своего сообщения
-     или админ (модерация).
-   · «Мои заметки» — ЛОКАЛЬНЫЙ журнал (localStorage), как было до онлайна: работает
-     без входа и без интернета, а «📋 Скопировать всё» отдаёт весь журнал одним
-     текстом в буфер — переслать разработчику любым мессенджером.
+   Коллекции (правила — firestore.rules):
+   · chat_messages — общий чат: читают одобренные, пишут от своего uid, автор правит
+     свой текст, удаляет автор или админ;
+   · chat_dm — личные: видят ТОЛЬКО двое участников (uids), админ здесь НЕ читает;
+   · chat_presence/{uid} — «кто в сети»: свой документ, «сердцебиение» раз в 2 минуты,
+     пока приложение открыто (онлайн = свежее 5 минут).
 
-   Офлайн/без входа общий чат не теряет написанное: сообщение уходит в очередь
-   (localStorage) и отправляется само, как только появится вход и связь.
+   Уведомления: пока приложение ЖИВО (открыто или свёрнуто, но страница не убита) —
+   Notification API через service worker + звук + красная метка на кнопке чата и на
+   иконке приложения. НАСТОЯЩИЙ push при полностью закрытом приложении требует ключа
+   Web Push (VAPID) из консоли Firebase и серверного триггера — здесь его НЕТ, это
+   отдельный шаг (нужен ключ от владельца проекта).
 
-   К каждой записи АВТОМАТИЧЕСКИ подшивается контекст (экран, проект, версия сборки,
-   устройство, размер экрана) — по опыту сессии именно его всегда приходится
-   выспрашивать отдельно, а без него репорт часто невоспроизводим. В общем чате его
-   видят все участники — так и задумано (это рабочий чат тестирования). */
+   Локальные заметки оставлены НАМЕРЕННО: работают без входа и интернета, и «📋
+   Скопировать всё» остаётся способом переслать текст разработчику (у него доступа
+   к базе нет). */
 (() => {
   "use strict";
   window.EP = window.EP || {};
 
   const KEY = "ep_feedback_v1";      // локальные заметки
   const QKEY = "ep_chat_queue_v1";   // офлайн-очередь общего чата
-  const COL = "chat_messages";       // общая коллекция (см. firestore.rules)
-  const MAX = 300;   // журнал устройства, не архив: старые записи вытесняются
-  const LIMIT = 120; // сколько последних сообщений чата держим на экране
-  const MAXLEN = 2000; // тот же предел, что и в правилах Firestore
+  const SEENK = "ep_chat_seen_v1";   // что уже прочитано { pub: ts }
+  const SNDK = "ep_chat_sound_v1";   // "0" — звук выключен
+  const COL = "chat_messages", DMC = "chat_dm", PRES = "chat_presence";
+  const MAX = 300;    // локальный журнал устройства
+  const LIMIT = 120;  // сколько последних сообщений держим живыми
+  const DM_LIMIT = 500;
+  const MAXLEN = 2000;
+  const ONLINE_MS = 5 * 60 * 1000;
+  const HB_MS = 2 * 60 * 1000;
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const cut = (s, n) => { const t = String(s || ""); return t.length > n ? t.slice(0, n - 1) + "…" : t; };
 
+  // ---------- локальные заметки ----------
   function read() {
     try { const v = JSON.parse(localStorage.getItem(KEY) || "[]"); return Array.isArray(v) ? v : []; } catch (e) { return []; }
   }
   function write(list) {
     try { localStorage.setItem(KEY, JSON.stringify(list.slice(-MAX))); return true; } catch (e) { return false; }
   }
-  // версия сборки = кэш-бастинг ?v=NNNN из подключённых скриптов (его ставит CI,
-  // см. scripts/bump-cache-version.js) — по нему сразу видно, на какой версии баг
+  // версия сборки = кэш-бастинг ?v=NNNN из разметки (ставит CI) — сразу видно, на какой
+  // версии баг; без этого репорт часто невоспроизводим
   function build() {
     try {
       const m = String(document.documentElement.outerHTML).match(/[?&]v=(\d+)/);
@@ -70,7 +81,7 @@
     return rec;
   }
   const fmtDate = (ms) => { try { return new Date(ms).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); } catch (e) { return String(ms); } };
-  // текст для отправки: сначала общая шапка (устройство/версия), потом записи по одной
+  const fmtTime = (ms) => { try { return new Date(ms).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }); } catch (e) { return ""; } };
   function asText() {
     const list = read();
     if (!list.length) return "";
@@ -86,9 +97,6 @@
       if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(txt); return true; }
     } catch (e) { /* нет доступа к буферу (не-HTTPS, старый WebView) — фолбэк ниже */ }
     try {
-      // фолбэк для старых WebView: временная textarea + execCommand («Скопировать логи»
-      // в logger.js работает так же; глобальный user-select:none её не касается —
-      // поля ввода в белом списке, см. base.css)
       const ta = document.createElement("textarea");
       ta.value = txt; ta.style.cssText = "position:fixed;left:-2000px;top:0";
       document.body.appendChild(ta); ta.focus(); ta.select();
@@ -99,13 +107,23 @@
   }
   const copyAll = () => copyText(asText());
 
-  // ---------- общий ОНЛАЙН-чат (Firestore) ----------
-  let tab = "chat";        // "chat" | "notes"
-  let msgs = [];           // последние LIMIT сообщений общего чата (по возрастанию времени)
-  let unsub = null;        // активная подписка onSnapshot (только пока чат открыт)
-  let chatState = "off";   // "off" (нет входа/БД) | "live" | "err"
-  let chatErr = "";
-  let flushing = false;
+  // ---------- состояние чата ----------
+  let view = "chat";          // "chat" | "people" | "dm" | "notes"
+  let dmUid = "", dmName = "";
+  let msgs = [], older = [], dmAll = [], people = [];
+  let unsubPub = null, unsubDm = null, unsubPres = null;
+  let chatState = "off", chatErr = "";
+  let flushing = false, loadingOlder = false, noMoreOlder = false;
+  let replyTo = null;         // на какое сообщение отвечаем
+  let editId = null;          // правим своё сообщение
+  let openMsgId = null;       // у какого сообщения раскрыты действия (тап по сообщению)
+  let hbTimer = null;
+  let pendingNew = 0;         // «↓ N новых», если список прокручен вверх
+  // «первый снапшот получен» — ИМЕННО флаг, а не проверка «msgs пуст»: на пустом чате
+  // самое первое сообщение приходило вторым снапшотом при msgs.length === 0 и молча
+  // не давало ни звука, ни уведомления (поймано живым прогоном)
+  let gotPub = false, gotDm = false;
+  const seenPending = new Set();   // какие личные уже помечаем прочитанными (без петли)
 
   function fdb() { try { return (window.EP && EP.Firebase && EP.Firebase.db) || null; } catch (e) { return null; } }
   function me() {
@@ -122,26 +140,29 @@
   }
   function isAdm() { try { return !!(EP.Auth && EP.Auth.isAdmin && EP.Auth.isAdmin()); } catch (e) { return false; } }
   function stamp() { try { return window.firebase.firestore.FieldValue.serverTimestamp(); } catch (e) { return null; } }
-  // время сообщения: серверное, если уже подтверждено; иначе клиентское ts
-  // (у только что отправленного serverTimestamp в локальном снапшоте ещё null —
-  // поэтому и сортируем/показываем по ts, а at храним как авторитетное значение)
+  // время сообщения: серверное, если пришло; иначе клиентское ts (у только что
+  // отправленного serverTimestamp в локальном снапшоте ещё null — pending write)
   function atMs(r) {
     try { if (r && r.at && typeof r.at.toMillis === "function") return r.at.toMillis(); } catch (e) {}
     return (r && r.ts) || 0;
   }
+  function seenRead() { try { const v = JSON.parse(localStorage.getItem(SEENK) || "{}"); return v && typeof v === "object" ? v : {}; } catch (e) { return {}; } }
+  function seenWrite(v) { try { localStorage.setItem(SEENK, JSON.stringify(v)); } catch (e) {} }
+  const soundOn = () => localStorage.getItem(SNDK) !== "0";
 
+  // ---------- офлайн-очередь ----------
   function qread() { try { const v = JSON.parse(localStorage.getItem(QKEY) || "[]"); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
   function qwrite(l) { try { localStorage.setItem(QKEY, JSON.stringify(l.slice(-50))); } catch (e) {} }
   function qAdd(rec) { const l = qread(); l.push(rec); qwrite(l); }
-
   function docOf(rec) {
-    return {
+    const d = {
       uid: rec.uid || myUid(), name: rec.name || myName(), text: String(rec.text || "").slice(0, MAXLEN),
       ts: rec.ts || Date.now(), at: stamp(),
       route: rec.route || "", project: rec.project || "", build: rec.build || "", screen: rec.screen || "", ua: rec.ua || ""
     };
+    if (rec.replyTo) d.replyTo = rec.replyTo;
+    return d;
   }
-  // отправить накопленное офлайн (по одному, с удалением из очереди только по факту успеха)
   function flushQueue() {
     if (flushing) return Promise.resolve(0);
     const d = fdb(), uid = myUid();
@@ -156,37 +177,178 @@
       return d.collection(COL).add(docOf(Object.assign({}, rec, { uid: uid }))).then(() => {
         const cur = qread(); cur.shift(); qwrite(cur); sent++;
         return step();
-      }).catch(() => undefined); // не смогли — оставляем в очереди, попробуем позже
+      }).catch(() => undefined);      // не смогли — оставляем в очереди
     };
     return step().then(() => { flushing = false; return sent; }, () => { flushing = false; return sent; });
   }
 
-  function subscribe() {
-    if (unsub) return;
+  // ---------- уведомления, звук, метка ----------
+  const canNotify = () => (typeof Notification !== "undefined" && Notification.permission === "granted");
+  function askNotify() {
+    if (typeof Notification === "undefined") return Promise.resolve(false);
+    try { return Promise.resolve(Notification.requestPermission()).then((r) => r === "granted"); }
+    catch (e) { return Promise.resolve(false); }
+  }
+  function notify(title, body, tag) {
+    if (!canNotify()) return;
+    const opts = { body: body, tag: tag || "ep-chat", icon: "assets/icon-192.png", badge: "assets/icon-192.png", data: { chat: 1 } };
+    try {
+      if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+        navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, opts)).catch(() => { try { new Notification(title, opts); } catch (e2) {} });
+        return;
+      }
+      new Notification(title, opts);
+    } catch (e) {}
+  }
+  function ping() {
+    if (!soundOn()) return;
+    try { if (EP.SoundFeedback && EP.SoundFeedback.play) { EP.SoundFeedback.play("chime", true); return; } } catch (e) {}
+    try {   // фолбэк, если модуль звука не подключён
+      const C = window.AudioContext || window.webkitAudioContext; if (!C) return;
+      const actx = ping._c || (ping._c = new C());
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = "sine"; o.frequency.value = 880; g.gain.value = 0.05;
+      o.connect(g); g.connect(actx.destination);
+      o.start(); o.stop(actx.currentTime + 0.12);
+    } catch (e) {}
+  }
+  function unreadPub() {
+    const uid = myUid(), s = seenRead(), from = s.pub || 0;
+    return msgs.filter((m) => m.uid !== uid && atMs(m) > from).length;
+  }
+  function unreadDmBy() {
+    const uid = myUid(), map = {};
+    dmAll.forEach((m) => { if (m.to === uid && !m.seen) map[m.from] = (map[m.from] || 0) + 1; });
+    return map;
+  }
+  function unreadTotal() {
+    const dm = unreadDmBy();
+    return unreadPub() + Object.keys(dm).reduce((s, k) => s + dm[k], 0);
+  }
+  // красная метка у ВСЕХ кнопок вызова чата (шапка плана, бургер-меню, плавающая
+  // кнопка) — через data-атрибут: точку рисует CSS, DOM-хирургия не нужна
+  function paintBadge() {
+    const n = unreadTotal();
+    document.querySelectorAll("[data-fb-open]").forEach((b) => {
+      if (n > 0) b.setAttribute("data-unread", n > 99 ? "99+" : String(n));
+      else b.removeAttribute("data-unread");
+    });
+    try {
+      if (n > 0 && navigator.setAppBadge) navigator.setAppBadge(n);
+      else if (navigator.clearAppBadge) navigator.clearAppBadge();
+    } catch (e) {}
+  }
+
+  // ---------- подписки ----------
+  function subPublic() {
+    if (unsubPub) return;
     const d = fdb(), uid = myUid();
     if (!d || !uid) { chatState = "off"; return; }
     try {
-      unsub = d.collection(COL).orderBy("ts", "desc").limit(LIMIT).onSnapshot((snap) => {
+      unsubPub = d.collection(COL).orderBy("ts", "desc").limit(LIMIT).onSnapshot((snap) => {
         const arr = [];
         snap.forEach((doc) => arr.push(Object.assign({ id: doc.id }, doc.data())));
+        const prevIds = new Set(msgs.map((m) => m.id));
+        const first = !gotPub; gotPub = true;
         msgs = arr.reverse();
         chatState = "live"; chatErr = "";
-        if (isOpen()) patchChat();
-        flushQueue().then((n) => { if (n && isOpen()) patchChat(); });
+        if (!first) onIncoming(msgs.filter((m) => !prevIds.has(m.id) && m.uid !== myUid()), null);
+        if (isOpen()) patch();
+        paintBadge();
+        flushQueue().then((n) => { if (n && isOpen()) patch(); });
       }, (err) => {
         chatState = "err";
         chatErr = String((err && (err.code || err.message)) || "ошибка");
-        if (isOpen()) patchChat();
+        if (isOpen()) patch();
       });
-    } catch (e) { chatState = "err"; chatErr = String(e && e.message || e); }
+    } catch (e) { chatState = "err"; chatErr = String((e && e.message) || e); }
   }
-  function unsubscribe() { if (unsub) { try { unsub(); } catch (e) {} unsub = null; } }
+  // ВСЯ моя личка ОДНОЙ подпиской (список людей с превью, непрочитанные и открытый
+  // диалог — из неё же). array-contains БЕЗ orderBy: так не нужен составной индекс
+  // Firestore, сортируем на клиенте. ОГРАНИЧЕНИЕ: при > DM_LIMIT сообщений подтянется
+  // не обязательно самый свежий срез (для рабочей переписки этого хватает).
+  function subDm() {
+    if (unsubDm) return;
+    const d = fdb(), uid = myUid();
+    if (!d || !uid) return;
+    try {
+      unsubDm = d.collection(DMC).where("uids", "array-contains", uid).limit(DM_LIMIT).onSnapshot((snap) => {
+        const arr = [];
+        snap.forEach((doc) => arr.push(Object.assign({ id: doc.id }, doc.data())));
+        const prevIds = new Set(dmAll.map((m) => m.id));
+        const first = !gotDm; gotDm = true;
+        dmAll = arr.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+        if (!first) onIncoming(null, dmAll.filter((m) => !prevIds.has(m.id) && m.to === uid));
+        if (isOpen()) patch();
+        paintBadge();
+      }, () => {});
+    } catch (e) {}
+  }
+  function subPresence() {
+    if (unsubPres) return;
+    const d = fdb(), uid = myUid();
+    if (!d || !uid) return;
+    try {
+      unsubPres = d.collection(PRES).limit(200).onSnapshot((snap) => {
+        const arr = [];
+        snap.forEach((doc) => arr.push(Object.assign({ uid: doc.id }, doc.data())));
+        people = arr;
+        if (isOpen() && (view === "people" || view === "dm")) patch();
+      }, () => {});
+    } catch (e) {}
+  }
+  function unsubAll() {
+    [unsubPub, unsubDm, unsubPres].forEach((f) => { if (f) { try { f(); } catch (e) {} } });
+    unsubPub = unsubDm = unsubPres = null;
+  }
+  function startAll() {
+    if (!myUid() || !fdb()) { chatState = "off"; return; }
+    subPublic(); subDm(); subPresence(); heartbeat();
+    flushQueue().then(paintBadge);
+  }
+  // «сердцебиение» присутствия: пока страница видима — раз в 2 минуты
+  function beat() {
+    const d = fdb(), uid = myUid();
+    if (!d || !uid || document.visibilityState === "hidden") return;
+    try {
+      d.collection(PRES).doc(uid).set({ name: myName(), at: Date.now(), route: (EP.state && EP.state.currentRoute) || "" }, { merge: true }).catch(() => {});
+    } catch (e) {}
+  }
+  function heartbeat() {
+    if (hbTimer) return;
+    beat();
+    hbTimer = setInterval(beat, HB_MS);
+  }
+  const isOnline = (p) => !!(p && p.at && Date.now() - p.at < ONLINE_MS);
 
-  function send(text) {
+  // новое сообщение (не моё) — звук + уведомление + «↓ N новых», если список не внизу
+  function onIncoming(freshPub, freshDm) {
+    const pub = freshPub || [], dm = freshDm || [];
+    if (!pub.length && !dm.length) return;
+    const openHere = isOpen() && ((pub.length && view === "chat") || (dm.length && view === "dm" && dm.some((m) => m.from === dmUid)));
+    const last = dm.length ? dm[dm.length - 1] : pub[pub.length - 1];
+    const who = dm.length ? ("✉ " + nameOf(last.from)) : (last.name || "Чат");
+    ping();
+    if (!openHere || document.visibilityState === "hidden") notify(who, cut(last.text, 120), dm.length ? "ep-dm-" + last.from : "ep-chat");
+    if (openHere) {
+      const box = listEl();
+      if (box && !nearBottom(box)) pendingNew += pub.length + dm.length;
+      else pendingNew = 0;
+    }
+  }
+  function nameOf(uid) {
+    const p = people.find((x) => x.uid === uid);
+    if (p && p.name) return p.name;
+    const m = msgs.concat(dmAll).find((x) => (x.uid || x.from) === uid && x.name);
+    return (m && m.name) || "Мастер";
+  }
+
+  // ---------- отправка/правка/удаление ----------
+  function sendPub(text) {
     const t = String(text || "").trim();
     if (!t) return Promise.resolve({ ok: false, queued: false });
-    const c = ctx();
-    const rec = Object.assign({ uid: myUid(), name: myName(), text: t.slice(0, MAXLEN), ts: Date.now() }, c);
+    const rec = Object.assign({ uid: myUid(), name: myName(), text: t.slice(0, MAXLEN), ts: Date.now() }, ctx());
+    if (replyTo) rec.replyTo = { id: replyTo.id, name: replyTo.name, text: cut(replyTo.text, 90) };
     const d = fdb(), uid = myUid();
     if (!d || !uid) { qAdd(rec); return Promise.resolve({ ok: false, queued: true }); }
     try {
@@ -194,50 +356,158 @@
         .catch((e) => { qAdd(rec); chatErr = String((e && (e.code || e.message)) || ""); return { ok: false, queued: true }; });
     } catch (e) { qAdd(rec); return Promise.resolve({ ok: false, queued: true }); }
   }
-  function removeMsg(id) {
+  function sendDm(text) {
+    const t = String(text || "").trim();
+    const d = fdb(), uid = myUid();
+    if (!t || !d || !uid || !dmUid) return Promise.resolve({ ok: false });
+    const doc = {
+      from: uid, to: dmUid, uids: [uid, dmUid], name: myName(), text: t.slice(0, MAXLEN),
+      ts: Date.now(), at: stamp(), seen: false
+    };
+    if (replyTo) doc.replyTo = { id: replyTo.id, name: replyTo.name, text: cut(replyTo.text, 90) };
+    try { return d.collection(DMC).add(doc).then(() => ({ ok: true })).catch(() => ({ ok: false })); }
+    catch (e) { return Promise.resolve({ ok: false }); }
+  }
+  function editMsg(id, text, isDm) {
+    const d = fdb(), t = String(text || "").trim();
+    if (!d || !id || !t) return Promise.resolve(false);
+    try {
+      return d.collection(isDm ? DMC : COL).doc(id)
+        .update({ text: t.slice(0, MAXLEN), editedAt: Date.now() })
+        .then(() => true).catch(() => false);
+    } catch (e) { return Promise.resolve(false); }
+  }
+  function removeMsg(id, isDm) {
     const d = fdb(); if (!d || !id) return Promise.resolve(false);
-    try { return d.collection(COL).doc(id).delete().then(() => true).catch(() => false); }
+    try { return d.collection(isDm ? DMC : COL).doc(id).delete().then(() => true).catch(() => false); }
     catch (e) { return Promise.resolve(false); }
   }
-  // текст общего чата для пересылки разработчику (у него доступа к базе нет —
-  // копипаста остаётся основным каналом, как и у локальных заметок)
+  // прочитано: публичный — метка времени в localStorage, личка — seen у документов
+  function markSeen() {
+    const uid = myUid();
+    if (view === "chat") {
+      const s = seenRead();
+      const last = msgs.length ? atMs(msgs[msgs.length - 1]) : Date.now();
+      s.pub = Math.max(s.pub || 0, last);
+      seenWrite(s);
+    }
+    if (view === "dm" && dmUid) {
+      const d = fdb();
+      if (d) dmAll.filter((m) => m.from === dmUid && m.to === uid && !m.seen && !seenPending.has(m.id)).forEach((m) => {
+        seenPending.add(m.id);
+        try { d.collection(DMC).doc(m.id).update({ seen: true }).catch(() => { seenPending.delete(m.id); }); }
+        catch (e) { seenPending.delete(m.id); }
+      });
+    }
+    paintBadge();
+  }
+  // «загрузить предыдущие» — живая подписка держит последние LIMIT, историю тянем разово
+  function loadOlder() {
+    const d = fdb(); if (!d || loadingOlder || noMoreOlder) return;
+    const all = older.concat(msgs);
+    const oldest = all.length ? (all[0].ts || 0) : Date.now();
+    loadingOlder = true;
+    try {
+      d.collection(COL).where("ts", "<", oldest).orderBy("ts", "desc").limit(LIMIT).get().then((snap) => {
+        const arr = [];
+        snap.forEach((doc) => arr.push(Object.assign({ id: doc.id }, doc.data())));
+        if (!arr.length) noMoreOlder = true;
+        older = arr.reverse().concat(older);
+        loadingOlder = false;
+        if (isOpen()) render(true);
+      }).catch(() => { loadingOlder = false; noMoreOlder = true; });
+    } catch (e) { loadingOlder = false; }
+  }
+  const dmMsgs = () => dmAll.filter((m) => m.from === dmUid || m.to === dmUid);
   function chatText() {
-    if (!msgs.length) return "";
-    const head = `Electric Pro — общий чат (${msgs.length} посл. сообщений)\n`;
-    return head + msgs.map((r) =>
-      `\n[${fmtDate(atMs(r))}] ${r.name || "?"} · ${r.route || "—"}${r.project ? " · «" + r.project + "»" : ""} · v${r.build || "—"}\n${r.text || ""}`
+    const list = view === "dm" ? dmMsgs() : older.concat(msgs);
+    if (!list.length) return "";
+    const head = view === "dm" ? `Electric Pro — личная переписка с ${dmName} (${list.length})\n` : `Electric Pro — общий чат (${list.length} сообщений)\n`;
+    return head + list.map((r) =>
+      `\n[${fmtDate(atMs(r))}] ${r.name || nameOf(r.from) || "?"}${r.route ? " · " + r.route : ""}${r.project ? " · «" + r.project + "»" : ""}\n${r.text || ""}`
     ).join("\n");
   }
 
-  // ---------- UI: свой оверлей (работает на ЛЮБОМ экране, не только в плане) ----------
+  // ---------- UI ----------
   function ovEl() { return document.getElementById("ep-fb-ov"); }
   function isOpen() { const ov = ovEl(); return !!(ov && !ov.hidden); }
+  function listEl() { const ov = ovEl(); return ov && ov.querySelector(".ep-fb-list"); }
+  const nearBottom = (box) => box.scrollHeight - box.scrollTop - box.clientHeight < 80;
 
   function statusHtml() {
     const q = qread().length;
-    if (chatState === "live") return `<span class="ep-fb-st is-live">🟢 онлайн</span>${q ? ` · <span class="ep-fb-st">${q} в очереди</span>` : ""}`;
-    if (chatState === "err") return `<span class="ep-fb-st is-err">🔴 нет доступа к чату (${esc(chatErr)})</span>${q ? ` · ${q} в очереди` : ""}`;
-    return `<span class="ep-fb-st">⚪ офлайн — уйдёт при входе${q ? ", в очереди " + q : ""}</span>`;
+    const bell = canNotify() ? "" : `<button type="button" class="ep-plan-mini ep-clickable" data-fb-notify aria-label="Включить уведомления">🔔</button>`;
+    const snd = `<button type="button" class="ep-plan-mini ep-clickable" data-fb-sound aria-label="Звук сообщений">${soundOn() ? "🔊" : "🔇"}</button>`;
+    let st = `<span class="ep-fb-st">⚪ офлайн${q ? " · в очереди " + q : ""}</span>`;
+    if (chatState === "live") st = `<span class="ep-fb-st is-live">🟢 онлайн</span>${q ? ` · <span class="ep-fb-st">${q} в очереди</span>` : ""}`;
+    else if (chatState === "err") st = `<span class="ep-fb-st is-err">🔴 нет доступа (${esc(chatErr)})</span>`;
+    return st + bell + snd;
+  }
+  function msgHtml(r, isDm) {
+    const uid = myUid(), mine = !!uid && (isDm ? r.from === uid : r.uid === uid);
+    const canDel = mine || (!isDm && isAdm());
+    const nm = esc(r.name || nameOf(r.from) || "Мастер");
+    const meta = isDm
+      ? esc(fmtTime(atMs(r))) + (r.editedAt ? " · изменено" : "") + (mine && r.seen ? " · прочитано" : "")
+      : esc(fmtTime(atMs(r))) + " · " + esc(r.route || "—") + (r.project ? " · " + esc(r.project) : "") + " · v" + esc(r.build || "—") + (r.editedAt ? " · изменено" : "");
+    const quote = r.replyTo ? `<div class="ep-fb-quote"><b>${esc(r.replyTo.name || "")}</b> ${esc(r.replyTo.text || "")}</div>` : "";
+    if (editId === r.id) {
+      return `<div class="ep-fb-msg is-mine"><div class="ep-fb-msgtop"><b>${nm}</b></div>
+        <textarea class="ep-fb-input" data-fb-editinput rows="2">${esc(r.text || "")}</textarea>
+        <div class="ep-fb-acts">
+          <button type="button" class="ep-plan-chip on ep-clickable" data-fb-editsave="${esc(r.id)}">✓ Сохранить</button>
+          <button type="button" class="ep-plan-chip ep-clickable" data-fb-editcancel>Отмена</button>
+        </div></div>`;
+    }
+    const acts = openMsgId === r.id ? `<div class="ep-fb-acts">
+      <button type="button" class="ep-plan-chip ep-clickable" data-fb-reply="${esc(r.id)}">↩ Ответить</button>
+      ${mine ? `<button type="button" class="ep-plan-chip ep-clickable" data-fb-edit="${esc(r.id)}">✎ Изменить</button>` : ""}
+      ${canDel ? `<button type="button" class="ep-plan-chip ep-clickable" data-fb-del2="${esc(r.id)}">🗑 Удалить</button>` : ""}
+      ${(!isDm && !mine && r.uid) ? `<button type="button" class="ep-plan-chip ep-clickable" data-fb-dm="${esc(r.uid)}">✉ Лично</button>` : ""}
+    </div>` : "";
+    return `<div class="ep-fb-msg${mine ? " is-mine" : ""}" data-fb-msg="${esc(r.id)}">
+      <div class="ep-fb-msgtop"><b>${nm}</b></div>
+      ${quote}<div class="ep-fb-text">${esc(r.text || "")}</div>
+      <div class="ep-fb-meta">${meta}</div>${acts}</div>`;
+  }
+  function pendingHtml() {
+    return qread().map((r) => `<div class="ep-fb-msg is-mine is-pending">
+      <div class="ep-fb-msgtop"><b>${esc(r.name || "Я")}</b><span class="ep-fb-st">⏳ не отправлено</span></div>
+      <div class="ep-fb-text">${esc(r.text || "")}</div></div>`).join("");
   }
   function chatListHtml() {
-    const uid = myUid(), adm = isAdm();
-    const q = qread();
-    const rows = msgs.map((r) => {
-      const mine = uid && r.uid === uid;
-      const meta = `${esc(fmtDate(atMs(r)))} · ${esc(r.route || "—")}${r.project ? " · " + esc(r.project) : ""} · v${esc(r.build || "—")}`;
-      const del = (mine || adm) ? `<button type="button" class="ep-plan-mini ep-clickable" data-fb-msgdel="${esc(r.id)}" aria-label="Удалить сообщение">✕</button>` : "";
-      return `<div class="ep-fb-msg${mine ? " is-mine" : ""}">
-        <div class="ep-fb-msgtop"><b>${esc(r.name || "Мастер")}</b>${del}</div>
-        <div class="ep-fb-text">${esc(r.text || "")}</div>
-        <div class="ep-fb-meta">${meta}</div>
-      </div>`;
-    }).join("");
-    const pend = q.map((r) => `<div class="ep-fb-msg is-mine is-pending">
-      <div class="ep-fb-msgtop"><b>${esc(r.name || "Я")}</b><span class="ep-fb-st">⏳ не отправлено</span></div>
-      <div class="ep-fb-text">${esc(r.text || "")}</div>
-    </div>`).join("");
+    const all = older.concat(msgs);
+    const more = (noMoreOlder || !all.length) ? "" : `<button type="button" class="btn btn-ghost ep-clickable ep-fb-more" data-fb-older>↑ Загрузить предыдущие</button>`;
+    const rows = all.map((r) => msgHtml(r, false)).join("");
+    const pend = pendingHtml();
     if (!rows && !pend) return `<div class="ep-fb-empty">${chatState === "live" ? "Пока никто ничего не писал." : "Сообщений нет."}</div>`;
-    return rows + pend;
+    return more + rows + pend;
+  }
+  function dmListHtml() {
+    const rows = dmMsgs().map((r) => msgHtml(r, true)).join("");
+    return rows || `<div class="ep-fb-empty">Начни переписку — сообщение увидит только ${esc(dmName)}.</div>`;
+  }
+  function peopleListHtml() {
+    const uid = myUid(), un = unreadDmBy();
+    // всех, кого знаем: присутствие + авторы сообщений (мог не «биться», но писал)
+    const map = {};
+    people.forEach((p) => { if (p.uid !== uid) map[p.uid] = { uid: p.uid, name: p.name || "Мастер", at: p.at || 0 }; });
+    msgs.concat(dmAll).forEach((m) => {
+      const id = m.uid || m.from;
+      if (!id || id === uid) return;
+      if (!map[id]) map[id] = { uid: id, name: m.name || "Мастер", at: 0 };
+    });
+    const list = Object.keys(map).map((k) => map[k]).sort((a, b) => (isOnline(b) - isOnline(a)) || String(a.name).localeCompare(String(b.name)));
+    if (!list.length) return `<div class="ep-fb-empty">Пока никого — как только кто-то войдёт, появится здесь.</div>`;
+    return list.map((p) => {
+      const last = dmAll.filter((m) => m.from === p.uid || m.to === p.uid).slice(-1)[0];
+      const n = un[p.uid] || 0;
+      return `<button type="button" class="ep-fb-person ep-clickable" data-fb-dm="${esc(p.uid)}">
+        <span class="ep-fb-dot${isOnline(p) ? " is-on" : ""}"></span>
+        <span class="ep-fb-pname">${esc(p.name)}${last ? `<i>${esc(cut(last.text, 40))}</i>` : ""}</span>
+        ${n ? `<span class="ep-fb-cnt">${n}</span>` : `<span class="ep-fb-st">${isOnline(p) ? "в сети" : (p.at ? "был " + fmtTime(p.at) : "")}</span>`}
+      </button>`;
+    }).join("");
   }
   function notesListHtml() {
     const list = read().slice().reverse();
@@ -249,61 +519,99 @@
         <div class="ep-fb-text">${esc(r.text)}</div>
       </div>`).join("");
   }
-  // обновление ТОЛЬКО списка и статуса — чтобы приходящие сообщения не стирали
-  // уже набранный, но не отправленный текст в поле ввода (и не сбивали фокус)
-  function patchChat() {
+  function bodyHtml() {
+    if (view === "people") return peopleListHtml();
+    if (view === "dm") return dmListHtml();
+    if (view === "notes") return notesListHtml();
+    return chatListHtml();
+  }
+  function tabsHtml() {
+    const un = unreadDmBy(), dmN = Object.keys(un).reduce((s, k) => s + un[k], 0), pubN = unreadPub();
+    const t = (id, label, n) => `<button type="button" class="ep-plan-chip ep-clickable${view === id ? " on" : ""}" data-fb-tab="${id}">${label}${n ? ` <i class="ep-fb-cnt">${n}</i>` : ""}</button>`;
+    return t("chat", "Общий", view === "chat" ? 0 : pubN) + t("people", "Люди", dmN) + t("notes", "Заметки", 0);
+  }
+  // обновляем ТОЛЬКО список/статус/вкладки — иначе приходящее сообщение стирало бы
+  // набранный, но не отправленный текст в поле ввода (и сбивало фокус)
+  function patch() {
     const ov = ovEl(); if (!ov) return;
     const st = ov.querySelector(".ep-fb-status");
     const box = ov.querySelector(".ep-fb-list");
-    if (st) st.innerHTML = statusHtml();
+    if (st && view !== "notes") st.innerHTML = statusHtml();
+    const tabs = ov.querySelector(".ep-fb-tabs-in"); if (tabs) tabs.innerHTML = tabsHtml();
     if (!box) return;
-    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
-    box.innerHTML = tab === "chat" ? chatListHtml() : notesListHtml();
-    if (tab === "chat" && atBottom) box.scrollTop = box.scrollHeight;
+    const wasBottom = nearBottom(box);
+    box.innerHTML = bodyHtml();
+    if (wasBottom && (view === "chat" || view === "dm")) { box.scrollTop = box.scrollHeight; pendingNew = 0; }
+    const chip = ov.querySelector(".ep-fb-newchip");
+    if (chip) { chip.hidden = !pendingNew; chip.textContent = "↓ " + pendingNew + " новых"; }
+    markSeen();
   }
-  function render() {
+  function render(keepScroll) {
     let ov = ovEl();
     if (!ov) { ov = document.createElement("div"); ov.id = "ep-fb-ov"; ov.className = "ep-fb-ov"; document.body.appendChild(ov); }
-    const chat = tab === "chat";
+    const prevTop = keepScroll && listEl() ? listEl().scrollTop : null;
+    const isNotes = view === "notes";
+    const dmHead = view === "dm"
+      ? `<div class="ep-fb-dmhead"><button type="button" class="ep-plan-mini ep-clickable" data-fb-tab="people">‹</button>
+         <span class="ep-fb-dot${isOnline(people.find((p) => p.uid === dmUid)) ? " is-on" : ""}"></span>
+         <b>${esc(dmName)}</b><span class="ep-fb-st">личная переписка</span></div>` : "";
+    const hint = isNotes
+      ? "Заметки только на этом устройстве (работают без входа и интернета). «Скопировать всё» → отправь текст разработчику."
+      : (view === "people" ? "Тапни человека — откроется личная переписка. Зелёная точка — в сети (заходил в приложение за последние 5 минут)."
+        : (view === "dm" ? "Личная переписка — видите только вы двое, даже админ её не читает. Тапни сообщение: ответить, изменить своё, удалить."
+          : "Тапни сообщение — ответить, изменить своё, удалить или написать лично. К сообщению подшивается экран, проект и версия сборки."));
     ov.innerHTML = `<div class="ep-fb-card card glass">
       <div class="ep-fb-head">
-        <b>💬 Замечания и баги</b>
+        <b>💬 Чат</b>
         <span class="ep-fb-sp"></span>
         <button type="button" class="ep-plan-mini ep-clickable" data-fb-close aria-label="Закрыть">✕</button>
       </div>
-      <div class="ep-fb-tabs">
-        <button type="button" class="ep-plan-chip ep-clickable${chat ? " on" : ""}" data-fb-tab="chat">Общий чат</button>
-        <button type="button" class="ep-plan-chip ep-clickable${chat ? "" : " on"}" data-fb-tab="notes">Мои заметки</button>
-        <span class="ep-fb-sp"></span>
-        <span class="ep-fb-status">${chat ? statusHtml() : ""}</span>
-      </div>
-      <div class="ep-fb-hint">${chat
-        ? "Общий чат тестирования: сообщения видят все участники. К записи подшивается экран, проект и версия сборки — так баг воспроизводим."
-        : "Заметки только на этом устройстве (работают без входа и интернета). «Скопировать всё» → отправь текст разработчику."}</div>
-      <div class="ep-fb-list">${chat ? chatListHtml() : notesListHtml()}</div>
-      <textarea id="ep-fb-input" class="ep-fb-input" rows="2" placeholder="${chat ? "Сообщение в общий чат…" : "Например: при тапе по проёму в развёртке зависает экран…"}"></textarea>
+      <div class="ep-fb-tabs"><span class="ep-fb-tabs-in">${tabsHtml()}</span><span class="ep-fb-sp"></span><span class="ep-fb-status">${isNotes ? "" : statusHtml()}</span></div>
+      ${dmHead}
+      <div class="ep-fb-hint">${hint}</div>
+      <div class="ep-fb-list">${bodyHtml()}</div>
+      <button type="button" class="ep-fb-newchip ep-clickable" data-fb-tobottom ${pendingNew ? "" : "hidden"}>↓ ${pendingNew} новых</button>
+      ${replyTo ? `<div class="ep-fb-replybar"><span>↩ ${esc(replyTo.name)}: ${esc(cut(replyTo.text, 60))}</span><button type="button" class="ep-plan-mini ep-clickable" data-fb-replycancel>✕</button></div>` : ""}
+      ${view === "people" ? "" : `<textarea id="ep-fb-input" class="ep-fb-input" rows="1" placeholder="${isNotes ? "Например: при тапе по проёму зависает экран…" : (view === "dm" ? "Сообщение — " + esc(dmName) : "Сообщение в общий чат…")}"></textarea>
       <div class="ep-fb-row">
-        ${chat
-          ? `<button type="button" class="btn btn-primary ep-clickable" data-fb-send>Отправить</button>
-             <button type="button" class="btn btn-ghost ep-clickable" data-fb-copychat>📋 Скопировать чат</button>`
-          : `<button type="button" class="btn btn-primary ep-clickable" data-fb-add>+ Записать</button>
+        ${isNotes
+          ? `<button type="button" class="btn btn-primary ep-clickable" data-fb-add>+ Записать</button>
              <button type="button" class="btn btn-ghost ep-clickable" data-fb-copy>📋 Скопировать всё</button>
-             ${read().length ? `<button type="button" class="btn btn-ghost ep-clickable" data-fb-clear>Очистить</button>` : ""}`}
-      </div>
+             ${read().length ? `<button type="button" class="btn btn-ghost ep-clickable" data-fb-clear>Очистить</button>` : ""}`
+          : `<button type="button" class="btn btn-primary ep-clickable" data-fb-send>Отправить</button>
+             <button type="button" class="btn btn-ghost ep-clickable" data-fb-copychat>📋 Скопировать</button>`}
+      </div>`}
     </div>`;
     ov.hidden = false;
-    const box = ov.querySelector(".ep-fb-list");
-    if (box && chat) box.scrollTop = box.scrollHeight;
+    const box = listEl();
+    if (box) {
+      if (prevTop != null) box.scrollTop = prevTop;
+      else if (view === "chat" || view === "dm") box.scrollTop = box.scrollHeight;   // автопрокрутка к последнему
+    }
     const inp = document.getElementById("ep-fb-input");
-    if (inp) setTimeout(() => { try { inp.focus(); } catch (e) {} }, 30);
+    if (inp) { grow(inp); setTimeout(() => { try { inp.focus(); } catch (e) {} }, 30); }
+    markSeen();
+    paintBadge();
   }
-  function open() {
-    // чат открывают и из бургер-меню — не оставлять выдвинутое меню под оверлеем
+  // поле ввода растёт по тексту (просьба пользователя), но не выше 35% экрана
+  function grow(t) {
+    try {
+      t.style.height = "auto";
+      t.style.height = Math.min(t.scrollHeight + 2, Math.round(window.innerHeight * 0.35)) + "px";
+    } catch (e) {}
+  }
+  function open(opts) {
     try { if (window.EP && EP.AppShell && EP.AppShell.closeDrawer) EP.AppShell.closeDrawer(); } catch (e) {}
-    render(); subscribe();
-    flushQueue().then((n) => { if (n && isOpen()) patchChat(); });
+    if (opts && opts.view) view = opts.view;
+    startAll();
+    render();
+    flushQueue().then((n) => { if (n && isOpen()) patch(); });
   }
-  function close() { unsubscribe(); const ov = ovEl(); if (ov) { ov.hidden = true; ov.innerHTML = ""; } }
+  function close() {
+    const ov = ovEl(); if (ov) { ov.hidden = true; ov.innerHTML = ""; }
+    replyTo = null; editId = null; openMsgId = null; pendingNew = 0;
+    paintBadge();
+  }
   function toast(msg) {
     const ov = ovEl(); if (!ov) return;
     let t = ov.querySelector(".ep-fb-toast");
@@ -312,6 +620,29 @@
     clearTimeout(toast._t);
     toast._t = setTimeout(() => { if (t && t.parentNode) t.parentNode.removeChild(t); }, 1800);
   }
+  function openDm(uid) {
+    if (!uid || uid === myUid()) return;
+    dmUid = uid; dmName = nameOf(uid); view = "dm"; openMsgId = null; replyTo = null;
+    if (!isOpen()) { startAll(); }
+    render();
+  }
+
+  // плавающая кнопка чата — вызов с ЛЮБОГО экрана (просьба пользователя)
+  function ensureFab() {
+    let f = document.getElementById("ep-chat-fab");
+    if (!f) {
+      f = document.createElement("button");
+      f.id = "ep-chat-fab"; f.type = "button";
+      f.className = "ep-chat-fab ep-clickable";
+      f.setAttribute("data-fb-open", "1");
+      f.setAttribute("aria-label", "Чат");
+      f.textContent = "💬";
+      document.body.appendChild(f);
+    }
+    const route = (EP.state && EP.state.currentRoute) || "";
+    f.hidden = route === "login" || !myUid();
+    paintBadge();
+  }
 
   document.addEventListener("click", (e) => {
     const t = e.target;
@@ -319,42 +650,66 @@
     const ov = ovEl(); if (!ov || ov.hidden) return;
     if (t.closest("[data-fb-close]")) { close(); return; }
     const tb = t.closest("[data-fb-tab]");
-    if (tb) { tab = tb.getAttribute("data-fb-tab") === "notes" ? "notes" : "chat"; render(); if (tab === "chat") subscribe(); return; }
-    if (t.closest("[data-fb-send]")) {
-      const inp = document.getElementById("ep-fb-input");
-      const v = inp ? inp.value : "";
-      if (!String(v).trim()) { toast("Напиши сообщение"); return; }
-      if (inp) inp.value = "";
-      send(v).then((r) => { toast(r.ok ? "Отправлено" : "Сохранено — уйдёт при входе"); patchChat(); });
+    if (tb) {
+      const v = tb.getAttribute("data-fb-tab");
+      view = (v === "notes" || v === "people" || v === "dm") ? v : "chat";
+      openMsgId = null; editId = null; pendingNew = 0;
+      startAll(); render(); return;
+    }
+    const dmBtn = t.closest("[data-fb-dm]");
+    if (dmBtn) { openDm(dmBtn.getAttribute("data-fb-dm")); return; }
+    if (t.closest("[data-fb-notify]")) { askNotify().then((ok) => { toast(ok ? "Уведомления включены" : "Уведомления не разрешены"); patch(); }); return; }
+    if (t.closest("[data-fb-sound]")) { localStorage.setItem(SNDK, soundOn() ? "0" : "1"); if (soundOn()) ping(); patch(); return; }
+    if (t.closest("[data-fb-tobottom]")) { const b = listEl(); if (b) b.scrollTop = b.scrollHeight; pendingNew = 0; patch(); return; }
+    if (t.closest("[data-fb-older]")) { loadOlder(); return; }
+    if (t.closest("[data-fb-replycancel]")) { replyTo = null; render(true); return; }
+    const rep = t.closest("[data-fb-reply]");
+    if (rep) {
+      const id = rep.getAttribute("data-fb-reply");
+      const src = older.concat(msgs, dmAll).find((m) => m.id === id);
+      if (src) replyTo = { id: id, name: src.name || nameOf(src.from), text: src.text || "" };
+      openMsgId = null; render(true); return;
+    }
+    const ed = t.closest("[data-fb-edit]");
+    if (ed) { editId = ed.getAttribute("data-fb-edit"); openMsgId = null; render(true); return; }
+    if (t.closest("[data-fb-editcancel]")) { editId = null; render(true); return; }
+    const sv = t.closest("[data-fb-editsave]");
+    if (sv) {
+      const inp2 = ov.querySelector("[data-fb-editinput]");
+      const id = sv.getAttribute("data-fb-editsave");
+      editMsg(id, inp2 ? inp2.value : "", view === "dm").then((ok) => { toast(ok ? "Изменено" : "Не удалось изменить"); editId = null; render(true); });
       return;
     }
-    if (t.closest("[data-fb-copychat]")) {
-      copyText(chatText()).then((ok) => toast(ok ? "Чат скопирован" : "Не удалось скопировать"));
-      return;
-    }
-    const md = t.closest("[data-fb-msgdel]");
-    if (md) {
+    const dl = t.closest("[data-fb-del2]");
+    if (dl) {
       if (!confirm("Удалить сообщение?")) return;
-      removeMsg(md.getAttribute("data-fb-msgdel")).then((ok) => { if (!ok) toast("Не удалось удалить"); });
+      removeMsg(dl.getAttribute("data-fb-del2"), view === "dm").then((ok) => { if (!ok) toast("Не удалось удалить"); openMsgId = null; });
       return;
     }
+    const mg = t.closest("[data-fb-msg]");
+    if (mg) { const id = mg.getAttribute("data-fb-msg"); openMsgId = (openMsgId === id ? null : id); patch(); return; }
+    if (t.closest("[data-fb-send]")) {
+      const inp3 = document.getElementById("ep-fb-input");
+      const v = inp3 ? inp3.value : "";
+      if (!String(v).trim()) { toast("Напиши сообщение"); return; }
+      if (inp3) { inp3.value = ""; grow(inp3); }
+      const p = view === "dm" ? sendDm(v) : sendPub(v);
+      replyTo = null;
+      p.then((r) => {
+        toast(r.ok ? "Отправлено" : (r.queued ? "Сохранено — уйдёт при входе" : "Не удалось отправить"));
+        render(false);
+      });
+      return;
+    }
+    if (t.closest("[data-fb-copychat]")) { copyText(chatText()).then((ok) => toast(ok ? "Скопировано" : "Не удалось скопировать")); return; }
     if (t.closest("[data-fb-add]")) {
-      const inp = document.getElementById("ep-fb-input");
-      const v = inp ? inp.value : "";
+      const inp4 = document.getElementById("ep-fb-input");
+      const v = inp4 ? inp4.value : "";
       if (!String(v).trim()) { toast("Напиши текст замечания"); return; }
-      add(v);
-      render();
-      toast("Записано");
-      return;
+      add(v); render(); toast("Записано"); return;
     }
-    if (t.closest("[data-fb-copy]")) {
-      copyAll().then((ok) => toast(ok ? "Скопировано — отправляй" : "Не удалось скопировать"));
-      return;
-    }
-    if (t.closest("[data-fb-clear]")) {
-      if (!confirm("Удалить все записи?")) return;
-      write([]); render(); return;
-    }
+    if (t.closest("[data-fb-copy]")) { copyAll().then((ok) => toast(ok ? "Скопировано — отправляй" : "Не удалось скопировать")); return; }
+    if (t.closest("[data-fb-clear]")) { if (!confirm("Удалить все записи?")) return; write([]); render(); return; }
     const del = t.closest("[data-fb-del]");
     if (del) {
       const i = Number(del.getAttribute("data-fb-del"));
@@ -362,20 +717,43 @@
       if (Number.isFinite(i) && i >= 0 && i < list.length) { list.splice(i, 1); write(list); render(); }
       return;
     }
-    // клик по затемнению (мимо карточки) — закрыть
-    if (t === ov) close();
+    if (t === ov) close();     // клик по затемнению
   });
+  document.addEventListener("input", (e) => {
+    const t = e.target;
+    if (!t) return;
+    if (t.id === "ep-fb-input" || (t.hasAttribute && t.hasAttribute("data-fb-editinput"))) grow(t);
+  });
+  document.addEventListener("scroll", (e) => {
+    const box = e.target;
+    if (!box || !box.classList || !box.classList.contains("ep-fb-list")) return;
+    if (nearBottom(box) && pendingNew) {
+      pendingNew = 0;
+      const ov = ovEl(), ch = ov && ov.querySelector(".ep-fb-newchip");
+      if (ch) ch.hidden = true;
+      markSeen();
+    }
+  }, true);
 
-  // вход случился (или сменился) при открытом чате — подписаться и дослать очередь
   window.addEventListener("ep:auth-changed", () => {
-    unsubscribe();
-    if (isOpen()) { subscribe(); patchChat(); }
-    flushQueue().then((n) => { if (n && isOpen()) patchChat(); });
+    unsubAll();
+    msgs = []; older = []; dmAll = []; people = []; noMoreOlder = false;
+    gotPub = false; gotDm = false; seenPending.clear();
+    if (myUid()) startAll();
+    ensureFab();
+    if (isOpen()) render(true);
   });
+  window.addEventListener("ep:route-loaded", ensureFab);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { beat(); startAll(); } });
+  // приложение открыто — сразу слушаем чат (метка/звук/уведомление работают и при
+  // закрытом окне чата), кнопка вызова доступна с любого экрана
+  setTimeout(() => { ensureFab(); if (myUid()) startAll(); }, 1500);
 
   EP.Feedback = {
     open, close, add, read, asText, copyAll, count: () => read().length,
-    send, messages: () => msgs.slice(), chatText, queue: qread, flushQueue,
-    state: () => chatState
+    send: sendPub, sendDm, messages: () => msgs.slice(), dmMessages: () => dmMsgs(), chatText,
+    queue: qread, flushQueue, state: () => chatState, unread: unreadTotal, people: () => people.slice(),
+    openDm, setView: (v) => { view = v; if (isOpen()) render(); }, isOnline, notifyAsk: askNotify
   };
+  EP.Chat = EP.Feedback;
 })();

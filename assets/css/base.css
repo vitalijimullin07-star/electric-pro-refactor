@@ -1423,6 +1423,33 @@ body[data-visual-mode="day"] .ep-consent-list li { color: #b91c1c; }
 .ep-fb-msgtop{display:flex;align-items:center;gap:6px;font-size:calc(12px * var(--eff-text-scale,1))}
 .ep-fb-msgtop button{margin-left:auto}
 .ep-fb-msg .ep-fb-meta{margin-top:4px}
+/* полноценный чат: цитата ответа, действия по тапу, люди, «↓ N новых», FAB, метка */
+.ep-fb-quote{border-left:3px solid var(--accent);padding:2px 0 2px 6px;margin:2px 0 4px;color:var(--muted);font-size:calc(12px * var(--eff-text-scale,1));white-space:pre-wrap}
+.ep-fb-quote b{color:var(--text)}
+.ep-fb-acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.ep-fb-replybar{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px dashed rgba(148,163,184,.45);border-radius:10px;color:var(--muted);font-size:calc(12px * var(--eff-text-scale,1))}
+.ep-fb-replybar span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ep-fb-dmhead{display:flex;align-items:center;gap:8px}
+.ep-fb-dmhead b{color:var(--text)}
+.ep-fb-person{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:rgba(148,163,184,.10);border:1px solid rgba(148,163,184,.32);border-radius:12px;padding:8px;color:var(--text);font:inherit;cursor:pointer}
+.ep-fb-pname{flex:1;display:flex;flex-direction:column;font-weight:700}
+.ep-fb-pname i{font-weight:400;font-style:normal;color:var(--muted);font-size:calc(11px * var(--eff-text-scale,1));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ep-fb-dot{width:9px;height:9px;border-radius:50%;background:#94a3b8;flex:none}
+.ep-fb-dot.is-on{background:#22c55e;box-shadow:0 0 6px rgba(34,197,94,.8)}
+.ep-fb-cnt{display:inline-flex;min-width:18px;height:18px;padding:0 5px;align-items:center;justify-content:center;border-radius:999px;background:#ef4444;color:#fff;font-size:11px;font-weight:800;font-style:normal}
+.ep-fb-newchip{align-self:center;border:none;border-radius:999px;background:var(--accent);color:#06121f;font-weight:800;padding:5px 12px;cursor:pointer}
+.ep-fb-newchip[hidden]{display:none}
+.ep-fb-more{align-self:center}
+/* плавающая кнопка вызова чата — на любом экране */
+.ep-chat-fab{position:fixed;right:14px;bottom:calc(16px + var(--kb,0px));z-index:9000;width:48px;height:48px;border-radius:50%;border:1px solid rgba(148,163,184,.4);background:rgb(var(--card-bg-rgb));color:var(--text);font-size:22px;line-height:1;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.35)}
+.ep-chat-fab[hidden]{display:none}
+body[data-flatshadow="1"] .ep-chat-fab{box-shadow:none}
+/* красная метка непрочитанных у ЛЮБОЙ кнопки вызова чата (шапка плана, меню, FAB) */
+/* точка-метка позиционируется от кнопки — но у ПЛАВАЮЩЕЙ кнопки уже position:fixed,
+   и её нельзя перебивать на relative: правило ниже по каскаду победило бы (обе
+   специфичности равны) и FAB уехал бы в общий поток страницы (поймано живым прогоном) */
+[data-fb-open]:not(.ep-chat-fab){position:relative}
+[data-fb-open][data-unread]::after{content:attr(data-unread);position:absolute;top:-4px;right:-4px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:#ef4444;color:#fff;font-size:10px;font-weight:800;line-height:16px;text-align:center;box-shadow:0 0 0 2px rgb(var(--card-bg-rgb))}
 .ep-fb-meta{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:calc(11px * var(--eff-text-scale,1))}
 .ep-fb-meta button{margin-left:auto}
 .ep-fb-text{white-space:pre-wrap;margin-top:4px}

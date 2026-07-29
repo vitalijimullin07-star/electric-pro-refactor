@@ -3318,9 +3318,11 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/chat_messages/.test(fb), "пишет в общую коллекцию chat_messages");
     ok(/onSnapshot/.test(fb), "живая подписка (сообщения других видно без перезагрузки)");
     ok(/serverTimestamp/.test(fb), "время сообщения — серверное");
-    ok(/unsubscribe|unsub\(\)/.test(fb) && /function close\(\)\s*\{\s*unsubscribe\(\)/.test(fb), "подписка снимается при закрытии чата");
+    // подписка живёт, пока открыто ПРИЛОЖЕНИЕ (иначе не было бы ни метки, ни звука при
+    // закрытом окне чата), а снимается на смене входа — см. раздел 35
+    ok(/function unsubAll\(\)/.test(fb) && /ep:auth-changed/.test(fb), "подписки снимаются при смене входа");
     ok(/ep_chat_queue_v1/.test(fb) && /flushQueue/.test(fb), "офлайн-очередь и автодосылка");
-    ok(/data-fb-tab/.test(fb) && /Мои заметки/.test(fb), "локальный журнал остался отдельной вкладкой");
+    ok(/data-fb-tab/.test(fb) && /"notes"/.test(fb), "локальный журнал остался отдельной вкладкой");
     ok(/chatText/.test(fb), "чат можно скопировать целиком (у разработчика доступа к базе нет)");
     const shell = fs.readFileSync(path.join(root, "assets", "js", "core", "app-shell.js"), "utf8");
     ok(/data-fb-open[^>]*>💬 Общий чат/.test(shell), "пункт «💬 Общий чат» в бургер-меню (доступен не только в плане)");
@@ -3330,12 +3332,56 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/allow read: if isApproved\(\) \|\| isAdmin\(\)/.test(blk), "читают одобренные — это и есть «общий» чат");
     ok(/request\.resource\.data\.uid == request\.auth\.uid/.test(blk), "писать только от своего имени");
     ok(/text\.size\(\) <= 2000/.test(blk), "ограничение длины сообщения");
-    ok(/allow update: if false/.test(blk), "правки задним числом запрещены");
+    ok(/allow update: if signedIn\(\)/.test(blk) && /resource\.data\.uid == request\.auth\.uid/.test(blk),
+      "править можно ТОЛЬКО своё сообщение (правка добавлена по просьбе пользователя, см. раздел 35)");
     ok(/allow delete: if isAdmin\(\) \|\| \(signedIn\(\) && resource\.data\.uid == request\.auth\.uid\)/.test(blk), "удаляет автор или админ");
     ok(/match \/\{document=\*\*\} \{\s*allow read, write: if false;/.test(rules), "финальный запрет-всё на месте (не потерян)");
     const css2 = fs.readFileSync(path.join(root, "assets", "css", "base.css"), "utf8");
     ok(/\.ep-fb-msg\.is-mine/.test(css2), "свои сообщения отличаются визуально");
     ok(!/\.ep-fb-msg\{[^}]*rgba\(255,\s*255,\s*255/.test(css2), "пузырь чужого сообщения не белым по белому (видно в светлой теме)");
+  });
+  // ===== 35. Полноценный чат: личка, кто в сети, ответы/правка, уведомления, метка =====
+  test("чат: личные сообщения и присутствие — модель и правила", () => {
+    const fs = require("fs"), path = require("path"), root = path.resolve(__dirname, "..");
+    const fb = fs.readFileSync(path.join(root, "assets", "js", "modules", "ui", "feedback.js"), "utf8");
+    ok(/chat_dm/.test(fb) && /uids/.test(fb), "личка пишется в chat_dm с массивом участников");
+    ok(/array-contains/.test(fb), "вся моя личка тянется одной подпиской (без составного индекса)");
+    ok(/chat_presence/.test(fb) && /HB_MS/.test(fb), "присутствие: свой документ + «сердцебиение»");
+    ok(/ONLINE_MS/.test(fb) && /isOnline/.test(fb), "«в сети» считается по свежести сердцебиения");
+    const rules = fs.readFileSync(path.join(root, "firestore.rules"), "utf8");
+    const dm = rules.slice(rules.indexOf("match /chat_dm/"));
+    ok(rules.indexOf("match /chat_dm/") > 0, "правила для личных сообщений есть");
+    ok(/allow read: if signedIn\(\) && request\.auth\.uid in resource\.data\.uids/.test(dm), "личку читают ТОЛЬКО двое участников (админ тоже нет)");
+    ok(/request\.resource\.data\.from == request\.auth\.uid/.test(dm), "писать личку только от своего имени");
+    ok(/resource\.data\.to == request\.auth\.uid[\s\S]{0,200}seen == true/.test(dm), "получатель может только отметить прочтение");
+    const pres = rules.slice(rules.indexOf("match /chat_presence/"));
+    ok(rules.indexOf("match /chat_presence/") > 0, "правила присутствия есть");
+    ok(/allow create, update: if isSelf\(uid\)/.test(pres), "своё присутствие обновляет только сам пользователь");
+    const pub = rules.slice(rules.indexOf("match /chat_messages/"), rules.indexOf("match /chat_presence/"));
+    ok(/allow update: if signedIn\(\)/.test(pub) && /resource\.data\.uid == request\.auth\.uid/.test(pub), "правку своего сообщения разрешили (просьба пользователя)");
+    ok(/request\.resource\.data\.ts == resource\.data\.ts/.test(pub), "но время/автора подменить нельзя");
+    ok(/match \/\{document=\*\*\} \{\s*allow read, write: if false;/.test(rules), "финальный запрет-всё на месте");
+  });
+  test("чат: ответы, правка, автопрокрутка, растущее поле, звук и метка", () => {
+    const fs = require("fs"), path = require("path"), root = path.resolve(__dirname, "..");
+    const fb = fs.readFileSync(path.join(root, "assets", "js", "modules", "ui", "feedback.js"), "utf8");
+    ok(/replyTo/.test(fb) && /data-fb-reply/.test(fb), "ответ на сообщение (цитата)");
+    ok(/data-fb-edit\b/.test(fb) && /function editMsg/.test(fb), "правка своего сообщения");
+    ok(/function grow\(/.test(fb) && /scrollHeight/.test(fb), "поле ввода растёт по тексту");
+    ok(/scrollTop = box\.scrollHeight/.test(fb), "автопрокрутка к последнему сообщению");
+    ok(/pendingNew/.test(fb) && /data-fb-tobottom/.test(fb), "«↓ N новых», если список прокручен вверх");
+    ok(/function ping\(/.test(fb) && /SoundFeedback/.test(fb), "звуковой сигнал (через общий модуль звука)");
+    ok(/function notify\(/.test(fb) && /showNotification/.test(fb), "уведомление через service worker");
+    ok(/function paintBadge/.test(fb) && /setAppBadge/.test(fb), "красная метка у кнопки чата и на иконке приложения");
+    ok(/data-fb-older/.test(fb) && /function loadOlder/.test(fb), "история: загрузить предыдущие");
+    ok(/ep-chat-fab/.test(fb) && /route === "login"/.test(fb), "плавающая кнопка чата на любом экране (кроме входа)");
+    const css = fs.readFileSync(path.join(root, "assets", "css", "base.css"), "utf8");
+    ok(/\.ep-chat-fab\{[^}]*position:fixed/.test(css), "FAB зафиксирован поверх экрана");
+    ok(/\[data-fb-open\]\[data-unread\]::after/.test(css), "метка непрочитанных рисуется CSS у любой кнопки вызова");
+    ok(/\.ep-fb-dot\.is-on/.test(css), "зелёная точка «в сети»");
+    const sw = fs.readFileSync(path.join(root, "sw.js"), "utf8");
+    ok(/notificationclick/.test(sw) && /clients\.matchAll/.test(sw), "клик по уведомлению поднимает открытое приложение");
+    ok(/addEventListener\("push"/.test(sw), "обработчик push готов (для будущего серверного пуша)");
   });
 
   // ===== 33. Слаботочка: Нептун, домофон, датчики с целью, камеры отдельными линиями =====

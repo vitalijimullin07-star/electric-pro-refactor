@@ -78,8 +78,57 @@ service cloud.firestore {
         && request.resource.data.text.size() > 0
         && request.resource.data.text.size() <= 2000
         && request.resource.data.ts is number;
-      allow update: if false;
+      /* Правка СВОЕГО сообщения (просьба пользователя «иметь возможность редактировать
+         собственное сообщение»): автор меняет только текст, подменить автора/время
+         (uid/ts) нельзя — история остаётся честной, а чужое сообщение не тронуть. */
+      allow update: if signedIn()
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.ts == resource.data.ts
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 2000;
       allow delete: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+    }
+
+    /* Кто в сети: один документ на пользователя, который он же и обновляет
+       «сердцебиением» (раз в 2 минуты, пока приложение открыто). Читают все
+       одобренные — из этого и складывается список людей с зелёной точкой. */
+    match /chat_presence/{uid} {
+      allow read: if isApproved() || isAdmin();
+      allow create, update: if isSelf(uid) && request.resource.data.at is number;
+      allow delete: if isSelf(uid) || isAdmin();
+    }
+
+    /* ЛИЧНЫЕ сообщения (просьба «перейти с публичного в личную переписку»): видят
+       ТОЛЬКО двое участников (uids). Админ здесь НЕ читает — это личка, а не общий
+       журнал; модерация остаётся только у публичного чата. Автор правит свой текст,
+       получатель может лишь отметить прочтение (seen) — текст при этом не меняется. */
+    match /chat_dm/{msgId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.uids;
+      allow create: if signedIn()
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.uids is list
+        && request.resource.data.uids.size() == 2
+        && request.auth.uid in request.resource.data.uids
+        && request.resource.data.to in request.resource.data.uids
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 2000
+        && request.resource.data.ts is number;
+      allow update: if signedIn() && (
+        (resource.data.from == request.auth.uid
+          && request.resource.data.from == resource.data.from
+          && request.resource.data.uids == resource.data.uids
+          && request.resource.data.ts == resource.data.ts
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 2000)
+        || (resource.data.to == request.auth.uid
+          && request.resource.data.text == resource.data.text
+          && request.resource.data.seen == true)
+      );
+      allow delete: if signedIn() && resource.data.from == request.auth.uid;
     }
 
     match /{document=**} {
