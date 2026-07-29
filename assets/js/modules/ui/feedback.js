@@ -42,7 +42,7 @@
   const COL = "chat_messages", DMC = "chat_dm", PRES = "chat_presence";
   const BANS = "chat_bans", REPS = "chat_reports";
   const CONT = "chat_contacts", FILES = "chat_files";
-  const ROOMS = "chat_rooms", GRP = "chat_group";
+  const ROOMS = "chat_rooms", GRP = "chat_group", TOKENS = "chat_tokens";
   const FILE_MAX = 900000;   // предел тела вложения (лимит документа Firestore — 1 МиБ)
   const SKINK = "ep_chat_skin_v1";   // "retro" (по умолчанию) | "modern"
   const STK = "ep_chat_status_v1";   // мой статус: "online" | "away" | "dnd"
@@ -247,6 +247,57 @@
       }
       new Notification(title, opts);
     } catch (e) {}
+  }
+  /* ---------- PUSH при ПОЛНОСТЬЮ закрытом приложении (FCM) ----------
+     Клиентское уведомление (notify() выше) живёт только пока страница жива — закрыл
+     приложение, и оно молчит. Настоящий push требует три вещи: разрешение на
+     уведомления, ТОКЕН устройства от FCM (по публичному ключу VAPID) и серверную
+     отправку (Cloud Function на создание сообщения, functions/index.js).
+     Токен кладём в chat_tokens/{token} — ключ ДОКУМЕНТА это сам токен, поэтому
+     повторный вход с того же устройства не плодит дубли, а функция может удалить
+     мёртвый токен по его же id. Поле mute зеркалит «⛔ не беспокоить»: статус живёт
+     в localStorage (устройство), сервер его иначе не увидит. */
+  let pushToken = "";
+  const pushSupported = () => {
+    try { return !!(window.firebase && firebase.messaging && firebase.messaging.isSupported && firebase.messaging.isSupported()); }
+    catch (e) { return false; }
+  };
+  function saveToken(token) {
+    const d = fdb(), uid = myUid();
+    if (!d || !uid || !token) return;
+    const ua = String(navigator.userAgent || "").slice(0, 200);
+    try {
+      d.collection(TOKENS).doc(token).set({
+        uid: uid, name: myName(), mute: quiet(), ua: ua, at: Date.now(), srv: stamp()
+      }, { merge: true }).catch(() => {});
+    } catch (e) {}
+  }
+  function registerPush() {
+    if (!pushSupported() || !canNotify() || !myUid()) return;
+    if (!window.EP_VAPID_KEY) return;                 // ключ не прошит — тихо выходим
+    if (!navigator.serviceWorker) return;
+    navigator.serviceWorker.ready.then((reg) => {
+      // ВАЖНО: передаём СВОЮ регистрацию sw.js — иначе SDK ищет отдельный
+      // firebase-messaging-sw.js в корне, которого у нас нет (и который дублировал бы
+      // логику кэша/оффлайна). Сообщения посылаем data-only, показывает их наш
+      // собственный обработчик push в sw.js.
+      return firebase.messaging().getToken({ vapidKey: window.EP_VAPID_KEY, serviceWorkerRegistration: reg });
+    }).then((token) => {
+      if (!token) return;
+      pushToken = token;
+      saveToken(token);
+    }).catch(() => {});                                // нет разрешения/сети — не шумим
+  }
+  function syncPushMute() {                            // сменил статус — обновляем «тишину»
+    const d = fdb();
+    if (!d || !pushToken) return;
+    try { d.collection(TOKENS).doc(pushToken).set({ mute: quiet(), at: Date.now() }, { merge: true }).catch(() => {}); } catch (e) {}
+  }
+  function dropPushToken() {                           // вышел из аккаунта — токен чужой
+    const d = fdb(), t = pushToken;
+    if (!d || !t) return;
+    pushToken = "";
+    try { d.collection(TOKENS).doc(t).delete().catch(() => {}); } catch (e) {}
   }
   function ping() {
     if (!soundOn()) return;
@@ -1191,7 +1242,12 @@
     }
     const dmBtn = t.closest("[data-fb-dm]");
     if (dmBtn) { openDm(dmBtn.getAttribute("data-fb-dm")); return; }
-    if (t.closest("[data-fb-notify]")) { askNotify().then((ok) => { toast(ok ? "Уведомления включены" : "Уведомления не разрешены"); patch(); }); return; }
+    if (t.closest("[data-fb-notify]")) {
+      // разрешение получено — СРАЗУ берём токен устройства: без него push при
+      // полностью закрытом приложении не придёт, а второго повода спросить не будет
+      askNotify().then((ok) => { if (ok) registerPush(); toast(ok ? "Уведомления включены" : "Уведомления не разрешены"); patch(); });
+      return;
+    }
     if (t.closest("[data-fb-sound]")) { localStorage.setItem(SNDK, soundOn() ? "0" : "1"); if (soundOn()) ping(); patch(); return; }
     if (t.closest("[data-fb-tobottom]")) { const b = listEl(); if (b) b.scrollTop = b.scrollHeight; pendingNew = 0; patch(); return; }
     if (t.closest("[data-fb-older]")) { loadOlder(); return; }
@@ -1266,7 +1322,9 @@
     if (t.closest("[data-fb-avatar]")) { statusPane = statusPane === "avatar" ? null : "avatar"; render(true); return; }
     if (t.closest("[data-fb-statusclose]")) { statusPane = null; render(true); return; }
     const sst = t.closest("[data-fb-setstatus]");
-    if (sst) { localStorage.setItem(STK, sst.getAttribute("data-fb-setstatus")); beat(); statusPane = null; render(true); return; }
+    // syncPushMute: «⛔ не беспокоить» живёт в localStorage (устройство) — сервер
+    // о нём иначе не узнает и продолжит присылать push при закрытом приложении
+    if (sst) { localStorage.setItem(STK, sst.getAttribute("data-fb-setstatus")); beat(); syncPushMute(); statusPane = null; render(true); return; }
     const sav = t.closest("[data-fb-setavatar]");
     if (sav) { localStorage.setItem(AVK, sav.getAttribute("data-fb-setavatar")); beat(); statusPane = null; render(true); return; }
     // ---- группы ----
@@ -1489,9 +1547,12 @@
 
   window.addEventListener("ep:auth-changed", () => {
     unsubAll();
+    // токен push принадлежал ПРЕЖНЕМУ аккаунту — иначе новый владелец устройства
+    // получал бы уведомления о чужой личке
+    dropPushToken();
     msgs = []; older = []; dmAll = []; people = []; bans = []; reports = []; contacts = []; rooms = []; grpAll = []; noMoreOlder = false;
     gotPub = false; gotDm = false; gotGrp = false; seenPending.clear();
-    if (myUid()) startAll();
+    if (myUid()) { startAll(); registerPush(); }
     ensureFab();
     if (isOpen()) render(true);
   });
@@ -1499,7 +1560,7 @@
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { beat(); startAll(); } });
   // приложение открыто — сразу слушаем чат (метка/звук/уведомление работают и при
   // закрытом окне чата), кнопка вызова доступна с любого экрана
-  setTimeout(() => { ensureFab(); if (myUid()) startAll(); }, 1500);
+  setTimeout(() => { ensureFab(); if (myUid()) { startAll(); registerPush(); } }, 1500);
 
   EP.Feedback = {
     open, close, add, read, asText, copyAll, count: () => read().length,
