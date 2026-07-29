@@ -2981,6 +2981,65 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/\.ep-plan-guide[^{]*\{[^}]*display:\s*none/.test(html), "магистрали (⇉) на печатном листе скрыты");
     ok(/\.ep-plan-swlink[^{]*\{[^}]*stroke-dasharray/.test(html), "связи выключатель→свет в печати пунктиром");
   });
+  // ===== 34. Печать: штробы приходят в свои посты + масштаб под формат листа =====
+  function blockCard(p, extra) {
+    const html = EP.Plan.Export.sheetHtml(p);
+    const card = html.split("unfcard").find((s) => /стена 1/.test(s)) || "";
+    const rect = /<rect x="([-\d.]+)" y="([-\d.]+)" width="([\d.]+)" height="([\d.]+)"[^>]*class="unfshape"/.exec(card);
+    const chases = [...card.matchAll(/<line x1="([-\d.]+)" y1="([-\d.]+)" x2="[-\d.]+" y2="([-\d.]+)"[^>]*stroke-dasharray/g)]
+      .map((m) => ({ x: +m[1], y0: +m[2], y1: +m[3] }));
+    return { html, card, rect: rect && { x: +rect[1], y: +rect[2], w: +rect[3], h: +rect[4] }, chases };
+  }
+  test("развёртка (PDF, 1:1): штробы блока идут В ЕГО ПОСТЫ, а не мимо", () => {
+    const p = EP.Plan.Core.createProject("chase1");
+    p.settings.realScale = true;                  // «1:1»: рамка блока — настоящие 368мм
+    const r = M.newRoom(G.rectPoints(0, 0, 200, 300), "К");
+    p.rooms.push(r);
+    const c = M.newCircuit("QF1", "#ef4444", 16); p.circuits.push(c);
+    const b = M.newElement("block", r.id + ":0", 100, 30, "power");
+    b.params = { items: ["socket", "socket", "socket", "internet", "tv"] }; b.circuitId = c.id;
+    p.elements.push(b);
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    const { rect, chases, card } = blockCard(p);
+    ok(rect && Math.abs(rect.w - 36.8) < 0.5, "рамка блока — реальные 368мм: " + (rect && rect.w));
+    ok(chases.length >= 3, "штробы есть: " + chases.length);
+    // ДО фикса штробы считались по легаси-габариту (18*kk на пост ≈ 150см) и уезжали
+    // за пределы блока (были x = -21.7 / 63.4 / 91.7 при рамке 81.6..118.4)
+    chases.forEach((h) => ok(h.x >= rect.x - 0.1 && h.x <= rect.x + rect.w + 0.1,
+      "штроба x=" + Math.round(h.x * 10) / 10 + " внутри рамки " + rect.x + ".." + Math.round((rect.x + rect.w) * 10) / 10));
+    eq((card.match(/>25×30</g) || []).length, 1, "одинаковое сечение рядом подписано ОДИН раз (не «25×3025×30»)");
+  });
+  test("развёртка (PDF): вертикальный блок — штробы в одну вертикаль (посты столбиком)", () => {
+    const p = EP.Plan.Core.createProject("chase2");
+    p.settings.realScale = true;
+    const r = M.newRoom(G.rectPoints(0, 0, 200, 300), "К");
+    p.rooms.push(r);
+    const b = M.newElement("block", r.id + ":0", 100, 90, "power");
+    b.params = { items: ["switch", "switch"] }; b.blockVert = true;
+    p.elements.push(b);
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    const { rect, chases } = blockCard(p);
+    ok(rect && rect.h > rect.w, "рамка вертикального блока выше, чем шире");
+    ok(chases.length >= 1, "штробы есть");
+    chases.forEach((h) => ok(Math.abs(h.x - 100) < 0.6, "штроба на оси блока: " + h.x));
+  });
+  test("PDF: масштаб чертежа подбирается плотнее и формат листа идёт в штамп", () => {
+    const p = EP.Plan.Core.createProject("fmt");
+    p.rooms.push(M.newRoom(G.rectPoints(0, 0, 700, 450), "К"));
+    p.elements.push(M.newElement("socket", p.rooms[0].id + ":0", 100, 30, "power"));
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    const html = EP.Plan.Export.sheetHtml(p);
+    // физический размер плана в мм в vm-харнессе не проверить (fakeNode не хранит
+    // атрибуты, buildSvg читает viewBox через DOM) — это покрыто живым прогоном;
+    // здесь проверяем ряд масштабов и то, что формат листа попал в штамп
+    ok(/· A4/.test(html), "в штампе рядом с масштабом стоит формат листа");
+    const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-export.js"), "utf8");
+    const row = /const SCALES = \[([^\]]+)\]/.exec(src);
+    ok(row, "ряд масштабов найден");
+    const list = row[1].split(",").map((x) => Number(x.trim()));
+    [30, 40, 60, 125].forEach((sc) => ok(list.indexOf(sc) >= 0, "в ряду есть промежуточный 1:" + sc + " (чертёж плотнее заполняет лист)"));
+    ok(list.every((v, i) => i === 0 || v > list[i - 1]), "ряд строго по возрастанию — find() берёт САМЫЙ крупный подходящий");
+  });
   test("развёртка (PDF): размер поста считается от БЛИЖАЙШЕГО внутреннего угла", () => {
     const p = EP.Plan.Core.createProject("nearcorner");
     const r = M.newRoom(G.rectPoints(0, 0, 500, 300), "К1");
