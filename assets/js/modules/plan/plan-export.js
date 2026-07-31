@@ -9,7 +9,8 @@
   const T = { sheet: "План электрики", made: "Исполнитель", obj: "Объект", addr: "Адрес", client: "Заказчик", area: "Площадь", roomsN: "Помещений", date: "Дата", legend: "Условные обозначения", expl: "Экспликация помещений", spec: "Спецификация точек", door: "Дверь", win: "Окно", panel: "Щит", genplan: "Общий план", specSheet: "Спецификация", tracesOf: (name) => `Трассы: ${name}`,
     stage: "Стадия", stageVal: "Р", sheetNo: "Лист", sheetsN: "Листов", scaleLbl: "Масштаб",
     album: "Состав альбома", docTitle: "Проект электроснабжения", sheetName: "Наименование листа",
-    unfolds: "Развёртки стен", scheme: "Однолинейная схема", circuits: "Линии и щит" };
+    unfolds: "Развёртки стен", scheme: "Однолинейная схема", circuits: "Линии и щит",
+    dimsOf: (name) => `Размеры и высоты: ${name}` };
   // слои-«трассы» — те, что реально прокладываются кабелем (не считая dims/labels/routes —
   // это служебные оверлеи, не самостоятельный вид работ)
   const TRACE_LAYER_IDS = ["light", "power", "lv", "tv", "cctv", "ac", "warm"];
@@ -31,7 +32,7 @@
   // ТОЛЬКО активный этаж (известное ограничение Этапа 1: без разбивки PDF
   // постранично по этажам — иначе комнаты разных этажей легли бы друг на
   // друга в одних координатах).
-  function buildSvg(pRaw) {
+  function buildSvg(pRaw, uiExtra) {
     const p = G().floorScoped(pRaw);
     const host = document.createElement("div");
     host.style.cssText = "position:fixed;left:-2000px;top:0;width:1050px;height:700px;";
@@ -45,7 +46,8 @@
     cv.svg.style.width = "1050px"; cv.svg.style.height = "700px";
     const bb = G().projectBBox(p);
     if (bb) cv.fit(bb, 0.07);
-    EP.Plan.Render.draw(cv, p, {});
+    EP.Plan.Render.draw(cv, p, uiExtra || {});
+    if (uiExtra && uiExtra.freeDims) freeDimsOverlay(cv, p);
     ["grid", "underlay"].forEach((n) => { const gl = cv.layers[n]; while (gl.firstChild) gl.removeChild(gl.firstChild); });
     // ИСТИННЫЙ МАСШТАБ ЧЕРТЕЖА (признак проф. документа, а не картинки «во всю ширину»):
     // viewBox после fit() — в САНТИМЕТРАХ проекта, поэтому физический размер на бумаге =
@@ -134,6 +136,43 @@
   // как pdfScale/pdfFormat (не часть модели проекта).
   let pdfFit = true;
 
+  // Привязка СВОБОДНЫХ точек (свет/трек/ТП/вывод/распайка — те, что не на стене) на листах
+  // «Размеры и высоты»: у настенных точек размеры даёт обычная размерная цепочка вдоль стены
+  // (слой «Размеры», тот же счёт, что и в живом плане), а у свободных цепочки нет в принципе —
+  // без привязки лист со светом был бы «точки без размеров». Рисуем ДВЕ выноски от габарита
+  // комнаты (левая стена → X, верхняя стена → Y), как на монтажном чертеже. Только в PDF
+  // (офскрин-оверлей поверх уже готовой сцены) — живой план не трогаем.
+  function freeDimsOverlay(cv, p) {
+    const g = cv.layers.overlay;
+    const k = cv.cmPerPx();
+    const NS = "http://www.w3.org/2000/svg";
+    const mk = (tag, attrs, txt) => {
+      const n = document.createElementNS(NS, tag);
+      Object.keys(attrs).forEach((a) => n.setAttribute(a, attrs[a]));
+      if (txt != null) n.textContent = txt;
+      g.appendChild(n);
+    };
+    (p.elements || []).forEach((el) => {
+      if (el.wallId) return;
+      const q = el.params || {};
+      if (q.x == null || q.y == null) return;
+      const room = G().roomAt(p, q);
+      if (!room || (room.points || []).length < 3) return;
+      const xs = room.points.map((pt) => pt.x), ys = room.points.map((pt) => pt.y);
+      const x0 = Math.min.apply(null, xs), y0 = Math.min.apply(null, ys);
+      const dx = Math.round(q.x - x0), dy = Math.round(q.y - y0);
+      const st = { class: "ep-plan-freedim", "stroke-width": Math.max(0.6, 0.9 * k) };
+      if (dx > 5) {
+        mk("line", Object.assign({ x1: x0, y1: q.y, x2: q.x, y2: q.y }, st));
+        mk("text", { x: (x0 + q.x) / 2, y: q.y - 3 * k, "font-size": 8 * k, "text-anchor": "middle", class: "ep-plan-freedimt" }, dx);
+      }
+      if (dy > 5) {
+        mk("line", Object.assign({ x1: q.x, y1: y0, x2: q.x, y2: q.y }, st));
+        mk("text", { x: q.x + 3 * k, y: (y0 + q.y) / 2, "font-size": 8 * k, class: "ep-plan-freedimt" }, dy);
+      }
+    });
+  }
+
   // временно включает ТОЛЬКО перечисленные слои (project.layers[].visible), зовёт fn,
   // восстанавливает исходную видимость — для страниц-по-слоям альбома (не трогаем
   // настройки видимости, которые пользователь оставил в самом редакторе плана)
@@ -167,6 +206,60 @@
       const svg = withLayers(p, [id, "routes", "labels"], () => buildSvg(p));
       return { title: T.tracesOf(layerName(p, id)), body: `<div class="plan">${svg}</div>`, scale: lastPlanScale };
     });
+  }
+  // ---- отдельный ЛИСТ «Размеры и высоты» НА КАЖДЫЙ ТИП точек ----
+  // Просьба пользователя (скриншот монтажного чертежа): «на общем плане размеры и высоты
+  // отдельно, розеток, выключателей, интернета и т.д. все точки, абсолютно все точки
+  // раздельно по типам. без трасс и т.д.» Лист = стены/проёмы/комнаты (рисуются всегда) +
+  // точки ТОЛЬКО одного типа + размерные цепочки вдоль стен + высоты h=NNN, БЕЗ трасс.
+  // Фильтр по типу сделан НЕ новым параметром рендера, а мелким клоном проекта с урезанным
+  // p.elements — тогда автоматически фильтруется ВСЁ разом (маркеры, размерная цепочка,
+  // подписи высоты, имена линий QF), и в plan-render.js/plan-geometry.js трогать нечего.
+  function typeName(t) {
+    const T2 = (EP.Plan.Elements && EP.Plan.Elements.TYPES) || {};
+    return (T2[t] && T2[t].name) || t;
+  }
+  // все типы точек, реально стоящие в проекте; блок раскрывается на свои посты (блок — это
+  // рамка с постами разных типов, а не отдельный «тип точки» для листа)
+  function usedPointTypes(p) {
+    const T2 = (EP.Plan.Elements && EP.Plan.Elements.TYPES) || {};
+    const has = new Set();
+    (p.elements || []).forEach((e) => {
+      if (e.type === "block") ((e.params && e.params.items) || []).forEach((t) => has.add(t));
+      else if (e.type !== "panel") has.add(e.type);
+    });
+    const order = Object.keys(T2).filter((t) => !T2[t].opening && t !== "panel" && t !== "block");
+    return order.filter((t) => has.has(t)).concat(Array.from(has).filter((t) => order.indexOf(t) < 0));
+  }
+  // проект-клон с точками ОДНОГО типа. Блок остаётся ЦЕЛИКОМ, если в нём есть пост нужного
+  // типа — это одна физическая рамка на стене, «вынуть» из неё один пост нельзя (ограничение
+  // осознанное: на листе «Розетки» блок «розетка+выключатель» показан целиком).
+  function projectOfType(p, t) {
+    const els = (p.elements || []).filter((e) => e.type === t
+      || (e.type === "block" && ((e.params && e.params.items) || []).indexOf(t) >= 0));
+    return Object.assign({}, p, { elements: els });
+  }
+  function buildTypePages(p) {
+    const pages = [];
+    usedPointTypes(p).forEach((t) => {
+      const sub = projectOfType(p, t);
+      if (!sub.elements.length) return;
+      // слои самих точек + «Размеры» (цепочки) + «Подписи» (имя линии QF); слой "routes"
+      // НЕ включаем — трасс на этом листе быть не должно (прямая просьба пользователя)
+      const on = Array.from(new Set(sub.elements.map((e) => e.layer).filter(Boolean))).concat(["dims", "labels"]);
+      // noLod: на печатном листе LOD-скрытие подписей неуместно — лист статичный, а
+      // размеры/высоты это его СМЫСЛ (на большой квартире LOD убрал бы ровно их)
+      // noWallLabels: подписи «N · длина» стен на этом листе не нужны (они есть на «Общем
+      // плане») и физически налезали на размерную цепочку — а цепочка и есть смысл листа
+      const svg = withLayers(p, on, () => buildSvg(sub, { noLod: true, freeDims: true, noWallLabels: true }));
+      const n = sub.elements.filter((e) => e.type === t).length;
+      const nb = sub.elements.length - n;
+      pages.push({
+        title: T.dimsOf(typeName(t)), scale: lastPlanScale,
+        body: `<div class="tpnote">Размеры — по цепочке от внутренних углов стен; высота установки — <b>h=NNN</b> (см от пола); свободные (потолочные) точки привязаны к габариту помещения. Точек: ${n}${nb ? ` (+ блоков с этим типом: ${nb})` : ""}. Трассы на листе не показаны.</div><div class="plan tpplan">${svg}</div>`
+      });
+    });
+    return pages;
   }
   // титульный лист — заказчик/объект/площадь (просьба пользователя: «титульный
   // лист где информация о заказчике и квартире/доме»)
@@ -487,15 +580,51 @@
   // ненадёжно разбивается по страницам (может ужать/обрезать лишние строки
   // вместо переноса на новый лист). Явное разбиение на страницы по 2 карточки
   // — детерминировано, не зависит от печатного движка браузера.
+  // Ключ-схема к развёртке (просьба пользователя со скриншотом дизайнерского чертежа «ВИД Б»
+  // с планом-ключом): мини-план КОМНАТЫ, где ЭТА стена выделена и нарисована стрелка
+  // направления взгляда (изнутри помещения на стену) — сразу видно, какой участок напечатан
+  // на листе, не сверяясь с общим планом.
+  function wallKeySvg(room, w) {
+    const pts = room.points || [];
+    if (pts.length < 3) return "";
+    const xs = pts.map((q) => q.x), ys = pts.map((q) => q.y);
+    const x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs);
+    const y0 = Math.min.apply(null, ys), y1 = Math.max.apply(null, ys);
+    const pad = Math.max(20, (x1 - x0 + y1 - y0) * 0.06);
+    const c = G().centroid(pts);
+    // стрелка: от центра комнаты к середине стены, чуть не доводя до самой стены
+    const dx = w.mx - c.x, dy = w.my - c.y, L = Math.hypot(dx, dy) || 1;
+    const ax = c.x + dx * 0.28, ay = c.y + dy * 0.28;
+    const bx = c.x + dx * 0.82, by = c.y + dy * 0.82;
+    const ux = dx / L, uy = dy / L, hd = Math.max(10, L * 0.16);
+    return `<svg class="unfkey" viewBox="${x0 - pad} ${y0 - pad} ${x1 - x0 + pad * 2} ${y1 - y0 + pad * 2}" preserveAspectRatio="xMidYMid meet">
+      <polygon points="${pts.map((q) => q.x + "," + q.y).join(" ")}" class="ukroom"></polygon>
+      <line x1="${w.a.x}" y1="${w.a.y}" x2="${w.b.x}" y2="${w.b.y}" class="ukwall"></line>
+      <line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" class="ukarr"></line>
+      <polygon class="ukarrh" points="${bx},${by} ${bx - ux * hd + uy * hd * 0.55},${by - uy * hd - ux * hd * 0.55} ${bx - ux * hd - uy * hd * 0.55},${by - uy * hd + ux * hd * 0.55}"></polygon>
+    </svg>`;
+  }
   const UNF_PER_PAGE = 2;
   function buildUnfolds(p) {
     const cards = [];
     (p.rooms || []).forEach((room) => {
       if ((room.points || []).length < 2) return;
-      G().walls(room).forEach((w) => {
+      const walls = G().walls(room);
+      walls.forEach((w) => {
         const els = (p.elements || []).filter((e) => e.wallId === w.id);
         if (!els.length) return;
-        cards.push(`<div class="unfcard"><h4>${esc(room.name)} · стена ${w.n} · ${G().fmtLen(w.len)} × ${G().fmtLen(room.height || p.settings.ceilingHeight)}</h4>${unfoldSvg(p, room, w, els)}</div>`);
+        const H = room.height || p.settings.ceilingHeight;
+        const opN = (G().wallOpeningSpans ? G().wallOpeningSpans(p, w) : []).length;
+        // информационная панель карточки: какое помещение / какая стена напечатана + ключ
+        const info = `<div class="unfinfo">
+          <table class="unfinfot"><tr><th>Помещение</th><td><b>${esc(room.name)}</b></td></tr>
+            <tr><th>Стена</th><td>№ ${w.n} из ${walls.length}</td></tr>
+            <tr><th>Габарит</th><td>${G().fmtLen(w.len)} × ${G().fmtLen(H)}</td></tr>
+            <tr><th>Материал</th><td>${esc(G().wallMatOf(p, w))}</td></tr>
+            <tr><th>Точек</th><td>${els.length}${opN ? ` · проёмов: ${opN}` : ""}</td></tr></table>
+          <div class="unfkeyw">${wallKeySvg(room, w)}<div class="unfkeyc">вид на стену №${w.n}<br>со стороны помещения</div></div>
+        </div>`;
+        cards.push(`<div class="unfcard"><h4>${esc(room.name)} · стена ${w.n} · ${G().fmtLen(w.len)} × ${G().fmtLen(H)}</h4>${info}${unfoldSvg(p, room, w, els)}</div>`);
       });
     });
     if (!cards.length) return [];
@@ -586,6 +715,7 @@
           <div><h3>${T.spec}</h3><table class="tb"><thead><tr><th></th><th>Тип</th><th>Кол-во</th></tr></thead><tbody>${spec}</tbody></table></div>
           <div class="legend"><h3>${T.legend}</h3>${legendRows}</div>
         </div>` });
+    buildTypePages(p).forEach((pg) => pages.push(pg));
     buildLayerPages(p).forEach((pg) => pages.push(pg));
     buildCircuits(p).forEach((pg) => pages.push(pg));
     buildUnfolds(p).forEach((pg) => pages.push(pg));
@@ -700,6 +830,23 @@
       .unfcard { border: .25mm solid #000; padding: 1.5mm 2mm; break-inside: avoid; display: flex; flex-direction: column; }
       .unfcard h4 { font-size: 9px; font-weight: 700; margin-bottom: 1mm; }
       .unf { width: 100%; flex: 1 1 auto; max-height: ${pg().h - 65}mm; }
+      /* информационная панель карточки развёртки: помещение/стена + ключ-схема с направлением взгляда */
+      .unfinfo { display: flex; gap: 2mm; align-items: flex-start; border-bottom: .2mm solid #000; padding-bottom: 1mm; margin-bottom: 1mm; }
+      .unfinfot { width: auto; flex: 1 1 auto; border-collapse: collapse; }
+      .unfinfot th, .unfinfot td { border: none; padding: 0 2mm 0 0; font-size: 8px; line-height: 1.25; text-align: left; }
+      .unfinfot th { font-weight: 400; color: #444; white-space: nowrap; width: 1%; }
+      .unfkeyw { flex: none; width: 28mm; }
+      .unfkey { width: 28mm; height: 20mm; border: .2mm solid #000; }
+      .unfkey .ukroom { fill: #f2f2f2; stroke: #999; stroke-width: 2; }
+      .unfkey .ukwall { stroke: #000; stroke-width: 11; }
+      .unfkey .ukarr { stroke: #000; stroke-width: 3; }
+      .unfkey .ukarrh { fill: #000; }
+      .unfkeyc { font-size: 7px; color: #444; text-align: center; line-height: 1.15; }
+      /* листы «Размеры и высоты» по типам точек */
+      .tpnote { font-size: 8px; color: #222; margin-bottom: 1mm; }
+      .tpplan { height: calc(100% - 5mm); }
+      .ep-plan-freedim { stroke: #000; stroke-dasharray: 10 5; }
+      .ep-plan-freedimt { fill: #000; font-family: Arial, sans-serif; }
       .unfwall { fill: #f1f5f9; stroke: #94a3b8; stroke-width: 1; }
       .unffloor { stroke: #111; stroke-width: 2; }
       .unfopen { fill: rgba(56,189,248,.12); stroke: #0891b2; stroke-width: 1; }
