@@ -68,6 +68,7 @@
     outLayer: "Тип вывода:", outPower: "Силовой", outLv: "Слаботочный",
     swTarget: "Свет от выключателя:", swAuto: "Авто (по линии)", swNone: "не задан",
     swPick: "🎯 На плане",
+    swMulti: "Целей на клавишу можно назначить НЕСКОЛЬКО — тап по чипу добавляет/убирает (например 2 трансформатора или три вывода 24В с одной клавиши). «Авто» снимает все ручные.",
     swKindLbl: "Тип:", swNormal: "Обычный", swPass: "Проходной", swCross: "Перекрёстный",
     swKeysLbl: "Клавиш:", swChain: "Цепочка — следующий:", swChainLast: "Это последнее звено → к лампе",
     swChainNone: "нет других выключателей в комнате для связи",
@@ -518,20 +519,26 @@
     const keys = (el.swKind || "normal") !== "normal" ? 1 : Math.max(1, el.keys || 1);
     const rows = [];
     for (let ki = 0; ki < keys; ki++) {
-      const manualId = (el.targetIds && el.targetIds[ki]) || (ki === 0 ? el.targetId : null);
-      const manualEl = manualId ? (p.elements || []).find((e) => e.id === manualId) : null;
-      const auto = G().switchTarget ? G().switchTarget(p, el, ki) : null; // с учётом текущего manualId
+      // целей у клавиши может быть НЕСКОЛЬКО (просьба пользователя: «на одну клавишу
+      // задавать несколько 24 вольта… с одной клавиши включать 2 трансформатора, или одно
+      // питание сразу на три») — чипы работают как МУЛЬТИВЫБОР: тап добавляет/убирает цель
+      const manualIds = G().targetIdsOf ? G().targetIdsOf(el, ki) : [];
+      const hasManual = manualIds.length > 0;
+      const auto = G().switchTarget ? G().switchTarget(p, el, ki) : null; // с учётом текущих ручных
       const label = keys > 1 ? `${T.swTarget} клавиша ${ki + 1}:` : T.swTarget;
-      // ручная цель из ДРУГОЙ комнаты не попадает в opts (пул комнаты) — показываем
-      // её отдельным подсвеченным чипом, иначе назначение выглядело бы потерянным
-      const foreign = manualEl && !opts.some((e) => e.id === manualId)
-        ? `<button type="button" class="ep-plan-chip ep-clickable on" data-pe-target="${ki}:${esc(manualId)}">${esc((TYPES[manualEl.type] || {}).glyph || "?")} ✓</button>` : "";
-      rows.push(`<div class="ep-plan-srow">${label}
-        <button type="button" class="ep-plan-chip ep-clickable ${!manualId ? "on" : ""}" data-pe-target="${ki}:auto">${T.swAuto}${!manualId && auto ? " → " + esc((TYPES[auto.type] || {}).glyph || "") : ""}</button>
+      // ручные цели из ДРУГИХ комнат не попадают в opts (пул комнаты) — показываем каждую
+      // отдельным подсвеченным чипом, иначе назначение выглядело бы потерянным
+      const foreign = manualIds.filter((id) => !opts.some((e) => e.id === id)).map((id) => {
+        const fe = (p.elements || []).find((e) => e.id === id);
+        return fe ? `<button type="button" class="ep-plan-chip ep-clickable on" data-pe-target="${ki}:${esc(id)}">${esc((TYPES[fe.type] || {}).glyph || "?")} ✓</button>` : "";
+      }).join("");
+      rows.push(`<div class="ep-plan-srow">${label}${manualIds.length > 1 ? ` <span class="ep-plan-dim">(${manualIds.length})</span>` : ""}
+        <button type="button" class="ep-plan-chip ep-clickable ${!hasManual ? "on" : ""}" data-pe-target="${ki}:auto">${T.swAuto}${!hasManual && auto ? " → " + esc((TYPES[auto.type] || {}).glyph || "") : ""}</button>
         <button type="button" class="ep-plan-chip ep-clickable" data-pe-picktarget="${ki}">${T.swPick}</button>${foreign}
-        ${opts.map((e) => `<button type="button" class="ep-plan-chip ep-clickable ${manualId === e.id ? "on" : ""}" data-pe-target="${ki}:${esc(e.id)}">${esc((TYPES[e.type] || {}).glyph || "?")} ${Math.round(e.params ? (e.params.x || 0) : e.offset)}</button>`).join("")}
+        ${opts.map((e) => `<button type="button" class="ep-plan-chip ep-clickable ${manualIds.indexOf(e.id) >= 0 ? "on" : ""}" data-pe-target="${ki}:${esc(e.id)}">${esc((TYPES[e.type] || {}).glyph || "?")} ${Math.round(e.params ? (e.params.x || 0) : e.offset)}</button>`).join("")}
       </div>`);
     }
+    if (rows.length) rows.push(`<div class="ep-plan-srow ep-plan-hintrow">${T.swMulti}</div>`);
     return rows.join("");
   }
   // цепочка проходных/перекрёстных: провод к СЛЕДУЮЩЕМУ звену; без chainNext — это
@@ -676,9 +683,18 @@
       const ki = Number(kiStr) || 0;
       c.commit();
       el.targetIds = el.targetIds || [];
-      el.targetIds[ki] = val === "auto" ? null : val;
-      if (ki === 0) el.targetId = el.targetIds[0]; // старое поле — для обратной совместимости чтения
-      if (val !== "auto") syncTargetCircuit(el, (c.project.elements || []).find((e) => e.id === val));
+      // МУЛЬТИВЫБОР: чип цели тоглит её в списке клавиши, «Авто» — снимает все ручные.
+      // В модель пишем СТРОКУ, если цель одна (прежний формат — старые проекты/экспорты
+      // и все читатели через G.targetIdsOf видят одно и то же), массив — если несколько.
+      const cur = G().targetIdsOf ? G().targetIdsOf(el, ki) : [];
+      let next = [];
+      if (val !== "auto") {
+        const i = cur.indexOf(val);
+        next = i >= 0 ? cur.filter((x) => x !== val) : cur.concat([val]);
+      }
+      el.targetIds[ki] = next.length > 1 ? next : (next[0] || null);
+      if (ki === 0) el.targetId = next.length === 1 ? next[0] : null; // legacy-алиас: только когда цель одна
+      if (val !== "auto" && next.indexOf(val) >= 0) syncTargetCircuit(el, (c.project.elements || []).find((e) => e.id === val));
       c.persist("elem-target"); openEditor(el); rooms().renderScene(); return;
     }
     if ((b = t.closest("[data-pe-picktarget]"))) {

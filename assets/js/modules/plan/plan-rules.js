@@ -143,7 +143,7 @@
     }
     (p.elements || []).forEach((e) => {
       if (e.type !== "pir" && e.type !== "lux") return;
-      const tid = (e.targetIds || []).find(Boolean) || e.targetId;
+      const tid = (G().allTargetIds ? G().allTargetIds(e) : [])[0]; // цель может быть массивом (несколько на клавишу)
       const auto = G().switchTarget ? G().switchTarget(p, e, 0) : null;
       if (!tid && !auto) { issues.push({ id: e.id, msg: `${e.type === "pir" ? "Датчик движения" : "Датчик освещённости"}: не назначена лампа/подсветка.` }); badIds.add(e.id); }
     });

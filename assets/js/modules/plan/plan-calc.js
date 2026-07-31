@@ -75,7 +75,9 @@
       if (!rt.circuitId) return;
       const el = (p.elements || []).find((e) => e.id === rt.fromId);
       const pn = rt.toPanel ? (p.panels || []).find((x) => x.id === rt.toId) : null;
-      const L = G().polylineLen(rt.points || []) + (el ? RT.pointVert(p, el) * RT.hopVertMul(p, rt) : 0) + (rt.toPanel ? RT.panelVert(p, pn) : 0) + RT.cableStub(p, el, rt);
+      // вертикали считаем по ПОВЕРХНОСТИ ЭТОГО хопа (rt.routeType) — при комбинированной
+      // разводке спуск у одной и той же точки разный: от пола или от потолка
+      const L = G().polylineLen(rt.points || []) + (el ? RT.pointVert(p, el, rt.routeType) * RT.hopVertMul(p, rt) : 0) + (rt.toPanel ? RT.panelVert(p, pn, rt.routeType) : 0) + RT.cableStub(p, el, rt);
       const r = row(rt.circuitId);
       r.cableLen += L; r.crossings += (rt.throughWalls || []).length;
       if (rt.leg === "pri24" || rt.leg === "sec24") r.has24 = true; // линия с 24В-разводкой (до/от щита)
@@ -97,7 +99,7 @@
         let k = 1;
         (p.elements || []).forEach((sw) => {
           if (sw.type !== "switch" || !R || !R.keys24Of) return;
-          const tids = (sw.targetIds || []).concat(sw.targetId ? [sw.targetId] : []);
+          const tids = G().allTargetIds(sw); // клавиша может нести несколько целей
           const feeds = tids.some((id) => { const t = (p.elements || []).find((e) => e.id === id); return t && t.type === "output24" && t.circuitId === c.id; });
           if (feeds) k = Math.max(k, R.keys24Of(p, sw));
         });
@@ -151,6 +153,8 @@
     if (!window.EP.PoolEngine) return null;
     const blocks = stats.map((s) => ({
       material: s.material,
+      // ПРИБЛИЖЁННЫЙ счёт по комнатам (когда трасс ещё нет) — поверхность берём ОБЩУЮ:
+      // здесь нет ни трасс, ни разбивки по слоям, чтобы применить settings.surfaces
       route: p.settings.routeType === "floor" ? "floor" : "ceiling",
       height: s.height,
       sockets: s.sockets, sw1: s.sw, sw2: 0, sw3: 0, pass: 0, cross: 0,
@@ -194,7 +198,11 @@
   // того, сколько КЛАВИШ этого выключателя назначено на выводы 24В — 1 клавиша даёт 3×1.5,
   // 2-3 клавиши 5×1.5 (просьба пользователя). Считается по СВОЕЙ трассе (fromId "sw24:<id>").
   function pri24Mark(p, r) {
-    const swId = String(r.fromId || "").indexOf("sw24:") === 0 ? String(r.fromId).slice(5) : null;
+    // fromId = "sw24:<id выключателя>@<id щита>" (щит в ключе — с тех пор, как одна клавиша
+    // может кормить НЕСКОЛЬКО трансформаторов, см. build24Legs); "@…" отрезаем, старый
+    // формат без "@" читается как есть
+    const raw = String(r.fromId || "");
+    const swId = raw.indexOf("sw24:") === 0 ? raw.slice(5).split("@")[0] : null;
     const sw = swId ? (p.elements || []).find((e) => e.id === swId) : null;
     const R = EP.Plan.Routes;
     const k = (sw && R && R.keys24Of) ? R.keys24Of(p, sw) : 1;
@@ -279,7 +287,12 @@
   // глубину — штроба тёплого пола (50×50, kind:"warm") режется диском "big", силовая и
   // слаботочная (kind power/lv, обычный размер settings.chaseW/H) — "small"; подрозетники
   // (коронка) и крепёж кабеля/буры от глубины НЕ зависят — считаются один раз в "small".
-  function addConsumItems(add, p, strobe, podroz, junctBoxes, cableBy) {
+  // surf — необязательная разбивка по поверхностям { cable:{floor,ceiling}, strobe:{floor,ceiling} }
+  // (комбинированная разводка): крепёж считается ОТДЕЛЬНЫМ вызовом на каждую поверхность,
+  // иначе весь кабель посчитался бы крепежом одной поверхности. Подрозетники/коробки/буры
+  // от поверхности НЕ зависят — идут ОДИН раз (в вызове первой поверхности), иначе
+  // задвоились бы. Если поверхность в проекте одна — вызов ровно один, как и раньше.
+  function addConsumItems(add, p, strobe, podroz, junctBoxes, cableBy, surf) {
     const CC = window.EP && window.EP.CableConsum;
     if (!CC) return; // модуль расходников не подключен на странице — тихо пропускаем
     const smallByMat = {}, bigByMat = {}, sockByMat = {};
@@ -304,12 +317,25 @@
       e.qty += it.qty;
     });
 
-    const surface = p.settings.routeType === "floor" ? "floor" : "ceil";
-    collect(CC.calc({
-      mode: "mount", cableM: totalCable, boxes: junctBoxes,
-      sockets: totalSockets, strobeM: totalStrobeSmall + totalStrobeBig,
-      surface, gofra: surface !== "floor" && p.settings.gofraCeil !== false
-    }));
+    // поверхности, по которым реально разложен кабель: одна (обычный проект) или обе
+    // (комбинированная разводка — слои разведены по-разному, см. settings.surfaces)
+    const cSurf = (surf && surf.cable) || null;
+    const sSurf = (surf && surf.strobe) || null;
+    const legs = [];
+    if (cSurf && (cSurf.floor > 0) && (cSurf.ceiling > 0)) {
+      legs.push({ surface: "floor", cableM: cSurf.floor, strobeM: (sSurf && sSurf.floor) || 0 });
+      legs.push({ surface: "ceil", cableM: cSurf.ceiling, strobeM: (sSurf && sSurf.ceiling) || 0 });
+    } else {
+      const only = (cSurf && cSurf.floor > 0 && !(cSurf.ceiling > 0)) ? "floor"
+        : (cSurf && cSurf.ceiling > 0) ? "ceil"
+        : (p.settings.routeType === "floor" ? "floor" : "ceil");
+      legs.push({ surface: only, cableM: totalCable, strobeM: totalStrobeSmall + totalStrobeBig });
+    }
+    legs.forEach((leg, i) => collect(CC.calc({
+      mode: "mount", cableM: leg.cableM, boxes: i === 0 ? junctBoxes : 0,
+      sockets: i === 0 ? totalSockets : 0, strobeM: leg.strobeM,
+      surface: leg.surface, gofra: leg.surface !== "floor" && p.settings.gofraCeil !== false
+    })));
 
     const matNames = Array.from(new Set(Object.keys(smallByMat).concat(Object.keys(bigByMat), Object.keys(sockByMat))));
     if (matNames.length) {
@@ -339,7 +365,19 @@
     routes.forEach((r) => { outCnt[r.fromId] = (outCnt[r.fromId] || 0) + 1; if (r.toId) inCnt[r.toId] = (inCnt[r.toId] || 0) + 1; });
 
     const strobe = {}; // "размер|материал|вид" -> метры (вид: power/lv/warm — не смешиваем в одну строку)
-    const addStrobe = (sizeK, mat, cm, kind) => { if (cm > 1) { const k = sizeK + "|" + mat + "|" + (kind || "power"); strobe[k] = (strobe[k] || 0) + cm / 100; } };
+    // штроба и кабель ПО ПОВЕРХНОСТЯМ (пол/потолок) — нужны расходникам: крепёж по полу
+    // (гофра ПНД + монтажная лента) и по потолку (гофра+клипсы / площадки+стяжки) физически
+    // разный, а при комбинированной разводке в проекте есть и то, и другое одновременно
+    const strobeSurf = { floor: 0, ceiling: 0 }, cableSurf = { floor: 0, ceiling: 0 };
+    const genSurf = s.routeType === "floor" ? "floor" : "ceiling";
+    const sfOf = (v) => (v === "floor" || v === "ceiling") ? v : genSurf;
+    const addStrobe = (sizeK, mat, cm, kind, surf) => {
+      if (cm > 1) {
+        const k = sizeK + "|" + mat + "|" + (kind || "power");
+        strobe[k] = (strobe[k] || 0) + cm / 100;
+        strobeSurf[sfOf(surf)] += cm / 100;
+      }
+    };
     const matOfEl = (e2) => { const w = e2.wallId && G2.wallById(p, e2.wallId); return w ? G2.wallMatOf(p, w) : ((s && s.wallMaterial) || "Бетон"); };
 
     const podroz = {}; // материал -> { std, deep }
@@ -359,19 +397,22 @@
       else addPost(e2.type);
       // штроба-спуск: только у точек, к которым построена трасса
       if (!(outCnt[e2.id] || inCnt[e2.id])) return;
-      const vert = RT.pointVert(p, e2);
+      // поверхность спуска — по УЖЕ ПОСТРОЕННОЙ трассе этой точки (её группа слоёв могла
+      // быть переведена на пол/потолок отдельно от общей настройки проекта)
+      const esurf = RT.surfaceOfEl ? RT.surfaceOfEl(p, e2) : genSurf;
+      const vert = RT.pointVert(p, e2, esurf);
       if (vert < 1) return;
       if (e2.layer === "warm") {
         // ТП: подача к термостату — обычная штроба (потолок/пол, куда бы ни шла трасса);
         // от термостата ВНИЗ в пол, к самому греющему кабелю — ВСЕГДА 50×50, отдельно
-        addStrobe(keyStd, mat, vert, "power");
+        addStrobe(keyStd, mat, vert, "power", esurf);
         const toFloor = Math.max(0, e2.height || 0);
-        if (toFloor > 1) addStrobe(sizeKey(s.tpChaseW || 50, s.tpChaseH || 50), mat, toFloor, "warm");
+        if (toFloor > 1) addStrobe(sizeKey(s.tpChaseW || 50, s.tpChaseH || 50), mat, toFloor, "warm", "floor");
         return;
       }
-      if (LV_LAYERS[e2.layer]) { addStrobe(keyStd, mat, vert, "lv"); return; } // слаботочка — своя штроба и своя строка
+      if (LV_LAYERS[e2.layer]) { addStrobe(keyStd, mat, vert, "lv", esurf); return; } // слаботочка — своя штроба и своя строка
       const cables = (outCnt[e2.id] || 0) + (inCnt[e2.id] || 0); // вход+выход шлейфа в одном спуске
-      addStrobe(keyStd, mat, Math.max(1, Math.ceil(cables / capOf(keyStd))) * vert, "power");
+      addStrobe(keyStd, mat, Math.max(1, Math.ceil(cables / capOf(keyStd))) * vert, "power", esurf);
     });
     // спуск у щита: линии приходят в одну точку — ёмкость из пула; слаботочку
     // считаем ОТДЕЛЬНОЙ штробой у щита (не мешаем её с силовой и там)
@@ -382,11 +423,19 @@
     };
     const panelRoutes = routes.filter((r) => r.toPanel);
     if ((p.panels || []).length && panelRoutes.length) {
-      const lvPanelCables = panelRoutes.filter((r) => LV_LAYERS[r.layer]).length;
-      const powPanelCables = panelRoutes.length - lvPanelCables;
       const pm = panelMat();
-      if (powPanelCables > 0) addStrobe(keyStd, pm, Math.ceil(powPanelCables / capOf(keyStd)) * RT.panelVert(p), "power");
-      if (lvPanelCables > 0) addStrobe(keyStd, pm, Math.ceil(lvPanelCables / capOf(keyStd)) * RT.panelVert(p), "lv");
+      // РАЗДЕЛЬНО по поверхности прихода: при комбинированной разводке к щиту часть линий
+      // приходит сверху, часть снизу — это два разных спуска разной длины, и складывать их
+      // в один нельзя (ёмкость штробы тоже считается внутри своей поверхности)
+      ["ceiling", "floor"].forEach((sf) => {
+        const inSf = panelRoutes.filter((r) => sfOf(r.routeType) === sf);
+        if (!inSf.length) return;
+        const lvN = inSf.filter((r) => LV_LAYERS[r.layer]).length;
+        const powN = inSf.length - lvN;
+        const vert = RT.panelVert(p, null, sf);
+        if (powN > 0) addStrobe(keyStd, pm, Math.ceil(powN / capOf(keyStd)) * vert, "power", sf);
+        if (lvN > 0) addStrobe(keyStd, pm, Math.ceil(lvN / capOf(keyStd)) * vert, "lv", sf);
+      });
     }
 
     // кабель по МАРКАМ: марка линии (QF) или по слою; с настраиваемым запасом
@@ -398,7 +447,7 @@
       // без распайки на конце кабель проходит штробу туда-обратно (нет коробки,
       // принимающей горизонталь на месте) — hopVertMul=2 для такого хопа; + выпуск
       // на разделку/подключение (RT.cableStub — см. её инвариант)
-      const L = G2.polylineLen(r.points || []) + (e2 ? RT.pointVert(p, e2) * RT.hopVertMul(p, r) : 0) + (r.toPanel ? RT.panelVert(p, pn) : 0) + RT.cableStub(p, e2, r);
+      const L = G2.polylineLen(r.points || []) + (e2 ? RT.pointVert(p, e2, r.routeType) * RT.hopVertMul(p, r) : 0) + (r.toPanel ? RT.panelVert(p, pn, r.routeType) : 0) + RT.cableStub(p, e2, r);
       const cc = (p.circuits || []).find((c) => c.id === r.circuitId);
       // 24В-линия: «до щита» (leg pri24, выключатель→трансформатор, 220В — марка
       // circuit.cable220) и «от щита» (leg sec24, трансформатор→точка 24В — circuit.cable)
@@ -418,6 +467,7 @@
       // трассу: питание КГ ВВГнг 3×1.5 и данные (витая пара или оптика). При PoE
       // (feed по умолчанию) кабель ОДИН — витая пара, как и было. Просьба пользователя:
       // «должно быть уточнение — питание по ютп, или отдельно кг ввгнг 3×1.5, и ютп или оптика».
+      cableSurf[sfOf(r.routeType)] += L; // для расходников (крепёж по полу/по потолку разный)
       const srcEl = (p.elements || []).find((e) => e.id === r.fromId);
       if (srcEl && (srcEl.type === "camera" || srcEl.type === "intercom") && srcEl.feed === "sep") {
         const dataMark = srcEl.data === "fiber" ? "Оптический кабель" : "Витая пара (UTP)";
@@ -432,6 +482,8 @@
       cableBy[key] = (cableBy[key] || 0) + L;
     });
     Object.keys(cableBy).forEach((m) => { cableBy[m] = Math.round((cableBy[m] / 100) * reserve * 10) / 10; });
+    // тем же запасом и в метры — иначе расходники считались бы по «сырым» сантиметрам
+    Object.keys(cableSurf).forEach((k) => { cableSurf[k] = Math.round((cableSurf[k] / 100) * reserve * 10) / 10; });
 
     // позиции для сметы
     const items = [];
@@ -496,7 +548,9 @@
     Object.keys(sleeves).forEach((k) => {
       const w = G2.wallById(p, sleeves[k].wallId);
       const mat = w ? G2.wallMatOf(p, w) : ((s && s.wallMaterial) || "Бетон");
-      sleeveByMat[mat] = (sleeveByMat[mat] || 0) + Math.ceil(sleeves[k].n / sleeveCap);
+      // ёмкость — у КАЖДОЙ группы своя (по её поверхности: по полу гофра всегда, по потолку
+      // — settings.gofraCeil); sg.cap остаётся общим фолбэком
+      sleeveByMat[mat] = (sleeveByMat[mat] || 0) + Math.ceil(sleeves[k].n / (sleeves[k].cap || sleeveCap));
     });
     Object.keys(sleeveByMat).forEach((m) => add("work", `Проходка Ø${s.sleeveD || 20} ${low(m)}`, sleeveByMat[m], "шт"));
     // ниша под щит — как в конфигураторе щита (вырубка × модули + монтаж)
@@ -532,7 +586,7 @@
     if (conn.shrinkM > 0) add("material", "Термоусадка 12/4", conn.shrinkM, "м");
     // расходники (крепёж/буры/коронки/диски/мешки) — по уже посчитанным точным метрам/
     // подрозетникам/коробкам/кабелю выше; молча пропускается, если EP.CableConsum не подключен
-    addConsumItems(add, p, strobe, podroz, junctBoxes, cableBy);
+    addConsumItems(add, p, strobe, podroz, junctBoxes, cableBy, { cable: cableSurf, strobe: strobeSurf });
     // затяжка кабеля в гофру — работа отдельно от самой гофры (материал); метраж
     // берём из уже посчитанного addConsumItems (там же гофра ПНД/потолочная гофра
     // считается по routeType/gofraCeil) — не пересчитываем заново, чтобы не разойтись

@@ -373,8 +373,18 @@
       };
     };
     if (S.showChases) {
-      const floorRoute = p.settings.routeType === "floor";
-      const chaseY0 = floorRoute ? H : 0;
+      // Поверхность (пол/потолок) больше НЕ одна на проект: у каждой группы слоёв своя
+      // (settings.surfaces). Направление штробы считаем НА КАЖДУЮ точку/пост — по её
+      // построенной трассе, иначе по настройкам её группы (G.routeSurface). У блока постов
+      // виды разные (силовая/свет/слаботочка), поэтому там — по виду входа.
+      const RTm = EP.Plan.Routes;
+      const surfFor = (layer, el2) => {
+        if (el2 && el2.type !== "block" && RTm && RTm.surfaceOfEl) return RTm.surfaceOfEl(p, el2);
+        return G().routeSurface ? G().routeSurface(p, layer, el2) : (p.settings.routeType === "floor" ? "floor" : "ceiling");
+      };
+      const isFloor = (layer, el2) => surfFor(layer, el2) === "floor";
+      const y0Of = (layer, el2) => (isFloor(layer, el2) ? H : 0);
+      const KIND_LAYER = { power: "power", light: "light", lv: "lv", warm: "warm" };
       const CHASE_COL = { power: "#f59e0b", light: "#facc15", lv: "#38bdf8", warm: "#fb7185" };
       const SIZE_LBL = {
         power: `${Math.round(p.settings.chaseW || 25)}×${Math.round(p.settings.chaseH || 30)}`,
@@ -410,16 +420,17 @@
           (G().blockChaseEntries ? G().blockChaseEntries(el2) : []).forEach((en) => {
             const c = bg.cell(en.idx);
             // выключатель в блоке при разводке по полу — штроба тянется до потолка (дальше к лампе)
-            const y0 = (en.kind === "light" && floorRoute) ? 0 : chaseY0;
+            const enLayer = KIND_LAYER[en.kind] || "power";
+            const y0 = (en.kind === "light" && isFloor(enLayer, el2)) ? 0 : y0Of(enLayer, el2);
             drawChase(c.cx, y0, c.cy, en.kind);
           });
         } else if (el2.layer === "warm") {
           // ТП: подача обычной штробой к термостату + ОТДЕЛЬНО всегда 50×50 от термостата в пол
-          drawChase(xx, chaseY0, yy, "power");
+          drawChase(xx, y0Of("warm", el2), yy, "power");
           if (el2.height > 1) drawChase(xx, yy, H, "warm");
         } else {
           const kind = chaseKindOf(el2.layer);
-          const y0 = (el2.type === "switch" && floorRoute) ? 0 : chaseY0;
+          const y0 = (el2.type === "switch" && isFloor(el2.layer, el2)) ? 0 : y0Of(el2.layer, el2);
           drawChase(xx, y0, yy, kind);
         }
       });
