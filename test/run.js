@@ -456,7 +456,9 @@ test("24В шаг2: build24Legs — трасса «до щита» (выкл→�
   sw.targetIds = [o24.id];
   P.elements.push(sw, o24);
   EP.Plan.Routes.build();
-  const pri = P.routes.find((r) => r.fromId === "sw24:" + sw.id);
+  // fromId = "sw24:<выключатель>@<щит>" — щит в ключе с тех пор, как одна клавиша может
+  // кормить НЕСКОЛЬКО трансформаторов (у каждого своя трасса «до щита»)
+  const pri = P.routes.find((r) => String(r.fromId).indexOf("sw24:" + sw.id) === 0);
   ok(pri && pri.leg === "pri24", "трасса «до щита» sw24 построена, leg=pri24");
   eq(pri.toId, trafo.id, "«до щита» идёт к трансформаторному щиту");
   eq(pri.circuitId, q24.id, "«до щита» отнесена к линии 24В (не к линии выключателя)");
@@ -472,7 +474,7 @@ test("24В шаг2: без трансформаторного щита трас�
   sw.targetIds = [o24.id];
   P.elements.push(sw, o24);
   EP.Plan.Routes.build();
-  ok(!P.routes.some((r) => r.fromId === "sw24:" + sw.id), "нет трансформатора — нет трассы «до щита»");
+  ok(!P.routes.some((r) => String(r.fromId).indexOf("sw24:" + sw.id) === 0), "нет трансформатора — нет трассы «до щита»");
 });
 test("24В шаг2: смета — кабель «до щита (220В)» и «от щита (24В)» отдельными позициями с маркой линии", () => {
   const trafo = M.newPanel(200, 280, "Слаботочный"); trafo.transformer = true;
@@ -1470,9 +1472,15 @@ test("трасса по полу: сплошная перегородка — г
   beam.kind = "lintel";
   EP.Plan.Routes.recomputeThroughWalls(P, rt);
   ok(!has(), "перемычка по полу — кабель под ней, гильзы нет");
+  // поверхность теперь у КАЖДОЙ трассы своя (rt.routeType) и она главнее общей настройки
+  // проекта — при комбинированной разводке иначе фильтр применялся бы не по физике хопа
+  rt.routeType = "ceiling";
   P.settings.routeType = "ceiling";
   EP.Plan.Routes.recomputeThroughWalls(P, rt);
   ok(has(), "перемычка по потолку — гильза нужна");
+  P.settings.routeType = "floor"; // общая настройка «пол», но САМА трасса по потолку
+  EP.Plan.Routes.recomputeThroughWalls(P, rt);
+  ok(has(), "поверхность самой трассы главнее общей настройки проекта");
 });
 test("createProject: стартовые настройки высота/пол-потолок/монтаж (опции формы создания)", () => {
   const p = EP.Plan.Core.createProject("X", { ceilingHeight: 300, routeType: "floor", gofraCeil: false });
@@ -3778,6 +3786,135 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/контроллер «Нептун»/.test(msgs), "нет Нептуна — предупреждение");
     ok(/нет слаботочного щита/.test(msgs), "нет роутер-щита для камер");
     ok(/отдельными линиями/.test(msgs), "камеры без своих линий");
+  });
+
+
+  // ===== 23. Комбинированные поверхности трасс + несколько целей на клавишу =====
+  test("поверхности: бэкофилл settings.surfaces (старые проекты — все «общее»)", () => {
+    const p = M.newProject("s");
+    ok(p.settings.surfaces && p.settings.surfaces.light === null && p.settings.surfaces.v24 === null, "новый проект — все null");
+    const old = M.newProject("old"); delete old.settings.surfaces;
+    EP.Plan.Core.importJSON(JSON.stringify({ project: old }));
+    const P = EP.Plan.Core.project;
+    ok(P.settings.surfaces && "lv" in P.settings.surfaces, "бэкофилл проставил объект");
+    // мусорное значение (вручную правленый JSON) нормализуется бэкофиллом при импорте
+    const dirty = M.newProject("dirty"); dirty.settings.surfaces = { light: "мусор", power: "floor" };
+    EP.Plan.Core.importJSON(JSON.stringify({ project: dirty }));
+    const P2 = EP.Plan.Core.project;
+    eq(P2.settings.surfaces.light, null, "мусорное значение нормализовано в null");
+    eq(P2.settings.surfaces.power, "floor", "валидное значение сохранено");
+  });
+  test("G.routeSurface: группа слоёв главнее общего; у света по полу лампа-хоп по потолку", () => {
+    const p = M.newProject("s");
+    p.settings.routeType = "ceiling";
+    eq(G.routeSurface(p, "power", null), "ceiling", "общее — потолок");
+    p.settings.surfaces.lv = "floor";
+    eq(G.routeSurface(p, "lv", null), "floor", "слаботочка своя — пол");
+    eq(G.routeSurface(p, "tv", null), "floor", "ТВ в той же группе lv");
+    eq(G.routeSurface(p, "power", null), "ceiling", "сила не затронута");
+    p.settings.surfaces.light = "floor";
+    eq(G.routeSurface(p, "light", null, { lampHop: false }), "floor", "питание света — по полу");
+    eq(G.routeSurface(p, "light", null, { lampHop: true }), "ceiling", "к лампе — всегда по потолку");
+    eq(G.surfaceKeyOf("lv", { type: "output24" }), "v24", "24В — своя группа");
+  });
+  test("поверхности: трасса розетки по полу, света — по потолку в одном проекте", () => {
+    const { P, w } = install({ panels: [M.newPanel(20, 280, "Щ")] });
+    P.settings.routeType = "ceiling";
+    P.settings.surfaces.power = "floor";
+    const sock = M.newElement("socket", w(0), 100, 30, "power");
+    const lamp = M.newElement("light", null, 0, 270, "light"); lamp.params = { x: 200, y: 150 };
+    P.elements.push(sock, lamp);
+    EP.Plan.Routes.build();
+    const rs = P.routes.find((r) => r.fromId === sock.id), rl = P.routes.find((r) => r.fromId === lamp.id);
+    eq(rs.routeType, "floor", "розетка — по полу");
+    eq(rs.chaseFloor, true, "штроба розетки в пол");
+    eq(rl.routeType, "ceiling", "свет — по потолку");
+    eq(rl.chaseFloor, false, "штроба света не в пол");
+    // спуск считается по поверхности ХОПА: у розетки h=30 от пола, у лампы от потолка
+    eq(EP.Plan.Routes.pointVert(P, sock, "floor"), 30, "спуск розетки от пола = высоте");
+    eq(EP.Plan.Routes.pointVert(P, sock, "ceiling"), P.settings.ceilingHeight - 30, "тот же элемент по потолку — другой спуск");
+  });
+  test("поверхности: питание света по полу, а хоп к лампе — по потолку", () => {
+    const q = M.newCircuit("QF1", "#e11", 10);
+    const { P, w } = install({ panels: [M.newPanel(20, 280, "Щ")], circuits: [q] });
+    P.settings.surfaces.light = "floor";
+    const sw = M.newElement("switch", w(0), 100, 90, "light"); sw.circuitId = q.id;
+    const lamp = M.newElement("light", null, 0, 270, "light"); lamp.params = { x: 200, y: 150 }; lamp.circuitId = q.id;
+    sw.targetIds = [lamp.id];
+    P.elements.push(sw, lamp);
+    EP.Plan.Routes.build();
+    const feed = P.routes.find((r) => r.fromId === sw.id && r.toPanel);
+    const toLamp = P.routes.find((r) => r.fromId === lamp.id);
+    ok(feed && feed.routeType === "floor", "щит→выключатель (питание) — по полу");
+    ok(toLamp && toLamp.routeType === "ceiling", "выключатель→лампа — по потолку");
+  });
+  test("поверхности: гильза по полу и по потолку в одном месте — ДВА отверстия", () => {
+    const { P } = install();
+    const rf = M.newRoute("power", "floor", [{ x: 100, y: 150 }, { x: 300, y: 150 }], "a", null);
+    const rc = M.newRoute("light", "ceiling", [{ x: 100, y: 150 }, { x: 300, y: 150 }], "b", null);
+    rf.throughWalls = [{ x: 200, y: 150, wallId: P.rooms[0].id + ":0" }];
+    rc.throughWalls = [{ x: 200, y: 150, wallId: P.rooms[0].id + ":0" }];
+    P.routes.push(rf, rc);
+    eq(EP.Plan.Routes.sleeveHoles(P), 2, "пол и потолок — разные отверстия");
+    const two = M.newRoute("power", "floor", [{ x: 100, y: 140 }, { x: 300, y: 140 }], "c", null);
+    two.throughWalls = [{ x: 200, y: 150, wallId: P.rooms[0].id + ":0" }];
+    P.routes.push(two);
+    eq(EP.Plan.Routes.sleeveHoles(P), 3, "по полу в гофре — 1 кабель на гильзу, второй кабель = ещё отверстие");
+  });
+  test("цели клавиши: одна — строкой, несколько — массивом; targetIdsOf читает оба формата", () => {
+    const el = { type: "switch", targetIds: ["a"], targetId: "a" };
+    eq(G.targetIdsOf(el, 0).join(","), "a", "строка");
+    el.targetIds = [["a", "b", "c"]];
+    eq(G.targetIdsOf(el, 0).join(","), "a,b,c", "массив");
+    eq(G.allTargetIds(el).join(","), "a,b,c", "все цели плоско (без дублей targetId)");
+    const legacy = { type: "switch", targetIds: [], targetId: "z" };
+    eq(G.targetIdsOf(legacy, 0).join(","), "z", "legacy targetId клавиши 0");
+  });
+  test("switchTargets: несколько ручных целей у одной клавиши; switchTarget — первая", () => {
+    const q = M.newCircuit("QF1", "#e11", 10);
+    const { P, w } = install({ circuits: [q] });
+    const sw = M.newElement("switch", w(0), 100, 90, "light"); sw.circuitId = q.id;
+    const l1 = M.newElement("light", null, 0, 270, "light"); l1.params = { x: 150, y: 150 }; l1.circuitId = q.id;
+    const l2 = M.newElement("light", null, 0, 270, "light"); l2.params = { x: 250, y: 150 }; l2.circuitId = q.id;
+    sw.targetIds = [[l1.id, l2.id]];
+    P.elements.push(sw, l1, l2);
+    const ts = G.switchTargets(P, sw, 0);
+    eq(ts.length, 2, "обе цели");
+    eq(G.switchTarget(P, sw, 0).id, l1.id, "switchTarget — первая (контракт «один элемент»)");
+  });
+  test("24В: одна клавиша на ДВА трансформатора — две трассы «до щита» (по одной на щит)", () => {
+    const t1 = M.newPanel(20, 280, "Тр1"); t1.transformer = true;
+    const t2 = M.newPanel(380, 280, "Тр2"); t2.transformer = true;
+    const q24 = M.newCircuit("Int1", "#0af", 6);
+    const { P, w } = install({ panels: [t1, t2], circuits: [q24] });
+    const sw = M.newElement("switch", w(0), 200, 90, "light");
+    const o1 = M.newElement("output24", null, 0, 270, "lv"); o1.params = { x: 60, y: 150 }; o1.circuitId = q24.id;
+    const o2 = M.newElement("output24", null, 0, 270, "lv"); o2.params = { x: 340, y: 150 }; o2.circuitId = q24.id;
+    sw.targetIds = [[o1.id, o2.id]];
+    P.elements.push(sw, o1, o2);
+    EP.Plan.Routes.build();
+    const pri = P.routes.filter((r) => r.leg === "pri24");
+    eq(pri.length, 2, "две трассы «до щита»");
+    ok(pri.some((r) => r.toId === t1.id) && pri.some((r) => r.toId === t2.id), "к обоим трансформаторам");
+    ok(pri.every((r) => String(r.fromId).indexOf("sw24:" + sw.id + "@") === 0), "fromId уникален по щиту");
+    // повторная инкрементальная сборка не плодит дубли
+    EP.Plan.Routes.buildIncremental({ silent: true });
+    eq(P.routes.filter((r) => r.leg === "pri24").length, 2, "buildIncremental не задвоил");
+    // «до щита» кабель на 2 цели 24В — 5 жил (keys24Of считает по всем целям всех клавиш)
+    eq(EP.Plan.Routes.keys24Of(P, sw), 2, "две цели 24В у выключателя");
+  });
+  test("смета: марка «до щита» находит выключатель при fromId с @щитом", () => {
+    const trafo = M.newPanel(200, 280, "Тр"); trafo.transformer = true;
+    const q24 = M.newCircuit("Int1", "#0af", 6);
+    const { P, w } = install({ panels: [trafo], circuits: [q24] });
+    const sw = M.newElement("switch", w(0), 100, 90, "light");
+    const o1 = M.newElement("output24", null, 0, 270, "lv"); o1.params = { x: 150, y: 150 }; o1.circuitId = q24.id;
+    const o2 = M.newElement("output24", null, 0, 270, "lv"); o2.params = { x: 250, y: 150 }; o2.circuitId = q24.id;
+    sw.targetIds = [[o1.id, o2.id]];
+    P.elements.push(sw, o1, o2);
+    EP.Plan.Routes.build();
+    const names = EP.Plan.Calc.estimateItems(P).map((i) => i.name).join(" | ");
+    ok(/5×1\.5.*до щита \(220В\)/.test(names), "две цели 24В → 5 жил «до щита»: " + names);
   });
 
   console.log("\n" + "=".repeat(48));

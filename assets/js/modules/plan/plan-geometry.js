@@ -501,6 +501,57 @@
     const room = (project.rooms || []).find((r) => r.id === roomId);
     return !!(room && G.pointInPolygon(q, room.points));
   });
+  // ---- ПОВЕРХНОСТЬ ТРАССЫ по слоям (пол/потолок) ----
+  // Раньше поверхность была ОДНА на весь проект (settings.routeType). Просьба пользователя:
+  // «трассы надо иметь возможность комбинировать: слаботочка по полу или потолку, освещение
+  // по полу и потолку (по полу только питание идёт если по полу), розетки, 24 вольта, и общее».
+  // settings.surfaces — переопределение НА ГРУППУ СЛОЁВ, null/пусто = «общее» (settings.routeType,
+  // как было). Ключи групп: light (освещение), power (розетки/сила/кондиционеры/тёплый пол),
+  // lv (слаботочка — интернет/ТВ/видеонаблюдение), v24 (выводы 24В, ОБЕ половины — «до щита»
+  // и «от щита», см. build24Legs в plan-routes.js).
+  // Тёплый пол намеренно в группе power: сама штроба ТП всегда 50×50 В ПОЛ независимо от
+  // поверхности (см. addRoute), а поверхность влияет только на подачу к термостату — она у
+  // ТП такая же силовая, как у розеток.
+  G.SURFACE_KEYS = ["light", "power", "lv", "v24"];
+  G.surfaceKeyOf = (layer, el) => {
+    if (el && el.type === "output24") return "v24";
+    if (layer === "light") return "light";
+    if (layer === "lv" || layer === "tv" || layer === "cctv") return "lv";
+    return "power";
+  };
+  // opts.lampHop — хоп НЕ доходит до щита (лампа↔выключатель, лампа↔распайка): у ОСВЕЩЕНИЯ
+  // при выборе «пол» по полу идёт ТОЛЬКО ПИТАНИЕ (хоп до щита), остальное — по потолку
+  // («по полу только питание идёт если по полу», прямая формулировка пользователя).
+  G.routeSurface = (project, layer, el, opts) => {
+    const s = (project && project.settings) || {};
+    const gen = s.routeType === "floor" ? "floor" : "ceiling";
+    const key = G.surfaceKeyOf(layer, el);
+    const v = (s.surfaces || {})[key];
+    let sf = (v === "floor" || v === "ceiling") ? v : gen;
+    if (key === "light" && sf === "floor" && opts && opts.lampHop) sf = "ceiling";
+    return sf;
+  };
+  // ---- ЦЕЛИ КЛАВИШИ выключателя/датчика: одна ИЛИ несколько ----
+  // el.targetIds[ki] хранит СТРОКУ (одна цель — прежний формат, старые проекты/экспорты
+  // читаются как есть) ИЛИ МАССИВ строк (несколько целей — просьба пользователя: «на одну
+  // клавишу задавать несколько 24 вольта, можно с одной клавиши включать 2 трансформатора,
+  // или одно питание сразу на три»). targetId — legacy-алиас клавиши 0.
+  G.targetIdsOf = (el, keyIdx) => {
+    if (!el) return [];
+    const ki = keyIdx || 0;
+    const raw = (el.targetIds || [])[ki];
+    const list = Array.isArray(raw) ? raw.slice() : (raw ? [raw] : []);
+    if (!list.length && ki === 0 && el.targetId) list.push(el.targetId);
+    return list.filter(Boolean);
+  };
+  // все цели ВСЕХ клавиш одним плоским списком (без повторов) — для трассировки/проверок
+  G.allTargetIds = (el) => {
+    const out = [];
+    const push = (v) => (Array.isArray(v) ? v : [v]).forEach((x) => { if (x && out.indexOf(x) < 0) out.push(x); });
+    ((el && el.targetIds) || []).forEach(push);
+    if (el && el.targetId) push(el.targetId);
+    return out;
+  };
   // Куда идёт свет от выключателя: ручное назначение (el.targetId) — приоритет;
   // иначе АВТО — ближайшая лампа/вывод той же ЛИНИИ (QF) в той же комнате
   // (без линии связь не рисуем — слишком много ложных совпадений).
@@ -514,7 +565,9 @@
     // plan-elements.js: геометрия грузится РАНЬШЕ и не должна зависеть от него.
     if (!el || (el.type !== "switch" && el.type !== "pir" && el.type !== "lux")) return null;
     const ki = keyIdx || 0;
-    const manualId = (el.targetIds && el.targetIds[ki]) || (ki === 0 ? el.targetId : null);
+    // ПЕРВАЯ из назначенных вручную целей — контракт функции остаётся «ОДИН элемент»
+    // (её читают проверки/расчёт/автоподбор); полный список — G.switchTargets ниже.
+    const manualId = G.targetIdsOf(el, ki)[0];
     if (manualId) { const t = (project.elements || []).find((e) => e.id === manualId); if (t) return t; }
     if (!el.circuitId) return null;
     const p0 = G.elemDrawPoint(project, el);
@@ -530,6 +583,19 @@
       if (!best || d < best.d) best = { d, el: e };
     });
     return best ? best.el : null;
+  };
+  // ВСЕ цели клавиши списком (одна ручная = массив из одного, несколько ручных = все,
+  // без ручных = авто-цель одним элементом, ничего нет = пустой массив). Рендер пунктиров
+  // и трассировка 24В идут ИМЕННО через неё; switchTarget выше остаётся «первой целью».
+  G.switchTargets = (project, el, keyIdx) => {
+    if (!el) return [];
+    const ids = G.targetIdsOf(el, keyIdx);
+    if (ids.length) {
+      const els = ids.map((id) => (project.elements || []).find((e) => e.id === id)).filter(Boolean);
+      if (els.length) return els;
+    }
+    const one = G.switchTarget(project, el, keyIdx);
+    return one ? [one] : [];
   };
   // Куда идёт свет от выключателя, если это НЕ обычная лампа/вывод, а светодиодная
   // лента той же линии (QF) в той же комнате — отдельно от switchTarget, т.к. лента

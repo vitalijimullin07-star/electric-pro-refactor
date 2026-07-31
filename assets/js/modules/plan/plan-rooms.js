@@ -290,8 +290,13 @@
       if (sw && hit && hit.el && hit.el.id !== sw.id && okT[hit.el.type]) {
         c.commit();
         sw.targetIds = sw.targetIds || [];
-        sw.targetIds[pick.ki] = hit.el.id;
-        if (pick.ki === 0) sw.targetId = hit.el.id; // legacy-алиас клавиши 0
+        // ДОБАВЛЯЕМ к уже назначенным целям этой клавиши (их может быть несколько —
+        // 2 трансформатора / три вывода 24В с одной клавиши), а не заменяем; повторный
+        // выбор той же точки ничего не дублирует
+        const curT = G().targetIdsOf ? G().targetIdsOf(sw, pick.ki) : [];
+        const nextT = curT.indexOf(hit.el.id) >= 0 ? curT : curT.concat([hit.el.id]);
+        sw.targetIds[pick.ki] = nextT.length > 1 ? nextT : (nextT[0] || null);
+        if (pick.ki === 0) sw.targetId = nextT.length === 1 ? nextT[0] : null; // legacy-алиас клавиши 0
         // линия цели — автоматически (220В-цель = линия выключателя, «Вывод 24В» — своя
         // 24В-линия): тот же хелпер, что и у чипов выбора цели в редакторе точки
         if (EP.Plan.Elements.syncTargetCircuit) EP.Plan.Elements.syncTargetCircuit(sw, hit.el);

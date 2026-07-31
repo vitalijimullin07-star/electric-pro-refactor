@@ -29,6 +29,10 @@
     noElems: "Нет точек — добавь розетки/свет в режиме 🔌.",
     hintJ: "Совет: поставь «Распайку» (◇) — трассы пойдут через неё, а не каждая к щиту.",
     routeType: "Ведём по", ceiling: "потолку", floor: "полу",
+    surfTitle: "Комбинировать по слоям",
+    surfAuto: "общее",
+    surfNames: { light: "Освещение", power: "Розетки/сила", lv: "Слаботочка", v24: "24В" },
+    surfHint: "У группы можно задать свою поверхность — остальные идут по «общему» выше. У освещения по полу идёт ТОЛЬКО питание (щит→выключатель), от выключателя к светильнику — всегда по потолку.",
     built: (n) => `Трасс: ${n}`, total: "Итого кабеля", crossings: "проходок",
     lines: "Линии (автоматы)", noLine: "Без линии", junctions: "Распаек",
     breaker: "Автомат", rcd: "УЗО",
@@ -57,6 +61,37 @@
   // раньше plan-calc.js в index.html, общий экспорт не переиспользуем.
   const isLvLayer = (layer) => layer === "lv" || layer === "tv" || layer === "cctv";
 
+  // ---- ПОВЕРХНОСТЬ КОНКРЕТНОГО ХОПА (пол/потолок) ----
+  // Поверхность больше НЕ одна на проект: у каждой группы слоёв своя (settings.surfaces,
+  // см. G.routeSurface). Резолвится ЗДЕСЬ на каждый хоп и пишется в rt.routeType — модель
+  // трассы это поле имела всегда (newRoute), просто раньше туда всегда шёл
+  // settings.routeType. Дальше ВСЁ (штроба, гильзы, вертикали, расходники, развёртка, PDF)
+  // читает поверхность ИЗ ТРАССЫ, а не из настроек проекта.
+  // «Питание» для освещения = хоп, доходящий ДО ЩИТА: только он идёт по полу при выборе
+  // «пол» у света, лампа↔выключатель/распайка — по потолку (прямая формулировка
+  // пользователя «по полу только питание идет если по полу»).
+  function surfaceOf(p, layer, fromEl, target) {
+    const keyEl = (fromEl && fromEl.type === "output24") ? fromEl
+      : (target && target.el && target.el.type === "output24") ? target.el : fromEl;
+    const lampHop = !(target && target.kind === "panel");
+    return G().routeSurface(p, layer, keyEl, { lampHop });
+  }
+  // Поверхность, «принадлежащая» точке: по её УЖЕ ПОСТРОЕННОЙ трассе (самый честный
+  // источник — там поверхность уже решена с учётом питание/лампа), иначе по настройкам.
+  // Нужна там, где считается вертикальный спуск/штроба у точки (plan-calc, развёртка, PDF).
+  function surfaceOfEl(p, el) {
+    if (!el) return G().routeSurface(p, null, null);
+    const rs = p.routes || [];
+    const r = rs.find((x) => x.fromId === el.id) || rs.find((x) => x.toId === el.id);
+    if (r && (r.routeType === "floor" || r.routeType === "ceiling")) return r.routeType;
+    return G().routeSurface(p, el.layer, el);
+  }
+  // какие поверхности реально использованы построенными трассами (для расходников/подсказок)
+  function surfacesUsed(p) {
+    const out = {};
+    (p.routes || []).forEach((r) => { out[r.routeType === "floor" ? "floor" : "ceiling"] = 1; });
+    return Object.keys(out);
+  }
   function circuitOf(p, el) { return el.circuitId ? (p.circuits || []).find((c) => c.id === el.circuitId) : null; }
   function colorOf(p, el) {
     const c = circuitOf(p, el);
@@ -789,9 +824,9 @@
   // крюка ниже: сравнивать по СТЕНАМ нельзя — одна и та же стена, пересечённая в ДРУГОМ
   // месте, превращает бесплатный переход через дверь в настоящую гильзу (этот случай
   // поймал существующий тест «переход через дверь не считается гильзой»).
-  function sleeveCount(p, pts, skipWall) {
+  function sleeveCount(p, pts, skipWall, surf) {
     let tw = G().polylineCrossings(p, pts, skipWall || null);
-    if (p.settings.routeType === "floor") tw = tw.filter((cr) => !floorSkip(p, cr));
+    if ((surf || p.settings.routeType) === "floor") tw = tw.filter((cr) => !floorSkip(p, cr));
     return tw.length;
   }
 
@@ -927,8 +962,9 @@
     // ни одной гильзы.
     if (lastGuideTrunkShare < GUIDE_TRUNK_MIN_SHARE) {
       const dp = ortho(p, a, b, skip);
+      const sf = surfaceOf(p, fromEl && fromEl.layer, fromEl, target); // гильзы считаем по поверхности ЭТОГО хопа
       if (dp && dp.length >= 2 && G().polylineLen(dp) < G().polylineLen(gp) - 1
-          && sleeveCount(p, dp, skip) <= sleeveCount(p, gp, skip)) return dp;
+          && sleeveCount(p, dp, skip, sf) <= sleeveCount(p, gp, skip, sf)) return dp;
     }
     return gp;
   }
@@ -1009,7 +1045,7 @@
     const out = new Map();
     (fp.elements || []).forEach((sw) => {
       if (sw.type !== "switch") return;
-      const tids = (sw.targetIds || []).concat(sw.targetId ? [sw.targetId] : []);
+      const tids = G().allTargetIds(sw); // одна клавиша может нести НЕСКОЛЬКО целей
       tids.forEach((id) => {
         const t = id ? byId.get(id) : null;
         if (!t || t.id === sw.id || t.type === "output24") return;
@@ -1022,7 +1058,7 @@
   // марка кабеля «до щита» (первичка): 1 клавиша — 3 жилы, 2-3 клавиши — 5 жил
   function keys24Of(p, sw) {
     const byId = new Map((G().floorScoped(p).elements || []).map((e) => [e.id, e]));
-    const tids = ((sw && sw.targetIds) || []).concat(sw && sw.targetId ? [sw.targetId] : []);
+    const tids = G().allTargetIds(sw);
     const seen = new Set();
     tids.forEach((id) => { const t = id ? byId.get(id) : null; if (t && t.type === "output24") seen.add(t.id); });
     return seen.size;
@@ -1150,26 +1186,48 @@
     if (trafo.length) {
       (fp.elements || []).forEach((sw) => {
         if (sw.type !== "switch") return;
-        if ((p.routes || []).some((r) => r.fromId === "sw24:" + sw.id)) return;
-        const tids = (sw.targetIds || []).concat(sw.targetId ? [sw.targetId] : []);
-        const t24 = tids.map((id) => byId.get(id)).find((t) => t && t.type === "output24");
-        if (!t24) return;
         const a = G().routeAnchor(p, sw);
         if (!a) return;
-        const near = trafo.slice().sort((x, y) => dist(a, x.pos) - dist(a, y.pos))[0];
-        const pts = buildPath(p, sw, a, { kind: "panel", id: near.id, pos: near.pos }, t24.circuitId);
-        if (!pts || pts.length < 2) return;
-        const rt = c.model.newRoute("power", p.settings.routeType, pts, "sw24:" + sw.id, near.id);
-        rt.circuitId = t24.circuitId || null;
-        rt.leg = "pri24";
-        rt.toPanel = true;
-        rt.color = colorOf(p, t24);
-        const s = p.settings;
-        rt.chaseW = s.chaseW || 25; rt.chaseH = s.chaseH || 30; rt.chaseFloor = (s.routeType === "floor");
-        let tw = G().polylineCrossings(p, pts, sw.wallId || null);
-        if (s.routeType === "floor") tw = tw.filter((cr) => !floorSkip(p, cr));
-        rt.throughWalls = tw;
-        p.routes.push(rt);
+        // ВСЕ 24В-цели ВСЕХ клавиш этого выключателя (одна клавиша может нести несколько —
+        // просьба пользователя: «с одной клавиши включать 2 трансформатора»). Каждая точка
+        // тянется к СВОЕМУ (ближайшему) трансформатору — тому же, что выберет routeGroups
+        // для её собственной трассы «от щита», иначе половины 24В сошлись бы в разных щитах.
+        const need = new Map(); // panelId -> { pn, t24 (для линии/цвета) }
+        G().allTargetIds(sw).forEach((id) => {
+          const t = byId.get(id);
+          if (!t || t.type !== "output24") return;
+          const tp = G().routeAnchor(p, t) || a;
+          const near = trafo.slice().sort((x, y) => dist(tp, x.pos) - dist(tp, y.pos))[0];
+          if (near && !need.has(near.id)) need.set(near.id, { pn: near, t24: t });
+        });
+        // Уже построенные «до щита» этого выключателя: если набор трансформаторов совпал —
+        // не трогаем (идемпотентность для инкрементальной сборки), иначе сносим и строим
+        // заново (цели могли добавиться/убраться — набор трасс обязан следовать за ними).
+        const had = (p.routes || []).filter((r) => String(r.fromId || "").indexOf("sw24:" + sw.id) === 0);
+        if (had.length) {
+          const same = had.length === need.size && had.every((r) => need.has(r.toId));
+          if (same) return;
+          p.routes = (p.routes || []).filter((r) => String(r.fromId || "").indexOf("sw24:" + sw.id) !== 0);
+        }
+        need.forEach(({ pn, t24 }) => {
+          const pts = buildPath(p, sw, a, { kind: "panel", id: pn.id, pos: pn.pos }, t24.circuitId);
+          if (!pts || pts.length < 2) return;
+          // поверхность «до щита» — по группе 24В (обе половины физически одна система)
+          const surf = G().routeSurface(p, "power", t24, { lampHop: false });
+          // fromId уникален НА КАЖДЫЙ трансформатор ("sw24:<выключатель>@<щит>") — иначе
+          // две трассы одного выключателя к разным щитам считались бы одной и той же
+          const rt = c.model.newRoute("power", surf, pts, "sw24:" + sw.id + "@" + pn.id, pn.id);
+          rt.circuitId = t24.circuitId || null;
+          rt.leg = "pri24";
+          rt.toPanel = true;
+          rt.color = colorOf(p, t24);
+          const s = p.settings;
+          rt.chaseW = s.chaseW || 25; rt.chaseH = s.chaseH || 30; rt.chaseFloor = (surf === "floor");
+          let tw = G().polylineCrossings(p, pts, sw.wallId || null);
+          if (surf === "floor") tw = tw.filter((cr) => !floorSkip(p, cr));
+          rt.throughWalls = tw;
+          p.routes.push(rt);
+        });
       });
     }
     // тег «от щита» на уже построенных трассах output24 -> трансформатор
@@ -2087,7 +2145,9 @@
     }
     curLane = 0;
     if (!pts || pts.length < 2) return null;
-    const rt = c.model.newRoute(fromEl.layer, p.settings.routeType, pts, fromEl.id, target.id || null);
+    // поверхность ЭТОГО хопа (по группе слоёв, а не одна на проект — см. surfaceOf выше)
+    const surf = surfaceOf(p, fromEl.layer, fromEl, target);
+    const rt = c.model.newRoute(fromEl.layer, surf, pts, fromEl.id, target.id || null);
     rt.circuitId = circuitId || null;
     rt.color = color;
     rt.lane = lane;                       // под-полоса внутри линии (см. curLane выше)
@@ -2095,11 +2155,11 @@
     // сечение штробы: тёплый пол — в пол (50×50), остальное — стандарт (25×30), можно менять
     const s = p.settings;
     if (fromEl.layer === "warm") { rt.chaseW = s.tpChaseW || 50; rt.chaseH = s.tpChaseH || 50; rt.chaseFloor = true; }
-    else { rt.chaseW = s.chaseW || 25; rt.chaseH = s.chaseH || 30; rt.chaseFloor = (s.routeType === "floor"); }
+    else { rt.chaseW = s.chaseW || 25; rt.chaseH = s.chaseH || 30; rt.chaseFloor = (surf === "floor"); }
     let throughWalls = G().polylineCrossings(p, pts, fromEl.wallId || null);
     // Пол: крест пути с проёмом до пола (дверь и т.п.) — уже не «сверление», гильза
     // Ø20 туда не считается (см. приоритет проёмов в buildPath выше).
-    if (s.routeType === "floor") throughWalls = throughWalls.filter((cr) => !floorSkip(p, cr));
+    if (surf === "floor") throughWalls = throughWalls.filter((cr) => !floorSkip(p, cr));
     rt.throughWalls = throughWalls;
     p.routes.push(rt);
     return rt;
@@ -2129,7 +2189,10 @@
   function recomputeThroughWalls(p, rt) {
     const fromEl = (p.elements || []).find((e) => e.id === rt.fromId);
     let throughWalls = G().polylineCrossings(p, rt.points, (fromEl && fromEl.wallId) || null);
-    if (p.settings.routeType === "floor") throughWalls = throughWalls.filter((cr) => !floorSkip(p, cr));
+    // поверхность берём У САМОЙ ТРАССЫ (rt.routeType), а не из общих настроек — иначе после
+    // ручной правки трассы, идущей по потолку в «пол»-проекте (или наоборот), фильтр
+    // проёмов применился бы не по её физике
+    if ((rt.routeType || p.settings.routeType) === "floor") throughWalls = throughWalls.filter((cr) => !floorSkip(p, cr));
     rt.throughWalls = throughWalls;
   }
 
@@ -2141,20 +2204,25 @@
   }
 
   // вертикали: спуск у точки (потолок/пол -> точка) и спуск у щита (считается один раз)
-  function pointVert(p, el) {
+  // surf — необязательная поверхность ЭТОГО хопа ("floor"/"ceiling"); без неё берётся
+  // поверхность построенной трассы точки (surfaceOfEl), иначе настройки её группы слоёв
+  function pointVert(p, el, surf) {
     if (!el || el.type === "junction") return 0;
+    const sf = (surf === "floor" || surf === "ceiling") ? surf : surfaceOfEl(p, el);
     // выключатель при разводке ПО ПОЛУ: линия идёт дальше на потолок (к лампе),
     // штроба у выключателя — на всю высоту, а не только до его собственной точки
-    if (el.type === "switch" && p.settings.routeType === "floor") return p.settings.ceilingHeight;
-    if (p.settings.routeType === "floor") return el.height || 0;
+    if (el.type === "switch" && sf === "floor") return p.settings.ceilingHeight;
+    if (sf === "floor") return el.height || 0;
     return Math.max(0, p.settings.ceilingHeight - (el.height || 0));
   }
   // pn — необязательный конкретный щит (у него может быть своя высота, если её
   // подвинули в развёртке); без pn или если у него height не задан — общая
-  // settings.panelHeight на проект (как раньше, обратная совместимость)
-  function panelVert(p, pn) {
+  // settings.panelHeight на проект (как раньше, обратная совместимость).
+  // surf — поверхность хопа, который приходит в щит (у разных линий может отличаться)
+  function panelVert(p, pn, surf) {
     const ph = (pn && pn.height != null) ? pn.height : p.settings.panelHeight;
-    return p.settings.routeType === "floor" ? ph : Math.max(0, p.settings.ceilingHeight - ph);
+    const sf = (surf === "floor" || surf === "ceiling") ? surf : (p.settings.routeType === "floor" ? "floor" : "ceiling");
+    return sf === "floor" ? ph : Math.max(0, p.settings.ceilingHeight - ph);
   }
   // Без распайки на конце (обычная точка, не щит/распайка) кабель у ЭТОЙ точки
   // проходит штробу ДВАЖДЫ — вниз к посту и обратно вверх продолжать шлейф
@@ -2193,17 +2261,23 @@
   // но это одно физическое отверстие, поэтому внутри одной трассы место считается один
   // раз (seen). Ёмкость: «в гофре» (по полу всегда, по потолку — settings.gofraCeil) —
   // 1 кабель на гильзу, без гофры — 2 (гофра толще, вдвоём в Ø20 не входят).
+  // Ключ группы включает ПОВЕРХНОСТЬ трассы: при комбинированной разводке (часть линий по
+  // полу, часть по потолку) проход в одном и том же месте стены по полу и по потолку —
+  // ДВА разных физических отверстия, в одну гильзу они не сходятся. Ёмкость тоже считается
+  // по поверхности группы: по полу гофра всегда (1 кабель), по потолку — settings.gofraCeil.
+  function surfCap(s, sf) { return (sf === "floor" || s.gofraCeil !== false) ? 1 : 2; }
   function sleeveGroups(p) {
     const s = p.settings || {};
-    const cap = (s.routeType === "floor" || s.gofraCeil !== false) ? 1 : 2;
-    const groups = {}; // "x|y" -> { n: кабелей, wallId }
+    const cap = surfCap(s, s.routeType === "floor" ? "floor" : "ceiling"); // общий (для подписи в шторке)
+    const groups = {}; // "поверхность|x|y" -> { n: кабелей, wallId, surface, cap }
     (p.routes || []).forEach((r) => {
+      const sf = r.routeType === "floor" ? "floor" : "ceiling";
       const seen = {};
       (r.throughWalls || []).forEach((c) => {
-        const key = Math.round(c.x / 20) + "|" + Math.round(c.y / 20);
+        const key = sf + "|" + Math.round(c.x / 20) + "|" + Math.round(c.y / 20);
         if (seen[key]) return;
         seen[key] = 1;
-        if (!groups[key]) groups[key] = { n: 0, wallId: c.wallId };
+        if (!groups[key]) groups[key] = { n: 0, wallId: c.wallId, surface: sf, cap: surfCap(s, sf) };
         groups[key].n++;
       });
     });
@@ -2212,7 +2286,7 @@
   // сколько РЕАЛЬНЫХ отверстий сверлить (сумма по местам с учётом ёмкости гильзы)
   function sleeveHoles(p) {
     const { groups, cap } = sleeveGroups(p);
-    return Object.keys(groups).reduce((n, k) => n + Math.ceil(groups[k].n / cap), 0);
+    return Object.keys(groups).reduce((n, k) => n + Math.ceil(groups[k].n / (groups[k].cap || cap)), 0);
   }
 
   function lengths(p) {
@@ -2221,7 +2295,7 @@
     (p.routes || []).forEach((r) => {
       const el = (p.elements || []).find((e) => e.id === r.fromId);
       const pn = r.toPanel ? (p.panels || []).find((x) => x.id === r.toId) : null;
-      const L = G().polylineLen(r.points) + pointVert(p, el) * hopVertMul(p, r) + (r.toPanel ? panelVert(p, pn) : 0);
+      const L = G().polylineLen(r.points) + pointVert(p, el, r.routeType) * hopVertMul(p, r) + (r.toPanel ? panelVert(p, pn, r.routeType) : 0);
       byLayer[r.layer] = (byLayer[r.layer] || 0) + L;
       const cid = r.circuitId || "_none";
       byCircuit[cid] = (byCircuit[cid] || 0) + L;
@@ -2231,12 +2305,42 @@
     return { byLayer, byCircuit, total, crossings };
   }
 
+  // какие поверхности РЕАЛЬНО получатся при текущих настройках (по всем группам слоёв) —
+  // от этого зависят подсказки шторки: «Монтаж по потолку» имеет смысл, только если хоть
+  // одна группа идёт по потолку, и наоборот. Считается по НАСТРОЙКАМ (не по построенным
+  // трассам) — подсказка нужна и до первого «Построить».
+  function resolvedSurfaces(p) {
+    const gen = (p.settings || {}).routeType === "floor" ? "floor" : "ceiling";
+    const cur = (p.settings && p.settings.surfaces) || {};
+    const out = {};
+    (G().SURFACE_KEYS || ["light", "power", "lv", "v24"]).forEach((k) => {
+      const v = cur[k];
+      out[(v === "floor" || v === "ceiling") ? v : gen] = 1;
+    });
+    // у освещения по полу питание идёт по полу, а лампа — по потолку: значит при «пол»
+    // у света реально используются ОБЕ поверхности
+    const lv = cur.light === "floor" || (cur.light == null && gen === "floor");
+    if (lv) out.ceiling = 1;
+    return out;
+  }
+  // чипы поверхности НА ГРУППУ СЛОЁВ: «общее» (null — по settings.routeType) / потолок / пол
+  function surfRowsHtml(p) {
+    const cur = (p.settings && p.settings.surfaces) || {};
+    return (G().SURFACE_KEYS || ["light", "power", "lv", "v24"]).map((k) => {
+      const v = cur[k] === "floor" || cur[k] === "ceiling" ? cur[k] : null;
+      const chip = (val, label) => `<button type="button" class="ep-plan-chip ep-clickable ${v === val ? "on" : ""}" data-prt-surf="${k}:${val || "auto"}">${label}</button>`;
+      return `<div class="ep-plan-srow">${esc(T.surfNames[k] || k)}:
+        ${chip(null, T.surfAuto)}${chip("ceiling", T.ceiling)}${chip("floor", T.floor)}</div>`;
+    }).join("");
+  }
+
   function sheet() {
     const p = core().project;
     const st = lengths(p);
     const unrouted = unroutedForSheet(p);
     const holes = sleeveHoles(p); // ФИЗИЧЕСКИЕ отверстия — то же число, что в смете
     const rt = p.settings.routeType;
+    const rsurf = resolvedSurfaces(p), useCeil = !!rsurf.ceiling, useFloor = !!rsurf.floor;
     const juncN = (p.elements || []).filter(isJunction).length;
     const circuits = p.circuits || [];
     const breakers = EP.Plan.Core.DEFAULTS.breakers;
@@ -2265,6 +2369,9 @@
         <button type="button" class="ep-plan-chip ep-clickable ${rt === "floor" ? "on" : ""}" data-prt-rt="floor">${T.floor}</button>
         <span class="ep-plan-flex"></span><span>${T.junctions}: <b>${juncN}</b></span>
       </div>
+      <div class="ep-plan-srow"><b>${T.surfTitle}</b></div>
+      ${surfRowsHtml(p)}
+      <div class="ep-plan-srow ep-plan-hintrow">${T.surfHint}</div>
       <div class="ep-plan-srow ep-plan-s2">
         <label>Штроба Ш, мм<input type="number" inputmode="numeric" min="10" data-prt-chw value="${Math.round(p.settings.chaseW || 25)}"></label>
         <label>Штроба В, мм<input type="number" inputmode="numeric" min="10" data-prt-chh value="${Math.round(p.settings.chaseH || 30)}"></label>
@@ -2273,11 +2380,12 @@
       <div class="ep-plan-srow">Соединители:
         ${[["gml", "Гильзы"], ["wago", "ВАГО"], ["siz", "СИЗ"]].map(([k, l]) => `<button type="button" class="ep-plan-chip ep-clickable ${(p.settings.connectorMode || "gml") === k ? "on" : ""}" data-prt-conn="${k}">${l}</button>`).join("")}
       </div>
-      ${p.settings.routeType !== "floor" ? `<div class="ep-plan-srow">Монтаж по потолку:
+      ${useCeil ? `<div class="ep-plan-srow">Монтаж по потолку:
         <button type="button" class="ep-plan-chip ep-clickable ${p.settings.gofraCeil !== false ? "on" : ""}" data-prt-gofra="1">В гофре</button>
         <button type="button" class="ep-plan-chip ep-clickable ${p.settings.gofraCeil === false ? "on" : ""}" data-prt-gofra="0">На стяжки</button>
-      </div>` : `<div class="ep-plan-modehint">По полу: кабель в гофре ПНД + монтажная лента (расходка считается автоматически).</div>`}
-      <div class="ep-plan-modehint">Линии идут по контуру комнаты с отступом, стены не пересекают — только перпендикулярной проходкой Ø${p.settings.sleeveD || 20} (${p.settings.routeType === "floor" || p.settings.gofraCeil !== false ? "в гофре — 1 кабель на гильзу" : "без гофры — макс. 2 кабеля на гильзу"}).</div>
+      </div>` : ""}
+      ${useFloor ? `<div class="ep-plan-modehint">По полу: кабель в гофре ПНД + монтажная лента (расходка считается автоматически).</div>` : ""}
+      <div class="ep-plan-modehint">Линии идут по контуру комнаты с отступом, стены не пересекают — только перпендикулярной проходкой Ø${p.settings.sleeveD || 20} (${useFloor ? "по полу — 1 кабель на гильзу" : ""}${useFloor && useCeil ? ", " : ""}${useCeil ? (p.settings.gofraCeil !== false ? "по потолку в гофре — 1 кабель на гильзу" : "по потолку без гофры — макс. 2 кабеля на гильзу") : ""}).</div>
       <div class="ep-plan-modehint">Тёплый пол — штроба в пол ${p.settings.tpChaseW || 50}×${p.settings.tpChaseH || 50} мм. Штроба к посту блока — в редакторе точки.</div>
       ${!juncN ? `<div class="ep-plan-modehint">${T.hintJ}</div>` : ""}
       ${unrouted.length ? `<div class="ep-plan-modehint ep-plan-warnhint">${T.unroutedBanner(unrouted.length)}
@@ -2370,7 +2478,21 @@
       const c = core(); c.commit(); c.project.settings.connectorMode = b.getAttribute("data-prt-conn"); c.persist("routes-conn"); sheet(); return;
     }
     if ((b = t.closest("[data-prt-rt]"))) {
-      const c = core(); c.commit(); c.project.settings.routeType = b.getAttribute("data-prt-rt"); c.persist("routes-rt"); sheet(); return;
+      const c = core(); c.commit(); c.project.settings.routeType = b.getAttribute("data-prt-rt"); c.persist("routes-rt");
+      // поверхность теперь записана В КАЖДОЙ трассе (rt.routeType) — без перестройки уже
+      // построенные остались бы на прежней поверхности молча (тот же принцип, что и у
+      // смены отступа от стены ниже: геометрия/физика изменилась, старые трассы неточны)
+      if ((c.project.routes || []).length) build(); else sheet();
+      return;
+    }
+    if ((b = t.closest("[data-prt-surf]"))) { // поверхность ГРУППЫ слоёв (общее/потолок/пол)
+      const [key, val] = b.getAttribute("data-prt-surf").split(":");
+      const c = core(); c.commit();
+      c.project.settings.surfaces = c.project.settings.surfaces || {};
+      c.project.settings.surfaces[key] = (val === "floor" || val === "ceiling") ? val : null;
+      c.persist("routes-surface");
+      if ((c.project.routes || []).length) build(); else sheet();
+      return;
     }
     if ((b = t.closest("[data-prt-gofra]"))) {
       const c = core(); c.commit(); c.project.settings.gofraCeil = b.getAttribute("data-prt-gofra") === "1"; c.persist("routes-gofra"); sheet(); return;
@@ -2413,5 +2535,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { build, buildIncremental, clearRoutes, suggestGuides, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, keys24Of, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds };
+  EP.Plan.Routes = { build, buildIncremental, clearRoutes, suggestGuides, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, keys24Of, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds };
 })();

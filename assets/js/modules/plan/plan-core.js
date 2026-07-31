@@ -27,7 +27,12 @@
     // материалы конструкций (стены/перегородки): для перегородок из ГКЛ/ПГП и пр.
     partitionMaterials: ["Бетон", "Кирпич", "Газоблок", "Пеноблок", "ГКЛ", "ПГП", "Дерево"],
     partitionThickness: { "Бетон": 12, "Кирпич": 12, "Газоблок": 10, "Пеноблок": 10, "ГКЛ": 8, "ПГП": 8, "Дерево": 8 },
-    routeType: "ceiling",  // потолок/пол — как ведём трассы
+    routeType: "ceiling",  // потолок/пол — ОБЩЕЕ правило, как ведём трассы
+    // Комбинирование поверхностей ПО ГРУППАМ СЛОЁВ (просьба пользователя: «трассы надо
+    // иметь возможность комбинировать: слаботочка по полу или потолку, освещение по полу
+    // и потолку, розетки, 24 вольта, и общее»). null = «общее» (routeType выше).
+    // Ключи и разрешение значения — G.surfaceKeyOf/G.routeSurface в plan-geometry.js.
+    surfaces: { light: null, power: null, lv: null, v24: null },
     chaseW: 25, chaseH: 30,     // мм — сечение штробы под провод (стандарт), редактируется
     tpChaseW: 50, tpChaseH: 50, // мм — штроба тёплого пола (в пол)
     symbolStyle: "gost",   // значки на плане: "simple" (кружки с буквами) | "gost" (ГОСТ 21.210)
@@ -136,6 +141,7 @@
         panelHeight: DEFAULTS.panelHeight,
         wallMaterial: DEFAULTS.wallMaterial,
         routeType: DEFAULTS.routeType,
+        surfaces: { ...DEFAULTS.surfaces },
         chaseW: DEFAULTS.chaseW, chaseH: DEFAULTS.chaseH,
         tpChaseW: DEFAULTS.tpChaseW, tpChaseH: DEFAULTS.tpChaseH,
         mainBreaker: DEFAULTS.mainBreaker, phases: DEFAULTS.phases, meter: false, mainRcd: false,
@@ -510,6 +516,14 @@
     if (p.settings.sleeveD == null) p.settings.sleeveD = DEFAULTS.sleeveD;
     if (!p.settings.connectorMode) p.settings.connectorMode = DEFAULTS.connectorMode;
     if (p.settings.gofraCeil == null) p.settings.gofraCeil = DEFAULTS.gofraCeil;
+    // поверхности по группам слоёв: старые проекты — все «общее» (null), т.е. ведут себя
+    // РОВНО как раньше (по settings.routeType); значение вне "floor"/"ceiling" нормализуем
+    // в null, чтобы мусор из вручную правленого JSON не считался переопределением
+    if (!p.settings.surfaces || typeof p.settings.surfaces !== "object") p.settings.surfaces = { ...DEFAULTS.surfaces };
+    Object.keys(DEFAULTS.surfaces).forEach((k) => {
+      const v = p.settings.surfaces[k];
+      p.settings.surfaces[k] = (v === "floor" || v === "ceiling") ? v : null;
+    });
     if (!p.settings.schemeMode) p.settings.schemeMode = DEFAULTS.schemeMode;
     // правки сметы Расчёта (plan-calc.js applyCalcEdits): скрытые позиции (ключ
     // type|имя), переименованные (замена кабеля/расходки) и добавленные вручную
