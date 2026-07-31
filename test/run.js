@@ -3063,7 +3063,7 @@ test("фото: deleteProject чистит кэш фото своего прое
     // масштабу — атрибутами width/height. Инлайн-стиль СИЛЬНЕЕ одноимённых атрибутов, и
     // чертёж на ЛЮБОМ формате печатался в неизменном боксе 1050×700px ≈ 278×185мм (поле A4).
     const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-export.js"), "utf8");
-    const fn = /function buildSvg\(pRaw\)[\s\S]*?\n  \}/.exec(src);
+    const fn = /function buildSvg\(pRaw, uiExtra\)[\s\S]*?\n  \}/.exec(src);
     ok(fn, "buildSvg найдена");
     const body = fn[0];
     ok(/cv\.svg\.style\.width = "";\s*cv\.svg\.style\.height = "";/.test(body),

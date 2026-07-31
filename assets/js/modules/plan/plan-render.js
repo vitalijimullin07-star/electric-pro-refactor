@@ -283,8 +283,13 @@
     const circHidden = (id) => { if (soloC) return false; const c = id && circById(id); return !!(c && c.hidden); };
     const circDim = (id) => soloC && id !== soloC; // приглушить: solo активен и это НЕ выбранная линия
     const DIM_OP = "0.12";
-    // level-of-detail: на отдалении детальные подписи прячем (см. CFG.lodDimK/lodQfK)
-    const lodDims = k <= CFG.lodDimK, lodQf = k <= CFG.lodQfK;
+    // level-of-detail: на отдалении детальные подписи прячем (см. CFG.lodDimK/lodQfK).
+    // ui.noLod отключает это скрытие полностью — для ПЕЧАТНЫХ листов (plan-export.js:
+    // лист статичный, а размеры/высоты — его смысл, на большой квартире LOD убрал бы
+    // ровно то, ради чего лист печатают). lodDims входит в сигнатуру кэша стен ниже,
+    // поэтому переключение noLod корректно инвалидирует кэш само.
+    const noLod = !!(ui && ui.noLod);
+    const lodDims = noLod || k <= CFG.lodDimK, lodQf = noLod || k <= CFG.lodQfK;
     // сдвиг подписи комнаты ВНИЗ, если свободная точка (свет/ТП/распайка) стоит
     // практически в центроиде — оба рисуются в центре комнаты и налезали друг на
     // друга (пойман визуальным тестом). Порог 35см — мировой, не зависит от зума,
@@ -326,7 +331,7 @@
     const structSig = JSON.stringify([
       project.rooms, project.openings, project.beams, project.voids, project.ledStrips,
       project.settings && project.settings.wallThickness, project.settings && project.settings.wallMaterial,
-      dimsOn, labelsOn, lodDims, kBucket, labelNudges,
+      dimsOn, labelsOn, lodDims, kBucket, labelNudges, ui && ui.noWallLabels,
       ui && ui.selectedRoomId, ui && ui.draft, ui && ui.beamDraft, ui && ui.voidDraft,
       EP.Plan.Rooms && EP.Plan.Rooms.selectedBeamId && EP.Plan.Rooms.selectedBeamId(),
       EP.Plan.Rooms && EP.Plan.Rooms.selectedVoidId && EP.Plan.Rooms.selectedVoidId()
@@ -393,7 +398,7 @@
           g.appendChild(el("path", { d: "M" + pts.map((p) => p.x + " " + p.y).join(" L"), class: "ep-plan-wallband" + matClass, "stroke-width": th, fill: "none" }));
         }
 
-        if (closed && dimsOn && lodDims) {
+        if (closed && dimsOn && lodDims && !(ui && ui.noWallLabels)) {
           const c = G.centroid(pts);
           G.walls(room).forEach((w) => {
             // подпись снаружи: нормаль от центроида
