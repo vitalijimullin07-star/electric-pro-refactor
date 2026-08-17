@@ -113,5 +113,51 @@
   function removeSource(source) { write(read().filter((x) => x.source !== String(source || ""))); }
   function itemsBySource(source) { return read().filter((x) => x.source === String(source || "")); }
 
-  window.EP.EstimateDraft = { addItem, getItems, removeItem, setQty, setPrice, clear, count, total, setSourceItems, removeSource, itemsBySource };
+  // ── Экспорт / импорт файлом ────────────────────────────────
+  // Формат ОБЩИЙ с основной сметой (EP.EstimateFile) — файл переносится в обе стороны.
+  // Импортируем именно в ПРЕДВАРИТЕЛЬНУЮ, потому что здесь позиции можно править:
+  // менять количество, вписывать цену, удалять — и только потом «В основную».
+  function FILE() { return window.EP && window.EP.EstimateFile; }
+  function exportData(meta) { const F = FILE(); return F ? F.envelope(read(), meta) : null; }
+  function exportJSON(meta) { return JSON.stringify(exportData(meta), null, 1); }
+  function parseImport(text) { const F = FILE(); return F ? F.parse(text) : null; }
+  // Слияние одинаковых (тип+имя+единица) — тем же правилом, что и «В основную»
+  function mergeItems(list) {
+    const items = read();
+    const keyOf = (x) => (x.type === "work" ? "w" : "m") + "|" + String(x.name || "").trim().toLowerCase() + "|" + String(x.unit || "").toLowerCase();
+    const index = new Map();
+    items.forEach((x) => index.set(keyOf(x), x));
+    let added = 0;
+    (Array.isArray(list) ? list : []).forEach((raw) => {
+      const it = {
+        id: lineId(), sourceId: "",
+        type: raw && raw.type === "work" ? "work" : "material",
+        name: String((raw && raw.name) || "").trim(),
+        unit: String((raw && raw.unit) || ""),
+        price: num(raw && raw.price),
+        qty: num(raw && raw.qty != null ? raw.qty : 1) || 1,
+        base: (raw && raw.base) || "", source: "import"
+      };
+      if (!it.name) return;
+      const k = keyOf(it);
+      const ex = index.get(k);
+      if (ex) { ex.qty = num(ex.qty) + num(it.qty); if (!num(ex.price) && num(it.price)) ex.price = num(it.price); }
+      else { ovrApply(it); items.push(it); index.set(k, it); }
+      added++;
+    });
+    write(items);
+    return added;
+  }
+  function importJSON(text, mode) {
+    const p = parseImport(text);
+    if (!p) return null;
+    if (mode === "replace") clear();
+    mergeItems(p.items);
+    return p;
+  }
+
+  window.EP.EstimateDraft = {
+    addItem, getItems, removeItem, setQty, setPrice, clear, count, total, setSourceItems, removeSource, itemsBySource,
+    mergeItems, exportData, exportJSON, parseImport, importJSON
+  };
 })();

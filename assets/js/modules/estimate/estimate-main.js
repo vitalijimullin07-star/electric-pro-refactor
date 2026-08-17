@@ -75,56 +75,13 @@
   function itemsBySource(source) { return read().filter((x) => x.source === String(source || "")); }
 
   // ── Экспорт / импорт сметы файлом ──────────────────────────
-  // Формат тот же по духу, что у «Проекта квартиры» (⤓ Экспорт / ⤒ Импорт JSON):
-  // конверт с type/версией + плоский список позиций. Логика ЧИСТАЯ (без DOM) — её
-  // зовёт UI из estimate-tabs.js и она же покрыта тестами.
-  const FILE_TYPE = "ep-estimate";
-  function exportData(meta) {
-    const m = meta || {};
-    return {
-      type: FILE_TYPE, v: 1,
-      exportedAt: new Date().toISOString(),
-      name: String(m.name || ""),
-      object: String(m.object || ""),
-      client: String(m.client || ""),
-      items: read().map((x) => ({
-        type: x.type === "work" ? "work" : "material",
-        name: String(x.name || ""), unit: String(x.unit || ""),
-        qty: num(x.qty), price: num(x.price),
-        base: x.base || "", source: x.source || ""
-      }))
-    };
-  }
+  // Формат и разбор — ОБЩИЕ с предварительной сметой (EP.EstimateFile), чтобы файл
+  // из одной сметы без переделок грузился в другую. Здесь только «что выгружаем»
+  // и «как вливаем» (заменить целиком / добавить со сложением одинаковых).
+  function FILE() { return window.EP && window.EP.EstimateFile; }
+  function exportData(meta) { const F = FILE(); return F ? F.envelope(read(), meta) : null; }
   function exportJSON(meta) { return JSON.stringify(exportData(meta), null, 1); }
-  // «Работа»/«work»/«раб» → work, всё остальное → material (файл могут собрать руками)
-  function typeOf(v) {
-    const s = String(v == null ? "" : v).trim().toLowerCase();
-    return (s === "work" || s.indexOf("раб") === 0) ? "work" : "material";
-  }
-  function parseImport(text) {
-    let data = text;
-    if (typeof text === "string") { try { data = JSON.parse(text); } catch (e) { return null; } }
-    if (!data) return null;
-    const raw = Array.isArray(data) ? data : (Array.isArray(data.items) ? data.items : null);
-    if (!raw) return null;
-    const items = raw.map((it) => ({
-      type: typeOf(it && it.type),
-      name: String((it && it.name) || "").trim(),
-      unit: String((it && it.unit) || "шт"),
-      qty: num(it && it.qty != null ? it.qty : 1) || 1,
-      price: num(it && it.price),
-      base: (it && it.base) || ""
-    })).filter((x) => x.name);
-    if (!items.length) return null;
-    return {
-      items: items,
-      name: String((!Array.isArray(data) && data.name) || ""),
-      object: String((!Array.isArray(data) && data.object) || ""),
-      client: String((!Array.isArray(data) && data.client) || ""),
-      works: items.filter((x) => x.type === "work").length,
-      materials: items.filter((x) => x.type === "material").length
-    };
-  }
+  function parseImport(text) { const F = FILE(); return F ? F.parse(text) : null; }
   // mode: "replace" — заменить смету целиком, иначе добавить к текущей (одинаковые
   // позиции по типу+имени+единице складываются — это делает mergeItems)
   function importJSON(text, mode) {
@@ -137,6 +94,6 @@
 
   window.EP.Estimate = {
     addItem, getItems, removeItem, setQty, clear, count, total, mergeItems, setSourceItems, removeSource, itemsBySource,
-    exportData, exportJSON, parseImport, importJSON, FILE_TYPE
+    exportData, exportJSON, parseImport, importJSON
   };
 })();
