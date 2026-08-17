@@ -3917,6 +3917,50 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/5×1\.5.*до щита \(220В\)/.test(names), "две цели 24В → 5 жил «до щита»: " + names);
   });
 
+
+  // ===== 24. Пул: повтор блоков + передача заготовок в «Проект квартиры» =====
+  test("пул: повтор блоков и очередь заготовок — контракт с планом", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const pool = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "pool", "pool-v29.js"), "utf8");
+    const plan = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-elements.js"), "utf8");
+    // повтор: чипы ×N, своё число, кап, сброс на 1 после добавления, дублирование блока
+    ok(/data-pv-rep=/.test(pool) && /data-pv-repcustom/.test(pool), "чипы повтора и своё число");
+    ok(/REPEAT_MAX\s*=\s*\d+/.test(pool) && /clampRep/.test(pool), "кап повтора (страховка от опечатки)");
+    ok(/repeat = 1;\s*\/\/ «12» не залипает/.test(pool), "повтор сбрасывается на 1 после добавления");
+    ok(/data-pv-dupblock/.test(pool) && /function dupBlock/.test(pool), "повтор уже добавленного блока (⧉)");
+    ok(/JSON\.parse\(JSON\.stringify\(b\)\)/.test(pool), "копии блоков глубокие, а не одна ссылка");
+    // ключ очереди ОБЯЗАН совпадать в пуле и в плане — иначе передача молча не работает
+    const kPool = /POOL_Q_KEY = "([^"]+)"/.exec(pool);
+    const kPlan = /POOL_Q_KEY = "([^"]+)"/.exec(plan);
+    ok(kPool && kPlan && kPool[1] === kPlan[1], "ключ очереди совпадает: " + (kPool && kPool[1]) + " / " + (kPlan && kPlan[1]));
+    ok(/data-pv-toplan/.test(pool) && /function exportToPlan/.test(pool), "кнопка «В проект квартиры» и экспорт очереди");
+    // маппинг постов пула на типы плана: только те типы, что план умеет в блоке
+    ok(/PLAN_POST = \{[^}]*sockets: "socket"[^}]*sw2: "switch"[^}]*tv: "tv"[^}]*internet: "internet"/.test(pool), "посты пула → типы плана");
+    ok(!/PLAN_POST = \{[^}]*warmFloor/.test(pool), "тёплый пол НЕ пост блока плана (идёт отдельной заготовкой)");
+    ok(/type: "warmfloor"/.test(pool), "тёплый пол — отдельная заготовка");
+    ok(/PLAN_DED = \{[^}]*"Кондей": "ac"/.test(pool), "отдельные линии пула → типы плана");
+    // план: раздел «Из пула», вооружение заготовки, постановка, убывание счётчика
+    ok(/data-pe-pool=/.test(plan) && /function poolSectionHtml/.test(plan), "раздел «Из пула» в палитре");
+    ok(/function placeFromPool/.test(plan), "постановка заготовки");
+    ok(/if \(S\.pool\) return placeFromPool\(w\);/.test(plan), "placeAt отдаёт управление заготовке");
+    ok(/e\.qty = \(Number\(e\.qty\) \|\| 1\) - 1;/.test(plan) && /q\.items\.splice\(idx, 1\)/.test(plan), "счётчик убывает, на нуле заготовка уходит");
+    ok(/S\.pool\.id \? q\.items\.findIndex/.test(plan), "заготовка ищется по id, а не только по индексу (пул мог перезалить очередь)");
+    ok(/if \(e\.type === "switch"\) \{ if \(e\.keys\)/.test(plan), "клавишность/вид выключателя переносятся из пула");
+    ok(/S\.pool = null; S\.selType = /.test(plan), "выбор обычного типа снимает вооружение заготовки");
+  });
+  test("пул: сборщик сметы читает АКТИВНЫЙ модуль пула (алиас не потерян)", () => {
+    // poolItems() в collector-bridge.js обращается к window.PoolV22CleanMonolith — это АЛИАС,
+    // который ставит pool-v29.js. Если алиас потеряется, кнопка «В смету» в пуле молча скажет
+    // «Пул пуст», хотя блоки есть — страж именно на связку этих двух файлов.
+    const fs2 = require("fs"), path2 = require("path");
+    const bridge = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "estimate", "collector-bridge.js"), "utf8");
+    const pool = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "pool", "pool-v29.js"), "utf8");
+    const need = /window\.(PoolV22CleanMonolith|EP\.Pool)/.exec(bridge);
+    ok(need, "мост берёт пул из window");
+    ok(/window\.PoolV22CleanMonolith = api/.test(pool), "pool-v29 ставит алиас, которого ждёт мост");
+    ok(/setSourceItems\("pool"/.test(bridge) && /setSourceItems\("plan"/.test(bridge), "пул и план — РАЗНЫЕ источники сметы (не затирают друг друга)");
+  });
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);
