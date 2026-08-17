@@ -35,6 +35,12 @@
   const money = v => (Math.round(n(v) * 100) / 100).toLocaleString("ru-RU") + " ₽";
 
   let settings, blocks, builder, priceMap, templates, dbModal = { open: false }, folds = { set: false, conn: false };
+  // Сколько ОДИНАКОВЫХ блоков добавить одним нажатием (просьба пользователя: «иногда хочется
+  // так (выключатель на 90) повторить (12 раз) и так же с выводами»). Сессионное значение,
+  // не часть модели пула — сбрасывается на 1 после добавления, чтобы «12» не залипло.
+  let repeat = 1;
+  const REPEAT_MAX = 50; // страховка от опечатки («120» вместо «12» не должно создать 120 блоков)
+  const clampRep = (v) => Math.max(1, Math.min(REPEAT_MAX, n(v, 1) || 1));
 
   function defSettings() {
     const D = (ENGINE() && ENGINE().DEFAULTS) || {};
@@ -183,12 +189,18 @@
 
         <div class="pv29-ded"><span class="pv29-lab">Отдельные линии (своя высота):</span><div class="pv29-dedbtns">${DEDICATED.map(d => `<button type="button" class="pv29-dedbtn" data-pv-ded="${d}">+ ${d}</button>`).join("")}</div></div>
 
-        <button type="button" class="pv29-add" data-pv-addblock>➕ Добавить блок</button>
+        <div class="pv29-row2 pv29-rep"><span class="pv29-lab">Повторить</span>
+          <div class="pv29-seg">${[1, 2, 4, 6, 12].map((r) => `<button type="button" data-pv-rep="${r}" class="${repeat === r ? "on" : ""}">×${r}</button>`).join("")}
+            <input type="number" inputmode="numeric" min="1" max="${REPEAT_MAX}" class="pv29-hcustom" data-pv-repcustom value="${[1, 2, 4, 6, 12].indexOf(repeat) < 0 ? repeat : ""}" placeholder="своё" /></div></div>
+
+        <button type="button" class="pv29-add" data-pv-addblock>➕ Добавить блок${repeat > 1 ? " ×" + repeat : ""}</button>
       </div>
 
       <div class="pv29-card">
         <div class="pv29-blockshead">Блоки (${blocks.length})</div>
-        ${blocks.length ? blocks.map((b, i) => `<div class="pv29-blockitem"><div class="pv29-blocktop"><span>${esc(blockSummary(b))}</span><button type="button" class="pv29-del" data-pv-delblock="${i}">✕</button></div>${b.dedicated || n(b.warmFloor) && postsOf(b) === n(b.warmFloor) ? "" : frameViz(b, {})}</div>`).join("") : `<div class="pv29-hint">Пока нет блоков.</div>`}
+        ${blocks.length ? blocks.map((b, i) => `<div class="pv29-blockitem"><div class="pv29-blocktop"><span>${esc(blockSummary(b))}</span>
+          <button type="button" class="pv29-dbbtn" data-pv-dupblock="${i}" title="Повторить этот блок">⧉ ×${repeat}</button>
+          <button type="button" class="pv29-del" data-pv-delblock="${i}">✕</button></div>${b.dedicated || n(b.warmFloor) && postsOf(b) === n(b.warmFloor) ? "" : frameViz(b, {})}</div>`).join("") : `<div class="pv29-hint">Пока нет блоков.</div>`}
       </div>
 
       <div class="pv29-card">
@@ -197,7 +209,8 @@
         <div class="pv29-drafthead">Позиции (${items.length})</div>
         ${rows}
         <div class="pv29-total"><span>Итого по ценам:</span><b>${money(total)}</b></div>
-        <div class="pv29-actions"><button type="button" class="pv29-est" data-pv-estimate>➕ В смету (предварительную)</button><button type="button" class="pv29-clear" data-pv-clear>Очистить</button></div>
+        <div class="pv29-actions"><button type="button" class="pv29-est" data-pv-estimate>➕ В смету (предварительную)</button><button type="button" class="pv29-est" data-pv-toplan>📐 В проект квартиры</button><button type="button" class="pv29-clear" data-pv-clear>Очистить</button></div>
+        <div class="pv29-hint">«📐 В проект квартиры» отправляет блоки как заготовки: в плане открой 🔌 Точки → раздел «Из пула», тапни заготовку и ставь её по стенам — счётчик убывает. Смета пула и смета плана считаются отдельно (см. подсказку в гайде).</div>
       </div>
     </div>`;
     if (dbModal.open) renderDbModal();
@@ -215,16 +228,31 @@
     if (n(builder.pass) > 0) b.passKeys = n(builder.passKeys, 1);
     if (n(builder.cross) > 0) b.crossKeys = n(builder.crossKeys, 1);
     if (!any) { toast("Блок пустой — добавь механизмы"); return; }
-    blocks.push(b);
+    const rep = clampRep(repeat);
+    for (let i = 0; i < rep; i++) blocks.push(JSON.parse(JSON.stringify(b))); // копии, а не одна ссылка
     builder = defBuilder();   // сбрасываем счётчики, материал/маршрут к дефолту
+    repeat = 1;               // «12» не залипает на следующий блок
     applyBuilderChange();
-    toast("Блок добавлен");
+    toast(rep > 1 ? "Добавлено блоков: " + rep : "Блок добавлен");
   }
   function addDedicated(name) {
     const h = window.prompt(`Высота для «${name}», см:`, name === "Плита" ? "60" : name === "Кондей" ? "220" : "110");
     if (h === null) return;
-    blocks.push({ material: builder.material, route: builder.route, height: clampH(h), dedicated: name });
-    save(); render(); toast(name + " добавлен");
+    const rep = clampRep(repeat);
+    for (let i = 0; i < rep; i++) blocks.push({ material: builder.material, route: builder.route, height: clampH(h), dedicated: name });
+    repeat = 1;
+    save(); render(); toast(rep > 1 ? name + " ×" + rep : name + " добавлен");
+  }
+  // повторить УЖЕ добавленный блок (кнопка ⧉ ×N в списке блоков) — глубокая копия
+  function dupBlock(i) {
+    const b = blocks[i];
+    if (!b) return;
+    const rep = clampRep(repeat);
+    const copies = [];
+    for (let j = 0; j < rep; j++) copies.push(JSON.parse(JSON.stringify(b)));
+    blocks.splice.apply(blocks, [i + 1, 0].concat(copies)); // вставляем сразу за исходным
+    save(); render();
+    toast("Повторён ×" + rep);
   }
 
   // ── цена → БД (вписать ₽) ──
@@ -294,6 +322,71 @@
     save(); closeDbModal(); render();
   }
 
+  // ── передача в «Проект квартиры» (расставить точки на плане) ──
+  // Просьба пользователя: «когда пулы собираю, от туда улетало в (проект квартиры), чтобы их
+  // расставить на плане». Пул НЕ знает геометрию (у него нет стен/комнат), поэтому передаём
+  // ОЧЕРЕДЬ ЗАГОТОВОК: что поставить, с какой высотой и сколько раз. Дальше пользователь
+  // тапает по стенам в плане, и каждая заготовка садится на своё место (счётчик убывает).
+  // Ключ localStorage — общий с планом (plan-elements.js POOL_Q_KEY), формат {v,at,items[]}.
+  const POOL_Q_KEY = "ep_pool_to_plan_v1";
+  // пост пула -> тип точки плана (в плане у блока посты бывают только этих типов, см.
+  // BLOCK_TYPES в plan-elements.js). Тёплый пол постом блока в плане быть не может —
+  // выносим его ОТДЕЛЬНОЙ заготовкой (см. ниже).
+  const PLAN_POST = { sockets: "socket", sw1: "switch", sw2: "switch", sw3: "switch", pass: "switch", cross: "switch", tv: "tv", internet: "internet" };
+  const PLAN_DED = { "Кондей": "ac", "Стиралка": "socket", "Сушилка": "socket", "Нептун": "sensor", "Плита": "output" };
+  const POST_ORDER = ["sockets", "sw1", "sw2", "sw3", "pass", "cross", "tv", "internet"];
+  const POST_LBL = { sockets: "Р", sw1: "В1", sw2: "В2", sw3: "В3", pass: "Пр", cross: "Пк", tv: "ТВ", internet: "И" };
+  // одна заготовка из блока пула (посты уже разложены)
+  function planEntryOf(b) {
+    const posts = [];
+    POST_ORDER.forEach((k) => { for (let i = 0; i < n(b[k]); i++) posts.push(k); });
+    if (!posts.length) return null;
+    if (posts.length === 1) {
+      const k = posts[0], e = { type: PLAN_POST[k], height: clampH(b.height), qty: 1 };
+      if (k === "sw2") e.keys = 2; else if (k === "sw3") e.keys = 3;
+      if (k === "pass") { e.swKind = "pass"; e.keys = n(b.passKeys, 1); }
+      if (k === "cross") { e.swKind = "cross"; e.keys = n(b.crossKeys, 1); }
+      // подпись КОРОТКАЯ: чип палитры плана узкий (3 в ряд), длинный текст в нём рвётся
+      e.label = (k === "pass" ? "Проходной" : k === "cross" ? "Перекрёстный"
+        : k === "sockets" ? "Розетка" : k === "tv" ? "ТВ" : k === "internet" ? "Интернет"
+        : "Выкл" + (e.keys > 1 ? " " + e.keys + "кл" : "")) + " · h" + clampH(b.height);
+      return e;
+    }
+    return { type: "block", items: posts.map((k) => PLAN_POST[k]), height: clampH(b.height), qty: 1,
+      label: "Блок " + posts.map((k) => POST_LBL[k]).join(",") + " · h" + clampH(b.height) };
+  }
+  function planQueueFromBlocks() {
+    const out = [];
+    const put = (e) => {
+      if (!e || !e.type) return;
+      const sig = [e.type, (e.items || []).join(","), e.height, e.keys || "", e.swKind || "", e.label].join("|");
+      const ex = out.find((x) => x.sig === sig);
+      if (ex) { ex.qty += e.qty; return; }
+      out.push(Object.assign({ sig: sig, id: "pq" + out.length + "_" + Date.now().toString(36) }, e));
+    };
+    blocks.forEach((b) => {
+      if (b.dedicated) {
+        put({ type: PLAN_DED[b.dedicated] || "output", height: clampH(b.height), qty: 1, label: b.dedicated + " · h" + clampH(b.height) });
+        return;
+      }
+      put(planEntryOf(b));
+      // тёплый пол — отдельной заготовкой (в блоке плана такого поста нет)
+      const tp = n(b.warmFloor);
+      if (tp > 0) put({ type: "warmfloor", height: clampH(b.height), qty: tp, label: "ТП · h" + clampH(b.height) });
+    });
+    return out;
+  }
+  function exportToPlan() {
+    if (!blocks.length) { toast("Сначала добавь блоки"); return; }
+    const items = planQueueFromBlocks();
+    if (!items.length) { toast("Нечего расставлять"); return; }
+    try { localStorage.setItem(POOL_Q_KEY, JSON.stringify({ v: 1, at: Date.now(), items: items })); }
+    catch (e) { toast("Не удалось сохранить очередь"); return; }
+    const total = items.reduce((s2, e) => s2 + n(e.qty), 0);
+    toast("В проект квартиры: " + total + " точ. — открой 🔌 Точки, раздел «Из пула»");
+    try { if (window.Router && Router.load) Router.load("plan"); } catch (e) {}
+  }
+
   // ── в смету ──
   function pushToEstimate() {
     if (window.EP && EP.Collector && EP.Collector.pushPool) { EP.Collector.pushPool(); toast("Отправлено в предварительную"); }
@@ -330,9 +423,12 @@
     if (el = t.closest("[data-pv-h]")) { builder.height = n(el.dataset.pvH); return applyBuilderChange(); }
     if (el = t.closest("[data-pv-set]")) { settings[el.dataset.pvSet] = el.dataset.val; if (el.dataset.pvSet === "route") builder.route = el.dataset.val; if (el.dataset.pvCollapse) folds[el.dataset.pvCollapse] = false; return applyBuilderChange(); }
     if (el = t.closest("[data-pv-ded]")) { return addDedicated(el.dataset.pvDed); }
+    if (el = t.closest("[data-pv-rep]")) { repeat = clampRep(el.dataset.pvRep); return render(); }
     if (t.closest("[data-pv-addblock]")) { return addBlock(); }
+    if (el = t.closest("[data-pv-dupblock]")) { return dupBlock(n(el.dataset.pvDupblock)); }
     if (el = t.closest("[data-pv-delblock]")) { blocks.splice(n(el.dataset.pvDelblock), 1); save(); return render(); }
     if (t.closest("[data-pv-estimate]")) { return pushToEstimate(); }
+    if (t.closest("[data-pv-toplan]")) { return exportToPlan(); }
     if (t.closest("[data-pv-clear]")) { return clearPool(); }
     // модалка цены
     if (el = t.closest("[data-pv-rowdb]")) { return openDbRow(n(el.dataset.pvRowdb)); }
@@ -345,6 +441,7 @@
     if (t.matches("[data-pv-ceil]")) { settings.ceilingHeight = clampH(t.value); return save(); }
     if (t.matches("[data-pv-crown]")) { settings.crown = n(t.value, 68); return save(); }
     if (t.matches("[data-pv-hcustom]")) { if (t.value !== "") builder.height = clampH(t.value); return; }
+    if (t.matches("[data-pv-repcustom]")) { if (t.value !== "") repeat = clampRep(t.value); return; }
     if (t.matches("[data-pv-shrink]")) { settings.shrinkCmPerJoint = n(t.value, 5); return save(); }
     if (t.matches("[data-pv-shrinktype]")) { settings.heatShrinkType = t.value; return save(); }
     if (t.matches("[data-pv-dps]")) { settings.dropsPerSocketJunction = Math.max(1, n(t.value, 2)); return save(); }
@@ -354,7 +451,7 @@
   }
   function onChange(e) {
     const t = e.target; if (!t || !t.closest || !t.closest("#ep-pool-root")) return;
-    if (t.matches("[data-pv-ceil],[data-pv-crown],[data-pv-shrink],[data-pv-shrinktype],[data-pv-dps],[data-pv-dpw],[data-pv-tpl],[data-pv-hcustom]")) render();
+    if (t.matches("[data-pv-ceil],[data-pv-crown],[data-pv-shrink],[data-pv-shrinktype],[data-pv-dps],[data-pv-dpw],[data-pv-tpl],[data-pv-hcustom],[data-pv-repcustom]")) render();
   }
 
   function onToggle(e) { const d = e.target; if (d && d.dataset && d.dataset.fold && (d.dataset.fold in folds)) folds[d.dataset.fold] = !!d.open; }
@@ -370,7 +467,8 @@
   function state() { const m = (blocks[0] && blocks[0].material) || "Бетон"; return { wallMaterial: m, mode: settings.mode, ceilingHeight: settings.ceilingHeight }; }
 
   load();
-  const api = { open, close, buildDraft, draft, state, version: VERSION, blocks: () => blocks.slice(), settings: () => Object.assign({}, settings) };
+  const api = { open, close, buildDraft, draft, state, version: VERSION, blocks: () => blocks.slice(), settings: () => Object.assign({}, settings),
+    exportToPlan, planQueueFromBlocks, POOL_Q_KEY };
   window.EP = window.EP || {};
   window.EP.Pool = api;
   window.PoolV22CleanMonolith = api;  // алиас: монтаж/сборщик/расходка

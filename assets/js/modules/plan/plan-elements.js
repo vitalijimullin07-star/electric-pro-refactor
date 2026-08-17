@@ -62,6 +62,11 @@
     offset: "Отступ от угла, см", height: "Высота от пола, см",
     status: "Статус", del: "✕ Удалить", apply: "✓", photo: "📷 Фото",
     confirmDel: "Удалить точку?", tapWall: "Тапни ближе к стене — элемент сядет на неё.",
+    poolTitle: "📦 Из пула", poolLeft: (n2) => `осталось расставить: ${n2}`,
+    poolHint: "Заготовки из «Пула розеток»: тапни заготовку, потом тапай по стенам — каждая точка садится со своей высотой и составом, счётчик убывает.",
+    poolClear: "✕", poolClearAria: "Убрать очередь заготовок из пула", poolClearAsk: "Убрать очередь заготовок из пула? Уже расставленные точки останутся.",
+    poolDone: "Все заготовки из пула расставлены ✓",
+    poolGone: "Заготовка уже расставлена или очередь обновилась — выбери заново.",
     presets: "Пресеты:",
     blockTitle: "Сборка блока", blockPosts: (n, m) => `${n}/${m} постов`,
     blockAdd: "Добавить пост:", blockTapDel: "Тап по посту в рамке — убрать",
@@ -84,7 +89,26 @@
   const G = () => EP.Plan.Geometry;
   const rooms = () => EP.Plan.Rooms;
 
-  const S = { selType: "socket", selId: null, openType: "door" };
+  const S = { selType: "socket", selId: null, openType: "door", pool: null };
+  // ---- ОЧЕРЕДЬ ЗАГОТОВОК ИЗ ПУЛА (Пул розеток → «Проект квартиры») ----
+  // Просьба пользователя: «когда пулы собираю, оттуда улетало в проект квартиры, чтобы их
+  // расставить на плане». Пул геометрии не знает, поэтому передаёт СПИСОК заготовок
+  // (что поставить, с какой высотой, сколько раз) — ключ localStorage общий с pool-v29.js
+  // (POOL_Q_KEY там же). Тап по заготовке в палитре «вооружает» её, каждый тап по плану
+  // ставит одну и уменьшает счётчик; на нуле заготовка уходит из списка.
+  const POOL_Q_KEY = "ep_pool_to_plan_v1";
+  function poolQueue() {
+    try {
+      const q = JSON.parse(localStorage.getItem(POOL_Q_KEY) || "null");
+      return (q && Array.isArray(q.items)) ? q : { v: 1, items: [] };
+    } catch (e) { return { v: 1, items: [] }; }
+  }
+  function poolQueueSave(q) {
+    try {
+      if (!q || !q.items || !q.items.length) localStorage.removeItem(POOL_Q_KEY);
+      else localStorage.setItem(POOL_Q_KEY, JSON.stringify(q));
+    } catch (e) {}
+  }
 
   // ---------- палитра / размещение ----------
   function onModeEnter() { sheetPalette(); }
@@ -100,10 +124,24 @@
     rooms().openSheet(`<div class="ep-plan-srow"><b>${T.palette}</b><span class="ep-plan-flex"></span>
         <span>${T.progress}: <b>${done}/${total}</b> · ${pct}%</span></div>
       <div class="ep-plan-modehint">${esc(T.paletteHint)}</div>
+      ${poolSectionHtml()}
       <div class="ep-plan-palette">${PALETTE_TYPES.map((k) => `
-        <button type="button" class="ep-plan-pbtn ep-clickable ${S.selType === k ? "on" : ""}" data-pe-type="${k}">
+        <button type="button" class="ep-plan-pbtn ep-clickable ${!S.pool && S.selType === k ? "on" : ""}" data-pe-type="${k}">
           <i class="ep-plan-glyph" data-glyph="${esc(TYPES[k].glyph)}">${esc(TYPES[k].glyph)}</i>${esc(TYPES[k].name)}</button>`).join("")}
       </div>`, { keepCollapsed: !!keep });
+  }
+  // раздел «Из пула» в палитре: заготовки, пришедшие из «Пула розеток» (кнопка 📐 там)
+  function poolSectionHtml() {
+    const q = poolQueue();
+    if (!q.items.length) return "";
+    const total = q.items.reduce((n2, e) => n2 + (Number(e.qty) || 0), 0);
+    return `<div class="ep-plan-srow"><b>${T.poolTitle}</b><span>· ${T.poolLeft(total)}</span>
+        <span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-plan-danger ep-clickable" data-pe-poolclear aria-label="${T.poolClearAria}">${T.poolClear}</button></div>
+      <div class="ep-plan-srow ep-plan-hintrow">${T.poolHint}</div>
+      <div class="ep-plan-palette">${q.items.map((e, i) => `
+        <button type="button" class="ep-plan-pbtn ep-clickable ${S.pool && S.pool.i === i ? "on" : ""}" data-pe-pool="${i}">
+          <i class="ep-plan-glyph">${esc((TYPES[e.type] || {}).glyph || "?")}</i>${esc(e.label || (TYPES[e.type] || {}).name || e.type)} <b>×${Number(e.qty) || 0}</b></button>`).join("")}
+      </div>`;
   }
   // ----- Проёмы (отдельный инструмент) -----
   function onOpeningModeEnter() { sheetOpenings(); }
@@ -190,7 +228,9 @@
     return TYPES[type].h == null ? s.ceilingHeight : TYPES[type].h;
   }
   function placeAt(w) {
-    const c = core(), p = c.project, t = TYPES[S.selType];
+    const c = core(), p = c.project;
+    if (S.pool) return placeFromPool(w);
+    const t = TYPES[S.selType];
     const k = rooms().canvasCmPerPx();
     if (t.panel) {
       c.commit();
@@ -240,6 +280,47 @@
     } else { rooms().toast(T.tapWall); return; }
     c.persist("elem-add");
     sheetPalette(true); // тот же счётчик — ветка свободной точки (свет/ТП/вывод)
+  }
+
+  // Ставит ОДНУ заготовку из очереди пула: тип/высота/клавишность приходят из пула, место —
+  // из тапа. Блок пула (несколько постов) становится блоком плана с теми же постами, поэтому
+  // «Сборку блока» вручную повторять не нужно. Счётчик заготовки убывает; на нуле она уходит
+  // из очереди (и вооружение снимается).
+  function placeFromPool(w) {
+    const c = core(), p = c.project;
+    const q = poolQueue();
+    // ищем по id (устойчиво к сдвигу индексов), индекс — фолбэк для очередей без id
+    let idx = S.pool.id ? q.items.findIndex((x) => x && x.id === S.pool.id) : -1;
+    if (idx < 0) idx = S.pool.i;
+    const e = q.items[idx];
+    if (!e) { S.pool = null; sheetPalette(true); rooms().toast(T.poolGone); return; }
+    S.pool.i = idx;
+    const t = TYPES[e.type] || TYPES.socket;
+    const k = rooms().canvasCmPerPx();
+    const hit = G().wallAt(p, w, CFG.wallSnapPx * k);
+    if (hit) vibrate(10);
+    if (!hit && !t.free) { rooms().toast(T.tapWall); return; }
+    c.commit();
+    const h = e.height != null ? Math.max(0, Number(e.height) || 0) : defaultHeight(e.type);
+    let el;
+    if (hit) {
+      el = c.model.newElement(e.type, hit.wall.id, G().snap(hit.offset, p.settings.gridStep), h, t.layer);
+      if (hit.wall.isBeam) el.beamSide = beamSideOf(w, hit.wall);
+    } else {
+      const sp = G().snapPoint(w, p.settings.gridStep);
+      el = c.model.newElement(e.type, null, 0, h, t.layer);
+      el.params = { x: sp.x, y: sp.y };
+    }
+    if (e.type === "block") el.params = Object.assign({}, el.params, { items: (e.items || ["socket"]).slice() });
+    if (e.type === "switch") { if (e.keys) el.keys = Math.max(1, Math.min(3, Number(e.keys) || 1)); if (e.swKind) el.swKind = e.swKind; }
+    p.elements.push(el);
+    if (t.ownLine && !el.circuitId) assignNewCircuit(el);
+    c.persist("elem-add");
+    e.qty = (Number(e.qty) || 1) - 1;
+    if (e.qty <= 0) { q.items.splice(idx, 1); S.pool = null; }
+    poolQueueSave(q);
+    if (!q.items.length) rooms().toast(T.poolDone);
+    sheetPalette(true);
   }
 
   // ---------- попадание / выбор ----------
@@ -637,7 +718,18 @@
     // выбрал тип — палитра сворачивается вниз (просьба пользователя: «при выборе
     // хотел чтобы окно скрывалось… сворачивалось в нижнюю часть экрана»), холст
     // свободен для расстановки; вернуть — кнопка ︿ в правом нижнем углу
-    if ((b = t.closest("[data-pe-type]"))) { S.selType = b.getAttribute("data-pe-type"); sheetPalette(true); rooms().collapseSheet(); return; }
+    if ((b = t.closest("[data-pe-type]"))) { S.pool = null; S.selType = b.getAttribute("data-pe-type"); sheetPalette(true); rooms().collapseSheet(); return; }
+    if ((b = t.closest("[data-pe-pool]"))) { // заготовка из пула — вооружаем её вместо типа
+      const i = Number(b.getAttribute("data-pe-pool")) || 0;
+      // храним И индекс, И id: если пул успел перезалить очередь (кнопка «В проект квартиры»
+      // ещё раз), индексы сдвинутся, и по индексу поставился бы ЧУЖОЙ тип — id это исключает
+      S.pool = { i: i, id: (poolQueue().items[i] || {}).id || null };
+      sheetPalette(true); rooms().collapseSheet(); return;
+    }
+    if (t.closest("[data-pe-poolclear]")) {
+      if (!window.confirm(T.poolClearAsk)) return;
+      poolQueueSave({ v: 1, items: [] }); S.pool = null; sheetPalette(true); return;
+    }
     if ((b = t.closest("[data-pe-otype]"))) { S.openType = b.getAttribute("data-pe-otype"); sheetOpenings(true); rooms().collapseSheet(); return; } // как и палитра точек — свернуть вниз, холст свободен
     if ((b = t.closest("[data-pe-preset]"))) { const i = $("#ep-pe-h"); if (i) i.value = b.getAttribute("data-pe-preset"); return; }
     if ((b = t.closest("[data-pe-status]"))) {

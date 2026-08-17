@@ -402,6 +402,8 @@ body[data-visual-mode="day"] .ep-plan-room.is-sel { fill: rgba(2, 132, 199, .17)
 /* длинные названия («Выключатель», «Кондиционер») не обрезались краем кнопки на
    узких экранах — разрешаем перенос внутри слова (найдено визуальным тестом) */
 .ep-plan-pbtn { min-width: 0; overflow-wrap: anywhere; hyphens: auto; line-height: 1.15; }
+/* счётчик «×N» у заготовки из пула: overflow-wrap:anywhere выше рвал его пополам («× 1 2») */
+.ep-plan-pbtn b { white-space: nowrap; }
 /* «✎ Этажи» в компакт-строке — текстовая кнопка, а не квадрат 40px (базовый
    .ep-plan-mini фиксирует width:40px — текст ломался на 2 строки) */
 .ep-plan-floors .ep-plan-mini { width: auto; padding: 0 12px; white-space: nowrap; }
