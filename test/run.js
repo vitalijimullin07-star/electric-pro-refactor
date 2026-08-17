@@ -3961,6 +3961,75 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/setSourceItems\("pool"/.test(bridge) && /setSourceItems\("plan"/.test(bridge), "пул и план — РАЗНЫЕ источники сметы (не затирают друг друга)");
   });
 
+  // ===== 36. Смета: экспорт/импорт файлом =====
+  // estimate-main.js — не plan-модуль, поэтому грузим его в СВОЙ мини-sandbox
+  // (window + in-memory localStorage): логика экспорта/разбора чистая и проверяется здесь,
+  // а UI (кнопки, Blob, input[type=file]) — статическими проверками ниже.
+  function loadEstimate() {
+    const vm2 = require("vm"), fs2 = require("fs"), path2 = require("path");
+    const store = {};
+    const sb = { console };
+    sb.window = sb; sb.globalThis = sb;
+    sb.localStorage = {
+      getItem: (k) => (k in store ? store[k] : null),
+      setItem: (k, v) => { store[k] = String(v); },
+      removeItem: (k) => { delete store[k]; }
+    };
+    sb.CustomEvent = function (t, o) { this.type = t; this.detail = o && o.detail; };
+    sb.dispatchEvent = () => true;
+    const ctx = vm2.createContext(sb);
+    vm2.runInContext(fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "estimate", "estimate-main.js"), "utf8"), ctx, { filename: "estimate-main.js" });
+    return sb.EP.Estimate;
+  }
+  test("смета: экспорт даёт конверт ep-estimate со всеми позициями", () => {
+    const E = loadEstimate();
+    E.addItem({ type: "work", name: "Штробление 25x30 по бетону", unit: "м", qty: 17.8, price: 0 });
+    E.addItem({ type: "material", name: "ВВГнг(А)-LS 3х2,5", unit: "м", qty: 400, price: 92 });
+    const data = JSON.parse(E.exportJSON({ name: "кв.390" }));
+    ok(data.type === "ep-estimate" && data.v === 1, "тип и версия конверта");
+    ok(data.name === "кв.390" && typeof data.exportedAt === "string", "имя и дата в конверте");
+    eq(data.items.length, 2, "позиции выгружены");
+    const w = data.items.find((x) => x.type === "work");
+    ok(w && w.qty === 17.8 && w.unit === "м", "работа с количеством и единицей");
+  });
+  test("смета: импорт читает конверт, голый массив и запятую в числах", () => {
+    const E = loadEstimate();
+    const env = E.parseImport(JSON.stringify({ type: "ep-estimate", name: "кв.390", items: [{ type: "work", name: "Проходки d20", unit: "шт", qty: 29 }] }));
+    ok(env && env.items.length === 1 && env.works === 1 && env.name === "кв.390", "конверт разобран");
+    const arr = E.parseImport(JSON.stringify([{ type: "материал", name: "Стяжки 5х350", unit: "шт", qty: "500" }]));
+    ok(arr && arr.items[0].type === "material" && arr.items[0].qty === 500, "голый массив и русский тип");
+    const comma = E.parseImport(JSON.stringify([{ type: "work", name: "Штроба", unit: "м", qty: "17,8" }]));
+    ok(comma && comma.items[0].qty === 17.8, "количество с запятой");
+    ok(E.parseImport("не json") === null && E.parseImport(JSON.stringify({ foo: 1 })) === null, "мусор отклонён");
+    ok(E.parseImport(JSON.stringify([{ name: "", qty: 5 }])) === null, "позиции без имени отброшены");
+  });
+  test("смета: импорт «добавить» складывает одинаковые, «заменить» очищает", () => {
+    const E = loadEstimate();
+    E.addItem({ type: "material", name: "Стяжки 5х350", unit: "шт", qty: 500, price: 1 });
+    const file = JSON.stringify({ type: "ep-estimate", items: [
+      { type: "material", name: "Стяжки 5х350", unit: "шт", qty: 100 },
+      { type: "work", name: "Прокладка кабеля", unit: "м", qty: 1220 }
+    ] });
+    E.importJSON(file, "add");
+    let items = E.getItems();
+    eq(items.length, 2, "одинаковая позиция не продублировалась");
+    eq(items.find((x) => x.name === "Стяжки 5х350").qty, 600, "количество сложилось");
+    E.importJSON(file, "replace");
+    items = E.getItems();
+    eq(items.length, 2, "замена оставила только позиции файла");
+    eq(items.find((x) => x.name === "Стяжки 5х350").qty, 100, "количество из файла, без сложения с прежним");
+  });
+  test("смета: кнопки экспорта/импорта в экране сметы и чтение файла", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "estimate", "estimate-tabs.js"), "utf8");
+    ok(/data-est-export/.test(src) && /data-est-import/.test(src), "кнопки в разметке");
+    ok(/\[data-est-export\]"\)\) \{ exportFile\(\)/.test(src) && /\[data-est-import\]"\)\) \{ importFile\(\)/.test(src), "обработчики повешены");
+    ok(/new Blob\(\[text\]/.test(src) && /a\.download = name/.test(src), "скачивание файла через Blob + <a download>");
+    ok(/input"\);\s*\n?.*type = "file"|inp\.type = "file"/.test(src) && /readAsText/.test(src), "чтение файла через input[type=file]");
+    ok(/d\.parseImport\(text\)/.test(src) && /d\.importJSON\(text, replace \? "replace" : "add"\)/.test(src), "UI зовёт чистую логику из EP.Estimate");
+    ok(/exportJSON|parseImport/.test(fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "estimate", "estimate-main.js"), "utf8")), "логика живёт в estimate-main.js");
+  });
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

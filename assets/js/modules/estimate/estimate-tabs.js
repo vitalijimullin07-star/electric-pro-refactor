@@ -57,6 +57,8 @@
         <div class="ep-sup-actions">
           <button type="button" class="btn btn-primary ep-clickable" data-est-print>Печать / PDF</button>
           <button type="button" class="btn btn-ghost ep-clickable" data-est-share>Поделиться</button>
+          <button type="button" class="btn btn-ghost ep-clickable" data-est-export>⤓ Экспорт</button>
+          <button type="button" class="btn btn-ghost ep-clickable" data-est-import>⤒ Импорт</button>
           ${isSupply ? '<button type="button" class="btn btn-ghost ep-clickable" data-route="consumables">+ Расходники</button>' : ""}
           ${isSupply ? '<button type="button" class="btn btn-ghost ep-clickable" data-est-usestock>📤 Задействовать со склада</button>' : ""}
           <button type="button" class="btn btn-ghost ep-clickable" data-route="main">На главный</button>
@@ -107,6 +109,67 @@ th{background:#f1f5f9;text-align:left}.c{text-align:center}.r{text-align:right}t
     } catch (e) { flash("Поделиться недоступно"); }
   }
 
+  // ── Экспорт / импорт сметы файлом ──────────────────────────
+  // Логика (сборка конверта, разбор файла, слияние) живёт в EP.Estimate — здесь только
+  // «положить в файл» и «прочитать файл»: скачивание через Blob + <a download>, чтение
+  // через скрытый input[type=file] (создаём один раз, разметку страниц не трогаем).
+  function download(name, text) {
+    try {
+      const blob = new Blob([text], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = name;
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { try { URL.revokeObjectURL(url); a.remove(); } catch (e) {} }, 1500);
+      return true;
+    } catch (e) { return false; }
+  }
+  function exportFile() {
+    const d = Draft();
+    if (!d || !d.exportJSON) return flash("Экспорт недоступен");
+    if (!d.count || !d.count()) return flash("Смета пуста — экспортировать нечего");
+    const dt = new Date();
+    const stamp = dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0");
+    const ok = download("smeta-" + stamp + ".json", d.exportJSON({ name: "Смета " + stamp }));
+    flash(ok ? "Файл сметы сохранён" : "Не удалось сохранить файл");
+  }
+  function pickFile(cb) {
+    let inp = document.getElementById("ep-est-file");
+    if (!inp) {
+      inp = document.createElement("input");
+      inp.type = "file"; inp.accept = ".json,application/json"; inp.id = "ep-est-file";
+      inp.style.display = "none";
+      document.body.appendChild(inp);
+    }
+    inp.value = "";
+    inp.onchange = () => {
+      const f = inp.files && inp.files[0];
+      if (!f) return;
+      const r = new FileReader();
+      r.onload = () => cb(String(r.result || ""));
+      r.onerror = () => flash("Не удалось прочитать файл");
+      r.readAsText(f);
+    };
+    inp.click();
+  }
+  function importFile() {
+    const d = Draft();
+    if (!d || !d.importJSON) return flash("Импорт недоступен");
+    pickFile((text) => {
+      const info = d.parseImport(text);
+      if (!info) return flash("Не похоже на файл сметы");
+      const has = d.count && d.count();
+      // ОК — заменить смету целиком, Отмена — добавить к текущей (позиции сложатся)
+      const replace = has ? confirm("В файле позиций: " + info.items.length +
+        " (работ " + info.works + ", материалов " + info.materials + ").\n\n" +
+        "ОК — заменить текущую смету.\nОтмена — добавить к текущей.") : false;
+      const res = d.importJSON(text, replace ? "replace" : "add");
+      if (!res) return flash("Не похоже на файл сметы");
+      render();
+      flash((replace ? "Смета заменена: " : "Добавлено позиций: ") + res.items.length);
+    });
+  }
+
   function flash(msg) {
     try {
       let el = document.getElementById("ep-collector-flash");
@@ -122,6 +185,8 @@ th{background:#f1f5f9;text-align:left}.c{text-align:center}.r{text-align:right}t
     if (document.getElementById("ep-estimate-root")) {
       if (t.closest && t.closest("[data-est-print]")) { printDoc(); return; }
       if (t.closest && t.closest("[data-est-share]")) { shareText(); return; }
+      if (t.closest && t.closest("[data-est-export]")) { exportFile(); return; }
+      if (t.closest && t.closest("[data-est-import]")) { importFile(); return; }
       if (t.closest && t.closest("[data-est-usestock]")) { if (window.EP && EP.Stock && EP.Stock.useFromSupply) EP.Stock.useFromSupply(); return; }
     }
   });
