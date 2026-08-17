@@ -433,7 +433,38 @@
     if ((el = t.closest("[data-est-save]"))) { flash("Черновик сохранён"); if (window.EP && window.EP.Router) window.EP.Router.go("estimate"); return; }
     if ((el = t.closest("[data-est-tomain]"))) { const d = Draft(); const m = window.EP && window.EP.Estimate; if (d && m) { if (d.count() === 0) { flash("Предварительная пуста"); return; } const n = m.mergeItems(d.getItems()); d.clear(); renderHomeSummary(); flash("В основную добавлено: " + n); } return; }
     if ((el = t.closest("[data-estmain-clear]"))) { const m = window.EP && window.EP.Estimate; if (m && (m.count() === 0 || confirm("Очистить основную смету?"))) { m.clear(); renderHomeSummary(); flash("Основная смета очищена"); } return; }
+    if ((el = t.closest("[data-draft-export]"))) { exportDraft(); return; }
+    if ((el = t.closest("[data-draft-import]"))) { importDraft(); return; }
   });
+
+  /* ---------- экспорт / импорт предварительной сметы файлом ----------
+     Формат и работа с файлом — общие (EP.EstimateFile), поэтому файл переносится
+     между предварительной и основной сметой в любую сторону. */
+  function exportDraft() {
+    const d = Draft(), F = window.EP && window.EP.EstimateFile;
+    if (!d || !F) { flash("Экспорт недоступен"); return; }
+    if (!d.count()) { flash("Предварительная пуста — экспортировать нечего"); return; }
+    const stamp = F.stamp();
+    const ok = F.download("smeta-" + stamp + ".json", d.exportJSON({ name: "Смета " + stamp }));
+    flash(ok ? "Файл сметы сохранён" : "Не удалось сохранить файл");
+  }
+  function importDraft() {
+    const d = Draft(), F = window.EP && window.EP.EstimateFile;
+    if (!d || !F) { flash("Импорт недоступен"); return; }
+    F.pickFile((text) => {
+      if (text == null) { flash("Не удалось прочитать файл"); return; }
+      const info = d.parseImport(text);
+      if (!info) { flash("Не похоже на файл сметы"); return; }
+      // ОК — заменить предварительную целиком, Отмена — добавить к текущей
+      const replace = d.count() ? confirm("В файле позиций: " + info.items.length +
+        " (работ " + info.works + ", материалов " + info.materials + ").\n\n" +
+        "ОК — заменить предварительную смету.\nОтмена — добавить к текущей.") : false;
+      const res = d.importJSON(text, replace ? "replace" : "add");
+      if (!res) { flash("Не похоже на файл сметы"); return; }
+      renderHomeSummary();
+      flash((replace ? "Смета заменена: " : "Добавлено позиций: ") + res.items.length);
+    });
+  }
 
   /* ---------- тост ---------- */
   let flashEl;
