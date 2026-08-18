@@ -259,3 +259,29 @@ body[data-visual-mode="day"] .ep-pick-title, body[data-visual-mode="day"] .ep-pi
 body[data-visual-mode="day"] .ep-pick-sub { color:#475569 !important; }
 body[data-visual-mode="day"] .ep-pick-btn.primary { color:#06231a !important; }
 body[data-visual-mode="night"] .ep-pick-head, body[data-visual-mode="night"] .ep-pick-btn { background:rgba(20,28,48,.90) !important; }
+
+/* ── Совместная база данных (db-share.js) ─────────────────────────────
+   Блок над действиями «Моей БД»: активный партнёр / заявки / лента изменений.
+   Цвета — токены темы, чтобы блок жил и в дне, и в ночи. */
+.ep-db-share { padding: 10px 12px; display: grid; gap: 8px; }
+.ep-db-shareline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ep-db-share-on { color: var(--text); font-size: 14px; }
+.ep-db-share-off { color: var(--muted); font-size: 14px; }
+.ep-db-shareline .btn { margin-left: auto; }
+.ep-db-share-req { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px 10px; border-radius: 12px; background: rgba(99, 102, 241, .14); color: var(--text); font-size: 14px; }
+.ep-db-share-req .btn { padding: 6px 10px; }
+.ep-db-share-msg { font-size: 13px; color: var(--muted); }
+.ep-db-share-x { background: none; border: none; color: var(--accent); font: inherit; cursor: pointer; padding: 0 4px; }
+.ep-db-share-notes { border-top: 1px solid rgba(148, 163, 184, .25); padding-top: 8px; }
+.ep-db-share-noteshead { display: flex; justify-content: space-between; align-items: center;
+  font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+.ep-db-share-note { font-size: 13px; color: var(--text); padding: 3px 0; }
+.ep-db-share-people { display: grid; gap: 6px; margin-top: 10px; max-height: 46dvh; overflow: auto; }
+.ep-db-share-person { display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+  border-radius: 10px; background: rgba(148, 163, 184, .12); }
+.ep-db-share-name { flex: 1 1 auto; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ep-db-share-person .btn { padding: 6px 10px; }
+.ep-db-share-dot { width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; flex: none; }
+.ep-db-share-dot.is-on { background: #22c55e; }
+.ep-db-modal-hint { font-size: 13px; color: var(--muted); margin: 0 0 8px; }
