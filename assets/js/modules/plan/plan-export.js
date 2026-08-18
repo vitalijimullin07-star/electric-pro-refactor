@@ -696,6 +696,15 @@
   };
   const iconFor = (k, glyph, gost) => (gost && GOST_ICONS[k]) ? GOST_ICONS[k] : `<i class="g">${esc(glyph)}</i>`;
 
+  // Временное переключение активного этажа на время сборки одного набора листов.
+  // БЕЗ persist/commit — это чтение, а не правка проекта; finally возвращает как было
+  // даже если рендер листа бросил исключение (иначе пользователь остался бы на чужом этаже).
+  function withFloor(p, fid, fn) {
+    if (!fid) return fn();
+    const prev = p.activeFloorId;
+    p.activeFloorId = fid;
+    try { return fn(); } finally { p.activeFloorId = prev; }
+  }
   function sheetHtml(p) {
     const expl = (p.rooms || []).filter((r) => (r.points || []).length >= 3)
       .map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.name)}</td><td>${G().fmtArea(G().roomNetArea(p, r))}</td><td>${esc(r.material || p.settings.wallMaterial)}</td></tr>`).join("");
@@ -708,17 +717,27 @@
       + ((p.panels || []).length ? `<div><i class="g">Щ</i>${T.panel}</div>` : "");
     // ---- альбом: собираем ЛИСТЫ по порядку, потом нумеруем (штамп каждого листа знает
     // свой номер и общее число — «Лист N / Листов M», как в проектной документации) ----
-    const genplanSvg = buildSvg(p);
-    const pages = [{ title: T.genplan, body: `<div class="plan">${genplanSvg}</div>`, scale: lastPlanScale }];
+    const pages = [];
+    // МНОГОЭТАЖНЫЙ альбом: листы, зависящие от ГЕОМЕТРИИ (общий план, по типам точек, по
+    // слоям трасс, развёртки), печатаются НА КАЖДЫЙ этаж — buildSvg/unfoldSvg берут
+    // активный этаж через G.floorScoped, поэтому просто прогоняем их по очереди с
+    // временно переключённым p.activeFloorId (withFloor, БЕЗ persist — вид пользователя
+    // не меняется). Листы, общие для всего проекта (спецификация, линии и щит,
+    // однолинейка), печатаются ОДИН раз: смета/линии/схема в модуле и так одни на проект.
+    const floors = (p.floors || []).length > 1 ? (p.floors || []).slice() : [null];
+    floors.forEach((f) => withFloor(p, f && f.id, () => {
+      const suf = f ? " · " + f.name : "";
+      pages.push({ title: T.genplan + suf, body: `<div class="plan">${buildSvg(p)}</div>`, scale: lastPlanScale });
+      buildTypePages(p).forEach((pg) => pages.push(Object.assign({}, pg, { title: pg.title + suf })));
+      buildLayerPages(p).forEach((pg) => pages.push(Object.assign({}, pg, { title: pg.title + suf })));
+      buildUnfolds(p).forEach((pg) => pages.push(Object.assign({}, pg, { title: pg.title + suf })));
+    }));
     pages.push({ title: T.specSheet, body: `<div class="cols">
           <div><h3>${T.expl}</h3><table class="tb"><thead><tr><th>№</th><th>Помещение</th><th>S</th><th>Стены</th></tr></thead><tbody>${expl}</tbody></table></div>
           <div><h3>${T.spec}</h3><table class="tb"><thead><tr><th></th><th>Тип</th><th>Кол-во</th></tr></thead><tbody>${spec}</tbody></table></div>
           <div class="legend"><h3>${T.legend}</h3>${legendRows}</div>
         </div>` });
-    buildTypePages(p).forEach((pg) => pages.push(pg));
-    buildLayerPages(p).forEach((pg) => pages.push(pg));
     buildCircuits(p).forEach((pg) => pages.push(pg));
-    buildUnfolds(p).forEach((pg) => pages.push(pg));
     buildScheme(p).forEach((pg) => pages.push(pg));
     const of = pages.length + 1; // + титульный лист
     const sheets = buildTitlePage(p, pages, of) + pages.map((pg, i) => sheetWrap(p, pg, i + 2, of)).join("");

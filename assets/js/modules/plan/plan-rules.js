@@ -176,6 +176,30 @@
       });
     }
 
+    // — ЭТАЖИ И СТОЯКИ (Этажи, Этап 2) —
+    // Проверяем ровно две вещи, которые молча оставляют этаж без трасс: стояк без пары
+    // (односторонняя ссылка ничего не питает — см. riserPairs в plan-routes.js) и этаж,
+    // на котором есть точки, но нет ни щита, ни стояка-приёмника.
+    if ((p.floors || []).length > 1) {
+      const RT = EP.Plan.Routes;
+      const nameF = (fid) => ((p.floors || []).find((f) => f.id === fid) || {}).name || "этаж";
+      (p.elements || []).forEach((el) => {
+        if (el.type !== "riser") return;
+        const m = el.riserLink ? (p.elements || []).find((x) => x.id === el.riserLink) : null;
+        if (!m || m.type !== "riser" || m.riserLink !== el.id) {
+          issues.push({ id: el.id, msg: `Стояк (${nameF(el.floorId)}): нет парного стояка на другом этаже — этаж по нему не питается.` });
+          badIds.add(el.id);
+        }
+      });
+      (p.floors || []).forEach((f) => {
+        const pts = (p.elements || []).filter((e) => e.floorId === f.id && e.status !== "existing" && e.type !== "junction" && e.type !== "riser");
+        if (!pts.length) return;
+        if ((p.panels || []).some((pn) => pn.floorId === f.id)) return;
+        const sinks = (RT && RT.sinkRisersOn) ? RT.sinkRisersOn(p, f.id) : [];
+        if (!sinks.length) issues.push({ msg: `${f.name}: нет щита и нет связанного стояка «СТ» — трассы на этом этаже не построятся.` });
+      });
+    }
+
     return { issues, badIds };
   }
   // подсветка проблемных точек — зовётся на КАЖДЫЙ рендер сцены, поэтому через мемо-кэш
