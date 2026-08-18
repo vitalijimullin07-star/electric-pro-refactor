@@ -150,10 +150,12 @@
       .foot { margin-top: 6mm; font-size: 9px; color: #555; border-top: 0.2mm solid #999; padding-top: 1.5mm; }
       .empty { text-align: center; padding: 4mm; }`;
   }
+  // БЕЗ авто-print <script> внутри листа: печать вызывает open() ниже — из скрытого
+  // iframe с явным focus()+print(), иначе часть браузеров печатала бы родительскую
+  // страницу вместо листа. Для фолбэка-вкладки печать тоже вызывается из open().
   function wrap(title, body) {
     return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>${esc(title)}</title>
-<style>${pageCss()}</style></head><body><div class="doc">${body}</div>
-<script>window.onload=function(){setTimeout(function(){window.print();},350);};<\/script></body></html>`;
+<style>${pageCss()}</style></head><body><div class="doc">${body}</div></body></html>`;
   }
   function reqTable(rows) {
     return `<table class="req">${rows.filter((r) => r).map((r) => `<tr><th>${esc(r[0])}</th><td>${esc(r[1]) || "—"}</td></tr>`).join("")}</table>`;
@@ -251,12 +253,48 @@
     return wrap("Заявка на материалы № " + no, body);
   }
 
-  // window.open ОБЯЗАН быть синхронным в стеке клика (см. комментарий вверху файла)
+  // Печать. РАНЬШЕ открывала лист в новой вкладке (window.open) и полагалась на
+  // авто-print внутри неё — но в мобильных браузерах и в УСТАНОВЛЕННОМ PWA
+  // window.open("","_blank") часто блокируется или открывает вкладку без диалога
+  // печати: «нажимаю печать, а выбор принтера не появляется». Теперь печатаем из
+  // СКРЫТОГО iframe с явным focus()+print() — системный диалог выбора принтера/
+  // «Сохранить как PDF» поднимается надёжно. Вызывается синхронно из обработчика клика.
   function open(html) {
-    const w = window.open("", "_blank");
-    if (!w || !w.document) return false;
-    w.document.open(); w.document.write(html); w.document.close();
-    return true;
+    try {
+      if (!document || !document.body) throw new Error("no dom");
+      const frame = document.createElement("iframe");
+      frame.setAttribute("aria-hidden", "true");
+      frame.style.cssText = "position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;";
+      document.body.appendChild(frame);
+      const cw = frame.contentWindow, idoc = cw.document;
+      idoc.open(); idoc.write(html); idoc.close();
+      let ran = false;
+      const run = function () {
+        if (ran) return; ran = true;
+        // focus() ОБЯЗАТЕЛЕН перед print(): без него часть движков печатает
+        // родительскую страницу, а не содержимое iframe.
+        try { cw.focus(); cw.print(); } catch (e) {}
+        // убрать iframe после закрытия диалога печати (afterprint) либо по таймауту
+        const kill = function () { setTimeout(function () { try { frame.remove(); } catch (e) {} }, 1000); };
+        try { cw.onafterprint = kill; } catch (e) {}
+        setTimeout(kill, 60000);
+      };
+      // лист — чистый HTML/CSS (без внешних картинок/шрифтов), раскладка готова почти
+      // сразу; небольшая задержка на всякий случай
+      setTimeout(run, 160);
+      return true;
+    } catch (e) {
+      // фолбэк — отдельная вкладка (десктоп, где popup разрешён): печать по загрузке
+      // + страховка таймером; guard, чтобы диалог не открылся дважды
+      const w = window.open("", "_blank");
+      if (!w || !w.document) return false;
+      w.document.open(); w.document.write(html); w.document.close();
+      let pr = false;
+      const doPr = function () { if (pr) return; pr = true; try { w.focus(); w.print(); } catch (e) {} };
+      try { w.onload = doPr; } catch (e) {}
+      setTimeout(doPr, 500);
+      return true;
+    }
   }
 
   window.EP.EstimatePrint = { estimateHtml, supplyHtml, open, rublesInWords, money, qty, today, docNo, setDocNo, masterFull, vatNote };

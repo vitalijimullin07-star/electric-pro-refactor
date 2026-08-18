@@ -173,10 +173,13 @@ table{width:100%;border-collapse:collapse;font-size:12px;margin:6px 0}th,td{bord
 .sub-t{text-align:right;margin:6px 2px}.grand{text-align:right;font-size:15px;font-weight:700;margin-top:6px}
 .sign{display:flex;justify-content:space-between;margin-top:30px;gap:20px}.sign>div{flex:1}
 .foot{margin-top:18px;color:#94a3b8;font-size:11px;text-align:center}</style></head>
-<body>${bodyHtml}<div class="foot">Electric Pro · документ сформирован автоматически</div>
-<script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script></body></html>`;
+<body>${bodyHtml}<div class="foot">Electric Pro · документ сформирован автоматически</div></body></html>`;
+    // печать через общий надёжный путь (скрытый iframe с диалогом выбора принтера);
+    // фолбэк — своя вкладка, если модуль печати недоступен
+    const P = window.EP && window.EP.EstimatePrint;
+    if (P && P.open) { if (!P.open(html)) flash("Разреши всплывающие окна для печати"); return; }
     const w = window.open("", "_blank");
-    if (w && w.document) { w.document.open(); w.document.write(html); w.document.close(); }
+    if (w && w.document) { w.document.open(); w.document.write(html); w.document.close(); w.print && setTimeout(() => { try { w.print(); } catch (e) {} }, 400); }
     else flash("Разреши всплывающие окна для печати");
   }
 
