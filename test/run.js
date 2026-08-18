@@ -4061,10 +4061,10 @@ test("фото: deleteProject чистит кэш фото своего прое
     sb.dispatchEvent = () => true;
     const ctx = vm2.createContext(sb);
     const dir = path2.join(__dirname, "..", "assets", "js", "modules", "estimate");
-    ["estimate-file", "estimate-draft", "estimate-main"].forEach((n) => {
+    ["estimate-file", "estimate-draft", "estimate-main", "estimate-print"].forEach((n) => {
       vm2.runInContext(fs2.readFileSync(path2.join(dir, n + ".js"), "utf8"), ctx, { filename: n + ".js" });
     });
-    return sb.EP;   // { EstimateFile, EstimateDraft, Estimate }
+    return sb.EP;   // { EstimateFile, EstimateDraft, Estimate, EstimatePrint }
   }
   test("смета: экспорт даёт конверт ep-estimate со всеми позициями", () => {
     const E = loadEstimate().Estimate;
@@ -4164,7 +4164,95 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/d\.importJSON\(text, replace \? "replace" : "add"\)/.test(pick) && /d\.importJSON\(text, replace \? "replace" : "add"\)/.test(tabs), "оба экрана зовут единую логику импорта");
   });
 
-  // ===== 37. Совместная база данных: подключение мастера, журнал правок, уведомления =====
+    // ---- печатный бланк сметы (EP.EstimatePrint) ----
+  test("печать: сумма прописью — род, разряды, ноль и копейки", () => {
+    const P = loadEstimate().EstimatePrint;
+    eq(P.rublesInWords(0), "Ноль рублей 00 копеек", "ноль не теряется");
+    eq(P.rublesInWords(0.05), "Ноль рублей 05 копеек", "только копейки");
+    eq(P.rublesInWords(1), "Один рубль 00 копеек");
+    eq(P.rublesInWords(2), "Два рубля 00 копеек");
+    eq(P.rublesInWords(1000), "Одна тысяча рублей 00 копеек", "тысяча — женский род");
+    eq(P.rublesInWords(2000), "Две тысячи рублей 00 копеек");
+    eq(P.rublesInWords(5000), "Пять тысяч рублей 00 копеек");
+    eq(P.rublesInWords(1000000), "Один миллион рублей 00 копеек", "миллион — мужской род");
+    eq(P.rublesInWords(123456.78), "Сто двадцать три тысячи четыреста пятьдесят шесть рублей 78 копеек");
+    eq(P.rublesInWords(21), "Двадцать один рубль 00 копеек");
+    eq(P.rublesInWords(111), "Сто одиннадцать рублей 00 копеек");
+  });
+  test("печать: формат чисел документа — разряды пробелом, копейки запятой, кол-во без нулей", () => {
+    const P = loadEstimate().EstimatePrint;
+    eq(P.money(1234567.891), "1 234 567,89");
+    eq(P.money(0), "0,00");
+    eq(P.qty(120), "120"); eq(P.qty(12.5), "12,5"); eq(P.qty(0.75), "0,75");
+  });
+  test("печать сметы: бланк содержит шапку, разделы, подытоги, прописью и подписи", () => {
+    const EP2 = loadEstimate(), P = EP2.EstimatePrint;
+    P.setDocNo("117");
+    const html = P.estimateHtml({
+      works: [{ name: "Штробление", unit: "м", qty: 10, price: 100 }],
+      mats: [{ name: "Кабель", unit: "м", qty: 20, price: 50 }],
+      date: "18.08.2026", client: "Петров П.П.", object: "кв. 390"
+    });
+    ok(/<h1>Смета № 117<\/h1>/.test(html), "номер документа в заголовке");
+    ok(html.indexOf("от 18.08.2026") > 0, "дата");
+    ok(html.indexOf("Петров П.П.") > 0 && html.indexOf("кв. 390") > 0, "заказчик и объект");
+    ok(html.indexOf("Раздел 1. Работы") > 0 && html.indexOf("Раздел 2. Материалы") > 0, "два раздела");
+    ok(html.indexOf("Итого по разделу 1") > 0 && html.indexOf("Итого по разделу 2") > 0, "подытоги по разделам");
+    ok(html.indexOf("1 000,00") > 0 && html.indexOf("2 000,00") > 0, "суммы разделов посчитаны");
+    ok(html.indexOf("Всего к оплате") > 0 && html.indexOf("Две тысячи рублей 00 копеек") > 0, "итог и сумма прописью");
+    ok(html.indexOf("Исполнитель (подпись, ФИО)") > 0 && html.indexOf("Заказчик (подпись, ФИО)") > 0, "подписи");
+    // печатная механика: шапка таблицы повторяется на каждой странице, строки не рвутся
+    ok(/thead\s*\{\s*display:\s*table-header-group/.test(html), "thead — table-header-group");
+    ok(html.indexOf("page-break-inside: avoid") > 0, "строки/итоги не разрываются между страницами");
+    ok(/@page\s*\{\s*size:\s*A4 portrait/.test(html), "лист A4 с полями");
+  });
+  test("печать сметы: наценка на материалы, скидка и «материалы суммой»", () => {
+    const P = loadEstimate().EstimatePrint;
+    const base = { works: [{ name: "Р", unit: "шт", qty: 1, price: 1000 }], mats: [{ name: "М", unit: "м", qty: 10, price: 100 }] };
+    const h1 = P.estimateHtml(Object.assign({}, base, { markup: 20 }));
+    ok(h1.indexOf("1 200,00") > 0, "наценка 20% поднимает сумму материалов");
+    const h2 = P.estimateHtml(Object.assign({}, base, { discount: 10 }));
+    ok(h2.indexOf("Скидка 10 %") > 0 && h2.indexOf("Подытог") > 0, "скидка отдельной строкой + подытог");
+    ok(h2.indexOf("1 800,00") > 0, "итог со скидкой");
+    const h3 = P.estimateHtml(Object.assign({}, base, { matMode: "sum" }));
+    ok(h3.indexOf("Материалы по проекту (комплект)") > 0, "материалы одной строкой");
+    ok(h3.indexOf(">М<") < 0, "поштучных материалов в бланке нет");
+  });
+  test("печать: заявка на материалы — без цен, со своими подписями", () => {
+    const P = loadEstimate().EstimatePrint;
+    const html = P.supplyHtml({ mats: [{ name: "Кабель", unit: "м", qty: 20, price: 50 }], no: "8", date: "18.08.2026" });
+    ok(html.indexOf("Заявка на материалы № 8") > 0, "свой заголовок");
+    ok(html.indexOf("Кабель") > 0 && html.indexOf("20") > 0, "позиция и количество");
+    ok(html.indexOf("1 000,00") < 0 && html.indexOf("50,00") < 0, "цен и сумм в заявке нет — их ставит поставщик");
+    ok(html.indexOf("Принял, поставщик (подпись, ФИО)") > 0, "подписи заявки");
+  });
+  test("печать: «НДС не облагается» только для форм без НДС", () => {
+    const P = loadEstimate().EstimatePrint;
+    eq(P.vatNote({ type: "self" }), "НДС не облагается (налог на профессиональный доход).");
+    eq(P.vatNote({ type: "ip" }), "НДС не облагается.");
+    eq(P.vatNote({ type: "ooo" }), "", "у ООО режим налогообложения неизвестен — строку не печатаем");
+  });
+  test("печать: реквизиты исполнителя собираются из профиля", () => {
+    const P = loadEstimate().EstimatePrint;
+    const line = P.masterFull({ type: "ip", name: "Иванов И.И.", inn: "770712345678", ogrn: "312", phone: "+7 999", email: "a@b.c", address: "Москва" });
+    ok(line.indexOf("ИП Иванов И.И.") === 0, "форма перед именем");
+    ["ИНН 770712345678", "ОГРН 312", "Москва", "тел. +7 999", "a@b.c"].forEach((x) => ok(line.indexOf(x) > 0, "в строке есть " + x));
+  });
+  test("печать: оба экрана используют ОДИН бланк (своего HTML сметы больше нет)", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const dir = path2.join(__dirname, "..", "assets", "js", "modules");
+    const tabs = fs2.readFileSync(path2.join(dir, "estimate", "estimate-tabs.js"), "utf8");
+    const docs = fs2.readFileSync(path2.join(dir, "documents", "documents.js"), "utf8");
+    ok(/EstimatePrint/.test(tabs), "экран «Смета» печатает через общий бланк");
+    ok(/EstimatePrint/.test(docs), "«Документы» печатают через общий бланк");
+    ok(tabs.indexOf("<!doctype html>") < 0, "своего печатного HTML в estimate-tabs больше нет");
+    ok(docs.indexOf("Смета № ${esc(docNo())}</h1>") < 0, "своего печатного HTML сметы в documents больше нет");
+    const idx = fs2.readFileSync(path2.join(__dirname, "..", "index.html"), "utf8");
+    ok(idx.indexOf("estimate/estimate-print.js") > 0, "модуль подключён в index.html");
+    ok(idx.indexOf("estimate/estimate-print.js") < idx.indexOf("estimate/estimate-tabs.js"), "и раньше экрана сметы");
+  });
+
+// ===== 37. Совместная база данных: подключение мастера, журнал правок, уведомления =====
   function loadShare() {
     const vm2 = require("vm"), fs2 = require("fs"), path2 = require("path");
     const store = {};

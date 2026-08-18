@@ -9,6 +9,9 @@
     return (Number(v || 0).toFixed(2)) + " \u20bd";
   }
   let tab = "works"; // works | supply
+  // номер сметы — ТОТ ЖЕ счётчик, что у «Документов» (ep_smeta_no_v29), чтобы номер
+  // документа не расходился между экранами
+  function prnNo() { const P = window.EP && window.EP.EstimatePrint; return P ? P.docNo() : "1"; }
 
   // агрегированные строки по типу (суммирование одинаковых по имени+единице)
   function rows(type) {
@@ -55,7 +58,8 @@
         <div class="ep-sup-list">${list}</div>
         ${(!isSupply && rs.length) ? `<div class="ep-sup-total">Итого: <b>${money(tot)}</b></div>` : ""}
         <div class="ep-sup-actions">
-          <button type="button" class="btn btn-primary ep-clickable" data-est-print>Печать / PDF</button>
+          ${!isSupply ? `<label class="ep-est-no">Смета №<input type="text" inputmode="numeric" maxlength="12" value="${esc(prnNo())}" data-est-no></label>` : ""}
+          <button type="button" class="btn btn-primary ep-clickable" data-est-print>${isSupply ? "Печать заявки" : "Печать сметы"}</button>
           <button type="button" class="btn btn-ghost ep-clickable" data-est-share>Поделиться</button>
           <button type="button" class="btn btn-ghost ep-clickable" data-est-export>⤓ Экспорт</button>
           <button type="button" class="btn btn-ghost ep-clickable" data-est-import>⤒ Импорт</button>
@@ -66,31 +70,18 @@
       </div>`;
   }
 
+  // Печать — ЕДИНЫЙ печатный бланк (EP.EstimatePrint): смета работ печатается полным
+  // документом (шапка с реквизитами, разделы «Работы»/«Материалы», подытоги, сумма
+  // прописью, отметка по НДС, подписи), вкладка «Поставщику» — заявкой на материалы
+  // (без цен: их заполняет поставщик). Раньше здесь была своя голая таблица без шапки.
+  function PRN() { return window.EP && window.EP.EstimatePrint; }
   function printDoc() {
-    const isSupply = tab === "supply";
-    const rs = rows(isSupply ? "material" : "work");
-    const tot = total(rs);
-    const title = isSupply ? "Материалы (поставщику)" : "Смета работ";
-    const col2 = isSupply ? "Материал" : "Работа";
-    const trs = rs.map((x, i) => isSupply
-      ? `<tr><td>${i + 1}</td><td>${esc(x.name)}</td><td class="c">${x.qty} ${esc(x.unit)}</td></tr>`
-      : `<tr><td>${i + 1}</td><td>${esc(x.name)}</td><td class="c">${x.qty} ${esc(x.unit)}</td><td class="r">${x.price ? money(x.price) : "—"}</td><td class="r">${money(x.price * x.qty)}</td></tr>`).join("");
-    const thead = isSupply
-      ? `<tr><th>№</th><th>${col2}</th><th class="c">Кол-во</th></tr>`
-      : `<tr><th>№</th><th>${col2}</th><th class="c">Кол-во</th><th class="r">Цена</th><th class="r">Сумма</th></tr>`;
-    const tfoot = isSupply ? "" : `<tfoot><tr><td colspan="4" class="r">Итого</td><td class="r">${money(tot)}</td></tr></tfoot>`;
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
-<style>body{font-family:Arial,Helvetica,sans-serif;color:#111;padding:18px}h1{font-size:18px;margin:0 0 12px}
-table{width:100%;border-collapse:collapse;font-size:13px}th,td{border:1px solid #cbd5e1;padding:6px 8px}
-th{background:#f1f5f9;text-align:left}.c{text-align:center}.r{text-align:right}tfoot td{font-weight:700}
-.foot{margin-top:14px;color:#64748b;font-size:12px}</style></head>
-<body><h1>${title}</h1><table><thead>${thead}</thead>
-<tbody>${trs}</tbody>${tfoot}</table>
-<p class="foot">Electric Pro</p>
-<script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script></body></html>`;
-    const w = window.open("", "_blank");
-    if (w && w.document) { w.document.open(); w.document.write(html); w.document.close(); }
-    else flash("Разреши всплывающие окна, чтобы напечатать");
+    const P = PRN();
+    if (!P) return flash("Печать недоступна");
+    const works = rows("work"), mats = rows("material");
+    if (!works.length && !mats.length) return flash("Смета пуста — печатать нечего");
+    const html = tab === "supply" ? P.supplyHtml({ mats }) : P.estimateHtml({ works, mats });
+    if (!P.open(html)) flash("Разреши всплывающие окна, чтобы напечатать");
   }
 
   function shareText() {
@@ -149,6 +140,11 @@ th{background:#f1f5f9;text-align:left}.c{text-align:center}.r{text-align:right}t
     } catch (e) {}
   }
 
+  document.addEventListener("input", (e) => {
+    const t = e.target;
+    if (!t || !t.hasAttribute || !document.getElementById("ep-estimate-root")) return;
+    if (t.hasAttribute("data-est-no")) { const P = window.EP && window.EP.EstimatePrint; if (P) P.setDocNo(t.value); }
+  });
   document.addEventListener("click", (e) => {
     const t = e.target; let el;
     if ((el = t.closest && t.closest("[data-esttab]"))) { tab = el.dataset.esttab === "supply" ? "supply" : "works"; render(); return; }
