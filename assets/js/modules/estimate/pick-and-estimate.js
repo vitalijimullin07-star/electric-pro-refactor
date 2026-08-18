@@ -219,10 +219,54 @@
 
   /* ---------- карточка позиции (клик по имени в предварительной) ---------- */
   function cardNum(v) { const n = parseFloat(String(v == null ? "" : v).replace(",", ".")); return isFinite(n) ? n : 0; }
+  /* ---------- поиск позиции в базе (карточка позиции) ----------
+     Названия в приложении и у поставщика почти никогда не совпадают дословно:
+     приложение считает «Кабель ВВГнг(А)-LS 3×2.5», а в накладной это
+     «ВВГ-Пнг (А)-LS ГОСТ КОНКОРД 3х2,5 (N,PE) -0,66». Раньше карточка брала ПЕРВОЕ
+     слово названия («кабель») и искала простой подстрокой — в базе поставщика слова
+     «кабель» нет вовсе, поэтому импортированные кабели не находились (репорт со
+     скриншотом: в списке только «Кабель SAT-703» и «Кабельный канал»).
+     Теперь: (1) нормализуем оба названия — ×, x, х и * приводим к одному символу,
+     запятую к точке, ё к е, всю пунктуацию к пробелам (иначе «3×2.5» и «3х2,5» —
+     разные строки); (2) ищем ПО ТОКЕНАМ с ранжированием: сначала позиции, совпавшие
+     по большему числу значимых токенов (марка, сечение), потом остальные. */
+  const CARD_STOP = /^(кабель|провод|материал|работа|шт|м|компл|упак|для|под|на|и|с)$/;
+  function cardNorm(s) {
+    return String(s == null ? "" : s).toLowerCase()
+      .replace(/ё/g, "е")
+      .replace(/[×хx*]/g, "x")          // 3×2.5 / 3х2,5 / 3x2,5 / 3*2,5 — одно и то же
+      .replace(/(\d),(\d)/g, "$1.$2")   // десятичная запятая → точка
+      .replace(/[^0-9a-zа-я.]+/g, " ")  // остальная пунктуация — разделитель
+      .replace(/\s+/g, " ").trim();
+  }
+  function cardTokens(s) {
+    const all = cardNorm(s).split(" ").filter(Boolean);
+    const strong = all.filter((t) => (/\d/.test(t) || t.length >= 3) && !CARD_STOP.test(t));
+    return { all, strong: strong.length ? strong : all };
+  }
+  // что подставляем в поле поиска при открытии: название без ведущего родового слова
+  // («Кабель ВВГнг(А)-LS 3×2.5» → «ВВГнг(А)-LS 3×2.5») — по нему база и ищется
   function cardKeywords(name) {
     const w = String(name || "").trim().split(/\s+/);
-    for (let i = 0; i < w.length; i++) { const t = w[i].replace(/[^A-Za-zА-Яа-яЁё]/g, ""); if (t.length >= 3) return t.toLowerCase(); }
-    return String(w[0] || "").toLowerCase();
+    if (w.length > 1 && CARD_STOP.test(cardNorm(w[0]))) return w.slice(1).join(" ");
+    return String(name || "").trim();
+  }
+  // ранжированный поиск: score — сколько значимых токенов запроса нашлось в названии
+  function cardSearch(arr, query) {
+    const q = cardTokens(query);
+    if (!q.strong.length) return arr.slice();
+    const scored = [];
+    arr.forEach((x) => {
+      const nm = cardNorm(x.name);
+      let hit = 0;
+      // токен с цифрой (сечение 3x2.5, номинал 16) весит больше слова-марки: именно он
+      // отличает нужную позицию от однотипных, поэтому 3х2,5 должен опережать 3х1,5
+      q.strong.forEach((t) => { if (nm.indexOf(t) >= 0) hit += /\d/.test(t) ? 2 : 1; });
+      if (hit) scored.push({ x, hit });
+    });
+    scored.sort((a, b) => b.hit - a.hit || String(a.x.name).length - String(b.x.name).length ||
+      String(a.x.name).localeCompare(String(b.x.name), "ru"));
+    return scored.map((s) => s.x);
   }
   function cardDbByType(type) { const db = DB(); return (db && db.getItemsByType) ? (db.getItemsByType(type, activeBase()) || []) : []; }
   function saveDraftToBase() {
@@ -296,9 +340,11 @@
     function dbList() {
       let arr = cardDbByType(item.type);
       if (!DB() || !DB().getItemsByType) return `<div class="ep-card-empty">База недоступна</div>`;
-      const qq = String(q || "").trim().toLowerCase();
-      if (qq) arr = arr.filter((x) => String(x.name || "").toLowerCase().includes(qq));
-      if (!arr.length) return `<div class="ep-card-empty">Ничего не найдено${qq ? ` по «${esc(q)}»` : ""}. Очисти поиск, чтобы видеть всё.</div>`;
+      const qq = String(q || "").trim();
+      if (qq) arr = cardSearch(arr, qq);
+      if (!arr.length) return `<div class="ep-card-empty">Ничего не найдено${qq ? ` по «${esc(q)}»` : ""}.
+        В базе поставщика название обычно другое — попробуй искать по сечению (${esc("3×2,5")}) или по марке (ВВГ),
+        либо очисти поиск, чтобы видеть всё.</div>`;
       return arr.slice(0, 50).map((x) => `<button type="button" class="ep-card-dbrow${String(x.id) === String(linkedId) ? " is-sel" : ""}" data-card-pick="${esc(x.id)}"><span class="ep-card-dbname">${esc(x.name)}</span><span class="ep-card-dbprice">${money(x.price)}${x.unit ? ` <i>${esc(x.unit)}</i>` : ""}</span></button>`).join("");
     }
     function draw() {

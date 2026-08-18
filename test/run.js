@@ -4411,6 +4411,73 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(iCore > 0 && iCore < iShare && iShare < iUi, "db-share.js подключён после ядра и до UI");
   });
 
+// ===== 38. Поиск позиции в базе: имена приложения ≠ имена поставщика =====
+  // Названия у поставщика в накладной другие («ВВГ-Пнг (А)-LS ГОСТ КОНКОРД 3х2,5 (N,PE)»),
+  // чем генерирует приложение («Кабель ВВГнг(А)-LS 3×2.5»), и сечение пишется другими
+  // символами (× / х / x, точка / запятая). Раньше карточка позиции искала по ПЕРВОМУ
+  // слову простой подстрокой и импортированные кабели не находила вовсе.
+  function loadPick() {
+    const vm2 = require("vm"), fs2 = require("fs"), path2 = require("path");
+    const store = {};
+    const sb = { console };
+    sb.window = sb; sb.globalThis = sb;
+    sb.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: (k) => { delete store[k]; } };
+    sb.CustomEvent = function (t, o) { this.type = t; this.detail = o && o.detail; };
+    sb.dispatchEvent = () => true; sb.addEventListener = () => {};
+    sb.document = { addEventListener() {}, getElementById() { return null }, querySelectorAll() { return [] }, createElement() { return { style: {}, classList: { add() {}, contains() { return false } }, appendChild() {}, addEventListener() {} } }, body: { appendChild() {} } };
+    const ctx = vm2.createContext(sb);
+    const dir = path2.join(__dirname, "..", "assets", "js", "modules");
+    ["database/database-storage", "database/database-adapter", "database/database-core",
+     "estimate/estimate-file", "estimate/estimate-draft", "estimate/estimate-main",
+     "estimate/pick-and-estimate"].forEach((n) => {
+      vm2.runInContext(fs2.readFileSync(path2.join(dir, n + ".js"), "utf8"), ctx, { filename: n });
+    });
+    return sb;
+  }
+  test("карточка позиции: поиск в базе нормализует ×/х/x и запятую в сечении", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "estimate", "pick-and-estimate.js"), "utf8");
+    const body = src.slice(src.indexOf("const CARD_STOP"), src.indexOf("function cardDbByType"));
+    const F = new Function(body + "; return { cardNorm, cardTokens, cardKeywords, cardSearch };")();
+    eq(F.cardNorm("Кабель ВВГнг(А)-LS 3×2.5"), "кабель ввгнг а ls 3x2.5");
+    eq(F.cardNorm("ВВГ-Пнг (А)-LS ГОСТ 3х2,5 (ККЗ)"), "ввг пнг а ls гост 3x2.5 ккз", "х и запятая приводятся к тому же виду");
+    // поле поиска подставляется без родового первого слова
+    eq(F.cardKeywords("Кабель ВВГнг(А)-LS 3×2.5"), "ВВГнг(А)-LS 3×2.5");
+    eq(F.cardKeywords("Подрозетник глубокий"), "Подрозетник глубокий", "не режем, если первое слово значимое");
+    const db = [
+      { id: "1", name: "ВВГ-Пнг (А)-LS ГОСТ КОНКОРД 3х2,5 (N,PE) -0,66", price: 88.78 },
+      { id: "2", name: "ВВГ-Пнг (А)-LS ГОСТ КОНКОРД 3х1,5 (N,PE) -0,66", price: 57.55 },
+      { id: "3", name: "Кабель SAT-703 (Cavel)", price: 77.07 },
+      { id: "4", name: "Кабельный канал ПВХ 40x40 белый", price: 190 },
+      { id: "5", name: "ВВГнг-Ls 3х1,5 Конкорд", price: 61 }
+    ];
+    // главный регресс: по названию из приложения кабели поставщика вообще находятся
+    // (раньше поиск шёл по слову «кабель», которого в их названиях нет)
+    const res = F.cardSearch(db, "ВВГнг(А)-LS 3×2.5");
+    ok(res.length >= 2, "кабели поставщика найдены (раньше не находились вовсе)");
+    eq(res[0].id, "1", "первым идёт кабель НУЖНОГО сечения (токен с цифрой весит больше)");
+    ok(res.map((x) => x.id).indexOf("5") > 0, "похожая марка другого сечения — ниже");
+    // поиск по сечению в любом написании
+    ["3х2,5", "3x2.5", "3×2.5"].forEach((q) => {
+      const r = F.cardSearch(db, q);
+      ok(r.length === 1 && r[0].id === "1", "поиск «" + q + "» даёт ровно 3х2,5");
+    });
+    // «кабель» — родовое слово, по нему не сужаем до одного канала
+    ok(F.cardSearch(db, "кабель").length >= 2, "по слову «кабель» видно все кабельные позиции");
+  });
+  test("план: priceFor находит цену при разном написании сечения", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-calc.js"), "utf8");
+    const body = src.slice(src.indexOf("function priceNorm"), src.indexOf("// ---------- шторка ----------"));
+    const items = [{ name: "Кабель ВВГнг(А)-LS 3х2,5", price: 92.25, type: "material" }];
+    const fakeEP = { Database: { getItemsByType: () => items } };
+    const F = new Function("EP", body + "; return { priceNorm, priceFor };")(fakeEP);
+    eq(F.priceNorm("Кабель ВВГнг(А)-LS 3×2.5"), F.priceNorm("Кабель ВВГнг(А)-LS 3х2,5"), "× и х, точка и запятая — одно и то же");
+    eq(F.priceFor("Кабель ВВГнг(А)-LS 3×2.5", "material"), 92.25, "цена находится, хотя в БД другое написание");
+    eq(F.priceFor("Кабель ВВГнг(А)-LS 3×2.5 · до щита (220В)", "material"), 92.25, "суффикс не мешает (подстрока)");
+    eq(F.priceFor("Кабель ВВГнг(А)-LS 5×6", "material"), 0, "чужое сечение цену не подхватывает");
+  });
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);
