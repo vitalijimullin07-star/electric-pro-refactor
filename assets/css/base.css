@@ -1576,3 +1576,16 @@ body[data-noblur="1"] .ep-fb-card{backdrop-filter:none!important;-webkit-backdro
    на всю ширину, как обычный input из общего правила выше */
 .ep-est-no { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
 .ep-est-no input { width: 66px; flex: none; text-align: center; }
+
+/* блок печати: номер, выбор что печатать, наценка на материалы, кнопки печати */
+.ep-est-print { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
+  margin-top: 12px; padding: 10px 12px; border: 1px solid rgba(148,163,184,.25);
+  border-radius: 12px; background: rgba(148,163,184,.06); }
+.ep-est-scope { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ep-est-lbl { font-size: 12px; color: var(--muted); }
+.ep-est-chip { border: 1px solid rgba(148,163,184,.4); background: transparent; color: var(--text);
+  border-radius: 999px; padding: 4px 12px; font-size: 12px; cursor: pointer; }
+.ep-est-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ep-est-markup { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.ep-est-markup input { width: 64px; flex: none; text-align: center; }
+.ep-est-prow { display: flex; gap: 8px; flex-wrap: wrap; }

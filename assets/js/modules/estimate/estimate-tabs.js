@@ -9,6 +9,15 @@
     return (Number(v || 0).toFixed(2)) + " \u20bd";
   }
   let tab = "works"; // works | supply
+  // Печать — что печатать (scope) и наценка на материалы (%). Просьба пользователя:
+  // «печатать как материалы так и работы, и на материалы перед печатью задавать процент».
+  // scope: "all" (смета целиком) | "work" (только работы) | "mat" (только материалы).
+  // Наценка применяется к цене материалов в самом бланке (EstimatePrint) — сессионно,
+  // но сохраняется в localStorage, чтобы не вводить её заново при каждом заходе.
+  const MK_KEY = "ep_est_matmarkup_v29";
+  let printScope = "all";
+  let matMarkup = (() => { try { return Number(localStorage.getItem(MK_KEY)) || 0; } catch (e) { return 0; } })();
+  function setMarkup(v) { matMarkup = Math.max(0, Number(v) || 0); try { localStorage.setItem(MK_KEY, String(matMarkup)); } catch (e) {} }
   // номер сметы — ТОТ ЖЕ счётчик, что у «Документов» (ep_smeta_no_v29), чтобы номер
   // документа не расходился между экранами
   function prnNo() { const P = window.EP && window.EP.EstimatePrint; return P ? P.docNo() : "1"; }
@@ -57,9 +66,8 @@
         </div>
         <div class="ep-sup-list">${list}</div>
         ${(!isSupply && rs.length) ? `<div class="ep-sup-total">Итого: <b>${money(tot)}</b></div>` : ""}
+        ${printBlock()}
         <div class="ep-sup-actions">
-          ${!isSupply ? `<label class="ep-est-no">Смета №<input type="text" inputmode="numeric" maxlength="12" value="${esc(prnNo())}" data-est-no></label>` : ""}
-          <button type="button" class="btn btn-primary ep-clickable" data-est-print>${isSupply ? "Печать заявки" : "Печать сметы"}</button>
           <button type="button" class="btn btn-ghost ep-clickable" data-est-share>Поделиться</button>
           <button type="button" class="btn btn-ghost ep-clickable" data-est-export>⤓ Экспорт</button>
           <button type="button" class="btn btn-ghost ep-clickable" data-est-import>⤒ Импорт</button>
@@ -70,18 +78,56 @@
       </div>`;
   }
 
-  // Печать — ЕДИНЫЙ печатный бланк (EP.EstimatePrint): смета работ печатается полным
-  // документом (шапка с реквизитами, разделы «Работы»/«Материалы», подытоги, сумма
-  // прописью, отметка по НДС, подписи), вкладка «Поставщику» — заявкой на материалы
-  // (без цен: их заполняет поставщик). Раньше здесь была своя голая таблица без шапки.
+  // Блок печати: номер сметы, выбор что печатать (смета целиком / только работы /
+  // только материалы) и наценка на материалы (%), плюс отдельная кнопка «Заявка
+  // поставщику» (материалы без цен). Наценка показывается, только когда в печать
+  // попадают материалы (scope ≠ work).
+  const SCOPES = [["all", "Смета целиком"], ["work", "Работы"], ["mat", "Материалы"]];
+  function printBlock() {
+    const printLabel = printScope === "work" ? "🖨 Печать работ"
+      : printScope === "mat" ? "🖨 Печать материалов" : "🖨 Печать сметы";
+    return `<div class="ep-est-print">
+        <label class="ep-est-no">Смета №<input type="text" inputmode="numeric" maxlength="12" value="${esc(prnNo())}" data-est-no></label>
+        <div class="ep-est-scope"><span class="ep-est-lbl">Печатать:</span>
+          ${SCOPES.map(([v, l]) => `<button type="button" class="ep-est-chip ep-clickable ${printScope === v ? "on" : ""}" data-est-scope="${v}">${l}</button>`).join("")}
+        </div>
+        ${printScope !== "work" ? `<label class="ep-est-markup">Наценка на материалы, %<input type="number" inputmode="decimal" min="0" step="1" value="${esc(String(matMarkup))}" data-est-markup></label>` : ""}
+        <div class="ep-est-prow">
+          <button type="button" class="btn btn-primary ep-clickable" data-est-print>${printLabel}</button>
+          <button type="button" class="btn btn-ghost ep-clickable" data-est-supply>Заявка поставщику (без цен)</button>
+        </div>
+      </div>`;
+  }
+
+  // Печать — ЕДИНЫЙ печатный бланк (EP.EstimatePrint). Что печатать выбирает scope:
+  // «all» — смета целиком (работы + материалы), «work» — только работы, «mat» — только
+  // материалы. К материалам применяется наценка matMarkup (%). Отдельная кнопка «Заявка
+  // поставщику» печатает материалы БЕЗ цен (supplyHtml). heading подставляется в заголовок
+  // листа, чтобы «Печать работ» дала документ «Смета работ», а не «Смета».
   function PRN() { return window.EP && window.EP.EstimatePrint; }
   function printDoc() {
     const P = PRN();
     if (!P) return flash("Печать недоступна");
     const works = rows("work"), mats = rows("material");
-    if (!works.length && !mats.length) return flash("Смета пуста — печатать нечего");
-    const html = tab === "supply" ? P.supplyHtml({ mats }) : P.estimateHtml({ works, mats });
+    let html;
+    if (printScope === "work") {
+      if (!works.length) return flash("Работ нет — печатать нечего");
+      html = P.estimateHtml({ works, mats: [], heading: "Смета работ" });
+    } else if (printScope === "mat") {
+      if (!mats.length) return flash("Материалов нет — печатать нечего");
+      html = P.estimateHtml({ works: [], mats, markup: matMarkup, heading: "Смета материалов" });
+    } else {
+      if (!works.length && !mats.length) return flash("Смета пуста — печатать нечего");
+      html = P.estimateHtml({ works, mats, markup: matMarkup, heading: "Смета" });
+    }
     if (!P.open(html)) flash("Разреши всплывающие окна, чтобы напечатать");
+  }
+  function supplyDoc() {
+    const P = PRN();
+    if (!P) return flash("Печать недоступна");
+    const mats = rows("material");
+    if (!mats.length) return flash("Материалов нет — заявка пустая");
+    if (!P.open(P.supplyHtml({ mats }))) flash("Разреши всплывающие окна, чтобы напечатать");
   }
 
   function shareText() {
@@ -144,12 +190,16 @@
     const t = e.target;
     if (!t || !t.hasAttribute || !document.getElementById("ep-estimate-root")) return;
     if (t.hasAttribute("data-est-no")) { const P = window.EP && window.EP.EstimatePrint; if (P) P.setDocNo(t.value); }
+    // наценку сохраняем на ввод, но НЕ перерисовываем экран (иначе сбился бы фокус поля)
+    else if (t.hasAttribute("data-est-markup")) { setMarkup(t.value); }
   });
   document.addEventListener("click", (e) => {
     const t = e.target; let el;
     if ((el = t.closest && t.closest("[data-esttab]"))) { tab = el.dataset.esttab === "supply" ? "supply" : "works"; render(); return; }
     if (document.getElementById("ep-estimate-root")) {
+      if ((el = t.closest && t.closest("[data-est-scope]"))) { printScope = el.getAttribute("data-est-scope"); render(); return; }
       if (t.closest && t.closest("[data-est-print]")) { printDoc(); return; }
+      if (t.closest && t.closest("[data-est-supply]")) { supplyDoc(); return; }
       if (t.closest && t.closest("[data-est-share]")) { shareText(); return; }
       if (t.closest && t.closest("[data-est-export]")) { exportFile(); return; }
       if (t.closest && t.closest("[data-est-import]")) { importFile(); return; }

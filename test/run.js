@@ -4251,6 +4251,34 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(idx.indexOf("estimate/estimate-print.js") > 0, "модуль подключён в index.html");
     ok(idx.indexOf("estimate/estimate-print.js") < idx.indexOf("estimate/estimate-tabs.js"), "и раньше экрана сметы");
   });
+  test("печать: отдельные документы работ и материалов (heading) + метка наценки", () => {
+    const P = loadEstimate().EstimatePrint;
+    const works = [{ name: "Штробление", unit: "м", qty: 10, price: 100 }];
+    const mats = [{ name: "Кабель", unit: "м", qty: 20, price: 50 }];
+    // только работы — заголовок «Смета работ», раздела материалов нет
+    const hw = P.estimateHtml({ works, mats: [], heading: "Смета работ" });
+    ok(/<h1>Смета работ №/.test(hw), "заголовок листа работ");
+    ok(hw.indexOf("Раздел 1. Работы") > 0 && hw.indexOf("Материалы") < 0, "в листе работ нет раздела материалов");
+    // только материалы — «Смета материалов», работ нет, материалы — раздел 1
+    const hm = P.estimateHtml({ works: [], mats, heading: "Смета материалов" });
+    ok(/<h1>Смета материалов №/.test(hm), "заголовок листа материалов");
+    ok(hm.indexOf("Раздел 1. Материалы") > 0 && hm.indexOf("Работы") < 0, "в листе материалов нет раздела работ");
+    // наценка на материалы — в цене и в подписи строки итога
+    const h20 = P.estimateHtml({ works: [], mats, markup: 20, heading: "Смета материалов" });
+    ok(h20.indexOf("1 200,00") > 0, "цена материалов с наценкой 20%");
+    ok(h20.indexOf("Материалы (с наценкой 20 %)") > 0, "в итогах помечена наценка");
+    ok(hm.indexOf("(с наценкой") < 0, "без наценки метки нет");
+  });
+  test("печать: экран сметы умеет scope (работы/материалы) и наценку на материалы", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const tabs = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "estimate", "estimate-tabs.js"), "utf8");
+    ok(/data-est-scope/.test(tabs), "чипы выбора что печатать");
+    ok(/data-est-markup/.test(tabs), "поле наценки на материалы");
+    ok(/data-est-supply/.test(tabs), "отдельная кнопка заявки поставщику");
+    ok(/heading:\s*"Смета работ"/.test(tabs) && /heading:\s*"Смета материалов"/.test(tabs), "печатает работы и материалы отдельными документами");
+    ok(/markup:\s*matMarkup/.test(tabs), "наценка передаётся в бланк");
+    ok(/ep_est_matmarkup_v29/.test(tabs), "наценка сохраняется на устройстве");
+  });
 
 // ===== 37. Совместная база данных: подключение мастера, журнал правок, уведомления =====
   function loadShare() {

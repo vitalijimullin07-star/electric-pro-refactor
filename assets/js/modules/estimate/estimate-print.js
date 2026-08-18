@@ -197,12 +197,15 @@
     const secMats = mats.length ? `<tr class="sec"><td colspan="6">Раздел ${works.length ? 2 : 1}. Материалы</td></tr>${matBody}
       <tr class="st"><td colspan="5" class="r">Итого по разделу ${works.length ? 2 : 1}</td><td class="r">${money(matSum)}</td></tr>` : "";
 
+    // heading — заголовок листа: «Смета» (целиком), «Смета работ», «Смета материалов»
+    // (когда печатают только один раздел). По умолчанию «Смета» — обратная совместимость.
+    const heading = o.heading || "Смета";
     const sumRows = [];
     if (works.length) sumRows.push(["Работы", money(workSum)]);
-    if (mats.length) sumRows.push(["Материалы", money(matSum)]);
+    if (mats.length) sumRows.push([o.markup ? "Материалы (с наценкой " + qty(o.markup) + " %)" : "Материалы", money(matSum)]);
     if (disc > 0) { sumRows.push(["Подытог", money(subtotal)]); sumRows.push(["Скидка " + qty(o.discount) + " %", "−" + money(disc)]); }
     const body = `
-      <div class="top"><h1>Смета № ${esc(no)}</h1><div class="date">от ${esc(date)}</div></div>
+      <div class="top"><h1>${esc(heading)} № ${esc(no)}</h1><div class="date">от ${esc(date)}</div></div>
       ${reqTable([["Исполнитель", masterFull(m)], ["Заказчик", [ci.name, ci.phone ? "тел. " + ci.phone : ""].filter(Boolean).join(", ")], ["Объект", ci.object]])}
       <table class="tb">
         <colgroup><col style="width:9mm"><col><col style="width:14mm"><col style="width:18mm"><col style="width:24mm"><col style="width:26mm"></colgroup>
@@ -220,8 +223,8 @@
       <div class="note">Смета носит предварительный характер: фактический объём работ и материалов уточняется по факту выполнения.
         Стоимость материалов может измениться при изменении цен поставщика.</div>
       ${signBlock("Исполнитель (подпись, ФИО)", "Заказчик (подпись, ФИО)")}
-      <div class="foot">Смета № ${esc(no)} от ${esc(date)} · ${esc(m.name || "Electric Pro")} · сформировано в Electric Pro</div>`;
-    return wrap("Смета № " + no, body);
+      <div class="foot">${esc(heading)} № ${esc(no)} от ${esc(date)} · ${esc(m.name || "Electric Pro")} · сформировано в Electric Pro</div>`;
+    return wrap(heading + " № " + no, body);
   }
 
   /* ---------- ЗАЯВКА НА МАТЕРИАЛЫ (лист поставщику) ----------
