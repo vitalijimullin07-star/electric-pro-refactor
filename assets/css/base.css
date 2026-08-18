@@ -642,7 +642,7 @@ body[data-visual-mode="night"] .main-dashboard .card p:not(.badge){color:#cbd5e1
 .ep-sup-sub{font-size:calc(12px * var(--eff-text-scale,1));color:var(--muted)}
 .ep-sup-sub b{color:var(--text)}
 .ep-sup-list{display:flex;flex-direction:column;gap:6px}
-.ep-sup-row{display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:center;padding:8px 10px;border-radius:10px;background:rgba(127,140,170,.10);border:1px solid rgba(127,140,170,.18)}
+.ep-sup-row{display:grid;grid-template-columns:1fr auto auto auto auto;gap:8px;align-items:center;padding:8px 10px;border-radius:10px;background:rgba(127,140,170,.10);border:1px solid rgba(127,140,170,.18)}
 .ep-sup-n{font-size:calc(13px * var(--eff-text-scale,1));color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis}
 .ep-sup-q{font-size:calc(12px * var(--eff-text-scale,1));color:var(--muted);white-space:nowrap}
 .ep-sup-p{font-size:calc(12px * var(--eff-text-scale,1));color:var(--muted);white-space:nowrap;text-align:right}
@@ -1141,7 +1141,7 @@ body[data-noanim="1"] *::after{animation-duration:.001s!important;transition-dur
 .ep-rep-row span:last-child{color:var(--muted,#cbd5e1);white-space:nowrap}
 
 /* Поставщику без цен — позиция + количество */
-.ep-sup-row.supply{grid-template-columns:1fr auto}
+.ep-sup-row.supply{grid-template-columns:1fr auto auto}
 .ep-sup-row.supply .ep-sup-q{font-size:calc(13px * var(--eff-text-scale,1));font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
 
 /* ── Блокировка доступа (тест/подписка истекли) ── */
@@ -1589,3 +1589,15 @@ body[data-noblur="1"] .ep-fb-card{backdrop-filter:none!important;-webkit-backdro
 .ep-est-markup { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
 .ep-est-markup input { width: 64px; flex: none; text-align: center; }
 .ep-est-prow { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* добавление позиции в основную смету */
+.ep-est-additem { margin-top: 10px; }
+.ep-est-addform { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
+  border: 1px solid rgba(148,163,184,.25); border-radius: 12px; background: rgba(148,163,184,.06); }
+.ep-est-af2 { display: flex; gap: 8px; flex-wrap: wrap; }
+.ep-est-af2 input { flex: 1 1 90px; min-width: 0; }
+.ep-est-af2 input:nth-child(2) { flex: 0 0 70px; text-align: center; }
+/* ✕ удаления позиции — компактная, справа в строке сметы */
+.ep-sup-del { flex: none; width: 26px; height: 26px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--muted); font-size: 14px; cursor: pointer; opacity: .7; }
+.ep-sup-del:hover, .ep-sup-del:active { background: rgba(239,68,68,.16); color: var(--danger, #ef4444); opacity: 1; }

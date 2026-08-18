@@ -16,6 +16,9 @@
   // но сохраняется в localStorage, чтобы не вводить её заново при каждом заходе.
   const MK_KEY = "ep_est_matmarkup_v29";
   let printScope = "all";
+  // добавление позиции прямо в основную смету (просьба пользователя): showAdd —
+  // раскрыта ли форма, addType — работа/материал (по умолчанию по текущей вкладке)
+  let showAdd = false, addType = "work";
   let matMarkup = (() => { try { return Number(localStorage.getItem(MK_KEY)) || 0; } catch (e) { return 0; } })();
   function setMarkup(v) { matMarkup = Math.max(0, Number(v) || 0); try { localStorage.setItem(MK_KEY, String(matMarkup)); } catch (e) {} }
   // номер сметы — ТОТ ЖЕ счётчик, что у «Документов» (ep_smeta_no_v29), чтобы номер
@@ -42,18 +45,21 @@
     const isSupply = tab === "supply";
     const rs = rows(isSupply ? "material" : "work");
     const tot = total(rs);
+    const delBtn = (x) => `<button type="button" class="ep-sup-del ep-clickable" data-est-del data-del-type="${isSupply ? "material" : "work"}" data-del-name="${esc(x.name)}" data-del-unit="${esc(x.unit)}" aria-label="Удалить позицию">✕</button>`;
     const list = rs.length ? rs.map((x, i) => isSupply ? `
       <div class="ep-sup-row supply">
         <div class="ep-sup-n">${i + 1}. ${esc(x.name)}</div>
         <div class="ep-sup-q">${x.qty}${x.unit ? " " + esc(x.unit) : ""}</div>
+        ${delBtn(x)}
       </div>` : `
       <div class="ep-sup-row">
         <div class="ep-sup-n">${i + 1}. ${esc(x.name)}</div>
         <div class="ep-sup-q">${x.qty}${x.unit ? " " + esc(x.unit) : ""}</div>
         <div class="ep-sup-p">${x.price ? money(x.price) : "—"}</div>
         <div class="ep-sup-s">${money(x.price * x.qty)}</div>
+        ${delBtn(x)}
       </div>`).join("") :
-      `<div class="ep-db-empty">Пока пусто. Добавь позиции через щит, пул или «Материалы/Работа» — кнопкой «В смету», и они появятся здесь.</div>`;
+      `<div class="ep-db-empty">Пока пусто. Добавь позиции через щит, пул или «Материалы/Работа» — кнопкой «В смету», или прямо здесь кнопкой «➕ Добавить позицию».</div>`;
     root.innerHTML = `
       <div class="ep-est-tabs">
         <button type="button" class="ep-est-tab ${!isSupply ? "on" : ""}" data-esttab="works">Смета работ</button>
@@ -66,6 +72,7 @@
         </div>
         <div class="ep-sup-list">${list}</div>
         ${(!isSupply && rs.length) ? `<div class="ep-sup-total">Итого: <b>${money(tot)}</b></div>` : ""}
+        <div class="ep-est-additem">${showAdd ? addForm(isSupply) : `<button type="button" class="btn btn-ghost ep-clickable" data-est-add>➕ Добавить позицию</button>`}</div>
         ${printBlock()}
         <div class="ep-sup-actions">
           <button type="button" class="btn btn-ghost ep-clickable" data-est-share>Поделиться</button>
@@ -97,6 +104,51 @@
           <button type="button" class="btn btn-ghost ep-clickable" data-est-supply>Заявка поставщику (без цен)</button>
         </div>
       </div>`;
+  }
+
+  // Форма добавления позиции прямо в основную смету. Тип по умолчанию — по текущей
+  // вкладке (работы → «Работа», Поставщику → «Материал»), но можно переключить.
+  function addForm() {
+    return `<div class="ep-est-addform">
+        <div class="ep-est-scope"><span class="ep-est-lbl">Тип:</span>
+          <button type="button" class="ep-est-chip ep-clickable ${addType === "work" ? "on" : ""}" data-eaf-type="work">Работа</button>
+          <button type="button" class="ep-est-chip ep-clickable ${addType === "material" ? "on" : ""}" data-eaf-type="material">Материал</button>
+        </div>
+        <input id="ep-eaf-name" type="text" placeholder="Наименование" autocomplete="off">
+        <div class="ep-est-af2">
+          <input id="ep-eaf-qty" type="number" inputmode="decimal" min="0" step="any" placeholder="Кол-во" value="1">
+          <input id="ep-eaf-unit" type="text" placeholder="ед." value="шт" maxlength="12">
+          <input id="ep-eaf-price" type="number" inputmode="decimal" min="0" step="any" placeholder="Цена ₽">
+        </div>
+        <div class="ep-est-prow">
+          <button type="button" class="btn btn-primary ep-clickable" data-est-addsave>Добавить</button>
+          <button type="button" class="btn btn-ghost ep-clickable" data-est-addcancel>Отмена</button>
+        </div>
+      </div>`;
+  }
+  function addSave() {
+    const d = Draft(); if (!d || !d.addItem) return flash("Добавление недоступно");
+    const val = (id) => { const el = document.getElementById(id); return el ? el.value : ""; };
+    const name = String(val("ep-eaf-name") || "").trim();
+    if (!name) return flash("Впиши наименование позиции");
+    const numv = (s) => { const n = parseFloat(String(s).replace(",", ".")); return isFinite(n) ? n : 0; };
+    const qty = numv(val("ep-eaf-qty")) || 1;
+    const unit = String(val("ep-eaf-unit") || "шт").trim() || "шт";
+    const price = numv(val("ep-eaf-price"));
+    d.addItem({ type: addType, name, unit, qty, price, source: "manual" });
+    showAdd = false;
+    render();
+    flash("Позиция добавлена");
+  }
+  // Удалить позицию из основной сметы. Строки на экране агрегированы (одинаковые
+  // тип+имя+единица сложены), поэтому удаляем ВСЕ позиции с этим ключом — как их и
+  // видит пользователь одной строкой.
+  function removeRow(type, name, unit) {
+    const d = Draft(); if (!d || !d.getItems) return;
+    const key = String(name || "").toLowerCase().trim() + "|" + String(unit || "");
+    const kill = d.getItems().filter((x) => x.type === type && (String(x.name || "").toLowerCase().trim() + "|" + String(x.unit || "")) === key);
+    kill.forEach((x) => d.removeItem(x.id));
+    render();
   }
 
   // Печать — ЕДИНЫЙ печатный бланк (EP.EstimatePrint). Что печатать выбирает scope:
@@ -198,6 +250,21 @@
     if ((el = t.closest && t.closest("[data-esttab]"))) { tab = el.dataset.esttab === "supply" ? "supply" : "works"; render(); return; }
     if (document.getElementById("ep-estimate-root")) {
       if ((el = t.closest && t.closest("[data-est-scope]"))) { printScope = el.getAttribute("data-est-scope"); render(); return; }
+      // добавление позиции в основную смету
+      if (t.closest && t.closest("[data-est-add]")) { showAdd = true; addType = tab === "supply" ? "material" : "work"; render(); return; }
+      if ((el = t.closest && t.closest("[data-eaf-type]"))) {
+        // переключаем тип БЕЗ полного render() — иначе стёрлись бы уже введённые поля
+        addType = el.getAttribute("data-eaf-type");
+        document.querySelectorAll("[data-eaf-type]").forEach((b) => b.classList.toggle("on", b.getAttribute("data-eaf-type") === addType));
+        return;
+      }
+      if (t.closest && t.closest("[data-est-addsave]")) { addSave(); return; }
+      if (t.closest && t.closest("[data-est-addcancel]")) { showAdd = false; render(); return; }
+      if ((el = t.closest && t.closest("[data-est-del]"))) {
+        if (!confirm("Удалить позицию из сметы?")) return;
+        removeRow(el.getAttribute("data-del-type"), el.getAttribute("data-del-name"), el.getAttribute("data-del-unit"));
+        return;
+      }
       if (t.closest && t.closest("[data-est-print]")) { printDoc(); return; }
       if (t.closest && t.closest("[data-est-supply]")) { supplyDoc(); return; }
       if (t.closest && t.closest("[data-est-share]")) { shareText(); return; }

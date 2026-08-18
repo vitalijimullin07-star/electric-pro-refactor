@@ -4279,6 +4279,35 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/markup:\s*matMarkup/.test(tabs), "наценка передаётся в бланк");
     ok(/ep_est_matmarkup_v29/.test(tabs), "наценка сохраняется на устройстве");
   });
+  test("печать: диалог через скрытый iframe (window.open как фолбэк), без авто-print в листе", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const prn = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "estimate", "estimate-print.js"), "utf8");
+    ok(/createElement\("iframe"\)/.test(prn), "печать поднимает iframe");
+    ok(/\.focus\(\);\s*\S*\.print\(\)/.test(prn) || /cw\.focus\(\)/.test(prn), "focus перед print, чтобы печатался лист, а не страница");
+    ok(/window\.open\("",\s*"_blank"\)/.test(prn), "остался фолбэк на отдельную вкладку");
+    ok(prn.indexOf("window.onload=function(){setTimeout(function(){window.print()") < 0, "авто-print <script> из листа убран");
+    const P = loadEstimate().EstimatePrint;
+    ok(P.estimateHtml({ works: [], mats: [] }).indexOf("window.print()") < 0, "бланк не несёт авто-print скрипт");
+  });
+  test("основная смета: добавление позиции вручную (addItem source=manual) + удаление строки", () => {
+    const EP2 = loadEstimate(), E = EP2.Estimate;
+    E.clear();
+    const line = E.addItem({ type: "work", name: "Демонтаж", unit: "точ", qty: 3, price: 150, source: "manual" });
+    eq(line.source, "manual", "источник помечен manual");
+    eq(line.type, "work"); eq(line.qty, 3); eq(line.unit, "точ"); eq(line.price, 150);
+    ok(E.getItems().some((x) => x.name === "Демонтаж"), "позиция в основной смете");
+    // удаление всех позиций с ключом тип+имя+единица (как их видит одна строка экрана)
+    E.getItems().filter((x) => x.type === "work" && x.name.toLowerCase() === "демонтаж" && x.unit === "точ").forEach((x) => E.removeItem(x.id));
+    ok(!E.getItems().some((x) => x.name === "Демонтаж"), "позиция удалена");
+  });
+  test("основная смета: экран умеет добавить/удалить позицию", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const tabs = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "estimate", "estimate-tabs.js"), "utf8");
+    ok(/data-est-add\b/.test(tabs) && /data-est-addsave/.test(tabs), "кнопка и форма добавления");
+    ok(/data-eaf-type/.test(tabs), "выбор типа (работа/материал) в форме");
+    ok(/addItem\(\{[^}]*source:\s*"manual"/.test(tabs), "добавляет со source manual");
+    ok(/data-est-del/.test(tabs) && /function removeRow/.test(tabs), "удаление строки сметы");
+  });
 
 // ===== 37. Совместная база данных: подключение мастера, журнал правок, уведомления =====
   function loadShare() {
