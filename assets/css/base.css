@@ -1571,3 +1571,8 @@ body[data-flatshadow="1"] .ep-chat-fab{box-shadow:none}
 .ep-fb-empty{color:var(--muted);text-align:center;padding:10px}
 .ep-fb-toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:rgba(15,23,42,.94);color:#f8fafc;padding:8px 14px;border-radius:10px;font-weight:800;z-index:10060}
 body[data-noblur="1"] .ep-fb-card{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;background:rgb(var(--card-bg-rgb))}
+
+/* номер сметы рядом с кнопкой печати (экран «Смета») — компактное поле, не растягивается
+   на всю ширину, как обычный input из общего правила выше */
+.ep-est-no { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.ep-est-no input { width: 66px; flex: none; text-align: center; }

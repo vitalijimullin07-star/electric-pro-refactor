@@ -292,35 +292,20 @@ table{width:100%;border-collapse:collapse;font-size:12px;margin:6px 0}th,td{bord
   }
 
   /* ---------- печать ---------- */
+  // Бланк сметы — ОБЩИЙ с экраном «Смета» (EP.EstimatePrint.estimateHtml): раньше здесь
+  // был свой отдельный HTML, и два экрана печатали один и тот же документ по-разному
+  // (у этого не было ни суммы прописью, ни повтора шапки таблицы на новой странице,
+  // ни отметки по НДС). Наценка/скидка/«материалы суммой» передаются параметрами.
   function printClientEstimate() {
-    const s = sums(); const ci = clientInfo(); const ml = masterLine();
-    const wrows = s.works.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.name)}</td><td class="c">${x.qty} ${esc(x.unit)}</td><td class="r">${money(x.price)}</td><td class="r">${money(x.price * x.qty)}</td></tr>`).join("");
-    const mrows = opt.matMode === "list"
-      ? s.mats.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.name)}</td><td class="c">${x.qty} ${esc(x.unit)}</td><td class="r">${money(x.price * s.k)}</td><td class="r">${money(x.price * s.k * x.qty)}</td></tr>`).join("")
-      : `<tr><td>1</td><td>Материалы (комплект)</td><td class="c"></td><td class="r"></td><td class="r">${money(s.matSum)}</td></tr>`;
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Смета № ${esc(docNo())}</title>
-<style>body{font-family:Arial,Helvetica,sans-serif;color:#111;padding:20px;max-width:760px;margin:0 auto}
-h1{font-size:18px;margin:0 0 4px}.sub{color:#475569;font-size:12px;margin-bottom:12px}
-.head{font-size:13px;line-height:1.6;margin-bottom:14px;border:1px solid #e2e8f0;border-radius:8px;padding:10px}
-h2{font-size:14px;margin:16px 0 6px}table{width:100%;border-collapse:collapse;font-size:12px}
-th,td{border:1px solid #cbd5e1;padding:5px 7px}th{background:#f1f5f9;text-align:left}.c{text-align:center}.r{text-align:right}
-.sub-t{text-align:right;font-size:13px;margin:6px 2px}.grand{text-align:right;font-size:16px;font-weight:700;margin-top:8px}
-.sign{display:flex;justify-content:space-between;margin-top:34px;font-size:13px}.foot{margin-top:18px;color:#94a3b8;font-size:11px}</style></head>
-<body>
-<h1>Смета № ${esc(docNo())}</h1><div class="sub">от ${today()}</div>
-<div class="head"><div><b>Исполнитель:</b> ${esc(ml) || "—"}</div><div><b>Заказчик:</b> ${esc(ci.client) || "—"}</div><div><b>Объект:</b> ${esc(ci.object) || "—"}</div></div>
-<h2>Работы</h2><table><thead><tr><th>№</th><th>Наименование</th><th class="c">Кол-во</th><th class="r">Цена</th><th class="r">Сумма</th></tr></thead><tbody>${wrows || '<tr><td colspan="5" class="c">—</td></tr>'}</tbody></table>
-<div class="sub-t">Итого работы: <b>${money(s.workSum)}</b></div>
-<h2>Материалы</h2><table><thead><tr><th>№</th><th>Наименование</th><th class="c">Кол-во</th><th class="r">Цена</th><th class="r">Сумма</th></tr></thead><tbody>${mrows || '<tr><td colspan="5" class="c">—</td></tr>'}</tbody></table>
-<div class="sub-t">Итого материалы: <b>${money(s.matSum)}</b></div>
-${s.disc > 0 ? `<div class="sub-t">Подытог: <b>${money(s.subtotal)}</b></div><div class="sub-t">Скидка ${esc(String(opt.discount))}%: <b>−${money(s.disc)}</b></div>` : ""}
-<div class="grand">К ОПЛАТЕ: ${money(s.total)}</div>
-<div class="sign"><div>Исполнитель ______________</div><div>Заказчик ______________</div></div>
-<div class="foot">Electric Pro</div>
-<script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script></body></html>`;
-    const w = window.open("", "_blank");
-    if (w && w.document) { w.document.open(); w.document.write(html); w.document.close(); }
-    else flash("Разреши всплывающие окна для печати");
+    const P = window.EP && window.EP.EstimatePrint;
+    const s = sums(), ci = clientInfo();
+    if (!P) return flash("Печать недоступна");
+    const html = P.estimateHtml({
+      works: s.works, mats: s.mats, no: docNo(), date: today(),
+      client: ci.client, object: ci.object,
+      markup: opt.markup, discount: opt.discount, matMode: opt.matMode
+    });
+    if (!P.open(html)) flash("Разреши всплывающие окна для печати");
   }
 
   function shareClientEstimate() {
