@@ -2022,6 +2022,88 @@ test("EP.Plan.Elements.hitAt: не находит элемент другого 
   ok(hit2 && hit2.el && hit2.el.id === s1.id, "но находится обратно на своём этаже");
 });
 
+// ----- Этажи, Этап 2: стояк между этажами -----
+// Хелпер: два этажа, щит только на первом, связанная пара стояков.
+function twoFloorsWithRiser() {
+  const { P, w } = install();
+  const pn = M.newPanel(-50, -50, "Щ1"); P.panels.push(pn);            // щит вне комнаты
+  P.guides.push(M.newGuide([{ x: -50, y: -50 }, { x: 600, y: 400 }])); // магистраль этажа 1
+  const r1 = M.newElement("riser", null, 0, 270, "power");
+  r1.params = { x: 200, y: 200 }; P.elements.push(r1);
+  const f1 = P.floors[0];
+  const f2 = EP.Plan.Core.addFloor("2 этаж");                          // активным стал f2
+  const roomB = M.newRoom(G.rectPoints(0, 0, 400, 300), "B"); P.rooms.push(roomB);
+  P.guides.push(M.newGuide([{ x: 200, y: 200 }, { x: 600, y: 400 }])); // магистраль этажа 2
+  const r2 = M.newElement("riser", null, 0, 270, "power");
+  r2.params = { x: 200, y: 200 }; P.elements.push(r2);
+  r1.riserLink = r2.id; r2.riserLink = r1.id;
+  return { P, w, pn, r1, r2, f1, f2, roomB };
+}
+test("Стояк: роли — приёмник на этаже без щита, источник на этаже со щитом", () => {
+  const { P, r1, r2 } = twoFloorsWithRiser();
+  const RT = EP.Plan.Routes;
+  eq(RT.riserPairs(P).length, 1, "пара найдена");
+  eq(RT.riserRole(P, r1), "source", "стояк на этаже со щитом — источник");
+  eq(RT.riserRole(P, r2), "sink", "стояк на этаже без щита — приёмник (питает свой этаж)");
+  eq(RT.sinkRisersOn(P, P.floors[1].id).length, 1, "на этаже 2 один стояк-приёмник");
+  eq(RT.sinkRisersOn(P, P.floors[0].id).length, 0, "на этаже со щитом приёмников нет");
+});
+test("Стояк: односторонняя ссылка игнорируется целиком (пары нет)", () => {
+  const { P, r1, r2 } = twoFloorsWithRiser();
+  r2.riserLink = null; // связь разорвана только с одной стороны
+  eq(EP.Plan.Routes.riserPairs(P).length, 0, "пара не считается");
+  eq(EP.Plan.Routes.riserRole(P, r1), null, "роли нет");
+});
+test("Стояк: этаж без щита трассируется — точки идут к стояку, стояк-источник к щиту", () => {
+  const { P, r1, r2, roomB } = twoFloorsWithRiser();
+  const s2 = M.newElement("socket", roomB.id + ":0", 100, 30, "power"); P.elements.push(s2);
+  EP.Plan.Routes.build({ silent: true });                 // активен этаж 2 (без щита)
+  const rt = P.routes.find((r) => r.fromId === s2.id);
+  ok(rt, "точка этажа 2 получила трассу");
+  eq(rt.toId, r2.id, "её цель — стояк, а не щит другого этажа");
+  ok(rt.toRiser, "трасса помечена как приходящая в стояк");
+  EP.Plan.Core.setActiveFloor(P.floors[0].id);
+  EP.Plan.Routes.build({ silent: true });                 // этаж 1: стояк — обычная точка
+  const rtSrc = P.routes.find((r) => r.fromId === r1.id);
+  ok(rtSrc, "стояк-источник сам протянут к щиту");
+  ok(rtSrc.toPanel && !rtSrc.toRiser, "и его цель — настоящий щит");
+});
+test("Стояк: вертикаль между этажами считается ОДИН раз, на трассе источника", () => {
+  const { P, r1, r2 } = twoFloorsWithRiser();
+  const RT = EP.Plan.Routes;
+  eq(RT.riserRun(P, r2), 0, "у приёмника вертикали нет (он цель)");
+  eq(RT.riserRun(P, r1), 270 + 20, "у источника — высота этажа (потолок + перекрытие)");
+  P.floors[1].height = 320;
+  eq(RT.riserRun(P, r1), 320, "своя высота этажа перебивает значение по умолчанию");
+  eq(RT.floorHeight(P, P.floors[0].id), 290, "у этажа без своей высоты — потолок + перекрытие");
+});
+test("Стояк: смета даёт отдельный проход через перекрытие и не считает щитовой спуск", () => {
+  const { P, r2, roomB } = twoFloorsWithRiser();
+  const s2 = M.newElement("socket", roomB.id + ":0", 100, 30, "power"); P.elements.push(s2);
+  EP.Plan.Routes.build({ silent: true });
+  const items = EP.Plan.Calc.estimateItems(P) || [];
+  const work = items.find((i) => i.type === "work" && /перекрытие/i.test(i.name));
+  ok(work && work.qty === 1, "работа «проход через перекрытие» — одна на пару стояков");
+  ok(items.some((i) => i.type === "material" && /гильза/i.test(i.name)), "материал гильзы тоже есть");
+  const rt = P.routes.find((r) => r.fromId === s2.id);
+  eq(rt.toId, r2.id, "трасса приходит в стояк");
+});
+test("Стояк: «Проверки» ловят стояк без пары и этаж без щита/стояка", () => {
+  const { P, r1, r2 } = twoFloorsWithRiser();
+  r1.riserLink = null; r2.riserLink = null;
+  const roomB2 = P.rooms[P.rooms.length - 1];
+  P.elements.push(M.newElement("socket", roomB2.id + ":0", 100, 30, "power"));
+  const res = EP.Plan.Rules.run(P);
+  ok(res.issues.some((i) => /нет парного стояка/i.test(i.msg)), "стояк без пары помечен");
+  ok(res.issues.some((i) => /нет щита и нет связанного стояка/i.test(i.msg)), "этаж без питания помечен");
+});
+test("Стояк: бэкофилл — высота этажа и slabThickness у старых проектов", () => {
+  const imp = EP.Plan.Core.importJSON(JSON.stringify({ project: { name: "o", settings: {}, rooms: [], elements: [{ id: "e1" }] } }));
+  eq(imp.floors[0].height, null, "высота этажа по умолчанию не задана");
+  eq(imp.settings.slabThickness, 20, "перекрытие 20 см по умолчанию");
+  eq(imp.elements[0].riserLink, null, "riserLink проставлен бэкофиллом");
+});
+
 // ===== 19. Шаблоны квартир =====
 test("EP.Plan.Templates: все шаблоны строят валидные прямоугольные комнаты", () => {
   const all = EP.Plan.Templates.CATEGORIES.concat(EP.Plan.Templates.SERIES);

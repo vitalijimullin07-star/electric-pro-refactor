@@ -22,6 +22,7 @@
     persistDebounceMs: 400, // localStorage-запись коалесируется (см. persist() ниже)
     heightPresets: { socket: 30, switch: 90, kitchen: 110 }, // см от пола
     panelHeight: 150,     // см — низ щита (для вертикалей трасс)
+    slabThickness: 20,    // см — межэтажное перекрытие (вертикаль стояка = высота этажа)
     wallMaterial: "Бетон", // материал стен по умолчанию (для расчёта штробления)
     materials: ["Бетон", "Кирпич", "Панель", "Мягкий"], // как в движке пула
     // материалы конструкций (стены/перегородки): для перегородок из ГКЛ/ПГП и пр.
@@ -116,7 +117,9 @@
   // своё floorId — рендер/хит-тест/автотрассировка видят только activeFloorId
   // (см. G.floorScoped в plan-geometry.js), а расчёт/смета/однолинейка читают
   // p.routes/p.circuits КАК ЕСТЬ, без фильтра — суммируются по всем этажам разом.
-  function newFloor(name) { return { id: uid("fl"), name: name || "Этаж" }; }
+  // height — высота этажа ОТ ПОЛА ДО ПОЛА (см) для расчёта вертикали стояка между
+  // этажами; null = settings.ceilingHeight + settings.slabThickness (перекрытие).
+  function newFloor(name) { return { id: uid("fl"), name: name || "Этаж", height: null }; }
   // floorId новых сущностей берём из S.project.activeFloorId (текущий активный этаж) —
   // ЕДИНАЯ точка простановки, чтобы не трогать десятки мест создания комнат/точек/щитов
   // по всему модулю (все они и так создаются только над видимым, т.е. активным, этажом).
@@ -139,6 +142,7 @@
         snapEnabled: DEFAULTS.snapEnabled,
         heightPresets: { ...DEFAULTS.heightPresets },
         panelHeight: DEFAULTS.panelHeight,
+        slabThickness: DEFAULTS.slabThickness,
         wallMaterial: DEFAULTS.wallMaterial,
         routeType: DEFAULTS.routeType,
         surfaces: { ...DEFAULTS.surfaces },
@@ -179,7 +183,9 @@
       circuitId: null, entryPost: null, targetId: null, photos: [], params: {}, floorId: curFloorId(),
       // только для type:"switch" — клавиши (1-3), вид (обычный/проходной/перекрёстный),
       // цель каждой клавиши (свет/вывод) и звено цепочки проходных/перекрёстных
-      keys: 1, swKind: "normal", targetIds: [], chainNext: null
+      keys: 1, swKind: "normal", targetIds: [], chainNext: null,
+      // только для type:"riser" — id ПАРНОГО стояка на другом этаже (связь взаимная)
+      riserLink: null
     };
   }
   function newRoute(layer, routeType, points, fromId, toId) {
@@ -483,6 +489,7 @@
     // ручного редактирования JSON) — фолбэк на первый этаж, а не потеря объекта.
     if (!Array.isArray(p.floors) || !p.floors.length) p.floors = [newFloor("1 этаж")];
     if (!p.activeFloorId || !p.floors.some((f) => f.id === p.activeFloorId)) p.activeFloorId = p.floors[0].id;
+    p.floors.forEach((f) => { if (f.height === undefined) f.height = null; });
     const fid0 = p.floors[0].id;
     p.guides = p.guides || []; // магистрали трасс (старые проекты — пусто)
     p.appliances = p.appliances || []; // мебель/техника (старые проекты — пусто)
@@ -497,6 +504,7 @@
     p.circuits = p.circuits || [];
     p.circuits.forEach((c) => { if (c.phase !== 1 && c.phase !== 2 && c.phase !== 3) c.phase = 1; if (c.cable220 === undefined) c.cable220 = null; if (c.rgb === undefined) c.rgb = null; });
     p.panels = p.panels || [];
+    (p.elements || []).forEach((el) => { if (el.riserLink === undefined) el.riserLink = null; });
     p.panels.forEach((pn) => { if (pn.transformer == null) pn.transformer = false; if (pn.router == null) pn.router = false; if (pn.avr == null) pn.avr = false; if (pn.neptun == null) pn.neptun = false; });
     p.settings = p.settings || {};
     if (!p.settings.symbolStyle) p.settings.symbolStyle = DEFAULTS.symbolStyle;
@@ -510,6 +518,7 @@
     if (p.settings.cableStubPoint == null) p.settings.cableStubPoint = DEFAULTS.cableStubPoint;
     if (p.settings.cableStubJunction == null) p.settings.cableStubJunction = DEFAULTS.cableStubJunction;
     if (p.settings.cableStubPanel == null) p.settings.cableStubPanel = DEFAULTS.cableStubPanel;
+    if (p.settings.slabThickness == null) p.settings.slabThickness = DEFAULTS.slabThickness;
     if (p.settings.tempLightingPts == null) p.settings.tempLightingPts = 0;
     if (p.settings.tempSocketsPts == null) p.settings.tempSocketsPts = 0;
     if (p.settings.routeOffset == null) p.settings.routeOffset = DEFAULTS.routeOffset;
@@ -603,6 +612,19 @@
     commit();
     f.name = clean;
     persist("floor-rename");
+  }
+  // Высота этажа ОТ ПОЛА ДО ПОЛА (см) — по ней считается вертикаль стояка между этажами
+  // (см. riserRun в plan-routes.js). null/0 = по умолчанию (ceilingHeight + slabThickness).
+  function setFloorHeight(id, cm) {
+    if (!S.project) return;
+    const f = (S.project.floors || []).find((x) => x.id === id);
+    if (!f) return;
+    const v = Math.round(Number(cm) || 0);
+    const next = v > 0 ? Math.min(2000, v) : null;
+    if (f.height === next) return;
+    commit();
+    f.height = next;
+    persist("floor-height");
   }
   // Переключение вида — НЕ мутация данных (без commit(), как R.mode), но persist()
   // запоминает, на каком этаже пользователь остановился (переживает перезагрузку/синк).
@@ -784,7 +806,7 @@
     commit, undo, redo, canUndo, canRedo, persist,
     flushPersist, // добить отложенную запись немедленно (уход со страницы, тесты)
     exportJSON, exportJSONById, importJSON, cloudPullIndex,
-    addFloor, renameFloor, setActiveFloor, deleteFloor,
+    addFloor, renameFloor, setActiveFloor, setFloorHeight, deleteFloor,
     photoUrl, addPhoto,
     model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening, newBeam, newVoid, newAppliance, newGuide, newManualScheme, newSchemeGroup, newSchemeLine, newLedStrip, newFloor }
   };

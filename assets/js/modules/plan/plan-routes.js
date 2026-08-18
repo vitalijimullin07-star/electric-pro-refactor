@@ -25,7 +25,7 @@
     heavyDone: (sc, ms, it, cores) => `Готово за ${(ms / 1000).toFixed(1)}с (вариантов: ${it}${cores > 1 ? ", ядер: " + cores : ""}). Пересечений линий: ${sc ? sc.crossings : "—"}, отверстий: ${sc ? sc.holes : "—"}`,
     buildDone: (sc, ms) => `Трассы построены (${(ms / 1000).toFixed(1)}с). Пересечений линий: ${sc ? sc.crossings : "—"}, отверстий: ${sc ? sc.holes : "—"}`,
     title: "Трассы", build: "⚡ Построить", clear: "✕ Очистить",
-    noPanel: "Поставь щит: режим 🔌, тип «Щ», тап по плану.",
+    noPanel: "Поставь щит: режим 🔌, тип «Щ», тап по плану. На этаже без щита — стояк «СТ», связанный с этажом, где щит есть.",
     noElems: "Нет точек — добавь розетки/свет в режиме 🔌.",
     hintJ: "Совет: поставь «Распайку» (◇) — трассы пойдут через неё, а не каждая к щиту.",
     routeType: "Ведём по", ceiling: "потолку", floor: "полу",
@@ -241,7 +241,9 @@
   function unroutedReason(p, el, panels) {
     const room = roomOfEl(p, el);
     if (!room) return "точка вне комнат — обведите это место комнатой";
-    if (!panels.length) return "нет щита для её линии";
+    if (!panels.length) return ((p.floors || []).length > 1)
+      ? "на этаже нет щита — поставь щит или свяжи стояк «СТ» с этажом, где щит есть"
+      : "нет щита для её линии";
     const sameRoom = panels.some((pn) => { const r = roomNear(p, pn.pos); return r && r.id === room.id; });
     if (sameRoom) return "щит в этой же комнате, но контур трассировки не построился";
     const gs = (G().floorScoped(p).guides || []).filter((gd) => (gd.points || []).length >= 2);
@@ -1063,6 +1065,90 @@
     tids.forEach((id) => { const t = id ? byId.get(id) : null; if (t && t.type === "output24") seen.add(t.id); });
     return seen.size;
   }
+  /* ---------- СТОЯК между этажами (Этажи, Этап 2) ----------
+     Стояк — элемент type:"riser" с ВЗАИМНОЙ ссылкой riserLink на парный стояк другого
+     этажа. Этаж без своего щита питается ЧЕРЕЗ стояк: на нём стояк работает как щит
+     (точки трассируются к нему), а на этаже-источнике тот же стояк — обычная точка,
+     которая сама тянется к настоящему щиту. Вертикаль между этажами (riserRun) считается
+     РОВНО ОДИН раз — на трассе, исходящей из стояка-ИСТОЧНИКА.
+     Пара обязана быть взаимной (a.riserLink===b.id и b.riserLink===a.id) — односторонняя
+     ссылка (например, после ручной правки JSON или удаления одного конца) игнорируется
+     целиком, иначе получилась бы «половина» связки, которая молча ничего не питает. */
+  function riserPairs(p) {
+    const byId = new Map((p.elements || []).map((e) => [e.id, e]));
+    const seen = new Set(), out = [];
+    (p.elements || []).forEach((e) => {
+      if (e.type !== "riser" || !e.riserLink || seen.has(e.id)) return;
+      const m = byId.get(e.riserLink);
+      if (!m || m.type !== "riser" || m.riserLink !== e.id || m.floorId === e.floorId) return;
+      seen.add(e.id); seen.add(m.id);
+      out.push([e, m]);
+    });
+    return out;
+  }
+  // «Дальность» этажа от щита в стояках: 0 — свой щит на этаже, 1 — питается через один
+  // стояк, и т.д. Именно УРОВЕНЬ (а не просто «есть ли питание») отличает источник от
+  // приёмника и не даёт двум концам пары считать друг друга источником (цикл).
+  function floorPowerLevel(p) {
+    const lvl = new Map();
+    (p.panels || []).forEach((pn) => { if (pn.floorId) lvl.set(pn.floorId, 0); });
+    const pairs = riserPairs(p);
+    for (let i = 0; i < 16; i++) {
+      let ch = false;
+      pairs.forEach(([a, b]) => {
+        const la = lvl.has(a.floorId) ? lvl.get(a.floorId) : Infinity;
+        const lb = lvl.has(b.floorId) ? lvl.get(b.floorId) : Infinity;
+        if (la + 1 < lb) { lvl.set(b.floorId, la + 1); ch = true; }
+        if (lb + 1 < la) { lvl.set(a.floorId, lb + 1); ch = true; }
+      });
+      if (!ch) break;
+    }
+    return lvl;
+  }
+  // Роль конкретного стояка: "sink" — питает СВОЙ этаж (его пара ближе к щиту),
+  // "source" — отдаёт питание наверх/вниз (сам тянется к щиту), null — пары нет либо
+  // оба конца на этажах с одинаковой дальностью (например, у каждого свой щит).
+  function riserRole(p, el) {
+    if (!el || el.type !== "riser" || !el.riserLink) return null;
+    const mate = (p.elements || []).find((x) => x.id === el.riserLink);
+    if (!mate || mate.riserLink !== el.id) return null;
+    const lvl = floorPowerLevel(p);
+    const me = lvl.has(el.floorId) ? lvl.get(el.floorId) : Infinity;
+    const it = lvl.has(mate.floorId) ? lvl.get(mate.floorId) : Infinity;
+    if (me === Infinity && it === Infinity) return null; // питания нет нигде
+    if (me > it) return "sink";
+    if (me < it) return "source";
+    return null;
+  }
+  function sinkRisersOn(p, fid) {
+    return (p.elements || []).filter((el) => el.type === "riser" && el.floorId === fid && riserRole(p, el) === "sink");
+  }
+  // Высота этажа от пола до пола (см) — вертикаль кабеля в стояке. Своя у этажа
+  // (floor.height), иначе потолок + перекрытие.
+  function floorHeight(p, fid) {
+    const f = (p.floors || []).find((x) => x.id === fid);
+    if (f && f.height > 0) return f.height;
+    const s = p.settings || {};
+    return (s.ceilingHeight || 270) + (s.slabThickness == null ? 20 : s.slabThickness);
+  }
+  // Добавка к метражу кабеля: подъём/спуск между этажами. Считается на трассе,
+  // ИСХОДЯЩЕЙ из стояка-источника (у приёмника своей трассы нет — он цель), поэтому
+  // ровно один раз на пару. Высота берётся у этажа, ЧЕРЕЗ перекрытие которого идёт
+  // кабель — это этаж более дальнего от щита конца (приёмника).
+  function riserRun(p, el) {
+    if (!el || el.type !== "riser") return 0;
+    if (riserRole(p, el) !== "source") return 0;
+    const mate = (p.elements || []).find((x) => x.id === el.riserLink);
+    return floorHeight(p, (mate && mate.floorId) || el.floorId);
+  }
+  // Узлы-стояки активного этажа в виде псевдо-щитов для трассировки. noComb — «гребёнка»
+  // входа (panelCombPos) относится к корпусу реального щита, у стояка её нет.
+  function riserNodes(p, fid) {
+    return sinkRisersOn(p, fid).map((el) => {
+      const pos = G().routeAnchor(p, el);
+      return pos ? { kind: "panel", id: el.id, pos, riser: true, noComb: true, el } : null;
+    }).filter(Boolean);
+  }
   function routeGroups(c, p, pointsToRoute, juncts, panels, extraConnected) {
     const routerPanels = panels.filter((pn) => pn.router);
     const trafoPanels = panels.filter((pn) => pn.transformer);
@@ -1248,9 +1334,13 @@
     p.circuits = p.circuits || [];
     const fp = G().floorScoped(p); // щиты/точки/распайки ТОЛЬКО активного этажа — иначе
     // трасса на этаже без своего щита попыталась бы дотянуться до щита другого этажа
-    // прямой линией по общим координатам (физически бессмысленно, до «стояка» — Этап 2).
-    if (!(fp.panels || []).length) { if (!silent) rooms().toast(T.noPanel); return; }
-    const points = (fp.elements || []).filter(isPoint);
+    // прямой линией по общим координатам (физически бессмысленно). Этаж без своего щита
+    // питается через СТОЯК (riserNodes ниже) — он и работает щитом для этого этажа.
+    const fidNow = p.activeFloorId || (p.floors && p.floors[0] && p.floors[0].id);
+    const risersHere = riserNodes(p, fidNow);
+    if (!(fp.panels || []).length && !risersHere.length) { if (!silent) rooms().toast(T.noPanel); return; }
+    const sinkIds = new Set(risersHere.map((n) => n.id)); // стояк-приёмник — ЦЕЛЬ, а не точка
+    const points = (fp.elements || []).filter((el) => isPoint(el) && !sinkIds.has(el.id));
     if (!points.length) { if (!silent) rooms().toast(T.noElems); return; }
     if (!quiet) c.commit();
     // Чистим/перестраиваем ТОЛЬКО трассы АКТИВНОГО этажа — трассы других этажей
@@ -1264,7 +1354,7 @@
 
     // узлы: щиты + распайки (этого же этажа); router — флаг щита-хаба сети (LV-точки
     // предпочитают его, см. routeGroups)
-    const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, router: !!pn.router, neptun: !!pn.neptun, transformer: !!pn.transformer }));
+    const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, router: !!pn.router, neptun: !!pn.neptun, transformer: !!pn.transformer })).concat(risersHere);
     const juncts = (fp.elements || []).filter(isJunction).map((el) => ({ kind: "junction", id: el.id, el, circuitId: el.circuitId, pos: G().elemPoint(p, el) })).filter((n) => n.pos);
 
     // pos — ЕДИНАЯ точка отрисовки (та же, что у маркера): трасса доходит до точки,
@@ -1307,8 +1397,11 @@
     const c = core(), p = c.project;
     p.circuits = p.circuits || [];
     const fp = G().floorScoped(p); // только активный этаж — та же причина, что и в build()
-    if (!(fp.panels || []).length) { if (!silent) rooms().toast(T.noPanel); return; }
-    const points = (fp.elements || []).filter(isPoint);
+    const fidNow = p.activeFloorId || (p.floors && p.floors[0] && p.floors[0].id);
+    const risersHere = riserNodes(p, fidNow); // этаж без щита питается через стояк
+    if (!(fp.panels || []).length && !risersHere.length) { if (!silent) rooms().toast(T.noPanel); return; }
+    const sinkIds = new Set(risersHere.map((n) => n.id));
+    const points = (fp.elements || []).filter((el) => isPoint(el) && !sinkIds.has(el.id));
     if (!points.length) { if (!silent) rooms().toast(T.noElems); return; }
     if (!quiet) c.commit();
 
@@ -1322,7 +1415,7 @@
 
     usedGuideIds = new Set(); // фикс №1: только магистрали, реально применённые к НОВЫМ точкам
     if (newPoints.length || newJuncts.length) {
-      const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, router: !!pn.router, neptun: !!pn.neptun, transformer: !!pn.transformer }));
+      const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, router: !!pn.router, neptun: !!pn.neptun, transformer: !!pn.transformer })).concat(risersHere);
       // уже проведённые точки — реальные узлы графа для шлейфа, не только щиты
       const existingPointNodes = points.filter((el) => haveRoute.has(el.id)).map((el) => {
         const pos = G().routeAnchor(p, el);
@@ -1338,7 +1431,7 @@
     hideGuides(p); // прячем ТОЛЬКО применённые к новым точкам (уже применённые ранее — уже скрыты)
     usedGuideIds = null;
     const unInc = collectUnrouted(p, newPoints, newJuncts,
-      (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y } })));
+      (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y } })).concat(risersHere));
     c.persist("routes-build-inc");
     if (!silent) { if (unInc.length) rooms().toast(T.unroutedToast(unInc.length)); sheet(); }
   }
@@ -1872,7 +1965,7 @@
   // ---- автоперестройка: геометрия сдвинулась (точка/стена/перегородка) —
   // ранее построенные трассы устарели бы молча (кривые длины/штробы в Расчёте).
   // Перестраиваем тихо, только если трассы уже были построены.
-  const AUTOREBUILD_ON = { "elem-move": 1, "room-reshape": 1, "room-merge": 1, "room-move": 1, "wall-th": 1, "wall-mat": 1, "beam-move": 1, "beam-w": 1, "panel-move": 1, "panel-router": 1, "panel-neptun": 1, "panel-trafo": 1, "opening-move": 1, "elem-target": 1 };
+  const AUTOREBUILD_ON = { "elem-move": 1, "room-reshape": 1, "room-merge": 1, "room-move": 1, "wall-th": 1, "wall-mat": 1, "beam-move": 1, "beam-w": 1, "panel-move": 1, "panel-router": 1, "panel-neptun": 1, "panel-trafo": 1, "opening-move": 1, "elem-target": 1, "riser-pair": 1 };
   let rebuilding = false;
   // ---- АВТОПЕРЕСТРОЙКА БЕЗ ФРИЗА: тяжёлый build() уходит в фоновый воркер ----
   // Замерено на стресс-проекте (30 комнат / 150 точек / 56 трасс) с эмуляцией слабого
@@ -2152,6 +2245,7 @@
     rt.color = color;
     rt.lane = lane;                       // под-полоса внутри линии (см. curLane выше)
     rt.toPanel = target.kind === "panel"; // спуск у щита считаем один раз
+    if (target.riser) rt.toRiser = true;  // цель — стояк, а не корпус щита: спуска у щита нет
     // сечение штробы: тёплый пол — в пол (50×50), остальное — стандарт (25×30), можно менять
     const s = p.settings;
     if (fromEl.layer === "warm") { rt.chaseW = s.tpChaseW || 50; rt.chaseH = s.tpChaseH || 50; rt.chaseFloor = true; }
@@ -2248,6 +2342,8 @@
     const base = (fromEl && fromEl.type === "junction")
       ? (s.cableStubJunction != null ? s.cableStubJunction : 30)
       : (s.cableStubPoint != null ? s.cableStubPoint : 20);
+    // стояк — не корпус щита: там разделка/протяжка как в распаечной коробке
+    if (r.toRiser) return base + (s.cableStubJunction != null ? s.cableStubJunction : 30);
     return base + (r.toPanel ? (s.cableStubPanel != null ? s.cableStubPanel : 50) : 0);
   }
   // ---- ФИЗИЧЕСКИЕ проходки (отверстия), а не кабеле-пересечения ----
@@ -2294,8 +2390,9 @@
     let crossings = 0, total = 0;
     (p.routes || []).forEach((r) => {
       const el = (p.elements || []).find((e) => e.id === r.fromId);
-      const pn = r.toPanel ? (p.panels || []).find((x) => x.id === r.toId) : null;
-      const L = G().polylineLen(r.points) + pointVert(p, el, r.routeType) * hopVertMul(p, r) + (r.toPanel ? panelVert(p, pn, r.routeType) : 0);
+      const pn = (r.toPanel && !r.toRiser) ? (p.panels || []).find((x) => x.id === r.toId) : null;
+      const L = G().polylineLen(r.points) + pointVert(p, el, r.routeType) * hopVertMul(p, r)
+        + ((r.toPanel && !r.toRiser) ? panelVert(p, pn, r.routeType) : 0) + riserRun(p, el);
       byLayer[r.layer] = (byLayer[r.layer] || 0) + L;
       const cid = r.circuitId || "_none";
       byCircuit[cid] = (byCircuit[cid] || 0) + L;
@@ -2535,5 +2632,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { build, buildIncremental, clearRoutes, suggestGuides, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, keys24Of, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds };
+  EP.Plan.Routes = { build, buildIncremental, clearRoutes, suggestGuides, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, keys24Of, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
 })();

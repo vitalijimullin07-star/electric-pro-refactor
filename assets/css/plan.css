@@ -969,3 +969,8 @@ body[data-visual-mode="day"] .ep-plan-unfpt-b { background: #f1f5f9; border-colo
 .ep-plan-tailtxt { font-family: system-ui; font-weight: 700; }
 body[data-visual-mode="day"] .ep-plan-furntext { fill: #475569; }
 body[data-flatshadow="1"] .ep-plan-furn.is-sel .ep-plan-furnrect { filter: none; }
+
+/* высота этажа в шторке «Этажи» — компактное поле рядом с именем (не растягивается
+   на всю строку, как обычный input в base.css) */
+.ep-plan-flh { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.ep-plan-flh input { width: 64px; flex: none; }

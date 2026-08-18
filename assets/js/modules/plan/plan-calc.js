@@ -74,10 +74,11 @@
     routes.forEach((rt) => {
       if (!rt.circuitId) return;
       const el = (p.elements || []).find((e) => e.id === rt.fromId);
-      const pn = rt.toPanel ? (p.panels || []).find((x) => x.id === rt.toId) : null;
+      const pn = (rt.toPanel && !rt.toRiser) ? (p.panels || []).find((x) => x.id === rt.toId) : null;
       // вертикали считаем по ПОВЕРХНОСТИ ЭТОГО хопа (rt.routeType) — при комбинированной
       // разводке спуск у одной и той же точки разный: от пола или от потолка
-      const L = G().polylineLen(rt.points || []) + (el ? RT.pointVert(p, el, rt.routeType) * RT.hopVertMul(p, rt) : 0) + (rt.toPanel ? RT.panelVert(p, pn, rt.routeType) : 0) + RT.cableStub(p, el, rt);
+      const L = G().polylineLen(rt.points || []) + (el ? RT.pointVert(p, el, rt.routeType) * RT.hopVertMul(p, rt) : 0)
+        + (pn ? RT.panelVert(p, pn, rt.routeType) : 0) + (RT.riserRun ? RT.riserRun(p, el) : 0) + RT.cableStub(p, el, rt);
       const r = row(rt.circuitId);
       r.cableLen += L; r.crossings += (rt.throughWalls || []).length;
       if (rt.leg === "pri24" || rt.leg === "sec24") r.has24 = true; // линия с 24В-разводкой (до/от щита)
@@ -421,7 +422,7 @@
       const hit = pn && G2.wallAt(p, { x: pn.x, y: pn.y }, 60);
       return hit ? G2.wallMatOf(p, hit.wall) : ((s && s.wallMaterial) || "Бетон");
     };
-    const panelRoutes = routes.filter((r) => r.toPanel);
+    const panelRoutes = routes.filter((r) => r.toPanel && !r.toRiser); // стояк — не щит, спуска в корпус нет
     if ((p.panels || []).length && panelRoutes.length) {
       const pm = panelMat();
       // РАЗДЕЛЬНО по поверхности прихода: при комбинированной разводке к щиту часть линий
@@ -443,11 +444,12 @@
     const reserve = 1 + (Number(s.cableReserve == null ? 10 : s.cableReserve) || 0) / 100;
     routes.forEach((r) => {
       const e2 = elById(r.fromId);
-      const pn = r.toPanel ? (p.panels || []).find((x) => x.id === r.toId) : null;
+      const pn = (r.toPanel && !r.toRiser) ? (p.panels || []).find((x) => x.id === r.toId) : null;
       // без распайки на конце кабель проходит штробу туда-обратно (нет коробки,
       // принимающей горизонталь на месте) — hopVertMul=2 для такого хопа; + выпуск
       // на разделку/подключение (RT.cableStub — см. её инвариант)
-      const L = G2.polylineLen(r.points || []) + (e2 ? RT.pointVert(p, e2, r.routeType) * RT.hopVertMul(p, r) : 0) + (r.toPanel ? RT.panelVert(p, pn, r.routeType) : 0) + RT.cableStub(p, e2, r);
+      const L = G2.polylineLen(r.points || []) + (e2 ? RT.pointVert(p, e2, r.routeType) * RT.hopVertMul(p, r) : 0)
+        + (pn ? RT.panelVert(p, pn, r.routeType) : 0) + (RT.riserRun ? RT.riserRun(p, e2) : 0) + RT.cableStub(p, e2, r);
       const cc = (p.circuits || []).find((c) => c.id === r.circuitId);
       // 24В-линия: «до щита» (leg pri24, выключатель→трансформатор, 220В — марка
       // circuit.cable220) и «от щита» (leg sec24, трансформатор→точка 24В — circuit.cable)
@@ -595,7 +597,7 @@
     // правки пользователя (скрыть/заменить/добавить) — В САМОМ КОНЦЕ, после всего
     // авто-счёта: gofraM выше читает items ДО правок (метраж затяжки не должен
     // зависеть от того, скрыл ли пользователь строку гофры из сметы)
-    return { items: applyCalcEdits(p, addAvrItems(p, items)), cableBy, strobe, conn, podroz, junctBoxes };
+    return { items: applyCalcEdits(p, addRiserItems(p, addAvrItems(p, items))), cableBy, strobe, conn, podroz, junctBoxes };
   }
 
   // ---------- правки сметы (p.calcEdits, бэкофилл в plan-core.js): скрытые позиции,
@@ -628,6 +630,19 @@
   // обычной сборки щита. Добавляется В ОБА пути сметы — и в точный счёт по трассам, и в
   // приближённый по комнатам: наличие АВР от трассировки не зависит вообще (поймано живым
   // прогоном: на проекте без трасс строка АВР не появлялась).
+  // Стояк между этажами (пара связанных точек «Стояк», см. riserPairs в plan-routes.js):
+  // проход через перекрытие — отдельная работа и отдельный материал (труба/гильза), они
+  // не выводятся ни из штроб, ни из подрозетников. Как и АВР, считаются НЕЗАВИСИМО от
+  // того, построены ли трассы (items может быть null — «считать нечего»).
+  function addRiserItems(p, items) {
+    const RT = EP.Plan.Routes;
+    const n = (RT && RT.riserPairs) ? RT.riserPairs(p).length : 0;
+    if (!n) return items;
+    if (!Array.isArray(items)) items = [];
+    items.push({ type: "work", name: "Проход через перекрытие (стояк между этажами)", qty: n, unit: "шт" });
+    items.push({ type: "material", name: "Труба (гильза) для прохода через перекрытие", qty: n, unit: "шт" });
+    return items;
+  }
   function addAvrItems(p, items) {
     const n = (p.panels || []).filter((pn) => pn.avr).length;
     if (!n) return items;
@@ -644,7 +659,7 @@
     const exact = exactOf(p);
     if (exact && exact.items.length) return exact.items; // правки уже применены внутри calcByRoutes
     const res = runEngine(p, stats);
-    return applyCalcEdits(p, addAvrItems(p, (res && res.draftItems) || null)); // приближённый счёт — те же правки
+    return applyCalcEdits(p, addRiserItems(p, addAvrItems(p, (res && res.draftItems) || null))); // приближённый счёт — те же правки
   }
 
   // ---------- МЕМО-КЭШ расчёта ----------
@@ -750,7 +765,7 @@
         </div>`;
     } else {
       const res = runEngine(p, stats);
-      items = applyCalcEdits(p, addAvrItems(p, res && res.draftItems ? res.draftItems : null));
+      items = applyCalcEdits(p, addRiserItems(p, addAvrItems(p, res && res.draftItems ? res.draftItems : null)));
       headHtml = `<div class="ep-plan-srow"><b>${T.workHead}</b></div>
         <div class="ep-plan-srow ep-plan-hintrow">${T.approxHint}</div>`;
     }

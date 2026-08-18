@@ -38,6 +38,10 @@
     // выбор в редакторе точки (el.threeKind). Линия под него автоматически 3-полюсная,
     // поэтому автоподбор кабеля (plan-scheme.js autoCable) сразу даёт 5-жильный.
     output3:   { name: "Вывод 3ф",    glyph: "3ф",  layer: "power", h: null, free: true },
+    // стояк между этажами (Этажи, Этап 2): свободная точка у потолка, парная с таким же
+    // стояком на другом этаже (el.riserLink). Этаж без своего щита питается через него —
+    // см. riserRole/riserNodes в plan-routes.js.
+    riser:     { name: "Стояк",       glyph: "СТ", layer: "power", h: null, free: true, riser: true },
     panel:     { name: "Щит",         glyph: "Щ",  layer: "power", h: 150, panel: true }
   };
   // Проёмы — под ОТДЕЛЬНОЙ кнопкой (🚪): дверь / раздвижная / окно / балкон.
@@ -378,6 +382,7 @@
       ${el.type === "switch" ? switchKindRow(el) + switchKeysRow(el) + switchChainRow(el) + (el.chainNext ? "" : switchTargetRow(el)) : ""}
       ${t.targets ? switchTargetRow(el) : ""}
       ${t.feedChoice ? feedRow(el) : ""}
+      ${el.type === "riser" ? riserRow(el) : ""}
       ${el.type === "block" ? blockHtml(el) : ""}
       <div class="ep-plan-srow">${T.status}:
         ${STATUS.map(([v, l]) => `<button type="button" class="ep-plan-chip ep-clickable ${el.status === v ? "on" : ""}" data-pe-status="${v}">${l}</button>`).join("")}
@@ -505,6 +510,43 @@
   // data-атрибутов ("pe" в главном редакторе точки, "pu" в карточке точки развёртки —
   // РАЗНЫЕ обработчики: pe-* зовёт openEditor() и перерисовывает ВЕСЬ #ep-plan-sheet,
   // pu-* остаётся внутри развёртки и перерисовывает только карточку, см. plan-unfold.js).
+  /* ---------- стояк: связка с парным стояком на другом этаже ----------
+     Пара ВСЕГДА взаимная (a.riserLink===b.id и наоборот) — трассировка (riserPairs в
+     plan-routes.js) односторонние ссылки игнорирует. Кнопка «＋ парный на …» создаёт
+     стояк-двойник на выбранном этаже в ТЕХ ЖЕ координатах (стояк — вертикальный канал,
+     он физически в одном месте на всех этажах) и связывает их сразу. */
+  function riserMate(p, el) {
+    if (!el || !el.riserLink) return null;
+    const m = (p.elements || []).find((x) => x.id === el.riserLink);
+    return (m && m.type === "riser" && m.riserLink === el.id) ? m : null;
+  }
+  function floorNameOf(p, fid) {
+    const f = (p.floors || []).find((x) => x.id === fid);
+    return f ? f.name : "этаж";
+  }
+  function riserRow(el) {
+    const p = core().project;
+    const mate = riserMate(p, el);
+    const RT = EP.Plan.Routes;
+    const role = (RT && RT.riserRole) ? RT.riserRole(p, el) : null;
+    const roleTxt = role === "sink" ? "питает этот этаж" : role === "source" ? "уходит на другой этаж" : "";
+    if (mate) {
+      const run = (RT && RT.riserRun) ? Math.round(RT.riserRun(p, el)) : 0;
+      return `<div class="ep-plan-srow">Связан: <b>${esc(floorNameOf(p, mate.floorId))}</b>
+          ${roleTxt ? `<span>· ${roleTxt}</span>` : ""}${run ? `<span>· вертикаль ${run} см</span>` : ""}
+          <button type="button" class="ep-plan-chip ep-clickable" data-pe-riser-unlink>✕ разорвать</button>
+        </div>`;
+    }
+    const others = (p.floors || []).filter((f) => f.id !== el.floorId);
+    const free = (p.elements || []).filter((x) => x.type === "riser" && x.id !== el.id && x.floorId !== el.floorId && !riserMate(p, x));
+    return `<div class="ep-plan-srow">Стояк не связан — этаж по нему не питается.</div>
+      ${others.length ? `<div class="ep-plan-srow">Создать парный:
+        ${others.map((f) => `<button type="button" class="ep-plan-chip ep-clickable" data-pe-riser-make="${esc(f.id)}">＋ ${esc(f.name)}</button>`).join("")}
+      </div>` : `<div class="ep-plan-srow">Добавь второй этаж («✎ Этажи»), чтобы связать стояк.</div>`}
+      ${free.length ? `<div class="ep-plan-srow">Связать с существующим:
+        ${free.map((x) => `<button type="button" class="ep-plan-chip ep-clickable" data-pe-riser-link="${esc(x.id)}">${esc(floorNameOf(p, x.floorId))}</button>`).join("")}
+      </div>` : ""}`;
+  }
   function circuitRow(el, attr) {
     const a = attr || "pe";
     const cs = core().project.circuits || [];
@@ -732,6 +774,31 @@
     }
     if ((b = t.closest("[data-pe-otype]"))) { S.openType = b.getAttribute("data-pe-otype"); sheetOpenings(true); rooms().collapseSheet(); return; } // как и палитра точек — свернуть вниз, холст свободен
     if ((b = t.closest("[data-pe-preset]"))) { const i = $("#ep-pe-h"); if (i) i.value = b.getAttribute("data-pe-preset"); return; }
+    if ((b = t.closest("[data-pe-riser-make]"))) {
+      const c = core(), el = current(); if (!el || el.type !== "riser") return;
+      const fid = b.getAttribute("data-pe-riser-make");
+      if (!(c.project.floors || []).some((f) => f.id === fid)) return;
+      c.commit();
+      const mate = c.model.newElement("riser", null, 0, defaultHeight("riser"), TYPES.riser.layer);
+      mate.floorId = fid;                       // ЯВНО: newElement ставит активный этаж
+      mate.params = { x: el.params.x, y: el.params.y }; // стояк — один и тот же канал
+      mate.riserLink = el.id; el.riserLink = mate.id;
+      c.project.elements.push(mate);
+      c.persist("riser-pair"); openEditor(el); return;
+    }
+    if ((b = t.closest("[data-pe-riser-link]"))) {
+      const c = core(), el = current(); if (!el || el.type !== "riser") return;
+      const other = (c.project.elements || []).find((x) => x.id === b.getAttribute("data-pe-riser-link"));
+      if (!other || other.type !== "riser" || other.floorId === el.floorId) return;
+      c.commit(); el.riserLink = other.id; other.riserLink = el.id;
+      c.persist("riser-pair"); openEditor(el); return;
+    }
+    if (t.closest("[data-pe-riser-unlink]")) {
+      const c = core(), el = current(); if (!el || el.type !== "riser") return;
+      const m = riserMate(c.project, el);
+      c.commit(); el.riserLink = null; if (m) m.riserLink = null;
+      c.persist("riser-pair"); openEditor(el); return;
+    }
     if ((b = t.closest("[data-pe-status]"))) {
       const c = core(), el = current(); if (!el) return;
       c.commit(); el.status = b.getAttribute("data-pe-status"); c.persist("elem-status"); openEditor(el); return;
@@ -974,11 +1041,14 @@
     c.commit();
     c.project.elements = c.project.elements.filter((x) => x.id !== el.id);
     c.project.routes = c.project.routes.filter((r) => r.fromId !== el.id);
+    // стояк удалён — снимаем ссылку у его пары (иначе на другом этаже остался бы
+    // «висячий» стояк, который по односторонней ссылке ничего не питает)
+    (c.project.elements || []).forEach((x) => { if (x.riserLink === el.id) x.riserLink = null; });
     c.persist("elem-del");
     if (S.selId === el.id) S.selId = null;
     rooms().closeSheet(); rooms().renderScene();
   }
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, SW_TARGET_TYPES, onModeEnter, onOpeningModeEnter, placeAt, placeOpening, hoverSnapPoint, openingNum, hitAt, openEditor, openPanelEditor, openOpeningEditor, openingFlipFor, selectedId, deselect, deleteElement, duplicateElement, circuitRow, assignNewCircuit, syncTargetCircuit };
+  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, SW_TARGET_TYPES, onModeEnter, onOpeningModeEnter, placeAt, placeOpening, hoverSnapPoint, openingNum, hitAt, openEditor, openPanelEditor, openOpeningEditor, openingFlipFor, selectedId, deselect, deleteElement, duplicateElement, circuitRow, assignNewCircuit, syncTargetCircuit, riserMate };
 })();

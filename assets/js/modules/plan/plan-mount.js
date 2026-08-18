@@ -458,16 +458,23 @@
     core().setActiveFloor(id);
     if (EP.Plan.Rooms) EP.Plan.Rooms.setMode("view"); // прошлая шторка/режим — с чужого этажа, закрываем
   }
+  // высота этажа по умолчанию — потолок + перекрытие (та же формула, что в
+  // plan-routes.js floorHeight; тут только для подсказки/плейсхолдера)
+  function defFloorH(p) {
+    const s = p.settings || {};
+    return Math.round((s.ceilingHeight || 270) + (s.slabThickness == null ? 20 : s.slabThickness));
+  }
   function doFloors() {
     const c = core(), p = c.project; if (!p) return;
     const rooms = EP.Plan.Rooms; if (!rooms) return;
     rooms.openSheet(`<div class="ep-plan-srow"><b>🏢 Этажи</b><span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-plan-floors-close>✕</button></div>
       ${p.floors.map((f) => `<div class="ep-plan-srow">
         <input type="text" class="ep-plan-flex" data-plan-floor-rn="${esc(f.id)}" value="${esc(f.name)}" maxlength="40">
+        <label class="ep-plan-flh">Высота, см<input type="number" inputmode="numeric" min="0" max="2000" placeholder="${defFloorH(p)}" data-plan-floor-h="${esc(f.id)}" value="${f.height > 0 ? Math.round(f.height) : ""}"></label>
         ${p.floors.length > 1 ? `<button type="button" class="ep-plan-mini ep-plan-danger ep-clickable" data-plan-floor-del="${esc(f.id)}" aria-label="Удалить этаж ${esc(f.name)}">✕</button>` : ""}
       </div>`).join("")}
       <div class="ep-plan-srow ep-plan-sbtns"><button type="button" class="ep-plan-tbtn ep-clickable" data-plan-floor-add>+ Добавить этаж</button></div>
-      <div class="ep-plan-modehint">Удаление этажа стирает всё его содержимое (комнаты, точки, трассы) безвозвратно.</div>`);
+      <div class="ep-plan-modehint">Высота этажа (от пола до пола) нужна для вертикали кабеля в СТОЯКЕ («СТ») между этажами; пусто — потолок + перекрытие (${defFloorH(p)} см). Этаж без своего щита питается через стояк: поставь точку «Стояк» на обоих этажах и свяжи их в редакторе точки. Удаление этажа стирает всё его содержимое (комнаты, точки, трассы) безвозвратно.</div>`);
   }
   function doMeta() {
     const c = core(), p = c.project; if (!p) return;
@@ -624,6 +631,13 @@
       const f = (c.project.floors || []).find((x) => x.id === t.getAttribute("data-plan-floor-rn"));
       if (f) { f.name = t.value; c.persist("floor-rename-live"); refreshFloorsBar(); }
     }
+  });
+  // Высота этажа — на "change", а НЕ на "input": setFloorHeight делает commit()
+  // (снимок undo), и на каждую набранную цифру плодить историю не нужно.
+  document.addEventListener("change", (e) => {
+    const r = root(); if (!r || !V.active) return;
+    const t = e.target, c = core(); if (!c.project || !t.hasAttribute || !t.hasAttribute("data-plan-floor-h")) return;
+    c.setFloorHeight(t.getAttribute("data-plan-floor-h"), t.value);
   });
   // Главный редактор БОЛЬШЕ НЕ запрашивает нативный Fullscreen API (см.
   // toggleFullscreen выше) — .ep-plan.is-full теперь ЧИСТО CSS-состояние,
