@@ -257,6 +257,46 @@ service cloud.firestore {
       allow delete: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
     }
 
+    /* СОВМЕСТНАЯ БАЗА ДАННЫХ (просьба «добавить пользователя к моей базе»):
+       связка двух мастеров. pairId = отсортированные uid через "__" — повторная заявка
+       не плодит дубли. Создать может любой одобренный, но ТОЛЬКО как pending и от своего
+       from; перевести в "ok" — ТОЛЬКО адресат (и пара при этом не подменяется); удалить
+       (отклонить/отключиться) — любая из сторон, после чего база у каждого снова своя. */
+    match /db_share/{pairId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.uids;
+      allow create: if (isApproved() || isAdmin())
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.uids is list
+        && request.resource.data.uids.size() == 2
+        && request.auth.uid in request.resource.data.uids
+        && request.resource.data.to in request.resource.data.uids
+        && request.resource.data.status == "pending";
+      allow update: if signedIn()
+        && resource.data.to == request.auth.uid
+        && request.resource.data.uids == resource.data.uids
+        && request.resource.data.from == resource.data.from
+        && request.resource.data.to == resource.data.to
+        && request.resource.data.status == "ok";
+      allow delete: if signedIn() && request.auth.uid in resource.data.uids;
+    }
+
+    /* ЖУРНАЛ ИЗМЕНЕНИЙ совместной базы: каждая правка «Моей БД» пишется операцией,
+       второй участник применяет её у себя и получает уведомление. Видят ТОЛЬКО двое
+       (uids), пишет участник и только от СВОЕГО имени (by), правки задним числом
+       невозможны (update: if false) — это журнал. Удалять может участник (чистка). */
+    match /db_ops/{opId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.uids;
+      allow create: if (isApproved() || isAdmin())
+        && request.resource.data.by == request.auth.uid
+        && request.resource.data.uids is list
+        && request.resource.data.uids.size() == 2
+        && request.auth.uid in request.resource.data.uids
+        && request.resource.data.kind in ["add", "update", "delete"]
+        && request.resource.data.ts is number;
+      allow update: if false;
+      allow delete: if signedIn() && request.auth.uid in resource.data.uids;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

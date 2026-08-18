@@ -70,6 +70,7 @@
         </div>
 
         ${renderSyncBlock()}
+        ${isMy() ? renderShareBlock() : ""}
 
         <div class="ep-db-actions">
           ${isMy() ? `
@@ -149,6 +150,68 @@
           ${admin ? `<button class="btn btn-ghost ep-clickable" data-db-push-server type="button">⬆️ Сервер → Firebase</button>` : ""}
         </div>` : ""}
       </div>`;
+  }
+
+  /* ---------- совместная база (EP.DbShare) ----------
+     Блок над действиями: активный партнёр или заявки «Принять», плюс лента
+     уведомлений об изменениях партнёра. Логика целиком в db-share.js. */
+  function SH() { return window.EP && window.EP.DbShare; }
+  function renderShareBlock() {
+    const sh = SH();
+    if (!sh) return "";
+    const st = sh.getState();
+    const inc = st.incoming || [];
+    const notes = st.notes || [];
+    const head = st.active
+      ? `<span class="ep-db-share-on">👥 Совместная база с <b>${esc(st.active.partner)}</b></span>
+         <button class="btn btn-ghost ep-clickable ep-db-danger" data-db-share-stop type="button">⛔ Отключить</button>`
+      : `<span class="ep-db-share-off">👤 База индивидуальная</span>
+         <button class="btn btn-ghost ep-clickable" data-db-share-open type="button">👥 Подключить мастера</button>`;
+    const incHtml = inc.length ? `<div class="ep-db-share-inc">
+        ${inc.map((r) => `<div class="ep-db-share-req">
+          <span>Заявка от <b>${esc(r.fromName || r.from)}</b> — работать над базой вдвоём</span>
+          <button class="btn btn-primary ep-clickable" data-db-share-accept="${esc(r.id)}" type="button">✓ Принять</button>
+          <button class="btn btn-ghost ep-clickable" data-db-share-decline="${esc(r.id)}" type="button">✕ Отклонить</button>
+        </div>`).join("")}
+      </div>` : "";
+    const outHtml = (!st.active && (st.outgoing || []).length) ? `<div class="ep-db-share-msg">
+        Заявка отправлена <b>${esc((st.outgoing[0].toName || st.outgoing[0].to))}</b> — ждём подтверждения.
+        <button class="ep-db-share-x" data-db-share-stop type="button">отменить</button></div>` : "";
+    const notesHtml = notes.length ? `<div class="ep-db-share-notes">
+        <div class="ep-db-share-noteshead">🔔 Изменения партнёра
+          <button class="ep-db-share-x" data-db-share-notesclear type="button">очистить</button></div>
+        ${notes.slice(0, 8).map((n) => `<div class="ep-db-share-note">${esc(n.text)}</div>`).join("")}
+      </div>` : "";
+    return `<div class="card ep-db-share" data-db-shareblock>
+        <div class="ep-db-shareline">${head}</div>
+        ${incHtml}${outHtml}${notesHtml}
+      </div>`;
+  }
+  function shareModal() {
+    const sh = SH();
+    if (!sh) { flash("Модуль совместной базы не загружен"); return; }
+    const st = sh.getState();
+    openModal("Подключить мастера к моей базе", `
+      <p class="ep-db-modal-hint">Найди мастера по имени и отправь заявку. Как только он нажмёт
+      «Принять» — база станет общей: правки видны обоим, об изменениях приходит уведомление.
+      Отключиться может любой из двоих, после этого база у каждого остаётся своей.</p>
+      <input class="ep-db-search" type="search" placeholder="Поиск мастера по имени…" data-db-share-q />
+      <div class="ep-db-share-people" data-db-share-people>${st.people.length ? "" : "Загружаю список…"}</div>
+    `, (ov) => {
+      const box = ov.querySelector("[data-db-share-people]");
+      const draw = (list) => {
+        box.innerHTML = list.length ? list.map((p) => `
+          <div class="ep-db-share-person">
+            <span class="ep-db-share-dot ${p.online ? "is-on" : ""}"></span>
+            <span class="ep-db-share-name">${esc(p.name)}</span>
+            <button class="btn btn-primary ep-clickable" data-db-share-invite="${esc(p.uid)}"
+              data-db-share-iname="${esc(p.name)}" type="button">＋ Пригласить</button>
+          </div>`).join("") : `<div class="ep-db-empty">Никого не нашлось. Мастер появится в списке после первого входа в приложение.</div>`;
+      };
+      sh.findPeople("").then(draw);
+      const inp = ov.querySelector("[data-db-share-q]");
+      if (inp) inp.addEventListener("input", () => sh.findPeople(inp.value).then(draw));
+    });
   }
 
   function updateSyncBlock() {
@@ -433,6 +496,28 @@
     if (hit("[data-db-savedit]")) { saveEdit(hit("[data-db-savedit]").dataset.dbSavedit); return; }
     if (hit("[data-db-toest]")) { addToEstimate(hit("[data-db-toest]").dataset.dbToest); return; }
 
+    // совместная база: подключить мастера / принять / отклонить / отключить / очистить ленту
+    if (hit("[data-db-share-open]")) { shareModal(); return; }
+    if (hit("[data-db-share-accept]")) {
+      const sh = SH(); if (!sh) return;
+      sh.accept(hit("[data-db-share-accept]").dataset.dbShareAccept)
+        .then(() => { render(); flash("Готово — база общая, правки видят оба"); })
+        .catch(() => flash("Не удалось принять заявку"));
+      return;
+    }
+    if (hit("[data-db-share-decline]")) {
+      const sh = SH(); if (!sh) return;
+      sh.decline(hit("[data-db-share-decline]").dataset.dbShareDecline).then(() => { render(); flash("Заявка отклонена"); }).catch(() => {});
+      return;
+    }
+    if (hit("[data-db-share-stop]")) {
+      const sh = SH(); if (!sh) return;
+      if (!confirm("Отключить совместную базу? У каждого останется своя копия — правки больше не синхронизируются.")) return;
+      sh.stop().then(() => { render(); flash("База снова индивидуальная"); }).catch(() => flash("Не удалось отключить"));
+      return;
+    }
+    if (hit("[data-db-share-notesclear]")) { const sh = SH(); if (sh) sh.clearNotes(); render(); return; }
+
     if (hit("[data-db-add]")) { state.addOpen = true; render(); return; }
     if (hit("[data-db-canceladd]")) { state.addOpen = false; render(); return; }
     if (hit("[data-db-saveadd]")) { saveAdd(); return; }
@@ -548,6 +633,16 @@
     }
     if (t.closest("[data-db-importok]")) { runImport(t.closest(".ep-db-modal-ov")); return; }
     if (t.closest("[data-db-restoreok]")) { runRestoreAll(t.closest(".ep-db-modal-ov")); return; }
+    // приглашение мастера — кнопка внутри модалки поиска (модалка висит на body)
+    let el;
+    if ((el = t.closest("[data-db-share-invite]"))) {
+      const sh = SH();
+      if (!sh) return;
+      sh.invite(el.dataset.dbShareInvite, el.dataset.dbShareIname || "")
+        .then(() => { closeModal(); render(); flash("Заявка отправлена — ждём «Принять»"); })
+        .catch((e) => flash(e && e.message === "already-shared" ? "База уже общая — сначала отключись" : "Не удалось отправить заявку"));
+      return;
+    }
   }
 
   let flashTimer = null;
@@ -583,6 +678,8 @@
   });
   // обновление блока статуса синхронизации (без перерисовки всего экрана)
   window.addEventListener("ep:db-sync-status", updateSyncBlock);
+  // заявка/подключение/чужая правка — перерисовываем экран базы, если он открыт
+  window.addEventListener("ep:dbshare-changed", () => { if (rootEl && document.body.contains(rootEl)) render(); });
   // действия модалок — модалки висят на body
   document.addEventListener("click", onBodyClick);
 

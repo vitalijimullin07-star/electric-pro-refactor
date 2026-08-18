@@ -4082,6 +4082,108 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/d\.importJSON\(text, replace \? "replace" : "add"\)/.test(pick) && /d\.importJSON\(text, replace \? "replace" : "add"\)/.test(tabs), "оба экрана зовут единую логику импорта");
   });
 
+  // ===== 37. Совместная база данных: подключение мастера, журнал правок, уведомления =====
+  function loadShare() {
+    const vm2 = require("vm"), fs2 = require("fs"), path2 = require("path");
+    const store = {};
+    const sb = { console };
+    sb.window = sb; sb.globalThis = sb;
+    sb.localStorage = {
+      getItem: (k) => (k in store ? store[k] : null),
+      setItem: (k, v) => { store[k] = String(v); },
+      removeItem: (k) => { delete store[k]; }
+    };
+    sb.CustomEvent = function (t, o) { this.type = t; this.detail = o && o.detail; };
+    sb.dispatchEvent = () => true;
+    sb.addEventListener = () => {};
+    sb.document = { readyState: "complete", addEventListener: () => {} };
+    const ctx = vm2.createContext(sb);
+    vm2.runInContext(fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "database", "db-share.js"), "utf8"), ctx, { filename: "db-share.js" });
+    return { S: sb.EP.DbShare, sb: sb, store: store };
+  }
+  test("совместная БД: пара считается от отсортированных uid (заявка не двоится)", () => {
+    const { S } = loadShare();
+    eq(S.pairIdOf("bbb", "aaa"), "aaa__bbb", "id пары не зависит от того, кто первый");
+    eq(S.pairIdOf("aaa", "bbb"), S.pairIdOf("bbb", "aaa"), "обе стороны получают ОДИН документ");
+  });
+  test("совместная БД: сравнение снимков даёт добавлено/изменено/удалено", () => {
+    const { S } = loadShare();
+    const prev = [
+      { id: "1", name: "Кабель ВВГ 3х2,5", type: "material", unit: "м", price: 90, category: "Кабель", subcategory: "" },
+      { id: "2", name: "Штробление", type: "work", unit: "м", price: 300, category: "Работы", subcategory: "" }
+    ];
+    const next = [
+      { id: "1", name: "Кабель ВВГ 3х2,5", type: "material", unit: "м", price: 105, category: "Кабель", subcategory: "" },
+      { id: "3", name: "Подрозетник", type: "material", unit: "шт", price: 25, category: "Установочные", subcategory: "" }
+    ];
+    const ops = S.diffItems(prev, next);
+    eq(ops.length, 3, "три операции");
+    const byKind = {};
+    ops.forEach((o) => { byKind[o.kind] = o; });
+    ok(byKind.update && byKind.update.itemId === "1", "изменение цены — update");
+    ok(byKind.add && byKind.add.itemId === "3", "новая позиция — add");
+    ok(byKind.delete && byKind.delete.itemId === "2" && byKind.delete.name === "Штробление", "удалённая — delete с именем");
+    eq(S.diffItems(prev, prev).length, 0, "без изменений операций нет");
+  });
+  test("совместная БД: повторная присылка тех же позиций не шумит уведомлениями", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "database", "db-share.js"), "utf8");
+    ok(/if \(mine && sameItem\(mine, Object\.assign\(\{ id: op\.itemId \}, it\)\)\) return false;/.test(src),
+       "идентичная позиция не применяется и не даёт уведомления");
+    ok(/function seedBase/.test(src) && /SEED_KEY/.test(src),
+       "свою базу отправляем один раз на пару (обе стороны, при подключении)");
+    ok(/lsSet\(SEED_KEY, lsGet\(SEED_KEY, \[\]\)\.filter/.test(src),
+       "после отключения флаг снимается — повторное подключение снова сольёт базы");
+  });
+  test("совместная БД: уведомления копятся, чистятся и переживают перезапуск", () => {
+    const { S, store } = loadShare();
+    ok(Array.isArray(S.notes()) && S.notes().length === 0, "сначала лента пуста");
+    S.applyOp({ kind: "add", itemId: "9", item: null, name: "X" });   // без EP.Database — не падает
+    S.clearNotes();
+    ok(store["ep_dbshare_notes_v1"] != null, "лента хранится в localStorage");
+  });
+  test("совместная БД: экспорт API и защита от чужих/повторных операций", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "database", "db-share.js"), "utf8");
+    ["invite", "accept", "decline", "stop", "findPeople", "getState", "notes", "clearNotes", "isActive"].forEach((n) => {
+      ok(new RegExp("\\b" + n + "\\b").test(src), "в API есть " + n);
+    });
+    ok(/op\.by === u\) return;/.test(src), "свои операции не применяются обратно");
+    ok(/if \(!markSeen\(op\.id\)\) return;/.test(src), "повторная операция не применяется дважды");
+    ok(/if \(applying\) return;/.test(src), "во время применения чужой правки свои операции не плодятся");
+    ok(/status: "pending"/.test(src) && /status: "ok"/.test(src), "заявка pending → принятие ok");
+    ok(/collection\(SHARE\)\.doc\(id\)\.delete\(\)/.test(src), "отключение удаляет связку (база снова индивидуальная)");
+    ok(/chat_presence/.test(src), "поиск мастеров — по каталогу присутствия, как в чате");
+    ok(/ep:db-changed/.test(src), "свои правки ловятся общим событием базы (database-core не тронут)");
+  });
+  test("совместная БД: правила Firestore на связку и журнал", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const r = fs2.readFileSync(path2.join(__dirname, "..", "firestore.rules"), "utf8");
+    const share = r.slice(r.indexOf("match /db_share/"), r.indexOf("match /db_ops/"));
+    ok(/allow read: if signedIn\(\) && request\.auth\.uid in resource\.data\.uids;/.test(share), "связку видят только двое");
+    ok(/request\.resource\.data\.from == request\.auth\.uid/.test(share) && /request\.resource\.data\.status == "pending"/.test(share), "создать можно только свою заявку и только pending");
+    ok(/resource\.data\.to == request\.auth\.uid/.test(share) && /request\.resource\.data\.status == "ok"/.test(share), "принять может только адресат");
+    ok(/allow delete: if signedIn\(\) && request\.auth\.uid in resource\.data\.uids;/.test(share), "отключиться может любая сторона");
+    const ops = r.slice(r.indexOf("match /db_ops/"), r.indexOf("match /{document=**}"));
+    ok(/allow read: if signedIn\(\) && request\.auth\.uid in resource\.data\.uids;/.test(ops), "журнал видят только двое");
+    ok(/request\.resource\.data\.by == request\.auth\.uid/.test(ops), "операция пишется только от своего имени");
+    ok(/allow update: if false;/.test(ops), "операции не правятся задним числом");
+    ok(/match \/\{document=\*\*\} \{\s*\n\s*allow read, write: if false;/.test(r), "финальный запрет-всё на месте");
+  });
+  test("совместная БД: экран базы показывает связку, заявки и ленту изменений", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const ui = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "database", "database-ui.js"), "utf8");
+    const idx = fs2.readFileSync(path2.join(__dirname, "..", "index.html"), "utf8");
+    ok(/function renderShareBlock/.test(ui) && /isMy\(\) \? renderShareBlock\(\) : ""/.test(ui), "блок рисуется только у «Моей БД»");
+    ok(/data-db-share-open/.test(ui) && /function shareModal/.test(ui), "кнопка и модалка поиска мастера");
+    ok(/data-db-share-accept/.test(ui) && /data-db-share-decline/.test(ui), "кнопки «Принять»/«Отклонить»");
+    ok(/data-db-share-stop/.test(ui) && /confirm\(/.test(ui), "отключение спрашивает подтверждение");
+    ok(/data-db-share-invite/.test(ui) && /sh\.invite\(/.test(ui), "приглашение отправляется из модалки");
+    ok(/ep:dbshare-changed/.test(ui), "экран перерисовывается на изменение связки/правку партнёра");
+    const iShare = idx.indexOf("db-share.js"), iUi = idx.indexOf("database-ui.js"), iCore = idx.indexOf("database-core.js");
+    ok(iCore > 0 && iCore < iShare && iShare < iUi, "db-share.js подключён после ядра и до UI");
+  });
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);
