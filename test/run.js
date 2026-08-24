@@ -4465,6 +4465,41 @@ test("фото: deleteProject чистит кэш фото своего прое
     // «кабель» — родовое слово, по нему не сужаем до одного канала
     ok(F.cardSearch(db, "кабель").length >= 2, "по слову «кабель» видно все кабельные позиции");
   });
+  test("автоподбор цены: «подходящие» берут точное совпадение, «дешёвые» — минимум при том же сечении", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "estimate", "pick-and-estimate.js"), "utf8");
+    const body = src.slice(src.indexOf("const CARD_STOP"), src.indexOf("  function autoFillPrices")).replace(/  function cardDbByType[^\n]*\n/, "");
+    const F = new Function(body + "; return { cardBestMatch };")();
+    const db = [
+      { id: "a", name: "ВВГнг-Ls 3х2,5 Конкорд", price: 94 },
+      { id: "b", name: "ВВГ-Пнг (А)-LS ГОСТ КОНКОРД 3х2,5 (N,PE) -0,66", price: 88.78 },
+      { id: "c", name: "ВВГ-Пнг (А)-LS ГОСТ 3х2,5 (ККЗ) одножильный", price: 92.25 },
+      { id: "d", name: "ВВГ-Пнг (А)-LS ГОСТ КОНКОРД 3х1,5 (N,PE) -0,66", price: 57.55 },
+      { id: "e", name: "Наконечник НШВИ 6,0-12 КВТ желтый", price: 2.36 },
+      { id: "f", name: "Гильза ГМЛ 6-4 луженая КВТ", price: 21 },
+      { id: "g", name: "Труба гофрированная ПНД 20мм с зондом черная", price: 10 }
+    ];
+    eq(F.cardBestMatch(db, "Кабель ВВГнг(А)-LS 3×2.5", "best").id, "a", "самое точное — совпали и марка, и сечение");
+    eq(F.cardBestMatch(db, "Кабель ВВГнг(А)-LS 3×2.5", "cheap").id, "b", "самое дешёвое ИЗ ТОГО ЖЕ сечения");
+    ok(F.cardBestMatch(db, "Кабель ВВГнг(А)-LS 3×2.5", "cheap").price < 90, "дешёвое не берётся из другого сечения (57,55 у 3х1,5)");
+    // морфология: «гофра» ↔ «гофрированная», «ГМЛ 6» по слову-марке
+    eq((F.cardBestMatch(db, "Гофра ПНД", "best") || {}).id, "g", "совпадение по началу слова");
+    eq((F.cardBestMatch(db, "ГМЛ 6", "best") || {}).id, "f");
+    // порог уверенности: одинокое число не повод ставить цену
+    eq(F.cardBestMatch(db, "Термоусадка 12/4", "best"), null, "«12» из названия не должно цеплять НШВИ 6,0-12");
+    eq(F.cardBestMatch(db, "Мешки для строительного мусора", "best"), null, "чего нет в базе — то и не подставляем");
+    // позиции без цены в базе кандидатами не считаются
+    eq(F.cardBestMatch([{ id: "z", name: "ВВГнг-Ls 3х2,5 Конкорд", price: 0 }], "Кабель ВВГнг(А)-LS 3×2.5", "best"), null);
+  });
+  test("автоподбор цены: кнопка, режимы и правило «руками вписанное не трогаем»", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "estimate", "pick-and-estimate.js"), "utf8");
+    ok(/data-est-autoprice/.test(src), "кнопка автоподстановки");
+    ok(/data-est-automode="best"/.test(src) && /data-est-automode="cheap"/.test(src), "два режима выбора");
+    ok(/ep_est_automode_v29/.test(src), "режим запоминается на устройстве");
+    ok(/getItems\(\)\.filter\(\(x\) => !\(Number\(x\.price\) > 0\)\)/.test(src), "берём ТОЛЬКО позиции без цены");
+    ok(/d\.setPrice\(it\.id, Number\(found\.price\) \|\| 0, found\.id\)/.test(src), "цена ставится с привязкой к записи базы");
+  });
   test("план: priceFor находит цену при разном написании сечения", () => {
     const fs2 = require("fs"), path2 = require("path");
     const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-calc.js"), "utf8");

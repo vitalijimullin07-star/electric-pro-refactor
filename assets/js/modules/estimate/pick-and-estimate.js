@@ -168,6 +168,11 @@
   }
 
   /* ---------- сводка предварительной сметы на главной ---------- */
+  // режим автоподбора цены из базы: "best" — самое точное совпадение, "cheap" — самое
+  // дешёвое среди одинаково точных. Выбор устройства, переживает перезагрузку.
+  const AUTOMODE_KEY = "ep_est_automode_v29";
+  let autoMode = (() => { try { return localStorage.getItem(AUTOMODE_KEY) === "cheap" ? "cheap" : "best"; } catch (e) { return "best"; } })();
+  function setAutoMode(m) { autoMode = m === "cheap" ? "cheap" : "best"; try { localStorage.setItem(AUTOMODE_KEY, autoMode); } catch (e) {} }
   function renderHomeSummary() {
     const draft = Draft();
     const items = draft ? draft.getItems() : [];
@@ -196,6 +201,16 @@
           </div>`).join("")}
       </div>` : "";
     const _noPrice = items.filter(x => !(Number(x.price) > 0)).length;
+    // автоподстановка цен из базы: кнопка появляется, только когда есть что заполнять
+    const _auto = _noPrice ? `
+      <div class="ep-est-auto">
+        <button type="button" class="btn btn-primary ep-clickable" data-est-autoprice>💰 Цены из базы (${_noPrice})</button>
+        <div class="ep-est-scope"><span class="ep-est-lbl">Выбирать:</span>
+          <button type="button" class="ep-est-chip ep-clickable ${autoMode === "best" ? "on" : ""}" data-est-automode="best">подходящие</button>
+          <button type="button" class="ep-est-chip ep-clickable ${autoMode === "cheap" ? "on" : ""}" data-est-automode="cheap">дешёвые</button>
+        </div>
+        <div class="ep-est-auto-hint">Заполнит только пустые цены по активной базе. Уже вписанные не тронет.</div>
+      </div>` : "";
     const _warn = _noPrice ? `<div class="ep-est-warn">⚠️ ${_noPrice} поз. без цены — впиши стоимость (или оставь до ответа поставщика)</div>` : "";
     const _hasFast = items.some(x => /площадк|стяжк|гвозд|баллон|клипс|гофра|лента монтаж/i.test(x.name || ""));
     const _res = (window.EP && window.EP.ConsumablesUI && window.EP.ConsumablesUI.getReserve) ? window.EP.ConsumablesUI.getReserve() : 0;
@@ -211,7 +226,7 @@
         </div>
         <div class="ep-est-reserve-hint">Добавляется к площадкам, стяжкам, гвоздям. Пересчитывается сразу.</div>
       </div>` : "";
-    list.innerHTML = _warn + _resCtrl +
+    list.innerHTML = _warn + _auto + _resCtrl +
       section("📦 Материалы", items.filter(x => x.type !== "work")) +
       section("🧰 Работа", items.filter(x => x.type === "work")) +
       `<div class="ep-est-total">Итого: <b>${money(total)}</b></div>`;
@@ -251,24 +266,106 @@
     if (w.length > 1 && CARD_STOP.test(cardNorm(w[0]))) return w.slice(1).join(" ");
     return String(name || "").trim();
   }
-  // ранжированный поиск: score — сколько значимых токенов запроса нашлось в названии
+  // Оценка одного токена по названию: точное вхождение — полный вес, иначе совпадение
+  // по НАЧАЛУ слова (русские окончания: «гофра» ↔ «гофрированная», «стяжки» ↔ «стяжку»)
+  // — половина веса. Числа по началу НЕ сравниваем: «3x2.5» не должно цепляться к «3x2».
+  function cardTokenHit(nm, t) {
+    const dig = /\d/.test(t);
+    // одинокая цифра («4» из «Термоусадка 12/4») слишком общая: вес как у слова, и
+    // засчитывать её как «уверенное» совпадение нельзя — иначе термоусадка цеплялась
+    // к «Трубка ТТК(4:1)» просто потому, что там встречается четвёрка
+    const solo = t.length === 1;
+    if (nm.indexOf(t) >= 0) return { w: (dig && !solo) ? 2 : 1, full: !solo };
+    if (!dig && t.length >= 5) {
+      const stem = t.slice(0, Math.max(4, t.length - 2));
+      if (nm.indexOf(stem) >= 0) return { w: 0.5, full: false };
+    }
+    return { w: 0, full: false };
+  }
+  // ранжированный поиск: score — вес совпавших значимых токенов запроса.
+  // Токен с цифрой (сечение 3x2.5, номинал 16) весит больше слова-марки: именно он
+  // отличает нужную позицию от однотипных, поэтому 3х2,5 должен опережать 3х1,5.
   function cardSearch(arr, query) {
     const q = cardTokens(query);
     if (!q.strong.length) return arr.slice();
     const scored = [];
     arr.forEach((x) => {
       const nm = cardNorm(x.name);
-      let hit = 0;
-      // токен с цифрой (сечение 3x2.5, номинал 16) весит больше слова-марки: именно он
-      // отличает нужную позицию от однотипных, поэтому 3х2,5 должен опережать 3х1,5
-      q.strong.forEach((t) => { if (nm.indexOf(t) >= 0) hit += /\d/.test(t) ? 2 : 1; });
-      if (hit) scored.push({ x, hit });
+      let hit = 0, full = 0;
+      q.strong.forEach((t) => { const h = cardTokenHit(nm, t); hit += h.w; if (h.full) full++; });
+      if (hit) scored.push({ x, hit, full });
     });
     scored.sort((a, b) => b.hit - a.hit || String(a.x.name).length - String(b.x.name).length ||
       String(a.x.name).localeCompare(String(b.x.name), "ru"));
     return scored.map((s) => s.x);
   }
   function cardDbByType(type) { const db = DB(); return (db && db.getItemsByType) ? (db.getItemsByType(type, activeBase()) || []) : []; }
+
+  /* ---------- автоподбор цены из базы ----------
+     Кнопка «💰 Цены из базы» проставляет цены сразу всем позициям БЕЗ цены.
+     Два режима: «подходящие» — берём самое точное совпадение; «дешёвые» — среди
+     одинаково точных берём самое дешёвое (полезно, когда у поставщика один и тот же
+     кабель есть от разных заводов).
+     ПОРОГ УВЕРЕННОСТИ обязателен: без него позиция вроде «Термоусадка 12/4» цеплялась бы
+     к «Трубка ТТК(4:1)» по одинокой цифре «4». Ставим цену, только если совпал хотя бы
+     ОДИН токен целиком и суммарный вес ≥ AUTO_MIN — иначе позиция честно остаётся без
+     цены и попадает в отчёт «не найдено». Цены, вписанные руками, НЕ трогаем. */
+  const AUTO_MIN = 1.5;
+  function cardBestMatch(arr, name, mode) {
+    const q = cardTokens(name);
+    if (!q.strong.length) return null;
+    // цифровые токены длиннее одного знака — сечение/номинал: в режиме «дешёвые» они
+    // ОБЯЗАНЫ совпасть, иначе «дешевле» легко окажется кабель не того сечения
+    const nums = q.strong.filter((t) => /\d/.test(t) && t.length > 1);
+    // «Уверенный» токен — слово ИЛИ составное число вроде сечения 3x2.5. Простое число
+    // («12» из «Термоусадка 12/4») уверенным НЕ считается: оно встречается где угодно и
+    // одно притянуло бы «Наконечник НШВИ 6,0-12». Совпасть должен хотя бы один уверенный.
+    const rich = (t) => (/\d/.test(t) ? /\d[x.]\d/.test(t) : t.length > 1);
+    const cand = [];
+    arr.forEach((x) => {
+      if (!(Number(x.price) > 0)) return;               // без цены подставлять нечего
+      const nm = cardNorm(x.name);
+      let hit = 0, conf = 0, numsOk = true;
+      q.strong.forEach((t) => { const h = cardTokenHit(nm, t); hit += h.w; if (h.full && rich(t)) conf++; });
+      nums.forEach((t) => { if (nm.indexOf(t) < 0) numsOk = false; });
+      if (!conf || hit < AUTO_MIN) return;
+      cand.push({ x, hit, numsOk });
+    });
+    if (!cand.length) return null;
+    if (mode === "cheap") {
+      // самый дешёвый среди тех, у кого сошлись все сечения/номиналы; если таких нет —
+      // не выдумываем «дешёвое», а падаем на самое точное совпадение
+      const ok = nums.length ? cand.filter((c) => c.numsOk) : cand;
+      if (ok.length) return ok.reduce((a, b) => (Number(b.x.price) < Number(a.x.price) ? b : a)).x;
+    }
+    let best = cand[0];
+    cand.forEach((c) => {
+      if (c.hit > best.hit + 1e-9) { best = c; return; }
+      // одинаково точные — берём с более коротким (значит менее «загруженным») названием
+      if (Math.abs(c.hit - best.hit) < 1e-9 && String(c.x.name).length < String(best.x.name).length) best = c;
+    });
+    return best.x;
+  }
+  function autoFillPrices(mode) {
+    const d = Draft(), db = DB();
+    if (!d || !db || !db.getItemsByType) { flash("База недоступна"); return; }
+    const items = d.getItems().filter((x) => !(Number(x.price) > 0));
+    if (!items.length) { flash("Все позиции уже с ценой"); return; }
+    const pool = { material: cardDbByType("material"), work: cardDbByType("work") };
+    if (!pool.material.length && !pool.work.length) { flash("В активной базе нет позиций — импортируй прайс"); return; }
+    let done = 0;
+    items.forEach((it) => {
+      const found = cardBestMatch(pool[it.type === "work" ? "work" : "material"], it.name, mode);
+      if (!found) return;
+      d.setPrice(it.id, Number(found.price) || 0, found.id);
+      done++;
+    });
+    renderHomeSummary();
+    const rest = items.length - done;
+    flash(done
+      ? "Подставлено цен: " + done + (rest ? " · без совпадений: " + rest : "")
+      : "Для этих " + items.length + " поз. совпадений в базе нет — впиши цену вручную");
+  }
   function saveDraftToBase() {
     const d = Draft(); const C = window.EP && window.EP.Clients;
     if (!d) return;
@@ -471,6 +568,8 @@
     if ((el = t.closest("[data-est-dec]"))) { const d = Draft(); if (d) { const it = d.getItems().find(x => x.id === el.dataset.estDec); if (it) { const q = (Number(it.qty) || 0) - 1; if (q <= 0) d.removeItem(it.id); else d.setQty(it.id, q); } } return; }
     if ((el = t.closest("[data-est-remove]"))) { const d = Draft(); if (d) d.removeItem(el.dataset.estRemove); return; }
     if ((el = t.closest("[data-est-card]"))) { const d = Draft(); if (d) { const it = d.getItems().find((x) => x.id === el.dataset.estCard); if (it) showItemCard(it); } return; }
+    if ((el = t.closest("[data-est-automode]"))) { setAutoMode(el.dataset.estAutomode); renderHomeSummary(); return; }
+    if (t.closest("[data-est-autoprice]")) { autoFillPrices(autoMode); return; }
     if ((el = t.closest("[data-est-reserve-step]"))) { const cu = window.EP && window.EP.ConsumablesUI; if (cu && cu.setReserve) { const cur = cu.getReserve ? cu.getReserve() : 0; cu.setReserve(Math.max(0, cur + (Number(el.dataset.estReserveStep) || 0))); } return; }
     if ((el = t.closest("[data-est-genworks]"))) { const cnt = genWorksFromDraft(); flash(cnt ? ("Добавлено работ из материалов: " + cnt) : "Подходящих работ в базе не нашлось"); return; }
     if ((el = t.closest("[data-est-savebase]"))) { saveDraftToBase(); return; }
