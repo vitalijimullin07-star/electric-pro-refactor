@@ -54,7 +54,6 @@
   // публичным показом). Проверка ЗДЕСЬ (видимость кнопки) — основная; вторая,
   // защитная — в самом plan-templates.js (клик-делегат), на случай устаревшего
   // кэша JS у обычного пользователя.
-  const isAdmin = () => { try { return !!(window.EP && EP.Auth && EP.Auth.isAdmin && EP.Auth.isAdmin()); } catch (e) { return false; } };
 
   // общая шапка «← Plan» (nav-header.js) в редакторе проекта дублирует «‹ Проекты» — прячем
   function setNavHidden(hide) {
@@ -133,7 +132,7 @@
         </div>
       </div>
       <div class="ep-plan-moremenu" id="ep-plan-moremenu" hidden>
-        ${isAdmin() ? `<button type="button" class="ep-plan-tbtn ep-clickable" data-plan-tpl-open aria-label="Шаблон квартиры" title="Готовая раскладка комнат — по количеству комнат или по серии дома">🧩 Шаблон</button>` : ""}
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-tpl-open aria-label="Шаблон квартиры" title="Готовая раскладка комнат: выбираешь тип, вписываешь свои размеры — комнаты встают уже состыкованными">🧩 Шаблон</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-pdf aria-label="Печатный лист (PDF)">📄 Печатный лист (PDF)</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-export>${T.exportBtn}</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-import>${T.importBtn}</button>
@@ -148,6 +147,8 @@
         <span class="ep-plan-modesep" aria-hidden="true"></span>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="rect" aria-label="Прямоугольная комната">▭</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="poly" aria-label="Комната по точкам">⬠</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="attach" aria-label="Пристроить комнату к стене" title="Тапни стену — комната встанет вплотную, общая стена получится сама">⊞</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="split" aria-label="Разрезать комнату перегородкой" title="Два тапа поперёк комнаты — получатся две комнаты с общей стеной">✂</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="opening" aria-label="Проёмы: двери, окна, балкон">🚪</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="beam" aria-label="Балка/перемычка на потолке">▬</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="void" aria-label="Вентшахта / мини-комната внутри комнаты">▦</button>

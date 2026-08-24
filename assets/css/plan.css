@@ -974,3 +974,11 @@ body[data-flatshadow="1"] .ep-plan-furn.is-sel .ep-plan-furnrect { filter: none;
    на всю строку, как обычный input в base.css) */
 .ep-plan-flh { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); white-space: nowrap; }
 .ep-plan-flh input { width: 64px; flex: none; }
+
+/* шаблон квартиры: таблица размеров комнат перед вставкой */
+.ep-plan-tplrow { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
+.ep-plan-tplcell { flex: 1 1 130px; min-width: 0; display: flex; flex-direction: column; gap: 4px;
+  padding: 6px; border: 1px solid rgba(148,163,184,.25); border-radius: 10px; background: rgba(148,163,184,.06); }
+.ep-plan-tplcell input[type="text"] { width: 100%; font-size: 12px; }
+.ep-plan-tplcell label { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
+.ep-plan-tplcell label input { width: 100%; flex: 1 1 auto; text-align: center; }

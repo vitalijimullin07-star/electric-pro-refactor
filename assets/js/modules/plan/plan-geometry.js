@@ -374,6 +374,80 @@
   // третий параметр `out` — необязательный: если передан объект, в out.gone
   // кладётся список [p,q]-отрезков ИСЧЕЗНУВШЕЙ (погашенной) общей стены —
   // используется, чтобы опционально поставить на её месте перемычку (балку)
+  /* ---------- РАЗРЕЗ комнаты хордой (обратная операция к mergeRoomPolygons) ----------
+     Обвёл квартиру одним контуром по наружным стенам — и режешь её перегородками на
+     комнаты. Общая стена получается ПО ПОСТРОЕНИЮ (обе новые комнаты используют один и
+     тот же отрезок разреза), поэтому разойтись на пару сантиметров физически не может —
+     а именно из-за таких расхождений трассы потом идут «по стене».
+     a/b — два тапа (у стен комнаты, не обязательно точно на них). Возвращает
+     {a: [...], b: [...], cut: [p, q]} или null, если разрез вырожденный. */
+  G.splitRoomPolygon = (pts, a, b) => {
+    if (!pts || pts.length < 3 || !a || !b) return null;
+    // 1) почти вертикальный/горизонтальный разрез доводим до точной оси (тот же порог
+    //    ratio, что у orthoAdjust) — перегородки в квартирах прямые
+    let A = { x: a.x, y: a.y }, B = { x: b.x, y: b.y };
+    const dx = Math.abs(A.x - B.x), dy = Math.abs(A.y - B.y);
+    // главный тут ПЕРВЫЙ тап: разрез ложится ровно туда, куда прицелился пользователь
+    // (среднее между двумя тапами давало «полусантиметры» и уезжало от намеченного места)
+    if (dx <= dy * 0.36) B.x = A.x;
+    else if (dy <= dx * 0.36) B.y = A.y;
+    const dir = { x: B.x - A.x, y: B.y - A.y };
+    const len = Math.hypot(dir.x, dir.y);
+    // два тапа рядом — это не разрез, а промах: линия через них всё равно пересекла бы
+    // контур где-то далеко и «разрезала» комнату случайной диагональю
+    if (len < 50) return null;
+    dir.x /= len; dir.y /= len;
+    // 2) продлеваем линию разреза и ищем ВСЕ пересечения с контуром
+    const n = pts.length, hits = [];
+    // Решаем A + s*dir = p0 + u*e (две неизвестные s, u) методом Крамера:
+    //   s*dir.x - u*e.x = w.x        w = p0 - A
+    //   s*dir.y - u*e.y = w.y
+    for (let i = 0; i < n; i++) {
+      const p0 = pts[i], p1 = pts[(i + 1) % n];
+      const ex = p1.x - p0.x, ey = p1.y - p0.y;
+      const D = ex * dir.y - dir.x * ey;
+      if (Math.abs(D) < 1e-9) continue;                   // ребро параллельно разрезу
+      const wx = p0.x - A.x, wy = p0.y - A.y;
+      const sc = (ex * wy - wx * ey) / D;                 // вдоль линии разреза
+      const u = (dir.x * wy - wx * dir.y) / D;            // вдоль ребра, должен быть 0..1
+      if (u < -1e-6 || u > 1 + 1e-6) continue;
+      const uu = Math.min(1, Math.max(0, u));
+      hits.push({ seg: i, t: uu, s: sc, x: p0.x + ex * uu, y: p0.y + ey * uu });
+    }
+    if (hits.length < 2) return null;
+    hits.sort((h1, h2) => h1.s - h2.s);
+    // 3) берём пару, которая ОХВАТЫВАЕТ середину между тапами (у выпуклой комнаты это
+    //    просто две точки; у вогнутой — та пара, между которой пользователь и тапал)
+    const mid = len / 2;
+    let qa = null, qb = null;
+    for (let i = 0; i + 1 < hits.length; i++) {
+      if (hits[i].s <= mid + 1e-6 && hits[i + 1].s >= mid - 1e-6) { qa = hits[i]; qb = hits[i + 1]; break; }
+    }
+    if (!qa) { qa = hits[0]; qb = hits[hits.length - 1]; }
+    if (qa.seg === qb.seg && Math.abs(qa.t - qb.t) < 1e-6) return null;
+    if (G.dist(qa, qb) < 30) return null;                  // слишком короткий разрез
+    // 4) обходим контур в обе стороны — получаем две комнаты с ОБЩИМ отрезком разреза
+    const walk = (from, to) => {
+      const out = [{ x: from.x, y: from.y }];
+      let i = from.seg, guard = 0;
+      while (guard++ <= n + 1) {
+        const nxt = (i + 1) % n;
+        if (i === to.seg && !(from.seg === to.seg && guard === 1)) break;
+        out.push({ x: pts[nxt].x, y: pts[nxt].y });
+        i = nxt;
+        if (i === to.seg) break;
+      }
+      out.push({ x: to.x, y: to.y });
+      return out;
+    };
+    const polyA = walk(qa, qb), polyB = walk(qb, qa);
+    const clean = (arr) => arr.filter((q, i) => i === 0 || G.dist(q, arr[i - 1]) > 0.5);
+    const pa = clean(polyA), pb = clean(polyB);
+    if (pa.length < 3 || pb.length < 3) return null;
+    if (Math.abs(G.area(pa)) < 10000 || Math.abs(G.area(pb)) < 10000) return null; // <1 м²
+    return { a: pa, b: pb, cut: [{ x: qa.x, y: qa.y }, { x: qb.x, y: qb.y }] };
+  };
+
   G.mergeRoomPolygons = (ptsA, ptsB, out) => {
     if (!ptsA || !ptsB || ptsA.length < 3 || ptsB.length < 3) return null;
     const EPS = 1; // см — допуск на неточность рисования от руки

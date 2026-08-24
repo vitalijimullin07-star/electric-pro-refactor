@@ -10,7 +10,9 @@
     modes: { view: "☝", rect: "▭", poly: "⬠", beam: "▬", void: "▦", furn: "🛋", elem: "🔌", opening: "🚪", ruler: "📏", underlay: "🖼", merge: "🔗", movroom: "🧭" },
     modeHint: {
       view: "Тап: точка — редактор, стена — развёртка, комната — свойства.",
-      rect: "Тапни два противоположных угла комнаты.",
+      rect: "Тапни угол — впиши размеры, или тапни второй угол.",
+      attach: "Тапни стену, к которой пристроить комнату — она встанет вплотную.",
+      split: "Разрез: тапни на одной стене комнаты, потом на противоположной — станет две комнаты.",
       furn: "Выбери мебель/технику и тапни по плану — встанет центром в точку тапа.",
       poly: "Ставь точки по контуру. Замкни тапом в первую точку.",
       beam: "Балка/перегородка: тапни начало и конец, потом тяни концы.",
@@ -28,6 +30,8 @@
     targetPicked: (name) => `Клавиша → ${name} ✓`,
     targetPickMiss: "Отменено — тап не попал в подходящую точку.",
     room: "Комната", create: "Создать", cancel: "Отмена", close: "Закрыть",
+    splitFail: "Разрез не получился: тапни у ДВУХ противоположных стен одной комнаты.",
+    splitBlocked: "Сначала убери точку/проём с линии разреза — иначе потеряется привязка.",
     name: "Название", width: "Ширина, см", depth: "Глубина, см", ceil: "Потолок, см",
     wet: "Влажная зона (санузел/кухня)", dup: "⧉ Копия", mirror: "⇋ Зеркало", del: "✕ Удалить",
     unfoldBtn: "Развёртка",
@@ -97,9 +101,10 @@
   // запоминаются между сессиями) ----------
   // Тот же набор, что и «режимы» в верхнем тулбаре (см. T.modes) — здесь его пилотный
   // список для панели быстрого доступа (что можно закрепить/что попадает в MRU).
-  const QB_TOOLS = { view: "☝", rect: "▭", poly: "⬠", beam: "▬", void: "▦", furn: "🛋", merge: "🔗", movroom: "🧭", elem: "🔌", opening: "🚪", wall: "📐", ruler: "📏", underlay: "🖼", guide: "⇉" };
+  const QB_TOOLS = { view: "☝", rect: "▭", poly: "⬠", attach: "⊞", split: "✂", beam: "▬", void: "▦", furn: "🛋", merge: "🔗", movroom: "🧭", elem: "🔌", opening: "🚪", wall: "📐", ruler: "📏", underlay: "🖼", guide: "⇉" };
   const QB_LABELS = {
-    view: "Просмотр", rect: "Прямоугольная комната", poly: "Комната по точкам", beam: "Балка/перемычка",
+    view: "Просмотр", rect: "Прямоугольная комната", poly: "Комната по точкам",
+    attach: "Пристроить к стене", split: "Разрезать комнату", beam: "Балка/перемычка",
     void: "Вентшахта/мини-комната", merge: "Объединить комнаты", movroom: "Перенести комнату", elem: "Точки", opening: "Проёмы",
     wall: "Развёртка стены", ruler: "Рулетка", underlay: "Подложка-фото",
     guide: "Магистраль трасс"
@@ -224,7 +229,7 @@
   // ---------- режимы ----------
   function setMode(mode) {
     R.mode = mode;
-    R.draft = { points: [] }; R.pendingRect = null; R.pendingPoly = null;
+    R.draft = { points: [] }; R.pendingRect = null; R.pendingPoly = null; R.rectAnchor = null; R.attach = null; R.split = null;
     R.ruler = { a: null, b: null }; R.beamDraft = { a: null, b: null }; R.voidDraft = { a: null, b: null };
     R.guideDraft = { points: [] };
     R.targetPick = null; // смена режима отменяет одноразовый выбор цели клавиши
@@ -310,10 +315,36 @@
       return;
     }
     const step = p.settings.gridStep || 10;
+    // ✂ разрез: два тапа поперёк комнаты
+    if (R.mode === "split") {
+      const pt = G().snapSmart(p, w, step, CFG.cornerSnapCm);
+      const room = G().roomAt(p, { x: pt.x, y: pt.y }) || G().roomAt(p, w);
+      if (!R.split || !R.split.a) {
+        if (!room) { toast("Тапни внутри комнаты, у стены, где начать разрез."); return; }
+        R.split = { roomId: room.id, a: { x: pt.x, y: pt.y }, b: null };
+        splitPreview(); sheetSplit(); return;
+      }
+      R.split.b = { x: pt.x, y: pt.y };
+      splitPreview(); sheetSplit(); return;
+    }
+    // ＋ пристроить комнату: тап по стене выбирает её как базу
+    if (R.mode === "attach") {
+      const hit = G().wallAt(p, w, CFG.hitWallPx * R.canvas.cmPerPx());
+      if (!hit) { toast("Тапни по стене, к которой пристроить комнату."); return; }
+      R.attach = { wallId: hit.wall.id, w: Math.round(hit.wall.len), h: 300, flip: false };
+      attachPreview(); sheetAttach();
+      return;
+    }
     if (R.mode === "rect") {
       const pt = G().snapSmart(p, w, step, CFG.cornerSnapCm);
       if (pt.snapped) vibrate(10);
-      if (!R.draft.points.length) { R.draft.points = [pt]; renderScaled(); return; }
+      // Первый тап — сразу предлагаем ВВЕСТИ размеры: второй тап целиться не нужно
+      // (он по-прежнему работает, как раньше — кто привык, тот и тапает).
+      if (!R.draft.points.length) {
+        R.draft.points = [pt]; R.rectAnchor = pt;
+        rectPreview(); sheetRectFromPoint();
+        return;
+      }
       const a = R.draft.points[0];
       const wcm = Math.abs(pt.x - a.x), hcm = Math.abs(pt.y - a.y);
       if (wcm < CFG.minRoomCm || hcm < CFG.minRoomCm) { toast(T.tooSmall); return; }
@@ -735,6 +766,128 @@
     renderScene();
   }
 
+  /* ---------- комната ЧИСЛАМИ от одной точки ----------
+     Раньше прямоугольник требовал двух тапов, и только потом размеры правились числами
+     в шторке. Теперь после ПЕРВОГО тапа сразу можно вбить ширину и глубину: поставил
+     угол — ввёл «420 × 310» — готово. Направление роста от этого угла выбирается чипами
+     (↘ по умолчанию: вправо-вниз, как читается план). Второй тап никуда не делся.  */
+  const RECT_DIRS = [["se", "↘"], ["sw", "↙"], ["ne", "↗"], ["nw", "↖"]];
+  function rectNums() {
+    const w = Math.max(CFG.minRoomCm, Number(($("#ep-pr-w") || {}).value) || 0);
+    const h = Math.max(CFG.minRoomCm, Number(($("#ep-pr-h") || {}).value) || 0);
+    return { w, h };
+  }
+  function rectFromAnchor(w, h) {
+    const a = R.rectAnchor, d = R.rectDir || "se";
+    return { x: d.indexOf("w") >= 0 ? a.x - w : a.x, y: d.indexOf("n") >= 0 ? a.y - h : a.y, w, h };
+  }
+  // живое превью контура по введённым числам (тот же draft, что рисует обычный второй тап)
+  function rectPreview() {
+    if (!R.rectAnchor) return;
+    const n = rectNums();
+    const r = rectFromAnchor(n.w || 400, n.h || 300);
+    R.draft.points = [{ x: r.x, y: r.y }, { x: r.x + r.w, y: r.y }, { x: r.x + r.w, y: r.y + r.h }, { x: r.x, y: r.y + r.h }, { x: r.x, y: r.y }];
+    renderScaled();
+  }
+  function sheetRectFromPoint() {
+    R.rectDir = R.rectDir || "se";
+    openSheet(`<div class="ep-plan-srow"><b>${T.room}</b> · угол поставлен</div>
+      <div class="ep-plan-srow"><input id="ep-pr-name" type="text" placeholder="${T.name}" value="${T.room} ${core().project.rooms.length + 1}" maxlength="40"></div>
+      <div class="ep-plan-srow ep-plan-s2">
+        <label>${T.width}<input id="ep-pr-w" type="number" inputmode="numeric" min="30" value="400"></label>
+        <label>${T.depth}<input id="ep-pr-h" type="number" inputmode="numeric" min="30" value="300"></label>
+      </div>
+      <div class="ep-plan-srow">Куда строить:
+        ${RECT_DIRS.map(([d, g]) => `<button type="button" class="ep-plan-chip ep-clickable ${R.rectDir === d ? "on" : ""}" data-pr-rdir="${d}">${g}</button>`).join("")}
+      </div>
+      <div class="ep-plan-modehint">Впиши размеры — или просто тапни второй угол на плане, как раньше.</div>
+      <div class="ep-plan-srow ep-plan-sbtns">
+        <button type="button" class="btn btn-primary ep-clickable" data-pr-create-rect2>${T.create}</button>
+        <button type="button" class="btn btn-ghost ep-clickable" data-pr-cancel>${T.cancel}</button>
+      </div>`);
+  }
+  function createRectFromPoint() {
+    if (!R.rectAnchor) return;
+    const n = rectNums();
+    R.pendingRect = rectFromAnchor(n.w, n.h);
+    R.rectAnchor = null;
+    createRect();
+  }
+  /* ---------- ＋ Пристроить комнату к стене ----------
+     Самый частый способ набрать квартиру: от коридора пристроить спальню, от спальни —
+     кухню. Ключевое отличие от «нарисовать рядом»: комната строится ПО САМОЙ СТЕНЕ
+     (та же линия, те же координаты), поэтому общая стена получается по построению и
+     физически не может разойтись на пару сантиметров — а именно из-за таких расхождений
+     трассы потом идут «по стене». Сторона по умолчанию — НАРУЖУ от комнаты-хозяйки
+     (нормаль G.wallFrame смотрит внутрь неё), но её можно перевернуть.  */
+  function attachGeom(p, wall, width, depth, flip) {
+    const fr = G().wallFrame(p, wall);
+    if (!fr) return null;
+    const dir = fr.dir;
+    const nx = flip ? fr.nrm.x : -fr.nrm.x, ny = flip ? fr.nrm.y : -fr.nrm.y;
+    const w = Math.max(CFG.minRoomCm, Math.min(width, wall.len));
+    const a = wall.a;
+    const b = { x: a.x + dir.x * w, y: a.y + dir.y * w };
+    return [
+      { x: a.x, y: a.y }, { x: b.x, y: b.y },
+      { x: b.x + nx * depth, y: b.y + ny * depth },
+      { x: a.x + nx * depth, y: a.y + ny * depth }
+    ];
+  }
+  function attachPreview() {
+    const a = R.attach;
+    if (!a) return;
+    const p = core().project, wall = G().wallById(p, a.wallId);
+    if (!wall) return;
+    const pts = attachGeom(p, wall, a.w, a.h, a.flip);
+    if (!pts) return;
+    R.draft.points = pts.concat([pts[0]]);
+    renderScaled();
+  }
+  function sheetAttach() {
+    const a = R.attach;
+    if (!a) return;
+    const p = core().project, wall = G().wallById(p, a.wallId);
+    if (!wall) { closeSheet(); return; }
+    const own = (p.rooms || []).find((r) => r.id === wall.roomId);
+    openSheet(`<div class="ep-plan-srow"><b>Пристроить комнату</b> · стена ${wall.n} (${Math.round(wall.len)} см)${own ? " · " + esc(own.name) : ""}</div>
+      <div class="ep-plan-srow"><input id="ep-pr-aname" type="text" placeholder="${T.name}" value="${T.room} ${(p.rooms || []).length + 1}" maxlength="40"></div>
+      <div class="ep-plan-srow ep-plan-s2">
+        <label>Вдоль стены, см<input id="ep-pr-aw" type="number" inputmode="numeric" min="30" max="${Math.round(wall.len)}" value="${Math.round(a.w)}"></label>
+        <label>${T.depth}<input id="ep-pr-ah" type="number" inputmode="numeric" min="30" value="${Math.round(a.h)}"></label>
+      </div>
+      <div class="ep-plan-srow">
+        <button type="button" class="ep-plan-chip ep-clickable" data-pr-aflip>⇄ На другую сторону</button>
+      </div>
+      <div class="ep-plan-modehint">Комната встанет вплотную к этой стене — общая стена получится сама, подгонять не нужно.</div>
+      <div class="ep-plan-srow ep-plan-sbtns">
+        <button type="button" class="btn btn-primary ep-clickable" data-pr-attach-go>✓ Пристроить</button>
+        <button type="button" class="btn btn-ghost ep-clickable" data-pr-cancel>${T.cancel}</button>
+      </div>`);
+  }
+  function attachRead() {
+    const a = R.attach; if (!a) return;
+    const w = Number(($("#ep-pr-aw") || {}).value) || a.w;
+    const h = Number(($("#ep-pr-ah") || {}).value) || a.h;
+    a.w = Math.max(CFG.minRoomCm, w);
+    a.h = Math.max(CFG.minRoomCm, h);
+  }
+  function attachGo() {
+    const a = R.attach; if (!a) return;
+    attachRead();
+    const c = core(), p = c.project, wall = G().wallById(p, a.wallId);
+    if (!wall) return;
+    const pts = attachGeom(p, wall, a.w, a.h, a.flip);
+    if (!pts) { toast("Не получилось построить — попробуй другую стену."); return; }
+    const name = (($("#ep-pr-aname") || {}).value || "").trim();
+    c.commit();
+    const room = c.model.newRoom(pts, name || undefined);
+    p.rooms.push(room);
+    c.persist("room-add");
+    R.attach = null; R.draft = { points: [] };
+    R.selectedRoomId = room.id;
+    setMode("view"); sheetRoom(room);
+  }
   function sheetCreateRect() {
     const r = R.pendingRect;
     openSheet(`<div class="ep-plan-srow"><b>${T.room}</b></div>
@@ -865,7 +1018,29 @@
         if (dd <= CFG.cornerSnapCm && (!best || dd < best.dd)) best = { dd, ox: o.x - moved.x, oy: o.y - moved.y };
       });
     });
-    if (best) { d.x += best.ox; d.y += best.oy; }
+    if (best) { d.x += best.ox; d.y += best.oy; return d; }
+    // Магнит ГРАНЕЙ (не только углов): у комнат разного размера углы не совпадают, и
+    // старый магнит «угол к углу» не срабатывал — комната вставала со щелью или
+    // наползанием на пару сантиметров. Из-за таких расхождений трассы потом идут «по
+    // стене» (реальный случай: две комнаты разъехались ровно на 20 см). Поэтому, если
+    // угол ни к чему не прилип, доводим по ОСИ: ищем ближайшую вертикальную грань чужой
+    // комнаты к вертикальной грани нашей (совпадение по x) и то же по y — независимо,
+    // так что комната может прилипнуть сразу двумя сторонами (в угол).
+    const xs = [], ys = [];
+    (G().floorScoped(p).rooms || []).forEach((r) => {
+      if (r.id === snap.room.id) return;
+      (r.points || []).forEach((q) => { xs.push(q.x); ys.push(q.y); });
+    });
+    const axis = (vals, cur, get) => {
+      let bx = null;
+      snap.pts.forEach((q0) => {
+        const v = get(q0) + cur;
+        vals.forEach((o) => { const dd = Math.abs(o - v); if (dd <= CFG.cornerSnapCm && (!bx || dd < bx.dd)) bx = { dd, off: o - v }; });
+      });
+      return bx ? bx.off : 0;
+    };
+    d.x += axis(xs, d.x, (q) => q.x);
+    d.y += axis(ys, d.y, (q) => q.y);
     return d;
   }
   // публичный перенос на заданный сдвиг (стрелки в шторке + тесты): одна транзакция
@@ -1625,6 +1800,94 @@
     return newRoom;
   }
 
+  /* ---------- ✂ Разрез комнаты на две ----------
+     Обратная операция к 🔗 «Объединить». Обвёл квартиру одним контуром — режешь её
+     перегородками: два тапа поперёк комнаты, и получаются две комнаты с ОБЩЕЙ стеной
+     (обе используют один и тот же отрезок разреза, поэтому разойтись не могут).
+     Точки/проёмы старой комнаты перевязываются на ту из новых, у чьей стены они
+     физически стоят — тот же приём, что у mergeRooms (мировые позиции считаются ДО
+     перестройки геометрии). Если точка/проём попали РОВНО на линию разреза, они
+     достанутся комнате, к стене которой ближе, — терять привязку нельзя.
+     opts.remnant: "beam"|"lintel" — поставить на месте разреза перегородку/перемычку
+     (как у слияния); без него разрез — просто новая общая стена двух комнат. */
+  function splitRoom(roomId, a, b, opts) {
+    const c = core(), p = c.project;
+    const room = (p.rooms || []).find((r) => r.id === roomId);
+    if (!room) return null;
+    const res = G().splitRoomPolygon(room.points, a, b);
+    if (!res) { toast(T.splitFail); return null; }
+
+    // мировые позиции точек/проёмов ДО перестройки
+    const els = (p.elements || []).filter((el) => el.wallId && String(el.wallId).split(":")[0] === room.id);
+    const ops = (p.openings || []).filter((op) => op.wallId && String(op.wallId).split(":")[0] === room.id);
+    const elPos = els.map((el) => G().elemPoint(p, el));
+    const opPos = ops.map((op) => { const ww = G().wallById(p, op.wallId); return ww ? G().pointAtOffset(ww, op.offset + op.width / 2) : null; });
+
+    const mk = (pts, name) => {
+      const r = c.model.newRoom(pts, name);
+      r.material = room.material || null;
+      r.height = room.height || null;
+      if ((room.zones || []).indexOf("wet") >= 0) r.zones = ["wet"];
+      return r;
+    };
+    const rA = mk(res.a, room.name);
+    const rB = mk(res.b, (room.name || T.room) + " 2");
+    const walls = G().walls(rA).map((ww) => ({ ww, room: rA })).concat(G().walls(rB).map((ww) => ({ ww, room: rB })));
+    const findNearWall = (pos) => {
+      if (!pos) return null;
+      let best = null;
+      walls.forEach((x) => { const cl = G().closestOnSeg(pos, x.ww.a, x.ww.b); if (cl.d < 5 && (!best || cl.d < best.cl.d)) best = { room: x.room, wall: x.ww, cl }; });
+      return best;
+    };
+    for (let i = 0; i < elPos.length; i++) if (!findNearWall(elPos[i])) { toast(T.splitBlocked); return null; }
+    for (let i = 0; i < opPos.length; i++) if (!findNearWall(opPos[i])) { toast(T.splitBlocked); return null; }
+
+    c.commit();
+    p.rooms = p.rooms.filter((r) => r.id !== room.id);
+    p.rooms.push(rA, rB);
+    els.forEach((el, i) => { const hit = findNearWall(elPos[i]); el.wallId = hit.room.id + ":" + hit.wall.i; el.offset = Math.round(hit.cl.t * hit.wall.len); });
+    ops.forEach((op, i) => { const hit = findNearWall(opPos[i]); op.wallId = hit.room.id + ":" + hit.wall.i; op.offset = Math.max(0, Math.round(hit.cl.t * hit.wall.len - op.width / 2)); });
+    if (opts && (opts.remnant === "beam" || opts.remnant === "lintel")) {
+      const bm = c.model.newBeam(res.cut[0], res.cut[1]);
+      bm.kind = opts.remnant;
+      bm.width = Math.round(G().wallThOf(p, G().walls(rA)[0]) || p.settings.wallThickness || 10);
+      p.beams.push(bm);
+    }
+    c.persist("room-split");
+    return { a: rA, b: rB };
+  }
+  function splitPreview() {
+    const sp = R.split;
+    if (!sp || !sp.a) { R.draft = { points: [] }; renderScaled(); return; }
+    R.draft.points = sp.b ? [sp.a, sp.b] : [sp.a];
+    renderScaled();
+  }
+  function sheetSplit() {
+    const sp = R.split;
+    if (!sp || !sp.roomId) return;
+    const p = core().project, room = (p.rooms || []).find((r) => r.id === sp.roomId);
+    const res = (sp.a && sp.b && room) ? G().splitRoomPolygon(room.points, sp.a, sp.b) : null;
+    const areas = res ? `${G().fmtArea(Math.abs(G().area(res.a)))} + ${G().fmtArea(Math.abs(G().area(res.b)))}` : "";
+    openSheet(`<div class="ep-plan-srow"><b>✂ Разрез</b>${room ? " · " + esc(room.name) : ""}${areas ? " · " + areas : ""}</div>
+      <div class="ep-plan-modehint">${sp.b ? "Разрез намечен. Что поставить на его месте?" : "Тапни на противоположной стене комнаты."}</div>
+      ${sp.b ? `<div class="ep-plan-srow ep-plan-sbtns">
+        <button type="button" class="btn btn-primary ep-clickable" data-pr-split-go="">${res ? "✓ Разрезать" : "✕ Так не выйдет"}</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-split-go="beam">＋ Перегородка</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-split-go="lintel">＋ Перемычка</button>
+      </div>` : ""}
+      <div class="ep-plan-srow ep-plan-sbtns">
+        <button type="button" class="btn btn-ghost ep-clickable" data-pr-cancel>${T.cancel}</button>
+      </div>`);
+  }
+  function splitGo(remnant) {
+    const sp = R.split;
+    if (!sp || !sp.a || !sp.b || !sp.roomId) return;
+    const res = splitRoom(sp.roomId, sp.a, sp.b, remnant ? { remnant } : null);
+    if (!res) return;
+    R.split = null; R.draft = { points: [] };
+    R.selectedRoomId = res.a.id;
+    setMode("view"); sheetRoom(res.a);
+  }
   function loadUnderlayFile(file) {
     const rd = new FileReader();
     rd.onload = () => {
@@ -1693,6 +1956,11 @@
     if (t.closest("[data-plan-fit]")) { if (R.canvas) R.canvas.fit(G().projectBBox(core().project)); return; }
     if (t.closest("[data-pr-cancel]")) { setMode(R.mode === "underlay" ? "view" : R.mode); return; }
     if (t.closest("[data-pr-create-rect]")) return createRect();
+    if (t.closest("[data-pr-create-rect2]")) return createRectFromPoint();
+    if (t.closest("[data-pr-attach-go]")) return attachGo();
+    if ((el = t.closest("[data-pr-split-go]"))) return splitGo(el.getAttribute("data-pr-split-go"));
+    if (t.closest("[data-pr-aflip]")) { if (R.attach) { attachRead(); R.attach.flip = !R.attach.flip; attachPreview(); sheetAttach(); } return; }
+    if ((el = t.closest("[data-pr-rdir]"))) { R.rectDir = el.getAttribute("data-pr-rdir"); rectPreview(); sheetRectFromPoint(); return; }
     if (t.closest("[data-pr-create-poly]")) return createPoly();
     if ((el = t.closest("[data-pr-pdir]"))) return polyDirAdd(el.getAttribute("data-pr-pdir"));
     if (t.closest("[data-pr-pundo]")) { R.draft.points.pop(); renderScaled(); if (R.draft.points.length) sheetPolyDraft(); else closeSheet(); return; }
@@ -1835,6 +2103,8 @@
   });
   document.addEventListener("input", (e) => {
     if (!R.active) return;
+    if ((e.target.id === "ep-pr-w" || e.target.id === "ep-pr-h") && R.rectAnchor) { rectPreview(); return; }
+    if ((e.target.id === "ep-pr-aw" || e.target.id === "ep-pr-ah") && R.attach) { attachRead(); attachPreview(); return; }
     if (e.target.id === "ep-pr-uplop") { const p = core().project; if (p.underlay) { p.underlay.opacity = Number(e.target.value) / 100; renderScene(); } }
     if (e.target.getAttribute && e.target.getAttribute("data-pr-beamw")) {
       const c = core(), bm = (c.project.beams || []).find((b) => b.id === e.target.getAttribute("data-pr-beamw"));
@@ -1877,6 +2147,6 @@
     // этот тонкий проброс, а сам обработчик (что двигать) остаётся в модуле мебели
     canvasSetDrag: (fn) => { if (R.canvas) R.canvas.setDragHandler(fn || null); },
     renderSceneSoon,
-    mergeRooms, moveRoom, syncQuickbarVisibility, armTargetPick
+    mergeRooms, splitRoom, moveRoom, syncQuickbarVisibility, armTargetPick
   };
 })();
