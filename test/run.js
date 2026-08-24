@@ -2109,7 +2109,8 @@ test("EP.Plan.Templates: все шаблоны строят валидные п�
   const all = EP.Plan.Templates.CATEGORIES.concat(EP.Plan.Templates.SERIES);
   ok(all.length >= 10, "категорий+серий достаточно");
   all.forEach((t) => {
-    const built = t.build();
+    ok(Array.isArray(t.rows) && t.rows.length, t.id + ": есть таблица размеров (rows)");
+    const built = EP.Plan.Templates.layoutRows(t.rows);
     ok(built.length >= 1, t.id + ": хотя бы одна комната");
     built.forEach((r) => {
       eq(r.points.length, 4, t.id + "/" + r.name + ": прямоугольник — 4 точки");
@@ -4511,6 +4512,118 @@ test("фото: deleteProject чистит кэш фото своего прое
     eq(F.priceFor("Кабель ВВГнг(А)-LS 3×2.5", "material"), 92.25, "цена находится, хотя в БД другое написание");
     eq(F.priceFor("Кабель ВВГнг(А)-LS 3×2.5 · до щита (220В)", "material"), 92.25, "суффикс не мешает (подстрока)");
     eq(F.priceFor("Кабель ВВГнг(А)-LS 5×6", "material"), 0, "чужое сечение цену не подхватывает");
+  });
+
+// ===== 39. Упрощение чертежа: разрез, пристройка, размеры шаблона, магнит граней =====
+  test("splitRoomPolygon: прямоугольник режется ровно там, куда прицелился ПЕРВЫЙ тап", () => {
+    const pts = G.rectPoints(0, 0, 600, 400);
+    const res = G.splitRoomPolygon(pts, { x: 0, y: 200 }, { x: 600, y: 205 }); // второй тап промазал на 5см
+    ok(res, "разрез построен");
+    eq(res.cut[0].y, 200, "разрез лёг на координату ПЕРВОГО тапа, а не на среднюю");
+    eq(res.cut[1].y, 200, "второй конец на той же линии (горизонталь выровнена)");
+    const s = Math.abs(G.area(res.a)) + Math.abs(G.area(res.b));
+    eq(Math.round(s), Math.round(Math.abs(G.area(pts))), "сумма площадей = площади исходной комнаты");
+    eq(Math.round(Math.abs(G.area(res.a)) / 1000) / 10, 12, "верхняя половина 12 м²");
+    eq(Math.round(Math.abs(G.area(res.b)) / 1000) / 10, 12, "нижняя половина 12 м²");
+  });
+  test("splitRoomPolygon: вертикальный разрез и отказ на двух тапах рядом", () => {
+    const pts = G.rectPoints(0, 0, 600, 400);
+    const v = G.splitRoomPolygon(pts, { x: 250, y: 0 }, { x: 245, y: 400 });
+    ok(v, "вертикальный разрез построен");
+    eq(v.cut[0].x, 250, "вертикаль выровнена по первому тапу");
+    eq(G.splitRoomPolygon(pts, { x: 100, y: 100 }, { x: 114, y: 100 }), null, "два тапа в 14см — промах, не разрез");
+    eq(G.splitRoomPolygon(pts, null, { x: 1, y: 1 }), null, "нет точки — null, без исключения");
+    eq(G.splitRoomPolygon([{ x: 0, y: 0 }, { x: 10, y: 0 }], { x: 0, y: 0 }, { x: 0, y: 300 }), null, "вырожденный контур — null");
+  });
+  test("splitRoomPolygon: Г-образная комната режется по своей геометрии", () => {
+    const L = [{ x: 0, y: 0 }, { x: 600, y: 0 }, { x: 600, y: 300 }, { x: 300, y: 300 }, { x: 300, y: 500 }, { x: 0, y: 500 }];
+    const res = G.splitRoomPolygon(L, { x: 300, y: 0 }, { x: 300, y: 300 });
+    ok(res, "разрез Г-образной построен");
+    const s = Math.abs(G.area(res.a)) + Math.abs(G.area(res.b));
+    eq(Math.round(s), Math.round(Math.abs(G.area(L))), "площадь сохранена");
+    ok(Math.abs(G.area(res.a)) > 10000 && Math.abs(G.area(res.b)) > 10000, "обе половины невырожденные");
+  });
+  test("Rooms.splitRoom: две комнаты с ОБЩЕЙ стеной, точки перевязаны, перегородка по желанию", () => {
+    const p = EP.Plan.Core.createProject("split");
+    const r = M.newRoom(G.rectPoints(0, 0, 600, 400), "Студия");
+    r.material = "Кирпич";
+    p.rooms.push(r);
+    const el = M.newElement("socket", r.id + ":0", 150, 30, "power");   // на ВЕРХНЕЙ стене
+    const el2 = M.newElement("socket", r.id + ":2", 150, 30, "power");  // на НИЖНЕЙ стене
+    p.elements.push(el, el2);
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    const res = EP.Plan.Rooms.splitRoom(r.id, { x: 0, y: 200 }, { x: 600, y: 200 });
+    ok(res && res.a && res.b, "разрез прошёл");
+    eq(p.rooms.length, 2, "исходная комната заменена двумя");
+    ok(!p.rooms.some((x) => x.id === r.id), "старой комнаты в проекте нет");
+    eq(res.a.material, "Кирпич", "материал унаследован");
+    // общая стена: у обеих комнат есть ребро по линии разреза
+    const onCut = (room) => G.walls(room).some((w) => Math.abs(w.a.y - 200) < 0.5 && Math.abs(w.b.y - 200) < 0.5);
+    ok(onCut(res.a) && onCut(res.b), "обе комнаты имеют ребро ровно по линии разреза (общая стена)");
+    // точки перевязаны каждая на свою комнату, мировая позиция не уехала
+    const wa = G.elemPoint(p, el), wb = G.elemPoint(p, el2);
+    eq(Math.round(wa.x), 150, "верхняя точка на месте по X");
+    eq(Math.round(wa.y), 0, "верхняя точка на месте по Y");
+    eq(Math.round(wb.y), 400, "нижняя точка осталась у нижней стены");
+    ok(el.wallId.split(":")[0] !== el2.wallId.split(":")[0], "точки достались РАЗНЫМ комнатам");
+    ok(p.rooms.some((x) => x.id === el.wallId.split(":")[0]), "точка привязана к существующей комнате");
+  });
+  test("Rooms.splitRoom: remnant ставит перегородку на месте разреза, неизвестный id безопасен", () => {
+    const p = EP.Plan.Core.createProject("split2");
+    const r = M.newRoom(G.rectPoints(0, 0, 600, 400), "К");
+    p.rooms.push(r);
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    eq(EP.Plan.Rooms.splitRoom("нет-такой", { x: 0, y: 0 }, { x: 1, y: 1 }), null, "нет комнаты — null, без исключения");
+    EP.Plan.Rooms.splitRoom(r.id, { x: 300, y: 0 }, { x: 300, y: 400 }, { remnant: "lintel" });
+    eq(p.beams.length, 1, "перемычка поставлена");
+    eq(p.beams[0].kind, "lintel", "именно перемычка (низ открыт), а не сплошная");
+    eq(Math.round(p.beams[0].a.x), 300, "балка легла на линию разреза");
+  });
+  test("перенос комнаты: магнит выравнивает ГРАНИ, а не только углы", () => {
+    const p = EP.Plan.Core.createProject("edgesnap");
+    const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "A");
+    // B стоит НИЖЕ и правее: углы далеко друг от друга (магнит углов не сработает),
+    // но левая грань B по x=596 — рядом с правой гранью A после сдвига
+    const B = M.newRoom(G.rectPoints(596, 900, 300, 300), "B");
+    p.rooms.push(A, B);
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    EP.Plan.Rooms.moveRoom(A.id, 200, 0);
+    const rightX = Math.max.apply(null, A.points.map((q) => q.x));
+    eq(rightX, 596, "правый край A выровнялся по левому краю B (сдвиг 200 → 196)");
+    const topY = Math.min.apply(null, A.points.map((q) => q.y));
+    eq(topY, 0, "по Y ничего не подтянулось — совпадать нечему");
+  });
+  test("шаблоны: размеры редактируемые (rows) и доступны всем, не только админу", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-templates.js"), "utf8");
+    ok(!/isAdmin/.test(src), "гейта по админу больше нет — шаблоны открыты всем");
+    ok(/data-tpl-w/.test(src) && /data-tpl-h/.test(src) && /data-tpl-name/.test(src), "поля размеров и имени комнаты");
+    ok(/data-plan-tpl-insert/.test(src) && /data-plan-tpl-back/.test(src), "кнопки «вставить» и «назад к списку»");
+    const mnt = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-mount.js"), "utf8");
+    ok(!/isAdmin\(\)\s*\?\s*`[^`]*data-plan-tpl-open/.test(mnt), "кнопка шаблона в тулбаре не под админом");
+  });
+  test("шаблоны: apply принимает СВОИ размеры и ставит именно их", () => {
+    const p = EP.Plan.Core.createProject("tplsize");
+    const rows = [[{ name: "Зал", w: 500, h: 400 }, { name: "Кухня", w: 300, h: 400 }]];
+    const n = EP.Plan.Templates.apply("studio", rows);
+    eq(n, 2, "вставлены обе комнаты из переданной таблицы");
+    const zal = p.rooms.find((r) => r.name === "Зал");
+    ok(zal, "комната с заданным именем создана");
+    const w = Math.max.apply(null, zal.points.map((q) => q.x)) - Math.min.apply(null, zal.points.map((q) => q.x));
+    const h = Math.max.apply(null, zal.points.map((q) => q.y)) - Math.min.apply(null, zal.points.map((q) => q.y));
+    eq(w, 500, "ширина из таблицы");
+    eq(h, 400, "глубина из таблицы");
+  });
+  test("чертёж: ⊞ пристройка и ✂ разрез есть в тулбаре и в квикбаре", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const mnt = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-mount.js"), "utf8");
+    ok(/data-plan-mode="attach"/.test(mnt) && /data-plan-mode="split"/.test(mnt), "обе кнопки в тулбаре");
+    ok(/data-plan-grp="build"[^>]*data-plan-mode="attach"/.test(mnt), "пристройка — во вкладке «Планировка»");
+    const rms = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-rooms.js"), "utf8");
+    ok(/attach: "⊞"/.test(rms) && /split: "✂"/.test(rms), "оба инструмента доступны в квикбаре");
+    ok(/R\.attach = null; R\.split = null;/.test(rms), "смена режима сбрасывает незаконченную пристройку/разрез");
+    ok(/data-pr-create-rect2/.test(rms), "прямоугольник по размерам ПОСЛЕ первого тапа");
+    ok(/data-pr-rdir/.test(rms), "выбор направления от точки-якоря");
   });
 
   console.log("\n" + "=".repeat(48));
