@@ -331,6 +331,9 @@
     const structSig = JSON.stringify([
       project.rooms, project.openings, project.beams, project.voids, project.ledStrips,
       project.settings && project.settings.wallThickness, project.settings && project.settings.wallMaterial,
+      // общий вынос размерной цепочки (per-wall вынос приезжает внутри project.rooms) —
+      // без него смена отступа в 🗂 Слои переиспользовала бы кэшированный узел стен
+      project.settings && project.settings.dimOffset,
       dimsOn, labelsOn, lodDims, kBucket, labelNudges, ui && ui.noWallLabels,
       ui && ui.selectedRoomId, ui && ui.draft, ui && ui.beamDraft, ui && ui.voidDraft,
       EP.Plan.Rooms && EP.Plan.Rooms.selectedBeamId && EP.Plan.Rooms.selectedBeamId(),
@@ -583,7 +586,10 @@
           // плотном плане цепочку нужно «вынести» дальше, чтобы она не налезала на
           // трассы. ОБЯЗАНО совпадать с off2 в дублирующем хит-тесте plan-rooms.js —
           // иначе видимая цифра и зона двойного тапа по ней разъедутся.
-          const off2 = (project.settings && project.settings.dimOffset >= 0) ? project.settings.dimOffset : 5;
+          // Значение — G.wallDimOffOf: вынос ЭТОЙ стены (room.wallDimOff[i], ставится
+          // тягой цифры в режиме ⟷), иначе общий settings.dimOffset. Отрицательный вынос
+          // честно переносит цепочку на другую сторону стены.
+          const off2 = G.wallDimOffOf(project, w);
           const tick = 4 * k, fs2 = 8.5 * k;
           const base = (d) => { const p = G.pointAtOffset(w, d); return { x: p.x + nx * off2, y: p.y + ny * off2 }; };
           const st2 = chain.stations;
@@ -908,8 +914,12 @@
       // повёрнут (всегда читается), опущен ниже маркера, как на проф. чертеже.
       // lodDims — на отдалении скрыта (первой начинает наслаиваться на соседей).
       if (lodDims && elem.wallId && elem.type !== "junction" && elem.height != null) {
+        // elem.hOff — сдвиг подписи в РЕАЛЬНЫХ см (ставится тягой в режиме ⟷): на плотном
+        // участке подпись налезает на соседний блок, и её нужно отвести. В см, а не в
+        // экранных px, чтобы позиция не «плыла» при зуме (тот же принцип, что у выноса цепочки).
         const below = (elem.type === "block" ? 15 * k : r0 + 2 * k);
-        grp.appendChild(el("text", { x: cx, y: cy + below + 7 * k, "font-size": 8.5 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-hlabel" }, "h=" + Math.round(elem.height)));
+        const ho = elem.hOff || { x: 0, y: 0 };
+        grp.appendChild(el("text", { x: cx + (ho.x || 0), y: cy + below + 7 * k + (ho.y || 0), "font-size": 8.5 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-hlabel" }, "h=" + Math.round(elem.height)));
       }
       if (circDim(elem.circuitId)) grp.setAttribute("opacity", DIM_OP); // solo другой линии — приглушить точку
       g.appendChild(grp);

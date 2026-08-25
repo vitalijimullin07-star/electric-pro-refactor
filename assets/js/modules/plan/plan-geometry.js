@@ -129,6 +129,18 @@
     const o = room && room.wallTh && Number(room.wallTh[wall.i]);
     return o >= 4 ? o : def;
   };
+  // Вынос размерной ЦЕПОЧКИ этой стены от её грани (см, знак = сторона): переопределение
+  // НА СТЕНУ (room.wallDimOff[i], ставится тягой цифры) поверх общей settings.dimOffset.
+  // Тот же приём, что wallThOf/wallMatOf. Читают И рендер, И хит-тест — иначе видимая
+  // цифра и зона тапа по ней разъедутся (давний инвариант размерной цепочки).
+  G.wallDimOffOf = (project, wall) => {
+    const s = project && project.settings;
+    const def = s && s.dimOffset >= 0 ? s.dimOffset : 5;
+    if (!wall || wall.isBeam) return def;
+    const room = (project.rooms || []).find((r) => r.id === wall.roomId);
+    const o = room && room.wallDimOff && room.wallDimOff[wall.i];
+    return typeof o === "number" && isFinite(o) ? o : def;
+  };
   G.wallMatOf = (project, wall) => {
     const def = (project.settings && project.settings.wallMaterial) || "Бетон";
     if (!wall) return def;

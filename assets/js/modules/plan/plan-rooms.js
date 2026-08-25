@@ -22,7 +22,7 @@
       ruler: "Тапни две точки — расстояние.",
       underlay: "Фото-план: загрузка, масштаб по известной длине, перенос.",
       merge: "Тапни первую комнату, потом соседнюю — объединятся в одну.",
-      dim: "Тапни две точки — появится размер. Потом тяни его за цифру, чтобы вынести подальше.",
+      dim: "Тяни размерную цепочку у стены или подпись h=NN — подвинешь их. Два тапа по плану — свой размер.",
       note: "Тапни место — впиши заметку. Потом можно вытянуть стрелку-выноску к нужной точке.",
       movroom: "Тапни комнату и тяни — поедет целиком: точки, проёмы, щит и балки внутри. Углы липнут к углам соседних комнат.",
       mergeSecond: "Тапни соседнюю комнату (или ту же — отменить).",
@@ -245,6 +245,14 @@
     else if (mode === "furn" && EP.Plan.Furniture) EP.Plan.Furniture.onModeEnter();
     else if (mode === "elem" && EP.Plan.Elements) EP.Plan.Elements.onModeEnter();
     else if (mode === "opening" && EP.Plan.Elements) EP.Plan.Elements.onOpeningModeEnter();
+    else if (mode === "dim") {
+      // тяга размеров вооружается СРАЗУ на вход в режим (а не только после выбора
+      // своего размера) — в ⟷ двигаются и АВТОМАТИЧЕСКИЕ: цепочка стены и подпись
+      // высоты. Подсказка — статичная строка режима (T.hints.dim), НЕ тост: тост
+      // рисуется в той же шторке и на 1.8с закрывает низ холста, съедая тапы.
+      closeSheet();
+      enableDimDrag(null);
+    }
     else if (mode === "guide") {
       // шторку открываем ТОЛЬКО если уже есть сохранённые магистрали (ради 🗑) —
       // иначе она закрывает низ холста и первый же тап рисования попадает в неё,
@@ -333,6 +341,14 @@
     if (R.mode === "dim") {
       const hitD = dimAt(w);
       if (hitD && !R.dimDraft) { R.selectedDimId = hitD.id; renderScene(); sheetDim(hitD); return; }
+      // тап по АВТОМАТИЧЕСКОМУ размеру — его карточка (вынос числом/сброс), а не начало
+      // нового размера: иначе прицелиться в цепочку было бы нечем
+      if (!R.dimDraft) {
+        const hitH = hLabelAt(w);
+        if (hitH) { sheetHLabel(hitH.id); return; }
+        const hitC = chainAt(w);
+        if (hitC) { sheetChain(hitC.roomId, hitC.i); return; }
+      }
       const pt = G().snapSmart(p, w, step, CFG.cornerSnapCm);
       if (pt.snapped) vibrate(10);
       if (!R.dimDraft) { R.dimDraft = { x: pt.x, y: pt.y }; R.ruler = { a: R.dimDraft, b: null }; renderScaled(); return; }
@@ -527,6 +543,35 @@
   // угла» и «Высота» (пользователь: «хотел двойной там по размеру, и редактировать»).
   // Возвращает true, если попал по цифре — тогда plan-canvas НЕ делает зум. Работает
   // только в режиме view (в режимах рисования двойной тап не переосмысливается).
+  // Позиция подписи высоты h=NNN под маркером — ПРИБЛИЖЕНИЕ рендера (plan-render.js:
+  // cy + below + 7*k) плюс собственный сдвиг подписи elem.hOff (см). Общая точка для
+  // хит-теста двойного тапа и для тяги подписи — чтобы зона тапа шла за видимой цифрой.
+  function hLabelPos(p, e, k) {
+    const dp = G().elemDrawPoint(p, e); if (!dp) return null;
+    const ho = e.hOff || { x: 0, y: 0 };
+    return { x: dp.x + (ho.x || 0), y: dp.y + (e.type === "block" ? 22 : 20) * k + (ho.y || 0) };
+  }
+  // Обход ВСЕХ звеньев размерных цепочек этажа с уже посчитанной позицией цифры.
+  // Вынос берётся G.wallDimOffOf (переопределение на стену), как и в рендере — один
+  // источник числа на рендер, хит-тест двойного тапа и тягу.
+  function eachChainSeg(p, fn) {
+    (p.rooms || []).forEach((room) => {
+      if ((room.points || []).length < 3) return;
+      const c0 = G().centroid(room.points);
+      G().walls(room).forEach((wl) => {
+        const chain = G().wallChainStations(p, wl);
+        if (!chain) return;
+        let nx = -(wl.b.y - wl.a.y), ny = wl.b.x - wl.a.x;
+        const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
+        if ((wl.mx - c0.x) * nx + (wl.my - c0.y) * ny < 0) { nx = -nx; ny = -ny; }
+        const off2 = G().wallDimOffOf(p, wl);
+        chain.segs.forEach((sg) => {
+          const pm = G().pointAtOffset(wl, sg.midOff);
+          fn(sg, { x: pm.x + nx * off2, y: pm.y + ny * off2 }, wl, { x: nx, y: ny }, room);
+        });
+      });
+    });
+  }
   function onDoubleTap(w) {
     const p = core().project;
     if (!p || R.mode !== "view" || !R.canvas || !EP.Plan.Elements) return false;
@@ -542,7 +587,7 @@
     if (lodDims) (p.elements || []).forEach((e) => {
       if (!e.wallId || e.type === "junction" || e.height == null) return;
       const dp = G().elemDrawPoint(p, e); if (!dp) return;
-      const lp = { x: dp.x, y: dp.y + (e.type === "block" ? 22 : 20) * k };
+      const lp = hLabelPos(p, e, k); if (!lp) return;
       consider(e.id, Math.hypot(w.x - lp.x, w.y - lp.y));
     });
     // звенья размерной цепочки вдоль стен (только если слой «Размеры» включён И
@@ -551,23 +596,9 @@
     // зависит от зума, просьба пользователя) — общий хелпер G.wallChainStations,
     // чтобы хит-тест совпадал с видимой цифрой.
     if (dimsOn && lodDims) {
-      const off2 = (p.settings && p.settings.dimOffset >= 0) ? p.settings.dimOffset : 5;
-      (p.rooms || []).forEach((room) => {
-        if ((room.points || []).length < 3) return;
-        const c0 = G().centroid(room.points);
-        G().walls(room).forEach((wl) => {
-          const chain = G().wallChainStations(p, wl);
-          if (!chain) return;
-          let nx = -(wl.b.y - wl.a.y), ny = wl.b.x - wl.a.x;
-          const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
-          if ((wl.mx - c0.x) * nx + (wl.my - c0.y) * ny < 0) { nx = -nx; ny = -ny; }
-          chain.segs.forEach((sg) => {
-            const pm = G().pointAtOffset(wl, sg.midOff);
-            const mid = { x: pm.x + nx * off2, y: pm.y + ny * off2 };
-            // правим «дальнюю» точку звена (bElemId), иначе ближнюю (у углов/проёмов elemId=null)
-            consider(sg.bElemId || sg.aElemId, Math.hypot(w.x - mid.x, w.y - mid.y));
-          });
-        });
+      eachChainSeg(p, (sg, mid) => {
+        // правим «дальнюю» точку звена (bElemId), иначе ближнюю (у углов/проёмов elemId=null)
+        consider(sg.bElemId || sg.aElemId, Math.hypot(w.x - mid.x, w.y - mid.y));
       });
     }
     if (!best) return false;
@@ -1252,35 +1283,145 @@
     enableDimDrag(dm.id);
     ensureVisibleAboveSheet(g ? g.mid : dm.a);
   }
+  /* ---------- АВТОМАТИЧЕСКИЕ размеры: вынести и подвинуть ----------
+     Цепочка вдоль стены и подпись высоты h=NNN существуют всегда (их считает рендер),
+     но на плотном участке налезают на трассы и соседние блоки. Двигаются в режиме ⟷:
+     цепочка — целиком по стене (room.wallDimOff[i], перпендикулярный вынос со знаком),
+     подпись высоты — своим сдвигом elem.hOff. Оба в РЕАЛЬНЫХ см: позиция не «плывёт»
+     при зуме. На расчёт/трассировку не влияют — это оформление чертежа. */
+  function chainAt(w) {
+    const p = G().floorScoped(core().project);
+    if (((p.layers || []).find((l) => l.id === "dims") || {}).visible === false) return null;
+    const k = R.canvas.cmPerPx();
+    let best = null;
+    (p.rooms || []).forEach((room) => {
+      if ((room.points || []).length < 3) return;
+      const c0 = G().centroid(room.points);
+      G().walls(room).forEach((wl) => {
+        const chain = G().wallChainStations(p, wl);
+        if (!chain) return;
+        let nx = -(wl.b.y - wl.a.y), ny = wl.b.x - wl.a.x;
+        const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
+        if ((wl.mx - c0.x) * nx + (wl.my - c0.y) * ny < 0) { nx = -nx; ny = -ny; }
+        const off = G().wallDimOffOf(p, wl);
+        const st = chain.stations;
+        const at = (d) => { const q = G().pointAtOffset(wl, d); return { x: q.x + nx * off, y: q.y + ny * off }; };
+        const d = G().closestOnSeg(w, at(st[0].off), at(st[st.length - 1].off)).d;
+        if (d <= 20 * k && (!best || d < best.d)) best = { d, roomId: room.id, i: wl.i, n: wl.n, nrm: { x: nx, y: ny }, off };
+      });
+    });
+    return best;
+  }
+  function hLabelAt(w) {
+    const p = G().floorScoped(core().project);
+    const k = R.canvas.cmPerPx();
+    // подпись скрыта LOD'ом — по невидимой цифре не тянем (тот же гейт, что у двойного тапа)
+    if (k > ((EP.Plan.Render && EP.Plan.Render.CFG && EP.Plan.Render.CFG.lodDimK) || 3)) return null;
+    let best = null;
+    (p.elements || []).forEach((e) => {
+      if (!e.wallId || e.type === "junction" || e.height == null) return;
+      const lp = hLabelPos(p, e, k); if (!lp) return;
+      const d = Math.hypot(w.x - lp.x, w.y - lp.y);
+      if (d <= 18 * k && (!best || d < best.d)) best = { d, el: e };
+    });
+    return best ? best.el : null;
+  }
+  function roomById(id) { return ((core().project || {}).rooms || []).find((r) => r.id === id) || null; }
+  function setWallDimOff(roomId, i, off) {
+    const c = core(), room = roomById(roomId);
+    if (!room) return;
+    c.commit();
+    if (off == null) { if (room.wallDimOff) delete room.wallDimOff[i]; }
+    else { room.wallDimOff = room.wallDimOff || []; room.wallDimOff[i] = Math.round(off); }
+    c.persist("wall-dimoff");
+    renderScene();
+  }
+  function sheetChain(roomId, i) {
+    const p = core().project, room = roomById(roomId);
+    if (!room) return;
+    const wl = G().walls(room)[i];
+    const cur = G().wallDimOffOf(p, wl);
+    openSheet(`<div class="ep-plan-srow"><b>⟷ Размеры стены ${i + 1}</b> · ${esc(room.name || T.room)}</div>
+      <div class="ep-plan-srow ep-plan-s2">
+        <label>Вынос от стены, см<input id="ep-pr-choff" type="number" inputmode="numeric" step="5"
+          value="${Math.round(cur)}" data-pr-wdimoff="${esc(roomId)}|${i}"></label>
+      </div>
+      <div class="ep-plan-srow ep-plan-sbtns">
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-wdimflip="${esc(roomId)}|${i}">⇄ На другую сторону</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-wdimreset="${esc(roomId)}|${i}">↺ Как у всех</button>
+        <button type="button" class="btn btn-primary ep-clickable" data-pr-cancel>${T.close}</button>
+      </div>
+      <div class="ep-plan-modehint">Тяни цепочку — вынесешь размеры этой стены дальше или ближе. «Как у всех» вернёт общий отступ из шторки 🗂 Слои.</div>`);
+  }
+  function sheetHLabel(elId) {
+    const e = ((core().project || {}).elements || []).find((x) => x.id === elId);
+    if (!e) return;
+    const ho = e.hOff || { x: 0, y: 0 };
+    const moved = Math.abs(ho.x || 0) > 0.5 || Math.abs(ho.y || 0) > 0.5;
+    openSheet(`<div class="ep-plan-srow"><b>⟷ Подпись высоты</b> · h=${Math.round(e.height)} см</div>
+      <div class="ep-plan-srow ep-plan-sbtns">
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-hoffreset="${esc(elId)}"${moved ? "" : " disabled"}>↺ На место</button>
+        <button type="button" class="btn btn-primary ep-clickable" data-pr-cancel>${T.close}</button>
+      </div>
+      <div class="ep-plan-modehint">Тяни подпись — отведёшь её от соседнего блока. Сама точка при этом не двигается.</div>`);
+  }
   // Тяга: за цифру/линию — ВЫНОС (перпендикулярно), за конец — сама точка замера.
+  // Без выбранного размера (dimId=null, вход в режим ⟷) тем же жестом двигаются
+  // АВТОМАТИЧЕСКИЕ размеры: подпись высоты и цепочка стены (см. блок выше).
   // Тот же veto-паттерн, что у балки/заметки: жест не по размеру остаётся панорамой.
   function enableDimDrag(dimId) {
-    let mode = null, base = null, accX = 0, accY = 0;
+    let mode = null, base = null, accX = 0, accY = 0, hEl = null, ch = null;
     // Сигнатура обработчика — (dx, dy, phase, start), где dx/dy это ПРИРАЩЕНИЕ с прошлого
     // pointermove (см. plan-canvas.js: `e.clientX - prev.x`), а НЕ сдвиг от начала жеста.
     // Поэтому копим accX/accY и каждый раз пересчитываем от снимка base — так не
     // накапливается дрейф округлений (тот же приём, что у переноса комнаты).
     R.canvas.setDragHandler((dx, dy, phase, start) => {
       const c = core(), p = c.project;
-      const dm = (p.dims || []).find((x) => x.id === dimId);
-      if (!dm) return false;
+      const dm = (p.dims || []).find((x) => x.id === dimId) || null;
       const k = R.canvas.cmPerPx();
       if (phase === "start") {
-        if (G().dist(start, dm.a) <= 22 * k) mode = "a";
-        else if (G().dist(start, dm.b) <= 22 * k) mode = "b";
-        else {
-          const gm = G().dimGeom(dm);
-          const cl = gm ? G().closestOnSeg(start, gm.A, gm.B) : { d: 1e9 };
-          if (gm && Math.min(G().dist(start, gm.mid), cl.d) <= 26 * k) mode = "off";
-          else return false;                       // не по размеру — жест остаётся панорамой
+        mode = null; hEl = null; ch = null;
+        if (dm) {
+          if (G().dist(start, dm.a) <= 22 * k) mode = "a";
+          else if (G().dist(start, dm.b) <= 22 * k) mode = "b";
+          else {
+            const gm = G().dimGeom(dm);
+            const cl = gm ? G().closestOnSeg(start, gm.A, gm.B) : { d: 1e9 };
+            if (gm && Math.min(G().dist(start, gm.mid), cl.d) <= 26 * k) mode = "off";
+          }
+          if (mode) base = { a: { x: dm.a.x, y: dm.a.y }, b: { x: dm.b.x, y: dm.b.y }, off: Number(dm.off) || 0 };
         }
-        base = { a: { x: dm.a.x, y: dm.a.y }, b: { x: dm.b.x, y: dm.b.y }, off: Number(dm.off) || 0 };
+        if (!mode) {
+          // не по выбранному размеру — АВТОМАТИЧЕСКИЕ: сначала подпись высоты (мелкая
+          // цель у точки), потом цепочка (длинная линия вдоль стены)
+          hEl = hLabelAt(start);
+          if (hEl) { mode = "h"; const ho = hEl.hOff || {}; base = { x: ho.x || 0, y: ho.y || 0 }; }
+          else {
+            ch = chainAt(start);
+            if (ch) { mode = "chain"; base = { off: ch.off }; }
+            else return false;                     // не по размеру — жест остаётся панорамой
+          }
+        }
         accX = 0; accY = 0;
         c.commit();
         return;
       }
       if (phase === "move" && mode) {
         accX += dx; accY += dy;
+        if (mode === "h") {
+          hEl.hOff = { x: Math.round(base.x + accX), y: Math.round(base.y + accY) };
+          renderSceneSoon(); return;
+        }
+        if (mode === "chain") {
+          // вынос = проекция накопленного сдвига на нормаль стены (знак сохраняем —
+          // протащив цепочку сквозь стену, честно переносим её на другую сторону)
+          const room = roomById(ch.roomId);
+          if (room) {
+            room.wallDimOff = room.wallDimOff || [];
+            room.wallDimOff[ch.i] = Math.round(base.off + accX * ch.nrm.x + accY * ch.nrm.y);
+          }
+          renderSceneSoon(); return;
+        }
         if (mode === "off") {
           // вынос = проекция накопленного сдвига на нормаль отрезка (знак сохраняем —
           // размер честно перелетает на другую сторону, если протащить сквозь отрезок)
@@ -1291,6 +1432,12 @@
         }
         renderSceneSoon();
       } else if (phase === "end" && mode) {
+        if (mode === "h") {
+          c.persist("hlabel-move"); renderScene(); sheetHLabel(hEl.id); mode = null; return;
+        }
+        if (mode === "chain") {
+          c.persist("wall-dimoff"); renderScene(); sheetChain(ch.roomId, ch.i); mode = null; return;
+        }
         if (mode !== "off") {
           const sp = G().snapSmart(p, dm[mode], p.settings.gridStep || 10, CFG.cornerSnapCm);
           dm[mode] = { x: sp.x, y: sp.y };
@@ -2219,6 +2366,23 @@
       c.commit(); dm.off = -(Number(dm.off) || 0); c.persist("dim-flip");
       renderScene(); sheetDim(dm); return;
     }
+    if ((el = t.closest("[data-pr-wdimflip]"))) {
+      const [rid0, i0] = el.getAttribute("data-pr-wdimflip").split("|");
+      const room = roomById(rid0), i = Number(i0) || 0;
+      if (room) setWallDimOff(rid0, i, -G().wallDimOffOf(core().project, G().walls(room)[i]));
+      sheetChain(rid0, i); return;
+    }
+    if ((el = t.closest("[data-pr-wdimreset]"))) {
+      const [rid0, i0] = el.getAttribute("data-pr-wdimreset").split("|");
+      setWallDimOff(rid0, Number(i0) || 0, null);   // назад на общий settings.dimOffset
+      sheetChain(rid0, Number(i0) || 0); return;
+    }
+    if ((el = t.closest("[data-pr-hoffreset]"))) {
+      const c = core(), id = el.getAttribute("data-pr-hoffreset");
+      const e2 = (c.project.elements || []).find((x) => x.id === id);
+      if (e2) { c.commit(); delete e2.hOff; c.persist("hlabel-move"); renderScene(); }
+      sheetHLabel(id); return;
+    }
     if ((el = t.closest("[data-pr-notedel]"))) {
       const c = core(), id = el.getAttribute("data-pr-notedel");
       c.commit();
@@ -2388,6 +2552,12 @@
       const c = core(), v = Math.max(0, Math.min(200, Number(t.value) || 0));
       c.commit(); c.project.settings.dimOffset = v; c.persist("dim-chainoff");
       renderScene(); return;
+    }
+    const wdo = t.getAttribute("data-pr-wdimoff");   // вынос цепочки КОНКРЕТНОЙ стены
+    if (wdo) {
+      const [rid0, i0] = wdo.split("|");
+      setWallDimOff(rid0, Number(i0) || 0, Math.max(-200, Math.min(200, Number(t.value) || 0)));
+      return;
     }
     const did = t.getAttribute("data-pr-dimoff");
     if (did) {
