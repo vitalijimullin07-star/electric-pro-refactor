@@ -77,6 +77,7 @@
             <button class="btn btn-primary ep-clickable" data-db-add type="button">＋ Добавить</button>
             <button class="btn btn-ghost ep-clickable" data-db-move type="button" ${selCount ? "" : "disabled"}>🗂️ Переместить</button>
             <button class="btn btn-ghost ep-clickable ep-db-danger" data-db-del type="button" ${selCount ? "" : "disabled"}>🗑️ Удалить</button>
+            <button class="btn btn-ghost ep-clickable" data-price-setup type="button" title="Все работы, которые приложение считает автоматически — вписать свои цены разом">💰 Цены на работы</button>
             <button class="btn btn-ghost ep-clickable" data-db-import type="button">⬇️ Импорт</button>
             <button class="btn btn-ghost ep-clickable" data-db-export type="button">⬆️ Экспорт</button>
             <button class="btn btn-ghost ep-clickable" data-db-backup type="button">📦 Бэкап всего</button>
