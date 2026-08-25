@@ -578,9 +578,13 @@
           // экранный отступ = больше см) — на широком виде плана цепочка
           // отъезжала от стены на десятки см и налезала на трассы/точки (репорт
           // пользователя со скриншотами: «линейка отдаляется» при отдалении).
-          // Теперь фиксированный отступ в РЕАЛЬНЫХ см (5см от грани стены,
-          // не больше, не зависит от зума) — просьба пользователя.
-          const off2 = 5, tick = 4 * k, fs2 = 8.5 * k;
+          // Теперь фиксированный отступ в РЕАЛЬНЫХ см (не зависит от зума) — просьба
+          // пользователя. Значение настраиваемое (settings.dimOffset, дефолт 5): на
+          // плотном плане цепочку нужно «вынести» дальше, чтобы она не налезала на
+          // трассы. ОБЯЗАНО совпадать с off2 в дублирующем хит-тесте plan-rooms.js —
+          // иначе видимая цифра и зона двойного тапа по ней разъедутся.
+          const off2 = (project.settings && project.settings.dimOffset >= 0) ? project.settings.dimOffset : 5;
+          const tick = 4 * k, fs2 = 8.5 * k;
           const base = (d) => { const p = G.pointAtOffset(w, d); return { x: p.x + nx * off2, y: p.y + ny * off2 }; };
           const st2 = chain.stations;
           const b0 = base(st2[0].off), b1 = base(st2[st2.length - 1].off);
@@ -1003,6 +1007,37 @@
       if (pn.avr && labelsOn) grp.appendChild(el("text", { x: pn.x, y: pn.y - hc / 2 - 4 * k, "font-size": 8.5 * k, "text-anchor": "middle", class: "ep-plan-qf", fill: "#f59e0b" }, "АВР"));
       g.appendChild(grp);
     });
+
+    // ---------- свои размеры ----------
+    // «Вынести размер и подвинуть» — отрезок между двумя точками, размерная линия
+    // вынесена на off перпендикулярно, к точкам идут выносные линии. Гейтится слоем
+    // «Размеры» (dims) наравне с автоматической цепочкой — это те же размеры, просто
+    // поставленные руками.
+    if (dimsOn) {
+      (project.dims || []).forEach((d) => {
+        const gm = EP.Plan.Geometry.dimGeom(d);
+        if (!gm) return;
+        const grp = el("g", { class: "ep-plan-udim", "data-dm": d.id });
+        const ext = 4 * k;                     // выносная линия чуть заходит за размерную
+        const beyond = (P, S) => ({ x: P.x + gm.n.x * Math.sign(d.off || 1) * S, y: P.y + gm.n.y * Math.sign(d.off || 1) * S });
+        grp.appendChild(el("line", { x1: d.a.x, y1: d.a.y, x2: beyond(gm.A, ext).x, y2: beyond(gm.A, ext).y, class: "ep-plan-udimext", "stroke-width": sw * 0.3 }));
+        grp.appendChild(el("line", { x1: d.b.x, y1: d.b.y, x2: beyond(gm.B, ext).x, y2: beyond(gm.B, ext).y, class: "ep-plan-udimext", "stroke-width": sw * 0.3 }));
+        grp.appendChild(el("line", { x1: gm.A.x, y1: gm.A.y, x2: gm.B.x, y2: gm.B.y, class: "ep-plan-udimline", "stroke-width": sw * 0.4 }));
+        const tk = 4 * k;
+        [gm.A, gm.B].forEach((P) => grp.appendChild(el("line", {
+          x1: P.x - gm.n.x * tk, y1: P.y - gm.n.y * tk, x2: P.x + gm.n.x * tk, y2: P.y + gm.n.y * tk,
+          class: "ep-plan-udimline", "stroke-width": sw * 0.4
+        })));
+        const selD = ui && ui.selectedDimId === d.id;
+        if (selD) grp.appendChild(el("circle", { cx: gm.grip.x, cy: gm.grip.y, r: 5 * k, class: "ep-plan-udimgrip" }));
+        grp.appendChild(el("text", {
+          x: gm.mid.x + gm.n.x * Math.sign(d.off || 1) * 7 * k, y: gm.mid.y + gm.n.y * Math.sign(d.off || 1) * 7 * k,
+          class: "ep-plan-udimtext" + (selD ? " is-sel" : ""), "font-size": 9.5 * k,
+          "text-anchor": "middle", "dominant-baseline": "middle"
+        }, EP.Plan.Geometry.fmtLen(gm.len)));
+        g.appendChild(grp);
+      });
+    }
 
     // ---------- заметки/выноски ----------
     // Монтажная записка на плане: «здесь штробить нельзя», «согласовать с заказчиком».

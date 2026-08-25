@@ -22,6 +22,7 @@
       ruler: "Тапни две точки — расстояние.",
       underlay: "Фото-план: загрузка, масштаб по известной длине, перенос.",
       merge: "Тапни первую комнату, потом соседнюю — объединятся в одну.",
+      dim: "Тапни две точки — появится размер. Потом тяни его за цифру, чтобы вынести подальше.",
       note: "Тапни место — впиши заметку. Потом можно вытянуть стрелку-выноску к нужной точке.",
       movroom: "Тапни комнату и тяни — поедет целиком: точки, проёмы, щит и балки внутри. Углы липнут к углам соседних комнат.",
       mergeSecond: "Тапни соседнюю комнату (или ту же — отменить).",
@@ -102,11 +103,11 @@
   // запоминаются между сессиями) ----------
   // Тот же набор, что и «режимы» в верхнем тулбаре (см. T.modes) — здесь его пилотный
   // список для панели быстрого доступа (что можно закрепить/что попадает в MRU).
-  const QB_TOOLS = { view: "☝", rect: "▭", poly: "⬠", attach: "⊞", split: "✂", beam: "▬", void: "▦", furn: "🛋", merge: "🔗", movroom: "🧭", note: "📝", elem: "🔌", opening: "🚪", wall: "📐", ruler: "📏", underlay: "🖼", guide: "⇉" };
+  const QB_TOOLS = { view: "☝", rect: "▭", poly: "⬠", attach: "⊞", split: "✂", beam: "▬", void: "▦", furn: "🛋", merge: "🔗", movroom: "🧭", note: "📝", dim: "⟷", elem: "🔌", opening: "🚪", wall: "📐", ruler: "📏", underlay: "🖼", guide: "⇉" };
   const QB_LABELS = {
     view: "Просмотр", rect: "Прямоугольная комната", poly: "Комната по точкам",
     attach: "Пристроить к стене", split: "Разрезать комнату", beam: "Балка/перемычка",
-    void: "Вентшахта/мини-комната", merge: "Объединить комнаты", movroom: "Перенести комнату", note: "Заметка", elem: "Точки", opening: "Проёмы",
+    void: "Вентшахта/мини-комната", merge: "Объединить комнаты", movroom: "Перенести комнату", note: "Заметка", dim: "Свой размер", elem: "Точки", opening: "Проёмы",
     wall: "Развёртка стены", ruler: "Рулетка", underlay: "Подложка-фото",
     guide: "Магистраль трасс"
   };
@@ -189,7 +190,7 @@
   }
 
   // ---------- сцена ----------
-  function ui() { return { selectedRoomId: R.selectedRoomId, draft: R.draft, ruler: R.ruler, beamDraft: R.beamDraft, voidDraft: R.voidDraft, soloCircuit: R.soloCircuit, guideDraft: R.guideDraft, guideMode: R.mode === "guide" }; }
+  function ui() { return { selectedRoomId: R.selectedRoomId, draft: R.draft, ruler: R.ruler, beamDraft: R.beamDraft, voidDraft: R.voidDraft, soloCircuit: R.soloCircuit, guideDraft: R.guideDraft, guideMode: R.mode === "guide", selectedDimId: R.selectedDimId }; }
   // solo линии QF (изоляция на плане): тап по линии в шторке 🧵 Трассы — только она ярко,
   // остальные приглушены. Повторный тап по той же линии — снять solo. Не персистится.
   function setSoloCircuit(id) { R.soloCircuit = (R.soloCircuit === id) ? null : (id || null); renderScene(); }
@@ -230,7 +231,7 @@
   // ---------- режимы ----------
   function setMode(mode) {
     R.mode = mode;
-    R.draft = { points: [] }; R.pendingRect = null; R.pendingPoly = null; R.rectAnchor = null; R.attach = null; R.split = null; R.noteId = null;
+    R.draft = { points: [] }; R.pendingRect = null; R.pendingPoly = null; R.rectAnchor = null; R.attach = null; R.split = null; R.noteId = null; R.dimDraft = null;
     R.ruler = { a: null, b: null }; R.beamDraft = { a: null, b: null }; R.voidDraft = { a: null, b: null };
     R.guideDraft = { points: [] };
     R.targetPick = null; // смена режима отменяет одноразовый выбор цели клавиши
@@ -327,6 +328,26 @@
       }
       R.split.b = { x: pt.x, y: pt.y };
       splitPreview(); sheetSplit(); return;
+    }
+    // ⟷ свой размер: первый тап — начало, второй — конец; тап по готовому — редактор
+    if (R.mode === "dim") {
+      const hitD = dimAt(w);
+      if (hitD && !R.dimDraft) { R.selectedDimId = hitD.id; renderScene(); sheetDim(hitD); return; }
+      const pt = G().snapSmart(p, w, step, CFG.cornerSnapCm);
+      if (pt.snapped) vibrate(10);
+      if (!R.dimDraft) { R.dimDraft = { x: pt.x, y: pt.y }; R.ruler = { a: R.dimDraft, b: null }; renderScaled(); return; }
+      const a = R.dimDraft;
+      R.dimDraft = null; R.ruler = { a: null, b: null };
+      if (G().dist(a, pt) < 10) { renderScene(); return; }   // тап в ту же точку — отмена
+      const c = core();
+      c.commit();
+      const dm = c.model.newDim(a, { x: pt.x, y: pt.y }, p.settings.dimOffset >= 0 ? Math.max(30, p.settings.dimOffset * 6) : 40);
+      p.dims.push(dm);
+      c.persist("dim-add");
+      R.selectedDimId = dm.id;
+      renderScene();
+      sheetDim(dm);
+      return;
     }
     // 📝 заметка: тап по существующей — редактор, тап по пустому — новая
     if (R.mode === "note") {
@@ -530,7 +551,7 @@
     // зависит от зума, просьба пользователя) — общий хелпер G.wallChainStations,
     // чтобы хит-тест совпадал с видимой цифрой.
     if (dimsOn && lodDims) {
-      const off2 = 5;
+      const off2 = (p.settings && p.settings.dimOffset >= 0) ? p.settings.dimOffset : 5;
       (p.rooms || []).forEach((room) => {
         if ((room.points || []).length < 3) return;
         const c0 = G().centroid(room.points);
@@ -1191,6 +1212,98 @@
     });
   }
 
+  /* ---------- ⟷ свои размеры: вынести и подвинуть ----------
+     Автоматическая цепочка вдоль стен есть всегда, но проставить размер МЕЖДУ чем
+     угодно (от стены до розетки, между двумя точками, диагональ) ею нельзя — и вынести
+     её на нужное расстояние тоже. Здесь: два тапа задают отрезок (с привязкой к углам,
+     как при рисовании), дальше размер тянется за цифру — меняется ВЫНОС (перпендикулярное
+     смещение размерной линии), ровно как «вынести размер» на чертеже. На расчёт и
+     трассировку не влияет — это оформление чертежа. */
+  function dimAt(w) {
+    const p = G().floorScoped(core().project);
+    const k = R.canvas.cmPerPx();
+    let best = null;
+    (p.dims || []).forEach((d) => {
+      const gm = G().dimGeom(d);
+      if (!gm) return;
+      // тапаем по цифре/линии выноса — по ним же и тянем
+      const dText = G().dist(w, gm.mid);
+      const cl = G().closestOnSeg(w, gm.A, gm.B);
+      const dd = Math.min(dText, cl.d);
+      if (dd <= 22 * k && (!best || dd < best.d)) best = { d: dd, dm: d };
+    });
+    return best ? best.dm : null;
+  }
+  function dimById(id) { return ((core().project || {}).dims || []).find((x) => x.id === id) || null; }
+  function sheetDim(dm) {
+    const g = G().dimGeom(dm);
+    openSheet(`<div class="ep-plan-srow"><b>⟷ Размер</b> · ${g ? esc(G().fmtLen(g.len)) : "—"}</div>
+      <div class="ep-plan-srow ep-plan-s2">
+        <label>Вынос, см<input id="ep-pr-dmoff" type="number" inputmode="numeric" step="5"
+          value="${Math.round(Number(dm.off) || 0)}" data-pr-dimoff="${esc(dm.id)}"></label>
+      </div>
+      <div class="ep-plan-srow ep-plan-sbtns">
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-dimflip="${esc(dm.id)}">⇄ На другую сторону</button>
+        <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pr-dimdel="${esc(dm.id)}">${T.del}</button>
+        <button type="button" class="btn btn-primary ep-clickable" data-pr-cancel>${T.close}</button>
+      </div>
+      <div class="ep-plan-modehint">Тяни за цифру — размер вынесется дальше или ближе. Тяни за концы — переставишь точки замера.</div>`);
+    R.selectedDimId = dm.id;
+    enableDimDrag(dm.id);
+    ensureVisibleAboveSheet(g ? g.mid : dm.a);
+  }
+  // Тяга: за цифру/линию — ВЫНОС (перпендикулярно), за конец — сама точка замера.
+  // Тот же veto-паттерн, что у балки/заметки: жест не по размеру остаётся панорамой.
+  function enableDimDrag(dimId) {
+    let mode = null, base = null, accX = 0, accY = 0;
+    // Сигнатура обработчика — (dx, dy, phase, start), где dx/dy это ПРИРАЩЕНИЕ с прошлого
+    // pointermove (см. plan-canvas.js: `e.clientX - prev.x`), а НЕ сдвиг от начала жеста.
+    // Поэтому копим accX/accY и каждый раз пересчитываем от снимка base — так не
+    // накапливается дрейф округлений (тот же приём, что у переноса комнаты).
+    R.canvas.setDragHandler((dx, dy, phase, start) => {
+      const c = core(), p = c.project;
+      const dm = (p.dims || []).find((x) => x.id === dimId);
+      if (!dm) return false;
+      const k = R.canvas.cmPerPx();
+      if (phase === "start") {
+        if (G().dist(start, dm.a) <= 22 * k) mode = "a";
+        else if (G().dist(start, dm.b) <= 22 * k) mode = "b";
+        else {
+          const gm = G().dimGeom(dm);
+          const cl = gm ? G().closestOnSeg(start, gm.A, gm.B) : { d: 1e9 };
+          if (gm && Math.min(G().dist(start, gm.mid), cl.d) <= 26 * k) mode = "off";
+          else return false;                       // не по размеру — жест остаётся панорамой
+        }
+        base = { a: { x: dm.a.x, y: dm.a.y }, b: { x: dm.b.x, y: dm.b.y }, off: Number(dm.off) || 0 };
+        accX = 0; accY = 0;
+        c.commit();
+        return;
+      }
+      if (phase === "move" && mode) {
+        accX += dx; accY += dy;
+        if (mode === "off") {
+          // вынос = проекция накопленного сдвига на нормаль отрезка (знак сохраняем —
+          // размер честно перелетает на другую сторону, если протащить сквозь отрезок)
+          const gm = G().dimGeom({ a: base.a, b: base.b, off: 0 });
+          if (gm) dm.off = Math.round(base.off + accX * gm.n.x + accY * gm.n.y);
+        } else {
+          dm[mode] = { x: base[mode].x + accX, y: base[mode].y + accY };
+        }
+        renderSceneSoon();
+      } else if (phase === "end" && mode) {
+        if (mode !== "off") {
+          const sp = G().snapSmart(p, dm[mode], p.settings.gridStep || 10, CFG.cornerSnapCm);
+          dm[mode] = { x: sp.x, y: sp.y };
+        }
+        c.persist("dim-move");
+        renderScene();
+        const cur = dimById(dimId);
+        if (cur) sheetDim(cur);                    // в шторке живое число выноса/длины
+        mode = null;
+      }
+    });
+  }
+
   /* ---------- 📝 заметки и выноски на плане ----------
      Монтажная записка прямо на чертеже: «здесь штробить нельзя», «согласовать».
      На расчёт/трассировку не влияет вообще — чистая пометка для людей на объекте,
@@ -1225,36 +1338,45 @@
   // только он. Тот же veto-паттерн, что у балки/комнаты: жест НЕ на заметке
   // возвращает false и остаётся панорамой холста.
   function enableNoteDrag(noteId) {
-    let mode = null, base = null;
-    R.canvas.setDragHandler((phase, w, dx, dy) => {
-      const p = core().project;
+    let mode = null, base = null, accX = 0, accY = 0;
+    // (dx, dy, phase, start) с ПРИРАЩЕНИЕМ в dx/dy — см. комментарий у enableDimDrag.
+    R.canvas.setDragHandler((dx, dy, phase, start) => {
+      const c = core(), p = c.project;
       const nt = (p.notes || []).find((x) => x.id === noteId);
       if (!nt) return false;
+      const k = R.canvas.cmPerPx();
       if (phase === "start") {
-        const k = R.canvas.cmPerPx();
-        if (nt.ax != null && G().dist(w, { x: nt.ax, y: nt.ay }) <= 22 * k) mode = "tip";
-        else if (G().dist(w, { x: nt.x, y: nt.y }) <= 30 * k) mode = "all";
-        else return false;
+        if (nt.ax != null && G().dist(start, { x: nt.ax, y: nt.ay }) <= 22 * k) mode = "tip";
+        else if (G().dist(start, { x: nt.x, y: nt.y }) <= 34 * k) mode = "all";
+        else return false;                          // не по заметке — панорама
         base = { x: nt.x, y: nt.y, ax: nt.ax, ay: nt.ay };
-        return true;
+        accX = 0; accY = 0;
+        c.commit();
+        return;
       }
-      if (phase === "move") {
-        if (mode === "tip") { nt.ax = base.ax + dx; nt.ay = base.ay + dy; }
+      if (phase === "move" && mode) {
+        accX += dx; accY += dy;
+        if (mode === "tip") { nt.ax = base.ax + accX; nt.ay = base.ay + accY; }
         else {
-          nt.x = base.x + dx; nt.y = base.y + dy;
-          if (base.ax != null) { nt.ax = base.ax + dx; nt.ay = base.ay + dy; }
+          nt.x = base.x + accX; nt.y = base.y + accY;
+          if (base.ax != null) { nt.ax = base.ax + accX; nt.ay = base.ay + accY; }   // стрелка едет вместе
         }
         renderSceneSoon();
-        return true;
-      }
-      if (phase === "end") {
+      } else if (phase === "end" && mode) {
         const step = p.settings.gridStep || 10;
         if (mode === "tip") { nt.ax = G().snap(nt.ax, step); nt.ay = G().snap(nt.ay, step); }
-        else { nt.x = G().snap(nt.x, step); nt.y = G().snap(nt.y, step); }
-        core().persist("note-move");
+        else {
+          // округляем ТЕКСТ по сетке и тем же сдвигом двигаем кончик стрелки — иначе
+          // стрелка остаётся на дробных координатах и за несколько тяг незаметно
+          // расходится с заметкой
+          const sx = G().snap(nt.x, step), sy = G().snap(nt.y, step);
+          if (nt.ax != null) { nt.ax += sx - nt.x; nt.ay += sy - nt.y; }
+          nt.x = sx; nt.y = sy;
+        }
+        c.persist("note-move");
         renderScene();
+        mode = null;
       }
-      return true;
     });
   }
   function noteById(id) { return ((core().project || {}).notes || []).find((x) => x.id === id) || null; }
@@ -1687,6 +1809,11 @@
         <button type="button" class="ep-plan-chip ep-clickable ${st === "gost" ? "on" : ""}" data-pr-symst="gost">ГОСТ</button>
         <button type="button" class="ep-plan-chip ep-clickable ${st === "design" ? "on" : ""}" data-pr-symst="design">Дизайн</button>
       </div>
+      <div class="ep-plan-srow ep-plan-s2">
+        <label>Вынос размеров от стены, см<input id="ep-pr-dimoff" type="number" inputmode="numeric" min="0" max="200" step="5"
+          value="${Math.round(p.settings.dimOffset >= 0 ? p.settings.dimOffset : 5)}" data-pr-chainoff></label>
+      </div>
+      <div class="ep-plan-srow ep-plan-hintrow">Насколько автоматическая размерная цепочка отодвинута от грани стены. На плотном плане её стоит вынести дальше.</div>
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-legend>📋 ${T.legendTitle}</button>
         <button type="button" class="btn btn-ghost ep-clickable" data-pr-cancel>${T.close}</button>
@@ -2079,6 +2206,19 @@
     if (t.closest("[data-pr-create-rect2]")) return createRectFromPoint();
     if (t.closest("[data-pr-attach-go]")) return attachGo();
     if ((el = t.closest("[data-pr-split-go]"))) return splitGo(el.getAttribute("data-pr-split-go"));
+    if ((el = t.closest("[data-pr-dimdel]"))) {
+      const c = core(), id = el.getAttribute("data-pr-dimdel");
+      c.commit();
+      c.project.dims = (c.project.dims || []).filter((x) => x.id !== id);
+      c.persist("dim-del");
+      R.selectedDimId = null; closeSheet(); renderScene(); return;
+    }
+    if ((el = t.closest("[data-pr-dimflip]"))) {
+      const c = core(), dm = dimById(el.getAttribute("data-pr-dimflip"));
+      if (!dm) return;
+      c.commit(); dm.off = -(Number(dm.off) || 0); c.persist("dim-flip");
+      renderScene(); sheetDim(dm); return;
+    }
     if ((el = t.closest("[data-pr-notedel]"))) {
       const c = core(), id = el.getAttribute("data-pr-notedel");
       c.commit();
@@ -2244,6 +2384,17 @@
     if (!R.active) return;
     const t = e.target;
     if (!t || !t.getAttribute) return;
+    if (t.getAttribute("data-pr-chainoff") != null) {
+      const c = core(), v = Math.max(0, Math.min(200, Number(t.value) || 0));
+      c.commit(); c.project.settings.dimOffset = v; c.persist("dim-chainoff");
+      renderScene(); return;
+    }
+    const did = t.getAttribute("data-pr-dimoff");
+    if (did) {
+      const c = core(), dm = dimById(did);
+      if (dm) { c.commit(); dm.off = Math.round(Number(t.value) || 0); c.persist("dim-off"); renderScene(); }
+      return;
+    }
     const rid = t.getAttribute("data-pr-wlen");
     if (rid) {
       const room = setWallLength(rid, Number(t.getAttribute("data-pr-wli")) || 0, Number(t.value) || 0);

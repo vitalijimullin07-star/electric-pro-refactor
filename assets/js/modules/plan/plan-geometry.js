@@ -17,7 +17,7 @@
   // но рендер/хит-тест/автотрассировка должны видеть только activeFloorId — иначе
   // геометрия разных этажей в одних координатах физически накладывалась бы друг
   // на друга. floorScoped() — ЕДИНАЯ точка этого фильтра: возвращает мелкий клон
-  // project с 11 геометрическими массивами, урезанными до активного этажа (те же
+  // project с 12 геометрическими массивами, урезанными до активного этажа (те же
   // ссылки на объекты — мутации через них по-прежнему бьют в реальный проект).
   // Для проектов с одним этажом (подавляющее большинство) возвращает project
   // КАК ЕСТЬ, без клонирования — нулевые накладные расходы и 100% обратная
@@ -32,7 +32,7 @@
       rooms: on(project.rooms), elements: on(project.elements), panels: on(project.panels),
       beams: on(project.beams), voids: on(project.voids), ledStrips: on(project.ledStrips),
       openings: on(project.openings), routes: on(project.routes), guides: on(project.guides),
-      appliances: on(project.appliances), notes: on(project.notes)
+      appliances: on(project.appliances), notes: on(project.notes), dims: on(project.dims)
     });
   };
 
@@ -392,6 +392,35 @@
   // бы именно её). Возвращает НОВЫЙ массив точек либо null, если правка не имеет
   // смысла (вырожденный контур, нулевая длина, сдвиг обошёл контур по кругу —
   // тогда ничего не мутируем, вызывающий просто показывает toast).
+  // ---- свой размер: геометрия «вынесенного» размера ----
+  // Отрезок a-b + перпендикулярный ВЫНОС off: размерная линия идёт параллельно отрезку
+  // на расстоянии off, а к самим точкам тянутся выносные линии (как на чертеже).
+  // Возвращает null у вырожденного отрезка — вызывающий просто ничего не рисует.
+  G.dimGeom = (d) => {
+    if (!d || !d.a || !d.b) return null;
+    const len = G.dist(d.a, d.b);
+    if (len < 1e-6) return null;
+    const dir = { x: (d.b.x - d.a.x) / len, y: (d.b.y - d.a.y) / len };
+    const n = { x: -dir.y, y: dir.x };
+    const off = Number(d.off) || 0;
+    const A = { x: d.a.x + n.x * off, y: d.a.y + n.y * off };
+    const B = { x: d.b.x + n.x * off, y: d.b.y + n.y * off };
+    return {
+      len, dir, n, A, B,
+      mid: { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 },
+      grip: { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 }   // за что тянуть вынос
+    };
+  };
+  // Перевод «мышь тут» -> вынос: проекция вектора от середины отрезка на нормаль.
+  // Тем же знаком, что и сам off, поэтому размер честно перелетает на другую сторону,
+  // если протащить его сквозь отрезок.
+  G.dimOffsetAt = (d, pt) => {
+    const g = G.dimGeom(d);
+    if (!g) return 0;
+    const mid = { x: (d.a.x + d.b.x) / 2, y: (d.a.y + d.b.y) / 2 };
+    return (pt.x - mid.x) * g.n.x + (pt.y - mid.y) * g.n.y;
+  };
+
   G.setWallLength = (pts, i, len) => {
     const n = (pts || []).length;
     if (n < 3 || !(len > 0)) return null;

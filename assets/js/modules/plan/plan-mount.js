@@ -146,6 +146,7 @@
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="attach" aria-label="Пристроить комнату к стене" title="Тапни стену — комната встанет вплотную, общая стена получится сама">⊞</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="split" aria-label="Разрезать комнату перегородкой" title="Два тапа поперёк комнаты — получатся две комнаты с общей стеной">✂</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build elec" data-plan-mode="note" aria-label="Заметка на плане" title="Записка прямо на чертеже: «здесь штробить нельзя», «согласовать» — попадёт и в PDF">📝</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build elec" data-plan-mode="dim" aria-label="Свой размер" title="Свой размер: тапни две точки, потом тяни за цифру — вынесешь его на нужное расстояние">⟷</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="opening" aria-label="Проёмы: двери, окна, балкон">🚪</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="beam" aria-label="Балка/перемычка на потолке">▬</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="void" aria-label="Вентшахта / мини-комната внутри комнаты">▦</button>

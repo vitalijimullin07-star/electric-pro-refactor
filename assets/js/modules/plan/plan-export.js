@@ -842,6 +842,11 @@
       .ep-plan-guide, .ep-plan-guidedraft, .ep-plan-guidept { display: none; }
       /* заметки/выноски — их ради монтажников и пишут, на листе они ОБЯЗАНЫ быть;
          на белой бумаге тёмно-янтарным, без тёмной обводки живого плана */
+      /* свои размеры — часть чертежа, печатаются наравне с автоматической цепочкой */
+      .ep-plan-udimline { stroke: #0f172a; fill: none; }
+      .ep-plan-udimext { stroke: #0f172a; stroke-dasharray: 4 3; opacity: .6; fill: none; }
+      .ep-plan-udimtext { fill: #0f172a; font-family: Arial, sans-serif; font-weight: 700; stroke: none; }
+      .ep-plan-udimgrip { display: none; }   /* ручка тяги — только на экране */
       .ep-plan-notetext { fill: #92400e; font-family: Arial, sans-serif; font-weight: 700; stroke: none; }
       .ep-plan-noteline { stroke: #92400e; stroke-dasharray: 6 4; fill: none; }
       .ep-plan-notetip { fill: #92400e; stroke: none; }
