@@ -4909,11 +4909,49 @@ test("фото: deleteProject чистит кэш фото своего прое
     const fs2 = require("fs"), path2 = require("path");
     const rnd = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-render.js"), "utf8");
     const rms = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-rooms.js"), "utf8");
-    const re = /const off2 = \([\w.]*settings && [\w.]*settings\.dimOffset >= 0\) \? [\w.]*settings\.dimOffset : 5;/;
-    ok(re.test(rnd), "рендер берёт вынос из настроек");
-    ok(re.test(rms), "хит-тест двойного тапа — ТОТ ЖЕ вынос (иначе цифра и зона тапа разъедутся)");
-    ok(!/const off2 = 5[,;]/.test(rnd) && !/const off2 = 5[,;]/.test(rms), "хардкода 5 не осталось");
-    ok(/data-pr-chainoff/.test(rms), "поле выноса в шторке «Слои»");
+    const p = install().P;
+    const room = p.rooms[0], wl = G.walls(room)[1];
+    eq(G.wallDimOffOf(p, wl), 5, "по умолчанию — общий вынос из настроек");
+    p.settings.dimOffset = 40;
+    eq(G.wallDimOffOf(p, wl), 40, "смена общей настройки двигает цепочку");
+    room.wallDimOff = []; room.wallDimOff[wl.i] = -12;
+    eq(G.wallDimOffOf(p, wl), -12, "вынос КОНКРЕТНОЙ стены перебивает общий (знак = сторона)");
+    eq(G.wallDimOffOf(p, G.walls(room)[0]), 40, "соседняя стена не затронута");
+    delete room.wallDimOff[wl.i];
+    eq(G.wallDimOffOf(p, wl), 40, "сброс возвращает общий");
+    // ОБА места (рендер и дублирующий хит-тест) обязаны читать вынос ОДНИМ хелпером —
+    // иначе видимая цифра и зона тапа по ней разъедутся
+    ok(/wallDimOffOf\(project, w\)/.test(rnd), "рендер берёт вынос из G.wallDimOffOf");
+    ok(/wallDimOffOf\(p, wl\)/.test(rms), "хит-тест/тяга — тот же хелпер");
+    ok(!/const off2 = \(p*r*o*j*e*c*t*\.?settings/.test(rnd), "своей копии формулы в рендере не осталось");
+    ok(/data-pr-chainoff/.test(rms), "поле общего выноса в шторке «Слои»");
+    ok(/data-pr-wdimoff/.test(rms), "поле выноса конкретной стены в её карточке");
+    // кэш стен: без dimOffset в подписи смена общего выноса переиспользовала бы старый узел
+    ok(/settings\.dimOffset,/.test(rnd.slice(rnd.indexOf("const structSig"), rnd.indexOf("const wallsCached"))),
+      "общий вынос входит в подпись кэша стен");
+  });
+  test("автоматические размеры двигаются и переживают сохранение", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const rms = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-rooms.js"), "utf8");
+    const rnd = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-render.js"), "utf8");
+    const { P, w } = install();
+    const el = M.newElement("socket", { wallId: w(0), offset: 100, height: 30 });
+    P.elements.push(el);
+    P.rooms[0].wallDimOff = []; P.rooms[0].wallDimOff[2] = 35;
+    el.hOff = { x: 14, y: -22 };
+    // оба сдвига — часть модели проекта: переживают экспорт/импорт (а значит и localStorage)
+    const back = EP.Plan.Core.importJSON(EP.Plan.Core.exportJSON());
+    eq((back.rooms[0].wallDimOff || [])[2], 35, "вынос цепочки стены сохранился");
+    const el2 = back.elements.find((x) => x.type === "socket");
+    eq(el2.hOff.x, 14, "сдвиг подписи высоты сохранился (x)");
+    eq(el2.hOff.y, -22, "…и y");
+    // рендер обязан читать сдвиг подписи, иначе тяга двигала бы только зону тапа
+    ok(/const ho = elem\.hOff/.test(rnd) && /ho\.x/.test(rnd) && /ho\.y/.test(rnd), "подпись высоты рисуется со сдвигом");
+    // тяга и тап в режиме ⟷ ловят и цепочку, и подпись
+    ok(/hLabelAt\(start\)/.test(rms) && /chainAt\(start\)/.test(rms), "тяга разбирает подпись и цепочку");
+    ok(/hLabelAt\(w\)/.test(rms) && /chainAt\(w\)/.test(rms), "тап по ним открывает их карточку");
+    ok(/enableDimDrag\(null\)/.test(rms), "тяга вооружается на вход в режим ⟷, а не только после выбора размера");
+    ok(/data-pr-hoffreset/.test(rms) && /data-pr-wdimreset/.test(rms), "обе карточки умеют вернуть на место");
   });
   test("СТРАЖ: все обработчики тяги в plan-rooms используют (dx, dy, phase, start)", () => {
     const fs2 = require("fs"), path2 = require("path");
