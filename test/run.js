@@ -4760,6 +4760,77 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/if \(x\.extra\) e\.extra = true;/.test(tabs), "флаг переживает агрегацию одинаковых позиций");
   });
 
+// ===== 41. «Цены на работы»: разовое заполнение БД после одобрения =====
+  test("каталог цен покрывает ВСЕ работы, которые движок генерирует сам", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    // 1) собираем реальный проект и смотрим, какие работы выдаёт расчёт
+    const p = EP.Plan.Core.createProject("pset");
+    const A = M.newRoom(G.rectPoints(0, 0, 600, 400), "Зал"); A.material = "Бетон";
+    const B = M.newRoom(G.rectPoints(600, 0, 400, 400), "Кухня"); B.material = "Кирпич";
+    p.rooms.push(A, B);
+    const pn = M.newPanel(50, 50, "Щит"); pn.avr = true; p.panels.push(pn);
+    p.settings.meter = true; p.settings.mainRcd = true;
+    p.settings.tempLightingPts = 4; p.settings.tempSocketsPts = 2;
+    const els = [
+      M.newElement("socket", A.id + ":0", 150, 30, "power"),
+      M.newElement("socket", A.id + ":2", 200, 30, "power"),
+      M.newElement("internet", A.id + ":1", 100, 30, "lv"),
+      M.newElement("socket", B.id + ":0", 120, 30, "power"),
+      M.newElement("junction", null, 0, 0, "routes")
+    ];
+    els[4].params = { x: 320, y: 120 };
+    p.elements.push.apply(p.elements, els);
+    p.guides.push(M.newGuide([{ x: 300, y: 380 }, { x: 900, y: 380 }]));
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    EP.Plan.Routes.build({ silent: true });
+    const gen = (EP.Plan.Calc.estimateItems(p) || []).filter((x) => x.type === "work").map((x) => x.name);
+    ok(gen.length > 10, "движок реально выдал работы (" + gen.length + ")");
+    // 2) каталог price-setup (модуль DOM-only — вытаскиваем чистую часть из исходника)
+    const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "database", "price-setup.js"), "utf8");
+    const part = src.slice(src.indexOf("  const PD = ()"), src.indexOf("// ---------- что уже есть"));
+    const F = new Function("window", part + "; return catalog;")({ EP: { Plan: { Core: { DEFAULTS: EP.Plan.Core.DEFAULTS } } } });
+    const names = [];
+    F().forEach((g) => g.items.forEach((it) => names.push(it.name)));
+    ok(names.length > 40, "каталог непустой (" + names.length + ")");
+    // 3) КЛЮЧЕВОЕ: каждое сгенерированное имя должно находиться правилами priceFor
+    //    (точное совпадение либо двунаправленная подстрока) — иначе цена не подставится
+    const norm = (x) => String(x || "").toLowerCase().replace(/ё/g, "е").replace(/[×хx*]/g, "x")
+      .replace(/(\d),(\d)/g, "$1.$2").replace(/\s+/g, " ").trim();
+    const cn = names.map(norm);
+    const miss = gen.filter((n) => {
+      const low = norm(n);
+      return !cn.some((c) => c === low || (c && (low.indexOf(c) >= 0 || c.indexOf(low) >= 0)));
+    });
+    eq(miss.join(" | "), "", "все работы движка покрыты каталогом");
+  });
+  test("каталог цен строится из DEFAULTS, а не из литералов", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "database", "price-setup.js"), "utf8");
+    const part = src.slice(src.indexOf("  const PD = ()"), src.indexOf("// ---------- что уже есть"));
+    const mk = (defs) => {
+      const F = new Function("window", part + "; return catalog;")({ EP: { Plan: { Core: { DEFAULTS: defs } } } });
+      const out = []; F().forEach((g) => g.items.forEach((it) => out.push(it.name))); return out;
+    };
+    const custom = mk({ materials: ["Бетон"], partitionMaterials: [], chaseW: 40, chaseH: 40, tpChaseW: 60, tpChaseH: 60, sleeveD: 25 });
+    ok(custom.indexOf("Штробление 40x40 бетон") >= 0, "сечение штробы взято из настроек, а не зашито");
+    ok(custom.indexOf("Проходка Ø25 бетон") >= 0, "диаметр гильзы взят из настроек");
+    ok(!custom.some((n) => /кирпич/.test(n)), "материалов только столько, сколько в DEFAULTS");
+    ok(custom.every((n) => n === n.replace(/Бетон/, "бетон")), "материал в НИЖНЕМ регистре — как low(mat) в движке");
+  });
+  test("«Цены на работы»: кнопки, безопасность и запись в Мою БД", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "database", "price-setup.js"), "utf8");
+    ok(/if \(!\(price > 0\)\) return;/.test(src), "пустые строки не пишем (0 ₽ выглядел бы как «бесплатно»)");
+    ok(/updateMyItem\(cur\.id, \{ price, unit \}\)/.test(src), "существующую позицию правим, а не плодим дубль");
+    ok(/category: CAT, subcategory: SUB/.test(src), "цены ложатся в ту же папку, что и из «Расчёта»");
+    ok(/catch \(e\) \{ items = \[\]; \}/.test(src), "неготовая база не роняет главный экран");
+    ok(/filter\(\(g\) => g\.core\)/.test(src), "в счётчик идут только основные группы — иначе он никогда не дойдёт до нуля");
+    const ui = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "database", "database-ui.js"), "utf8");
+    ok(/data-price-setup/.test(ui), "кнопка на экране «База данных» — постоянный вход, даже если подсказку скрыли");
+    const idx = fs2.readFileSync(path2.join(__dirname, "..", "index.html"), "utf8");
+    ok(idx.indexOf("price-setup.js") > idx.indexOf("database-core.js"), "модуль подключён ПОСЛЕ ядра базы");
+  });
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);
