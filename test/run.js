@@ -4859,6 +4859,77 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(idx.indexOf("price-setup.js") > idx.indexOf("database-core.js"), "модуль подключён ПОСЛЕ ядра базы");
   });
 
+// ===== 42. Свои размеры: вынести и подвинуть =====
+  test("dimGeom: размерная линия вынесена перпендикулярно отрезку", () => {
+    const d = { a: { x: 0, y: 0 }, b: { x: 600, y: 0 }, off: 40 };
+    const g = G.dimGeom(d);
+    ok(g, "геометрия построена");
+    eq(g.len, 600, "длина — длина отрезка, а не размерной линии");
+    eq(Math.round(g.A.y), 40, "начало размерной линии вынесено на off");
+    eq(Math.round(g.B.y), 40, "и конец тоже");
+    eq(Math.round(g.A.x), 0, "вдоль отрезка ничего не сдвинулось");
+    eq(Math.round(g.mid.x), 300, "середина между концами");
+    const back = G.dimGeom({ a: d.a, b: d.b, off: -40 });
+    eq(Math.round(back.A.y), -40, "отрицательный вынос — другая сторона");
+    eq(G.dimGeom({ a: { x: 5, y: 5 }, b: { x: 5, y: 5 }, off: 10 }), null, "вырожденный отрезок — null");
+    eq(G.dimGeom(null), null, "мусор — null, без исключения");
+    const diag = G.dimGeom({ a: { x: 0, y: 0 }, b: { x: 300, y: 400 }, off: 50 });
+    eq(Math.round(diag.len), 500, "диагональ считается честно");
+    near(Math.hypot(diag.A.x - 0, diag.A.y - 0), 50, 0.01, "вынос перпендикулярен и равен off");
+  });
+  test("dimOffsetAt: тяга переводится в вынос и сохраняет сторону", () => {
+    const d = { a: { x: 0, y: 0 }, b: { x: 600, y: 0 }, off: 0 };
+    near(G.dimOffsetAt(d, { x: 300, y: 90 }), 90, 0.01, "тянем вниз — вынос положительный");
+    near(G.dimOffsetAt(d, { x: 300, y: -90 }), -90, 0.01, "протащили сквозь отрезок — вынос сменил знак");
+    near(G.dimOffsetAt(d, { x: 999, y: 40 }), 40, 0.01, "сдвиг ВДОЛЬ отрезка на вынос не влияет");
+  });
+  test("свои размеры: модель, бэкофилл, этажи, печать", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const p = EP.Plan.Core.createProject("dims");
+    ok(Array.isArray(p.dims), "у нового проекта есть массив размеров");
+    eq(p.settings.dimOffset, 5, "вынос автоматической цепочки по умолчанию 5 см");
+    const dm = M.newDim({ x: 0, y: 0 }, { x: 300, y: 0 });
+    ok(dm.floorId, "размер привязан к этажу, как остальная геометрия");
+    p.dims.push(dm);
+    const f2 = EP.Plan.Core.addFloor("2 этаж");
+    EP.Plan.Core.setActiveFloor(f2.id);
+    eq((G.floorScoped(p).dims || []).length, 0, "на другом этаже чужого размера не видно");
+    EP.Plan.Core.setActiveFloor(p.floors[0].id);
+    eq((G.floorScoped(p).dims || []).length, 1, "на своём — видно");
+    const old = EP.Plan.Core.importJSON(JSON.stringify({ name: "старый", rooms: [], elements: [] }));
+    ok(Array.isArray(old.dims), "старый проект без dims бэкофиллится");
+    eq(old.settings.dimOffset, 5, "и настройка выноса тоже");
+    const core = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-core.js"), "utf8");
+    ok(/"appliances", "notes", "dims"/.test(core), "удаление этажа уносит его размеры каскадом");
+    const exp = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-export.js"), "utf8");
+    ok(/\.ep-plan-udimtext \{ fill: #0f172a/.test(exp), "размер печатается на листе");
+    ok(/\.ep-plan-udimgrip \{ display: none/.test(exp), "ручка тяги — только на экране, не в PDF");
+  });
+  test("вынос автоматической цепочки — из настроек, и одинаковый в рендере и хит-тесте", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const rnd = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-render.js"), "utf8");
+    const rms = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-rooms.js"), "utf8");
+    const re = /const off2 = \([\w.]*settings && [\w.]*settings\.dimOffset >= 0\) \? [\w.]*settings\.dimOffset : 5;/;
+    ok(re.test(rnd), "рендер берёт вынос из настроек");
+    ok(re.test(rms), "хит-тест двойного тапа — ТОТ ЖЕ вынос (иначе цифра и зона тапа разъедутся)");
+    ok(!/const off2 = 5[,;]/.test(rnd) && !/const off2 = 5[,;]/.test(rms), "хардкода 5 не осталось");
+    ok(/data-pr-chainoff/.test(rms), "поле выноса в шторке «Слои»");
+  });
+  test("СТРАЖ: все обработчики тяги в plan-rooms используют (dx, dy, phase, start)", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const rms = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-rooms.js"), "utf8");
+    // plan-canvas.js зовёт dragHandler(dx, dy, phase, startWorldPoint, opts), причём dx/dy
+    // это ПРИРАЩЕНИЕ с прошлого pointermove. Перепутанная сигнатура не даёт ни ошибки в
+    // консоли, ни падения — тяга просто молча не работает (так и уехала в прод тяга
+    // заметок в PR #217). Поэтому страж на форму всех колбэков.
+    const sigs = rms.match(/setDragHandler\(\((.*?)\)/g) || [];
+    ok(sigs.length >= 6, "обработчики тяги найдены (" + sigs.length + ")");
+    const bad = sigs.filter((x) => !/setDragHandler\(\((dx, dy, phase|\) =>|null)/.test(x) || /\(phase[,)]/.test(x));
+    eq(bad.join(" | "), "", "ни один обработчик не начинается с phase");
+    // и накопление приращений там, где считается сдвиг от начала жеста
+    ok(/accX \+= dx; accY \+= dy;/.test(rms), "приращения накапливаются (dx/dy — не сдвиг от старта)");
+  });
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

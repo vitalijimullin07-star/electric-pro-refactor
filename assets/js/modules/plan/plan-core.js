@@ -34,6 +34,7 @@
     // и потолку, розетки, 24 вольта, и общее»). null = «общее» (routeType выше).
     // Ключи и разрешение значения — G.surfaceKeyOf/G.routeSurface в plan-geometry.js.
     surfaces: { light: null, power: null, lv: null, v24: null },
+    dimOffset: 5,               // см — вынос АВТОМАТИЧЕСКОЙ размерной цепочки от грани стены
     chaseW: 25, chaseH: 30,     // мм — сечение штробы под провод (стандарт), редактируется
     tpChaseW: 50, tpChaseH: 50, // мм — штроба тёплого пола (в пол)
     symbolStyle: "gost",   // значки на плане: "simple" (кружки с буквами) | "gost" (ГОСТ 21.210)
@@ -146,7 +147,7 @@
         wallMaterial: DEFAULTS.wallMaterial,
         routeType: DEFAULTS.routeType,
         surfaces: { ...DEFAULTS.surfaces },
-        chaseW: DEFAULTS.chaseW, chaseH: DEFAULTS.chaseH,
+        chaseW: DEFAULTS.chaseW, chaseH: DEFAULTS.chaseH, dimOffset: DEFAULTS.dimOffset,
         tpChaseW: DEFAULTS.tpChaseW, tpChaseH: DEFAULTS.tpChaseH,
         mainBreaker: DEFAULTS.mainBreaker, phases: DEFAULTS.phases, meter: false, mainRcd: false,
         panelBrand: DEFAULTS.panelBrand, panelReserve: DEFAULTS.panelReserve, panelBox: null,
@@ -167,6 +168,7 @@
       appliances: [], // мебель и бытовая техника (прямоугольники на полу, см. newAppliance)
       guides: [],   // магистрали трасс: нарисованные приоритетные направления (полилинии)
       notes: [],    // заметки/выноски на плане: свободный текст со стрелкой (см. newNote)
+      dims: [],     // свои размеры: отрезок a-b с выносом off (см. newDim)
       calcEdits: { hidden: [], renamed: {}, custom: [] }, // правки сметы Расчёта (plan-calc.js)
       manualScheme: newManualScheme(), // ручной конструктор однолинейки (Слой 7б)
       layers: blankLayers(),
@@ -231,6 +233,17 @@
   // объект, на расчёт/трассировку не влияет вообще.
   function newNote(x, y, text) {
     return { id: uid("nt"), x: x || 0, y: y || 0, text: text || "", ax: null, ay: null, floorId: curFloorId() };
+  }
+  // Свой размер на плане: отрезок между двумя точками + ВЫНОС (off) — перпендикулярное
+  // смещение размерной линии от самого отрезка, как «вынести размер» на чертеже.
+  // Знак off задаёт сторону выноса; 0 — размерная линия прямо по отрезку.
+  function newDim(a, b, off) {
+    return {
+      id: uid("dm"),
+      a: { x: (a && a.x) || 0, y: (a && a.y) || 0 },
+      b: { x: (b && b.x) || 0, y: (b && b.y) || 0 },
+      off: off == null ? 40 : off, floorId: curFloorId()
+    };
   }
   // Проёмы: дверь / раздвижная / окно / балконный блок. Размеры настраиваемые.
   // height — высота проёма (см), sill — низ проёма от пола (окно ~90, дверь 0).
@@ -501,7 +514,8 @@
     p.guides = p.guides || []; // магистрали трасс (старые проекты — пусто)
     p.appliances = p.appliances || []; // мебель/техника (старые проекты — пусто)
     p.notes = p.notes || [];           // заметки/выноски (старые проекты — пусто)
-    [p.rooms, p.panels, p.elements, p.beams, p.voids, p.ledStrips, p.openings, p.routes, p.guides, p.appliances, p.notes].forEach((arr) => {
+    p.dims = p.dims || [];             // свои размеры (старые проекты — пусто)
+    [p.rooms, p.panels, p.elements, p.beams, p.voids, p.ledStrips, p.openings, p.routes, p.guides, p.appliances, p.notes, p.dims].forEach((arr) => {
       (arr || []).forEach((x) => { if (!x.floorId || !p.floors.some((f) => f.id === x.floorId)) x.floorId = fid0; });
     });
     p.openings = p.openings || [];
@@ -517,6 +531,7 @@
     p.settings = p.settings || {};
     if (!p.settings.symbolStyle) p.settings.symbolStyle = DEFAULTS.symbolStyle;
     if (p.settings.realScale == null) p.settings.realScale = DEFAULTS.realScale;
+    if (!(p.settings.dimOffset >= 0)) p.settings.dimOffset = DEFAULTS.dimOffset;
     if (p.settings.cableReserve == null) p.settings.cableReserve = DEFAULTS.cableReserve;
     if (p.settings.cableBrand == null) p.settings.cableBrand = DEFAULTS.cableBrand;
     if (p.settings.routeQuality == null) p.settings.routeQuality = DEFAULTS.routeQuality;
@@ -650,7 +665,7 @@
     commit();
     const p = S.project;
     p.floors = p.floors.filter((f) => f.id !== id);
-    ["rooms", "panels", "elements", "beams", "voids", "ledStrips", "openings", "routes", "guides", "appliances", "notes"].forEach((key) => {
+    ["rooms", "panels", "elements", "beams", "voids", "ledStrips", "openings", "routes", "guides", "appliances", "notes", "dims"].forEach((key) => {
       p[key] = (p[key] || []).filter((x) => x.floorId !== id);
     });
     if (p.activeFloorId === id) p.activeFloorId = p.floors[0].id;
@@ -816,6 +831,6 @@
     exportJSON, exportJSONById, importJSON, cloudPullIndex,
     addFloor, renameFloor, setActiveFloor, setFloorHeight, deleteFloor,
     photoUrl, addPhoto,
-    model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening, newBeam, newVoid, newAppliance, newGuide, newNote, newManualScheme, newSchemeGroup, newSchemeLine, newLedStrip, newFloor }
+    model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening, newBeam, newVoid, newAppliance, newGuide, newNote, newDim, newManualScheme, newSchemeGroup, newSchemeLine, newLedStrip, newFloor }
   };
 })();
