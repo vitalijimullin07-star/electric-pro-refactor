@@ -4817,6 +4817,34 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(!custom.some((n) => /кирпич/.test(n)), "материалов только столько, сколько в DEFAULTS");
     ok(custom.every((n) => n === n.replace(/Бетон/, "бетон")), "материал в НИЖНЕМ регистре — как low(mat) в движке");
   });
+  test("«Цены на работы»: список строится по материалам, с которыми мастер работает", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "database", "price-setup.js"), "utf8");
+    const part = src.slice(src.indexOf("  const PD = ()"), src.indexOf("// ---------- что уже есть"));
+    // подставляем своё «хранилище» — так же, как это делает браузер
+    const mk = (saved) => {
+      const store = { getItem: (k) => (k === "ep_price_mats_v1" ? saved : null), setItem: () => {} };
+      const F = new Function("window", "localStorage",
+        part + "; return { catalog: catalog, all: allMaterials, picked: pickedMaterials };")(
+        { EP: { Plan: { Core: { DEFAULTS: EP.Plan.Core.DEFAULTS } } } }, store);
+      const names = []; F.catalog().forEach((g) => g.items.forEach((it) => names.push(it.name)));
+      return { names, all: F.all(), picked: F.picked() };
+    };
+    const def = mk(null);
+    eq(def.picked.length, 4, "по умолчанию — 4 основных материала стен");
+    ok(def.all.length > 4, "выбрать можно и перегородочные (ГКЛ/ПГП/газоблок)");
+    const two = mk(JSON.stringify(["Бетон", "Панель"]));
+    eq(two.picked.join(","), "Бетон,Панель", "берём ровно отмеченные");
+    ok(two.names.some((n) => /бетон/.test(n)) && two.names.some((n) => /панель/.test(n)), "их строки на месте");
+    ok(!two.names.some((n) => /кирпич|мягкий/.test(n)), "лишних материалов в списке нет");
+    ok(two.names.length < def.names.length, "список короче — и счётчик тоже");
+    const gkl = mk(JSON.stringify(["ГКЛ"]));
+    ok(gkl.names.some((n) => /гкл/.test(n)), "перегородочный материал можно поднять в основные");
+    eq(mk(JSON.stringify([])).picked.length, 4, "пустой список — молча дефолт, не пустой экран");
+    eq(mk("не json").picked.length, 4, "битое значение — тоже дефолт");
+    ok(/if \(!next\.length\) \{ flash\("Хотя бы один материал нужен"\); return; \}/.test(src), "нельзя снять все материалы");
+    ok(/if \(box\) save\(box\);[\s\S]{0,500}setMaterials\(next\)/.test(src), "введённые цены сохраняются ДО смены набора — иначе стёрлись бы");
+  });
   test("«Цены на работы»: кнопки, безопасность и запись в Мою БД", () => {
     const fs2 = require("fs"), path2 = require("path");
     const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "database", "price-setup.js"), "utf8");

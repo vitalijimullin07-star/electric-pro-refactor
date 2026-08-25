@@ -30,14 +30,38 @@
   // перегородок, которые тоже попадают в названия, если в проекте есть ГКЛ/ПГП/газоблок.
   // Перегородочные вынесены в отдельную группу и по умолчанию свёрнуты — на первом запуске
   // важнее быстро закрыть основное, а не заполнить 60 полей.
-  function materials() {
+  // ВСЕ материалы, которые вообще могут попасть в названия работ: стены комнат
+  // (DEFAULTS.materials) + перегородки (DEFAULTS.partitionMaterials).
+  function allMaterials() {
+    const d = PD();
+    const base = (d && d.materials) || ["Бетон", "Кирпич", "Панель", "Мягкий"];
+    const part = (d && d.partitionMaterials) || [];
+    const seen = {}, out = [];
+    base.concat(part).forEach((m) => {
+      const k = String(m).toLowerCase();
+      if (!seen[k]) { seen[k] = 1; out.push(m); }
+    });
+    return out;
+  }
+  // С какими материалами мастер реально работает (просьба пользователя: «материалы —
+  // часто работаю с бетоном, панелькой и т.д.»). Раньше в счётчик шли ВСЕ материалы
+  // стен, и у мастера, который кирпич и «мягкий» не видит годами, «осталось без цены»
+  // не дошло бы до нуля никогда — счётчик зря мозолил бы глаза. Выбор — свойство
+  // УСТРОЙСТВА (как остальные настройки этого экрана), не проекта.
+  const MATS_KEY = "ep_price_mats_v1";
+  function pickedMaterials() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(MATS_KEY) || "null"); } catch (e) { saved = null; }
+    const all = allMaterials();
+    if (Array.isArray(saved) && saved.length) {
+      const keep = all.filter((m) => saved.some((x) => String(x).toLowerCase() === String(m).toLowerCase()));
+      if (keep.length) return keep;      // пустой/битый список — молча падаем на дефолт
+    }
     const d = PD();
     return (d && d.materials) || ["Бетон", "Кирпич", "Панель", "Мягкий"];
   }
-  function partitionOnly() {
-    const d = PD();
-    const base = materials().map((m) => m.toLowerCase());
-    return ((d && d.partitionMaterials) || []).filter((m) => base.indexOf(m.toLowerCase()) < 0);
+  function setMaterials(list) {
+    try { localStorage.setItem(MATS_KEY, JSON.stringify(list || [])); } catch (e) {}
   }
   const chaseStd = () => { const d = PD(); return (d ? d.chaseW : 25) + "x" + (d ? d.chaseH : 30); };
   const chaseWarm = () => { const d = PD(); return (d ? d.tpChaseW : 50) + "x" + (d ? d.tpChaseH : 50); };
@@ -69,13 +93,8 @@
     return [
       {
         id: "main", title: "Штробы, подрозетники, проходки", open: true, core: true,
-        hint: "Основные материалы стен. Хватит заполнить обычную штробу — слаботочная подхватит ту же цену, если оставить её пустой.",
-        items: byMaterial(materials())
-      },
-      {
-        id: "part", title: "То же по перегородкам (ГКЛ, ПГП, газоблок…)", open: false,
-        hint: "Нужно, только если в проектах есть такие перегородки.",
-        items: byMaterial(partitionOnly())
+        hint: "Только материалы, которые ты отметил выше. Хватит заполнить обычную штробу — слаботочная подхватит ту же цену, если оставить её пустой.",
+        items: byMaterial(pickedMaterials())
       },
       {
         id: "cable", title: "Кабель и коробки", open: true, core: true,
@@ -161,6 +180,7 @@
     const have = myWorks();
     const groups = catalog();
     const left = pending();
+    const picked = pickedMaterials();
     ov.innerHTML = `<div class="ep-pset-box card">
       <div class="ep-pset-head">
         <b>💰 Цены на работы</b>
@@ -171,6 +191,13 @@
         в «Проекте квартиры», Пуле и смете. Впиши свои цены, и расчёт сразу начнёт показывать суммы,
         а не «нет цены в БД». Заполнять всё сразу не нужно: пустые строки просто не попадут в базу,
         вернуться можно в любой момент из «Базы данных».</p>
+      <div class="ep-pset-mats">
+        <div class="ep-pset-matlbl">С какими стенами работаешь — по ним и будут строки:</div>
+        <div class="ep-pset-matchips">${allMaterials().map((m) => {
+          const on = picked.some((x) => String(x).toLowerCase() === String(m).toLowerCase());
+          return `<button type="button" class="ep-pset-chip ep-clickable${on ? " on" : ""}" data-pset-mat="${esc(m)}">${esc(m)}</button>`;
+        }).join("")}</div>
+      </div>
       <div class="ep-pset-sum">Осталось без цены: <b data-pset-left>${left}</b> из ${total()}</div>
       ${groups.map((g) => `
         <details class="ep-pset-grp" ${g.open ? "open" : ""} data-pset-grp="${esc(g.id)}">
@@ -275,6 +302,20 @@
     if (t.closest("[data-pset-close]")) { close(); return; }
     if (t.closest("[data-pset-hide]")) { setState("later"); refreshBanner(); return; }
     if (t.closest("[data-pset-later]")) { setState("later"); close(); return; }
+    if ((el = t.closest("[data-pset-mat]"))) {
+      const box = document.getElementById("ep-pset-ov");
+      // уже введённые числа сохраняем ДО перерисовки — иначе смена набора материалов
+      // молча стёрла бы всё, что мастер успел вписать
+      if (box) save(box);
+      const m = el.getAttribute("data-pset-mat");
+      const cur = pickedMaterials();
+      const has = cur.some((x) => String(x).toLowerCase() === m.toLowerCase());
+      const next = has ? cur.filter((x) => String(x).toLowerCase() !== m.toLowerCase()) : cur.concat([m]);
+      if (!next.length) { flash("Хотя бы один материал нужен"); return; }
+      setMaterials(next);
+      if (box) render(box);
+      return;
+    }
     if ((el = t.closest("[data-pset-allgo]"))) {
       const g = el.getAttribute("data-pset-allgo");
       const box = document.getElementById("ep-pset-ov");
@@ -301,5 +342,5 @@
   });
   document.addEventListener("ep:auth-changed", () => setTimeout(refreshBanner, 120));
 
-  window.EP.PriceSetup = { open, close, catalog, pending, total, save, refreshBanner, KEY };
+  window.EP.PriceSetup = { open, close, catalog, pending, total, save, refreshBanner, allMaterials, pickedMaterials, setMaterials, KEY, MATS_KEY };
 })();
