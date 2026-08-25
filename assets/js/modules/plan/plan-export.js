@@ -554,21 +554,32 @@
     // проход 2: размеры/высоты — ПОСЛЕ всех символов, значит визуально ПОВЕРХ них
     sorted.forEach((el, idx) => {
       const x = el.offset, y = H - el.height;
-      s += `<line x1="${x}" y1="${H}" x2="${x}" y2="${y}" class="unfdim"/>`;
+      // el.uDim — ручные сдвиги размеров, поставленные тягой в живой развёртке
+      // (plan-unfold.js). Обе развёртки ОБЯЗАНЫ совпадать, поэтому читаем их и здесь:
+      // v — вертикаль вбок, h — горизонталь вверх/вниз, lx/ly — подпись высоты.
+      const ud = el.uDim || {};
+      const uv = Number(ud.v) || 0, uh = Number(ud.h) || 0;
+      s += `<line x1="${x + uv}" y1="${H}" x2="${x + uv}" y2="${y}" class="unfdim"/>`;
       const cx0 = cornerOf(x);
       if (Math.abs(x - cx0) > 2) {
-        s += `<line x1="${cx0}" y1="${y}" x2="${x}" y2="${y}" class="unfdimh"/>`;
-        s += `<line x1="${cx0}" y1="${y - 3 * kk}" x2="${cx0}" y2="${y + 3 * kk}" class="unfdimh"/>`;
+        const hy = y + uh;
+        s += `<line x1="${cx0}" y1="${hy}" x2="${x}" y2="${hy}" class="unfdimh"/>`;
+        s += `<line x1="${cx0}" y1="${hy - 3 * kk}" x2="${cx0}" y2="${hy + 3 * kk}" class="unfdimh"/>`;
         // цифра «от угла» стоит на середине выноски — а там часто оказывается ДРУГОЙ пост
         // (соседняя точка на близкой высоте) или его имя QF: на скриншотах пользователя
-        // цифры сливались в «1236»/«1387». Приподнимаем её, пока не выйдет из чужих габаритов.
+        // цифры сливались в «1236»/«1387». Приподнимаем её, пока не выйдет из чужих габаритов
+        // (при ручном сдвиге линии — не трогаем, стоит ровно где поставили).
         const lx = (cx0 + x) / 2;
-        let ly = y - 3 * kk;
-        const bad = (yy2) => boxes.concat(qfBoxes).some((o) => Math.abs(lx - o.x) < 12 * kk + o.hw && Math.abs(yy2 - o.y) < 6 * kk + o.hh);
-        for (let i = 0; i < 2 && bad(ly); i++) ly -= 7 * kk; // не больше двух шагов — иначе цифра уедет от своей выноски
+        let ly = hy - 3 * kk;
+        if (!uh) {
+          const bad = (yy2) => boxes.concat(qfBoxes).some((o) => Math.abs(lx - o.x) < 12 * kk + o.hw && Math.abs(yy2 - o.y) < 6 * kk + o.hh);
+          for (let i = 0; i < 2 && bad(ly); i++) ly -= 7 * kk; // не больше двух шагов — иначе цифра уедет от своей выноски
+        }
         s += `<text x="${lx}" y="${ly}" font-size="${9.5 * kk}" text-anchor="middle" class="unfdimt">${Math.round(Math.abs(x - cx0))}</text>`;
       }
-      const hl = placeHLabel(idx);
+      const hl = (ud.lx != null || ud.ly != null)
+        ? { x: x + (Number(ud.lx) || 0), y: y + (Number(ud.ly) || 0) }
+        : placeHLabel(idx);
       s += `<text x="${hl.x}" y="${hl.y}" font-size="${11 * kk}" text-anchor="middle" dominant-baseline="middle" class="unfdimt">${Math.round(el.height)}</text>`;
     });
     return s + "</svg>";
