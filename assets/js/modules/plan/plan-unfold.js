@@ -197,6 +197,7 @@
         <button type="button" class="ep-plan-unfpt-b is-wide ep-clickable" data-pu-pt="p+">+ пост</button>
       </div>` : ""}
       ${EL().circuitRow ? EL().circuitRow(el, "pu") : ""}
+      ${el.uDim ? `<div class="ep-plan-unfpt-row"><button type="button" class="ep-plan-unfpt-b is-wide ep-clickable" data-pu-pt-dimreset>↺ Размеры на место</button></div>` : ""}
       <div class="ep-plan-unfpt-row"><button type="button" class="ep-plan-unfpt-b is-wide ep-clickable" data-pu-pt-edit>⚙ Полный редактор</button></div>`;
     box.appendChild(d);
   }
@@ -543,28 +544,49 @@
       if (cc) gr.appendChild(svgEl("text", { x, y: y - 18 * ks, "font-size": 8.5 * ks, "text-anchor": "middle", fill: col, class: "ep-plan-unfqf" }, cc.name));
       svg.appendChild(gr);
     });
-    // проход 2: размеры/высоты — ПОСЛЕ всех символов, значит визуально ПОВЕРХ них
+    // проход 2: размеры/высоты — ПОСЛЕ всех символов, значит визуально ПОВЕРХ них.
+    // el.uDim — РУЧНЫЕ сдвиги размеров ЭТОЙ точки в развёртке (см): v — вертикальная
+    // линия вбок, h — горизонтальная вверх/вниз, lx/ly — подпись высоты. Ставятся тягой
+    // (см. bindStrip), одинаково читаются живой развёрткой и печатной (plan-export.js).
     dimJobs.forEach(({ el, x, y, idx }) => {
-      // вертикаль: высота от пола до точки (синим)
-      svg.appendChild(svgEl("line", { "data-pu-diml": el.id, x1: x, y1: H, x2: x, y2: y, class: "ep-plan-unfdimL", "stroke-width": kk }));
+      const ud = el.uDim || {};
+      const uv = Number(ud.v) || 0, uh = Number(ud.h) || 0;
+      // вертикаль: высота от пола до точки (синим). Обёрнута в <g> — ручной сдвиг живёт
+      // в его transform, поэтому тяга самой ТОЧКИ (updateDragVisual правит x1/x2 линии)
+      // продолжает работать как раньше и сдвиг не теряет.
+      const gv = svgEl("g", { "data-pu-dimv": el.id, transform: `translate(${uv} 0)` });
+      gv.appendChild(svgEl("line", { "data-pu-diml": el.id, x1: x, y1: H, x2: x, y2: y, class: "ep-plan-unfdimL", "stroke-width": kk }));
+      // прозрачная зона тяги — НЕ доходит до поста (иначе перехватывала бы тап по нему:
+      // размеры рисуются ПОСЛЕ символов и лежат поверх)
+      if (H - (y + 18 * ks) > 10 * ks) gv.appendChild(svgEl("line", { x1: x, y1: H, x2: x, y2: y + 18 * ks, stroke: "transparent", "stroke-width": 10 * ks }));
+      svg.appendChild(gv);
       // горизонталь: от БЛИЖАЙШЕГО внутреннего угла до поста НА ЕГО ВЫСОТЕ (синим, с
       // засечкой у угла) и число — расстояние до этого угла (те «размеры», что просил
       // пользователь; ближний угол — чтобы линейка была короткой и не шла через всю стену)
       const cx0 = cornerOf(x);
       if (Math.abs(x - cx0) > 2) {
-        svg.appendChild(svgEl("line", { x1: cx0, y1: y, x2: x, y2: y, class: "ep-plan-unfdimE", "stroke-width": kk * 0.7 }));
-        svg.appendChild(svgEl("line", { x1: cx0, y1: y - 3 * ks, x2: cx0, y2: y + 3 * ks, class: "ep-plan-unfdimE", "stroke-width": kk * 0.7 }));
+        const gh = svgEl("g", { "data-pu-dimh": el.id, transform: `translate(0 ${uh})` });
+        gh.appendChild(svgEl("line", { x1: cx0, y1: y, x2: x, y2: y, class: "ep-plan-unfdimE", "stroke-width": kk * 0.7 }));
+        gh.appendChild(svgEl("line", { x1: cx0, y1: y - 3 * ks, x2: cx0, y2: y + 3 * ks, class: "ep-plan-unfdimE", "stroke-width": kk * 0.7 }));
         // цифра «от угла» стоит на середине выноски — а там часто оказывается ДРУГОЙ пост
         // (соседняя точка на близкой высоте) или его имя QF, и цифры сливались. Приподнимаем,
-        // пока не выйдет из чужих габаритов (тот же приём, что у подписи высоты).
+        // пока не выйдет из чужих габаритов (тот же приём, что у подписи высоты). Если
+        // пользователь двигал линию сам (uh) — автоподъём не мешаем, стоит ровно где поставил.
         const lx = (cx0 + x) / 2;
         let ly = y - 3 * ks;
-        const bad = (yy2) => elBoxes.concat(qfBoxes).some((o) => Math.abs(lx - o.x) < 12 * ks + o.hw && Math.abs(yy2 - o.y) < 6 * ks + o.hh);
-        for (let i = 0; i < 2 && bad(ly); i++) ly -= 7 * ks; // не больше двух шагов — иначе цифра уедет от своей выноски
-        svg.appendChild(svgEl("text", { x: lx, y: ly, "font-size": 9.5 * ks, "text-anchor": "middle", class: "ep-plan-unfdimT" }, Math.round(Math.abs(x - cx0)) + ""));
+        if (!uh) {
+          const bad = (yy2) => elBoxes.concat(qfBoxes).some((o) => Math.abs(lx - o.x) < 12 * ks + o.hw && Math.abs(yy2 - o.y) < 6 * ks + o.hh);
+          for (let i = 0; i < 2 && bad(ly); i++) ly -= 7 * ks; // не больше двух шагов — иначе цифра уедет от своей выноски
+        }
+        gh.appendChild(svgEl("text", { x: lx, y: ly, "font-size": 9.5 * ks, "text-anchor": "middle", class: "ep-plan-unfdimT" }, Math.round(Math.abs(x - cx0)) + ""));
+        const gx = Math.abs(x - cx0) - 18 * ks;
+        if (gx > 10 * ks) gh.appendChild(svgEl("line", { x1: cx0, y1: y, x2: cx0 + (x > cx0 ? gx : -gx), y2: y, stroke: "transparent", "stroke-width": 10 * ks }));
+        svg.appendChild(gh);
       }
-      // подпись высоты — РЯДОМ с постом, с антиналожением (тап — карточка точки)
-      const hl = placeHLabel(idx);
+      // подпись высоты — РЯДОМ с постом, с антиналожением (тап — карточка точки, тяга —
+      // своё место: авторазмещение отключается, как только пользователь её подвинул)
+      const manual = ud.lx != null || ud.ly != null;
+      const hl = manual ? { x: x + (Number(ud.lx) || 0), y: y + (Number(ud.ly) || 0) } : placeHLabel(idx);
       svg.appendChild(hitRect(hl.x, hl.y, 30 * ks, 18 * ks, { "data-pu-heightof": el.id, class: "ep-plan-unftap" }));
       svg.appendChild(svgEl("text", { "data-pu-dimt": el.id, x: hl.x, y: hl.y, "font-size": 11 * ks, "text-anchor": "middle", "dominant-baseline": "middle", class: "ep-plan-unfdimT is-tap" }, Math.round(el.height) + ""));
     });
@@ -602,6 +624,14 @@
       if (d.kind === "open") { if (d.g) d.g.setAttribute("transform", `translate(${d.op.offset - d.x0} ${d.y0 - (d.op.sill || 0)})`); return; }
       if (d.kind === "panel") { if (d.g) d.g.setAttribute("transform", `translate(${d.curPx - d.x0} ${(H - d.curHeight) - d.y0})`); return; }
       if (d.kind === "led") { if (d.g) d.g.setAttribute("transform", `translate(${Math.min(d.ls.offsetA, d.ls.offsetB) - d.x0} 0)`); return; }
+      // размеры точки: вертикаль едет вбок, горизонталь вверх/вниз, подпись высоты — куда угодно
+      if (d.kind === "dimv") { if (d.g) d.g.setAttribute("transform", `translate(${(d.el.uDim || {}).v || 0} 0)`); return; }
+      if (d.kind === "dimh") { if (d.g) d.g.setAttribute("transform", `translate(0 ${(d.el.uDim || {}).h || 0})`); return; }
+      if (d.kind === "dimt") {
+        const ud = d.el.uDim || {};
+        if (d.txt) { d.txt.setAttribute("x", d.el.offset + (ud.lx || 0)); d.txt.setAttribute("y", (H - d.el.height) + (ud.ly || 0)); }
+        return;
+      }
       const x = d.el.offset, yTrue = H - d.el.height;
       // палец закрывает саму точку под собой — на время тяги ПАЛЬЦЕМ (не пером/мышью,
       // у них точность и так достаточная) визуально приподнимаем маркер и его
@@ -627,9 +657,27 @@
       if (pts.size === 2) { pinch = pinchInfo(); S.drag = null; pending = null; return; }
       const p = core().project;
       downClient = { x: e.clientX, y: e.clientY }; moved = false; pending = null;
-      // тап по цифре размера высоты — сразу карточка точки с полями (не тяга, не добавление)
+      // цифра высоты: тап — карточка точки (как было), тяга — своё место подписи
       const hof = e.target.closest && e.target.closest("[data-pu-heightof]");
-      if (hof) { pending = { kind: "dimof", id: hof.getAttribute("data-pu-heightof") }; return; }
+      if (hof) {
+        const el0 = (p.elements || []).find((x) => x.id === hof.getAttribute("data-pu-heightof"));
+        if (!el0) { pending = { kind: "dimof", id: hof.getAttribute("data-pu-heightof") }; return; }
+        core().commit();
+        S.drag = { kind: "dimt", el: el0, moved: false, txt: svg.querySelector(`[data-pu-dimt="${el0.id}"]`) };
+        return;
+      }
+      // размерные линии точки: вертикальная (вбок) и горизонтальная (вверх/вниз) —
+      // ловим ДО символов/проёмов, зона тяги у них прозрачная и не доходит до поста
+      const dgv = e.target.closest && e.target.closest("[data-pu-dimv]");
+      const dgh = e.target.closest && e.target.closest("[data-pu-dimh]");
+      const dg = dgv || dgh;
+      if (dg) {
+        const el0 = (p.elements || []).find((x) => x.id === dg.getAttribute(dgv ? "data-pu-dimv" : "data-pu-dimh"));
+        if (!el0) return;
+        core().commit();
+        S.drag = { kind: dgv ? "dimv" : "dimh", el: el0, moved: false, g: dg };
+        return;
+      }
       const pg2 = e.target.closest && e.target.closest("[data-pu-panel]");
       if (pg2) {
         const pn = (p.panels || []).find((x) => x.id === pg2.getAttribute("data-pu-panel"));
@@ -724,6 +772,14 @@
         } else if (S.drag.kind === "led") {
           const x0 = Math.round(Math.max(0, Math.min(w.len - S.drag.len, pt.x - S.drag.len / 2)));
           S.drag.ls.offsetA = x0; S.drag.ls.offsetB = x0 + S.drag.len;
+        } else if (S.drag.kind === "dimv" || S.drag.kind === "dimh" || S.drag.kind === "dimt") {
+          // сдвиг считается ОТ САМОЙ ТОЧКИ (её offset/высоты), а не от начала жеста —
+          // тогда он не «дрейфует» за несколько тяг и переживает перенос самой точки
+          const e2 = S.drag.el, ud = e2.uDim = e2.uDim || {};
+          const dxCm = Math.round(pt.x - e2.offset), dyCm = Math.round(pt.y - (H - e2.height));
+          if (S.drag.kind === "dimv") ud.v = dxCm;
+          else if (S.drag.kind === "dimh") ud.h = dyCm;
+          else { ud.lx = dxCm; ud.ly = dyCm; }
         } else {
           S.drag.el.offset = Math.round(Math.max(0, Math.min(w.len, pt.x))); // плавно, 1 см
           S.drag.el.height = Math.round(Math.max(0, Math.min(H, H - pt.y)));
@@ -744,7 +800,8 @@
       if (pts.size < 2) pinch = null;
       if (S.drag) {
         if (S.drag.moved) {
-          const what = S.drag.kind === "open" ? "opening-move" : S.drag.kind === "panel" ? "panel-move" : S.drag.kind === "led" ? "led-move" : "elem-move";
+          const what = S.drag.kind === "open" ? "opening-move" : S.drag.kind === "panel" ? "panel-move" : S.drag.kind === "led" ? "led-move"
+            : (S.drag.kind === "dimv" || S.drag.kind === "dimh" || S.drag.kind === "dimt") ? "unfdim-move" : "elem-move";
           core().persist(what);
           S.drag = null;
           drawStrip(); rooms().renderScene(); // полная перерисовка ОДИН раз, на отпускании
@@ -765,6 +822,13 @@
           const op = S.drag.op;
           exitFS(); close();
           if (EL().openOpeningEditor) EL().openOpeningEditor(op);
+        }
+        else if (S.drag.kind === "dimt") {
+          // тап по цифре высоты БЕЗ тяги — карточка точки, как было до появления тяги
+          S.ptPanel = S.drag.el.id; renderPtPanel();
+        }
+        else if (S.drag.kind === "dimv" || S.drag.kind === "dimh") {
+          // тап по размерной линии без тяги — ничего (её редактируют только тягой)
         }
         else if (S.drag.kind === "panel") {
           // тап без тяги по щиту — своего редактора тут нет, просто ничего не делаем
@@ -834,6 +898,11 @@
     if (t.closest("[data-pu-pt-close]")) { S.ptPanel = null; const pt = $("#ep-pu-box .ep-plan-unfpt"); if (pt) pt.remove(); return; }
     // exitFS() ОБЯЗАТЕЛЕН перед close() — тот же баг класса, что и у openOpeningEditor
     // выше: close() сам НЕ гасит настоящий Fullscreen API на #ep-plan-sheet.
+    if (t.closest("[data-pu-pt-dimreset]")) {
+      const el2 = ptEl(); if (!el2) return;
+      core().commit(); delete el2.uDim; core().persist("unfdim-move");
+      drawStrip(); renderPtPanel(); return;
+    }
     if (t.closest("[data-pu-pt-edit]")) { const el2 = ptEl(); S.ptPanel = null; if (el2 && EL().openEditor) { exitFS(); close(); EL().openEditor(el2); } return; }
     if ((b = t.closest("[data-pu-circ]"))) {
       const el2 = ptEl(); if (!el2) return;

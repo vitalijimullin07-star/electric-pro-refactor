@@ -3114,6 +3114,39 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(chases.length >= 1, "штробы есть");
     chases.forEach((h) => ok(Math.abs(h.x - 100) < 0.6, "штроба на оси блока: " + h.x));
   });
+  test("развёртка: ручные сдвиги размеров (uDim) доходят до печатного листа", () => {
+    const mk = (ud) => {
+      const p = EP.Plan.Core.createProject("ud" + (ud ? "1" : "0"));
+      const r = M.newRoom(G.rectPoints(0, 0, 400, 300), "К");
+      p.rooms.push(r);
+      const e = M.newElement("socket", r.id + ":0", 120, 30, "power");
+      if (ud) e.uDim = ud;
+      p.elements.push(e);
+      EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+      const card = EP.Plan.Export.sheetHtml(p).split("unfcard").find((s) => /стена 1/.test(s)) || "";
+      // вертикаль: линия от пола (y1=H) до точки; горизонталь: линия от угла на высоте точки
+      const vert = /<line x1="([-\d.]+)" y1="270" x2="[-\d.]+" y2="240" class="unfdim"/.exec(card);
+      const horz = /<line x1="([-\d.]+)" y1="([-\d.]+)" x2="([-\d.]+)" y2="[-\d.]+" class="unfdimh"/.exec(card);
+      const labs = [...card.matchAll(/<text x="([-\d.]+)" y="([-\d.]+)"[^>]*class="unfdimt">(\d+)</g)]
+        .map((m) => ({ x: +m[1], y: +m[2], t: m[3] }));
+      return { vx: vert && +vert[1], hy: horz && +horz[2], h30: labs.find((l) => l.t === "30") };
+    };
+    const a = mk(null);
+    eq(a.vx, 120, "без сдвигов вертикаль стоит на точке");
+    eq(a.hy, 240, "…а горизонталь на её высоте");
+    ok(a.h30, "подпись высоты есть");
+    const b = mk({ v: 25, h: -40, lx: 60, ly: 35 });
+    eq(b.vx, 145, "вертикаль уехала вбок ровно на v");
+    eq(b.hy, 200, "горизонталь — вверх ровно на h");
+    eq(b.h30.x, 180, "подпись высоты встала по lx от точки (авторазмещение отключено)");
+    eq(b.h30.y, 275, "…и по ly");
+    const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-unfold.js"), "utf8");
+    ok(/data-pu-dimv/.test(src) && /data-pu-dimh/.test(src), "в живой развёртке у обеих линий своя зона тяги");
+    ok(/kind === "dimv"/.test(src) && /kind === "dimh"/.test(src) && /kind === "dimt"/.test(src), "три вида тяги размеров");
+    ok(/S\.ptPanel = S\.drag\.el\.id; renderPtPanel\(\);/.test(src), "тап по цифре высоты БЕЗ тяги по-прежнему открывает карточку точки");
+    ok(/data-pu-pt-dimreset/.test(src), "в карточке точки есть возврат размеров на место");
+    ok(/stroke: "transparent"/.test(src), "зона тяги прозрачная и не доходит до поста");
+  });
   test("PDF: масштаб чертежа подбирается плотнее и формат листа идёт в штамп", () => {
     const p = EP.Plan.Core.createProject("fmt");
     p.rooms.push(M.newRoom(G.rectPoints(0, 0, 700, 450), "К"));
