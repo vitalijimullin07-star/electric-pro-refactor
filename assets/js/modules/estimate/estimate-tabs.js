@@ -32,8 +32,8 @@
     items.filter(x => x.type === type).forEach(x => {
       const key = String(x.name || "").toLowerCase().trim() + "|" + (x.unit || "");
       const e = m.get(key);
-      if (e) { e.qty += Number(x.qty) || 0; if (!e.price && Number(x.price)) e.price = Number(x.price); }
-      else m.set(key, { name: x.name, unit: x.unit || "", price: Number(x.price) || 0, qty: Number(x.qty) || 0 });
+      if (e) { e.qty += Number(x.qty) || 0; if (!e.price && Number(x.price)) e.price = Number(x.price); if (x.extra) e.extra = true; }
+      else m.set(key, { name: x.name, unit: x.unit || "", price: Number(x.price) || 0, qty: Number(x.qty) || 0, extra: !!x.extra });
     });
     return [...m.values()].filter(x => x.qty > 0).sort((a, b) => String(a.name).localeCompare(String(b.name), "ru"));
   }
@@ -46,18 +46,20 @@
     const rs = rows(isSupply ? "material" : "work");
     const tot = total(rs);
     const delBtn = (x) => `<button type="button" class="ep-sup-del ep-clickable" data-est-del data-del-type="${isSupply ? "material" : "work"}" data-del-name="${esc(x.name)}" data-del-unit="${esc(x.unit)}" aria-label="Удалить позицию">✕</button>`;
+    // «доп.» — позиция уедет в ОТДЕЛЬНЫЙ акт дополнительных работ, а не в основную смету
+    const extBtn = (x) => `<button type="button" class="ep-sup-ext ep-clickable ${x.extra ? "on" : ""}" data-est-extra data-ext-type="${isSupply ? "material" : "work"}" data-ext-name="${esc(x.name)}" data-ext-unit="${esc(x.unit)}" data-ext-on="${x.extra ? "0" : "1"}" aria-label="${x.extra ? "Убрать из доп. работ" : "В доп. работы"}" title="${x.extra ? "Убрать из доп. работ" : "Отнести к доп. работам (отдельный акт)"}">доп.</button>`;
     const list = rs.length ? rs.map((x, i) => isSupply ? `
       <div class="ep-sup-row supply">
         <div class="ep-sup-n">${i + 1}. ${esc(x.name)}</div>
         <div class="ep-sup-q">${x.qty}${x.unit ? " " + esc(x.unit) : ""}</div>
-        ${delBtn(x)}
+        ${extBtn(x)}${delBtn(x)}
       </div>` : `
       <div class="ep-sup-row">
         <div class="ep-sup-n">${i + 1}. ${esc(x.name)}</div>
         <div class="ep-sup-q">${x.qty}${x.unit ? " " + esc(x.unit) : ""}</div>
         <div class="ep-sup-p">${x.price ? money(x.price) : "—"}</div>
         <div class="ep-sup-s">${money(x.price * x.qty)}</div>
-        ${delBtn(x)}
+        ${extBtn(x)}${delBtn(x)}
       </div>`).join("") :
       `<div class="ep-db-empty">Пока пусто. Добавь позиции через щит, пул или «Материалы/Работа» — кнопкой «В смету», или прямо здесь кнопкой «➕ Добавить позицию».</div>`;
     root.innerHTML = `
@@ -89,10 +91,11 @@
   // только материалы) и наценка на материалы (%), плюс отдельная кнопка «Заявка
   // поставщику» (материалы без цен). Наценка показывается, только когда в печать
   // попадают материалы (scope ≠ work).
-  const SCOPES = [["all", "Смета целиком"], ["work", "Работы"], ["mat", "Материалы"]];
+  const SCOPES = [["all", "Смета целиком"], ["work", "Работы"], ["mat", "Материалы"], ["extra", "Доп. работы"]];
   function printBlock() {
     const printLabel = printScope === "work" ? "🖨 Печать работ"
-      : printScope === "mat" ? "🖨 Печать материалов" : "🖨 Печать сметы";
+      : printScope === "mat" ? "🖨 Печать материалов"
+      : printScope === "extra" ? "🖨 Печать акта доп. работ" : "🖨 Печать сметы";
     return `<div class="ep-est-print">
         <label class="ep-est-no">Смета №<input type="text" inputmode="numeric" maxlength="12" value="${esc(prnNo())}" data-est-no></label>
         <div class="ep-est-scope"><span class="ep-est-lbl">Печатать:</span>
@@ -168,6 +171,12 @@
     } else if (printScope === "mat") {
       if (!mats.length) return flash("Материалов нет — печатать нечего");
       html = P.estimateHtml({ works: [], mats, markup: matMarkup, heading: "Смета материалов" });
+    } else if (printScope === "extra") {
+      // ОТДЕЛЬНЫЙ акт: только помеченные «доп.» — то, что выявилось на объекте и в
+      // основной договор не входило. Основная смета при этом остаётся как была.
+      const ew = works.filter((x) => x.extra), em = mats.filter((x) => x.extra);
+      if (!ew.length && !em.length) return flash("Нет позиций, помеченных «доп.»");
+      html = P.estimateHtml({ works: ew, mats: em, markup: matMarkup, heading: "Дополнительные работы" });
     } else {
       if (!works.length && !mats.length) return flash("Смета пуста — печатать нечего");
       html = P.estimateHtml({ works, mats, markup: matMarkup, heading: "Смета" });
@@ -260,6 +269,14 @@
       }
       if (t.closest && t.closest("[data-est-addsave]")) { addSave(); return; }
       if (t.closest && t.closest("[data-est-addcancel]")) { showAdd = false; render(); return; }
+      if ((el = t.closest && t.closest("[data-est-extra]"))) {
+        const M = window.EP && window.EP.Estimate;
+        if (M && M.setExtra) {
+          M.setExtra(el.getAttribute("data-ext-type"), el.getAttribute("data-ext-name"),
+            el.getAttribute("data-ext-unit"), el.getAttribute("data-ext-on") === "1");
+        }
+        render(); return;
+      }
       if ((el = t.closest && t.closest("[data-est-del]"))) {
         if (!confirm("Удалить позицию из сметы?")) return;
         removeRow(el.getAttribute("data-del-type"), el.getAttribute("data-del-name"), el.getAttribute("data-del-unit"));

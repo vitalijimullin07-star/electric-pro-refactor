@@ -217,9 +217,13 @@ body[data-visual-mode="day"] .ep-plan-qbtn, body[data-visual-mode="day"] .ep-pla
 
 /* — дневная тема — */
 body[data-visual-mode="day"] .ep-plan-canvas { background: #fff; border-color: #dbe3ee; }
+.ep-plan.is-paper .ep-plan-canvas { background: #fff; border-color: #dbe3ee; }
 body[data-visual-mode="day"] .ep-plan-grid-line { stroke: rgba(71, 85, 105, .12); }
+.ep-plan.is-paper .ep-plan-grid-line { stroke: rgba(71, 85, 105, .12); }
 body[data-visual-mode="day"] .ep-plan-grid-major { stroke: rgba(71, 85, 105, .28); }
+.ep-plan.is-paper .ep-plan-grid-major { stroke: rgba(71, 85, 105, .28); }
 body[data-visual-mode="day"] .ep-plan-grid-axis { stroke: rgba(2, 132, 199, .5); }
+.ep-plan.is-paper .ep-plan-grid-axis { stroke: rgba(2, 132, 199, .5); }
 body[data-visual-mode="day"] .ep-plan-newrow input[type="text"],
 body[data-visual-mode="day"] .ep-plan-title input { background: #fff; border-color: #cbd5e1; color: #0f172a; }
 body[data-visual-mode="day"] .ep-plan-tbtn { background: #fff; border-color: #cbd5e1; color: #0f172a; }
@@ -386,10 +390,15 @@ body[data-visual-mode="day"] .ep-plan-sheet { border-color: #dbe3ee; }
 body[data-visual-mode="day"] .ep-plan-srow input[type="text"],
 body[data-visual-mode="day"] .ep-plan-srow input[type="number"] { background: #fff; border-color: #cbd5e1; color: #0f172a; }
 body[data-visual-mode="day"] .ep-plan-wall { stroke: #334155; }
+.ep-plan.is-paper .ep-plan-wall { stroke: #334155; }
 body[data-visual-mode="day"] .ep-plan-dim { fill: #64748b; }
+.ep-plan.is-paper .ep-plan-dim { fill: #64748b; }
 body[data-visual-mode="day"] .ep-plan-name { fill: #0f172a; stroke: rgba(255,255,255,.75); }
+.ep-plan.is-paper .ep-plan-name { fill: #0f172a; stroke: rgba(255,255,255,.75); }
 body[data-visual-mode="day"] .ep-plan-room { fill: rgba(2, 132, 199, .08); }
+.ep-plan.is-paper .ep-plan-room { fill: rgba(2, 132, 199, .08); }
 body[data-visual-mode="day"] .ep-plan-room.is-sel { fill: rgba(2, 132, 199, .17); }
+.ep-plan.is-paper .ep-plan-room.is-sel { fill: rgba(2, 132, 199, .17); }
 
 /* — Слои 2-6: палитра, чипы, развёртка, таблицы, предупреждения — */
 .ep-plan-palette { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 7px; }
@@ -420,6 +429,66 @@ body[data-visual-mode="day"] .ep-plan-guidedraft { stroke: #3b82f6; }
   display: inline-flex; align-items: center; justify-content: center;
   background: rgba(255, 255, 255, .12); font: 700 11px system-ui;
 }
+/* просмотр фото точки с разметкой (стрелка + подпись) */
+.ep-plan-phov {
+  position: fixed; inset: 0; z-index: 10002; display: flex; align-items: center; justify-content: center;
+  background: rgba(2, 6, 16, .82); padding: 12px;
+}
+.ep-plan-phov[hidden] { display: none; }
+.ep-plan-phbox {
+  width: min(720px, 100%); max-height: 92dvh; overflow: auto; border-radius: 16px; padding: 12px;
+  background: rgb(var(--card-bg-rgb, 15 23 42)); border: 1px solid rgba(148, 163, 184, .3);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.ep-plan-phhead { display: flex; align-items: center; gap: 8px; font: 600 13px system-ui; }
+.ep-plan-phwrap { position: relative; touch-action: none; user-select: none; line-height: 0; }
+.ep-plan-phwrap img { width: 100%; height: auto; display: block; border-radius: 10px; }
+.ep-plan-phsvg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.ep-plan-phlab {
+  position: absolute; transform: translate(-50%, -120%); white-space: nowrap;
+  background: rgba(244, 63, 94, .92); color: #fff; font: 700 11px system-ui;
+  padding: 2px 6px; border-radius: 8px; display: inline-flex; align-items: center; gap: 5px;
+}
+.ep-plan-phlab.is-bare { padding: 1px 4px; }
+.ep-plan-phlab b { cursor: pointer; opacity: .85; }
+.ep-plan-phcnt {
+  position: absolute; left: 3px; bottom: 3px; font: 700 10px system-ui; font-style: normal;
+  background: rgba(244, 63, 94, .92); color: #fff; padding: 1px 5px; border-radius: 7px; cursor: pointer;
+}
+/* 📝 заметки/выноски на плане — монтажная записка поверх чертежа */
+.ep-plan-notetext {
+  fill: #fbbf24; font-family: system-ui; font-weight: 600; paint-order: stroke;
+  stroke: rgba(11, 18, 32, .78); stroke-width: 3px; stroke-linejoin: round; cursor: move;
+}
+.ep-plan-noteline { stroke: #fbbf24; stroke-dasharray: 6 4; fill: none; }
+.ep-plan-notetip { fill: #fbbf24; stroke: none; }
+.ep-plan.is-paper .ep-plan-notetext,
+body[data-visual-mode="day"] .ep-plan-notetext { fill: #b45309; stroke: rgba(255, 255, 255, .8); }
+.ep-plan.is-paper .ep-plan-noteline, body[data-visual-mode="day"] .ep-plan-noteline { stroke: #b45309; }
+.ep-plan.is-paper .ep-plan-notetip, body[data-visual-mode="day"] .ep-plan-notetip { fill: #b45309; }
+.ep-plan-srow textarea {
+  width: 100%; min-height: 62px; resize: vertical; border-radius: 12px; padding: 8px 10px;
+  border: 1px solid rgba(148, 163, 184, .38); background: rgba(148, 163, 184, .12);
+  color: var(--text, #e8eef7); font: 500 13px/1.35 system-ui;
+}
+/* ✕ на чипе «моего блока» — убрать сборку из библиотеки */
+.ep-plan-mybdel {
+  margin-left: 4px; padding: 0 4px; border-radius: 6px; font: 700 11px system-ui;
+  color: var(--danger, #f87171); background: rgba(248, 113, 113, .14);
+}
+/* список «Длины стен» в шторке комнаты — правка размера числом у ЛЮБОЙ формы */
+.ep-plan-walllens { margin: 4px 0; }
+.ep-plan-walllens > summary { cursor: pointer; font: 600 12.5px system-ui; padding: 6px 0; list-style: none; }
+.ep-plan-walllens > summary::-webkit-details-marker { display: none; }
+.ep-plan-walllens > summary::before { content: "▸ "; }
+.ep-plan-walllens[open] > summary::before { content: "▾ "; }
+.ep-plan-wlgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+.ep-plan-wlgrid label { display: flex; align-items: center; gap: 5px; font: 500 11.5px system-ui; color: var(--muted, #94a3b8); }
+.ep-plan-wlgrid input { width: 100%; min-width: 0; }
+/* превью символа в кнопке палитры — тот же прибор, что ляжет на план (см.
+   EP.Plan.Render.symbolPreviewSvg). Размер как у прежнего кружка-глифа, чтобы
+   раскладка палитры не поехала. */
+.ep-plan-symprev { width: 28px; height: 28px; flex: none; display: block; overflow: visible; }
 .ep-plan-chip {
   padding: 8px 12px; border-radius: 99px; border: 1px solid rgba(255, 255, 255, .16);
   background: rgba(255, 255, 255, .05); color: var(--text, #e8eef7);
@@ -436,7 +505,7 @@ body[data-visual-mode="day"] .ep-plan-guidedraft { stroke: #3b82f6; }
 .ep-plan-tplcard:active { background: var(--accent, #38bdf8); border-color: transparent; color: #06121f; }
 .ep-plan-tplcard:active span { color: #06121f; opacity: .75; }
 .ep-plan-ph { position: relative; display: inline-block; }
-.ep-plan-ph img { width: 52px; height: 52px; object-fit: cover; border-radius: 9px; display: block; }
+.ep-plan-ph img { width: 52px; height: 52px; object-fit: cover; border-radius: 9px; display: block; cursor: zoom-in; }
 .ep-plan-ph button {
   position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%;
   border: 0; background: #f87171; color: #fff; font: 700 10px system-ui; cursor: pointer;
@@ -510,6 +579,7 @@ body[data-visual-mode="day"] .ep-plan-guidedraft { stroke: #3b82f6; }
 .ep-plan-warnring { fill: none; stroke: #fbbf24; stroke-dasharray: 4 3; }
 
 body[data-visual-mode="day"] .ep-plan-el circle { stroke: rgba(15, 23, 42, .5); }
+.ep-plan.is-paper .ep-plan-el circle { stroke: rgba(15, 23, 42, .5); }
 body[data-visual-mode="day"] .ep-plan-unfwall { fill: rgba(71, 85, 105, .06); }
 
 /* — UX-пакет: блоки постов, полный экран, материалы стен — */
@@ -529,14 +599,18 @@ body[data-visual-mode="day"] .ep-plan-unfwall { fill: rgba(71, 85, 105, .06); }
 .ep-plan-leader { stroke: #94a3b8; fill: none; pointer-events: none; }
 .ep-plan-walldot { fill: #cbd5e1; stroke: none; pointer-events: none; }
 body[data-visual-mode="day"] .ep-plan-leader { stroke: #64748b; }
+.ep-plan.is-paper .ep-plan-leader { stroke: #64748b; }
 body[data-visual-mode="day"] .ep-plan-walldot { fill: #475569; }
+.ep-plan.is-paper .ep-plan-walldot { fill: #475569; }
 
 /* материалы стен: бетон — сплошная, кирпич — терракот, панель — двойной штрих, мягкий — светлый пунктир */
 .ep-plan-wall.mat-brick { stroke: #d97706; }
 .ep-plan-wall.mat-panel { stroke: #94a3b8; stroke-dasharray: 12 4; }
 .ep-plan-wall.mat-soft { stroke: #a8b3c5; stroke-dasharray: 5 5; }
 body[data-visual-mode="day"] .ep-plan-wall.mat-brick { stroke: #b45309; }
+.ep-plan.is-paper .ep-plan-wall.mat-brick { stroke: #b45309; }
 body[data-visual-mode="day"] .ep-plan-wall.mat-soft { stroke: #94a3b8; }
+.ep-plan.is-paper .ep-plan-wall.mat-soft { stroke: #94a3b8; }
 
 /* полный экран — height:auto ОБЯЗАН сбросить явный height у базового .ep-plan (см. его
    инвариант выше): position:fixed + inset:0 (все 4 стороны) уже однозначно фиксирует
@@ -591,10 +665,15 @@ body[data-visual-mode="day"] .ep-plan-wall.mat-soft { stroke: #94a3b8; }
 .ep-plan-chain { stroke: #f87171; }
 .ep-plan-chaintext { fill: #f87171; font-family: system-ui; font-weight: 600; }
 body[data-visual-mode="day"] .ep-plan-doorarc { stroke: #64748b; }
+.ep-plan.is-paper .ep-plan-doorarc { stroke: #64748b; }
 body[data-visual-mode="day"] .ep-plan-doorleaf { stroke: #334155; }
+.ep-plan.is-paper .ep-plan-doorleaf { stroke: #334155; }
 body[data-visual-mode="day"] .ep-plan-window { stroke: #334155; }
+.ep-plan.is-paper .ep-plan-window { stroke: #334155; }
 body[data-visual-mode="day"] .ep-plan-chain { stroke: #dc2626; }
+.ep-plan.is-paper .ep-plan-chain { stroke: #dc2626; }
 body[data-visual-mode="day"] .ep-plan-chaintext { fill: #dc2626; }
+.ep-plan.is-paper .ep-plan-chaintext { fill: #dc2626; }
 .ep-plan-ledstrip { stroke: #fbbf24; stroke-linecap: round; opacity: .9; filter: drop-shadow(0 0 1.5px rgba(251,191,36,.6)); }
 
 /* — Трассы v2: распайки, линии на автоматах — */
@@ -611,6 +690,7 @@ body[data-visual-mode="day"] .ep-plan-chaintext { fill: #dc2626; }
 .ep-plan-sel { padding: 5px 7px; border-radius: 8px; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.05); color: var(--text,#e8eef7); font: 600 12px system-ui; }
 body[data-visual-mode="day"] .ep-plan-sel { background:#fff; border-color:#cbd5e1; color:#0f172a; }
 body[data-visual-mode="day"] .ep-plan-junction { fill:#0284c7; stroke:#0f172a; }
+.ep-plan.is-paper .ep-plan-junction { fill:#0284c7; stroke:#0f172a; }
 
 /* — v3: толстые стены, балки, QF, развёртка-fullscreen — */
 /* материалы стен видно по цвету: бетон — серый, кирпич — кирпичный, панель — светло-серый
@@ -629,6 +709,7 @@ body[data-visual-mode="day"] .ep-plan-junction { fill:#0284c7; stroke:#0f172a; }
 .ep-plan-wallcorner.mat-panel { fill: #8aa0bd; }
 .ep-plan-wallcorner.mat-soft { fill: #b0a07a; }
 body[data-visual-mode="day"] .ep-plan-wallband.mat-concrete, body[data-visual-mode="day"] .ep-plan-wallcorner.mat-concrete { stroke: #64748b; fill: #64748b; }
+.ep-plan.is-paper .ep-plan-wallband.mat-concrete, .ep-plan.is-paper .ep-plan-wallcorner.mat-concrete { stroke: #64748b; fill: #64748b; }
 
 .ep-plan-beamdraft { opacity: .5; }
 .ep-plan-beamhandle { fill: #38bdf8; stroke: #fff; stroke-width: 1; }
@@ -652,6 +733,7 @@ body[data-visual-mode="day"] .ep-plan-voidname { fill: #0f172a; }
 /* подпись высоты установки под маркером точки (h=NNN) */
 .ep-plan-hlabel { fill: #cbd5e1; font-family: system-ui; font-weight: 600; pointer-events: none; }
 body[data-visual-mode="day"] .ep-plan-hlabel { fill: #475569; }
+.ep-plan.is-paper .ep-plan-hlabel { fill: #475569; }
 /* пунктир: выключатель -> его свет/вывод */
 .ep-plan-swlink { stroke-dasharray: 6 5; opacity: .8; fill: none; pointer-events: none; }
 /* цепочка проходных/перекрёстных — звено к звену, сплошная (провод-связка) */
@@ -733,6 +815,7 @@ body[data-visual-mode="day"] .ep-plan-unfdimT { fill: #0369a1; }
 /* номера проёмов на плане */
 .ep-plan-opnum { fill: #e2e8f0; font-family: system-ui; font-weight: 700; paint-order: stroke; stroke: rgba(15,23,42,.7); stroke-width: 2px; }
 body[data-visual-mode="day"] .ep-plan-opnum { fill: #0f172a; stroke: rgba(255,255,255,.7); }
+.ep-plan.is-paper .ep-plan-opnum { fill: #0f172a; stroke: rgba(255,255,255,.7); }
 
 /* проёмы на развёртке стены */
 .ep-plan-unfopen { fill: rgba(56,189,248,.10); stroke: #38bdf8; }
@@ -909,13 +992,21 @@ body[data-visual-mode="day"] .ep-plan-unfover-ok { color: #15803d; }
 .ep-plan-walledge { stroke: rgba(226, 232, 240, .75); }
 .ep-plan-hatchln { stroke: rgba(15, 23, 42, .8); stroke-width: .8; }
 body[data-visual-mode="day"] .ep-plan-wallfill.mat-concrete { fill: #94a3b8; }
+.ep-plan.is-paper .ep-plan-wallfill.mat-concrete { fill: #94a3b8; }
 body[data-visual-mode="day"] .ep-plan-wallfill.mat-brick { fill: #d98e5a; }
+.ep-plan.is-paper .ep-plan-wallfill.mat-brick { fill: #d98e5a; }
 body[data-visual-mode="day"] .ep-plan-wallfill.mat-block { fill: #a9bb9a; }
+.ep-plan.is-paper .ep-plan-wallfill.mat-block { fill: #a9bb9a; }
 body[data-visual-mode="day"] .ep-plan-wallfill.mat-panel { fill: #a6b4c8; }
+.ep-plan.is-paper .ep-plan-wallfill.mat-panel { fill: #a6b4c8; }
 body[data-visual-mode="day"] .ep-plan-wallfill.mat-wood { fill: #c9a97e; }
+.ep-plan.is-paper .ep-plan-wallfill.mat-wood { fill: #c9a97e; }
 body[data-visual-mode="day"] .ep-plan-wallfill.mat-gkl, body[data-visual-mode="day"] .ep-plan-wallfill.mat-pgp, body[data-visual-mode="day"] .ep-plan-wallfill.mat-soft { fill: #c3ccd8; }
+.ep-plan.is-paper .ep-plan-wallfill.mat-gkl, .ep-plan.is-paper .ep-plan-wallfill.mat-pgp, .ep-plan.is-paper .ep-plan-wallfill.mat-soft { fill: #c3ccd8; }
 body[data-visual-mode="day"] .ep-plan-walledge { stroke: rgba(15, 23, 42, .8); }
+.ep-plan.is-paper .ep-plan-walledge { stroke: rgba(15, 23, 42, .8); }
 body[data-visual-mode="day"] .ep-plan-hatchln { stroke: rgba(15, 23, 42, .55); }
+.ep-plan.is-paper .ep-plan-hatchln { stroke: rgba(15, 23, 42, .55); }
 /* ручки выбранной комнаты: тяни угол — форма, тяни стену — сдвиг */
 .ep-plan-roomhandle { fill: #38bdf8; stroke: #fff; stroke-width: 1; opacity: .95; }
 /* ГОСТ-символы: линии цветом линии/слоя, читаемая толщина */
@@ -923,6 +1014,7 @@ body[data-visual-mode="day"] .ep-plan-hatchln { stroke: rgba(15, 23, 42, .55); }
 .ep-plan-gost text { font-family: system-ui; font-weight: 700; }
 .ep-plan-panelhalf { fill: #38bdf8; opacity: .9; }
 body[data-visual-mode="day"] .ep-plan-panelhalf { fill: #1d4ed8; }
+.ep-plan.is-paper .ep-plan-panelhalf { fill: #1d4ed8; }
 /* поле числа в развёртке + строка-подсказка в расчёте */
 .ep-plan-unfnum { width: 64px; padding: 6px 8px; border-radius: 9px; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.05); color: var(--text, #e8eef7); font: 600 13px system-ui; }
 body[data-visual-mode="day"] .ep-plan-unfnum { background: #fff; border-color: #cbd5e1; color: #0f172a; }

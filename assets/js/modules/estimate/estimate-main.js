@@ -31,6 +31,10 @@
       price: num(it.price),
       qty: num(it.qty != null ? it.qty : 1) || 1,
       base: it.base || "",
+      // «доп. работы» — то, что выявилось уже на объекте и в основной договор не входило.
+      // Печатается ОТДЕЛЬНЫМ актом (см. estimate-tabs: scope "extra"), чтобы заказчик
+      // видел, за что доплата, а не искал новые строки в старой смете.
+      extra: !!it.extra,
       source: source || it.source || "main"
     };
   }
@@ -38,6 +42,19 @@
   function getItems() { return read(); }
   function removeItem(id) { write(read().filter((x) => x.id !== id)); }
   function setQty(id, qty) { const items = read(); const it = items.find((x) => x.id === id); if (it) { it.qty = num(qty); write(items); } return it || null; }
+  // Пометить/снять «доп. работы» у ВСЕХ позиций с таким же тип+имя+единица — на экране
+  // они агрегированы в одну строку, и пользователь помечает именно её (тот же ключ
+  // агрегации, что и у удаления строки).
+  function setExtra(type, name, unit, on) {
+    const items = read();
+    const key = String(name || "").toLowerCase().trim() + "|" + (unit || "");
+    let n = 0;
+    items.forEach((x) => {
+      if (x.type === type && (String(x.name || "").toLowerCase().trim() + "|" + (x.unit || "")) === key) { x.extra = !!on; n++; }
+    });
+    if (n) write(items);
+    return n;
+  }
   function clear() { write([]); }
   function count() { return read().length; }
   function total() { return read().reduce((s, x) => s + num(x.price) * num(x.qty), 0); }
@@ -93,7 +110,7 @@
   }
 
   window.EP.Estimate = {
-    addItem, getItems, removeItem, setQty, clear, count, total, mergeItems, setSourceItems, removeSource, itemsBySource,
+    addItem, getItems, removeItem, setQty, setExtra, clear, count, total, mergeItems, setSourceItems, removeSource, itemsBySource,
     exportData, exportJSON, parseImport, importJSON
   };
 })();
