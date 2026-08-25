@@ -22,6 +22,7 @@
       ruler: "Тапни две точки — расстояние.",
       underlay: "Фото-план: загрузка, масштаб по известной длине, перенос.",
       merge: "Тапни первую комнату, потом соседнюю — объединятся в одну.",
+      note: "Тапни место — впиши заметку. Потом можно вытянуть стрелку-выноску к нужной точке.",
       movroom: "Тапни комнату и тяни — поедет целиком: точки, проёмы, щит и балки внутри. Углы липнут к углам соседних комнат.",
       mergeSecond: "Тапни соседнюю комнату (или ту же — отменить).",
       guide: "Магистраль: тапай точки приоритетного направления трасс (по коридору). Повторный тап в последнюю точку — сохранить линию."
@@ -101,11 +102,11 @@
   // запоминаются между сессиями) ----------
   // Тот же набор, что и «режимы» в верхнем тулбаре (см. T.modes) — здесь его пилотный
   // список для панели быстрого доступа (что можно закрепить/что попадает в MRU).
-  const QB_TOOLS = { view: "☝", rect: "▭", poly: "⬠", attach: "⊞", split: "✂", beam: "▬", void: "▦", furn: "🛋", merge: "🔗", movroom: "🧭", elem: "🔌", opening: "🚪", wall: "📐", ruler: "📏", underlay: "🖼", guide: "⇉" };
+  const QB_TOOLS = { view: "☝", rect: "▭", poly: "⬠", attach: "⊞", split: "✂", beam: "▬", void: "▦", furn: "🛋", merge: "🔗", movroom: "🧭", note: "📝", elem: "🔌", opening: "🚪", wall: "📐", ruler: "📏", underlay: "🖼", guide: "⇉" };
   const QB_LABELS = {
     view: "Просмотр", rect: "Прямоугольная комната", poly: "Комната по точкам",
     attach: "Пристроить к стене", split: "Разрезать комнату", beam: "Балка/перемычка",
-    void: "Вентшахта/мини-комната", merge: "Объединить комнаты", movroom: "Перенести комнату", elem: "Точки", opening: "Проёмы",
+    void: "Вентшахта/мини-комната", merge: "Объединить комнаты", movroom: "Перенести комнату", note: "Заметка", elem: "Точки", opening: "Проёмы",
     wall: "Развёртка стены", ruler: "Рулетка", underlay: "Подложка-фото",
     guide: "Магистраль трасс"
   };
@@ -229,7 +230,7 @@
   // ---------- режимы ----------
   function setMode(mode) {
     R.mode = mode;
-    R.draft = { points: [] }; R.pendingRect = null; R.pendingPoly = null; R.rectAnchor = null; R.attach = null; R.split = null;
+    R.draft = { points: [] }; R.pendingRect = null; R.pendingPoly = null; R.rectAnchor = null; R.attach = null; R.split = null; R.noteId = null;
     R.ruler = { a: null, b: null }; R.beamDraft = { a: null, b: null }; R.voidDraft = { a: null, b: null };
     R.guideDraft = { points: [] };
     R.targetPick = null; // смена режима отменяет одноразовый выбор цели клавиши
@@ -326,6 +327,19 @@
       }
       R.split.b = { x: pt.x, y: pt.y };
       splitPreview(); sheetSplit(); return;
+    }
+    // 📝 заметка: тап по существующей — редактор, тап по пустому — новая
+    if (R.mode === "note") {
+      const hit = noteAt(w);
+      if (hit) { sheetNote(hit); return; }
+      const c = core();
+      c.commit();
+      const nt = c.model.newNote(Math.round(w.x), Math.round(w.y), "");
+      p.notes.push(nt);
+      c.persist("note-add");
+      renderScene();
+      sheetNote(nt);
+      return;
     }
     // ＋ пристроить комнату: тап по стене выбирает её как базу
     if (R.mode === "attach") {
@@ -1177,6 +1191,111 @@
     });
   }
 
+  /* ---------- 📝 заметки и выноски на плане ----------
+     Монтажная записка прямо на чертеже: «здесь штробить нельзя», «согласовать».
+     На расчёт/трассировку не влияет вообще — чистая пометка для людей на объекте,
+     поэтому попадает и в PDF (её ради этого и пишут). Стрелка-выноска НЕобязательна:
+     без неё это просто подпись в точке, с ней — указывает на конкретное место. */
+  function noteAt(w) {
+    const p = G().floorScoped(core().project);
+    const k = R.canvas.cmPerPx();
+    let best = null;
+    (p.notes || []).forEach((nt) => {
+      const d = G().dist(w, { x: nt.x, y: nt.y });
+      if (d <= 26 * k && (!best || d < best.d)) best = { d, nt };
+    });
+    return best ? best.nt : null;
+  }
+  function sheetNote(nt) {
+    const has = nt.ax != null && nt.ay != null;
+    openSheet(`<div class="ep-plan-srow"><b>📝 Заметка</b></div>
+      <div class="ep-plan-srow"><textarea id="ep-pr-nt" rows="3" maxlength="400" placeholder="Например: здесь штробить нельзя — несущая"
+        data-pr-note="${esc(nt.id)}">${esc(nt.text || "")}</textarea></div>
+      <div class="ep-plan-srow ep-plan-sbtns">
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-notearrow="${esc(nt.id)}">${has ? "✕ Убрать выноску" : "➚ Выноска"}</button>
+        <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pr-notedel="${esc(nt.id)}">${T.del}</button>
+        <button type="button" class="btn btn-primary ep-clickable" data-pr-cancel>${T.close}</button>
+      </div>
+      <div class="ep-plan-modehint">${has ? "Тяни кончик стрелки — он указывает на место. Саму заметку тоже можно двигать." : "Заметку можно двигать пальцем. «Выноска» добавит стрелку к нужной точке."}</div>`);
+    R.noteId = nt.id;
+    enableNoteDrag(nt.id);
+    ensureVisibleAboveSheet({ x: nt.x, y: nt.y });
+  }
+  // Тяга: за текст — вся заметка целиком (вместе со стрелкой), за кончик стрелки —
+  // только он. Тот же veto-паттерн, что у балки/комнаты: жест НЕ на заметке
+  // возвращает false и остаётся панорамой холста.
+  function enableNoteDrag(noteId) {
+    let mode = null, base = null;
+    R.canvas.setDragHandler((phase, w, dx, dy) => {
+      const p = core().project;
+      const nt = (p.notes || []).find((x) => x.id === noteId);
+      if (!nt) return false;
+      if (phase === "start") {
+        const k = R.canvas.cmPerPx();
+        if (nt.ax != null && G().dist(w, { x: nt.ax, y: nt.ay }) <= 22 * k) mode = "tip";
+        else if (G().dist(w, { x: nt.x, y: nt.y }) <= 30 * k) mode = "all";
+        else return false;
+        base = { x: nt.x, y: nt.y, ax: nt.ax, ay: nt.ay };
+        return true;
+      }
+      if (phase === "move") {
+        if (mode === "tip") { nt.ax = base.ax + dx; nt.ay = base.ay + dy; }
+        else {
+          nt.x = base.x + dx; nt.y = base.y + dy;
+          if (base.ax != null) { nt.ax = base.ax + dx; nt.ay = base.ay + dy; }
+        }
+        renderSceneSoon();
+        return true;
+      }
+      if (phase === "end") {
+        const step = p.settings.gridStep || 10;
+        if (mode === "tip") { nt.ax = G().snap(nt.ax, step); nt.ay = G().snap(nt.ay, step); }
+        else { nt.x = G().snap(nt.x, step); nt.y = G().snap(nt.y, step); }
+        core().persist("note-move");
+        renderScene();
+      }
+      return true;
+    });
+  }
+  function noteById(id) { return ((core().project || {}).notes || []).find((x) => x.id === id) || null; }
+
+  /* ---------- длина стены ЧИСЛОМ (замерил лазером — вписал) ----------
+     Ш/Г числом были только у ПРЯМОУГОЛЬНОЙ комнаты; у контурной/объединённой/
+     разрезанной стены можно было только тянуть пальцем. Здесь список всех стен
+     комнаты с их длинами: правишь число — стена встаёт ровно в размер (математика
+     в G.setWallLength, см. её комментарий про протаскивание сдвига по контуру).
+     Точки и проёмы на стенах ПРИЖИМАЮТСЯ к новой длине (offset клампится) — иначе
+     розетка, стоявшая на 500-м сантиметре, повисла бы за краем укоротившейся стены. */
+  function wallLenHtml(room) {
+    const ws = G().walls(room);
+    if (!ws.length) return "";
+    return `<details class="ep-plan-walllens"><summary>📏 Длины стен (${ws.length})</summary>
+      <div class="ep-plan-wlgrid">${ws.map((w) => `
+        <label>№${w.n}<input type="number" inputmode="numeric" min="10" step="1" value="${Math.round(w.len)}"
+          data-pr-wlen="${esc(room.id)}" data-pr-wli="${w.i}"></label>`).join("")}</div>
+      <div class="ep-plan-modehint">Впиши длину — стена встанет в размер, соседние подстроятся. Точки на ней останутся на своих местах.</div>
+    </details>`;
+  }
+  function setWallLength(roomId, i, len) {
+    const c = core(), p = c.project;
+    const room = (p.rooms || []).find((r) => r.id === roomId);
+    if (!room) return null;
+    const next = G().setWallLength(room.points, i, len);
+    if (!next) { toast("Так стену не изменить — попробуй другую или потяни угол."); return null; }
+    c.commit();
+    room.points = next;
+    // offsets точек/проёмов не должны вылезать за укоротившиеся стены
+    const wl = {};
+    G().walls(room).forEach((w) => { wl[w.id] = w.len; });
+    (p.elements || []).forEach((el) => {
+      if (el.wallId && wl[el.wallId] != null) el.offset = Math.max(0, Math.min(el.offset || 0, wl[el.wallId]));
+    });
+    (p.openings || []).forEach((op) => {
+      if (op.wallId && wl[op.wallId] != null) op.offset = Math.max(0, Math.min(op.offset || 0, Math.max(0, wl[op.wallId] - (op.width || 0))));
+    });
+    c.persist("room-reshape"); // уже в AUTOREBUILD_ON — трассы пересчитаются сами
+    return room;
+  }
   function sheetRoom(room) {
     const p = core().project;
     const isR = G().isRect(room), d = isR ? G().rectDims(room) : null;
@@ -1193,6 +1312,7 @@
         ${(EP.Plan.Core.DEFAULTS.materials || []).map((m) => `<button type="button" class="ep-plan-chip ep-clickable ${(room.material || p.settings.wallMaterial) === m ? "on" : ""}" data-pr-mat="${esc(m)}">${esc(m)}</button>`).join("")}
       </div>
       <div class="ep-plan-srow"><label class="ep-plan-chk"><input id="ep-pr-wet" type="checkbox" ${wet ? "checked" : ""}> ${T.wet}</label></div>
+      ${wallLenHtml(room)}
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-apply="${esc(room.id)}">✓</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-unfold="${esc(room.id)}">📐 ${T.unfoldBtn}</button>
@@ -1959,6 +2079,22 @@
     if (t.closest("[data-pr-create-rect2]")) return createRectFromPoint();
     if (t.closest("[data-pr-attach-go]")) return attachGo();
     if ((el = t.closest("[data-pr-split-go]"))) return splitGo(el.getAttribute("data-pr-split-go"));
+    if ((el = t.closest("[data-pr-notedel]"))) {
+      const c = core(), id = el.getAttribute("data-pr-notedel");
+      c.commit();
+      c.project.notes = (c.project.notes || []).filter((x) => x.id !== id);
+      c.persist("note-del");
+      R.noteId = null; closeSheet(); renderScene(); return;
+    }
+    if ((el = t.closest("[data-pr-notearrow]"))) {
+      const c = core(), nt = noteById(el.getAttribute("data-pr-notearrow"));
+      if (!nt) return;
+      c.commit();
+      if (nt.ax != null) { nt.ax = null; nt.ay = null; }
+      else { nt.ax = nt.x + 90; nt.ay = nt.y + 70; }   // стрелка появляется рядом — дальше тянут пальцем
+      c.persist("note-arrow");
+      renderScene(); sheetNote(nt); return;
+    }
     if (t.closest("[data-pr-aflip]")) { if (R.attach) { attachRead(); R.attach.flip = !R.attach.flip; attachPreview(); sheetAttach(); } return; }
     if ((el = t.closest("[data-pr-rdir]"))) { R.rectDir = el.getAttribute("data-pr-rdir"); rectPreview(); sheetRectFromPoint(); return; }
     if (t.closest("[data-pr-create-poly]")) return createPoly();
@@ -2101,10 +2237,29 @@
       if (l) { c.commit(); l.visible = !!t.checked; c.persist("layer-toggle"); }
     }
   });
+  // Длина стены числом — на "change" (не "input"): setWallLength делает commit(),
+  // и на каждую набранную цифру плодить undo-снимок не нужно (тот же принцип, что у
+  // высоты этажа и полей заказчика/адреса).
+  document.addEventListener("change", (e) => {
+    if (!R.active) return;
+    const t = e.target;
+    if (!t || !t.getAttribute) return;
+    const rid = t.getAttribute("data-pr-wlen");
+    if (rid) {
+      const room = setWallLength(rid, Number(t.getAttribute("data-pr-wli")) || 0, Number(t.value) || 0);
+      renderScene();
+      if (room) sheetRoom(room); else sheetRoom((core().project.rooms || []).find((r) => r.id === rid));
+    }
+  });
   document.addEventListener("input", (e) => {
     if (!R.active) return;
     if ((e.target.id === "ep-pr-w" || e.target.id === "ep-pr-h") && R.rectAnchor) { rectPreview(); return; }
     if ((e.target.id === "ep-pr-aw" || e.target.id === "ep-pr-ah") && R.attach) { attachRead(); attachPreview(); return; }
+    if (e.target.getAttribute && e.target.getAttribute("data-pr-note")) {
+      const nt = noteById(e.target.getAttribute("data-pr-note"));
+      if (nt) { nt.text = String(e.target.value || "").slice(0, 400); renderSceneSoon(); core().persist("note-text"); }
+      return;
+    }
     if (e.target.id === "ep-pr-uplop") { const p = core().project; if (p.underlay) { p.underlay.opacity = Number(e.target.value) / 100; renderScene(); } }
     if (e.target.getAttribute && e.target.getAttribute("data-pr-beamw")) {
       const c = core(), bm = (c.project.beams || []).find((b) => b.id === e.target.getAttribute("data-pr-beamw"));
@@ -2147,6 +2302,6 @@
     // этот тонкий проброс, а сам обработчик (что двигать) остаётся в модуле мебели
     canvasSetDrag: (fn) => { if (R.canvas) R.canvas.setDragHandler(fn || null); },
     renderSceneSoon,
-    mergeRooms, splitRoom, moveRoom, syncQuickbarVisibility, armTargetPick
+    mergeRooms, splitRoom, moveRoom, setWallLength, syncQuickbarVisibility, armTargetPick
   };
 })();

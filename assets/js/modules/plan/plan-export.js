@@ -840,6 +840,11 @@
          (кабель показан самими трассами), а как polyline без fill:none давали ровно те
          чёрные пятна из репорта пользователя. */
       .ep-plan-guide, .ep-plan-guidedraft, .ep-plan-guidept { display: none; }
+      /* заметки/выноски — их ради монтажников и пишут, на листе они ОБЯЗАНЫ быть;
+         на белой бумаге тёмно-янтарным, без тёмной обводки живого плана */
+      .ep-plan-notetext { fill: #92400e; font-family: Arial, sans-serif; font-weight: 700; stroke: none; }
+      .ep-plan-noteline { stroke: #92400e; stroke-dasharray: 6 4; fill: none; }
+      .ep-plan-notetip { fill: #92400e; stroke: none; }
       /* связи выключатель→свет в печати — пунктиром и бледнее: это ЛОГИЧЕСКАЯ связь,
          а не кабель; сплошными яркими линиями (dash задан только в plan.css, которого
          у печатного <style> нет) они читались как посторонние диагонали через комнаты. */

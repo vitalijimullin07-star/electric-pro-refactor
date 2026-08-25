@@ -166,6 +166,7 @@
       ledStrips: [], // светодиодная лента: сегменты ВДОЛЬ стены (wallId+offsetA/offsetB)
       appliances: [], // мебель и бытовая техника (прямоугольники на полу, см. newAppliance)
       guides: [],   // магистрали трасс: нарисованные приоритетные направления (полилинии)
+      notes: [],    // заметки/выноски на плане: свободный текст со стрелкой (см. newNote)
       calcEdits: { hidden: [], renamed: {}, custom: [] }, // правки сметы Расчёта (plan-calc.js)
       manualScheme: newManualScheme(), // ручной конструктор однолинейки (Слой 7б)
       layers: blankLayers(),
@@ -224,6 +225,12 @@
   // Привязка к стене (как у элементов) — тривиальный рендер и на плане, и в развёртке.
   function newLedStrip(wallId, offsetA, offsetB, height, circuitId) {
     return { id: uid("ls"), wallId, offsetA: offsetA || 0, offsetB: offsetB || 0, height: height || 0, circuitId: circuitId || null, status: "planned", floorId: curFloorId() };
+  }
+  // Заметка на плане: свободный текст в точке (x,y) и НЕОБЯЗАТЕЛЬНАЯ стрелка-выноска
+  // к точке (ax,ay) — «здесь штробить нельзя», «согласовать с заказчиком». Монтажный
+  // объект, на расчёт/трассировку не влияет вообще.
+  function newNote(x, y, text) {
+    return { id: uid("nt"), x: x || 0, y: y || 0, text: text || "", ax: null, ay: null, floorId: curFloorId() };
   }
   // Проёмы: дверь / раздвижная / окно / балконный блок. Размеры настраиваемые.
   // height — высота проёма (см), sill — низ проёма от пола (окно ~90, дверь 0).
@@ -493,7 +500,8 @@
     const fid0 = p.floors[0].id;
     p.guides = p.guides || []; // магистрали трасс (старые проекты — пусто)
     p.appliances = p.appliances || []; // мебель/техника (старые проекты — пусто)
-    [p.rooms, p.panels, p.elements, p.beams, p.voids, p.ledStrips, p.openings, p.routes, p.guides, p.appliances].forEach((arr) => {
+    p.notes = p.notes || [];           // заметки/выноски (старые проекты — пусто)
+    [p.rooms, p.panels, p.elements, p.beams, p.voids, p.ledStrips, p.openings, p.routes, p.guides, p.appliances, p.notes].forEach((arr) => {
       (arr || []).forEach((x) => { if (!x.floorId || !p.floors.some((f) => f.id === x.floorId)) x.floorId = fid0; });
     });
     p.openings = p.openings || [];
@@ -642,7 +650,7 @@
     commit();
     const p = S.project;
     p.floors = p.floors.filter((f) => f.id !== id);
-    ["rooms", "panels", "elements", "beams", "voids", "ledStrips", "openings", "routes", "guides", "appliances"].forEach((key) => {
+    ["rooms", "panels", "elements", "beams", "voids", "ledStrips", "openings", "routes", "guides", "appliances", "notes"].forEach((key) => {
       p[key] = (p[key] || []).filter((x) => x.floorId !== id);
     });
     if (p.activeFloorId === id) p.activeFloorId = p.floors[0].id;
@@ -808,6 +816,6 @@
     exportJSON, exportJSONById, importJSON, cloudPullIndex,
     addFloor, renameFloor, setActiveFloor, setFloorHeight, deleteFloor,
     photoUrl, addPhoto,
-    model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening, newBeam, newVoid, newAppliance, newGuide, newManualScheme, newSchemeGroup, newSchemeLine, newLedStrip, newFloor }
+    model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening, newBeam, newVoid, newAppliance, newGuide, newNote, newManualScheme, newSchemeGroup, newSchemeLine, newLedStrip, newFloor }
   };
 })();

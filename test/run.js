@@ -4029,7 +4029,7 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/e\.qty = \(Number\(e\.qty\) \|\| 1\) - 1;/.test(plan) && /q\.items\.splice\(idx, 1\)/.test(plan), "счётчик убывает, на нуле заготовка уходит");
     ok(/S\.pool\.id \? q\.items\.findIndex/.test(plan), "заготовка ищется по id, а не только по индексу (пул мог перезалить очередь)");
     ok(/if \(e\.type === "switch"\) \{ if \(e\.keys\)/.test(plan), "клавишность/вид выключателя переносятся из пула");
-    ok(/S\.pool = null; S\.selType = /.test(plan), "выбор обычного типа снимает вооружение заготовки");
+    ok(/S\.pool = null;[^\n]*S\.selType = /.test(plan), "выбор обычного типа снимает вооружение заготовки");
   });
   test("пул: сборщик сметы читает АКТИВНЫЙ модуль пула (алиас не потерян)", () => {
     // poolItems() в collector-bridge.js обращается к window.PoolV22CleanMonolith — это АЛИАС,
@@ -4624,6 +4624,140 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/R\.attach = null; R\.split = null;/.test(rms), "смена режима сбрасывает незаконченную пристройку/разрез");
     ok(/data-pr-create-rect2/.test(rms), "прямоугольник по размерам ПОСЛЕ первого тапа");
     ok(/data-pr-rdir/.test(rms), "выбор направления от точки-якоря");
+  });
+
+// ===== 40. Взято у ArcSite: превью символов, бумага, свои блоки, заметки, метки на фото =====
+  test("палитра: превью рисует ТОТ ЖЕ прибор, что ляжет на план", () => {
+    const R = EP.Plan.Render;
+    ok(typeof R.symbolPreviewSvg === "function", "symbolPreviewSvg экспортирован");
+    const sock = R.symbolPreviewSvg("socket", { glyph: "Р", color: "#f87171" });
+    ok(/^<svg /.test(sock) && /ep-plan-symprev/.test(sock), "возвращается СТРОКА <svg> (палитра собирается из HTML)");
+    eq((sock.match(/<circle[^>]*r="5\.5"/g) || []).length, 2, "у розетки два гнезда Ø11 — как в deviceFace");
+    ok(sock.indexOf("#f87171") >= 0, "рамка красится цветом слоя/линии");
+    // качельки красятся стилем key (#f1f5f9) — считаем их напрямую
+    eq((R.symbolPreviewSvg("switch", { glyph: "В", color: "#facc15", keys: 3 }).match(/fill="#f1f5f9"/g) || []).length, 3, "у 3-клавишного три качельки");
+    eq((R.symbolPreviewSvg("switch", { glyph: "В", color: "#facc15", keys: 1 }).match(/fill="#f1f5f9"/g) || []).length, 1, "у одноклавишного одна");
+    const light = R.symbolPreviewSvg("light", { glyph: "С", color: "#facc15", free: true });
+    ok(/<circle[^>]*r="34"/.test(light) && light.indexOf(">С<") >= 0, "свободная потолочная точка — кружок с буквой");
+    const ac = R.symbolPreviewSvg("ac", { glyph: "КД", color: "#22d3ee" });
+    ok(ac.indexOf(">КД<") >= 0, "у прибора без «лица» остаётся буква в рамке");
+    ok(R.symbolPreviewSvg("socket", { glyph: "<b>&", color: "#fff" }).indexOf("<b>") < 0, "глиф экранируется");
+    const fs = require("fs"), path = require("path");
+    const src = fs.readFileSync(path.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-elements.js"), "utf8");
+    ok(/\$\{symPreview\(k\)\}/.test(src), "палитра типов рисует превью, а не букву-глиф");
+    ok(/symbolPreviewSvg\) return `<i class="ep-plan-glyph"/.test(src), "фолбэк на прежнюю букву, если рендер недоступен");
+  });
+  test("бумажный режим холста: класс, память устройства, переиспользование дневных правил", () => {
+    const fs = require("fs"), path = require("path");
+    const mnt = fs.readFileSync(path.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-mount.js"), "utf8");
+    ok(/data-plan-paper/.test(mnt), "кнопка режима в шапке");
+    ok(/ep_plan_paper_v1/.test(mnt), "выбор — свойство устройства (localStorage), не проекта");
+    ok(/box\.classList\.toggle\("is-paper"/.test(mnt), "режим — класс на .ep-plan, чистый CSS");
+    ok(/applyPaper\(root\)/.test(mnt), "режим восстанавливается при открытии проекта");
+    const css = fs.readFileSync(path.join(__dirname, "..", "assets", "css", "plan.css"), "utf8");
+    ok(/\.ep-plan\.is-paper \.ep-plan-canvas \{ background: #fff/.test(css), "холст белый");
+    ok((css.match(/\.ep-plan\.is-paper /g) || []).length > 20, "правила сцены продублированы с дневных (новых цветов не заводили)");
+  });
+  test("длина стены числом: прямоугольник остаётся прямоугольником", () => {
+    const r = G.rectPoints(0, 0, 600, 400);
+    const box = (pts) => [Math.max.apply(null, pts.map((q) => q.x)) - Math.min.apply(null, pts.map((q) => q.x)),
+      Math.max.apply(null, pts.map((q) => q.y)) - Math.min.apply(null, pts.map((q) => q.y))];
+    const a = G.setWallLength(r, 0, 500);
+    ok(a, "правка принята");
+    eq(box(a)[0], 500, "ширина стала ровно 500");
+    eq(box(a)[1], 400, "глубина не изменилась (не трапеция!)");
+    eq(box(G.setWallLength(r, 1, 250))[1], 250, "вертикальная стена меняет глубину");
+    eq(G.setWallLength(r, 0, 0), null, "нулевая длина — отказ");
+    eq(G.setWallLength([{ x: 0, y: 0 }], 0, 100), null, "вырожденный контур — отказ");
+    eq(G.setWallLength(r, 0, 1), null, "комната схлопнулась бы — отказ, ничего не мутируем");
+    eq(r[1].x, 600, "исходные точки НЕ мутированы (вернули новый массив)");
+  });
+  test("длина стены числом: Г-образная комната и точки на укоротившейся стене", () => {
+    const L = [{ x: 0, y: 0 }, { x: 600, y: 0 }, { x: 600, y: 300 }, { x: 300, y: 300 }, { x: 300, y: 500 }, { x: 0, y: 500 }];
+    const o = G.setWallLength(L, 0, 500);
+    ok(o, "Г-образная правится");
+    eq(o[1].x, 500, "конец стены встал в размер");
+    eq(o[2].x, 500, "сдвиг протащился на перпендикулярную стену — форма не сломалась");
+    eq(o[3].x, 300, "на параллельной стене протаскивание остановилось");
+    const p = EP.Plan.Core.createProject("wlen");
+    const room = M.newRoom(G.rectPoints(0, 0, 600, 400), "К");
+    p.rooms.push(room);
+    const el = M.newElement("socket", room.id + ":0", 580, 30, "power"); // почти у дальнего края
+    p.elements.push(el);
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    EP.Plan.Rooms.setWallLength(room.id, 0, 400);
+    eq(el.offset, 400, "offset прижался к новой длине — розетка не повисла за краем стены");
+  });
+  test("заметки на плане: модель, бэкофилл, этажи, печать", () => {
+    const p = EP.Plan.Core.createProject("notes");
+    ok(Array.isArray(p.notes), "у нового проекта есть массив заметок");
+    const nt = M.newNote(100, 200, "Здесь штробить нельзя");
+    eq(nt.ax, null, "выноска необязательна — по умолчанию её нет");
+    ok(nt.floorId, "заметка привязана к этажу, как остальная геометрия");
+    p.notes.push(nt);
+    const f2 = EP.Plan.Core.addFloor("2 этаж");
+    EP.Plan.Core.setActiveFloor(f2.id);
+    eq((G.floorScoped(p).notes || []).length, 0, "на другом этаже чужой заметки не видно");
+    EP.Plan.Core.setActiveFloor(p.floors[0].id);
+    eq((G.floorScoped(p).notes || []).length, 1, "на своём — видно");
+    const old = EP.Plan.Core.importJSON(JSON.stringify({ name: "старый", rooms: [], elements: [] }));
+    ok(Array.isArray(old.notes), "старый проект без notes бэкофиллится");
+    const fs = require("fs"), path = require("path");
+    const core = fs.readFileSync(path.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-core.js"), "utf8");
+    ok(/"guides", "appliances", "notes"/.test(core), "удаление этажа уносит его заметки каскадом");
+    const exp = fs.readFileSync(path.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-export.js"), "utf8");
+    ok(/\.ep-plan-notetext \{ fill: #92400e/.test(exp), "заметка печатается на листе (у печати свой <style>)");
+  });
+  test("заметки: рендер, тяга и правка текста без мусора в undo", () => {
+    const fs = require("fs"), path = require("path");
+    const rms = fs.readFileSync(path.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-rooms.js"), "utf8");
+    ok(/note: "📝"/.test(rms), "инструмент есть в квикбаре");
+    ok(/R\.mode === "note"/.test(rms), "режим обрабатывает тап по холсту");
+    ok(/function enableNoteDrag/.test(rms) && /mode = "tip"/.test(rms), "тянется и заметка целиком, и кончик выноски");
+    ok(/nt\.text = String\(e\.target\.value[^\n]*\n\s*return;/.test(rms) || /data-pr-note"\)\) \{[\s\S]{0,220}persist\("note-text"\)/.test(rms),
+      "текст пишется на input БЕЗ commit() — не плодим undo на каждую букву");
+    const rnd = fs.readFileSync(path.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-render.js"), "utf8");
+    ok(/\(project\.notes \|\| \[\]\)\.forEach/.test(rnd), "заметки рисуются");
+    ok(rnd.indexOf("ep-plan-notetext") > rnd.indexOf("ep-plan-route"), "поверх трасс и точек — записку должно быть видно");
+  });
+  test("свои блоки: библиотека мастера, а не проекта", () => {
+    const fs = require("fs"), path = require("path");
+    const src = fs.readFileSync(path.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-elements.js"), "utf8");
+    ok(/ep_plan_myblocks_v1/.test(src), "библиотека живёт на устройстве — переезжает из проекта в проект");
+    ok(/data-pe-mybsave/.test(src) && /data-pe-myb=/.test(src) && /data-pe-mybdel/.test(src), "сохранить / поставить / убрать");
+    ok(/if \(S\.myb\) return placeFromMyBlock\(w\)/.test(src), "вооружённый блок перехватывает тап по плану");
+    ok(/const same = a\.find/.test(src), "такой же состав не дублируется в библиотеке");
+    ok(/if \(!hit\) \{ rooms\(\)\.toast\(T\.tapWall\); return; \}/.test(src), "блок постов ставится только на стену");
+    ok(/S\.myb = \{ id: b\.getAttribute\("data-pe-myb"\) \}; S\.pool = null;/.test(src), "выбор своего блока снимает заготовку пула");
+  });
+  test("метки на фото: нормализованные координаты и ключ по id фото", () => {
+    const fs = require("fs"), path = require("path");
+    const src = fs.readFileSync(path.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-elements.js"), "utf8");
+    // проверяем ПОВЕДЕНИЕ, а не текст: первая версия сверяла префикс "ph_", которого
+    // у id вообще нет (uid("ph") без подчёркивания) — тест «проходил» на сломанном коде
+    const body = src.slice(src.indexOf("const photoKey = (el, i) => {"));
+    const key = new Function(body.slice(0, body.indexOf("\n  };") + 5) + " return photoKey;")();
+    eq(key({ photos: ["phmt8brtllancz3"] }, 0), "phmt8brtllancz3", "ключ метки — id фото");
+    eq(key({ photos: ["data:image/jpeg;base64,AAA"] }, 0), "#0", "легаси-строка data: — ключом индекс");
+    eq(key({ photos: [] }, 0), "#0", "фото нет — индекс, без исключения");
+    ok(/\(ev\.clientX - r\.left\) \/ \(r\.width \|\| 1\)/.test(src), "координаты нормализуются по реальному боксу картинки");
+    ok(/Math\.hypot\(to\.x - f\.x, to\.y - f\.y\) < 0\.04/.test(src), "короткий тап не создаёт стрелку");
+    ok(/persist\("photo-mark"\)/.test(src) && /c\.commit\(\);/.test(src), "метка — обычная undo-запись проекта");
+    ok(/data-pe-phopen/.test(src) && /data-pe-phmdel/.test(src), "открыть фото и убрать метку");
+    const css = fs.readFileSync(path.join(__dirname, "..", "assets", "css", "plan.css"), "utf8");
+    ok(/\.ep-plan-phwrap \{[^}]*touch-action: none/.test(css), "жест рисования не перехватывается прокруткой");
+  });
+  test("доп. работы: отдельный акт, основная смета не меняется", () => {
+    const fs = require("fs"), path = require("path");
+    const main = fs.readFileSync(path.join(__dirname, "..", "assets", "js", "modules", "estimate", "estimate-main.js"), "utf8");
+    ok(/extra: !!it\.extra/.test(main), "флаг «доп.» в модели позиции");
+    ok(/function setExtra\(type, name, unit, on\)/.test(main), "пометка по ключу тип+имя+единица (как строка на экране)");
+    ok(/setQty, setExtra, clear/.test(main), "setExtra экспортирован");
+    const tabs = fs.readFileSync(path.join(__dirname, "..", "assets", "js", "modules", "estimate", "estimate-tabs.js"), "utf8");
+    ok(/\["extra", "Доп\. работы"\]/.test(tabs), "чип выбора в блоке печати");
+    ok(/heading: "Дополнительные работы"/.test(tabs), "печатается своим заголовком");
+    ok(/works\.filter\(\(x\) => x\.extra\), em = mats\.filter\(\(x\) => x\.extra\)/.test(tabs), "в акт идут ТОЛЬКО помеченные");
+    ok(/if \(x\.extra\) e\.extra = true;/.test(tabs), "флаг переживает агрегацию одинаковых позиций");
   });
 
   console.log("\n" + "=".repeat(48));

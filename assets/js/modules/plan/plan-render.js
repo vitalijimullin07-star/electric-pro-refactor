@@ -1004,6 +1004,26 @@
       g.appendChild(grp);
     });
 
+    // ---------- заметки/выноски ----------
+    // Монтажная записка на плане: «здесь штробить нельзя», «согласовать с заказчиком».
+    // Рисуется ПОСЛЕ точек и трасс (поверх всего) — её должно быть видно всегда;
+    // за слоем «Подписи» намеренно НЕ гейтится: заметку пишут именно чтобы её увидели.
+    // Многострочный текст — <tspan> по строкам (перенос по \n, как ввёл пользователь).
+    (project.notes || []).forEach((nt) => {
+      const txt = String(nt.text || "").trim();
+      if (!txt) return;
+      const grp = el("g", { class: "ep-plan-note", "data-nt": nt.id });
+      if (nt.ax != null && nt.ay != null) {
+        grp.appendChild(el("line", { x1: nt.x, y1: nt.y, x2: nt.ax, y2: nt.ay, class: "ep-plan-noteline", "stroke-width": sw * 0.8 }));
+        grp.appendChild(el("circle", { cx: nt.ax, cy: nt.ay, r: 3 * k, class: "ep-plan-notetip" }));
+      }
+      const lines = txt.split("\n").slice(0, 6);
+      const t = el("text", { x: nt.x, y: nt.y, "font-size": 9 * k, class: "ep-plan-notetext" });
+      lines.forEach((ln, i) => t.appendChild(el("tspan", { x: nt.x, dy: i ? 11 * k : 0 }, ln)));
+      grp.appendChild(t);
+      g.appendChild(grp);
+    });
+
     // рулетка
     const r = ui && ui.ruler;
     if (r && r.a) {
@@ -1041,10 +1061,54 @@
     if (hg && hg.parentNode) hg.parentNode.removeChild(hg);
   }
 
+  // ---------- превью символа для палитры (СТРОКА, не DOM) ----------
+  // Палитра 🔌 показывала букву-глиф («Р», «ВК»), а на план ложился совсем другой
+  // символ — по нему и приходилось узнавать прибор. Здесь тот же ЕДИНЫЙ источник
+  // геометрии (deviceFace + FACE_STYLE + FRAME_MM), что у плана/развёртки/PDF,
+  // просто отрисованный в самостоятельный <svg> строкой: палитру собирает
+  // plan-elements.js из HTML-строк, DOM-узлы туда не отдать.
+  // ОГРАНИЧЕНИЕ (осознанное): превью рисует прибор «в лицо» (как в «Дизайне»/«1:1»),
+  // а не в текущем settings.symbolStyle — ГОСТ-значок это вид СВЕРХУ, в кнопке 44×44
+  // он читается хуже буквы. Узнаваемость типа прибора важнее совпадения со стилем.
+  const escS = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  function facePrims(prim) {
+    let out = "";
+    (prim || []).forEach((o) => {
+      const st = FACE_STYLE[o.cls] || {};
+      const at = `fill="${st.fill || "none"}" stroke="${st.stroke || "none"}" stroke-width="${st.sw || 0}"`;
+      if (o.t === "rect") out += `<rect x="${o.x}" y="${o.y}" width="${o.w}" height="${o.h}" rx="${o.rx || 0}" ${at}/>`;
+      else if (o.t === "circle") out += `<circle cx="${o.cx}" cy="${o.cy}" r="${o.r}" ${at}/>`;
+      else if (o.t === "line") out += `<line x1="${o.x1}" y1="${o.y1}" x2="${o.x2}" y2="${o.y2}" fill="none" stroke="${st.stroke || "none"}" stroke-width="${st.sw || 0}"/>`;
+      else if (o.t === "path") out += `<path d="${o.d}" ${at}/>`;
+      else if (o.t === "text") out += `<text x="${o.x || 0}" y="${o.y || 0}" font-size="${o.s || 12}" text-anchor="middle" dominant-baseline="central" fill="#0f172a">${escS(o.txt)}</text>`;
+    });
+    return out;
+  }
+  // opts: { glyph, free, color, keys } — free-типы (свет/трек/ТП/распайка) на плане
+  // рисуются кружком с буквой, у них «лица» нет и рамки поста тоже.
+  function symbolPreviewSvg(type, opts) {
+    const o = opts || {}, col = o.color || "#94a3b8";
+    const prim = deviceFace(type, o.keys) || [];
+    const hasFace = prim.some((x) => x.cls !== "post");
+    let body;
+    if (o.free) {
+      body = `<circle cx="0" cy="0" r="34" fill="${col}" fill-opacity=".22" stroke="${col}" stroke-width="4"/>`
+        + `<text x="0" y="2" font-size="34" text-anchor="middle" dominant-baseline="central" fill="${col}">${escS(o.glyph || "")}</text>`;
+    } else {
+      // рамка прибора реальных пропорций (FRAME_H_MM), красится как на плане — по линии/слою
+      const w = FRAME_H_MM;
+      body = `<rect x="${-w / 2}" y="${-w / 2}" width="${w}" height="${w}" rx="6" fill="${col}" fill-opacity=".16" stroke="${col}" stroke-width="4"/>`
+        + (hasFace ? facePrims(prim)
+          : `<text x="0" y="2" font-size="30" text-anchor="middle" dominant-baseline="central" fill="${col}">${escS(o.glyph || "")}</text>`);
+    }
+    return `<svg class="ep-plan-symprev" viewBox="-50 -50 100 100" aria-hidden="true">${body}</svg>`;
+  }
+
   EP.Plan = EP.Plan || {};
   EP.Plan.Render = {
     draw, drawScaled, CFG, hoverPreview, clearHoverPreview,
     // реальные габариты и «лица» приборов — общие для плана, развёртки и PDF
-    FRAME_MM, FRAME_H_MM, POST_MM, frameWmm, frameWcm, frameHcm, deviceFace, FACE_STYLE, CM_PER_PX_1TO1
+    FRAME_MM, FRAME_H_MM, POST_MM, frameWmm, frameWcm, frameHcm, deviceFace, FACE_STYLE, CM_PER_PX_1TO1,
+    symbolPreviewSvg
   };
 })();

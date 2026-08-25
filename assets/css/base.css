@@ -642,7 +642,7 @@ body[data-visual-mode="night"] .main-dashboard .card p:not(.badge){color:#cbd5e1
 .ep-sup-sub{font-size:calc(12px * var(--eff-text-scale,1));color:var(--muted)}
 .ep-sup-sub b{color:var(--text)}
 .ep-sup-list{display:flex;flex-direction:column;gap:6px}
-.ep-sup-row{display:grid;grid-template-columns:1fr auto auto auto auto;gap:8px;align-items:center;padding:8px 10px;border-radius:10px;background:rgba(127,140,170,.10);border:1px solid rgba(127,140,170,.18)}
+.ep-sup-row{display:grid;grid-template-columns:1fr auto auto auto auto auto;gap:8px;align-items:center;padding:8px 10px;border-radius:10px;background:rgba(127,140,170,.10);border:1px solid rgba(127,140,170,.18)}
 .ep-sup-n{font-size:calc(13px * var(--eff-text-scale,1));color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis}
 .ep-sup-q{font-size:calc(12px * var(--eff-text-scale,1));color:var(--muted);white-space:nowrap}
 .ep-sup-p{font-size:calc(12px * var(--eff-text-scale,1));color:var(--muted);white-space:nowrap;text-align:right}
@@ -1141,7 +1141,7 @@ body[data-noanim="1"] *::after{animation-duration:.001s!important;transition-dur
 .ep-rep-row span:last-child{color:var(--muted,#cbd5e1);white-space:nowrap}
 
 /* Поставщику без цен — позиция + количество */
-.ep-sup-row.supply{grid-template-columns:1fr auto auto}
+.ep-sup-row.supply{grid-template-columns:1fr auto auto auto}
 .ep-sup-row.supply .ep-sup-q{font-size:calc(13px * var(--eff-text-scale,1));font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
 
 /* ── Блокировка доступа (тест/подписка истекли) ── */
@@ -1601,6 +1601,13 @@ body[data-noblur="1"] .ep-fb-card{backdrop-filter:none!important;-webkit-backdro
 .ep-sup-del { flex: none; width: 26px; height: 26px; border: 0; border-radius: 8px;
   background: transparent; color: var(--muted); font-size: 14px; cursor: pointer; opacity: .7; }
 .ep-sup-del:hover, .ep-sup-del:active { background: rgba(239,68,68,.16); color: var(--danger, #ef4444); opacity: 1; }
+
+/* чип «доп.» — позиция уедет в отдельный акт дополнительных работ */
+.ep-sup-ext { flex: none; border: 1px solid rgba(148,163,184,.32); border-radius: 8px;
+  padding: 3px 6px; background: transparent; color: var(--muted); font: 700 10.5px system-ui;
+  cursor: pointer; opacity: .8; white-space: nowrap; }
+.ep-sup-ext.on { background: rgba(251,191,36,.18); border-color: rgba(251,191,36,.55);
+  color: #f59e0b; opacity: 1; }
 
 /* автоподстановка цен из базы (блок предварительной сметы) */
 .ep-est-auto { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;

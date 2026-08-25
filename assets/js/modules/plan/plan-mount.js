@@ -49,11 +49,6 @@
   const readGroup = () => { try { const g = localStorage.getItem(GROUP_KEY); return g === "elec" ? "elec" : "build"; } catch (e) { return "build"; } };
   const V = { active: false, canvas: null, unsub: null, saveNote: "", ctrlsOn: true, group: readGroup() };
   const core = () => EP.Plan && EP.Plan.Core;
-  // Шаблоны квартир (plan-templates.js) — временно скрыты для всех, кроме админа
-  // (репорт пользователя: «шаблоны кривые» — раскладки требуют доработки перед
-  // публичным показом). Проверка ЗДЕСЬ (видимость кнопки) — основная; вторая,
-  // защитная — в самом plan-templates.js (клик-делегат), на случай устаревшего
-  // кэша JS у обычного пользователя.
 
   // общая шапка «← Plan» (nav-header.js) в редакторе проекта дублирует «‹ Проекты» — прячем
   function setNavHidden(hide) {
@@ -119,6 +114,7 @@
         </div>
         <button type="button" class="ep-plan-mini ep-clickable" data-plan-full aria-label="Во весь экран">⤢</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-fb-open aria-label="Замечания и баги (чат)" title="Записать замечание/баг — потом скопировать и отправить">💬</button>
+        <button type="button" class="ep-plan-mini ep-clickable${paperOn() ? " on" : ""}" data-plan-paper aria-label="Бумажный режим холста" title="Холст как печатный лист: белый фон, тёмные линии — видно, как выйдет из принтера">📄</button>
         <button type="button" class="ep-plan-mini ep-clickable${p.settings.realScale ? " on" : ""}" data-plan-realscale aria-label="Значки в реальном размере (1:1)" title="Значки в реальном размере, мм — рамки 84/155/226/300/368 мм (1:1)">1:1</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-plan-ctrls aria-label="${V.ctrlsOn ? "Свернуть панель" : "Развернуть панель"}" title="Свернуть/развернуть панель инструментов">${V.ctrlsOn ? "︿" : "﹀"}</button>
       </div>
@@ -149,6 +145,7 @@
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="poly" aria-label="Комната по точкам">⬠</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="attach" aria-label="Пристроить комнату к стене" title="Тапни стену — комната встанет вплотную, общая стена получится сама">⊞</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="split" aria-label="Разрезать комнату перегородкой" title="Два тапа поперёк комнаты — получатся две комнаты с общей стеной">✂</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build elec" data-plan-mode="note" aria-label="Заметка на плане" title="Записка прямо на чертеже: «здесь штробить нельзя», «согласовать» — попадёт и в PDF">📝</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="opening" aria-label="Проёмы: двери, окна, балкон">🚪</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="beam" aria-label="Балка/перемычка на потолке">▬</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="void" aria-label="Вентшахта / мини-комната внутри комнаты">▦</button>
@@ -179,6 +176,7 @@
     mountCanvas();
     refreshToolbar();
     applyToolGroup(root); // вкладка «Планировка»/«Электрика» — сразу после вставки разметки
+    applyPaper(root);     // бумажный режим холста — выбор устройства, переживает переоткрытие
     armBack(); // ставим «ловушку» для аппаратной кнопки Назад
     setNavHidden(true); // редактор уже имеет свою «‹ Проекты» — общая шапка не нужна
   }
@@ -300,6 +298,30 @@
   // (пользователь мог сам его подобрать). Точность 1:1 — на уровне соглашения CSS
   // (96 px = 1 дюйм): у части устройств физический размер может отличаться на несколько
   // процентов, поэтому в тосте это честно оговорено.
+  // «📄» — бумажный режим ХОЛСТА: белый лист и тёмные линии независимо от темы
+  // приложения, чтобы на экране было видно то же, что выйдет из принтера. Реализован
+  // ЧИСТЫМ CSS (.ep-plan.is-paper в plan.css переиспользует ровно дневные правила
+  // сцены — новых цветов не заводим, разъехаться им негде). Это настройка ВИДА, а не
+  // проекта: живёт в localStorage устройства (как quickbar/вкладка инструментов), в
+  // модель и undo-историю не попадает и на печать никак не влияет — PDF и так всегда
+  // печатается на белом со своим самодостаточным <style>.
+  const PAPER_KEY = "ep_plan_paper_v1";
+  const paperOn = () => { try { return localStorage.getItem(PAPER_KEY) === "1"; } catch (e) { return false; } };
+  function togglePaper(root) {
+    const on = !paperOn();
+    try { localStorage.setItem(PAPER_KEY, on ? "1" : "0"); } catch (e) {}
+    applyPaper(root);
+    if (EP.Plan.Rooms && EP.Plan.Rooms.toast) {
+      EP.Plan.Rooms.toast(on ? "Бумажный режим: холст как печатный лист." : "Холст снова по теме приложения.");
+    }
+  }
+  function applyPaper(root) {
+    const r = root || document;
+    const box = r.querySelector(".ep-plan");
+    if (box) box.classList.toggle("is-paper", paperOn());
+    const btn = r.querySelector("[data-plan-paper]");
+    if (btn) btn.classList.toggle("on", paperOn());
+  }
   function toggleRealScale(root) {
     const c = core(), p = c.project; if (!p) return;
     const on = !p.settings.realScale;
@@ -544,6 +566,7 @@
     if ((el = t.closest("[data-plan-del]"))) return doDelete(r, el.getAttribute("data-plan-del"));
     if (t.closest("[data-plan-back]")) { core().closeProject(); return renderList(r); }
     if (t.closest("[data-plan-ctrls]")) return toggleTopCtrls(r);
+    if (t.closest("[data-plan-paper]")) return togglePaper(r);
     if (t.closest("[data-plan-realscale]")) return toggleRealScale(r);
     if (t.closest("[data-plan-rename]")) return doRename();
     if (t.closest("[data-plan-meta]")) return doMeta();

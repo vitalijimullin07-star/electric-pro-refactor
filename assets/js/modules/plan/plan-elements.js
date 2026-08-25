@@ -93,7 +93,7 @@
   const G = () => EP.Plan.Geometry;
   const rooms = () => EP.Plan.Rooms;
 
-  const S = { selType: "socket", selId: null, openType: "door", pool: null };
+  const S = { selType: "socket", selId: null, openType: "door", pool: null, myb: null, photo: null };
   // ---- ОЧЕРЕДЬ ЗАГОТОВОК ИЗ ПУЛА (Пул розеток → «Проект квартиры») ----
   // Просьба пользователя: «когда пулы собираю, оттуда улетало в проект квартиры, чтобы их
   // расставить на плане». Пул геометрии не знает, поэтому передаёт СПИСОК заготовок
@@ -129,10 +129,22 @@
         <span>${T.progress}: <b>${done}/${total}</b> · ${pct}%</span></div>
       <div class="ep-plan-modehint">${esc(T.paletteHint)}</div>
       ${poolSectionHtml()}
+      ${myBlocksHtml()}
       <div class="ep-plan-palette">${PALETTE_TYPES.map((k) => `
         <button type="button" class="ep-plan-pbtn ep-clickable ${!S.pool && S.selType === k ? "on" : ""}" data-pe-type="${k}">
-          <i class="ep-plan-glyph" data-glyph="${esc(TYPES[k].glyph)}">${esc(TYPES[k].glyph)}</i>${esc(TYPES[k].name)}</button>`).join("")}
+          ${symPreview(k)}${esc(TYPES[k].name)}</button>`).join("")}
       </div>`, { keepCollapsed: !!keep });
+  }
+  // Превью символа в кнопке палитры: рисуем ТОТ ЖЕ прибор, что ляжет на план
+  // (EP.Plan.Render.symbolPreviewSvg — общий источник геометрии с планом/развёрткой/PDF),
+  // а не букву-глиф, по которой тип узнаётся только на память. Цвет — по слою типа,
+  // как красится точка без назначенной линии QF. Фолбэк на прежнюю букву, если рендер
+  // почему-то недоступен (порядок загрузки модулей/старый кэш).
+  function symPreview(k, keys) {
+    const t = TYPES[k] || {}, R = EP.Plan.Render;
+    if (!R || !R.symbolPreviewSvg) return `<i class="ep-plan-glyph" data-glyph="${esc(t.glyph)}">${esc(t.glyph)}</i>`;
+    const p = core().project, ly = (p && p.layers || []).find((l) => l.id === t.layer);
+    return R.symbolPreviewSvg(k, { glyph: t.glyph, free: !!t.free, color: (ly && ly.color) || "#94a3b8", keys: keys || 1 });
   }
   // раздел «Из пула» в палитре: заготовки, пришедшие из «Пула розеток» (кнопка 📐 там)
   function poolSectionHtml() {
@@ -144,7 +156,7 @@
       <div class="ep-plan-srow ep-plan-hintrow">${T.poolHint}</div>
       <div class="ep-plan-palette">${q.items.map((e, i) => `
         <button type="button" class="ep-plan-pbtn ep-clickable ${S.pool && S.pool.i === i ? "on" : ""}" data-pe-pool="${i}">
-          <i class="ep-plan-glyph">${esc((TYPES[e.type] || {}).glyph || "?")}</i>${esc(e.label || (TYPES[e.type] || {}).name || e.type)} <b>×${Number(e.qty) || 0}</b></button>`).join("")}
+          ${symPreview(e.type, e.keys)}${esc(e.label || (TYPES[e.type] || {}).name || e.type)} <b>×${Number(e.qty) || 0}</b></button>`).join("")}
       </div>`;
   }
   // ----- Проёмы (отдельный инструмент) -----
@@ -234,6 +246,7 @@
   function placeAt(w) {
     const c = core(), p = c.project;
     if (S.pool) return placeFromPool(w);
+    if (S.myb) return placeFromMyBlock(w);
     const t = TYPES[S.selType];
     const k = rooms().canvasCmPerPx();
     if (t.panel) {
@@ -324,6 +337,71 @@
     if (e.qty <= 0) { q.items.splice(idx, 1); S.pool = null; }
     poolQueueSave(q);
     if (!q.items.length) rooms().toast(T.poolDone);
+    sheetPalette(true);
+  }
+
+  /* ---------- «Мои блоки»: своя библиотека сборок постов ----------
+     Электрик собирает один и тот же блок десятки раз (розетка+розетка+интернет у
+     изголовья, розетка+выключатель у входа). Сохранённая сборка ставится ОДНИМ тапом.
+     Библиотека — свойство МАСТЕРА, а не проекта: живёт в localStorage устройства
+     (как quickbar/вкладка инструментов), поэтому переезжает из проекта в проект.
+     Храним только состав/ориентацию/высоту — линия QF и место назначаются на плане,
+     они у каждого блока свои. */
+  const MYB_KEY = "ep_plan_myblocks_v1";
+  const MYB_MAX = 24;
+  function myBlocks() {
+    try {
+      const a = JSON.parse(localStorage.getItem(MYB_KEY) || "null");
+      return Array.isArray(a) ? a : [];
+    } catch (e) { return []; }
+  }
+  function myBlocksSave(a) {
+    try {
+      if (!a || !a.length) localStorage.removeItem(MYB_KEY);
+      else localStorage.setItem(MYB_KEY, JSON.stringify(a.slice(0, MYB_MAX)));
+    } catch (e) {}
+  }
+  const myBlockName = (items) => (items || []).map((k) => (TYPES[k] || {}).glyph || "?").join("+");
+  function saveMyBlock(el) {
+    const items = ((el.params && el.params.items) || []).slice();
+    if (!items.length) { rooms().toast("В блоке нет постов."); return; }
+    const a = myBlocks();
+    const rec = { id: "mb_" + Date.now().toString(36), name: myBlockName(items), items, blockVert: !!el.blockVert, height: el.height };
+    // такой же состав уже сохранён — не плодим дубли
+    const same = a.find((x) => x && (x.items || []).join(",") === items.join(",") && !!x.blockVert === !!rec.blockVert);
+    if (same) { rooms().toast("Такой блок уже в библиотеке: " + same.name); return; }
+    a.unshift(rec);
+    myBlocksSave(a);
+    rooms().toast("Блок «" + rec.name + "» сохранён — он в палитре 🔌, раздел «Мои блоки».");
+    openEditor(el);
+  }
+  function myBlocksHtml() {
+    const a = myBlocks();
+    if (!a.length) return "";
+    return `<div class="ep-plan-srow"><b>🧱 Мои блоки</b><span class="ep-plan-flex"></span>
+        <span class="ep-plan-qfmeta">тап — поставить</span></div>
+      <div class="ep-plan-palette">${a.map((b, i) => `
+        <button type="button" class="ep-plan-pbtn ep-clickable ${S.myb && S.myb.id === b.id ? "on" : ""}" data-pe-myb="${esc(b.id)}">
+          ${symPreview("block")}${esc(b.name)}${b.blockVert ? " ⟂" : ""}
+          <b class="ep-plan-mybdel" data-pe-mybdel="${esc(b.id)}" role="button" aria-label="Убрать из библиотеки">✕</b></button>`).join("")}
+      </div>`;
+  }
+  function placeFromMyBlock(w) {
+    const c = core(), p = c.project;
+    const b = myBlocks().find((x) => x && x.id === S.myb.id);
+    if (!b) { S.myb = null; sheetPalette(true); rooms().toast("Блок больше не в библиотеке."); return; }
+    const k = rooms().canvasCmPerPx();
+    const hit = G().wallAt(p, w, CFG.wallSnapPx * k);
+    if (!hit) { rooms().toast(T.tapWall); return; }   // блок постов живёт только на стене
+    vibrate(10);
+    c.commit();
+    const h = b.height != null ? Math.max(0, Number(b.height) || 0) : defaultHeight("block");
+    const el = c.model.newElement("block", hit.wall.id, G().snap(hit.offset, p.settings.gridStep), h, TYPES.block.layer);
+    if (hit.wall.isBeam) el.beamSide = beamSideOf(w, hit.wall);
+    el.params = Object.assign({}, el.params, { items: (b.items || ["socket"]).slice() });
+    if (b.blockVert) el.blockVert = true;
+    p.elements.push(el);
+    c.persist("elem-add");
     sheetPalette(true);
   }
 
@@ -697,7 +775,10 @@
       <div class="ep-plan-srow">Ориентация:
         <button type="button" class="ep-plan-chip ep-clickable" data-pe-brot="1">⟳ ${el.blockVert ? "Вертикальный" : "Горизонтальный"} · развернуть 90°</button>
       </div>
-      <div class="ep-plan-modehint">${T.blockTapDel} · штроба входит в выбранный подрозетник.</div>`;
+      <div class="ep-plan-srow ep-plan-sbtns">
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pe-mybsave="${esc(el.id)}">💾 В библиотеку</button>
+      </div>
+      <div class="ep-plan-modehint">${T.blockTapDel} · штроба входит в выбранный подрозетник. Сохранённый блок ставится одним тапом из палитры 🔌.</div>`;
   }
 
   // el.photos хранит короткие id (байты — в IndexedDB, см. plan-core.js) — src
@@ -710,8 +791,107 @@
     const c = core();
     return (el.photos || []).map((id, i) => {
       const src = (typeof id === "string" && id.startsWith("data:")) ? id : ((c.photoUrl && c.photoUrl(id)) || "");
-      return `<span class="ep-plan-ph"><img src="${src}" alt="фото точки"><button type="button" data-pe-phdel="${i}" aria-label="Удалить фото">✕</button></span>`;
+      const nm = photoMarks(el, i).length;
+      return `<span class="ep-plan-ph"><img src="${src}" alt="фото точки" data-pe-phopen="${i}">
+        ${nm ? `<i class="ep-plan-phcnt" data-pe-phopen="${i}">➚${nm}</i>` : ""}
+        <button type="button" data-pe-phdel="${i}" aria-label="Удалить фото">✕</button></span>`;
     }).join("");
+  }
+  /* ---------- разметка поверх фотофиксации ----------
+     Фото точки хранились, но рисовать по ним было нельзя — а на объекте именно это и
+     нужно: «вот сюда штробу», «этот кабель — свет». Метка = стрелка + необязательная
+     подпись, координаты НОРМАЛИЗОВАНЫ (0..1 от размера фото), поэтому не зависят ни от
+     размера превью, ни от экрана, на котором открыли. Живут в el.photoMarks[photoId]
+     (ключ — id фото, а не индекс: удалили соседнее фото — метки не перепутались).
+     Байты фото не трогаем вообще — они в IndexedDB, метки лежат в модели проекта. */
+  // Ключ — сам id фото (uid("ph") → "ph"+base36, БЕЗ подчёркивания: проверять префикс
+  // "ph_" бессмысленно, это уже стоило одного живого прогона). Настоящее различие —
+  // мигрированный id против ЛЕГАСИ-строки "data:...": у второй ключом берём индекс.
+  const photoKey = (el, i) => {
+    const id = (el.photos || [])[i];
+    return (typeof id === "string" && id && id.slice(0, 5) !== "data:") ? id : "#" + i;
+  };
+  const photoMarks = (el, i) => ((el.photoMarks || {})[photoKey(el, i)] || []);
+  function photoMarksSvg(marks) {
+    return `<svg class="ep-plan-phsvg" viewBox="0 0 100 100" preserveAspectRatio="none">
+      <defs><marker id="ep-ph-arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="#f43f5e"/></marker></defs>
+      ${marks.map((m) => `<line x1="${m.x1 * 100}" y1="${m.y1 * 100}" x2="${m.x2 * 100}" y2="${m.y2 * 100}"
+        stroke="#f43f5e" stroke-width="0.9" vector-effect="non-scaling-stroke" marker-end="url(#ep-ph-arw)"/>`).join("")}
+    </svg>`;
+  }
+  // Подписи — обычным HTML поверх фото (в SVG с preserveAspectRatio="none" текст
+  // растянулся бы вместе с картинкой и поехал по пропорциям).
+  function photoLabelsHtml(marks) {
+    return marks.map((m, i) => m.text
+      ? `<span class="ep-plan-phlab" style="left:${(m.x1 * 100).toFixed(2)}%;top:${(m.y1 * 100).toFixed(2)}%">${esc(m.text)}<b data-pe-phmdel="${i}" role="button" aria-label="Убрать метку">✕</b></span>`
+      : `<span class="ep-plan-phlab is-bare" style="left:${(m.x1 * 100).toFixed(2)}%;top:${(m.y1 * 100).toFixed(2)}%"><b data-pe-phmdel="${i}" role="button" aria-label="Убрать метку">✕</b></span>`).join("");
+  }
+  function openPhoto(el, i) {
+    const c = core(), id = (el.photos || [])[i];
+    if (id == null) return;
+    const src = (typeof id === "string" && id.startsWith("data:")) ? id : ((c.photoUrl && c.photoUrl(id)) || "");
+    let ov = document.getElementById("ep-plan-phov");
+    if (!ov) {
+      ov = document.createElement("div");
+      ov.id = "ep-plan-phov";
+      ov.className = "ep-plan-phov";
+      document.body.appendChild(ov);
+    }
+    S.photo = { elId: el.id, i, draft: null };
+    const marks = photoMarks(el, i);
+    ov.innerHTML = `<div class="ep-plan-phbox">
+        <div class="ep-plan-phhead"><b>Фото ${i + 1} из ${(el.photos || []).length}</b>
+          <span class="ep-plan-flex"></span>
+          <button type="button" class="ep-plan-mini ep-clickable" data-pe-phclose aria-label="Закрыть">✕</button></div>
+        <div class="ep-plan-phwrap" data-pe-phcanvas>
+          <img src="${src}" alt="фото точки">
+          ${photoMarksSvg(marks)}${photoLabelsHtml(marks)}
+        </div>
+        <div class="ep-plan-srow"><input id="ep-pe-phtext" type="text" maxlength="60" placeholder="Подпись к стрелке (необязательно)"></div>
+        <div class="ep-plan-modehint">Проведи пальцем по фото — появится стрелка. Подпись впиши до того, как проведёшь, или сразу после.</div>
+      </div>`;
+    ov.hidden = false;
+    armPhotoDraw(ov);
+  }
+  function closePhoto() {
+    const ov = document.getElementById("ep-plan-phov");
+    if (ov) { ov.hidden = true; ov.innerHTML = ""; }
+    S.photo = null;
+  }
+  // Рисование стрелки прямо по фото: pointerdown → move → up, координаты сразу
+  // нормализуются по РЕАЛЬНОМУ боксу картинки (getBoundingClientRect), поэтому
+  // одинаково работают на телефоне и на десктопе, при любом размере оверлея.
+  function armPhotoDraw(ov) {
+    const wrap = ov.querySelector("[data-pe-phcanvas]");
+    if (!wrap) return;
+    let from = null;
+    const norm = (ev) => {
+      const r = wrap.getBoundingClientRect();
+      return { x: Math.max(0, Math.min(1, (ev.clientX - r.left) / (r.width || 1))), y: Math.max(0, Math.min(1, (ev.clientY - r.top) / (r.height || 1))) };
+    };
+    wrap.addEventListener("pointerdown", (ev) => {
+      ev.preventDefault();
+      from = norm(ev);
+      try { wrap.setPointerCapture(ev.pointerId); } catch (e) {}
+    });
+    wrap.addEventListener("pointerup", (ev) => {
+      if (!from) return;
+      const to = norm(ev);
+      const f = from; from = null;
+      if (Math.hypot(to.x - f.x, to.y - f.y) < 0.04) return; // тап, а не стрелка
+      const el = (core().project.elements || []).find((x) => x.id === (S.photo || {}).elId);
+      if (!el) return;
+      const c = core(), key = photoKey(el, S.photo.i);
+      c.commit();
+      el.photoMarks = el.photoMarks || {};
+      el.photoMarks[key] = (el.photoMarks[key] || []).concat([{
+        x1: f.x, y1: f.y, x2: to.x, y2: to.y,
+        text: String((($("#ep-pe-phtext") || {}).value) || "").slice(0, 60)
+      }]);
+      c.persist("photo-mark");
+      openPhoto(el, S.photo.i);
+    });
   }
   function current() { return core().project.elements.find((e) => e.id === S.selId) || null; }
 
@@ -760,13 +940,28 @@
     // выбрал тип — палитра сворачивается вниз (просьба пользователя: «при выборе
     // хотел чтобы окно скрывалось… сворачивалось в нижнюю часть экрана»), холст
     // свободен для расстановки; вернуть — кнопка ︿ в правом нижнем углу
-    if ((b = t.closest("[data-pe-type]"))) { S.pool = null; S.selType = b.getAttribute("data-pe-type"); sheetPalette(true); rooms().collapseSheet(); return; }
+    if ((b = t.closest("[data-pe-type]"))) { S.pool = null; S.myb = null; S.selType = b.getAttribute("data-pe-type"); sheetPalette(true); rooms().collapseSheet(); return; }
     if ((b = t.closest("[data-pe-pool]"))) { // заготовка из пула — вооружаем её вместо типа
       const i = Number(b.getAttribute("data-pe-pool")) || 0;
       // храним И индекс, И id: если пул успел перезалить очередь (кнопка «В проект квартиры»
       // ещё раз), индексы сдвинутся, и по индексу поставился бы ЧУЖОЙ тип — id это исключает
-      S.pool = { i: i, id: (poolQueue().items[i] || {}).id || null };
+      S.pool = { i: i, id: (poolQueue().items[i] || {}).id || null }; S.myb = null;
       sheetPalette(true); rooms().collapseSheet(); return;
+    }
+    if ((b = t.closest("[data-pe-mybdel]"))) {   // ✕ на чипе — убрать из библиотеки
+      const id = b.getAttribute("data-pe-mybdel");
+      myBlocksSave(myBlocks().filter((x) => x && x.id !== id));
+      if (S.myb && S.myb.id === id) S.myb = null;
+      sheetPalette(true); return;
+    }
+    if ((b = t.closest("[data-pe-myb]"))) {      // вооружаем свой блок вместо типа
+      S.myb = { id: b.getAttribute("data-pe-myb") }; S.pool = null;
+      sheetPalette(true); rooms().collapseSheet(); return;
+    }
+    if ((b = t.closest("[data-pe-mybsave]"))) {
+      const el = (core().project.elements || []).find((x) => x.id === b.getAttribute("data-pe-mybsave"));
+      if (el) saveMyBlock(el);
+      return;
     }
     if (t.closest("[data-pe-poolclear]")) {
       if (!window.confirm(T.poolClearAsk)) return;
@@ -892,6 +1087,21 @@
     if (t.closest("[data-pe-apply]")) return applyEditor();
     if (t.closest("[data-pe-del]")) { deleteElement(current()); return; }
     if (t.closest("[data-pe-photo]")) { const f = $("#ep-pe-file"); if (f) { f.onchange = () => { if (f.files && f.files[0]) addPhoto(f.files[0]); }; f.click(); } return; }
+    if ((b = t.closest("[data-pe-phclose]"))) { closePhoto(); return; }
+    if ((b = t.closest("[data-pe-phmdel]"))) {
+      const el = (core().project.elements || []).find((x) => x.id === (S.photo || {}).elId);
+      if (!el || !S.photo) return;
+      const c = core(), key = photoKey(el, S.photo.i);
+      c.commit();
+      (el.photoMarks || {})[key] = ((el.photoMarks || {})[key] || []).filter((m, i2) => i2 !== Number(b.getAttribute("data-pe-phmdel")));
+      c.persist("photo-mark-del");
+      openPhoto(el, S.photo.i); return;
+    }
+    if ((b = t.closest("[data-pe-phopen]"))) {
+      const el = current();
+      if (el) openPhoto(el, Number(b.getAttribute("data-pe-phopen")) || 0);
+      return;
+    }
     if ((b = t.closest("[data-pe-phdel]"))) {
       const c = core(), el = current(); if (!el) return;
       c.commit(); el.photos.splice(Number(b.getAttribute("data-pe-phdel")), 1); c.persist("elem-photo-del"); openEditor(el); return;
