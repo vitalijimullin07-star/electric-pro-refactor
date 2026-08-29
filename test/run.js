@@ -3147,6 +3147,54 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/data-pu-pt-dimreset/.test(src), "в карточке точки есть возврат размеров на место");
     ok(/stroke: "transparent"/.test(src), "зона тяги прозрачная и не доходит до поста");
   });
+  test("PDF: оформление по ГОСТ — основная надпись, графы подшивки, спецификация", () => {
+    const p = EP.Plan.Core.createProject("гост");
+    p.address = "г. Москва, ул. Тестовая, д. 1, кв. 2";
+    p.docCode = "074/1/26-30МС"; p.stage = "П"; p.gip = "Лукина"; p.org = "ВЕКТОР";
+    p.settings.mainBreaker = 32; p.settings.meter = true; p.settings.mainRcd = true;
+    const r = M.newRoom(G.rectPoints(0, 0, 500, 400), "Кухня");
+    p.rooms.push(r);
+    const c1 = M.newCircuit("QF1", "#ef4444", 16); c1.rcd = true;
+    const c2 = M.newCircuit("QF2", "#22c55e", 10);
+    p.circuits.push(c1, c2);
+    p.panels.push(M.newPanel(250, 20));
+    const so = (off) => { const e = M.newElement("socket", r.id + ":0", off, 30, "power"); e.circuitId = c1.id; p.elements.push(e); };
+    so(80); so(160);
+    const sw = M.newElement("switch", r.id + ":1", 60, 90, "light"); sw.keys = 2; sw.circuitId = c2.id; p.elements.push(sw);
+    p.elements.push(M.newElement("internet", r.id + ":0", 300, 30, "lv"));
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    EP.Plan.Routes.build({ silent: true });        // без трасс в спецификации не было бы кабеля
+    const html = EP.Plan.Export.sheetHtml(p);
+    // основная надпись по ГОСТ 21.101: шифр, объект, стадия/лист/листов, ГИП, организация
+    ok(/074\/1\/26-30МС/.test(html), "шифр документа в штампе");
+    ok(/ул\. Тестовая/.test(html), "объект (адрес) в штампе");
+    ok(/Электрооборудование и электроосвещение/.test(html), "раздел проекта в штампе");
+    ok(/>Изм\.</.test(html) && />№ док</.test(html), "таблица изменений");
+    ok(/>ГИП</.test(html) && /Лукина/.test(html), "строка ГИП");
+    ok(/ВЕКТОР/.test(html), "организация");
+    ok(/>П</.test(html), "стадия из проекта, а не константа");
+    // графы подшивки и формат листа
+    ok(/Взам\. инв\. №/.test(html) && /Подп\. и дата/.test(html) && /Инв\. № подл\./.test(html), "графы подшивки");
+    ok(/Формат A4/.test(html), "формат листа под рамкой");
+    // спецификация по ГОСТ 21.110: 9 граф, разделы, данные из общего расчёта
+    ok(/Спецификация оборудования, изделий и материалов/.test(html), "лист спецификации");
+    ok(/Наименование и техническая характеристика/.test(html) && /Масса единицы, кг/.test(html), "шапка на 9 граф");
+    const spec = html.split('class="spec"')[1] || "";
+    ["Щитовые устройства", "Провода и кабели", "Электроустановочные изделия"].forEach((s2) =>
+      ok(spec.indexOf(s2) >= 0, "раздел «" + s2 + "»"));
+    // разделы не должны повторяться (позиции приходят из расчёта вперемешку)
+    const secCount = (s2) => (html.match(new RegExp('class="sp-sec">' + s2 + '<', "g")) || []).length;
+    eq(secCount("Монтажные изделия"), 1, "раздел печатается ОДИН раз");
+    ok(/Шкаф внутреннего монтажа/.test(spec), "щит в спецификации");
+    ok(/Автоматический выключатель дифференциального тока 16А/.test(spec), "диф по номиналу");
+    ok(/Выключатель нагрузки 32А/.test(spec) && /Счётчик электроэнергии/.test(spec), "вводной аппарат и счётчик");
+    ok(/Кабель силовой с медными жилами/.test(spec) && /ВВГнг\(А\)-LS/.test(spec), "кабель с маркой");
+    ok(/Выключатель 2-кл\. скрытой установки/.test(spec), "клавишность выключателя");
+    ok(/Розетка компьютерная RJ45/.test(spec), "слаботочные механизмы");
+    ok(/по дизайн-проекту/.test(spec), "механизмы — по дизайн-проекту");
+    ok(!/Бур 6 мм|Мешки для/.test(spec), "расходники инструмента в спецификацию объекта не идут");
+    ok(/Количество материалов уточняется по месту/.test(html), "примечание к спецификации");
+  });
   test("PDF: масштаб чертежа подбирается плотнее и формат листа идёт в штамп", () => {
     const p = EP.Plan.Core.createProject("fmt");
     p.rooms.push(M.newRoom(G.rectPoints(0, 0, 700, 450), "К"));
@@ -3156,13 +3204,19 @@ test("фото: deleteProject чистит кэш фото своего прое
     // физический размер плана в мм в vm-харнессе не проверить (fakeNode не хранит
     // атрибуты, buildSvg читает viewBox через DOM) — это покрыто живым прогоном;
     // здесь проверяем ряд масштабов и то, что формат листа попал в штамп
-    ok(/· A4/.test(html), "в штампе рядом с масштабом стоит формат листа");
+    // формат листа подписывается ПОД рамкой («Формат A4»), как в проектной документации,
+    // а масштаб — в графе наименования основной надписи
+    ok(/Формат A4/.test(html), "формат листа подписан под рамкой");
+    // (сам масштаб в vm-харнессе null — buildSvg считает его через DOM-viewBox, см. ниже;
+    // проверяем, что графа наименования его печатает, когда он есть)
+    ok(/М 1:\$\{scale\}/.test(require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-export.js"), "utf8")),
+      "масштаб — в графе наименования штампа");
     const src0 = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-export.js"), "utf8");
     ok(/⤢ Во весь лист/.test(src0), "есть режим «во весь лист»");
     ok(/let pdfFit = true;/.test(src0), "по умолчанию — во весь лист (репорт «выбрал A1, а проект как в A4»)");
     ok(/data-pxp-fit/.test(src0), "переключатель режима масштаба в шторке");
     ok(/Math\.round\(100 \/ k\)/.test(src0), "знаменатель масштаба при вписывании = 100/k (не 10/k — на этом первый прогон дал «1:3»)");
-    ok(/lastPlanFit \? " впис\." : ""/.test(src0), "вписанный масштаб честно помечен в штампе");
+    ok(/lastPlanFit \? " \(впис\.\)" : ""/.test(src0), "вписанный масштаб честно помечен в штампе");
     ok(/Сформировать PDF \(\$\{pdfFormat\}/.test(src0), "формат листа видно прямо на кнопке печати");
     const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-export.js"), "utf8");
     const row = /const SCALES = \[([^\]]+)\]/.exec(src);
