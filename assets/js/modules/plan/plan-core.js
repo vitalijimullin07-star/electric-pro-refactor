@@ -135,6 +135,8 @@
       id: uid("prj"), v: 1,
       name: String(name || "").trim() || "Новый проект",
       address: "", client: "", clientId: null,
+      // графы основной надписи PDF (ГОСТ 21.101): шифр документа, стадия, ГИП, организация
+      docCode: "", stage: "Р", gip: "", org: "",
       floors, activeFloorId: floors[0].id,
       settings: {
         ceilingHeight: DEFAULTS.ceilingHeight,
@@ -504,6 +506,11 @@
   // чтобы старые/сторонние проекты не теряли настройки молча.
   function backfillProject(p) {
     if (p.client == null) p.client = "";
+    // графы основной надписи PDF — у старых проектов их нет
+    if (p.docCode == null) p.docCode = "";
+    if (p.stage == null) p.stage = "Р";
+    if (p.gip == null) p.gip = "";
+    if (p.org == null) p.org = "";
     // Этажи: старые проекты — один неявный этаж. Сюда же попадают проекты,
     // где чей-то floorId ссылается на этаж, которого уже нет (например, после
     // ручного редактирования JSON) — фолбэк на первый этаж, а не потеря объекта.

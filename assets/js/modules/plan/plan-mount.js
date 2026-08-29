@@ -507,7 +507,17 @@
       <div class="ep-plan-srow"><label style="flex:1">${T.metaClient}<input type="text" id="ep-plan-meta-client" value="${esc(p.client || "")}" placeholder="Иванов И.И."></label></div>
       <div class="ep-plan-srow"><label style="flex:1">${T.metaAddress}<input type="text" id="ep-plan-meta-addr" value="${esc(p.address || "")}" placeholder="г. Москва, ул. …, д. …, кв. …"></label></div>
       <div class="ep-plan-srow"><label style="flex:1">${T.metaCeil}<input type="number" inputmode="numeric" min="150" max="600" id="ep-plan-meta-ceil" value="${esc(p.settings.ceilingHeight || 270)}"></label></div>
-      <div class="ep-plan-modehint">Высота потолка проекта — база для вертикалей трасс и расчёта кабеля. У отдельной комнаты можно задать свою высоту в её карточке.</div>`);
+      <div class="ep-plan-modehint">Высота потолка проекта — база для вертикалей трасс и расчёта кабеля. У отдельной комнаты можно задать свою высоту в её карточке.</div>
+      <div class="ep-plan-srow"><b>Основная надпись (штамп PDF)</b></div>
+      <div class="ep-plan-srow ep-plan-s2">
+        <label>Шифр документа<input type="text" id="ep-plan-meta-code" value="${esc(p.docCode || "")}" placeholder="074/1/26-30МС"></label>
+        <label>Стадия<input type="text" id="ep-plan-meta-stage" value="${esc(p.stage || "Р")}" placeholder="Р" maxlength="3"></label>
+      </div>
+      <div class="ep-plan-srow ep-plan-s2">
+        <label>ГИП<input type="text" id="ep-plan-meta-gip" value="${esc(p.gip || "")}" placeholder="Фамилия"></label>
+        <label>Организация<input type="text" id="ep-plan-meta-org" value="${esc(p.org || "")}" placeholder="Название"></label>
+      </div>
+      <div class="ep-plan-modehint">Эти графы печатаются в основной надписи каждого листа PDF (ГОСТ 21.101). Пустые — просто не заполняются.</div>`);
   }
   function doExport() {
     const c = core(), p = c.project; if (!p) return;
@@ -651,6 +661,12 @@
     if (t.id === "ep-plan-meta-client") { c.project.client = t.value; c.persist("meta-client"); }
     else if (t.id === "ep-plan-meta-addr") { c.project.address = t.value; c.persist("meta-addr"); }
     else if (t.id === "ep-plan-meta-ceil") { const v = Math.round(Number(t.value)); if (v >= 150 && v <= 600) { c.project.settings.ceilingHeight = v; c.persist("meta-ceil"); } }
+    // графы основной надписи PDF — сохраняются на "input" БЕЗ commit(), как клиент/адрес
+    // (иначе каждая набранная буква плодила бы снимок undo)
+    else if (t.id === "ep-plan-meta-code") { c.project.docCode = t.value; c.persist("meta-code"); }
+    else if (t.id === "ep-plan-meta-stage") { c.project.stage = t.value; c.persist("meta-stage"); }
+    else if (t.id === "ep-plan-meta-gip") { c.project.gip = t.value; c.persist("meta-gip"); }
+    else if (t.id === "ep-plan-meta-org") { c.project.org = t.value; c.persist("meta-org"); }
     else if (t.hasAttribute("data-plan-floor-rn")) {
       // без commit() — как gtitle/lname в ручной схеме: не плодить undo-снапшот на каждую букву
       const f = (c.project.floors || []).find((x) => x.id === t.getAttribute("data-plan-floor-rn"));

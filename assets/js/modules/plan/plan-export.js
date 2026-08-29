@@ -6,11 +6,19 @@
   "use strict";
   window.EP = window.EP || {};
 
-  const T = { sheet: "План электрики", made: "Исполнитель", obj: "Объект", addr: "Адрес", client: "Заказчик", area: "Площадь", roomsN: "Помещений", date: "Дата", legend: "Условные обозначения", expl: "Экспликация помещений", spec: "Спецификация точек", door: "Дверь", win: "Окно", panel: "Щит", genplan: "Общий план", specSheet: "Спецификация", tracesOf: (name) => `Трассы: ${name}`,
+  const T = { sheet: "План электрики", made: "Исполнитель", obj: "Объект", addr: "Адрес", client: "Заказчик", area: "Площадь", roomsN: "Помещений", date: "Дата", legend: "Условные обозначения", expl: "Экспликация помещений", spec: "Спецификация точек", door: "Дверь", win: "Окно", panel: "Щит", genplan: "Общий план", specSheet: "Экспликация и условные обозначения", tracesOf: (name) => `Трассы: ${name}`,
     stage: "Стадия", stageVal: "Р", sheetNo: "Лист", sheetsN: "Листов", scaleLbl: "Масштаб",
     album: "Состав альбома", docTitle: "Проект электроснабжения", sheetName: "Наименование листа",
     unfolds: "Развёртки стен", scheme: "Однолинейная схема", circuits: "Линии и щит",
-    dimsOf: (name) => `Размеры и высоты: ${name}` };
+    dimsOf: (name) => `Размеры и высоты: ${name}`,
+    // ГОСТ 21.110 — спецификация оборудования, изделий и материалов
+    specGost: "Спецификация оборудования, изделий и материалов",
+    specCols: ["Позиция", "Наименование и техническая характеристика", "Тип, марка, обозначение документа, опросного листа",
+      "Код оборудования, изделия, материала", "Поставщик", "Единица измерения", "Коли-<br>чество", "Масса единицы, кг", "Примечание"],
+    secShields: "Щитовые устройства", secCables: "Провода и кабели",
+    secDevices: "Электроустановочные изделия", secMount: "Монтажные изделия",
+    byDesign: "по дизайн-проекту", section: "Электрооборудование и электроосвещение",
+    specNote: `<b>Примечание:</b><br>1. Количество материалов уточняется по месту.<br>2. В спецификации указаны рекомендуемые материалы и оборудование.<br>Допускается замена указанных материалов и оборудования на другие с аналогичными характеристиками, имеющие сертификаты соответствия Госстандарта РФ.` };
   // слои-«трассы» — те, что реально прокладываются кабелем (не считая dims/labels/routes —
   // это служебные оверлеи, не самостоятельный вид работ)
   const TRACE_LAYER_IDS = ["light", "power", "lv", "tv", "cctv", "ac", "warm"];
@@ -116,7 +124,9 @@
   const PAGE = { A4: { w: 297, h: 210 }, A3: { w: 420, h: 297 }, A2: { w: 594, h: 420 }, A1: { w: 841, h: 594 }, A0: { w: 1189, h: 841 } };
   let pdfFormat = "A4";
   const pg = () => PAGE[pdfFormat] || PAGE.A4;
-  const planArea = () => ({ w: pg().w - 35, h: pg().h - 64 });
+  // высота поля: лист − (5+5 поля, 6 внутренний отступ рамки, ~9 заголовок листа,
+  // 58 основная надпись по ГОСТ 21.101 — она стала выше прежней вольной вёрстки)
+  const planArea = () => ({ w: pg().w - 35, h: pg().h - 84 });
   // Ряд подбирается «первый, при котором влезает» = САМЫЙ КРУПНЫЙ из подходящих.
   // Шагов стало больше (добавлены 30/40/60/125): на грубой лестнице 25→50→75 чертёж
   // часто занимал 60% поля листа и вокруг оставалась пустота — «проект не
@@ -268,7 +278,12 @@
     const master = (window.EP.state && EP.state.user && EP.state.user.displayName) || "";
     return {
       obj: p.name || "—", addr: p.address || "—", client: p.client || "—",
-      master: master || "—", date: new Date().toLocaleDateString("ru-RU")
+      master: master || "—", date: new Date().toLocaleDateString("ru-RU"),
+      // поля основной надписи по ГОСТ 21.101 (правятся в шторке ℹ️ проекта):
+      // шифр документа, ГИП, организация, стадия. Пустые — прочерк, лист всё равно
+      // остаётся оформленным, просто без этих граф.
+      code: p.docCode || "", gip: p.gip || "", org: p.org || "",
+      stage: p.stage || T.stageVal
     };
   }
   // ОСНОВНАЯ НАДПИСЬ (штамп) — на КАЖДОМ листе, правый нижний угол, как в проектной
@@ -276,37 +291,72 @@
   // номер листа из общего числа, масштаб, дата. Раньше штамп был один раз на титуле,
   // а листы уходили заказчику без единой идентификации (просьба пользователя:
   // «адаптируй печать PDF как проф. документ и проф. чертёж»).
+  // ОСНОВНАЯ НАДПИСЬ по ГОСТ 21.101 (форма 3) — 185×55 мм, правый нижний угол:
+  // слева таблица изменений и подписи (Разраб./ГИП), в середине шифр документа,
+  // объект и наименование листа, справа стадия/лист/листов и организация.
+  // Раньше штамп был свободной вёрсткой «объект/адрес/заказчик» — пользователь
+  // прислал реальный проектный PDF («хотелось бы точь в точь так»), там ГОСТ-форма.
   function stampHtml(p, title, no, of, scale) {
     const m = docMeta(p);
-    return `<table class="stamp">
-      <tr>
-        <td class="st-k">${T.obj}</td><td class="st-v" colspan="3">${esc(m.obj)}</td>
-        <td class="st-k">${T.stage}</td><td class="st-v st-c">${T.stageVal}</td>
-        <td class="st-k">${T.sheetNo}</td><td class="st-v st-c">${no}</td>
-      </tr>
-      <tr>
-        <td class="st-k">${T.addr}</td><td class="st-v" colspan="3">${esc(m.addr)}</td>
-        <td class="st-k">${T.scaleLbl}</td><td class="st-v st-c">${scale ? "1:" + scale + (lastPlanFit ? " впис." : "") : "—"}${" · " + pdfFormat}</td>
-        <td class="st-k">${T.sheetsN}</td><td class="st-v st-c">${of}</td>
-      </tr>
-      <tr>
-        <td class="st-k">${T.client}</td><td class="st-v" colspan="3">${esc(m.client)}</td>
-        <td class="st-k">${T.made}</td><td class="st-v" colspan="3">${esc(m.master)}</td>
-      </tr>
-      <tr>
-        <td class="st-k">${T.sheetName}</td><td class="st-v st-title" colspan="5">${esc(title)}</td>
-        <td class="st-k">${T.date}</td><td class="st-v st-c">${esc(m.date)}</td>
-      </tr>
+    const dash = (s) => { const v = String(s == null ? "" : s).trim(); return v && v !== "—" ? esc(v) : ""; };
+    const c = (t, cls) => `<td class="s-c${cls ? " " + cls : ""}">${t || ""}</td>`;
+    const six = () => c() + c() + c() + c() + c() + c();
+    // 5 строк таблицы изменений (графы 14-18): 4 пустые + шапка
+    return `<table class="stamp"><colgroup>
+        <col style="width:8mm"><col style="width:11mm"><col style="width:12mm"><col style="width:14mm"><col style="width:16mm"><col style="width:18mm">
+        <col style="width:70mm"><col style="width:12mm"><col style="width:12mm"><col style="width:12mm">
+      </colgroup>
+      <tr>${six()}<td class="s-c s-code" colspan="4" rowspan="2">${dash(m.code) || esc(p.name || "")}</td></tr>
+      <tr>${six()}</tr>
+      <tr>${six()}<td class="s-c s-obj" colspan="4" rowspan="3">${esc(m.addr === "—" ? m.obj : m.addr)}</td></tr>
+      <tr>${six()}</tr>
+      <tr>${c("Изм.")}${c("Колич.")}${c("Лист")}${c("№ док")}${c("Подп.")}${c("Дата")}</tr>
+      <tr><td class="s-l" colspan="2">Разраб.</td><td class="s-c" colspan="2">${dash(m.master)}</td>${c()}${c()}
+        <td class="s-c s-sec" rowspan="2">${T.section}</td>
+        <td class="s-c s-h">${T.stage}</td><td class="s-c s-h">${T.sheetNo}</td><td class="s-c s-h">${T.sheetsN}</td></tr>
+      <tr><td class="s-l" colspan="2">Пров.</td><td class="s-c" colspan="2"></td>${c()}${c()}
+        <td class="s-c">${esc(m.stage)}</td><td class="s-c">${no}</td><td class="s-c">${of}</td></tr>
+      <tr><td class="s-l" colspan="2">Н. контр.</td><td class="s-c" colspan="2"></td>${c()}${c()}
+        <td class="s-c s-title" rowspan="2">${esc(title)}${scale ? `<br>М 1:${scale}${lastPlanFit ? " (впис.)" : ""}` : ""}</td>
+        <td class="s-c s-org" colspan="3" rowspan="2">${dash(m.org)}</td></tr>
+      <tr><td class="s-l" colspan="2">ГИП</td><td class="s-c" colspan="2">${dash(m.gip)}</td>${c()}${c()}</tr>
     </table>`;
   }
+  // Сокращённая основная надпись (ГОСТ 21.101, форма 6) — для ПОСЛЕДУЮЩИХ листов
+  // одного документа: только таблица изменений, шифр и номер листа. Так оформлен
+  // и второй лист спецификации в присланном пользователем проекте.
+  function stampContHtml(p, no) {
+    const m = docMeta(p);
+    const c = (t) => `<td class="s-c">${t || ""}</td>`;
+    return `<table class="stamp stamp-c"><colgroup>
+        <col style="width:8mm"><col style="width:11mm"><col style="width:12mm"><col style="width:14mm"><col style="width:16mm"><col style="width:18mm">
+        <col style="width:94mm"><col style="width:12mm">
+      </colgroup>
+      <tr>${c()}${c()}${c()}${c()}${c()}${c()}
+        <td class="s-c s-code" rowspan="2">${esc(m.code || p.name || "")}</td>
+        <td class="s-c s-h">${T.sheetNo}</td></tr>
+      <tr>${c("Изм.")}${c("Колич.")}${c("Лист")}${c("№ док")}${c("Подп.")}${c("Дата")}
+        <td class="s-c">${no}</td></tr>
+    </table>`;
+  }
+  // Графы подшивки (ГОСТ 2.104, графы 19-23) — вертикальные надписи в левом поле:
+  // «Инв. № подл.», «Подп. и дата», «Взам. инв. №». В присланном проекте они есть
+  // на каждом листе — без них лист не читается как проектный документ.
+  const bindingHtml = () => `<div class="bind">
+      <div class="bind-b"><span>Взам. инв. №</span></div>
+      <div class="bind-b bind-t"><span>Подп. и дата</span></div>
+      <div class="bind-b"><span>Инв. № подл.</span></div>
+    </div>`;
   // один лист альбома: поля по ГОСТ 2.301 (20мм слева под подшивку, 5мм остальные),
-  // рамка, заголовок листа и штамп внизу справа
+  // рамка, графы подшивки, штамп внизу справа и подпись формата под рамкой
   function sheetWrap(p, page, no, of) {
-    return `<div class="sheet"><div class="fr">
-      <h2>${esc(page.title)}</h2>
-      <div class="body">${page.body}</div>
-      ${stampHtml(p, page.title, no, of, page.scale || null)}
-    </div></div>`;
+    const stamp = page.contd ? stampContHtml(p, no) : stampHtml(p, page.title, no, of, page.scale || null);
+    return `<div class="sheet">${bindingHtml()}<div class="fr">
+      ${page.noHead ? "" : `<h2>${esc(page.title)}</h2>`}
+      <div class="body${page.contd || page.noHead ? " body-c" : ""}">${page.body}</div>
+      ${page.side || ""}
+      ${stamp}
+    </div><div class="fmt">Формат ${pdfFormat}</div></div>`;
   }
   // титульный лист: объект/заказчик/площадь + ВЕДОМОСТЬ листов альбома (состав) —
   // так документ читается как альбом, а не как набор картинок
@@ -315,10 +365,10 @@
     const roomsList = (p.rooms || []).filter((r) => (r.points || []).length >= 3);
     const totalArea = roomsList.reduce((s2, r) => s2 + G().roomNetArea(p, r), 0);
     const ved = pages.map((pg, i) => `<tr><td class="st-c">${i + 2}</td><td>${esc(pg.title)}</td><td class="st-c">${pg.scale ? "1:" + pg.scale : "—"}</td></tr>`).join("");
-    return `<div class="sheet"><div class="fr">
+    return `<div class="sheet">${bindingHtml()}<div class="fr">
       <div class="tp">
         <div class="tp-top">
-          <div class="tp-stage">${T.stage} ${T.stageVal}</div>
+          <div class="tp-stage">${T.stage} ${esc(m.stage)}</div>
           <h1>${esc(m.obj)}</h1>
           <div class="tp-sub">${T.docTitle}</div>
         </div>
@@ -338,7 +388,7 @@
         </div>
       </div>
       ${stampHtml(p, "Титульный лист. " + T.album, 1, of, null)}
-    </div></div>`;
+    </div><div class="fmt">Формат ${pdfFormat}</div></div>`;
   }
 
   // развёртка одной стены для печати (длина × высота, точки с рулетками от угла и от пола)
@@ -693,6 +743,132 @@
     return Object.keys(out).map((k) => ({ k, name: (TY[k] || { name: k }).name, glyph: (TY[k] || {}).glyph || "?", qty: out[k] }));
   }
 
+  /* ---------- СПЕЦИФИКАЦИЯ ОБОРУДОВАНИЯ, ИЗДЕЛИЙ И МАТЕРИАЛОВ (ГОСТ 21.110) ----------
+     Форма 1: 9 граф, разделы курсивом по центру. Данные берём из УЖЕ существующих
+     расчётов, а не считаем заново: аппараты — из p.circuits/settings (как в однолинейке),
+     кабель и монтажные изделия — из EP.Plan.Calc.estimateItems (тот же список, что уходит
+     в смету), приборы — из p.elements. Так спецификация не может разойтись со сметой. */
+  // расходники ИНСТРУМЕНТА (буры, диски, мешки, гвозди) в спецификацию объекта не идут —
+  // это не материалы, остающиеся на объекте; в присланном проекте их тоже нет
+  const SPEC_SKIP = /^(гвозд|газовый баллон|бур |пика|карандаш|коронка|диск |мешки|термоусадк)/i;
+  const SPEC_MOUNT = /гофра|клипс|стяжк|площадк|лента монтажная|подрозетник|коробк|гмл|ваго|сиз|наконечник|гильз|труба/i;
+  const CABLE_SEC = (mark) => {
+    const m = /(\d+)\s*[×xх]\s*([\d.,]+)/i.exec(String(mark || ""));
+    return m ? { cores: m[1], sec: m[2].replace(".", ",") } : null;
+  };
+  function specRows(p) {
+    const S = p.settings || {}, out = [];
+    const push = (sec, name, mark, unit, qty) => out.push({ sec, name, mark, unit, qty });
+    // --- 1. Щитовые устройства (по модели щита и линиям, как в однолинейке) ---
+    const panels = (p.panels || []);
+    const modules = EP.Plan.Scheme && EP.Plan.Scheme.neededModules ? EP.Plan.Scheme.neededModules(p) : 0;
+    if (panels.length) {
+      const box = S.panelBox || {};
+      const size = box.wmm && box.hmm ? ` ${box.wmm}x${box.hmm}${box.dmm ? "x" + box.dmm : ""} мм` : "";
+      push(T.secShields, `Шкаф внутреннего монтажа${modules ? " на " + modules + " модулей" : ""}${size}`,
+        esc(S.panelBrand || ""), "шт.", panels.length);
+    }
+    if (S.mainBreaker) push(T.secShields, `Выключатель нагрузки ${S.mainBreaker}А`, "", "шт.", 1);
+    if (S.meter) push(T.secShields, "Счётчик электроэнергии", "", "шт.", 1);
+    if (S.mainRcd) push(T.secShields, `Устройство защитного отключения ${S.mainBreaker || 63}А 30mA`, "", "шт.", 1);
+    const byKey = {};
+    (p.circuits || []).forEach((c2) => {
+      const amp = c2.breaker || 16, poles = c2.poles === 3 ? "3P" : "1P";
+      const key = (c2.rcd ? "d" : "a") + poles + amp;
+      byKey[key] = byKey[key] || {
+        n: 0, name: c2.rcd ? `Автоматический выключатель дифференциального тока ${amp}А` : `Автоматический выключатель ${poles} ${amp}А`
+      };
+      byKey[key].n++;
+    });
+    Object.keys(byKey).sort().forEach((k) => push(T.secShields, byKey[k].name, "", "шт.", byKey[k].n));
+    // --- 2/4. Кабель и монтажные изделия — из общего списка позиций сметы ---
+    const items = (EP.Plan.Calc && EP.Plan.Calc.estimateItems ? EP.Plan.Calc.estimateItems(p) : null) || [];
+    items.filter((it) => it.type === "material").forEach((it) => {
+      const nm = String(it.name || "");
+      if (SPEC_SKIP.test(nm)) return;
+      const qty = Math.ceil(Number(it.qty) || 0);
+      if (!qty) return;
+      if (/^кабель/i.test(nm)) {
+        const mark = nm.replace(/^кабель\s*/i, "").split("·")[0].trim();
+        const cs = CABLE_SEC(mark);
+        push(T.secCables,
+          `Кабель силовой с медными жилами с ПВХ изоляцией пониженной горючести, низким дымо- и газовыделением${cs ? ` сеч.${cs.cores}x${cs.sec} мм²` : ""}`,
+          mark, "м.", qty);
+      } else if (SPEC_MOUNT.test(nm)) {
+        push(T.secMount, nm, "", it.unit === "м" ? "м." : it.unit === "шт" ? "шт." : (it.unit || "шт."), qty);
+      }
+    });
+    // --- 3. Электроустановочные изделия (механизмы — «по дизайн-проекту») ---
+    const dev = {};
+    const addDev = (name) => { dev[name] = (dev[name] || 0) + 1; };
+    const TY = EP.Plan.Elements ? EP.Plan.Elements.TYPES : {};
+    const nameOf = (type, el) => {
+      if (type === "socket") return "Розетка скрытой установки";
+      if (type === "switch") {
+        const keys = (el && el.keys) || 1;
+        const kind = el && el.swKind === "pass" ? " проходной" : el && el.swKind === "cross" ? " перекрёстный" : "";
+        return `Выключатель ${keys}-кл.${kind} скрытой установки`;
+      }
+      if (type === "internet") return "Розетка компьютерная RJ45 скрытой установки";
+      if (type === "tv") return "Розетка телевизионная скрытой установки";
+      if (type === "warmfloor") return "Терморегулятор тёплого пола";
+      if (type === "light") return "Светильник потолочный";
+      if (type === "bra") return "Светильник настенный (бра)";
+      if (type === "track") return "Трековый светильник";
+      if (type === "ac") return "Вывод для кондиционера";
+      // выводы/распайки/стояки — не изделия, в спецификацию механизмов не идут
+      if (type === "junction" || type === "output" || type === "output24" || type === "output3" || type === "riser") return null;
+      return (TY[type] || {}).name || null;
+    };
+    (p.elements || []).forEach((e) => {
+      if (e.type === "block") ((e.params && e.params.items) || []).forEach((t2) => { const n = nameOf(t2, null); if (n) addDev(n); });
+      else { const n = nameOf(e.type, e); if (n) addDev(n); }
+    });
+    Object.keys(dev).sort().forEach((n) => push(T.secDevices, n, T.byDesign, "шт.", dev[n]));
+    return out;
+  }
+  // листы спецификации: строки бьются по страницам, разделы печатаются курсивом
+  const SPEC_ROWS_PER_PAGE = 22;
+  function buildSpecPages(p) {
+    const rows = specRows(p);
+    if (!rows.length) return [];
+    // ГРУППИРУЕМ по разделам в фиксированном порядке ГОСТ-спецификации: позиции приходят
+    // из расчёта вперемешку (подрозетник, кабель, ГМЛ…), и без группировки один и тот же
+    // раздел печатался бы дважды — поймано на первом же прогоне печати
+    const ORDER = [T.secShields, T.secCables, T.secDevices, T.secMount];
+    const flat = [];
+    ORDER.forEach((sec) => {
+      const part = rows.filter((r) => r.sec === sec);
+      if (!part.length) return;
+      if (flat.length) flat.push({ blank: true });
+      flat.push({ head: sec });
+      part.forEach((r) => flat.push(r));
+    });
+    const head = `<tr class="sp-h">${T.specCols.map((c2) => `<th>${c2}</th>`).join("")}</tr>
+      <tr class="sp-n">${T.specCols.map((c2, i) => `<td>${i + 1}</td>`).join("")}</tr>`;
+    const cell = (r) => r.blank ? `<tr>${"<td></td>".repeat(9)}</tr>`
+      : r.head ? `<tr><td></td><td class="sp-sec">${esc(r.head)}</td>${"<td></td>".repeat(7)}</tr>`
+        : `<tr><td></td><td class="sp-nm">${esc(r.name)}</td><td class="sp-c">${esc(r.mark)}</td><td></td><td></td>
+             <td class="sp-c">${esc(r.unit)}</td><td class="sp-c">${r.qty}</td><td></td><td></td></tr>`;
+    // заголовок раздела не должен оставаться ОДИН в конце листа (строки уехали на
+    // следующий) — двигаем его на следующий лист, на его место пустая строка
+    for (let i = SPEC_ROWS_PER_PAGE - 1; i < flat.length; i += SPEC_ROWS_PER_PAGE) {
+      if (flat[i] && flat[i].head) flat.splice(i, 0, { blank: true });
+    }
+    const pages = [];
+    for (let i = 0; i < flat.length; i += SPEC_ROWS_PER_PAGE) {
+      const part = flat.slice(i, i + SPEC_ROWS_PER_PAGE);
+      // добиваем пустыми строками, чтобы таблица на листе была одной высоты
+      while (part.length < SPEC_ROWS_PER_PAGE) part.push({ blank: true });
+      pages.push({
+        title: T.specGost, noHead: true, contd: i > 0,
+        body: `<table class="spec">${head}${part.map(cell).join("")}</table>`,
+        side: i === 0 ? `<div class="spec-note">${T.specNote}</div>` : ""
+      });
+    }
+    return pages;
+  }
+
   // мини-значки ГОСТ 21.210 для легенды/спецификации листа
   const gi = (inner) => `<svg class="gsym" viewBox="-14 -15 28 28" width="18" height="18" fill="none" stroke="#111" stroke-width="1.7">${inner}</svg>`;
   const GOST_ICONS = {
@@ -748,6 +924,7 @@
           <div><h3>${T.spec}</h3><table class="tb"><thead><tr><th></th><th>Тип</th><th>Кол-во</th></tr></thead><tbody>${spec}</tbody></table></div>
           <div class="legend"><h3>${T.legend}</h3>${legendRows}</div>
         </div>` });
+    buildSpecPages(p).forEach((pg) => pages.push(pg));
     buildCircuits(p).forEach((pg) => pages.push(pg));
     buildScheme(p).forEach((pg) => pages.push(pg));
     const of = pages.length + 1; // + титульный лист
@@ -758,13 +935,24 @@
          иначе браузерные поля складывались бы с нашими и рамка «плыла» от принтера ---- */
       @page { size: ${pdfFormat} landscape; margin: 0; }
       * { box-sizing: border-box; margin: 0; }
-      body { font: 10.5px/1.3 Arial, "Helvetica Neue", Helvetica, sans-serif; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      /* ГОСТ-шрифт: узкий наклонный (тип А). Настоящего ГОСТ-шрифта в системе нет —
+         ближайшее из гарантированно доступного это Arial Narrow курсивом, как и
+         выглядит присланный пользователем проект. */
+      body { font: italic 10.5px/1.25 "Arial Narrow", "Liberation Sans Narrow", Arial, sans-serif; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       .sheet { position: relative; width: ${pg().w}mm; height: ${pg().h}mm; padding: 5mm 5mm 5mm 20mm; overflow: hidden; break-after: page; page-break-after: always; }
+      /* графы подшивки (ГОСТ 2.104, графы 19-23) — в левом поле, текст на 90° */
+      .bind { position: absolute; left: 5mm; bottom: 5mm; width: 15mm; display: flex; flex-direction: column; }
+      .bind-b { height: 25mm; border: .25mm solid #000; border-right: 0; display: flex; align-items: center; justify-content: center; }
+      .bind-b.bind-t { height: 35mm; }
+      .bind-b span { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 8px; white-space: nowrap; }
+      .fmt { position: absolute; right: 5mm; bottom: 1mm; font-size: 8px; }
       .sheet:last-child { break-after: auto; page-break-after: auto; }
       .fr { position: relative; width: 100%; height: 100%; border: 0.7mm solid #000; padding: 3mm; display: flex; flex-direction: column; }
       .fr > h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding-bottom: 1mm; border-bottom: .3mm solid #000; margin-bottom: 2mm; }
       /* содержимое НИКОГДА не залезает под штамп (он position:absolute) */
-      .body { flex: 1 1 auto; min-height: 0; padding-bottom: 27mm; }
+      /* содержимое НИКОГДА не залезает под штамп: полная надпись 55мм, сокращённая 11мм */
+      .body { flex: 1 1 auto; min-height: 0; padding-bottom: 58mm; }
+      .body-c { padding-bottom: 14mm; }
       .plan { height: 100%; display: flex; align-items: center; justify-content: center; }
       .plan svg { display: block; max-width: 100%; max-height: 100%; }
       .cols { display: flex; gap: 4mm; align-items: flex-start; }
@@ -776,14 +964,37 @@
       .note { font-size: 10px; margin-bottom: 2mm; }
       .legend div { display: flex; align-items: center; gap: 2mm; padding: .4mm 0; font-size: 9.5px; }
       .g { font-style: normal; display: inline-flex; width: 4.5mm; height: 4.5mm; border-radius: 50%; border: .25mm solid #000; align-items: center; justify-content: center; font-size: 7.5px; font-weight: 700; flex: none; }
-      /* ---- основная надпись (штамп) ---- */
+      /* ---- основная надпись по ГОСТ 21.101 (форма 3 — первый лист, форма 6 — далее) ---- */
       .stamp { position: absolute; right: 0; bottom: 0; width: 185mm; border-collapse: collapse; table-layout: fixed; }
-      .stamp td { border: .25mm solid #000; padding: .6mm 1.2mm; height: 6mm; font-size: 8.5px; vertical-align: middle; }
-      .stamp .st-k { width: 20mm; color: #333; font-size: 7.5px; text-transform: uppercase; letter-spacing: .02em; background: #f4f4f4; }
-      .stamp .st-c { text-align: center; }
-      .stamp .st-title { font-weight: 700; font-size: 10px; }
+      .stamp td { border: .25mm solid #000; padding: 0 .8mm; height: 5.5mm; font-size: 8px; vertical-align: middle; overflow: hidden; }
+      .stamp .s-c { text-align: center; }
+      .stamp .s-l { text-align: left; }
+      .stamp .s-code { font-size: 10px; }
+      .stamp .s-obj { font-size: 8.5px; line-height: 1.15; padding: .5mm 2mm; }
+      .stamp .s-sec, .stamp .s-title { font-size: 9px; line-height: 1.15; padding: .5mm 1.5mm; }
+      .stamp .s-h { font-size: 7.5px; }
+      .stamp .s-org { font-size: 11px; letter-spacing: .06em; }
+      .stamp-c { width: 185mm; }
+      /* ---- спецификация оборудования (ГОСТ 21.110, форма 1) ---- */
+      .spec { width: 100%; border-collapse: collapse; table-layout: fixed; }
+      .spec th, .spec td { border: .25mm solid #000; height: 5.6mm; padding: 0 1mm; font-size: 8.5px; font-weight: 400; vertical-align: middle; overflow: hidden; }
+      .spec .sp-h th { text-align: center; height: 12mm; font-size: 8px; line-height: 1.15; padding: .5mm; }
+      .spec .sp-n td { text-align: center; font-size: 8px; height: 4.4mm; }
+      .spec col { }
+      .spec th:nth-child(1), .spec td:nth-child(1) { width: 12mm; }
+      .spec th:nth-child(3), .spec td:nth-child(3) { width: 40mm; }
+      .spec th:nth-child(4), .spec td:nth-child(4) { width: 25mm; }
+      .spec th:nth-child(5), .spec td:nth-child(5) { width: 25mm; }
+      .spec th:nth-child(6), .spec td:nth-child(6) { width: 18mm; }
+      .spec th:nth-child(7), .spec td:nth-child(7) { width: 15mm; }
+      .spec th:nth-child(8), .spec td:nth-child(8) { width: 20mm; }
+      .spec th:nth-child(9), .spec td:nth-child(9) { width: 24mm; }
+      .spec .sp-c { text-align: center; }
+      .spec .sp-sec { text-align: center; }
+      .spec .sp-nm { padding-left: 3mm; }
+      .spec-note { position: absolute; left: 0; bottom: 2mm; width: calc(100% - 188mm); font-size: 8.5px; line-height: 1.3; }
       /* ---- титульный лист ---- */
-      .tp { display: flex; flex-direction: column; height: 100%; padding-bottom: 27mm; }
+      .tp { display: flex; flex-direction: column; height: 100%; padding-bottom: 58mm; }
       .tp-top { text-align: center; padding: 6mm 0 8mm; }
       .tp-stage { font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: #444; margin-bottom: 3mm; }
       .tp-top h1 { font-size: 22px; font-weight: 700; letter-spacing: .01em; }
