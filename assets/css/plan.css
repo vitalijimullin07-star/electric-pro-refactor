@@ -844,6 +844,27 @@ body[data-visual-mode="day"] .ep-plan-opnum { fill: #0f172a; stroke: rgba(255,25
 .ep-plan-unfopen { cursor: pointer; }
 .ep-plan-unfold.is-full .ep-plan-unfsvg, .ep-plan-sheet-full .ep-plan-unfsvg { height: 80vh; height: 80dvh; }
 
+/* выбор разделов альбома перед печатью (шторка 📄): строка-чекбокс «раздел — N листов».
+   Не <input type=checkbox>: base.css растягивает любой input на width:100%, а строке
+   нужен компактный квадратик слева (тот же приём, что у .ep-uchk в админке). */
+.ep-plan-secs { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 6px; }
+.ep-plan-secrow {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  background: rgba(148, 163, 184, .1); border: 1px solid rgba(148, 163, 184, .22);
+  border-radius: 10px; padding: 7px 10px; color: var(--text); font: inherit; font-size: 13px; cursor: pointer;
+}
+.ep-plan-secrow.on { background: rgba(56, 189, 248, .16); border-color: rgba(56, 189, 248, .5); }
+.ep-plan-secrow i {
+  flex: none; width: 18px; height: 18px; border-radius: 5px; font-style: normal; font-size: 12px; font-weight: 700;
+  border: 1px solid rgba(148, 163, 184, .55); display: flex; align-items: center; justify-content: center;
+}
+.ep-plan-secrow.on i { background: var(--accent); border-color: var(--accent); color: #06121f; }
+.ep-plan-secrow span { flex: 1 1 auto; min-width: 0; }
+.ep-plan-secrow b { flex: none; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* раздел, для которого в проекте нет данных: остаётся видимым, но приглушён — так
+   понятно, ПОЧЕМУ его листов нет в альбоме (а не «галка стоит, а листов нет») */
+.ep-plan-secrow.is-empty { opacity: .55; }
+
 /* превью масштаба PDF-развёртки (шторка 📄 перед печатью, plan-export.js) — сама
    svg-разметка (unfoldSvg) общая с печатным листом, но ТОТ <style> — отдельный
    документ (window.open, без доступа к plan.css) со своими цветами под белую

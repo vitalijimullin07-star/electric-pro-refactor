@@ -33,6 +33,47 @@
   // сбрасывается между сессиями), крутится ползунком в шторке 📄 перед печатью
   let pdfScale = 1;
 
+  /* ---- РАЗДЕЛЫ АЛЬБОМА: что печатать ----
+     Полный альбом на реальную квартиру выходит на 20-25 листов, а на объект часто
+     нужен один раздел (одни развёртки монтажнику, одна спецификация снабженцу).
+     Порядок в списке = порядок листов в альбоме, менять его здесь и в sheetHtml()
+     ОДНОВРЕМЕННО. Выбор — свойство УСТРОЙСТВА (localStorage), не проекта: это
+     «как я обычно печатаю», а не данные объекта — тем же принципом, что
+     ep_plan_paper_v1 и настройки quickbar. */
+  const SECTIONS = [
+    { id: "title", name: "Титульный лист и состав альбома" },
+    { id: "plan", name: "Общий план" },
+    { id: "dims", name: "Размеры и высоты (лист на каждый тип точек)" },
+    { id: "traces", name: "Трассы (лист на каждый слой)" },
+    { id: "unfolds", name: "Развёртки стен" },
+    { id: "expl", name: "Экспликация и условные обозначения" },
+    { id: "spec", name: "Спецификация оборудования (ГОСТ 21.110)" },
+    { id: "circuits", name: "Линии и щит" },
+    { id: "scheme", name: "Однолинейная схема" }
+  ];
+  const SEC_KEY = "ep_pdf_sections_v1";
+  let pdfSections = null;
+  function sections() {
+    if (pdfSections) return pdfSections;
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(SEC_KEY) || "null"); } catch (e) {}
+    const valid = Array.isArray(saved) ? saved.filter((id) => SECTIONS.some((s) => s.id === id)) : [];
+    // пустой/битый список — печатаем всё (иначе кнопка «Сформировать PDF» молча
+    // отдавала бы пустой альбом, и починить это из интерфейса было бы нечем)
+    pdfSections = new Set(valid.length ? valid : SECTIONS.map((s) => s.id));
+    return pdfSections;
+  }
+  const secOn = (id) => sections().has(id);
+  function toggleSec(id) {
+    const s = sections();
+    if (s.has(id)) s.delete(id); else s.add(id);
+    try { localStorage.setItem(SEC_KEY, JSON.stringify(Array.from(s))); } catch (e) {}
+  }
+  function setAllSec(on) {
+    pdfSections = new Set(on ? SECTIONS.map((s) => s.id) : []);
+    try { localStorage.setItem(SEC_KEY, JSON.stringify(Array.from(pdfSections))); } catch (e) {}
+  }
+
   // чистый SVG плана: отдельный офф-скрин холст, без сетки и подложки.
   // floorScoped() ЗДЕСЬ, а не у каждого вызывающего — buildLayerPages() тоже
   // зовёт buildSvg(p) внутри withLayers(), одно место фильтра покрывает оба
@@ -196,9 +237,13 @@
     const l = (p.layers || []).find((x) => x.id === id);
     return l ? l.name : id;
   }
-  // какие из «трассируемых» слоёв реально что-то содержат в ЭТОМ проекте (нет
-  // смысла печатать пустую страницу «Тёплый пол», если его в проекте нет)
-  function usedTraceLayers(p) {
+  // какие из «трассируемых» слоёв реально что-то содержат на АКТИВНОМ ЭТАЖЕ (нет
+  // смысла печатать пустую страницу «Тёплый пол», если его в проекте нет).
+  // floorScoped ОБЯЗАТЕЛЕН: сам лист рисуется через buildSvg, а тот фильтрует по
+  // активному этажу — без фильтра здесь на этаже 2 появлялся бы пустой лист по
+  // слою, который есть только на этаже 1.
+  function usedTraceLayers(p0) {
+    const p = G().floorScoped(p0);
     const used = new Set();
     (p.routes || []).forEach((r) => { if (r.layer) used.add(r.layer); });
     (p.elements || []).forEach((e) => { if (e.layer) used.add(e.layer); });
@@ -229,9 +274,11 @@
     const T2 = (EP.Plan.Elements && EP.Plan.Elements.TYPES) || {};
     return (T2[t] && T2[t].name) || t;
   }
-  // все типы точек, реально стоящие в проекте; блок раскрывается на свои посты (блок — это
-  // рамка с постами разных типов, а не отдельный «тип точки» для листа)
-  function usedPointTypes(p) {
+  // все типы точек, реально стоящие на АКТИВНОМ ЭТАЖЕ; блок раскрывается на свои посты
+  // (блок — это рамка с постами разных типов, а не отдельный «тип точки» для листа).
+  // floorScoped — по той же причине, что и у usedTraceLayers выше.
+  function usedPointTypes(p0) {
+    const p = G().floorScoped(p0);
     const T2 = (EP.Plan.Elements && EP.Plan.Elements.TYPES) || {};
     const has = new Set();
     (p.elements || []).forEach((e) => {
@@ -666,18 +713,32 @@
     </svg>`;
   }
   const UNF_PER_PAGE = 2;
-  function buildUnfolds(p) {
-    const cards = [];
+  // Стены с точками, по которым строятся карточки развёрток — ОБЩИЙ источник и для
+  // самой сборки, и для счётчика листов в шторке 📄 (счётчик обязан быть дешёвым:
+  // он пересчитывается на каждый клик по чекбоксу и НЕ должен строить ни одного SVG).
+  // floorScoped ОБЯЗАТЕЛЕН: раньше buildUnfolds шла по p.rooms проекта целиком, и на
+  // многоэтажном проекте ОДНИ И ТЕ ЖЕ развёртки печатались повторно на каждый этаж.
+  function unfoldWalls(p0) {
+    const p = G().floorScoped(p0);
+    const out = [];
     (p.rooms || []).forEach((room) => {
       if ((room.points || []).length < 2) return;
       const walls = G().walls(room);
       walls.forEach((w) => {
         const els = (p.elements || []).filter((e) => e.wallId === w.id);
-        if (!els.length) return;
-        const H = room.height || p.settings.ceilingHeight;
-        const opN = (G().wallOpeningSpans ? G().wallOpeningSpans(p, w) : []).length;
-        // информационная панель карточки: какое помещение / какая стена напечатана + ключ
-        const info = `<div class="unfinfo">
+        if (els.length) out.push({ p, room, w, els, walls });
+      });
+    });
+    return out;
+  }
+  function buildUnfolds(p0) {
+    const cards = [];
+    unfoldWalls(p0).forEach((u) => {
+      const p = u.p, room = u.room, w = u.w, els = u.els, walls = u.walls;
+      const H = room.height || p.settings.ceilingHeight;
+      const opN = (G().wallOpeningSpans ? G().wallOpeningSpans(p, w) : []).length;
+      // информационная панель карточки: какое помещение / какая стена напечатана + ключ
+      const info = `<div class="unfinfo">
           <table class="unfinfot"><tr><th>Помещение</th><td><b>${esc(room.name)}</b></td></tr>
             <tr><th>Стена</th><td>№ ${w.n} из ${walls.length}</td></tr>
             <tr><th>Габарит</th><td>${G().fmtLen(w.len)} × ${G().fmtLen(H)}</td></tr>
@@ -685,8 +746,7 @@
             <tr><th>Точек</th><td>${els.length}${opN ? ` · проёмов: ${opN}` : ""}</td></tr></table>
           <div class="unfkeyw">${wallKeySvg(room, w)}<div class="unfkeyc">вид на стену №${w.n}<br>со стороны помещения</div></div>
         </div>`;
-        cards.push(`<div class="unfcard"><h4>${esc(room.name)} · стена ${w.n} · ${G().fmtLen(w.len)} × ${G().fmtLen(H)}</h4>${info}${unfoldSvg(p, room, w, els)}</div>`);
-      });
+      cards.push(`<div class="unfcard"><h4>${esc(room.name)} · стена ${w.n} · ${G().fmtLen(w.len)} × ${G().fmtLen(H)}</h4>${info}${unfoldSvg(p, room, w, els)}</div>`);
     });
     if (!cards.length) return [];
     const totalPages = Math.ceil(cards.length / UNF_PER_PAGE);
@@ -892,6 +952,31 @@
     p.activeFloorId = fid;
     try { return fn(); } finally { p.activeFloorId = prev; }
   }
+  /* Сколько листов даст каждый раздел — БЕЗ сборки единого SVG (чекбоксы в шторке 📄
+     пересчитывают это на каждый клик). Числа считаются ТЕМИ ЖЕ функциями «что печатать»,
+     что и сама сборка (usedPointTypes / usedTraceLayers / unfoldWalls / buildSpecPages),
+     поэтому «— N листов» и реальный альбом не могут разойтись. Спецификация строит
+     только строки таблицы (SVG там нет), а её данные приходят из мемоизированного
+     EP.Plan.Calc.estimateItems — повторный вызов ничего не пересчитывает. */
+  function albumOutline(p) {
+    const n = { title: 1, plan: 0, dims: 0, traces: 0, unfolds: 0, expl: 1, spec: 0, circuits: 0, scheme: 0 };
+    floorsOf(p).forEach((f) => withFloor(p, f && f.id, () => {
+      n.plan += 1;
+      n.dims += usedPointTypes(p).length;
+      n.traces += usedTraceLayers(p).length;
+      n.unfolds += Math.ceil(unfoldWalls(p).length / UNF_PER_PAGE);
+    }));
+    try { n.spec = buildSpecPages(p).length; } catch (e) { n.spec = 0; }
+    n.circuits = (p.circuits || []).length ? 1 : 0;
+    n.scheme = (window.ShieldSchemeSVG && EP.Plan.Scheme && (p.circuits || []).length) ? 1 : 0;
+    let total = 0;
+    SECTIONS.forEach((s) => { if (secOn(s.id)) total += n[s.id] || 0; });
+    return { n, total };
+  }
+  // МНОГОЭТАЖНЫЙ альбом: листы, зависящие от ГЕОМЕТРИИ, печатаются НА КАЖДЫЙ этаж;
+  // одноэтажный проект — один проход с активным этажом как есть (null = не трогаем)
+  const floorsOf = (p) => ((p.floors || []).length > 1 ? (p.floors || []).slice() : [null]);
+
   function sheetHtml(p) {
     const expl = (p.rooms || []).filter((r) => (r.points || []).length >= 3)
       .map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.name)}</td><td>${G().fmtArea(G().roomNetArea(p, r))}</td><td>${esc(r.material || p.settings.wallMaterial)}</td></tr>`).join("");
@@ -905,30 +990,34 @@
     // ---- альбом: собираем ЛИСТЫ по порядку, потом нумеруем (штамп каждого листа знает
     // свой номер и общее число — «Лист N / Листов M», как в проектной документации) ----
     const pages = [];
-    // МНОГОЭТАЖНЫЙ альбом: листы, зависящие от ГЕОМЕТРИИ (общий план, по типам точек, по
-    // слоям трасс, развёртки), печатаются НА КАЖДЫЙ этаж — buildSvg/unfoldSvg берут
-    // активный этаж через G.floorScoped, поэтому просто прогоняем их по очереди с
-    // временно переключённым p.activeFloorId (withFloor, БЕЗ persist — вид пользователя
-    // не меняется). Листы, общие для всего проекта (спецификация, линии и щит,
+    // Листы, зависящие от ГЕОМЕТРИИ (общий план, по типам точек, по слоям трасс,
+    // развёртки), печатаются НА КАЖДЫЙ этаж — buildSvg/unfoldSvg берут активный этаж
+    // через G.floorScoped, поэтому просто прогоняем их по очереди с временно
+    // переключённым p.activeFloorId (withFloor, БЕЗ persist — вид пользователя не
+    // меняется). Листы, общие для всего проекта (спецификация, линии и щит,
     // однолинейка), печатаются ОДИН раз: смета/линии/схема в модуле и так одни на проект.
-    const floors = (p.floors || []).length > 1 ? (p.floors || []).slice() : [null];
-    floors.forEach((f) => withFloor(p, f && f.id, () => {
+    // Каждый раздел гейтится secOn() — набор выбирается чекбоксами в шторке 📄.
+    floorsOf(p).forEach((f) => withFloor(p, f && f.id, () => {
       const suf = f ? " · " + f.name : "";
-      pages.push({ title: T.genplan + suf, body: `<div class="plan">${buildSvg(p)}</div>`, scale: lastPlanScale });
-      buildTypePages(p).forEach((pg) => pages.push(Object.assign({}, pg, { title: pg.title + suf })));
-      buildLayerPages(p).forEach((pg) => pages.push(Object.assign({}, pg, { title: pg.title + suf })));
-      buildUnfolds(p).forEach((pg) => pages.push(Object.assign({}, pg, { title: pg.title + suf })));
+      if (secOn("plan")) pages.push({ title: T.genplan + suf, body: `<div class="plan">${buildSvg(p)}</div>`, scale: lastPlanScale });
+      if (secOn("dims")) buildTypePages(p).forEach((pg) => pages.push(Object.assign({}, pg, { title: pg.title + suf })));
+      if (secOn("traces")) buildLayerPages(p).forEach((pg) => pages.push(Object.assign({}, pg, { title: pg.title + suf })));
+      if (secOn("unfolds")) buildUnfolds(p).forEach((pg) => pages.push(Object.assign({}, pg, { title: pg.title + suf })));
     }));
-    pages.push({ title: T.specSheet, body: `<div class="cols">
+    if (secOn("expl")) pages.push({ title: T.specSheet, body: `<div class="cols">
           <div><h3>${T.expl}</h3><table class="tb"><thead><tr><th>№</th><th>Помещение</th><th>S</th><th>Стены</th></tr></thead><tbody>${expl}</tbody></table></div>
           <div><h3>${T.spec}</h3><table class="tb"><thead><tr><th></th><th>Тип</th><th>Кол-во</th></tr></thead><tbody>${spec}</tbody></table></div>
           <div class="legend"><h3>${T.legend}</h3>${legendRows}</div>
         </div>` });
-    buildSpecPages(p).forEach((pg) => pages.push(pg));
-    buildCircuits(p).forEach((pg) => pages.push(pg));
-    buildScheme(p).forEach((pg) => pages.push(pg));
-    const of = pages.length + 1; // + титульный лист
-    const sheets = buildTitlePage(p, pages, of) + pages.map((pg, i) => sheetWrap(p, pg, i + 2, of)).join("");
+    if (secOn("spec")) buildSpecPages(p).forEach((pg) => pages.push(pg));
+    if (secOn("circuits")) buildCircuits(p).forEach((pg) => pages.push(pg));
+    if (secOn("scheme")) buildScheme(p).forEach((pg) => pages.push(pg));
+    // без титульного листа нумерация начинается с первого содержательного листа —
+    // «Лист N / Листов M» в штампе обязан сходиться с реальным числом листов альбома
+    const tp = secOn("title");
+    const of = pages.length + (tp ? 1 : 0);
+    const sheets = (tp ? buildTitlePage(p, pages, of) : "")
+      + pages.map((pg, i) => sheetWrap(p, pg, i + 1 + (tp ? 1 : 0), of)).join("");
     return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>${esc(p.name)} — ${T.sheet}</title><style>
       /* ---- лист альбома: A4 landscape, поля по ГОСТ 2.301 (20мм слева под подшивку,
          5мм остальные), рамка, штамп внизу справа. margin:0 у @page — поля рисуем сами,
@@ -1119,6 +1208,7 @@
   function print() {
     const p = core().project;
     if (!p || !(p.rooms || []).length) { rooms().toast("Нарисуй план — потом лист."); return; }
+    if (!sections().size) { rooms().toast("Выбери хотя бы один раздел для печати."); return; }
     // window.open() ОБЯЗАН остаться синхронным, прямо в обработчике клика — иначе
     // блокировщик всплывающих окон режет его (popup разрешён только внутри стека
     // вызовов пользовательского жеста, не из setTimeout).
@@ -1140,27 +1230,33 @@
   // первая попавшаяся стена с точками — образец для живого превью масштаба
   // (просьба пользователя: ползунок с превью ПЕРЕД печатью PDF)
   function firstUnfoldSample(p) {
-    let card = null;
-    (p.rooms || []).some((room) => {
-      if ((room.points || []).length < 2) return false;
-      return G().walls(room).some((w) => {
-        const els = (p.elements || []).filter((e) => e.wallId === w.id);
-        if (!els.length) return false;
-        card = unfoldSvg(p, room, w, els);
-        return true;
-      });
-    });
-    return card;
+    const u = unfoldWalls(p)[0];
+    return u ? unfoldSvg(u.p, u.room, u.w, u.els) : null;
   }
   function pdfScalePreview(p) {
     const card = firstUnfoldSample(p);
     return card ? `<div class="ep-plan-pdfpreview">${card}</div>` : `<div class="ep-plan-modehint">Нет точек на стенах для превью — масштаб всё равно применится ко всем развёрткам.</div>`;
   }
+  // строка раздела в шторке 📄: чекбокс + сколько листов он даст (0 листов — раздел
+  // остаётся в списке, но помечен «нет данных», чтобы было видно, ПОЧЕМУ его нет в альбоме)
+  function secRowHtml(s, cnt) {
+    const on = secOn(s.id);
+    const lbl = cnt > 0 ? `${cnt} ${cnt === 1 ? "лист" : (cnt < 5 ? "листа" : "листов")}` : "нет данных";
+    return `<button type="button" class="ep-plan-secrow ep-clickable ${on ? "on" : ""} ${cnt ? "" : "is-empty"}" data-pxp-sec="${s.id}">
+      <i>${on ? "✓" : ""}</i><span>${s.name}</span><b>${lbl}</b></button>`;
+  }
   function sheetPdfScale() {
     const p = core().project;
     if (!p || !(p.rooms || []).length) { rooms().toast("Нарисуй план — потом лист."); return; }
     const pct = Math.round(pdfScale * 100);
+    const out = albumOutline(p);
     rooms().openSheet(`<div class="ep-plan-srow"><b>📄 Печатный лист (PDF)</b><span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-sheet-fs aria-label="Во весь экран">⛶</button><button type="button" class="ep-plan-mini ep-clickable" data-pxp-close>✕</button></div>
+      <div class="ep-plan-srow"><b>Что печатать</b><span class="ep-plan-flex"></span>
+        <button type="button" class="ep-plan-mini ep-clickable" data-pxp-secall="1">Все</button>
+        <button type="button" class="ep-plan-mini ep-clickable" data-pxp-secall="0">Снять</button>
+      </div>
+      <div class="ep-plan-secs">${SECTIONS.map((s) => secRowHtml(s, out.n[s.id] || 0)).join("")}</div>
+      <div class="ep-plan-modehint">Полный альбом на квартиру — это 20+ листов. Сними лишние разделы: монтажнику на объект обычно нужны только развёртки, снабженцу — спецификация. Выбор запоминается на этом устройстве.</div>
       <div class="ep-plan-srow">Масштаб постов на развёртках:
         <input type="range" min="20" max="220" value="${pct}" data-pxp-scale class="ep-plan-unfslider">
         <b data-pxp-scaleval>${pct}%</b>
@@ -1178,7 +1274,7 @@
       <b>Важно:</b> в диалоге печати выбери ТУ ЖЕ бумагу. На Android диалог сам решает размер: если оставить A4, лист впишется со сжатием — чертёж будет читаемым, но масштаб в штампе перестанет быть истинным.</div>
       <div id="ep-plan-pdfpreview-box">${pdfScalePreview(p)}</div>
       <div class="ep-plan-srow ep-plan-sbtns">
-        <button type="button" class="btn btn-primary ep-clickable" data-pxp-print>📄 Сформировать PDF (${pdfFormat}${pdfFit ? " · во весь лист" : ""})</button>
+        <button type="button" class="btn btn-primary ep-clickable" data-pxp-print ${out.total ? "" : "disabled"}>📄 Сформировать PDF (${pdfFormat}${pdfFit ? " · во весь лист" : ""} · ${out.total} л.)</button>
       </div>`);
   }
 
@@ -1190,6 +1286,10 @@
     if (fmtBtn) { pdfFormat = fmtBtn.getAttribute("data-pxp-fmt") || "A4"; sheetPdfScale(); return; }
     const fitBtn = e.target.closest("[data-pxp-fit]");
     if (fitBtn) { pdfFit = fitBtn.getAttribute("data-pxp-fit") === "1"; sheetPdfScale(); return; }
+    const secBtn = e.target.closest("[data-pxp-sec]");
+    if (secBtn) { toggleSec(secBtn.getAttribute("data-pxp-sec")); sheetPdfScale(); return; }
+    const allBtn = e.target.closest("[data-pxp-secall]");
+    if (allBtn) { setAllSec(allBtn.getAttribute("data-pxp-secall") === "1"); sheetPdfScale(); return; }
     // closeSheet() ПЕРЕД print() — иначе он тут же стёр бы тост «Строим PDF…»,
     // который print() показывает через тот же openSheet() сразу после себя.
     if (e.target.closest("[data-pxp-print]")) { rooms().closeSheet(); print(); return; }
@@ -1206,5 +1306,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Export = { print, sheetHtml, counts };
+  EP.Plan.Export = { print, sheetHtml, counts, SECTIONS, sections, toggleSec, setAllSec, albumOutline };
 })();
