@@ -5465,6 +5465,10 @@ test("фото: deleteProject чистит кэш фото своего прое
       eq(opened.rooms[0].name, "Местная", "активной осталась МЕСТНАЯ версия — чужая правка её не затёрла");
       eq(EP.Plan.Core.listProjects().length, before + 1, "облачная сохранена ОТДЕЛЬНОЙ копией, ничего не потеряно");
       ok(EP.Plan.Core.listProjects().some((r) => /с другого устройства/.test(r.name)), "копия помечена в названии");
+      // повторное открытие НЕ плодит ещё одну копию (облако так и осталось новее)
+      EP.Plan.Core.closeProject();
+      await EP.Plan.Core.openProject(id);
+      eq(EP.Plan.Core.listProjects().length, before + 1, "второе открытие копию не дублирует");
       detachCloud();
     });
 
