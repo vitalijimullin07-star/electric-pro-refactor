@@ -1109,3 +1109,10 @@ body[data-flatshadow="1"] .ep-plan-furn.is-sel .ep-plan-furnrect { filter: none;
 .ep-plan-tplcell input[type="text"] { width: 100%; font-size: 12px; }
 .ep-plan-tplcell label { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
 .ep-plan-tplcell label input { width: 100%; flex: 1 1 auto; text-align: center; }
+
+/* синхронизация списка проектов между устройствами (plan-core cloudPullIndex/syncState) */
+.ep-plan-syncrow { display: flex; align-items: center; gap: 8px; margin: 2px 2px 8px; font-size: 12px; color: var(--muted); }
+.ep-plan-syncb { font-style: normal; font-size: 11px; padding: 1px 6px; border-radius: 6px; white-space: nowrap; }
+.ep-plan-syncb.is-cloud { background: rgba(56, 189, 248, .2); color: #38bdf8; }
+.ep-plan-syncb.is-pending { background: rgba(245, 158, 11, .2); color: #f59e0b; }
+.ep-plan-syncb.is-local { background: rgba(148, 163, 184, .2); color: var(--muted); }

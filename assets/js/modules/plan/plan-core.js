@@ -10,6 +10,7 @@
   const LS_PROJECT = "ep_plan_v1_p_";   // + id проекта
   const CLOUD_INDEX = "plan-index";
   const CLOUD_PROJECT = "plan-";        // + id проекта
+  const LS_TOMBS = "ep_plan_v1_tombs";  // надгробия удалённых проектов (см. cloudPullIndex)
 
   // ---- центральный конфиг (редактируется пользователем в следующих слоях) ----
   const DEFAULTS = {
@@ -19,6 +20,8 @@
     snapEnabled: true,
     undoLimit: 40,
     cloudDebounceMs: 1500,
+    cloudTimeoutMs: 4000, // чтение из облака не должно подвешивать открытие проекта
+    tombMax: 200,         // сколько надгробий помним (кап на размер индекса в облаке)
     persistDebounceMs: 400, // localStorage-запись коалесируется (см. persist() ниже)
     heightPresets: { socket: 30, switch: 90, kitchen: 110 }, // см от пола
     panelHeight: 150,     // см — низ щита (для вертикалей трасс)
@@ -444,8 +447,12 @@
   function loadIndex() { S.index = lsGet(LS_INDEX, []); }
   function saveIndex() { lsSet(LS_INDEX, S.index); }
   function indexUpsert(p) {
-    const row = { id: p.id, name: p.name, address: p.address || "", updatedAt: p.updatedAt, rooms: p.rooms.length, elements: p.elements.length };
     const i = S.index.findIndex((x) => x.id === p.id);
+    const row = { id: p.id, name: p.name, address: p.address || "", updatedAt: p.updatedAt, rooms: p.rooms.length, elements: p.elements.length };
+    // cloudAt — «до какой версии проект видели в облаке» (ставит cloudPullIndex).
+    // Локальная правка НЕ должна её терять: по ней openProject решает, тянуть ли
+    // свежую копию с другого устройства.
+    if (i >= 0 && S.index[i].cloudAt) row.cloudAt = S.index[i].cloudAt;
     if (i >= 0) S.index[i] = row; else S.index.unshift(row);
     S.index.sort((a, b) => b.updatedAt - a.updatedAt);
     saveIndex();
@@ -461,29 +468,99 @@
   // надёжно. ПЛАТА: сами фото — IndexedDB ЛОКАЛЬНА устройству, на другом
   // устройстве/браузере по id из облака их не достать (там их просто нет) —
   // раскрыто пользователю как известное ограничение, см. CLAUDE.md.
+  // Сеть может «висеть» (EP.Cloud.pull своего таймаута не имеет), а на этих чтениях
+  // стоит ОТКРЫТИЕ проекта — без ограничения по времени плохая связь подвешивала бы
+  // список проектов. Не дождались — работаем с локальной копией, как офлайн.
+  function withTimeout(pr, ms) {
+    return Promise.race([pr, new Promise((res) => setTimeout(() => res(null), ms))]);
+  }
+  // Надгробия: проект, удалённый на ДРУГОМ устройстве, иначе воскресал бы вечно —
+  // это устройство при следующем пуше кладёт его обратно в облачный индекс.
+  function loadTombs() { S.tombs = lsGet(LS_TOMBS, []); }
+  function addTomb(id) {
+    S.tombs = (S.tombs || []).filter((t) => t.id !== id);
+    S.tombs.unshift({ id, at: now() });
+    S.tombs = S.tombs.slice(0, DEFAULTS.tombMax);
+    lsSet(LS_TOMBS, S.tombs);
+  }
+  function mergeTombs(a, b) {
+    const m = {};
+    (a || []).concat(b || []).forEach((t) => {
+      if (t && t.id && (!m[t.id] || t.at > m[t.id].at)) m[t.id] = { id: t.id, at: t.at || 0 };
+    });
+    return Object.keys(m).map((k) => m[k]).sort((x, y) => y.at - x.at).slice(0, DEFAULTS.tombMax);
+  }
   function cloudPushSoon() {
     clearTimeout(S.cloudTimer);
-    S.cloudTimer = setTimeout(() => {
+    S.cloudTimer = setTimeout(async () => {
       if (!cloudReady()) return;
       const p = S.project;
-      if (p) EP.Cloud.push(CLOUD_PROJECT + p.id, { project: p, updatedAt: p.updatedAt });
-      EP.Cloud.push(CLOUD_INDEX, { rows: S.index, updatedAt: now() });
+      if (p) {
+        const at = p.updatedAt;
+        const ok = await EP.Cloud.push(CLOUD_PROJECT + p.id, { project: p, updatedAt: at });
+        // syncedAt — «до какой версии проект реально доехал в облако». По нему потом
+        // отличаем «локально есть неотправленное» от «в облаке лежит новее». Это
+        // СЛУЖЕБНАЯ метка, а не правка проекта: updatedAt не трогаем, commit()/undo не
+        // плодим и повторный пуш не запускаем (иначе получили бы бесконечный цикл).
+        if (ok && S.project && S.project.id === p.id) {
+          S.project.syncedAt = at;
+          lsSet(LS_PROJECT + p.id, S.project);
+        }
+      }
+      EP.Cloud.push(CLOUD_INDEX, { rows: S.index, deleted: S.tombs || [], updatedAt: now() });
     }, DEFAULTS.cloudDebounceMs);
   }
   async function cloudPullIndex() {
     if (!cloudReady()) return;
-    const d = await EP.Cloud.pull(CLOUD_INDEX);
-    if (d && Array.isArray(d.rows)) {
-      d.rows.forEach((r) => { if (r && r.id && !S.index.some((x) => x.id === r.id)) S.index.push(r); });
-      S.index.sort((a, b) => b.updatedAt - a.updatedAt);
-      saveIndex();
-      emit("index");
-    }
+    const d = await withTimeout(EP.Cloud.pull(CLOUD_INDEX), DEFAULTS.cloudTimeoutMs);
+    if (!d) return;
+    // 1) надгробия с других устройств: удаляем и у себя, но ТОЛЬКО если наша копия не
+    //    новее самого удаления — иначе потеряли бы правки, сделанные уже после него
+    (Array.isArray(d.deleted) ? d.deleted : []).forEach((t) => {
+      if (!t || !t.id) return;
+      const row = S.index.find((x) => x.id === t.id);
+      if (row && !(row.updatedAt > (t.at || 0))) dropLocalProject(t.id);
+    });
+    S.tombs = mergeTombs(S.tombs, d.deleted);
+    lsSet(LS_TOMBS, S.tombs);
+    // 2) строки индекса: раньше добавлялись ТОЛЬКО отсутствующие, поэтому правка с
+    //    другого устройства до этого устройства не доезжала вообще. Теперь берём
+    //    новейшую по updatedAt и запоминаем cloudAt — по нему openProject решит,
+    //    тянуть ли сам документ проекта.
+    const dead = new Set((S.tombs || []).map((t) => t.id));
+    (Array.isArray(d.rows) ? d.rows : []).forEach((r) => {
+      if (!r || !r.id || dead.has(r.id)) return;
+      const i = S.index.findIndex((x) => x.id === r.id);
+      if (i < 0) { S.index.push(Object.assign({}, r, { cloudAt: r.updatedAt })); return; }
+      S.index[i].cloudAt = Math.max(S.index[i].cloudAt || 0, r.updatedAt || 0);
+      if ((r.updatedAt || 0) > (S.index[i].updatedAt || 0)) {
+        S.index[i] = Object.assign({}, r, { cloudAt: r.updatedAt });
+      }
+    });
+    S.index.sort((a, b) => b.updatedAt - a.updatedAt);
+    saveIndex();
+    emit("index");
   }
   async function cloudPullProject(id) {
     if (!cloudReady()) return null;
-    const d = await EP.Cloud.pull(CLOUD_PROJECT + id);
+    const d = await withTimeout(EP.Cloud.pull(CLOUD_PROJECT + id), DEFAULTS.cloudTimeoutMs);
     return d && d.project ? d.project : null;
+  }
+  /* Состояние синхронизации проекта — для списка проектов:
+     "off"     — облако недоступно (нет входа/сети);
+     "local"   — есть только здесь, в облако ещё не уехал;
+     "pending" — есть неотправленные правки;
+     "cloud"   — в облаке лежит версия НОВЕЕ местной (откроется свежая);
+     "sync"    — совпадает с облаком. */
+  function syncState(id) {
+    if (!cloudReady()) return "off";
+    const row = S.index.find((x) => x.id === id);
+    if (!row) return "local";
+    const local = row.updatedAt || 0, cloud = row.cloudAt || 0;
+    if (!cloud) return "local";
+    if (cloud > local) return "cloud";
+    if (local > cloud) return "pending";
+    return "sync";
   }
 
   // ---------- проекты ----------
@@ -509,6 +586,9 @@
   // чтобы старые/сторонние проекты не теряли настройки молча.
   function backfillProject(p) {
     if (p.client == null) p.client = "";
+    // «до какой версии проект доехал в облако» — у старых проектов метки нет; 0 значит
+    // «в облаке не видели», и первое же расхождение будет разрешено в пользу облака
+    if (p.syncedAt == null) p.syncedAt = 0;
     // графы основной надписи PDF — у старых проектов их нет
     if (p.settings && p.settings.northDeg == null) p.settings.northDeg = 0;
     if (p.docCode == null) p.docCode = "";
@@ -593,7 +673,26 @@
   async function openProject(id) {
     let p = lsGet(LS_PROJECT + id, null);
     if (!p) p = await idbGetProject(id);    // квота localStorage была пробита — берём копию из IDB
-    if (!p) p = await cloudPullProject(id); // проект, созданный на другом устройстве
+    // ---- облако: раньше документ проекта тянулся ТОЛЬКО когда локальной копии нет
+    // вообще, поэтому правка, сделанная на ДРУГОМ устройстве, до этого устройства не
+    // доезжала никогда. Теперь тянем ещё и когда индекс говорит, что в облаке новее.
+    const row = S.index.find((x) => x.id === id);
+    const cloudAt = (row && row.cloudAt) || 0;
+    if (!p || cloudAt > (p.updatedAt || 0)) {
+      const cp = await cloudPullProject(id);
+      if (cp && (!p || (cp.updatedAt || 0) > (p.updatedAt || 0))) {
+        const synced = (p && p.syncedAt) || 0;
+        if (p && (p.updatedAt || 0) > synced) {
+          // ОБА изменились с последней синхронизации — молча выбрать нельзя.
+          // Активной остаётся ЛОКАЛЬНАЯ (мастер правил её последней и видит на экране),
+          // облачная сохраняется ОТДЕЛЬНОЙ копией: ничего не теряем, решает пользователь.
+          saveConflictCopy(cp);
+        } else {
+          p = cp;                       // локальных несохранённых правок нет — берём свежую
+          lsSet(LS_PROJECT + id, p);
+        }
+      }
+    }
     if (!p) return null;
     backfillProject(p);
     const migrated = migratePhotos(p); // старые проекты с inline base64 в el.photos
@@ -605,6 +704,26 @@
     return p;
   }
   function closeProject() { S.project = null; S.undo = []; S.redo = []; photoCache.clear(); emit("close"); }
+  // Облачная копия разошлась с местной (правили на двух устройствах) — кладём её
+  // ОТДЕЛЬНЫМ проектом со своим id, вместо того чтобы затирать чью-то работу.
+  function saveConflictCopy(cp) {
+    const copy = Object.assign({}, cp, {
+      id: uid("prj"), name: (cp.name || "Проект") + " (с другого устройства)",
+      updatedAt: now(), syncedAt: 0
+    });
+    backfillProject(copy);
+    lsSet(LS_PROJECT + copy.id, copy);
+    indexUpsert(copy);
+    return copy;
+  }
+  // Убрать проект ЛОКАЛЬНО, не заводя надгробия (это НЕ удаление пользователем, а
+  // исполнение чужого удаления, пришедшего из облака).
+  function dropLocalProject(id) {
+    try { localStorage.removeItem(LS_PROJECT + id); } catch (e) {}
+    idbDeleteProject(id);
+    S.index = S.index.filter((x) => x.id !== id);
+    if (S.project && S.project.id === id) closeProject();
+  }
   function deleteProject(id) {
     // отложенная (debounced) запись persist() могла ещё не сработать — если она
     // как раз для ЭТОГО проекта, гасим её, иначе таймер воскресит удалённый
@@ -616,6 +735,7 @@
     try { localStorage.removeItem(LS_PROJECT + id); } catch (e) {}
     idbDeleteProject(id); // и вторую копию (см. IDB_PSTORE) — удаление проекта не отменяемо
     S.index = S.index.filter((x) => x.id !== id);
+    addTomb(id);        // иначе другое устройство при следующем пуше воскресит проект
     saveIndex(); cloudPushSoon();
     if (S.project && S.project.id === id) closeProject(); else emit("index");
   }
@@ -819,6 +939,7 @@
 
   // ---------- init ----------
   loadIndex();
+  loadTombs();
   if (window.EP.Cloud && EP.Cloud.onLogin) EP.Cloud.onLogin(() => { cloudPullIndex(); });
 
   // Марка кабеля по умолчанию = settings.cableBrand + сечение. ЕДИНЫЙ источник для
@@ -839,7 +960,7 @@
     listProjects, createProject, openProject, closeProject, deleteProject, renameProject,
     commit, undo, redo, canUndo, canRedo, persist,
     flushPersist, // добить отложенную запись немедленно (уход со страницы, тесты)
-    exportJSON, exportJSONById, importJSON, cloudPullIndex,
+    exportJSON, exportJSONById, importJSON, cloudPullIndex, syncState, cloudReady,
     addFloor, renameFloor, setActiveFloor, setFloorHeight, deleteFloor,
     photoUrl, addPhoto,
     model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening, newBeam, newVoid, newAppliance, newGuide, newNote, newDim, newManualScheme, newSchemeGroup, newSchemeLine, newLedStrip, newFloor }
