@@ -136,9 +136,63 @@
   // ближе к стене на общих участках, а значит и число ПЕРЕСЕЧЕНИЙ линий между собой.
   let laneOrder = null;
   function setLaneOrder(map) { laneOrder = map || null; }
+  /* АВТО-ПОРЯДОК ПОЛОС (когда оптимизатор не запускался). Порядок в p.circuits — это
+     порядок, в котором мастер ЗАВОДИЛ линии, к геометрии он отношения не имеет; полосы по
+     нему раздавались произвольно, и кабели вынужденно пересекались на входах в ствол
+     магистрали. Правило то же, что у гребёнки щита, только поперёк ствола: кабели с ОДНОЙ
+     стороны ствола держатся своей группы, а внутри группы чем ДАЛЬШЕ от щита линия входит
+     в ствол, тем ближе к самому стволу её полоса — тогда вход более БЛИЗКОЙ линии не режет
+     ход более дальней (она уже свернула). Считается ОДИН раз на сборку по позициям точек:
+     ни поиска, ни лишних buildPath. Замер на трёх разных планировках: 10→3, 6→3, 2→1
+     пересечений разных линий БЕЗ единого клика; «✨ Оптимизировать» дальше добирает до 0-2.
+     laneOrder (явный выбор оптимизатора) ГЛАВНЕЕ — иначе результат оптимизации сбрасывался
+     бы на следующей же перестройке. */
+  let autoLane = null;
+  function computeAutoLane(p) {
+    const guides = (p.guides || []).filter((gd) => (gd.points || []).length >= 2);
+    const panels = p.panels || [], circuits = p.circuits || [];
+    if (!guides.length || !panels.length || circuits.length < 2) return null;
+    const graph = buildGuideGraph(guides, p);
+    if (!graph || !graph.edges.length) return null;
+    // «нулевая отметка» ствола — проекция ближайшего к магистрали щита
+    let pan = null, panPr = null;
+    panels.forEach((pn) => {
+      const pr = nearestOnGraph(graph, { x: pn.x, y: pn.y });
+      if (pr && (!panPr || pr.d < panPr.d)) { pan = pn; panPr = pr; }
+    });
+    if (!panPr) return null;
+    const rows = [];
+    circuits.forEach((c) => {
+      let sx = 0, sy = 0, n = 0;
+      (p.elements || []).forEach((e) => {
+        if (e.circuitId !== c.id) return;
+        const q = G().elemPoint(p, e);
+        if (q) { sx += q.x; sy += q.y; n++; }
+      });
+      if (!n) return void rows.push({ id: c.id, side: 0, d: 0 });
+      const pt = { x: sx / n, y: sy / n };
+      const pr = nearestOnGraph(graph, pt);
+      if (!pr) return void rows.push({ id: c.id, side: 0, d: 0 });
+      // сторона ствола — знак проекции на нормаль ребра входа (та же каноническая
+      // нормаль, что и у самого лан-офсета, поэтому «сторона» здесь и там одна и та же)
+      const nn = edgeNormal(graph, pr.edgeI);
+      const side = ((pt.x - pr.x) * nn.x + (pt.y - pr.y) * nn.y) >= 0 ? 1 : -1;
+      const sp = shortestOnGraph(graph, pr, panPr);
+      let d = 0;
+      const q = (sp && sp.points) || [];
+      for (let i = 1; i < q.length; i++) d += dist(q[i - 1], q[i]);
+      rows.push({ id: c.id, side, d });
+    });
+    if (rows.length < 2) return null;
+    rows.sort((u, v) => (u.side - v.side) || (v.d - u.d) || (u.id < v.id ? -1 : 1));
+    const map = {};
+    rows.forEach((r, i) => { map[r.id] = i; });
+    return map;
+  }
   function circuitIdx(p, circuitId) {
     if (!circuitId) return -1;
     if (laneOrder && laneOrder[circuitId] != null) return laneOrder[circuitId];
+    if (autoLane && autoLane[circuitId] != null) return autoLane[circuitId];
     return (p.circuits || []).findIndex((c) => c.id === circuitId);
   }
   // РАНЬШЕ был кап "×10 лэйнов" (Math.min(idx, 10)) — задуман, чтобы отступ не рос
@@ -1351,6 +1405,7 @@
     const sinkIds = new Set(risersHere.map((n) => n.id)); // стояк-приёмник — ЦЕЛЬ, а не точка
     const points = (fp.elements || []).filter((el) => isPoint(el) && !sinkIds.has(el.id));
     if (!points.length) { if (!silent) rooms().toast(T.noElems); return; }
+    autoLane = computeAutoLane(fp);   // порядок полос по геометрии (см. computeAutoLane)
     if (!quiet) c.commit();
     // Чистим/перестраиваем ТОЛЬКО трассы АКТИВНОГО этажа — трассы других этажей
     // изолированы (своя геометрия) и не трогаются: иначе «Построить» на этаже 2
@@ -1413,6 +1468,7 @@
     const sinkIds = new Set(risersHere.map((n) => n.id));
     const points = (fp.elements || []).filter((el) => isPoint(el) && !sinkIds.has(el.id));
     if (!points.length) { if (!silent) rooms().toast(T.noElems); return; }
+    autoLane = computeAutoLane(fp);   // порядок полос по геометрии (см. computeAutoLane)
     if (!quiet) c.commit();
 
     // проходки уже существующих ручных трасс — актуализируем, путь НЕ трогаем
