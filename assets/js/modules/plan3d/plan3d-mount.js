@@ -13,8 +13,8 @@
     open: "🚶 3D", exit: "Выйти", loading: "Загружаю 3D…",
     noRooms: "Сначала нарисуй хотя бы одну комнату — по ней и строится 3D.",
     failed: "Не удалось запустить 3D на этом устройстве",
-    sensors: "Включить датчики", sensorsHint: "Осмотр поворотом телефона",
-    hint: "Джойстик снизу — идти. Веди пальцем по экрану — осмотреться.",
+    sensors: "🧭 Датчики", sensorsHint: "Осмотр поворотом телефона",
+    hint: "Левый джойстик — идти, правый — осматриваться. Можно и пальцем по экрану.",
     elec: "⚡ Электрика"
   };
 
@@ -28,6 +28,7 @@
     joyRadius: 60,         // px: радиус хода стика
     joyDead: 8,            // px: мёртвая зона
     lookSpeed: 0.0032,     // рад на px свайпа
+    lookStickSpeed: 2.4,   // рад/сек при полном отклонении ПРАВОГО стика
     pitchLimit: 1.35,      // рад: ограничение взгляда вверх/вниз
     lintelH: 40,           // см: высота перемычки (kind:"lintel") под потолком
     // свет (Слой 4): источников в шейдере фиксированное число, они перевешиваются
@@ -61,12 +62,13 @@
       <canvas class="ep-p3d-cv"></canvas>
       <div class="ep-p3d-top">
         <button type="button" class="ep-p3d-btn ep-clickable" data-p3d-exit>✕ ${T.exit}</button>
-        <span class="ep-p3d-fps" data-p3d-fps></span>
         <button type="button" class="ep-p3d-btn ep-clickable on" data-p3d-elec>${T.elec}</button>
         <button type="button" class="ep-p3d-btn ep-clickable" data-p3d-sensors hidden>${T.sensors}</button>
+        <span class="ep-p3d-fps" data-p3d-fps></span>
       </div>
       <div class="ep-p3d-hint" data-p3d-hint>${T.hint}</div>
-      <div class="ep-p3d-joy" data-p3d-joy><i></i></div>`;
+      <div class="ep-p3d-joy is-move" data-p3d-joy><i></i><b>идти</b></div>
+      <div class="ep-p3d-joy is-look" data-p3d-joy2><i></i><b>смотреть</b></div>`;
     document.body.appendChild(d);
     return d;
   }
