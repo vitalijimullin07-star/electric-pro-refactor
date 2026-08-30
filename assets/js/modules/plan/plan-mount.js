@@ -17,6 +17,12 @@
     metaCeil: "Высота потолка по умолчанию, см",
     importBtn: "⤒ Импорт JSON",
     empty: "Проектов пока нет. Создай первый — название можно менять потом.",
+    syncOn: "☁ Проекты синхронизируются между устройствами",
+    syncOff: "☁ Нет связи с облаком — проекты только на этом устройстве",
+    syncBtn: "⟳ Обновить",
+    syncing: "Смотрю облако…",
+    syncDone: (n) => (n ? `Список обновлён: проектов ${n}` : "Список обновлён"),
+    syncNone: "Облако недоступно — нужен вход и интернет",
     back: "‹ Проекты",
     rename: "✎",
     meta: "ℹ️", metaTitle: "О проекте (для титульного листа PDF)",
@@ -86,15 +92,28 @@
           <input id="ep-plan-file" type="file" accept="application/json,.json" hidden>
         </div>
       </div>
+      <div class="ep-plan-syncrow">
+        <span class="ep-plan-syncst">${core().cloudReady() ? T.syncOn : T.syncOff}</span>
+        <span class="ep-plan-flex"></span>
+        <button type="button" class="ep-plan-mini ep-clickable" data-plan-sync>${T.syncBtn}</button>
+      </div>
       <div class="ep-plan-list">${rows.length ? rows.map(rowHtml).join("") : `<div class="card ep-plan-empty">${esc(T.empty)}</div>`}</div>
     </div>`;
     setNavHidden(false); // список проектов — общая шапка «← Plan» нужна для навигации назад
   }
+  // значок синхронизации у строки проекта: показываем ТОЛЬКО когда есть что сказать
+  // (совпадает с облаком — молчим, чтобы список не рябил одинаковыми галочками)
+  const SYNC_BADGE = {
+    cloud: { t: "☁ новее в облаке", c: "is-cloud" },
+    pending: { t: "↑ не отправлен", c: "is-pending" },
+    local: { t: "только здесь", c: "is-local" }
+  };
   function rowHtml(r) {
+    const b = SYNC_BADGE[core().syncState(r.id)];
     return `<div class="card ep-plan-item">
       <button type="button" class="ep-plan-item-main ep-clickable" data-plan-open="${esc(r.id)}">
         <b>${esc(r.name)}</b>
-        <span>${esc(T.stats(r.rooms || 0, r.elements || 0))} · ${esc(T.updated)} ${esc(fmtDate(r.updatedAt))}</span>
+        <span>${esc(T.stats(r.rooms || 0, r.elements || 0))} · ${esc(T.updated)} ${esc(fmtDate(r.updatedAt))}${b ? ` <i class="ep-plan-syncb ${b.c}">${esc(b.t)}</i>` : ""}</span>
       </button>
       <button type="button" class="ep-plan-item-del ep-clickable" data-plan-del="${esc(r.id)}" aria-label="${esc(T.del)}: ${esc(r.name)}">✕</button>
     </div>`;
@@ -447,6 +466,17 @@
     const p = await core().openProject(id);
     if (p) renderEditor(root);
   }
+  // ручное «⟳ Обновить»: тянет индекс проектов из облака и перерисовывает список.
+  // Автоматически он тянется один раз при входе (EP.Cloud.onLogin) — эта кнопка нужна,
+  // когда правку сделали на другом устройстве уже ПОСЛЕ открытия списка здесь.
+  async function doSync(root, btn) {
+    if (!core().cloudReady()) { alert(T.syncNone); return; }
+    const prev = btn.textContent;
+    btn.textContent = T.syncing; btn.disabled = true;
+    try { await core().cloudPullIndex(); } catch (e) {}
+    btn.disabled = false; btn.textContent = prev;
+    renderList(root);
+  }
   function doDelete(root, id) {
     if (!confirm(T.confirmDel)) return;
     core().deleteProject(id);
@@ -589,6 +619,7 @@
     if (t.closest("[data-plan-redo]")) { core().redo(); return; }
     if (t.closest("[data-plan-export]")) return doExport();
     if (t.closest("[data-plan-import]")) return doImport(r);
+    if ((el = t.closest("[data-plan-sync]"))) return void doSync(r, el);
     if (t.closest("[data-plan-full]")) return toggleFullscreen(r);
     if ((el = t.closest("[data-plan-floor]"))) return doSwitchFloor(el.getAttribute("data-plan-floor"));
     if (t.closest("[data-plan-floors-manage]")) return doFloors();

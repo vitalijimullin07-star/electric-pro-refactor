@@ -8,8 +8,17 @@ const { loadPlan, fakeCanvas, fakeNode } = require("./harness");
 let passed = 0, failed = 0;
 const fails = [];
 function test(name, fn) {
-  try { fn(); passed++; }
-  catch (e) { failed++; fails.push(name + " — " + e.message); }
+  try {
+    const r = fn();
+    // АСИНХРОННЫЙ тест: fn() возвращает промис СРАЗУ, try/catch его падения не видит —
+    // раньше такой тест засчитывался пройденным ВСЕГДА, а ошибка уходила в
+    // unhandled rejection и молча терялась. Возвращаем промис, чтобы `await test(...)`
+    // ждал результат и падение честно попадало в счётчик.
+    if (r && typeof r.then === "function") {
+      return r.then(() => { passed++; }, (e) => { failed++; fails.push(name + " — " + e.message); });
+    }
+    passed++;
+  } catch (e) { failed++; fails.push(name + " — " + e.message); }
 }
 function ok(c, m) { if (!c) throw new Error(m || "ожидалось истинное"); }
 function eq(a, b, m) { if (a !== b) throw new Error((m || "") + " ждали " + JSON.stringify(b) + ", получили " + JSON.stringify(a)); }
@@ -5391,6 +5400,123 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(fs2.existsSync(path2.join(__dirname, "..", "assets", "js", "vendor", "three", "three.module.min.js")),
       "локальная копия three.js в репозитории (CSP разрешает только 'self')");
   });
+
+  // ===== 44. Синхронизация проектов между устройствами (plan-core + EP.Cloud) =====
+  {
+    // подставное «облако»: тот же контракт, что у assets/js/modules/ui/cloud-store.js
+    // (push/pull/isReady) — сам Firestore в vm-песочнице недоступен
+    const cloud = { docs: {}, pushes: 0 };
+    const attachCloud = () => {
+      EP.Cloud = {
+        isReady: () => true,
+        push: (name, data) => { cloud.pushes++; cloud.docs[name] = JSON.parse(JSON.stringify(data)); return Promise.resolve(true); },
+        pull: (name) => Promise.resolve(cloud.docs[name] ? JSON.parse(JSON.stringify(cloud.docs[name])) : null)
+      };
+    };
+    const detachCloud = () => { delete EP.Cloud; };
+
+    await test("облако: правка с ДРУГОГО устройства доезжает при открытии проекта", async () => {
+      attachCloud();
+      const p = EP.Plan.Core.createProject("сНоутбука");
+      EP.Plan.Core.commit();
+      p.rooms.push(M.newRoom(G.rectPoints(0, 0, 400, 300), "К"));
+      EP.Plan.Core.persist("seed");
+      EP.Plan.Core.flushPersist();
+      const id = p.id;
+      // «другое устройство» правит тот же проект и кладёт версию новее
+      const remote = JSON.parse(JSON.stringify(p));
+      remote.rooms.push(M.newRoom(G.rectPoints(500, 0, 400, 300), "Вторая"));
+      remote.updatedAt = p.updatedAt + 10000;
+      cloud.docs["plan-" + id] = { project: remote, updatedAt: remote.updatedAt };
+      cloud.docs["plan-index"] = { rows: [{ id, name: "сНоутбука", updatedAt: remote.updatedAt, rooms: 2, elements: 0 }], deleted: [] };
+      // локальная копия «синхронизирована» — своих неотправленных правок нет
+      const loc = JSON.parse(sandbox.localStorage.getItem("ep_plan_v1_p_" + id));
+      loc.syncedAt = loc.updatedAt;
+      sandbox.localStorage.setItem("ep_plan_v1_p_" + id, JSON.stringify(loc));
+      EP.Plan.Core.closeProject();
+      await EP.Plan.Core.cloudPullIndex();
+      eq(EP.Plan.Core.syncState(id), "cloud", "индекс видит, что в облаке новее");
+      const opened = await EP.Plan.Core.openProject(id);
+      eq(opened.rooms.length, 2, "открылась СВЕЖАЯ версия из облака (раньше молча оставалась местная)");
+      detachCloud();
+    });
+
+    await test("облако: правили на двух устройствах — местная остаётся, облачная ложится копией", async () => {
+      attachCloud();
+      const p = EP.Plan.Core.createProject("конфликт");
+      EP.Plan.Core.commit();
+      p.rooms.push(M.newRoom(G.rectPoints(0, 0, 400, 300), "Местная"));
+      EP.Plan.Core.persist("seed");
+      EP.Plan.Core.flushPersist();
+      const id = p.id, base = p.updatedAt;
+      const remote = JSON.parse(JSON.stringify(p));
+      remote.rooms[0].name = "Облачная";
+      remote.updatedAt = base + 10000;
+      cloud.docs["plan-" + id] = { project: remote, updatedAt: remote.updatedAt };
+      cloud.docs["plan-index"] = { rows: [{ id, name: "конфликт", updatedAt: remote.updatedAt, rooms: 1, elements: 0 }], deleted: [] };
+      // местная копия имеет НЕОТПРАВЛЕННЫЕ правки (syncedAt старее updatedAt)
+      const loc = JSON.parse(sandbox.localStorage.getItem("ep_plan_v1_p_" + id));
+      loc.syncedAt = base - 5000;
+      sandbox.localStorage.setItem("ep_plan_v1_p_" + id, JSON.stringify(loc));
+      EP.Plan.Core.closeProject();
+      await EP.Plan.Core.cloudPullIndex();
+      const before = EP.Plan.Core.listProjects().length;
+      const opened = await EP.Plan.Core.openProject(id);
+      eq(opened.rooms[0].name, "Местная", "активной осталась МЕСТНАЯ версия — чужая правка её не затёрла");
+      eq(EP.Plan.Core.listProjects().length, before + 1, "облачная сохранена ОТДЕЛЬНОЙ копией, ничего не потеряно");
+      ok(EP.Plan.Core.listProjects().some((r) => /с другого устройства/.test(r.name)), "копия помечена в названии");
+      // повторное открытие НЕ плодит ещё одну копию (облако так и осталось новее)
+      EP.Plan.Core.closeProject();
+      await EP.Plan.Core.openProject(id);
+      eq(EP.Plan.Core.listProjects().length, before + 1, "второе открытие копию не дублирует");
+      detachCloud();
+    });
+
+    await test("облако: удаление на одном устройстве не воскресает на другом", async () => {
+      attachCloud();
+      const p = EP.Plan.Core.createProject("удалю");
+      EP.Plan.Core.commit();
+      p.rooms.push(M.newRoom(G.rectPoints(0, 0, 300, 300), "К"));
+      EP.Plan.Core.persist("seed");
+      EP.Plan.Core.flushPersist();
+      const id = p.id;
+      EP.Plan.Core.deleteProject(id);
+      // надгробие пишется СРАЗУ (пуш в облако отложен дебаунсом и в vm-песочнице
+      // не срабатывает — setTimeout там заглушка, поэтому проверяем сам факт записи)
+      const tombs = JSON.parse(sandbox.localStorage.getItem("ep_plan_v1_tombs") || "[]");
+      ok(tombs.some((t) => t.id === id), "надгробие записано");
+      // «другое устройство» ещё держит проект в своём индексе и пушит его обратно
+      cloud.docs["plan-index"] = { rows: [{ id, name: "удалю", updatedAt: p.updatedAt, rooms: 1, elements: 0 }], deleted: [] };
+      await EP.Plan.Core.cloudPullIndex();
+      ok(!EP.Plan.Core.listProjects().some((r) => r.id === id), "удалённый проект не вернулся в список");
+      detachCloud();
+    });
+
+    await test("облако: недоступно — всё работает как раньше, локально", async () => {
+      detachCloud();
+      const p = EP.Plan.Core.createProject("офлайн");
+      EP.Plan.Core.commit();
+      p.rooms.push(M.newRoom(G.rectPoints(0, 0, 300, 300), "К"));
+      EP.Plan.Core.persist("seed");
+      EP.Plan.Core.flushPersist();
+      eq(EP.Plan.Core.cloudReady(), false, "облако не готово");
+      eq(EP.Plan.Core.syncState(p.id), "off", "статус «нет облака»");
+      EP.Plan.Core.closeProject();
+      const opened = await EP.Plan.Core.openProject(p.id);
+      ok(opened && opened.rooms.length === 1, "проект открылся из localStorage");
+    });
+
+    test("облако: статус синхронизации и разметка списка", () => {
+      const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-core.js"), "utf8");
+      ok(/cloudTimeoutMs/.test(src) && /Promise\.race/.test(src),
+        "чтение из облака ограничено по времени — плохая связь не подвешивает открытие проекта");
+      ok(/S\.project\.syncedAt = at;/.test(src), "после успешного пуша ставится метка синхронизации");
+      ok(!/syncedAt = at;[\s\S]{0,120}cloudPushSoon\(\)/.test(src), "метка НЕ запускает повторный пуш (иначе цикл)");
+      const mnt = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-mount.js"), "utf8");
+      ok(/data-plan-sync/.test(mnt), "кнопка «Обновить» в списке проектов");
+      ok(/syncState\(r\.id\)/.test(mnt), "у строки проекта показывается состояние синхронизации");
+    });
+  }
 
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
