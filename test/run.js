@@ -3226,6 +3226,79 @@ test("фото: deleteProject чистит кэш фото своего прое
     [10, 15].forEach((sc) => ok(list.indexOf(sc) >= 0, "в ряду есть крупный 1:" + sc + " — иначе на A1/A0 «стандартный» режим упирался в 1:20 (45% листа)"));
     ok(list.every((v, i) => i === 0 || v > list[i - 1]), "ряд строго по возрастанию — find() берёт САМЫЙ крупный подходящий");
   });
+  test("PDF: выбор разделов альбома — счётчик листов и фильтр печати", () => {
+    const EX = EP.Plan.Export;
+    const p = EP.Plan.Core.createProject("разделы");
+    const r = M.newRoom(G.rectPoints(0, 0, 500, 400), "Кухня");
+    p.rooms.push(r);
+    const c1 = M.newCircuit("QF1", "#ef4444", 16);
+    p.circuits.push(c1);
+    p.panels.push(M.newPanel(250, 20));
+    const so = M.newElement("socket", r.id + ":0", 100, 30, "power"); so.circuitId = c1.id; p.elements.push(so);
+    const sw = M.newElement("switch", r.id + ":1", 60, 90, "light"); p.elements.push(sw);
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    EX.setAllSec(true);
+    const out = EX.albumOutline(p);
+    // счётчик считается ТЕМИ ЖЕ функциями «что печатать», что и сборка альбома —
+    // значит «— N листов» и реальный альбом разойтись не могут
+    eq(out.n.plan, 1, "общий план — один лист");
+    eq(out.n.dims, 2, "по листу на каждый использованный тип точек (розетка + выключатель)");
+    eq(out.n.expl, 1, "экспликация — один лист");
+    eq(out.n.circuits, 1, "линии и щит — один лист (линия в проекте есть)");
+    const all = EX.sheetHtml(p);
+    const sheetsOf = (h) => (h.match(/<div class="sheet">/g) || []).length;
+    // заголовки листов альбома — только <h2> внутри рамки (не ведомость на титуле
+    // и не комментарии в печатном <style>)
+    const titlesOf = (h) => [...h.matchAll(/<h2>([^<]+)<\/h2>/g)].map((m) => m[1]);
+    eq(sheetsOf(all), out.total, "число листов в альбоме совпадает со счётчиком шторки");
+    // снимаем разделы — соответствующие листы физически исчезают из альбома
+    EX.setAllSec(false);
+    EX.toggleSec("plan");
+    const only = EX.sheetHtml(p);
+    eq(sheetsOf(only), 1, "остался ровно один лист");
+    eq(titlesOf(only).join("|"), "Общий план", "…и это общий план, снятые разделы не печатаются");
+    ok(!/Состав альбома/.test(only), "титульный лист тоже снимается");
+    // без титульного «Листов M» обязано сойтись с реальным числом листов
+    ok(/>Листов<\/td>[\s\S]{0,200}>1</.test(only) || /1<\/td>/.test(only), "в штампе «Листов 1»");
+    EX.setAllSec(false); EX.toggleSec("plan"); EX.toggleSec("expl");
+    const two = EX.sheetHtml(p);
+    eq(sheetsOf(two), 2, "два выбранных раздела — два листа");
+    EX.setAllSec(true);
+    const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-export.js"), "utf8");
+    ok(/ep_pdf_sections_v1/.test(src), "выбор разделов персистится на устройстве");
+    ok(/data-pxp-sec=/.test(src) && /data-pxp-secall=/.test(src), "чекбоксы разделов и «Все/Снять» в шторке");
+    ok(/if \(!sections\(\)\.size\)/.test(src), "печать без единого раздела — понятный отказ, а не пустой альбом");
+    // порядок разделов в списке = порядок листов в альбоме
+    eq(EX.SECTIONS.map((s) => s.id).join(","), "title,plan,dims,traces,unfolds,expl,spec,circuits,scheme", "порядок разделов");
+  });
+  test("PDF: листы по этажам не дублируются и не пустуют", () => {
+    // buildUnfolds раньше шла по p.rooms ПРОЕКТА ЦЕЛИКОМ, а usedPointTypes/usedTraceLayers
+    // считали типы/слои тоже проектом целиком — на двухэтажном проекте развёртки первого
+    // этажа печатались ПОВТОРНО на листах второго, а по типу точек, которого на этаже нет,
+    // выходил пустой лист.
+    const EX = EP.Plan.Export;
+    EX.setAllSec(true);
+    const p = EP.Plan.Core.createProject("этажи-pdf");
+    const r1 = M.newRoom(G.rectPoints(0, 0, 400, 300), "Низ");
+    p.rooms.push(r1);
+    p.elements.push(M.newElement("socket", r1.id + ":0", 100, 30, "power"));
+    const f2 = EP.Plan.Core.addFloor("2 этаж");
+    const r2 = M.newRoom(G.rectPoints(0, 0, 400, 300), "Верх");
+    p.rooms.push(r2);
+    p.elements.push(M.newElement("light", null, null, null, "light", { x: 200, y: 150 }));
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    EP.Plan.Core.setActiveFloor(p.floors[0].id);
+    const out = EX.albumOutline(p);
+    eq(out.n.plan, 2, "общий план — на каждый этаж");
+    // на 1 этаже стоит розетка (настенная), на 2-м — свободный свет: по одному типу на этаж
+    eq(out.n.dims, 2, "лист «размеры» только по типам, реально стоящим НА ЭТОМ этаже");
+    eq(out.n.unfolds, 1, "развёртки только там, где есть точки на стенах (не дублируются на второй этаж)");
+    const html = EX.sheetHtml(p);
+    const titles = [...html.matchAll(/<h2>([^<]+)<\/h2>/g)].map((m) => m[1]);
+    eq(titles.filter((t) => /^Развёртки стен/.test(t)).length, 1, "лист развёрток ровно один (раньше дублировался на каждый этаж)");
+    eq(titles.filter((t) => /^Общий план/.test(t)).length, 2, "общий план — на каждый этаж");
+    eq(EP.Plan.Core.project.activeFloorId, p.floors[0].id, "после печати активный этаж восстановлен");
+  });
   test("PDF: размер чертежа не перебивается инлайн-стилем офскрин-обмера", () => {
     // Репорт пользователя (дважды: «выбрал A1, а проект как будто в A4 остался», затем
     // «общий план не во весь лист»): buildSvg выставляет svg.style.width/height = 1050×700px
