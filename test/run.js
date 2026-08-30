@@ -636,6 +636,129 @@ test("build(): ручная трасса (manual:true) сохраняется п
   eq(after.points.length, before + 1, "ручная точка излома сохранилась (не потёрлась авто-перестройкой)");
   ok(after.manual, "флаг manual сохранён");
 });
+test("гребёнка у щита: порядок входа по полосе подхода, а не по координате источника", () => {
+  // Замер на типовой двушке: 18 из 23 пересечений РАЗНЫХ линий приходились на пятно
+  // вокруг щита. Кабели идут к щиту по магистрали СТОПКОЙ ПОЛОС (по 2см на линию), а
+  // слоты гребёнки раньше раздавались по координате ИСТОЧНИКА — связи между этими двумя
+  // порядками нет, и кабели менялись местами прямо перед щитом.
+  const P = EP.Plan.Core.createProject("гребёнка");
+  EP.Plan.Core.commit();
+  const room = (x, y, w, h, n) => { const r = M.newRoom(G.rectPoints(x, y, w, h), n); P.rooms.push(r); return r; };
+  room(0, 300, 900, 140, "Коридор");
+  const rs = [room(0, 0, 380, 300, "Кухня"), room(380, 0, 520, 300, "Гостиная"),
+    room(0, 440, 460, 340, "Спальня"), room(460, 440, 440, 340, "Санузел")];
+  const pan = M.newPanel(60, 360); P.panels.push(pan);
+  const cs = rs.map((_, i) => { const c = M.newCircuit("QF" + (i + 1), "#ef4444", 16); P.circuits.push(c); return c; });
+  rs.forEach((rm, i) => [80, 180, 280].forEach((o) => {
+    const e = M.newElement("socket", rm.id + ":0", o, 30, "power"); e.circuitId = cs[i].id; P.elements.push(e);
+  }));
+  P.guides.push(M.newGuide([{ x: 40, y: 370 }, { x: 860, y: 370 }]));
+  EP.Plan.Core.persist("seed");
+  EP.Plan.Routes.build({ silent: true });
+  const tails = P.routes.filter((r) => r.toPanel && r.toId === pan.id && r.points.length >= 3)
+    .map((r) => { const q = r.points, L = q.length; return { x: q[L - 1].x, lane: q[L - 2].y, pre: q[L - 3] }; });
+  ok(tails.length >= 4, "к щиту пришло минимум 4 кабеля");
+  // 1) слоты не дублируются (пред-проход считал смещение по ЧАСТИЧНОМУ набору и давал
+  //    два кабеля в одну точку — пути при этом физически совпадали)
+  const xs = tails.map((t) => Math.round(t.x * 10) / 10);
+  eq(new Set(xs).size, xs.length, "у каждого кабеля свой слот гребёнки");
+  // 2) кабели, подходящие С ОДНОЙ стороны, упорядочены по глубине полосы: чем дальше
+  //    полоса от щита, тем раньше кабель сворачивает (иначе поворот режет чужие ходы)
+  const right = tails.filter((t) => t.pre.x > t.x).sort((a, b) => b.lane - a.lane);
+  ok(right.length >= 3, "минимум 3 кабеля подходят с одной стороны");
+  ok(right.every((t, i) => i === 0 || t.x >= right[i - 1].x - 0.01),
+    "глубже полоса — левее слот (подходы не пересекаются)");
+  // 3) сами пересечения РАЗНЫХ линий у щита
+  const segX = (a1, a2, b1, b2) => {
+    const d1x = a2.x - a1.x, d1y = a2.y - a1.y, d2x = b2.x - b1.x, d2y = b2.y - b1.y;
+    const den = d1x * d2y - d1y * d2x; if (Math.abs(den) < 1e-9) return null;
+    const t = ((b1.x - a1.x) * d2y - (b1.y - a1.y) * d2x) / den;
+    const u = ((b1.x - a1.x) * d1y - (b1.y - a1.y) * d1x) / den;
+    return (t < 0.001 || t > 0.999 || u < 0.001 || u > 0.999) ? null : { x: a1.x + d1x * t, y: a1.y + d1y * t };
+  };
+  // считаем пересечения ИМЕННО подходов к щиту (два последних отрезка каждой трассы —
+  // ход по своей полосе + поворот в щит); дальние пересечения на стволе магистрали —
+  // отдельная задача и этим пакетом не лечатся
+  let combX = 0;
+  const rr = P.routes.filter((r) => r.toPanel && r.toId === pan.id && (r.points || []).length >= 3);
+  for (let i = 0; i < rr.length; i++) for (let j = i + 1; j < rr.length; j++) {
+    if ((rr[i].circuitId || 0) === (rr[j].circuitId || 0)) continue;
+    const A = rr[i].points, B = rr[j].points;
+    for (let a = A.length - 2; a < A.length; a++) for (let b = B.length - 2; b < B.length; b++) {
+      if (segX(A[a - 1], A[a], B[b - 1], B[b])) combX++;
+    }
+  }
+  eq(combX, 0, "подходы к щиту больше не перекрещиваются");
+});
+test("порядок полос считается по геометрии, а не по порядку заведения линий", () => {
+  // Порядок p.circuits — это порядок, в котором мастер ЗАВОДИЛ линии; полосы по нему
+  // раздавались произвольно, и кабели пересекались на входах в ствол магистрали.
+  // Теперь порядок = сторона ствола + удалённость входа от щита (computeAutoLane).
+  const mk = () => {
+    const P = EP.Plan.Core.createProject("полосы");
+    EP.Plan.Core.commit();
+    const room = (x, y, w, h, n) => { const r = M.newRoom(G.rectPoints(x, y, w, h), n); P.rooms.push(r); return r; };
+    room(0, 300, 900, 140, "Коридор");
+    const rs = [room(0, 0, 380, 300, "Кухня"), room(380, 0, 520, 300, "Гостиная"),
+      room(0, 440, 460, 340, "Спальня"), room(460, 440, 440, 340, "Санузел")];
+    P.panels.push(M.newPanel(60, 360));
+    const cs = rs.map((_, i) => { const c = M.newCircuit("QF" + (i + 1), "#ef4444", 16); P.circuits.push(c); return c; });
+    rs.forEach((rm, i) => [80, 180, 280].forEach((o) => {
+      const e = M.newElement("socket", rm.id + ":0", o, 30, "power"); e.circuitId = cs[i].id; P.elements.push(e);
+    }));
+    P.guides.push(M.newGuide([{ x: 40, y: 370 }, { x: 860, y: 370 }]));
+    EP.Plan.Core.persist("seed");
+    EP.Plan.Routes.build({ silent: true });
+    return P;
+  };
+  const P = mk();
+  // фактическая полоса линии = отступ её ХОДА ПО СТВОЛУ от самой магистрали (y=370);
+  // линия, которая до ствола не доходит (идёт сразу на уровень щита), полосы не имеет
+  const laneOf = (cid) => {
+    const rt = P.routes.find((r) => r.circuitId === cid && r.points.length > 2);
+    if (!rt) return null;
+    const run = [];
+    for (let i = 1; i < rt.points.length; i++) {
+      const a = rt.points[i - 1], b = rt.points[i];
+      if (Math.abs(a.y - b.y) < 0.5 && a.y >= 369 && a.y < 400) run.push(a.y);
+    }
+    return run.length ? Math.round(Math.min(...run) - 370) : null;
+  };
+  const lanes = P.circuits.map((c) => laneOf(c.id)).filter((v) => v != null);
+  ok(lanes.length >= 3, "минимум три линии идут по стволу");
+  eq(new Set(lanes).size, lanes.length, "полосы не совпадают — линии не ложатся друг на друга");
+  // «Спальня» (вход у x≈80) и «Санузел» (вход у x≈540) — с ОДНОЙ стороны ствола; дальняя
+  // от щита обязана идти БЛИЖЕ к стволу, иначе вход ближней режет её ход
+  const spal = laneOf(P.circuits[2].id), san = laneOf(P.circuits[3].id);
+  ok(spal != null && san != null, "обе нижние линии идут по стволу");
+  ok(san < spal, "линия, входящая ДАЛЬШЕ от щита, идёт ближе к стволу");
+  // порядок детерминирован: повторная сборка даёт те же полосы
+  const before = P.circuits.map((c) => laneOf(c.id)).join(",");
+  EP.Plan.Routes.build({ silent: true });
+  eq(P.circuits.map((c) => laneOf(c.id)).join(","), before, "порядок полос детерминирован");
+  const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-routes.js"), "utf8");
+  ok(/if \(laneOrder && laneOrder\[circuitId\] != null\)[\s\S]{0,200}autoLane/.test(src),
+    "явный порядок оптимизатора ГЛАВНЕЕ авто — иначе результат «✨ Оптимизировать» сбрасывался бы перестройкой");
+});
+test("ручная правка трассы в щит переживает перестройку, даже если кабель вошёл не по центру", () => {
+  // Латентный баг, вскрытый пере-упорядочиванием гребёнки: restoreManualRoutes сверял
+  // конец трассы с ЦЕНТРОМ щита с допуском 1см, а кабели входят гребёнкой по кромке
+  // корпуса — любая ручная правка такой трассы молча терялась при перестройке.
+  const { P } = scene(false);
+  EP.Plan.Routes.build({ silent: true });
+  const rt = P.routes.find((r) => r.toPanel);
+  ok(rt, "трасса в щит есть");
+  const end = rt.points[rt.points.length - 1];
+  const pan = P.panels.find((x) => x.id === rt.toId);
+  end.x = pan.x + 12;                    // кабель вошёл в щит по кромке, а не в центр
+  rt.points.splice(1, 0, { x: rt.points[0].x + 5, y: rt.points[0].y + 5 });
+  rt.manual = true;
+  const before = rt.points.length;
+  EP.Plan.Routes.build({ silent: true });
+  const after = P.routes.find((r) => r.fromId === rt.fromId);
+  ok(after && after.manual, "флаг manual на месте");
+  eq(after.points.length, before, "ручные изломы сохранились");
+});
 test("build(): ручная трасса СБРАСЫВАЕТСЯ в авто, если её точка-источник физически сдвинулась", () => {
   const { P } = scene(false);
   EP.Plan.Routes.build();
@@ -2254,12 +2377,16 @@ test("фото: deleteProject чистит кэш фото своего прое
     const rt1 = P.routes.find((r) => r.fromId === s1.id);
     const rt2 = P.routes.find((r) => r.fromId === s2.id);
     ok(rt1 && rt2, "обе трассы построены");
-    // QF1 (первая линия) идёт РОВНО по нарисованной магистрали (y=400, без базового отступа —
-    // магистраль не стена, это и есть «рекомендуемое направление» пользователя)
-    ok(rt1.points.some((pt) => Math.abs(pt.y - 400) < 1), "QF1 — ровно на магистрали (y=400)");
-    // QF2 (вторая линия) сдвинута на +2см перпендикулярно магистрали — НЕ совпадает с QF1
-    ok(rt2.points.some((pt) => Math.abs(pt.y - 402) < 1), "QF2 — магистраль +2см (y=402)");
-    ok(!rt2.points.some((pt) => Math.abs(pt.y - 400) < 1), "QF2 не ложится ровно на линию QF1");
+    // ОДНА из линий идёт РОВНО по нарисованной магистрали (y=400, без базового отступа —
+    // магистраль не стена, это и есть «рекомендуемое направление» пользователя), ВТОРАЯ —
+    // на +2см. КАКАЯ именно решает геометрия (computeAutoLane: сторона ствола + удалённость
+    // входа от щита), а не порядок заведения линий, — поэтому проверяем свойство, а не
+    // конкретную линию.
+    const on400 = [rt1, rt2].filter((r) => r.points.some((pt) => Math.abs(pt.y - 400) < 1));
+    const on402 = [rt1, rt2].filter((r) => r.points.some((pt) => Math.abs(pt.y - 402) < 1));
+    eq(on400.length, 1, "ровно одна линия идёт по самой магистрали (y=400)");
+    eq(on402.length, 1, "вторая — магистраль +2см (y=402)");
+    ok(on400[0] !== on402[0], "это разные линии — они не ложатся друг на друга");
   });
   test("guides: точка БЕЗ линии (circuitId=null) идёт РОВНО по магистрали (offset=0, не отрицательный)", () => {
     // Баг: circuitIdx(p,null) возвращал -1, а guideLaneOff без guard'а (Math.min(-1,10)*2 = -2)
@@ -2386,9 +2513,12 @@ test("фото: deleteProject чистит кэш фото своего прое
     P.elements.push(s1, s2);
     EP.Plan.Routes.build();
     const rt1 = P.routes.find((r) => r.fromId === s1.id), rt2 = P.routes.find((r) => r.fromId === s2.id);
-    ok(rt1.points.some((pt) => Math.abs(pt.y - 420) < 1), "QF1 (первая линия) — ровно на магистрали");
-    ok(rt2.points.some((pt) => Math.abs(pt.y - 422) < 1), "QF2 (вторая линия) — та же СТОРОНА +2см, несмотря на обратное направление обхода");
-    ok(!rt2.points.some((pt) => Math.abs(pt.y - 418) < 1), "QF2 НЕ ушла на противоположную сторону (-2см)");
+    // какая из двух линий идёт по самой магистрали, а какая на +2см, решает геометрия
+    // (computeAutoLane) — здесь важно ДРУГОЕ: обе полосы на ОДНОЙ физической стороне
+    const near = (r, y) => r.points.some((pt) => Math.abs(pt.y - y) < 1);
+    ok(near(rt1, 420) !== near(rt2, 420), "одна линия — ровно на магистрали, другая нет");
+    ok(near(rt1, 422) || near(rt2, 422), "вторая — та же СТОРОНА +2см, несмотря на обратное направление обхода");
+    ok(!near(rt1, 418) && !near(rt2, 418), "ни одна не ушла на противоположную сторону (-2см)");
   });
   test("guides: своя ветка магистрали предпочтительнее чужой, даже если чужая численно ближе — без лишнего перехода через соседнюю комнату", () => {
     // Найдено ПО РЕАЛЬНОМУ ПРОЕКТУ пользователя (репорт: «должно было зайти из 3 в 1, а
