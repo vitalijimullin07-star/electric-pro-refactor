@@ -99,6 +99,8 @@
       // Слой 3 — электрика (точки/щиты/трассы/проходки), Слой 4 — свет по её лампам
       S.elec = P3.Electro.build(THREE, S.scene, fp, p);
       S.light = P3.Light.build(THREE, S.scene, fp, p, S.elec.lamps);
+      // Слой 5 — адаптивное качество: самозамер на входе + подстройка на ходу
+      S.quality = P3.Quality.attach(THREE, rend, S.camera, S.scene, S.light);
       // управление (Слой 2): джойстик + гироскоп/свайп + коллизия со стенами
       S.ctl = P3.Controls.attach(THREE, S.box, S.camera, built, DEFAULTS);
       S.on = true;
@@ -117,6 +119,7 @@
   function onResize() {
     if (!S.renderer || !S.camera) return;
     const w = window.innerWidth, h = window.innerHeight;
+    if (S.quality) S.quality.apply(S.quality.levels.findIndex((l) => l.id === S.quality.level()));
     S.renderer.setSize(w, h, false);
     S.camera.aspect = w / h;
     S.camera.updateProjectionMatrix();
@@ -131,11 +134,12 @@
     S.lastT = now;
     if (S.ctl) S.ctl.update(dt);
     if (S.light) S.light.update(dt, S.camera);
+    if (S.quality) S.quality.update(dt);
     S.renderer.render(S.scene, S.camera);
     fpsAcc += dt; fpsN++;
     if (fpsAcc >= 1) {
       const el = S.box && S.box.querySelector("[data-p3d-fps]");
-      if (el) el.textContent = Math.round(fpsN / fpsAcc) + " fps";
+      if (el) el.textContent = Math.round(fpsN / fpsAcc) + " fps" + (S.quality ? " · " + S.quality.level() : "");
       fpsAcc = 0; fpsN = 0;
     }
   }
@@ -169,7 +173,7 @@
     }
     if (S.box && S.box.parentNode) S.box.parentNode.removeChild(S.box);
     if (S.elec && S.elec.dispose) S.elec.dispose();
-    S.box = null; S.scene = null; S.camera = null; S.built = null; S.elec = null; S.light = null;
+    S.box = null; S.scene = null; S.camera = null; S.built = null; S.elec = null; S.light = null; S.quality = null;
     S.on = false;
   }
   function close() { if (S.on || S.box) closeBox(); }

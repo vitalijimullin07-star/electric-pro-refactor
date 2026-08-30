@@ -59,6 +59,7 @@
     const amb = new THREE.HemisphereLight(0xcfe0ff, 0x6a7382, D.ambient);
     scene.add(amb);
 
+    const rig = {};
     // раз в кадр: перевесить пул источников на ближайшие лампы
     let acc = 0;
     function update(dt, camera) {
@@ -67,10 +68,13 @@
       acc = 0;
       if (!lamps.length) return;
       const cp = camera.position;
+      // activeLights ставит Слой 5 (адаптивное качество): на слабом устройстве
+      // светят не все источники пула, а только первые
+      const cap = rig.activeLights == null ? pool.length : Math.min(pool.length, rig.activeLights);
       const near = lamps
         .map((l) => ({ l, d: (l.x - cp.x) ** 2 + (l.y - cp.y) ** 2 + (l.z - cp.z) ** 2 }))
         .sort((a, b) => a.d - b.d)
-        .slice(0, pool.length);
+        .slice(0, cap);
       pool.forEach((src, i) => {
         const n = near[i];
         if (!n) { src.visible = false; src.intensity = 0; return; }
@@ -80,7 +84,8 @@
         src.visible = true;
       });
     }
-    return { update, sun, pool, azimuth: az };
+    Object.assign(rig, { update, sun, pool, azimuth: az, activeLights: null });
+    return rig;
   }
 
   P3.Light = { build };

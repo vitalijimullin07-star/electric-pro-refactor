@@ -5124,10 +5124,41 @@ test("фото: deleteProject чистит кэш фото своего прое
     const pm = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-mount.js"), "utf8");
     ok(/ep-plan-meta-north/.test(pm), "компас правится в шторке проекта");
   });
+  test("3D: адаптивное качество — уровни по возрастанию и гистерезис", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan3d", "plan3d-quality.js"), "utf8");
+    // levels идут от слабого к сильному и каждый рычаг монотонен — иначе «понижение»
+    // качества могло бы что-то УТЯЖЕЛИТЬ
+    const rows = [...src.matchAll(/\{ id: "(\w+)", dpr: ([\d.]+), lights: (\d+), far: (\d+)/g)]
+      .map((m) => ({ id: m[1], dpr: +m[2], lights: +m[3], far: +m[4] }));
+    eq(rows.length, 3, "три уровня");
+    eq(rows.map((r) => r.id).join(","), "low,mid,high", "от слабого к сильному");
+    for (let i = 1; i < rows.length; i++) {
+      ok(rows[i].dpr > rows[i - 1].dpr, "разрешение растёт");
+      ok(rows[i].lights >= rows[i - 1].lights, "источников не меньше");
+      ok(rows[i].far > rows[i - 1].far, "дальность растёт");
+    }
+    ok(/raiseHold: (\d+)/.test(src) && /dropHold: (\d+)/.test(src), "пороги удержания заданы");
+    const dh = +/dropHold: (\d+)/.exec(src)[1], rh = +/raiseHold: (\d+)/.exec(src)[1];
+    ok(rh > dh, "гистерезис: поднимаем осторожнее, чем роняем (" + rh + " против " + dh + ")");
+    ok(/dropFps: (\d+)/.test(src) && +/dropFps: (\d+)/.exec(src)[1] < +/raiseFps: (\d+)/.exec(src)[1],
+      "порог снижения ниже порога повышения");
+    ok(/probeSec/.test(src) && /probeFrames/.test(src), "стартовый уровень — по самозамеру, а не по модели устройства");
+    // свет обязан уважать лимит уровня, иначе понижение качества не снимет нагрузку
+    const lt = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan3d", "plan3d-light.js"), "utf8");
+    ok(/activeLights/.test(lt), "источники ограничиваются уровнем качества");
+  });
+  test("3D: стены со штукатуркой (процедурная текстура, не файл)", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan3d", "plan3d-materials.js"), "utf8");
+    ok(/CanvasTexture/.test(src) && /createImageData/.test(src), "текстура рисуется в памяти — офлайн-first");
+    ok(/RepeatWrapping/.test(src), "повторяется по поверхности");
+    ok(/tex\.dispose\(\)/.test(src), "текстура освобождается при выходе (иначе течёт видеопамять)");
+  });
   test("3D: модуль подключён и не тянет three.js до входа", () => {
     const fs2 = require("fs"), path2 = require("path");
     const idx = fs2.readFileSync(path2.join(__dirname, "..", "index.html"), "utf8");
-    ["plan3d-mount", "plan3d-materials", "plan3d-scene", "plan3d-controls", "plan3d-electro", "plan3d-light"].forEach((n) =>
+    ["plan3d-mount", "plan3d-materials", "plan3d-scene", "plan3d-controls", "plan3d-electro", "plan3d-light", "plan3d-quality"].forEach((n) =>
       ok(idx.indexOf("plan3d/" + n + ".js") >= 0, n + " подключён"));
     ok(idx.indexOf("plan3d.css") >= 0, "стили 3D подключены");
     ok(idx.indexOf("three.module") < 0, "three.js НЕ грузится тегом — только import() при входе в 3D");

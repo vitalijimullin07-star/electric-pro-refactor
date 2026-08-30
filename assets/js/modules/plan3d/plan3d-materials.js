@@ -24,9 +24,34 @@
   };
   const PLASTER = { color: 0xe9eaec, rough: 0.94 };
 
+  /* Процедурная «штукатурка»: мелкий шум на канвасе 256×256, ОДНА текстура на все
+     стены (репит по мировым размерам). Без неё стены — идеально гладкие плоскости
+     одного тона, и комната читается как коробка из CAD, а не как помещение: глазу
+     не за что зацепиться, пропадает ощущение масштаба. Текстура генерируется в
+     памяти (не файл) — офлайн-first, ничего не грузится. */
+  function noiseTex(THREE) {
+    const N = 256;
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = N;
+    const ctx = cv.getContext("2d");
+    const img = ctx.createImageData(N, N);
+    for (let i = 0; i < N * N; i++) {
+      const v = 208 + Math.round(Math.random() * 47);   // светлый, малоконтрастный шум
+      img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v;
+      img.data[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    const t = new THREE.CanvasTexture(cv);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(6, 6);
+    t.anisotropy = 2;
+    return t;
+  }
+
   function make(THREE, p) {
     const cache = new Map();
-    const std = (o) => new THREE.MeshStandardMaterial({ color: o.color, roughness: o.rough, metalness: 0 });
+    const tex = noiseTex(THREE);
+    const std = (o) => new THREE.MeshStandardMaterial({ color: o.color, roughness: o.rough, metalness: 0, map: tex, bumpMap: tex, bumpScale: 0.12 });
     const wallOf = (name) => {
       const k = String(name || "");
       if (!cache.has(k)) cache.set(k, std(WALL[k] || PLASTER));
@@ -37,10 +62,11 @@
       // пол/потолок видны с обеих сторон: плоскость строится из полигона комнаты
       // и её нормаль после разворота смотрит вниз — DoubleSide избавляет от
       // «исчезающего пола», когда камера стоит ровно на нём
-      floor: new THREE.MeshStandardMaterial({ color: 0xbfc4cb, roughness: 0.96, side: THREE.DoubleSide }),
+      floor: new THREE.MeshStandardMaterial({ color: 0xbfc4cb, roughness: 0.96, side: THREE.DoubleSide, map: tex }),
       ceil: new THREE.MeshStandardMaterial({ color: 0xf2f4f6, roughness: 0.98, side: THREE.DoubleSide }),
-      shaft: new THREE.MeshStandardMaterial({ color: 0xa9b0ba, roughness: 0.9 }),
-      dispose() { cache.forEach((m) => m.dispose()); }
+      shaft: new THREE.MeshStandardMaterial({ color: 0xa9b0ba, roughness: 0.9, map: tex }),
+      tex,
+      dispose() { cache.forEach((m) => m.dispose()); tex.dispose(); }
     };
   }
 
