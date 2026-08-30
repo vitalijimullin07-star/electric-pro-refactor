@@ -509,6 +509,10 @@
         if (ok && S.project && S.project.id === p.id) {
           S.project.syncedAt = at;
           lsSet(LS_PROJECT + p.id, S.project);
+          // и в индексе отмечаем, что облако видело ЭТУ версию — иначе список
+          // показывал бы «только здесь» у проекта, который только что уехал в облако
+          const row = S.index.find((x) => x.id === p.id);
+          if (row) { row.cloudAt = Math.max(row.cloudAt || 0, at); saveIndex(); emit("index"); }
         }
       }
       EP.Cloud.push(CLOUD_INDEX, { rows: S.index, deleted: S.tombs || [], updatedAt: now() });
