@@ -448,7 +448,11 @@
   function saveIndex() { lsSet(LS_INDEX, S.index); }
   function indexUpsert(p) {
     const i = S.index.findIndex((x) => x.id === p.id);
-    const row = { id: p.id, name: p.name, address: p.address || "", updatedAt: p.updatedAt, rooms: p.rooms.length, elements: p.elements.length };
+    // updatedAt — САМАЯ СВЕЖАЯ известная версия (по ней список сортируется и показывает
+    // дату), localAt — версия, которая реально лежит НА ЭТОМ устройстве. Разделять их
+    // обязательно: после подтягивания индекса строка описывает облачную версию, и по
+    // одному updatedAt уже нельзя понять, местная копия отстала или нет.
+    const row = { id: p.id, name: p.name, address: p.address || "", updatedAt: p.updatedAt, localAt: p.updatedAt, rooms: p.rooms.length, elements: p.elements.length };
     // cloudAt — «до какой версии проект видели в облаке» (ставит cloudPullIndex).
     // Локальная правка НЕ должна её терять: по ней openProject решает, тянуть ли
     // свежую копию с другого устройства.
@@ -531,10 +535,13 @@
     (Array.isArray(d.rows) ? d.rows : []).forEach((r) => {
       if (!r || !r.id || dead.has(r.id)) return;
       const i = S.index.findIndex((x) => x.id === r.id);
-      if (i < 0) { S.index.push(Object.assign({}, r, { cloudAt: r.updatedAt })); return; }
+      if (i < 0) { S.index.push(Object.assign({}, r, { cloudAt: r.updatedAt, localAt: 0 })); return; }
+      const localAt = S.index[i].localAt != null ? S.index[i].localAt : S.index[i].updatedAt;
       S.index[i].cloudAt = Math.max(S.index[i].cloudAt || 0, r.updatedAt || 0);
       if ((r.updatedAt || 0) > (S.index[i].updatedAt || 0)) {
-        S.index[i] = Object.assign({}, r, { cloudAt: r.updatedAt });
+        // строка показывает СВЕЖУЮ (облачную) версию, но localAt сохраняем — иначе
+        // список тут же соврал бы «всё синхронизировано», хотя копия здесь старая
+        S.index[i] = Object.assign({}, r, { cloudAt: r.updatedAt, localAt });
       }
     });
     S.index.sort((a, b) => b.updatedAt - a.updatedAt);
@@ -556,7 +563,7 @@
     if (!cloudReady()) return "off";
     const row = S.index.find((x) => x.id === id);
     if (!row) return "local";
-    const local = row.updatedAt || 0, cloud = row.cloudAt || 0;
+    const local = (row.localAt != null ? row.localAt : row.updatedAt) || 0, cloud = row.cloudAt || 0;
     if (!cloud) return "local";
     if (cloud > local) return "cloud";
     if (local > cloud) return "pending";
