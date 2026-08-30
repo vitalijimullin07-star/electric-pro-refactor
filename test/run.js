@@ -636,6 +636,79 @@ test("build(): ручная трасса (manual:true) сохраняется п
   eq(after.points.length, before + 1, "ручная точка излома сохранилась (не потёрлась авто-перестройкой)");
   ok(after.manual, "флаг manual сохранён");
 });
+test("гребёнка у щита: порядок входа по полосе подхода, а не по координате источника", () => {
+  // Замер на типовой двушке: 18 из 23 пересечений РАЗНЫХ линий приходились на пятно
+  // вокруг щита. Кабели идут к щиту по магистрали СТОПКОЙ ПОЛОС (по 2см на линию), а
+  // слоты гребёнки раньше раздавались по координате ИСТОЧНИКА — связи между этими двумя
+  // порядками нет, и кабели менялись местами прямо перед щитом.
+  const P = EP.Plan.Core.createProject("гребёнка");
+  EP.Plan.Core.commit();
+  const room = (x, y, w, h, n) => { const r = M.newRoom(G.rectPoints(x, y, w, h), n); P.rooms.push(r); return r; };
+  room(0, 300, 900, 140, "Коридор");
+  const rs = [room(0, 0, 380, 300, "Кухня"), room(380, 0, 520, 300, "Гостиная"),
+    room(0, 440, 460, 340, "Спальня"), room(460, 440, 440, 340, "Санузел")];
+  const pan = M.newPanel(60, 360); P.panels.push(pan);
+  const cs = rs.map((_, i) => { const c = M.newCircuit("QF" + (i + 1), "#ef4444", 16); P.circuits.push(c); return c; });
+  rs.forEach((rm, i) => [80, 180, 280].forEach((o) => {
+    const e = M.newElement("socket", rm.id + ":0", o, 30, "power"); e.circuitId = cs[i].id; P.elements.push(e);
+  }));
+  P.guides.push(M.newGuide([{ x: 40, y: 370 }, { x: 860, y: 370 }]));
+  EP.Plan.Core.persist("seed");
+  EP.Plan.Routes.build({ silent: true });
+  const tails = P.routes.filter((r) => r.toPanel && r.toId === pan.id && r.points.length >= 3)
+    .map((r) => { const q = r.points, L = q.length; return { x: q[L - 1].x, lane: q[L - 2].y, pre: q[L - 3] }; });
+  ok(tails.length >= 4, "к щиту пришло минимум 4 кабеля");
+  // 1) слоты не дублируются (пред-проход считал смещение по ЧАСТИЧНОМУ набору и давал
+  //    два кабеля в одну точку — пути при этом физически совпадали)
+  const xs = tails.map((t) => Math.round(t.x * 10) / 10);
+  eq(new Set(xs).size, xs.length, "у каждого кабеля свой слот гребёнки");
+  // 2) кабели, подходящие С ОДНОЙ стороны, упорядочены по глубине полосы: чем дальше
+  //    полоса от щита, тем раньше кабель сворачивает (иначе поворот режет чужие ходы)
+  const right = tails.filter((t) => t.pre.x > t.x).sort((a, b) => b.lane - a.lane);
+  ok(right.length >= 3, "минимум 3 кабеля подходят с одной стороны");
+  ok(right.every((t, i) => i === 0 || t.x >= right[i - 1].x - 0.01),
+    "глубже полоса — левее слот (подходы не пересекаются)");
+  // 3) сами пересечения РАЗНЫХ линий у щита
+  const segX = (a1, a2, b1, b2) => {
+    const d1x = a2.x - a1.x, d1y = a2.y - a1.y, d2x = b2.x - b1.x, d2y = b2.y - b1.y;
+    const den = d1x * d2y - d1y * d2x; if (Math.abs(den) < 1e-9) return null;
+    const t = ((b1.x - a1.x) * d2y - (b1.y - a1.y) * d2x) / den;
+    const u = ((b1.x - a1.x) * d1y - (b1.y - a1.y) * d1x) / den;
+    return (t < 0.001 || t > 0.999 || u < 0.001 || u > 0.999) ? null : { x: a1.x + d1x * t, y: a1.y + d1y * t };
+  };
+  // считаем пересечения ИМЕННО подходов к щиту (два последних отрезка каждой трассы —
+  // ход по своей полосе + поворот в щит); дальние пересечения на стволе магистрали —
+  // отдельная задача и этим пакетом не лечатся
+  let combX = 0;
+  const rr = P.routes.filter((r) => r.toPanel && r.toId === pan.id && (r.points || []).length >= 3);
+  for (let i = 0; i < rr.length; i++) for (let j = i + 1; j < rr.length; j++) {
+    if ((rr[i].circuitId || 0) === (rr[j].circuitId || 0)) continue;
+    const A = rr[i].points, B = rr[j].points;
+    for (let a = A.length - 2; a < A.length; a++) for (let b = B.length - 2; b < B.length; b++) {
+      if (segX(A[a - 1], A[a], B[b - 1], B[b])) combX++;
+    }
+  }
+  eq(combX, 0, "подходы к щиту больше не перекрещиваются");
+});
+test("ручная правка трассы в щит переживает перестройку, даже если кабель вошёл не по центру", () => {
+  // Латентный баг, вскрытый пере-упорядочиванием гребёнки: restoreManualRoutes сверял
+  // конец трассы с ЦЕНТРОМ щита с допуском 1см, а кабели входят гребёнкой по кромке
+  // корпуса — любая ручная правка такой трассы молча терялась при перестройке.
+  const { P } = scene(false);
+  EP.Plan.Routes.build({ silent: true });
+  const rt = P.routes.find((r) => r.toPanel);
+  ok(rt, "трасса в щит есть");
+  const end = rt.points[rt.points.length - 1];
+  const pan = P.panels.find((x) => x.id === rt.toId);
+  end.x = pan.x + 12;                    // кабель вошёл в щит по кромке, а не в центр
+  rt.points.splice(1, 0, { x: rt.points[0].x + 5, y: rt.points[0].y + 5 });
+  rt.manual = true;
+  const before = rt.points.length;
+  EP.Plan.Routes.build({ silent: true });
+  const after = P.routes.find((r) => r.fromId === rt.fromId);
+  ok(after && after.manual, "флаг manual на месте");
+  eq(after.points.length, before, "ручные изломы сохранились");
+});
 test("build(): ручная трасса СБРАСЫВАЕТСЯ в авто, если её точка-источник физически сдвинулась", () => {
   const { P } = scene(false);
   EP.Plan.Routes.build();

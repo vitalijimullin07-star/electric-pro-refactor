@@ -986,14 +986,23 @@
     const el = (p.elements || []).find((x) => x.id === id);
     return el ? G().routeAnchor(p, el) : null;
   }
+  // Допуск «анкор не сдвинулся». У точки/распайки это ровно её позиция (1см — уже не
+  // округление). У ЩИТА конец трассы физически не совпадает с центром корпуса: кабели
+  // входят гребёнкой по кромке (panelCombPos/relayPanelCombs), т.е. со смещением до
+  // полуширины корпуса. Со строгим 1см ЛЮБАЯ ручная правка трассы, вошедшей в щит не по
+  // центру, молча терялась при следующей перестройке — латентный баг, вскрытый пере-
+  // упорядочиванием гребёнки (до него первая трасса случайно получала смещение 0).
+  function anchorTol(p, id) {
+    return (p.panels || []).some((x) => x.id === id) ? combWidth(p) / 2 + 2 : 1;
+  }
   function restoreManualRoutes(p, saved) {
     saved.forEach((old) => {
       if (!old.points || old.points.length < 2) return;
       const a = anchorPos(p, old.fromId);
-      if (!a || dist(a, old.points[0]) > 1) return;
+      if (!a || dist(a, old.points[0]) > anchorTol(p, old.fromId)) return;
       if (old.toId) {
         const b = anchorPos(p, old.toId);
-        if (!b || dist(b, old.points[old.points.length - 1]) > 1) return;
+        if (!b || dist(b, old.points[old.points.length - 1]) > anchorTol(p, old.toId)) return;
       }
       const idx = p.routes.findIndex((r) => r.fromId === old.fromId);
       if (idx >= 0) p.routes[idx] = old;
@@ -1365,6 +1374,7 @@
     build24Legs(c, p, panels); // трасса «до щита» (выкл→трансформатор) + тег «от щита»
 
     if (savedManual.length) restoreManualRoutes(p, savedManual);
+    relayPanelCombs(p);  // порядок входа кабелей в щит — только когда известны ВСЕ подходы
     hideGuides(p); // прячем ТОЛЬКО применённые магистрали (см. usedGuideIds/hideGuides)
     usedGuideIds = null;
     const un = collectUnrouted(p, points, juncts, panels);
@@ -1428,6 +1438,11 @@
     // нет (напр. только-только назначили клавише 24В-цель): идемпотентна, не дублирует
     build24Legs(c, p, (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, transformer: !!pn.transformer })));
 
+    // relayPanelCombs здесь НАМЕРЕННО НЕ зовём: пере-упорядочивание гребёнки двигает
+    // хвосты УЖЕ построенных трасс, а инкрементальная сборка по инварианту существующие
+    // трассы не трогает вообще (прямая просьба пользователя про кнопку «⚡ Построить»).
+    // Новый кабель получает свободный слот пред-проходом (panelCombPos); привести весь
+    // щит в порядок — полная перестройка или «✨ Оптимизировать».
     hideGuides(p); // прячем ТОЛЬКО применённые к новым точкам (уже применённые ранее — уже скрыты)
     usedGuideIds = null;
     const unInc = collectUnrouted(p, newPoints, newJuncts,
@@ -2179,28 +2194,95 @@
   // Ширина: реальный корпус из settings.panelBox.wmm (мм), иначе 36см; шаг = ширина/(N+1),
   // не больше 6см (иначе на 1-2 кабелях гребёнка выглядела бы как разъезд в стороны).
   const PANEL_COMB_MAX_STEP = 6;
-  function panelCombPos(p, panelId, basePos, fromPos) {
-    const box = p.settings && p.settings.panelBox;
-    const wCm = Math.max(20, Math.min(60, box && box.wmm ? box.wmm / 10 : 36));
-    // ось гребёнки — вдоль стены, на которой стоит щит (нормаль стены даёт направление);
-    // без стены рядом — вдоль X (щит в нише/на свободном месте)
+  // ось гребёнки — вдоль стены, на которой стоит щит; без стены рядом — вдоль X
+  // (щит в нише/на свободном месте). Одна функция на пред- и пост-проход.
+  function combAxis(p, basePos) {
     const hit = G().wallAt(p, basePos, 80);
-    let ax = { x: 1, y: 0 };
     if (hit && hit.wall) {
       const w = hit.wall, L = w.len || 1;
-      ax = { x: (w.b.x - w.a.x) / L, y: (w.b.y - w.a.y) / L };
+      return { x: (w.b.x - w.a.x) / L, y: (w.b.y - w.a.y) / L };
     }
+    return { x: 1, y: 0 };
+  }
+  const combWidth = (p) => {
+    const box = p.settings && p.settings.panelBox;
+    return Math.max(20, Math.min(60, box && box.wmm ? box.wmm / 10 : 36));
+  };
+  function panelCombPos(p, panelId, basePos, fromPos) {
+    const ax = combAxis(p, basePos);
     // все трассы ЭТОГО щита, уже построенные + текущая: сортируем по проекции источника
-    // на ось гребёнки, порядковый номер даёт смещение
+    // на ось гребёнки, порядковый номер даёт смещение. ЭТО ТОЛЬКО ЗАГОТОВКА — окончательный
+    // порядок гребёнки ставит relayPanelCombs() после сборки всех трасс (см. ниже): здесь
+    // ещё не известно ни сколько всего кабелей придёт в щит, ни С КАКОЙ СТОРОНЫ каждый.
     const others = (p.routes || []).filter((r) => r.toPanel && r.toId === panelId && (r.points || []).length > 1);
     const proj = (q) => q.x * ax.x + q.y * ax.y;
     const mine = proj(fromPos);
     let idx = 0;
     others.forEach((r) => { if (proj(r.points[0]) < mine) idx++; });
     const n = others.length + 1;
-    const step = Math.min(PANEL_COMB_MAX_STEP, wCm / (n + 1));
+    const step = Math.min(PANEL_COMB_MAX_STEP, combWidth(p) / (n + 1));
     const off = (idx - (n - 1) / 2) * step;
     return { x: basePos.x + ax.x * off, y: basePos.y + ax.y * off };
+  }
+
+  /* ---- ПОРЯДОК ГРЕБЁНКИ У ЩИТА (пост-проход после сборки всех трасс) ----
+     Замер на типовой двушке (8 линий, магистраль по коридору): 18 из 23 пересечений
+     РАЗНЫХ линий приходились на пятно вокруг щита. Причина не в самой гребёнке, а в её
+     ПОРЯДКЕ: panelCombPos сортирует по координате ИСТОЧНИКА, а кабели подходят к щиту по
+     магистрали СТОПКОЙ ПОЛОС (по 2см на линию) — источник и полоса подхода не связаны
+     никак, поэтому кабели вынуждены меняться местами прямо перед щитом. Плюс сам
+     пред-проход считает смещение по ЧАСТИЧНОМУ набору (n растёт с каждой трассой), и
+     слоты дублируются — два кабеля получали один и тот же слот (замерено).
+     Правило без пересечений (вывод из геометрии, не эвристика): кабель идёт вдоль оси
+     гребёнки на своей полосе, потом сворачивает к щиту перпендикулярно. Его поворот режет
+     ход всех кабелей на БОЛЕЕ БЛИЗКИХ к щиту полосах, чьи слоты стоят «за» ним. Значит:
+     чем ДАЛЬШЕ полоса подхода от щита, тем РАНЬШЕ кабель обязан свернуть, т.е. тем ближе
+     его слот к тому краю гребёнки, откуда кабель пришёл. Кабели, подходящие с РАЗНЫХ
+     сторон, занимают каждый свою половину гребёнки — иначе они пересекались бы между собой
+     в середине. Итог: порядок слотов = (сторона подхода, затем глубина полосы). */
+  function relayPanelCombs(p) {
+    const wCm = combWidth(p);
+    (p.panels || []).forEach((pn) => {
+      const base = { x: pn.x, y: pn.y };
+      const ax = combAxis(p, base), nr = { x: -ax.y, y: ax.x };
+      const pa = (q) => q.x * ax.x + q.y * ax.y, pnr = (q) => q.x * nr.x + q.y * nr.y;
+      const a0 = pa(base), n0 = pnr(base);
+      const info = [];
+      (p.routes || []).forEach((r) => {
+        // ручные трассы не трогаем (route.manual — правка пользователя), как и везде
+        if (!r.toPanel || r.toId !== pn.id || r.manual) return;
+        const q = r.points || [];
+        if (q.length < 3) return;
+        const end = q[q.length - 1], pre = q[q.length - 2], pre2 = q[q.length - 3];
+        // ДВА вида подхода, оба переставляемы без потери ортогональности:
+        // ⟂ оси (кабель шёл по своей полосе и сворачивает к щиту) — двигаем ОБЕ последние
+        //   точки, меняется только длина хода по контуру;
+        // ∥ оси (кабель уже спустился на уровень щита и добирает вдоль стены) — двигаем
+        //   ТОЛЬКО конец: отрезок просто становится короче/длиннее, оставаясь вдоль оси.
+        //   Глубина полосы у такого подхода нулевая — он идёт вплотную к щиту, поэтому в
+        //   своей половине гребёнки он крайний.
+        const perp = Math.abs(pa(pre) - pa(end)) <= 1;
+        const along = pa(pre2) - pa(pre);
+        const side = perp
+          ? (Math.abs(along) > 1 ? (along > 0 ? 1 : -1) : (pa(pre) - a0 >= 0 ? 1 : -1))
+          : (pa(pre) - a0 >= 0 ? 1 : -1);
+        info.push({ r, end, pre: perp ? pre : null, side, depth: perp ? Math.abs(pnr(pre) - n0) : 0 });
+      });
+      if (info.length < 2) return;
+      // сторона подхода → своя половина гребёнки; внутри половины: чем дальше полоса,
+      // тем раньше сворачиваем (слева — по возрастанию глубины, справа — по убыванию)
+      info.sort((u, v) => (u.side - v.side)
+        || (u.side < 0 ? u.depth - v.depth : v.depth - u.depth)
+        || (u.r.id < v.r.id ? -1 : 1));                 // детерминизм при равной глубине
+      const step = Math.min(PANEL_COMB_MAX_STEP, wCm / (info.length + 1));
+      info.forEach((it, i) => {
+        const d = (a0 + (i - (info.length - 1) / 2) * step) - pa(it.end);
+        if (Math.abs(d) < 0.05) return;
+        it.end.x += ax.x * d; it.end.y += ax.y * d;
+        if (it.pre) { it.pre.x += ax.x * d; it.pre.y += ax.y * d; }
+        recomputeThroughWalls(p, it.r);   // слот уехал на несколько см — гильзы пересчитываем
+      });
+    });
   }
   function addRoute(c, p, fromEl, a, target, circuitId, color) {
     if (target && target.kind === "panel" && target.pos && !target.noComb) {
