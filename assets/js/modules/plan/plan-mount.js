@@ -113,7 +113,7 @@
     return `<div class="card ep-plan-item">
       <button type="button" class="ep-plan-item-main ep-clickable" data-plan-open="${esc(r.id)}">
         <b>${esc(r.name)}</b>
-        <span>${esc(T.stats(r.rooms || 0, r.elements || 0))} · ${esc(T.updated)} ${esc(fmtDate(r.updatedAt))}${b ? ` · <i class="ep-plan-syncb ${b.c}">${esc(b.t)}</i>` : ""}</span>
+        <span>${esc(T.stats(r.rooms || 0, r.elements || 0))} · ${esc(T.updated)} ${esc(fmtDate(r.updatedAt))}${b ? ` <i class="ep-plan-syncb ${b.c}">${esc(b.t)}</i>` : ""}</span>
       </button>
       <button type="button" class="ep-plan-item-del ep-clickable" data-plan-del="${esc(r.id)}" aria-label="${esc(T.del)}: ${esc(r.name)}">✕</button>
     </div>`;
