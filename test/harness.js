@@ -9,6 +9,10 @@ const vm = require("vm");
 
 const ROOT = path.resolve(__dirname, "..");
 const PLAN_DIR = path.join(ROOT, "assets/js/modules/plan");
+const P3D_DIR = path.join(ROOT, "assets/js/modules/plan3d");
+// 3D-модуль: в песочницу грузим ТОЛЬКО чистую логику (разбивка стены проёмами,
+// таблица материалов). mount/controls — DOM+WebGL, тестируются живым прогоном.
+const P3D_ORDER = ["plan3d-materials", "plan3d-scene", "plan3d-electro"];
 const PLAN_ORDER = [
   "plan-core", "plan-geometry", "plan-canvas", "plan-render", "plan-rooms",
   "plan-elements", "plan-unfold", "plan-routes", "plan-calc", "plan-rules",
@@ -58,6 +62,7 @@ function loadPlan() {
   runFile(ctx, path.join(ROOT, "assets/js/modules/shield/shield-scheme-svg-v28.js"));
   runFile(ctx, path.join(ROOT, "assets/js/modules/consumables/cable-consum.js"));
   PLAN_ORDER.forEach((n) => runFile(ctx, path.join(PLAN_DIR, n + ".js")));
+  P3D_ORDER.forEach((n) => runFile(ctx, path.join(P3D_DIR, n + ".js")));
   return { EP: sandbox.EP, sandbox, store };
 }
 
@@ -76,4 +81,4 @@ function fakeCanvas() {
   };
 }
 
-module.exports = { loadPlan, fakeCanvas, fakeNode, PLAN_ORDER, PLAN_DIR, ROOT };
+module.exports = { loadPlan, fakeCanvas, fakeNode, PLAN_ORDER, PLAN_DIR, P3D_DIR, ROOT };

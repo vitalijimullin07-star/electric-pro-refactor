@@ -5055,6 +5055,122 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/accX \+= dx; accY \+= dy;/.test(rms), "приращения накапливаются (dx/dy — не сдвиг от старта)");
   });
 
+  // ===== 43. 3D-прогулка (Слои 0-2) =====
+  // Три.js и WebGL в vm-песочнице недоступны — здесь ЧИСТАЯ логика (разбивка стены
+  // проёмами и проходимость), остальное (сцена, ходьба, коллизия, dispose) проверено
+  // живым прогоном в headless Chromium.
+  test("3D: стена режется проёмами — дверь проходима, окно нет", () => {
+    const { P } = install();
+    const room = P.rooms[0], w = G.walls(room)[0];   // стена 0..400 по x, y=0
+    const L = w.len;
+    const S3 = EP.Plan3D.Scene;
+    // без проёмов — одна сплошная часть на всю стену и она же непроходима
+    const bare = S3.wallPieces(P, w, 270);
+    eq(bare.solid.length, 1, "без проёмов — один кусок");
+    eq(Math.round(bare.solid[0].u1 - bare.solid[0].u0), Math.round(L), "на всю длину");
+    eq(bare.block.length, 1, "и он непроходим");
+    // дверь (sill=0, высота 200): слева, справа и ПЕРЕМЫЧКА сверху; проём проходим
+    const d = M.newOpening("door");
+    d.wallId = w.id; d.offset = 100; d.width = 90;
+    P.openings.push(d);
+    const wd = S3.wallPieces(P, w, 270);
+    eq(wd.solid.length, 3, "слева + перемычка + справа");
+    const lint = wd.solid.find((s) => s.y0 > 0);
+    ok(lint && lint.y0 === 200 && lint.y1 === 270, "перемычка от верха проёма до потолка");
+    ok(!wd.solid.some((s) => s.u0 >= 100 && s.u1 <= 190 && s.y0 === 0), "под дверью стены нет");
+    eq(wd.block.length, 2, "дверной проём НЕ перекрывает проход");
+    // окно (sill=90, высота 140): добавляются подоконная часть и над окном, и оно блокирует
+    P.openings.length = 0;
+    const win = M.newOpening("window");
+    win.wallId = w.id; win.offset = 200; win.width = 140;
+    P.openings.push(win);
+    const ww = S3.wallPieces(P, w, 270);
+    ok(ww.solid.some((s) => s.y0 === 0 && s.y1 === 90 && s.u0 === 200), "часть под подоконником");
+    ok(ww.solid.some((s) => s.y0 === 230 && s.y1 === 270), "часть над окном");
+    eq(ww.block.length, 3, "окно непроходимо (в отличие от двери)");
+  });
+  test("3D: материалы стен берутся из имён 2D-модели, неизвестное — штукатурка", () => {
+    const Mt = EP.Plan3D.Materials;
+    ok(Mt.WALL["Бетон"] && Mt.WALL["Кирпич"] && Mt.WALL["Панель"], "материалы несущих стен");
+    ok(Mt.WALL["ГКЛ"] && Mt.WALL["Дерево"], "и перегородочные");
+    ok(Mt.PLASTER && Mt.PLASTER.color, "штукатурка — дефолт");
+    // имена ОБЯЗАНЫ совпадать с теми, что реально даёт 2D-модель, иначе 3D молча
+    // покрасит все стены штукатуркой вместо материала
+    const D = EP.Plan.Core.DEFAULTS;
+    (D.materials || []).forEach((m) => ok(Mt.WALL[m], "материал 2D «" + m + "» известен 3D"));
+  });
+  test("3D: прибор сидит на ПОВЕРХНОСТИ стены, а не отступает в комнату", () => {
+    const { P, w } = install();
+    const el = M.newElement("socket", w(0), 150, 30, "power");
+    P.elements.push(el);
+    const wl = G.wallById(P, w(0));
+    const th = G.wallThOf(P, wl);
+    const seat = EP.Plan3D.Electro.wallSeat(P, el);
+    const axis = G.pointAtOffset(wl, 150);
+    const dSeat = Math.hypot(seat.x - axis.x, seat.y - axis.y);
+    near(dSeat, th / 2, 0.01, "3D-посадка — ровно полтолщины от осевой (заподлицо со стеной)");
+    // 2D-маркер отступает ДАЛЬШЕ (th/2 + 8 см), чтобы не сливаться со стеной на чертеже —
+    // в 3D такой отступ повесил бы розетку в воздухе посреди комнаты
+    const draw = G.elemDrawPoint(P, el);
+    const dDraw = Math.hypot(draw.x - axis.x, draw.y - axis.y);
+    ok(dDraw > dSeat + 5, "у 2D-маркера отступ больше: " + Math.round(dDraw) + " против " + Math.round(dSeat));
+    ok(EP.Plan3D.Electro.DEV.w > 5 && EP.Plan3D.Electro.DEV.w < 15, "габарит механизма правдоподобен");
+  });
+  test("3D: север проекта — поле модели с бэкофиллом (солнце в окна)", () => {
+    const p = EP.Plan.Core.createProject("n");
+    eq(p.settings.northDeg, 0, "дефолт — север вверх плана");
+    const old = EP.Plan.Core.importJSON(JSON.stringify({ name: "старый", rooms: [], elements: [] }));
+    eq(old.settings.northDeg, 0, "старый проект бэкофиллится");
+    const pm = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-mount.js"), "utf8");
+    ok(/ep-plan-meta-north/.test(pm), "компас правится в шторке проекта");
+  });
+  test("3D: адаптивное качество — уровни по возрастанию и гистерезис", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan3d", "plan3d-quality.js"), "utf8");
+    // levels идут от слабого к сильному и каждый рычаг монотонен — иначе «понижение»
+    // качества могло бы что-то УТЯЖЕЛИТЬ
+    const rows = [...src.matchAll(/\{ id: "(\w+)", dpr: ([\d.]+), lights: (\d+), far: (\d+)/g)]
+      .map((m) => ({ id: m[1], dpr: +m[2], lights: +m[3], far: +m[4] }));
+    eq(rows.length, 3, "три уровня");
+    eq(rows.map((r) => r.id).join(","), "low,mid,high", "от слабого к сильному");
+    for (let i = 1; i < rows.length; i++) {
+      ok(rows[i].dpr > rows[i - 1].dpr, "разрешение растёт");
+      ok(rows[i].lights >= rows[i - 1].lights, "источников не меньше");
+      ok(rows[i].far > rows[i - 1].far, "дальность растёт");
+    }
+    ok(/raiseHold: (\d+)/.test(src) && /dropHold: (\d+)/.test(src), "пороги удержания заданы");
+    const dh = +/dropHold: (\d+)/.exec(src)[1], rh = +/raiseHold: (\d+)/.exec(src)[1];
+    ok(rh > dh, "гистерезис: поднимаем осторожнее, чем роняем (" + rh + " против " + dh + ")");
+    ok(/dropFps: (\d+)/.test(src) && +/dropFps: (\d+)/.exec(src)[1] < +/raiseFps: (\d+)/.exec(src)[1],
+      "порог снижения ниже порога повышения");
+    ok(/probeSec/.test(src) && /probeFrames/.test(src), "стартовый уровень — по самозамеру, а не по модели устройства");
+    // свет обязан уважать лимит уровня, иначе понижение качества не снимет нагрузку
+    const lt = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan3d", "plan3d-light.js"), "utf8");
+    ok(/activeLights/.test(lt), "источники ограничиваются уровнем качества");
+  });
+  test("3D: стены со штукатуркой (процедурная текстура, не файл)", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan3d", "plan3d-materials.js"), "utf8");
+    ok(/CanvasTexture/.test(src) && /createImageData/.test(src), "текстура рисуется в памяти — офлайн-first");
+    ok(/RepeatWrapping/.test(src), "повторяется по поверхности");
+    ok(/tex\.dispose\(\)/.test(src), "текстура освобождается при выходе (иначе течёт видеопамять)");
+  });
+  test("3D: модуль подключён и не тянет three.js до входа", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const idx = fs2.readFileSync(path2.join(__dirname, "..", "index.html"), "utf8");
+    ["plan3d-mount", "plan3d-materials", "plan3d-scene", "plan3d-controls", "plan3d-electro", "plan3d-light", "plan3d-quality"].forEach((n) =>
+      ok(idx.indexOf("plan3d/" + n + ".js") >= 0, n + " подключён"));
+    ok(idx.indexOf("plan3d.css") >= 0, "стили 3D подключены");
+    ok(idx.indexOf("three.module") < 0, "three.js НЕ грузится тегом — только import() при входе в 3D");
+    const mnt = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan3d", "plan3d-mount.js"), "utf8");
+    ok(/await import\(".*three\.module\.min\.js"\)/.test(mnt), "динамический import three.js");
+    ok(/loseContext/.test(mnt) && /geometry\.dispose\(\)/.test(mnt), "освобождение WebGL при выходе");
+    const pm = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-mount.js"), "utf8");
+    ok(/data-plan-3d/.test(pm), "кнопка входа в шапке плана");
+    ok(fs2.existsSync(path2.join(__dirname, "..", "assets", "js", "vendor", "three", "three.module.min.js")),
+      "локальная копия three.js в репозитории (CSP разрешает только 'self')");
+  });
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

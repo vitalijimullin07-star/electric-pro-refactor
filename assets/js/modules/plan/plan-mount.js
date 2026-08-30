@@ -113,6 +113,7 @@
           <button type="button" class="ep-plan-mini ep-clickable" data-plan-meta aria-label="${T.metaTitle}" title="${T.metaTitle}">${T.meta}</button>
         </div>
         <button type="button" class="ep-plan-mini ep-clickable" data-plan-full aria-label="Во весь экран">⤢</button>
+        <button type="button" class="ep-plan-mini ep-clickable" data-plan-3d aria-label="3D-прогулка по квартире" title="Пройтись по квартире от первого лица: стены, проёмы, точки и трассы в 3D">🚶</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-fb-open aria-label="Замечания и баги (чат)" title="Записать замечание/баг — потом скопировать и отправить">💬</button>
         <button type="button" class="ep-plan-mini ep-clickable${paperOn() ? " on" : ""}" data-plan-paper aria-label="Бумажный режим холста" title="Холст как печатный лист: белый фон, тёмные линии — видно, как выйдет из принтера">📄</button>
         <button type="button" class="ep-plan-mini ep-clickable${p.settings.realScale ? " on" : ""}" data-plan-realscale aria-label="Значки в реальном размере (1:1)" title="Значки в реальном размере, мм — рамки 84/155/226/300/368 мм (1:1)">1:1</button>
@@ -508,6 +509,8 @@
       <div class="ep-plan-srow"><label style="flex:1">${T.metaAddress}<input type="text" id="ep-plan-meta-addr" value="${esc(p.address || "")}" placeholder="г. Москва, ул. …, д. …, кв. …"></label></div>
       <div class="ep-plan-srow"><label style="flex:1">${T.metaCeil}<input type="number" inputmode="numeric" min="150" max="600" id="ep-plan-meta-ceil" value="${esc(p.settings.ceilingHeight || 270)}"></label></div>
       <div class="ep-plan-modehint">Высота потолка проекта — база для вертикалей трасс и расчёта кабеля. У отдельной комнаты можно задать свою высоту в её карточке.</div>
+      <div class="ep-plan-srow"><label style="flex:1">Север, ° (для 3D-прогулки)<input type="number" inputmode="numeric" min="0" max="359" id="ep-plan-meta-north" value="${esc(p.settings.northDeg || 0)}"></label></div>
+      <div class="ep-plan-modehint">Куда смотрит север относительно ВЕРХА плана: 0° — вверх, 90° — вправо. По нему в 🚶 3D солнце светит в окна с правильной стороны.</div>
       <div class="ep-plan-srow"><b>Основная надпись (штамп PDF)</b></div>
       <div class="ep-plan-srow ep-plan-s2">
         <label>Шифр документа<input type="text" id="ep-plan-meta-code" value="${esc(p.docCode || "")}" placeholder="074/1/26-30МС"></label>
@@ -663,6 +666,7 @@
     else if (t.id === "ep-plan-meta-ceil") { const v = Math.round(Number(t.value)); if (v >= 150 && v <= 600) { c.project.settings.ceilingHeight = v; c.persist("meta-ceil"); } }
     // графы основной надписи PDF — сохраняются на "input" БЕЗ commit(), как клиент/адрес
     // (иначе каждая набранная буква плодила бы снимок undo)
+    else if (t.id === "ep-plan-meta-north") { const v = Math.round(Number(t.value)); if (v >= 0 && v <= 359) { c.project.settings.northDeg = v; c.persist("meta-north"); } }
     else if (t.id === "ep-plan-meta-code") { c.project.docCode = t.value; c.persist("meta-code"); }
     else if (t.id === "ep-plan-meta-stage") { c.project.stage = t.value; c.persist("meta-stage"); }
     else if (t.id === "ep-plan-meta-gip") { c.project.gip = t.value; c.persist("meta-gip"); }
