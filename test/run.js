@@ -5124,6 +5124,24 @@ test("фото: deleteProject чистит кэш фото своего прое
     const pm = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-mount.js"), "utf8");
     ok(/ep-plan-meta-north/.test(pm), "компас правится в шторке проекта");
   });
+  test("3D: два джойстика — идти и смотреть, гироскоп не обязателен", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const dir = path2.join(__dirname, "..", "assets", "js", "modules", "plan3d");
+    const ctl = fs2.readFileSync(path2.join(dir, "plan3d-controls.js"), "utf8");
+    const mnt = fs2.readFileSync(path2.join(dir, "plan3d-mount.js"), "utf8");
+    ok(/data-p3d-joy>/.test(mnt) && /data-p3d-joy2>/.test(mnt), "в разметке ДВА стика");
+    ok(/идти/.test(mnt) && /смотреть/.test(mnt), "у стиков подписи");
+    // правый стик задаёт СКОРОСТЬ поворота (рад/сек), а не разовый сдвиг
+    ok(/lookStickSpeed/.test(mnt) && /lookStickSpeed \* dt/.test(ctl), "правый стик крутит камеру, пока держишь");
+    ok(/st\.move/.test(ctl) && /st\.look/.test(ctl), "стики — отдельные состояния");
+    // гироскоп ВЫКЛЮЧЕН по умолчанию и включается кнопкой: просьба «не только датчиками»
+    ok(/gyroOn: false/.test(ctl), "гироскоп по умолчанию выключен");
+    ok(/sensBtn\.onclick = \(\) => \{ if \(st\.gyroOn\) gyroOff\(\); else gyroOn\(\); \}/.test(ctl), "кнопка датчиков — тумблер");
+    // и складывается со стиком: применяем ПРИРАЩЕНИЕ, а не абсолютный угол телефона
+    ok(/gyroPrev/.test(ctl) && /st\.gyro\.a - st\.gyroPrev\.a/.test(ctl), "гироскоп применяется приращением (иначе перетирал бы стик)");
+    ok(/KeyW/.test(ctl) && /ArrowUp/.test(ctl), "на десктопе WASD и стрелки");
+    ok(/removeEventListener\("keydown", onKey\)/.test(ctl), "клавиатурные слушатели снимаются при выходе");
+  });
   test("3D: адаптивное качество — уровни по возрастанию и гистерезис", () => {
     const fs2 = require("fs"), path2 = require("path");
     const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan3d", "plan3d-quality.js"), "utf8");

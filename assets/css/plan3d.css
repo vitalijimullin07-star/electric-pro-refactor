@@ -18,17 +18,17 @@
   pointer-events: auto;
   background: rgba(15, 23, 42, .72); color: #e6edf7;
   border: 1px solid rgba(148, 163, 184, .38); border-radius: 10px;
-  padding: 8px 12px; font-size: 14px; font-weight: 600; cursor: pointer;
+  padding: 7px 10px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
   backdrop-filter: blur(6px);
 }
 .ep-p3d-btn:active { background: rgba(15, 23, 42, .9); }
 .ep-p3d-fps {
   margin-left: auto; color: rgba(226, 232, 240, .65); font-size: 12px;
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: tabular-nums; white-space: nowrap; flex: none;
 }
 
 .ep-p3d-hint {
-  position: absolute; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+  position: absolute; left: 50%; bottom: calc(210px + env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
   max-width: 82vw; text-align: center;
   color: rgba(226, 232, 240, .82); font-size: 13px; line-height: 1.35;
@@ -37,16 +37,26 @@
 }
 .ep-p3d-hint.is-gone { opacity: 0; }
 
-/* плавающий стик: появляется под пальцем, поэтому позиция ставится из JS */
+/* Два стика: левый — идти, правый — осматриваться. Позицию (и в покое, и под
+   пальцем) ставит JS через left/top — так не приходится мирить `bottom` с
+   центрирующим transform, и стик одинаково точно встаёт куда угодно. */
 .ep-p3d-joy {
-  position: absolute; width: 132px; height: 132px; margin: -66px 0 0 -66px;
-  border-radius: 50%; border: 2px solid rgba(148, 163, 184, .35);
-  background: rgba(15, 23, 42, .28);
-  opacity: 0; transition: opacity .15s; pointer-events: none;
+  position: absolute; width: 132px; height: 132px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%; border: 2px solid rgba(148, 163, 184, .32);
+  background: rgba(15, 23, 42, .26);
+  opacity: .45; transition: opacity .15s; pointer-events: none;
 }
 .ep-p3d-joy.on { opacity: 1; }
 .ep-p3d-joy i {
   position: absolute; left: 50%; top: 50%; width: 54px; height: 54px;
-  margin: 0; border-radius: 50%; background: rgba(226, 232, 240, .55);
+  border-radius: 50%; background: rgba(226, 232, 240, .55);
   transform: translate(-50%, -50%);
 }
+.ep-p3d-joy b {
+  position: absolute; left: 50%; bottom: -19px; transform: translateX(-50%);
+  font-size: 11px; font-weight: 600; color: rgba(226, 232, 240, .55); white-space: nowrap;
+}
+.ep-p3d-joy.on b { opacity: 0; }
+/* включённый тумблер в шапке (датчики, электрика) */
+.ep-p3d-btn.on { background: rgba(56, 189, 248, .26); border-color: rgba(56, 189, 248, .6); }

@@ -36,14 +36,16 @@
     const ctx = cv.getContext("2d");
     const img = ctx.createImageData(N, N);
     for (let i = 0; i < N * N; i++) {
-      const v = 208 + Math.round(Math.random() * 47);   // светлый, малоконтрастный шум
+      // контраст НАМЕРЕННО низкий: на первом прогоне шум 208..255 читался вблизи
+      // как телевизионные помехи, а не как штукатурка
+      const v = 236 + Math.round(Math.random() * 19);
       img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v;
       img.data[i * 4 + 3] = 255;
     }
     ctx.putImageData(img, 0, 0);
     const t = new THREE.CanvasTexture(cv);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.repeat.set(6, 6);
+    t.repeat.set(4, 4);
     t.anisotropy = 2;
     return t;
   }
@@ -51,7 +53,7 @@
   function make(THREE, p) {
     const cache = new Map();
     const tex = noiseTex(THREE);
-    const std = (o) => new THREE.MeshStandardMaterial({ color: o.color, roughness: o.rough, metalness: 0, map: tex, bumpMap: tex, bumpScale: 0.12 });
+    const std = (o) => new THREE.MeshStandardMaterial({ color: o.color, roughness: o.rough, metalness: 0, map: tex, bumpMap: tex, bumpScale: 0.05 });
     const wallOf = (name) => {
       const k = String(name || "");
       if (!cache.has(k)) cache.set(k, std(WALL[k] || PLASTER));
