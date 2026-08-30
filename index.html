@@ -26,6 +26,7 @@
   <link rel="stylesheet" href="assets/css/pool-v29.css?v=3182" />
   <link rel="stylesheet" href="assets/css/visual-firebase-sync.css?v=3182" />
   <link rel="stylesheet" href="assets/css/plan.css?v=3182" />
+  <link rel="stylesheet" href="assets/css/plan3d.css?v=3182" />
 </head>
 <body data-visual-mode="night" data-animation="glass" data-button-shape="soft" data-bg-style="live">
   <div id="app"></div>
@@ -109,6 +110,12 @@
   <script defer src="assets/js/modules/plan/plan-manualscheme.js?v=3182"></script>
   <script defer src="assets/js/modules/plan/plan-export.js?v=3182"></script>
   <script defer src="assets/js/modules/plan/plan-mount.js?v=3182"></script>
+  <!-- 3D-прогулка по плану: лёгкие IIFE-модули; сам three.js подгружается
+       динамическим import() только при первом входе в 3D -->
+  <script defer src="assets/js/modules/plan3d/plan3d-mount.js?v=3182"></script>
+  <script defer src="assets/js/modules/plan3d/plan3d-materials.js?v=3182"></script>
+  <script defer src="assets/js/modules/plan3d/plan3d-scene.js?v=3182"></script>
+  <script defer src="assets/js/modules/plan3d/plan3d-controls.js?v=3182"></script>
   <script defer src="assets/js/core/app.js?v=3182"></script>
   <script src="assets/js/modules/sound-feedback.js?v=3182"></script>
   <script defer src="assets/js/core/pwa.js?v=3182"></script>

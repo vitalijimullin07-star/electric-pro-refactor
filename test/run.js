@@ -5055,6 +5055,66 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/accX \+= dx; accY \+= dy;/.test(rms), "приращения накапливаются (dx/dy — не сдвиг от старта)");
   });
 
+  // ===== 43. 3D-прогулка (Слои 0-2) =====
+  // Три.js и WebGL в vm-песочнице недоступны — здесь ЧИСТАЯ логика (разбивка стены
+  // проёмами и проходимость), остальное (сцена, ходьба, коллизия, dispose) проверено
+  // живым прогоном в headless Chromium.
+  test("3D: стена режется проёмами — дверь проходима, окно нет", () => {
+    const { P } = install();
+    const room = P.rooms[0], w = G.walls(room)[0];   // стена 0..400 по x, y=0
+    const L = w.len;
+    const S3 = EP.Plan3D.Scene;
+    // без проёмов — одна сплошная часть на всю стену и она же непроходима
+    const bare = S3.wallPieces(P, w, 270);
+    eq(bare.solid.length, 1, "без проёмов — один кусок");
+    eq(Math.round(bare.solid[0].u1 - bare.solid[0].u0), Math.round(L), "на всю длину");
+    eq(bare.block.length, 1, "и он непроходим");
+    // дверь (sill=0, высота 200): слева, справа и ПЕРЕМЫЧКА сверху; проём проходим
+    const d = M.newOpening("door");
+    d.wallId = w.id; d.offset = 100; d.width = 90;
+    P.openings.push(d);
+    const wd = S3.wallPieces(P, w, 270);
+    eq(wd.solid.length, 3, "слева + перемычка + справа");
+    const lint = wd.solid.find((s) => s.y0 > 0);
+    ok(lint && lint.y0 === 200 && lint.y1 === 270, "перемычка от верха проёма до потолка");
+    ok(!wd.solid.some((s) => s.u0 >= 100 && s.u1 <= 190 && s.y0 === 0), "под дверью стены нет");
+    eq(wd.block.length, 2, "дверной проём НЕ перекрывает проход");
+    // окно (sill=90, высота 140): добавляются подоконная часть и над окном, и оно блокирует
+    P.openings.length = 0;
+    const win = M.newOpening("window");
+    win.wallId = w.id; win.offset = 200; win.width = 140;
+    P.openings.push(win);
+    const ww = S3.wallPieces(P, w, 270);
+    ok(ww.solid.some((s) => s.y0 === 0 && s.y1 === 90 && s.u0 === 200), "часть под подоконником");
+    ok(ww.solid.some((s) => s.y0 === 230 && s.y1 === 270), "часть над окном");
+    eq(ww.block.length, 3, "окно непроходимо (в отличие от двери)");
+  });
+  test("3D: материалы стен берутся из имён 2D-модели, неизвестное — штукатурка", () => {
+    const Mt = EP.Plan3D.Materials;
+    ok(Mt.WALL["Бетон"] && Mt.WALL["Кирпич"] && Mt.WALL["Панель"], "материалы несущих стен");
+    ok(Mt.WALL["ГКЛ"] && Mt.WALL["Дерево"], "и перегородочные");
+    ok(Mt.PLASTER && Mt.PLASTER.color, "штукатурка — дефолт");
+    // имена ОБЯЗАНЫ совпадать с теми, что реально даёт 2D-модель, иначе 3D молча
+    // покрасит все стены штукатуркой вместо материала
+    const D = EP.Plan.Core.DEFAULTS;
+    (D.materials || []).forEach((m) => ok(Mt.WALL[m], "материал 2D «" + m + "» известен 3D"));
+  });
+  test("3D: модуль подключён и не тянет three.js до входа", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const idx = fs2.readFileSync(path2.join(__dirname, "..", "index.html"), "utf8");
+    ["plan3d-mount", "plan3d-materials", "plan3d-scene", "plan3d-controls"].forEach((n) =>
+      ok(idx.indexOf("plan3d/" + n + ".js") >= 0, n + " подключён"));
+    ok(idx.indexOf("plan3d.css") >= 0, "стили 3D подключены");
+    ok(idx.indexOf("three.module") < 0, "three.js НЕ грузится тегом — только import() при входе в 3D");
+    const mnt = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan3d", "plan3d-mount.js"), "utf8");
+    ok(/await import\(".*three\.module\.min\.js"\)/.test(mnt), "динамический import three.js");
+    ok(/loseContext/.test(mnt) && /geometry\.dispose\(\)/.test(mnt), "освобождение WebGL при выходе");
+    const pm = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-mount.js"), "utf8");
+    ok(/data-plan-3d/.test(pm), "кнопка входа в шапке плана");
+    ok(fs2.existsSync(path2.join(__dirname, "..", "assets", "js", "vendor", "three", "three.module.min.js")),
+      "локальная копия three.js в репозитории (CSP разрешает только 'self')");
+  });
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);
