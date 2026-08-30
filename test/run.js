@@ -690,6 +690,56 @@ test("гребёнка у щита: порядок входа по полосе 
   }
   eq(combX, 0, "подходы к щиту больше не перекрещиваются");
 });
+test("порядок полос считается по геометрии, а не по порядку заведения линий", () => {
+  // Порядок p.circuits — это порядок, в котором мастер ЗАВОДИЛ линии; полосы по нему
+  // раздавались произвольно, и кабели пересекались на входах в ствол магистрали.
+  // Теперь порядок = сторона ствола + удалённость входа от щита (computeAutoLane).
+  const mk = () => {
+    const P = EP.Plan.Core.createProject("полосы");
+    EP.Plan.Core.commit();
+    const room = (x, y, w, h, n) => { const r = M.newRoom(G.rectPoints(x, y, w, h), n); P.rooms.push(r); return r; };
+    room(0, 300, 900, 140, "Коридор");
+    const rs = [room(0, 0, 380, 300, "Кухня"), room(380, 0, 520, 300, "Гостиная"),
+      room(0, 440, 460, 340, "Спальня"), room(460, 440, 440, 340, "Санузел")];
+    P.panels.push(M.newPanel(60, 360));
+    const cs = rs.map((_, i) => { const c = M.newCircuit("QF" + (i + 1), "#ef4444", 16); P.circuits.push(c); return c; });
+    rs.forEach((rm, i) => [80, 180, 280].forEach((o) => {
+      const e = M.newElement("socket", rm.id + ":0", o, 30, "power"); e.circuitId = cs[i].id; P.elements.push(e);
+    }));
+    P.guides.push(M.newGuide([{ x: 40, y: 370 }, { x: 860, y: 370 }]));
+    EP.Plan.Core.persist("seed");
+    EP.Plan.Routes.build({ silent: true });
+    return P;
+  };
+  const P = mk();
+  // фактическая полоса линии = отступ её ХОДА ПО СТВОЛУ от самой магистрали (y=370);
+  // линия, которая до ствола не доходит (идёт сразу на уровень щита), полосы не имеет
+  const laneOf = (cid) => {
+    const rt = P.routes.find((r) => r.circuitId === cid && r.points.length > 2);
+    if (!rt) return null;
+    const run = [];
+    for (let i = 1; i < rt.points.length; i++) {
+      const a = rt.points[i - 1], b = rt.points[i];
+      if (Math.abs(a.y - b.y) < 0.5 && a.y >= 369 && a.y < 400) run.push(a.y);
+    }
+    return run.length ? Math.round(Math.min(...run) - 370) : null;
+  };
+  const lanes = P.circuits.map((c) => laneOf(c.id)).filter((v) => v != null);
+  ok(lanes.length >= 3, "минимум три линии идут по стволу");
+  eq(new Set(lanes).size, lanes.length, "полосы не совпадают — линии не ложатся друг на друга");
+  // «Спальня» (вход у x≈80) и «Санузел» (вход у x≈540) — с ОДНОЙ стороны ствола; дальняя
+  // от щита обязана идти БЛИЖЕ к стволу, иначе вход ближней режет её ход
+  const spal = laneOf(P.circuits[2].id), san = laneOf(P.circuits[3].id);
+  ok(spal != null && san != null, "обе нижние линии идут по стволу");
+  ok(san < spal, "линия, входящая ДАЛЬШЕ от щита, идёт ближе к стволу");
+  // порядок детерминирован: повторная сборка даёт те же полосы
+  const before = P.circuits.map((c) => laneOf(c.id)).join(",");
+  EP.Plan.Routes.build({ silent: true });
+  eq(P.circuits.map((c) => laneOf(c.id)).join(","), before, "порядок полос детерминирован");
+  const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-routes.js"), "utf8");
+  ok(/if \(laneOrder && laneOrder\[circuitId\] != null\)[\s\S]{0,200}autoLane/.test(src),
+    "явный порядок оптимизатора ГЛАВНЕЕ авто — иначе результат «✨ Оптимизировать» сбрасывался бы перестройкой");
+});
 test("ручная правка трассы в щит переживает перестройку, даже если кабель вошёл не по центру", () => {
   // Латентный баг, вскрытый пере-упорядочиванием гребёнки: restoreManualRoutes сверял
   // конец трассы с ЦЕНТРОМ щита с допуском 1см, а кабели входят гребёнкой по кромке

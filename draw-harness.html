@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>harness</title>
+<link rel="stylesheet" href="/assets/css/base.css">
+<link rel="stylesheet" href="/assets/css/layout.css">
+<link rel="stylesheet" href="/assets/css/theme.css">
+<link rel="stylesheet" href="/assets/css/plan.css">
+<link rel="stylesheet" href="/assets/css/plan3d.css">
+<link rel="stylesheet" href="/assets/css/database.css">
+</head><body>
+<div id="app"><div class="app-shell"><div class="page-container">
+  <div id="ep-plan-root"></div>
+</div></div></div>
+<script>
+  window.EP = window.EP || {};
+  EP.state = { user: { uid: "u1", displayName: "Мастер Тест", email: "t@t.t" } };
+  EP.Auth = { isAdmin: () => true, user: () => EP.state.user };
+  EP.Firebase = { db: null };
+  EP.Router = { load: () => {}, current: () => "plan" };
+</script>
+<script defer src="/assets/js/modules/plan/plan-core.js"></script>
+<script defer src="/assets/js/modules/plan/plan-geometry.js"></script>
+<script defer src="/assets/js/modules/plan/plan-canvas.js"></script>
+<script defer src="/assets/js/modules/plan/plan-render.js"></script>
+<script defer src="/assets/js/modules/plan/plan-elements.js"></script>
+<script defer src="/assets/js/modules/plan/plan-routes.js"></script>
+<script defer src="/assets/js/modules/plan/plan-rooms.js"></script>
+<script defer src="/assets/js/modules/plan/plan-unfold.js"></script>
+<script defer src="/assets/js/modules/plan/plan-scheme.js"></script>
+<script defer src="/assets/js/modules/plan/plan-manualscheme.js"></script>
+<script defer src="/assets/js/modules/plan/plan-calc.js"></script>
+<script defer src="/assets/js/modules/plan/plan-rules.js"></script>
+<script defer src="/assets/js/modules/plan/plan-export.js"></script>
+<script defer src="/assets/js/modules/plan/plan-templates.js"></script>
+<script defer src="/assets/js/modules/plan/plan-furniture.js"></script>
+<script defer src="/assets/js/modules/plan/plan-mount.js"></script>
+<script>
+window.addEventListener("DOMContentLoaded", () => {
+  window.dispatchEvent(new CustomEvent("ep:route-loaded", { detail: { route: "plan" } }));
+  window.__newProject = async () => {
+    const C = EP.Plan.Core, G = EP.Plan.Geometry, M = C.model;
+    const pr = C.createProject("Тест");
+    await C.openProject(pr.id);
+    const P = C.project;
+    C.commit();
+    const room = (x, y, w, h, n) => { const r = M.newRoom(G.rectPoints(x, y, w, h), n); P.rooms.push(r); return r; };
+    room(0, 300, 900, 140, "Коридор");
+    const rs = [room(0, 0, 380, 300, "Кухня"), room(380, 0, 520, 300, "Гостиная"),
+      room(0, 440, 460, 340, "Спальня"), room(460, 440, 440, 340, "Санузел")];
+    P.panels.push(M.newPanel(60, 360));
+    const cs = [];
+    for (let i = 1; i <= 8; i++) { const c = M.newCircuit("QF" + i, ["#ef4444","#22c55e","#3b82f6","#f59e0b","#a855f7","#06b6d4","#ec4899","#84cc16"][i-1], 16); P.circuits.push(c); cs.push(c); }
+    rs.forEach((rm, i) => {
+      [80, 180, 280].forEach((o) => { const e = M.newElement("socket", rm.id + ":0", o, 30, "power"); e.circuitId = cs[i].id; P.elements.push(e); });
+      const sw = M.newElement("switch", rm.id + ":1", 60, 90, "light"); sw.circuitId = cs[4 + i].id; P.elements.push(sw);
+    });
+    P.guides.push(M.newGuide([{ x: 40, y: 370 }, { x: 860, y: 370 }]));
+    C.persist("seed");
+    window.dispatchEvent(new CustomEvent("ep:route-loaded", { detail: { route: "plan" } }));
+    await new Promise((r) => setTimeout(r, 120));
+    const row = document.querySelector("[data-plan-open]");
+    if (row) row.click();
+    return P.id;
+  };
+  window.__cross = () => {
+    const P = EP.Plan.Core.project;
+    const segX = (a1,a2,b1,b2)=>{const d1x=a2.x-a1.x,d1y=a2.y-a1.y,d2x=b2.x-b1.x,d2y=b2.y-b1.y;
+      const den=d1x*d2y-d1y*d2x; if(Math.abs(den)<1e-9)return null;
+      const t=((b1.x-a1.x)*d2y-(b1.y-a1.y)*d2x)/den, u=((b1.x-a1.x)*d1y-(b1.y-a1.y)*d1x)/den;
+      return (t<0.001||t>0.999||u<0.001||u>0.999)?null:1;};
+    const rr=(P.routes||[]).filter(r=>(r.points||[]).length>1); let n=0;
+    for(let i=0;i<rr.length;i++)for(let j=i+1;j<rr.length;j++){
+      if((rr[i].circuitId||0)===(rr[j].circuitId||0))continue;
+      for(let a=1;a<rr[i].points.length;a++)for(let b=1;b<rr[j].points.length;b++)
+        if(segX(rr[i].points[a-1],rr[i].points[a],rr[j].points[b-1],rr[j].points[b]))n++;
+    }
+    return { crossings: n, routes: rr.length, score: EP.Plan.Routes.scoreRoutes(P) };
+  };
+});
+</script>
+</body></html>
