@@ -147,7 +147,10 @@
      пересечений разных линий БЕЗ единого клика; «✨ Оптимизировать» дальше добирает до 0-2.
      laneOrder (явный выбор оптимизатора) ГЛАВНЕЕ — иначе результат оптимизации сбрасывался
      бы на следующей же перестройке. */
-  let autoLane = null;
+  let autoLane = null;   // {pid, map} — привязан к проекту: одиночная пересборка трассы
+                         // («↺ Авто») не должна взять порядок от ДРУГОГО проекта
+  function setAutoLane(p) { autoLane = { pid: p.id, map: computeAutoLane(p) }; }
+  function ensureAutoLane(p) { if (!autoLane || autoLane.pid !== p.id) setAutoLane(p); }
   function computeAutoLane(p) {
     const guides = (p.guides || []).filter((gd) => (gd.points || []).length >= 2);
     const panels = p.panels || [], circuits = p.circuits || [];
@@ -192,7 +195,7 @@
   function circuitIdx(p, circuitId) {
     if (!circuitId) return -1;
     if (laneOrder && laneOrder[circuitId] != null) return laneOrder[circuitId];
-    if (autoLane && autoLane[circuitId] != null) return autoLane[circuitId];
+    if (autoLane && autoLane.pid === p.id && autoLane.map && autoLane.map[circuitId] != null) return autoLane.map[circuitId];
     return (p.circuits || []).findIndex((c) => c.id === circuitId);
   }
   // РАНЬШЕ был кап "×10 лэйнов" (Math.min(idx, 10)) — задуман, чтобы отступ не рос
@@ -1405,7 +1408,7 @@
     const sinkIds = new Set(risersHere.map((n) => n.id)); // стояк-приёмник — ЦЕЛЬ, а не точка
     const points = (fp.elements || []).filter((el) => isPoint(el) && !sinkIds.has(el.id));
     if (!points.length) { if (!silent) rooms().toast(T.noElems); return; }
-    autoLane = computeAutoLane(fp);   // порядок полос по геометрии (см. computeAutoLane)
+    setAutoLane(fp);                 // порядок полос по геометрии (см. computeAutoLane)
     if (!quiet) c.commit();
     // Чистим/перестраиваем ТОЛЬКО трассы АКТИВНОГО этажа — трассы других этажей
     // изолированы (своя геометрия) и не трогаются: иначе «Построить» на этаже 2
@@ -1468,7 +1471,7 @@
     const sinkIds = new Set(risersHere.map((n) => n.id));
     const points = (fp.elements || []).filter((el) => isPoint(el) && !sinkIds.has(el.id));
     if (!points.length) { if (!silent) rooms().toast(T.noElems); return; }
-    autoLane = computeAutoLane(fp);   // порядок полос по геометрии (см. computeAutoLane)
+    setAutoLane(fp);                 // порядок полос по геометрии (см. computeAutoLane)
     if (!quiet) c.commit();
 
     // проходки уже существующих ручных трасс — актуализируем, путь НЕ трогаем
@@ -1536,6 +1539,7 @@
       if (toEl) target = { kind: isJunction(toEl) ? "junction" : "point", id: toEl.id, pos: isJunction(toEl) ? G().elemPoint(p, toEl) : G().routeAnchor(p, toEl) };
     }
     if (!target || !target.pos) return;
+    ensureAutoLane(p);   // одиночная пересборка вне build() — порядок полос ЭТОГО проекта
     c.commit();
     rt.points = buildPath(p, fromEl, a, target, rt.circuitId);
     rt.manual = false;
