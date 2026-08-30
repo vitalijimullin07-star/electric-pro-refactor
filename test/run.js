@@ -749,6 +749,37 @@ test("порядок полос считается по геометрии, а �
   ok(/if \(laneOrder && laneOrder\[circuitId\] != null\)[\s\S]{0,200}autoLane/.test(src),
     "явный порядок оптимизатора ГЛАВНЕЕ авто — иначе результат «✨ Оптимизировать» сбрасывался бы перестройкой");
 });
+test("build() ИДЕМПОТЕНТЕН: повторная сборка на том же состоянии даёт тот же результат", () => {
+  // Инвариант модуля. Сломался незаметно, когда пост-проход гребёнки начал править точки
+  // пути НА МЕСТЕ: путь может содержать ссылки на точки кэшированной геометрии, и правка
+  // портила кэш — первый прогон давал 12 пересечений, второй и дальше 13. Внешне это
+  // выглядело как «оптимизатор иногда недетерминирован» и дважды роняло CI-гейт.
+  const P = EP.Plan.Core.createProject("идемпотентность");
+  EP.Plan.Core.commit();
+  const room = (x, y, w, h, n) => { const r = M.newRoom(G.rectPoints(x, y, w, h), n); P.rooms.push(r); return r; };
+  room(0, 0, 700, 120, "Коридор");
+  const rs = [room(0, 120, 350, 400, "К1"), room(350, 120, 350, 400, "К2")];
+  P.panels.push(M.newPanel(60, 60, "Щ"));
+  const cs = [0, 1, 2, 3].map((i) => { const c = M.newCircuit("QF" + (i + 1), "#f00", 16); P.circuits.push(c); return c; });
+  rs.forEach((rm) => { for (let k = 0; k < 4; k++) {
+    const e = M.newElement("socket", rm.id + ":" + (k % 3), 60 + k * 70, 30, "power");
+    e.circuitId = cs[k].id; P.elements.push(e);
+  } });
+  P.guides.push(M.newGuide([{ x: 60, y: 60 }, { x: 640, y: 60 }]));
+  EP.Plan.Core.persist("seed");
+  const shot = () => JSON.stringify(P.routes.map((r) => r.points));
+  EP.Plan.Routes.build({ silent: true });
+  const a = shot();
+  EP.Plan.Routes.build({ silent: true });
+  const b = shot();
+  EP.Plan.Routes.build({ silent: true });
+  eq(b, a, "второй build даёт ТУ ЖЕ геометрию");
+  eq(shot(), a, "и третий тоже");
+  const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-routes.js"), "utf8");
+  const fn = /function relayPanelCombs\(p\)[\s\S]*?\n  \}/.exec(src);
+  ok(fn && !/it\.end\.x \+=|it\.pre\.x \+=/.test(fn[0]),
+    "гребёнка ЗАМЕНЯЕТ точки пути, а не правит их на месте (иначе портит кэш геометрии)");
+});
 test("ручная правка трассы в щит переживает перестройку, даже если кабель вошёл не по центру", () => {
   // Латентный баг, вскрытый пере-упорядочиванием гребёнки: restoreManualRoutes сверял
   // конец трассы с ЦЕНТРОМ щита с допуском 1см, а кабели входят гребёнкой по кромке
@@ -2988,14 +3019,16 @@ test("фото: deleteProject чистит кэш фото своего прое
     EP.Plan.Routes.setLaneOrder(null);
     EP.Plan.Routes.build();
     const base = EP.Plan.Routes.scoreRoutes(P);
-    const r1 = EP.Plan.Routes.optimizeRouting({ budgetMs: 200, seed: 42 });
+    // ПОТОЛОК ПО ЧИСЛУ ПРОБ, а не по времени: с budgetMs два прогона под нагрузкой
+    // успевают разное число итераций, и «тот же сид — та же метрика» падало на ровном месте
+    const r1 = EP.Plan.Routes.optimizeRouting({ budgetMs: 5000, maxIters: 40, seed: 42 });
     ok(r1 && r1.score.cost <= base.cost, `оптимизатор не хуже базы (${r1.score.cost} ≤ ${base.cost})`);
     eq(r1.score.unrouted, 0, "все точки по-прежнему с трассами");
     const geom1 = JSON.stringify(P.routes.map((r) => r.points));
     // тот же сид → тот же результат (инвариант детерминизма модуля)
     const P2 = optProject();
     EP.Plan.Routes.setLaneOrder(null);
-    const r2 = EP.Plan.Routes.optimizeRouting({ budgetMs: 200, seed: 42 });
+    const r2 = EP.Plan.Routes.optimizeRouting({ budgetMs: 5000, maxIters: 40, seed: 42 });
     ok(r2 && Math.abs(r2.score.cost - r1.score.cost) < 1e-6, "тот же сид — та же метрика");
     EP.Plan.Routes.setLaneOrder(null);
     ok(geom1.length > 10, "трассы построены");

@@ -1607,6 +1607,12 @@
     const c = core(), p = c.project;
     if (!p) return null;
     const budget = Math.max(50, opts.budgetMs || 900);
+    // maxIters — потолок ЧИСЛА проб вместо времени. В приложении не используется (там
+    // бюджет по времени — сколько ресурса телефона не жалко), нужен ТЕСТАМ: проверка
+    // детерминизма «тот же сид → та же метрика» по времени принципиально нестабильна —
+    // под нагрузкой два прогона успевают разное число итераций и расходятся (этот тест
+    // дважды ронял CI-гейт на ровном месте).
+    const maxIters = opts.maxIters > 0 ? opts.maxIters : Infinity;
     const t0 = Date.now();
     const rnd = lcg(opts.seed || 12345);
     const ids = (p.circuits || []).map((x) => x.id);
@@ -1666,7 +1672,7 @@
     // и без того хватало едва-едва). Так «лучший из N» гарантированно НЕ ХУЖЕ прежнего.
     const STALL_LIMIT = 12, allowRestart = !!opts.restart;
     let cur = best, stall = 0;
-    while (ids.length > 1 && Date.now() - t0 < budget) {
+    while (ids.length > 1 && iterations < maxIters && Date.now() - t0 < budget) {
       const order = Object.assign({}, cur.order);
       const i = Math.floor(rnd() * ids.length), j = Math.floor(rnd() * ids.length);
       if (i === j) continue;
@@ -2326,20 +2332,33 @@
         const side = perp
           ? (Math.abs(along) > 1 ? (along > 0 ? 1 : -1) : (pa(pre) - a0 >= 0 ? 1 : -1))
           : (pa(pre) - a0 >= 0 ? 1 : -1);
-        info.push({ r, end, pre: perp ? pre : null, side, depth: perp ? Math.abs(pnr(pre) - n0) : 0 });
+        info.push({ r, q, iEnd: q.length - 1, iPre: perp ? q.length - 2 : -1, end, pre, side,
+          depth: perp ? Math.abs(pnr(pre) - n0) : 0,
+          // тай-брейк при РАВНОЙ глубине — по позиции источника кабеля (чистая геометрия).
+          // По id трассы было НЕЛЬЗЯ: id генерится случайно, и два прогона на одинаковом
+          // проекте давали разный порядок гребёнки → разную геометрию → разную метрику.
+          // Модуль обязан быть детерминированным (это его инвариант, на нём стоит
+          // проверка «тот же сид — та же метрика» у оптимизатора).
+          key: pa(q[0]) * 1e6 + pnr(q[0]) });
       });
       if (info.length < 2) return;
       // сторона подхода → своя половина гребёнки; внутри половины: чем дальше полоса,
       // тем раньше сворачиваем (слева — по возрастанию глубины, справа — по убыванию)
       info.sort((u, v) => (u.side - v.side)
         || (u.side < 0 ? u.depth - v.depth : v.depth - u.depth)
-        || (u.r.id < v.r.id ? -1 : 1));                 // детерминизм при равной глубине
+        || (u.key - v.key));                            // детерминизм при равной глубине
       const step = Math.min(PANEL_COMB_MAX_STEP, wCm / (info.length + 1));
       info.forEach((it, i) => {
         const d = (a0 + (i - (info.length - 1) / 2) * step) - pa(it.end);
         if (Math.abs(d) < 0.05) return;
-        it.end.x += ax.x * d; it.end.y += ax.y * d;
-        if (it.pre) { it.pre.x += ax.x * d; it.pre.y += ax.y * d; }
+        // ЗАМЕНЯЕМ точки новыми объектами, а НЕ правим на месте: путь может содержать
+        // ссылки на точки, которые живут в кэшированной геометрии (контур комнаты, узлы
+        // графа магистралей), и правка «по месту» портила бы кэш. Это не теория — из-за
+        // неё build() перестал быть идемпотентным (первый прогон 12 пересечений, второй
+        // и дальше 13), а на этом инварианте стоит проверка детерминизма оптимизатора.
+        const mv = (q0) => ({ x: q0.x + ax.x * d, y: q0.y + ax.y * d });
+        it.q[it.iEnd] = mv(it.end);
+        if (it.iPre >= 0) it.q[it.iPre] = mv(it.pre);
         recomputeThroughWalls(p, it.r);   // слот уехал на несколько см — гильзы пересчитываем
       });
     });
