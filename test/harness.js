@@ -12,7 +12,7 @@ const PLAN_DIR = path.join(ROOT, "assets/js/modules/plan");
 const P3D_DIR = path.join(ROOT, "assets/js/modules/plan3d");
 // 3D-модуль: в песочницу грузим ТОЛЬКО чистую логику (разбивка стены проёмами,
 // таблица материалов). mount/controls — DOM+WebGL, тестируются живым прогоном.
-const P3D_ORDER = ["plan3d-materials", "plan3d-scene"];
+const P3D_ORDER = ["plan3d-materials", "plan3d-scene", "plan3d-electro"];
 const PLAN_ORDER = [
   "plan-core", "plan-geometry", "plan-canvas", "plan-render", "plan-rooms",
   "plan-elements", "plan-unfold", "plan-routes", "plan-calc", "plan-rules",

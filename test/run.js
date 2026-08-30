@@ -5099,10 +5099,35 @@ test("фото: deleteProject чистит кэш фото своего прое
     const D = EP.Plan.Core.DEFAULTS;
     (D.materials || []).forEach((m) => ok(Mt.WALL[m], "материал 2D «" + m + "» известен 3D"));
   });
+  test("3D: прибор сидит на ПОВЕРХНОСТИ стены, а не отступает в комнату", () => {
+    const { P, w } = install();
+    const el = M.newElement("socket", w(0), 150, 30, "power");
+    P.elements.push(el);
+    const wl = G.wallById(P, w(0));
+    const th = G.wallThOf(P, wl);
+    const seat = EP.Plan3D.Electro.wallSeat(P, el);
+    const axis = G.pointAtOffset(wl, 150);
+    const dSeat = Math.hypot(seat.x - axis.x, seat.y - axis.y);
+    near(dSeat, th / 2, 0.01, "3D-посадка — ровно полтолщины от осевой (заподлицо со стеной)");
+    // 2D-маркер отступает ДАЛЬШЕ (th/2 + 8 см), чтобы не сливаться со стеной на чертеже —
+    // в 3D такой отступ повесил бы розетку в воздухе посреди комнаты
+    const draw = G.elemDrawPoint(P, el);
+    const dDraw = Math.hypot(draw.x - axis.x, draw.y - axis.y);
+    ok(dDraw > dSeat + 5, "у 2D-маркера отступ больше: " + Math.round(dDraw) + " против " + Math.round(dSeat));
+    ok(EP.Plan3D.Electro.DEV.w > 5 && EP.Plan3D.Electro.DEV.w < 15, "габарит механизма правдоподобен");
+  });
+  test("3D: север проекта — поле модели с бэкофиллом (солнце в окна)", () => {
+    const p = EP.Plan.Core.createProject("n");
+    eq(p.settings.northDeg, 0, "дефолт — север вверх плана");
+    const old = EP.Plan.Core.importJSON(JSON.stringify({ name: "старый", rooms: [], elements: [] }));
+    eq(old.settings.northDeg, 0, "старый проект бэкофиллится");
+    const pm = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-mount.js"), "utf8");
+    ok(/ep-plan-meta-north/.test(pm), "компас правится в шторке проекта");
+  });
   test("3D: модуль подключён и не тянет three.js до входа", () => {
     const fs2 = require("fs"), path2 = require("path");
     const idx = fs2.readFileSync(path2.join(__dirname, "..", "index.html"), "utf8");
-    ["plan3d-mount", "plan3d-materials", "plan3d-scene", "plan3d-controls"].forEach((n) =>
+    ["plan3d-mount", "plan3d-materials", "plan3d-scene", "plan3d-controls", "plan3d-electro", "plan3d-light"].forEach((n) =>
       ok(idx.indexOf("plan3d/" + n + ".js") >= 0, n + " подключён"));
     ok(idx.indexOf("plan3d.css") >= 0, "стили 3D подключены");
     ok(idx.indexOf("three.module") < 0, "three.js НЕ грузится тегом — только import() при входе в 3D");

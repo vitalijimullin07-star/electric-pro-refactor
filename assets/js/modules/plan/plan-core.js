@@ -140,6 +140,9 @@
       floors, activeFloorId: floors[0].id,
       settings: {
         ceilingHeight: DEFAULTS.ceilingHeight,
+        // направление «север» относительно ВЕРХА плана, ° — нужно 3D-прогулке,
+        // чтобы солнце светило в окна с той стороны, откуда светит на самом деле
+        northDeg: 0,
         wallThickness: DEFAULTS.wallThickness,
         gridStep: DEFAULTS.gridStep,
         snapEnabled: DEFAULTS.snapEnabled,
@@ -507,6 +510,7 @@
   function backfillProject(p) {
     if (p.client == null) p.client = "";
     // графы основной надписи PDF — у старых проектов их нет
+    if (p.settings && p.settings.northDeg == null) p.settings.northDeg = 0;
     if (p.docCode == null) p.docCode = "";
     if (p.stage == null) p.stage = "Р";
     if (p.gip == null) p.gip = "";

@@ -14,7 +14,8 @@
     noRooms: "Сначала нарисуй хотя бы одну комнату — по ней и строится 3D.",
     failed: "Не удалось запустить 3D на этом устройстве",
     sensors: "Включить датчики", sensorsHint: "Осмотр поворотом телефона",
-    hint: "Джойстик снизу — идти. Веди пальцем по экрану — осмотреться."
+    hint: "Джойстик снизу — идти. Веди пальцем по экрану — осмотреться.",
+    elec: "⚡ Электрика"
   };
 
   // Единый центр настроек 3D — здесь и только здесь магические числа режима.
@@ -27,7 +28,12 @@
     joyRadius: 60,         // px: радиус хода стика
     joyDead: 8,            // px: мёртвая зона
     lookSpeed: 0.0032,     // рад на px свайпа
-    pitchLimit: 1.35       // рад: ограничение взгляда вверх/вниз
+    pitchLimit: 1.35,      // рад: ограничение взгляда вверх/вниз
+    lintelH: 40,           // см: высота перемычки (kind:"lintel") под потолком
+    // свет (Слой 4): источников в шейдере фиксированное число, они перевешиваются
+    // на ближайшие лампы — иначе квартира на 20 ламп кладёт fps
+    maxLights: 6, lampIntensity: 9, lampRange: 700, lightRebindSec: 0.4,
+    sunIntensity: 1.1, sunAltitudeDeg: 52, ambient: 0.55
   };
   P3.DEFAULTS = DEFAULTS;
   P3.CM = 0.01;            // см -> метры (three.js работает в метрах)
@@ -56,6 +62,7 @@
       <div class="ep-p3d-top">
         <button type="button" class="ep-p3d-btn ep-clickable" data-p3d-exit>✕ ${T.exit}</button>
         <span class="ep-p3d-fps" data-p3d-fps></span>
+        <button type="button" class="ep-p3d-btn ep-clickable on" data-p3d-elec>${T.elec}</button>
         <button type="button" class="ep-p3d-btn ep-clickable" data-p3d-sensors hidden>${T.sensors}</button>
       </div>
       <div class="ep-p3d-hint" data-p3d-hint>${T.hint}</div>
@@ -86,8 +93,12 @@
       S.scene.background = new THREE.Color(0x0d1526);
       S.camera = new THREE.PerspectiveCamera(DEFAULTS.fov, window.innerWidth / window.innerHeight, DEFAULTS.near, DEFAULTS.far);
       // сцена из данных проекта (Слой 1) — читает project как есть, ничего не мутирует
-      const built = P3.Scene.build(THREE, S.scene, G().floorScoped(p), p);
+      const fp = G().floorScoped(p);
+      const built = P3.Scene.build(THREE, S.scene, fp, p);
       S.built = built;
+      // Слой 3 — электрика (точки/щиты/трассы/проходки), Слой 4 — свет по её лампам
+      S.elec = P3.Electro.build(THREE, S.scene, fp, p);
+      S.light = P3.Light.build(THREE, S.scene, fp, p, S.elec.lamps);
       // управление (Слой 2): джойстик + гироскоп/свайп + коллизия со стенами
       S.ctl = P3.Controls.attach(THREE, S.box, S.camera, built, DEFAULTS);
       S.on = true;
@@ -119,6 +130,7 @@
     const dt = Math.min(0.1, (now - S.lastT) / 1000); // клампим, чтобы после фона не «телепортироваться»
     S.lastT = now;
     if (S.ctl) S.ctl.update(dt);
+    if (S.light) S.light.update(dt, S.camera);
     S.renderer.render(S.scene, S.camera);
     fpsAcc += dt; fpsN++;
     if (fpsAcc >= 1) {
@@ -156,7 +168,8 @@
       S.renderer = null;
     }
     if (S.box && S.box.parentNode) S.box.parentNode.removeChild(S.box);
-    S.box = null; S.scene = null; S.camera = null; S.built = null;
+    if (S.elec && S.elec.dispose) S.elec.dispose();
+    S.box = null; S.scene = null; S.camera = null; S.built = null; S.elec = null; S.light = null;
     S.on = false;
   }
   function close() { if (S.on || S.box) closeBox(); }
@@ -168,6 +181,13 @@
     const t = e.target;
     if (t.closest && t.closest("[data-plan-3d]")) { e.preventDefault(); return void open(); }
     if (t.closest && t.closest("[data-p3d-exit]")) { e.preventDefault(); return close(); }
+    const eb = t.closest && t.closest("[data-p3d-elec]");
+    if (eb && S.elec) {                       // слой электрики включается/выключается, как «Слои» в 2D
+      const on = !S.elec.group.visible;
+      S.elec.group.visible = on;
+      eb.classList.toggle("on", on);
+      return;
+    }
   });
   // Android-«назад» и Esc закрывают 3D, не выходя из плана целиком
   window.addEventListener("popstate", (e) => {
