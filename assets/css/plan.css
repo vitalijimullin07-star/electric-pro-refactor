@@ -277,6 +277,23 @@ body[data-visual-mode="day"] .ep-plan-gtab.on { background: var(--accent, #0284c
   border: 1px solid rgba(255, 255, 255, .12);
   backdrop-filter: blur(8px); color: var(--text, #e8eef7);
 }
+/* НАКЛАДНОЙ лист поверх шторки — полный редактор точки над развёрткой стены.
+   position:absolute ВНУТРИ #ep-plan-sheet (он же родитель): развёртка — единственное
+   место модуля с НАСТОЯЩИМ Fullscreen API, а в нативном фуллскрине виден только сам
+   fullscreen-элемент и его потомки, поэтому сосед с position:fixed просто не показался
+   бы. Фон НЕПРОЗРАЧНЫЙ: под ним чертёж стены, и сквозь полупрозрачный лист поля читались
+   бы поверх линий развёртки. Занимает НИЖНЮЮ часть, а не весь лист (inset:0): чертёж
+   стены остаётся виден над редактором — правишь высоту и сразу видишь, куда точка встала. */
+.ep-plan-sheet2 {
+  position: absolute; left: 0; right: 0; bottom: 0; top: auto; z-index: 20;
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px; border-radius: 14px 14px 0 0; overflow: auto; max-height: 76%;
+  background: rgb(var(--card-bg-rgb, 15, 23, 42));
+  border-top: 1px solid rgba(255, 255, 255, .16);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, .35);
+  color: var(--text, #e8eef7);
+}
+.ep-plan-sheet2[hidden] { display: none; }
 /* Кнопка сворачивания шторки вниз (⌄) / разворачивания обратно (︿) — ОДНА, всегда
    в правом нижнем углу холста (просьба пользователя: «не скрывалось, а сворачивалось
    в нижнюю часть экрана кнопкой ^, но чтобы просто была кнопка в нижнем правом
