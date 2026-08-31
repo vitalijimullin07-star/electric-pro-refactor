@@ -16,7 +16,7 @@ const P3D_ORDER = ["plan3d-materials", "plan3d-scene", "plan3d-electro"];
 const PLAN_ORDER = [
   "plan-core", "plan-geometry", "plan-canvas", "plan-render", "plan-rooms",
   "plan-elements", "plan-unfold", "plan-routes", "plan-calc", "plan-rules",
-  "plan-scheme", "plan-manualscheme", "plan-export", "plan-templates", "plan-layouts", "plan-furniture"
+  "plan-scheme", "plan-manualscheme", "plan-export", "plan-dxf", "plan-templates", "plan-layouts", "plan-furniture"
 ];
 
 const noop = () => {};
