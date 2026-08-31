@@ -5946,7 +5946,10 @@ test("фото: deleteProject чистит кэш фото своего прое
       const p = twoRoomProject();
       const r1 = p.rooms[0];
       const b = M.newElement("block", r1.id + ":2", 300, 30, "power");
-      b.items = [{ type: "socket" }, { type: "internet" }];
+      // посты блока — СТРОКИ-типы в el.params.items (так во всём модуле), а не объекты:
+      // на объектах тест «проходил» на выдуманной форме данных и не поймал бы, что
+      // реальный блок из двух постов выгружается как одна розетка
+      b.params = { items: ["socket", "internet"] };
       p.elements.push(b);
       const d = parseDxf(D().build(p, {}).text);
       const blk = d.blocks.find((x) => x.name === "EP_SOCKET_INTERNET");
@@ -6114,6 +6117,79 @@ test("фото: deleteProject чистит кэш фото своего прое
       eq((EP.Plan.Rules.run(p).issues || []).filter((i) => /цепочк|звено/i.test(i.msg)).length, 0,
         "и никаких предупреждений про цепочки");
       EP.Plan.Core.closeProject();
+    });
+  }
+
+  // ===== 48. Клавишность выключателя-ПОСТА внутри блока =====
+  // Раньше задать её было негде: пост — просто строка-тип в params.items, и любой
+  // выключатель в рамке считался однокнопочным обычным (и в символе, и в коннекторах).
+  {
+    test("посты блока: мета читается параллельно, старые проекты не затронуты", () => {
+      const el = { params: { items: ["socket", "switch"] } };
+      eq(G.postMeta(el, 1).keys, 1, "нет меты — одна клавиша, как было");
+      eq(G.postMeta(el, 1).swKind, "normal", "и обычный выключатель");
+      el.params.itemMeta = [null, { keys: 3, swKind: "pass" }];
+      eq(G.postMeta(el, 1).keys, 3, "мета поста прочиталась");
+      eq(G.postMeta(el, 1).swKind, "pass", "и вид тоже");
+      eq(G.postMeta(el, 0).keys, 1, "у соседнего поста без меты — умолчание");
+      eq(G.postMeta(el, 1).keys, 3, "повторное чтение стабильно");
+      eq(G.postMeta({}, 0).keys, 1, "элемент без params не роняет");
+      eq(G.postMeta(el, 9).keys, 1, "индекс за пределами — умолчание");
+      // клавиш не бывает 0 или 7 — клампим, а не верим модели на слово
+      el.params.itemMeta[1] = { keys: 99 };
+      eq(G.postMeta(el, 1).keys, 3, "клавишность зажата сверху");
+      el.params.itemMeta[1] = { keys: 0 };
+      eq(G.postMeta(el, 1).keys, 1, "и снизу");
+    });
+
+    test("посты блока: клавишность доходит до коннекторов в смете", () => {
+      const mkP = (meta) => {
+        const p = EP.Plan.Core.createProject("блок");
+        const r = M.newRoom(G.rectPoints(0, 0, 400, 300), "К"); p.rooms.push(r);
+        p.panels.push(M.newPanel(20, 280, "Щит"));
+        const c = M.newCircuit("QF1", "#facc15"); p.circuits.push(c);
+        const b = M.newElement("block", r.id + ":0", 150, 90, "light"); b.circuitId = c.id;
+        b.params = { items: ["switch"] };
+        if (meta) b.params.itemMeta = [meta];
+        const j = M.newElement("junction", null, 0, 270, "routes");
+        j.params = { x: 200, y: 150 }; j.circuitId = c.id;
+        p.elements.push(b, j);
+        EP.Plan.Core.commit(); EP.Plan.Core.persist("x");
+        EP.Plan.Routes.build({ silent: true });
+        const items = (EP.Plan.Calc.calcByRoutes(p) || {}).items || [];
+        const conn = items.filter((i) => /ГМЛ|ВАГО|СИЗ|зажим|клемм/i.test(i.name))
+          .reduce((a, i) => a + (i.qty || 0), 0);
+        EP.Plan.Core.closeProject();
+        return conn;
+      };
+      const one = mkP(null), three = mkP({ keys: 3, swKind: "normal" });
+      ok(one > 0, "коннекторы вообще считаются (одноклавишный: " + one + ")");
+      ok(three > one, "трёхклавишному нужно БОЛЬШЕ коннекторов, чем одноклавишному ("
+        + three + " против " + one + ") — раньше оба считались одинаково");
+    });
+
+    test("посты блока: клавишность доходит до символа в DXF", () => {
+      const p = EP.Plan.Core.createProject("блок в DXF");
+      const r = M.newRoom(G.rectPoints(0, 0, 400, 300), "К"); p.rooms.push(r);
+      const b = M.newElement("block", r.id + ":0", 150, 90, "light");
+      b.params = { items: ["switch"], itemMeta: [{ keys: 3, swKind: "normal" }] };
+      p.elements.push(b);
+      EP.Plan.Core.commit(); EP.Plan.Core.persist("x");
+      const txt = EP.Plan.Dxf.build(p, {}).text;
+      ok(/EP_SWITCH3/.test(txt), "в DXF блок трёхклавишного, а не одноклавишного: "
+        + (txt.match(/EP_[A-Z0-9_]+/g) || []).filter((v, i, a) => a.indexOf(v) === i).join(" "));
+      EP.Plan.Core.closeProject();
+    });
+
+    test("посты блока: удаление поста уносит его мету, а не сдвигает на соседа", () => {
+      const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-elements.js"), "utf8");
+      ok(/itemMeta\.splice\(di, 1\)/.test(src),
+        "мета удаляется тем же индексом, что и пост (иначе двухклавишность переползёт на соседний)");
+      ok(/data-pe-pkind/.test(src) && /data-pe-pkeys/.test(src), "в «Сборке блока» есть чипы вида и клавишности");
+      ok(/params\.itemMeta = el\.params\.itemMeta \|\| \[\]/.test(src), "мета создаётся лениво — старые блоки не переписываются");
+      // items ОСТАЛИСЬ строками: смена формы потребовала бы миграции восьми читателей
+      const geo = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-geometry.js"), "utf8");
+      ok(/G\.postMeta = /.test(geo), "чтение меты — одной функцией в геометрии, а не копией в каждом модуле");
     });
   }
 
