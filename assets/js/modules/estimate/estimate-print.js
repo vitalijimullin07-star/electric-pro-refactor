@@ -229,6 +229,51 @@
     return wrap(heading + " № " + no, body);
   }
 
+  /* ---------- СМЕТА ПО РАБОТАМ: ЭТАПЫ И СРОКИ ----------
+     Тот же бланк (шапка, реквизиты, подписи, печатная механика — всё общее), но работы
+     сгруппированы ПО ЭТАПАМ и у каждой строки есть трудозатраты. Заказчику видно, что за
+     чем идёт и сколько это по времени; мастеру — чем обосновать срок и разбить оплату.
+     Материалов здесь нет вовсе: это документ про труд, не про закупку. */
+  function worksStagesHtml(o) {
+    o = o || {};
+    const W = window.EP && window.EP.EstimateWorks;
+    if (!W) return estimateHtml(o);          // модуль не подключён — обычная смета работ
+    const br = W.breakdown(o.works || [], { extra: o.extraMode || "all", crew: o.crew });
+    const m = masterOf(o), ci = clientOf(o);
+    const no = o.no || docNo(), date = o.date || today();
+    const heading = o.heading || "Смета по работам";
+    let n = 0;
+    const secs = br.stages.map((s, i) => `
+      <tr class="sec"><td colspan="7">Этап ${i + 1}. ${esc(s.name)}</td></tr>
+      ${s.items.map((x) => `<tr><td class="c">${++n}</td><td>${esc(x.name)}</td><td class="c">${esc(x.unit)}</td>
+        <td class="r">${qty(x.qty)}</td><td class="r">${money(x.price)}</td><td class="r">${money(x.sum)}</td>
+        <td class="r">${qty(Math.round(x.hours * 10) / 10)}</td></tr>`).join("")}
+      <tr class="st"><td colspan="5" class="r">Итого по этапу ${i + 1}</td><td class="r">${money(s.sum)}</td><td class="r">${qty(s.hours)}</td></tr>`).join("");
+    const body = `
+      <div class="top"><h1>${esc(heading)} № ${esc(no)}</h1><div class="date">от ${esc(date)}</div></div>
+      ${reqTable([["Исполнитель", masterFull(m)], ["Заказчик", [ci.name, ci.phone ? "тел. " + ci.phone : ""].filter(Boolean).join(", ")], ["Объект", ci.object]])}
+      <table class="tb">
+        <colgroup><col style="width:9mm"><col><col style="width:12mm"><col style="width:16mm"><col style="width:22mm"><col style="width:24mm"><col style="width:16mm"></colgroup>
+        <thead><tr><th>№</th><th>Наименование работ</th><th>Ед.</th><th>Кол-во</th><th>Цена, ₽</th><th>Сумма, ₽</th><th>Труд, ч</th></tr></thead>
+        <tbody>${secs || `<tr><td colspan="7" class="empty">Работ нет</td></tr>`}</tbody>
+      </table>
+      <div class="tot">
+        <table class="sum">
+          <tr><td class="k">Трудозатраты</td><td class="v">${qty(br.hours)} чел.-ч</td></tr>
+          <tr><td class="k">Бригада</td><td class="v">${br.crew.people} чел. × ${qty(br.crew.hoursPerDay)} ч/смена</td></tr>
+          <tr><td class="k">Ориентировочный срок</td><td class="v">${qty(br.days)} раб. дн.</td></tr>
+          <tr class="grand"><td class="k">Всего работ</td><td class="v">${money(br.sum)} ₽</td></tr>
+        </table>
+        <div class="words">Всего по работам: <b>${esc(rublesInWords(br.sum))}</b>.</div>
+        ${vatNote(m) ? `<div class="vat">${esc(vatNote(m))}</div>` : ""}
+      </div>
+      <div class="note">Трудозатраты и срок — расчётные, по нормам выработки: фактическое время зависит от материала стен,
+        готовности объекта и доступа к фронту работ. Материалы в настоящий документ не входят.</div>
+      ${signBlock("Исполнитель (подпись, ФИО)", "Заказчик (подпись, ФИО)")}
+      <div class="foot">${esc(heading)} № ${esc(no)} от ${esc(date)} · ${esc(m.name || "Electric Pro")} · сформировано в Electric Pro</div>`;
+    return wrap(heading + " № " + no, body);
+  }
+
   /* ---------- ЗАЯВКА НА МАТЕРИАЛЫ (лист поставщику) ----------
      Цены НЕ печатаем: это закупочный лист, цену ставит поставщик — под это есть колонки
      «Цена» и «Сумма» ПУСТЫЕ, чтобы он заполнил их от руки или в своей системе. */
@@ -297,5 +342,5 @@
     }
   }
 
-  window.EP.EstimatePrint = { estimateHtml, supplyHtml, open, rublesInWords, money, qty, today, docNo, setDocNo, masterFull, vatNote };
+  window.EP.EstimatePrint = { estimateHtml, worksStagesHtml, supplyHtml, open, rublesInWords, money, qty, today, docNo, setDocNo, masterFull, vatNote };
 })();

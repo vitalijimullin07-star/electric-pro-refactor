@@ -4394,7 +4394,7 @@ test("фото: deleteProject чистит кэш фото своего прое
     sb.dispatchEvent = () => true;
     const ctx = vm2.createContext(sb);
     const dir = path2.join(__dirname, "..", "assets", "js", "modules", "estimate");
-    ["estimate-file", "estimate-draft", "estimate-main", "estimate-print"].forEach((n) => {
+    ["estimate-file", "estimate-draft", "estimate-main", "estimate-works", "estimate-print"].forEach((n) => {
       vm2.runInContext(fs2.readFileSync(path2.join(dir, n + ".js"), "utf8"), ctx, { filename: n + ".js" });
     });
     return sb.EP;   // { EstimateFile, EstimateDraft, Estimate, EstimatePrint }
@@ -4640,6 +4640,86 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/data-eaf-type/.test(tabs), "выбор типа (работа/материал) в форме");
     ok(/addItem\(\{[^}]*source:\s*"manual"/.test(tabs), "добавляет со source manual");
     ok(/data-est-del/.test(tabs) && /function removeRow/.test(tabs), "удаление строки сметы");
+  });
+
+  // ---- смета ПО РАБОТАМ: этапы и трудозатраты (EP.EstimateWorks) ----
+  const WORKS = [
+    { type: "work", name: "Штробление 25x30 бетон", qty: 100, unit: "м", price: 300 },
+    { type: "work", name: "Высверливание подрозетников бетон", qty: 40, unit: "шт", price: 250 },
+    { type: "work", name: "Прокладка кабеля ВВГнг(А)-LS 3×2.5", qty: 300, unit: "м", price: 60 },
+    { type: "work", name: "Сборка и расключение щита", qty: 1, unit: "шт", price: 8000 },
+    { type: "work", name: "Установка автоматического выключателя", qty: 12, unit: "шт", price: 200 },
+    { type: "work", name: "Внутренняя точка (розетка/выключатель)", qty: 40, unit: "шт", price: 350 },
+    { type: "work", name: "Демонтаж старых розеток", qty: 20, unit: "шт", price: 100 },
+    { type: "work", name: "Согласование с УК", qty: 1, unit: "усл", price: 3000 },
+    { type: "material", name: "Кабель ВВГнг(А)-LS 3×2.5", qty: 300, unit: "м", price: 94 }
+  ];
+  test("смета по работам: разнос по этапам в порядке выполнения", () => {
+    const W = loadEstimate().EstimateWorks;
+    const br = W.breakdown(WORKS);
+    eq(br.stages.map((s) => s.id).join(","), "demo,rough,shield,fine,other", "этапы идут в порядке работ на объекте");
+    // «демонтаж старых РОЗЕТОК» не должен уехать в чистовой этап по слову «розеток»
+    eq(br.stages[0].items.length, 1, "демонтаж — отдельный этап");
+    ok(/Демонтаж/.test(br.stages[0].items[0].name), "и это именно демонтажная позиция");
+    const rough = br.stages.find((s) => s.id === "rough");
+    eq(rough.items.length, 3, "черновой: штробление + подрозетники + прокладка кабеля");
+    const shield = br.stages.find((s) => s.id === "shield");
+    eq(shield.items.length, 2, "щит: сборка + установка автоматов");
+    eq(br.stages.find((s) => s.id === "fine").items.length, 1, "чистовой: внутренние точки");
+    eq(br.stages.find((s) => s.id === "other").items.length, 1, "всё прочее — в «Прочие работы»");
+    ok(!JSON.stringify(br).includes("Кабель ВВГнг"), "материалы в смету по работам не попадают");
+  });
+  test("смета по работам: трудозатраты по нормам и срок при бригаде", () => {
+    const W = loadEstimate().EstimateWorks;
+    const br = W.breakdown(WORKS, { crew: { people: 2, hoursPerDay: 8 } });
+    // 100 м штробы / 10 м-ч = 10 ч; 40 подрозетников / 8 = 5 ч; 300 м кабеля / 30 = 10 ч
+    const rough = br.stages.find((s) => s.id === "rough");
+    near(rough.hours, 25, 0.1, "черновой этап — 25 чел.-ч по нормам");
+    near(br.hours, br.stages.reduce((a, s) => a + s.hours, 0), 0.11, "итог = сумма этапов");
+    // срок округляется ВВЕРХ до половины дня: занижать срок в договоре нельзя
+    eq(br.days, Math.ceil((br.hours / 16) * 2) / 2, "срок = часы / (бригада × смена), вверх до 0.5 дня");
+    const solo = W.breakdown(WORKS, { crew: { people: 1, hoursPerDay: 8 } });
+    ok(solo.days > br.days, "один человек делает дольше, чем двое");
+    eq(W.breakdown([], { crew: { people: 2, hoursPerDay: 8 } }).days, 0, "пустая смета — нулевой срок");
+    // сборка щита — ЧАСЫ, а не минуты: правило про щит обязано стоять ПЕРЕД правилом
+    // «установка автоматов», иначе целый щит оценивался бы в 5 минут (поймано живым прогоном)
+    ok(W.normFor("Сборка и расключение щита") <= 0.5, "щит собирается часами, а не штуками в час");
+    ok(W.normFor("Установка автоматического выключателя") >= 8, "а отдельный аппарат — минуты");
+    ok(W.normFor("Установка светильника") <= 4, "светильник дольше, чем «прочая работа» по умолчанию");
+  });
+  test("смета по работам: доп. работы в основной срок не входят", () => {
+    const W = loadEstimate().EstimateWorks;
+    const items = WORKS.concat([{ type: "work", name: "Штробление под кондиционер", qty: 20, unit: "м", price: 300, extra: true }]);
+    const all = W.breakdown(items, { extra: "all" });
+    const main = W.breakdown(items, { extra: "skip" });
+    const only = W.breakdown(items, { extra: "only" });
+    near(all.hours - main.hours, 2, 0.05, "доп. работа — 20 м / 10 = 2 ч");
+    eq(only.stages.length, 1, "в акте доп. работ только помеченные позиции");
+    near(only.hours, 2, 0.05, "и её часы");
+  });
+  test("смета по работам: нормы выработки — ОДИН источник на приложение", () => {
+    const fs2 = require("fs"), path2 = require("path");
+    const tools = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "tools", "tools.js"), "utf8");
+    ok(/EstimateWorks[\s\S]{0,80}normFor\(name\)/.test(tools),
+      "tools.js читает нормы из EP.EstimateWorks, а не держит расходящуюся копию");
+    const idx = fs2.readFileSync(path2.join(__dirname, "..", "index.html"), "utf8");
+    ok(idx.indexOf("estimate-works.js") > 0, "модуль подключён");
+    ok(idx.indexOf("estimate-works.js") < idx.indexOf("estimate-print.js"), "и раньше печати, которая его читает");
+  });
+  test("смета по работам: печатный бланк с этапами, часами и сроком", () => {
+    const P = loadEstimate().EstimatePrint;
+    const html = P.worksStagesHtml({ works: WORKS, no: "7", date: "01.09.2026", crew: { people: 3, hoursPerDay: 8 } });
+    ok(/Смета по работам № 7/.test(html), "заголовок листа");
+    ok(/Этап 1\. Демонтаж/.test(html) && /Этап 2\. Черновой этап/.test(html), "разделы по этапам с номерами");
+    ok(/Труд, ч/.test(html), "колонка трудозатрат");
+    ok(/Трудозатраты/.test(html) && /Ориентировочный срок/.test(html), "итог по часам и сроку");
+    ok(/3 чел\. × 8 ч\/смена/.test(html), "бригада печатается в документе");
+    ok(!/Кабель ВВГнг/.test(html), "материалов в этом документе нет");
+    ok(/display: table-header-group/.test(html) && /page-break-inside: avoid/.test(html), "печатная механика — общая с остальными бланками");
+    const tabs = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "estimate", "estimate-tabs.js"), "utf8");
+    ok(/\["stages", "По этапам"\]/.test(tabs), "режим печати «По этапам» в блоке печати");
+    ok(/worksStagesHtml\(\{ works, extraMode: "skip" \}\)/.test(tabs), "печатается основной объём, без доп. работ");
+    ok(/data-est-crew/.test(tabs) && /data-est-shift/.test(tabs), "бригада и смена настраиваются на экране");
   });
 
 // ===== 37. Совместная база данных: подключение мастера, журнал правок, уведомления =====
