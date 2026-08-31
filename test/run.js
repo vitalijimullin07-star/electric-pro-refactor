@@ -5772,6 +5772,229 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 46. Экспорт DXF (AutoCAD) =====
+  {
+    const D = () => EP.Plan.Dxf;
+    // Разбор DXF парами «код / значение» — проверяем РЕАЛЬНУЮ структуру файла, а не то,
+    // что в тексте встретилась нужная подстрока (регексом легко «доказать» битый файл)
+    function parseDxf(txt) {
+      const t = txt.split("\n");
+      const pairs = [];
+      for (let i = 0; i + 1 < t.length; i += 2) pairs.push([t[i].trim(), t[i + 1]]);
+      const out = { header: {}, layers: [], blocks: [], ents: [], sections: [] };
+      let sec = null, cur = null, where = null, hkey = null;
+      pairs.forEach(([c, v]) => {
+        if (c === "0" && v === "SECTION") { sec = "?"; return; }
+        if (sec === "?" && c === "2") { sec = v; out.sections.push(v); return; }
+        if (c === "0" && v === "ENDSEC") { sec = null; cur = null; where = null; return; }
+        if (sec === "HEADER") { if (c === "9") hkey = v; else if (hkey) { out.header[hkey] = out.header[hkey] || []; out.header[hkey].push(v); } return; }
+        if (sec === "TABLES") {
+          if (c === "0" && v === "TABLE") { where = "?"; return; }
+          if (where === "?" && c === "2") { where = v; return; }
+          if (c === "0" && v === "ENDTAB") { where = null; cur = null; return; }
+          if (c === "0") { cur = { type: v }; if (where === "LAYER") out.layers.push(cur); if (where === "STYLE") { out.styles = out.styles || []; out.styles.push(cur); } return; }
+          if (cur) cur[c] = v;
+          return;
+        }
+        if (sec === "BLOCKS") {
+          if (c === "0" && v === "BLOCK") { cur = { ents: [] }; out.blocks.push(cur); return; }
+          if (c === "0" && v === "ENDBLK") { cur = null; return; }
+          if (cur && c === "2" && !cur.name) { cur.name = v; return; }
+          if (cur && c === "0") { cur.ents.push({ type: v }); return; }
+          if (cur && cur.ents.length) cur.ents[cur.ents.length - 1][c] = v;
+          return;
+        }
+        if (sec === "ENTITIES") {
+          if (c === "0") { cur = { type: v }; out.ents.push(cur); return; }
+          if (cur) { if (cur[c] == null) cur[c] = v; else { cur[c] = [].concat(cur[c], v); } }
+        }
+      });
+      return out;
+    }
+    const nums = (e, code) => [].concat(e[code] == null ? [] : e[code]).map(Number);
+
+    function twoRoomProject() {
+      const p = EP.Plan.Core.createProject("Экспорт");
+      p.client = "Иванов"; p.address = "Пушкина 10";
+      const r1 = M.newRoom(G.rectPoints(0, 0, 400, 300), "Кухня");
+      const r2 = M.newRoom(G.rectPoints(400, 0, 500, 300), "Зал");
+      p.rooms.push(r1, r2);
+      p.openings.push(M.newOpening("window", r1.id + ":0", 150, 140));
+      p.panels.push(M.newPanel(30, 280, "Щит"));
+      const c1 = M.newCircuit("QF1", "#ef4444"), c2 = M.newCircuit("Int1", "#60a5fa");
+      p.circuits.push(c1, c2);
+      const s = M.newElement("socket", r1.id + ":2", 100, 30, "power"); s.circuitId = c1.id;
+      const sw = M.newElement("switch", r1.id + ":3", 50, 90, "light"); sw.keys = 2; sw.circuitId = c1.id;
+      p.elements.push(s, sw);
+      p.guides.push(M.newGuide([{ x: 20, y: 280 }, { x: 880, y: 280 }]));
+      EP.Plan.Core.commit(); EP.Plan.Core.persist("x");
+      return p;
+    }
+
+    test("DXF: файл — валидный R12 с секциями, слоями и стилем текста", () => {
+      const p = twoRoomProject();
+      const d = parseDxf(D().build(p, { units: "mm" }).text);
+      eq(d.header.$ACADVER[0], "AC1009", "версия R12 — её читают все CAD");
+      eq(d.header.$DWGCODEPAGE[0], "ANSI_1251", "кодовая страница объявлена (иначе кириллица — кракозябры)");
+      eq(d.header.$INSUNITS[0], "4", "единицы = миллиметры");
+      ["HEADER", "TABLES", "BLOCKS", "ENTITIES"].forEach((s) => ok(d.sections.indexOf(s) >= 0, "секция " + s));
+      ok((d.styles || []).some((s) => s["2"] === "STANDARD"), "стиль STANDARD есть — без него TEXT не рисуется");
+      ok(d.layers.some((l) => l["2"] === "0"), "слой 0 объявлен (его ждут строгие читатели)");
+      ok(/\n0\nEOF\n$/.test(D().build(p, {}).text), "файл заканчивается EOF");
+      EP.Plan.Core.closeProject();
+    });
+
+    test("DXF: слои латиницей, линия QF получает СВОЙ слой", () => {
+      const p = twoRoomProject();
+      EP.Plan.Routes.build({ silent: true });
+      const d = parseDxf(D().build(p, {}).text);
+      const names = d.layers.map((l) => l["2"]);
+      ok(names.every((s) => /^[A-Z0-9$_-]+$/.test(s)), "ни одного имени слоя с кириллицей/пробелом: " + names.join(" "));
+      ok(names.indexOf("EP-WALLS") >= 0 && names.indexOf("EP-ROOMS") >= 0, "стены и контуры помещений");
+      ok(names.indexOf("EP-QF-QF1") >= 0, "трассы линии QF1 — свой слой (гасится отдельно)");
+      ok(names.indexOf("EP-LABELS") >= 0, "подписи высот отдельным слоем от имён комнат");
+      EP.Plan.Core.closeProject();
+    });
+
+    test("DXF: транслитерация имени линии в имя слоя", () => {
+      eq(D().layerName("24В1"), "24V1", "кириллица в латиницу, а не в безликий номер");
+      eq(D().layerName("Int 1"), "INT-1", "пробел не допускается в имени слоя R12");
+      eq(D().layerName("QF1"), "QF1", "латиница как есть");
+      eq(D().layerName(""), "X", "пустое имя не даёт пустой слой");
+      // имя файла тоже латиницей: не-ASCII имя часть браузеров отдаёт без расширения —
+      // получается файл «download», который CAD не откроет (воспроизведено в harness)
+      eq(D().fileName({ name: "П-44Т двушка" }), "ep-plan-p-44t-dvushka.dxf", "кириллица в имени файла транслитерируется");
+      eq(D().fileName({}), "ep-plan-proekt.dxf", "без имени — понятный запасной вариант");
+      ok(/\.dxf$/.test(D().fileName({ name: "🏠🏠" })), "расширение остаётся даже у имени из одних эмодзи");
+    });
+
+    test("DXF: кириллица уходит в CP1251, спецсимволы заменяются читаемым", () => {
+      const b = D().toCp1251;
+      eq([...b("Аа")].join(","), "192,224", "А и а на своих местах CP1251");
+      eq([...b("Яя")].join(","), "223,255", "конец кириллического блока");
+      eq([...b("Ёё")].join(","), "168,184", "Ё и ё лежат отдельно от основного блока");
+      eq([...b("h=30")].join(","), "104,61,51,48", "ASCII без изменений");
+      eq([...b("4×3")].join(","), "52,120,51", "«×» становится x, а не «?» — иначе размер нечитаем");
+      eq([...b("м²")].join(","), "236,50", "«²» становится 2");
+    });
+
+    test("DXF: разбор пути «лица» прибора — только прямые, кривые не выдумываем", () => {
+      const pts = D().pathPts("M -11 -9 L 11 -9 L 11 7 Z");
+      eq(pts.length, 3, "три вершины гнезда RJ45");
+      eq(pts[0].x, -11, "первая вершина");
+      eq(D().pathPts("M 0 0 C 1 1 2 2 3 3"), null, "кривую не пытаемся приблизить — возвращаем null");
+      eq(D().pathPts("M 0 0 L 1 1"), null, "меньше трёх точек — не полилиния");
+    });
+
+    test("DXF: разрез отрезка проёмами", () => {
+      const A = { x: 0, y: 0 }, B = { x: 100, y: 0 };
+      const one = D().cutSegment(A, B, [[0.2, 0.4]]);
+      eq(one.length, 2, "один проём делит стену на два куска");
+      eq(Math.round(one[0][1].x), 20, "первый кусок кончается на кромке");
+      eq(Math.round(one[1][0].x), 40, "второй начинается за проёмом");
+      eq(D().cutSegment(A, B, [[0, 1]]).length, 0, "проём во всю стену — стены не остаётся");
+      eq(D().cutSegment(A, B, []).length, 1, "без проёмов — цельный отрезок");
+      const ovl = D().cutSegment(A, B, [[0.2, 0.5], [0.4, 0.7]]);
+      eq(ovl.length, 2, "перекрывающиеся проёмы не плодят вырожденных кусков");
+      eq(Math.round(ovl[1][0].x), 70, "и объединяются в один вырез");
+    });
+
+    test("DXF: щёки проёма строго поперёк стены, вырез точно по кромкам", () => {
+      const p = twoRoomProject();      // окно на ВЕРХНЕЙ стене, offset 150, ширина 140
+      const d = parseDxf(D().build(p, { units: "mm" }).text);
+      const top = d.ents.filter((e) => e.type === "LINE" && e["8"] === "EP-WALLS"
+        && Math.abs(Number(e["20"])) <= 500 && Math.abs(Number(e["21"])) <= 500 && Number(e["10"]) < 4200);
+      // РЕГРЕСС: раньше точка разреза бралась долей offset/len ОДИНАКОВО на внутреннем и
+      // наружном ребре, а митра делает их разной длины — щёки выходили косыми, проём
+      // смещённым. Все линии стены обязаны быть строго по осям.
+      ok(top.every((e) => Math.abs(Number(e["10"]) - Number(e["11"])) < 0.01 || Math.abs(Number(e["20"]) - Number(e["21"])) < 0.01),
+        "каждая линия стены строго горизонтальна или вертикальна");
+      const jambs = top.filter((e) => Math.abs(Number(e["10"]) - Number(e["11"])) < 0.01).map((e) => Number(e["10"])).sort((a, b) => a - b);
+      eq(jambs.join(","), "1500,2900", "щёки ровно на кромках проёма 1500..2900 мм");
+      EP.Plan.Core.closeProject();
+    });
+
+    test("DXF: единицы переключаются, координаты масштабируются", () => {
+      const p = twoRoomProject();
+      const mm = parseDxf(D().build(p, { units: "mm" }).text);
+      const cm = parseDxf(D().build(p, { units: "cm" }).text);
+      eq(cm.header.$INSUNITS[0], "5", "сантиметры объявлены в заголовке");
+      const w = (d) => Math.abs(Number(d.header.$EXTMAX[0]) - Number(d.header.$EXTMIN[0]));
+      eq(Math.round(w(mm) / w(cm)), 10, "в мм координаты ровно в 10 раз крупнее");
+      EP.Plan.Core.closeProject();
+    });
+
+    test("DXF: Y отражается — в CAD ось вверх, в модели вниз", () => {
+      const p = twoRoomProject();
+      const d = parseDxf(D().build(p, { units: "cm" }).text);
+      // комната лежит в y=0..300 (вниз), значит в файле должна оказаться в y = -300..0
+      ok(Number(d.header.$EXTMAX[1]) <= 10 && Number(d.header.$EXTMIN[1]) < -200,
+        "чертёж уехал в отрицательные Y: " + d.header.$EXTMIN[1] + ".." + d.header.$EXTMAX[1]);
+      EP.Plan.Core.closeProject();
+    });
+
+    test("DXF: магистраль ⇉ не выгружается, а трассы — да", () => {
+      const p = twoRoomProject();
+      EP.Plan.Routes.build({ silent: true });
+      const d = parseDxf(D().build(p, {}).text);
+      ok(!d.layers.some((l) => /GUIDE/.test(l["2"])), "магистрали нет ни в одном слое — это подсказка редактора, не кабель");
+      ok(d.ents.some((e) => e["8"] === "EP-QF-QF1"), "трассы выгружены");
+      EP.Plan.Core.closeProject();
+    });
+
+    test("DXF: смешанный блок постов рисуется по СВОЕМУ составу", () => {
+      const p = twoRoomProject();
+      const r1 = p.rooms[0];
+      const b = M.newElement("block", r1.id + ":2", 300, 30, "power");
+      b.items = [{ type: "socket" }, { type: "internet" }];
+      p.elements.push(b);
+      const d = parseDxf(D().build(p, {}).text);
+      const blk = d.blocks.find((x) => x.name === "EP_SOCKET_INTERNET");
+      ok(!!blk, "у смешанного блока свой блок DXF, а не N копий первого поста: "
+        + d.blocks.map((x) => x.name).join(" "));
+      // розетка даёт круги (углубление + два гнезда), RJ45 — замкнутую полилинию
+      ok(blk.ents.filter((e) => e.type === "CIRCLE").length >= 3, "розетка со своими гнёздами");
+      ok(blk.ents.filter((e) => e.type === "POLYLINE").length >= 2, "рамка блока и гнездо RJ45");
+      EP.Plan.Core.closeProject();
+    });
+
+    test("DXF: выгружается только АКТИВНЫЙ этаж", () => {
+      const p = EP.Plan.Core.createProject("два этажа");
+      p.rooms.push(M.newRoom(G.rectPoints(0, 0, 400, 300), "Первый"));
+      const f2 = EP.Plan.Core.addFloor("2 этаж");
+      EP.Plan.Core.setActiveFloor(f2.id);
+      p.rooms.push(M.newRoom(G.rectPoints(0, 0, 500, 400), "Второй"));
+      EP.Plan.Core.commit(); EP.Plan.Core.persist("x");
+      const txt = D().build(p, {}).text;
+      ok(txt.indexOf("Второй") >= 0 && txt.indexOf("Первый") < 0, "в файле только комната активного этажа");
+      EP.Plan.Core.closeProject();
+    });
+
+    test("DXF: снятый раздел не попадает в файл", () => {
+      const p = twoRoomProject();
+      const only = parseDxf(D().build(p, { parts: new Set(["walls"]) }).text);
+      ok(only.layers.some((l) => l["2"] === "EP-WALLS"), "стены на месте");
+      ok(!only.layers.some((l) => l["2"] === "EP-DIMS"), "снятые размеры не создали слой");
+      ok(!only.ents.some((e) => e.type === "INSERT"), "снятые приборы не вставлены");
+      EP.Plan.Core.closeProject();
+    });
+
+    test("DXF: подбор цвета ACI и разметка/подключение модуля", () => {
+      eq(D().aci("#ff0000"), 1, "красный");
+      eq(D().aci("#ffff00"), 2, "жёлтый");
+      eq(D().aci("#60a5fa"), 140, "голубой слаботочки — ближайший индекс палитры");
+      eq(D().aci("не цвет", 7), 7, "мусор — цвет по умолчанию, а не падение");
+      const fsx = require("fs"), px = require("path"), base = px.join(__dirname, "..");
+      const mnt = fsx.readFileSync(px.join(base, "assets/js/modules/plan/plan-mount.js"), "utf8");
+      const idx = fsx.readFileSync(px.join(base, "index.html"), "utf8");
+      ok(/data-plan-dxf/.test(mnt), "кнопка DXF в меню «⋯»");
+      ok(idx.indexOf("plan-dxf.js") > idx.indexOf("plan-render.js"), "plan-dxf.js подключён после рендера (берёт у него габариты и «лица»)");
+      const src = fsx.readFileSync(px.join(base, "assets/js/modules/plan/plan-dxf.js"), "utf8");
+      ok(/RD\(\)\.deviceFace|R\.deviceFace/.test(src), "символы берутся из общего deviceFace, а не рисуются заново");
+      ok(/ep_plan_dxf_v1/.test(src), "выбор разделов и единиц запоминается на устройстве");
+    });
+  }
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);
