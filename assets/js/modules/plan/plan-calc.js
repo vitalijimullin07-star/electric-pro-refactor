@@ -209,6 +209,15 @@
     const k = (sw && R && R.keys24Of) ? R.keys24Of(p, sw) : 1;
     return EP.Plan.Core.cableMark(p, k >= 2 ? "5×1.5" : "3×1.5");
   }
+  /* Перегон МЕЖДУ звеньями цепочки проходных/перекрёстных (leg "chain"): по нему идут не
+     фаза с нулём, а «путевые» провода, и жил надо больше обычного — 3 (две путевые + PE)
+     между двумя проходными и 5, если на конце перекрёстный (ему нужны четыре плюс PE).
+     Сечение берём у линии, если мастер задал её марку вручную, иначе 1.5 как у света. */
+  function chainMark(p, r) {
+    const cc = (p.circuits || []).find((c) => c.id === r.circuitId);
+    const sec = (cc && cc.cable && String(cc.cable).split("×")[1]) || "1.5";
+    return EP.Plan.Core.cableMark(p, (r.chainCross ? "5×" : "3×") + sec);
+  }
   // у линии 24В: RGB ли она (для марки «от щита»)
   function rgbOf(p, circuitId) {
     const cc = (p.circuits || []).find((c) => c.id === circuitId);
@@ -461,6 +470,8 @@
         key = ((cc && cc.cable220) || pri24Mark(p, r)) + " · до щита (220В)";
       } else if (r.leg === "sec24") {
         key = ((cc && cc.cable) || defaultCableMark(p, r.layer, true, rgbOf(p, r.circuitId))) + " · от щита (24В)";
+      } else if (r.leg === "chain") {
+        key = chainMark(p, r) + " · между выключателями";
       } else {
         const i24 = is24Circuit(p, r.circuitId);
         key = (cc && cc.cable) || defaultCableMark(p, r.layer, i24, i24 && rgbOf(p, r.circuitId));
