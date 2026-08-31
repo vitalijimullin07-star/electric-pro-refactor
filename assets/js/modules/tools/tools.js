@@ -126,7 +126,16 @@
     if (/гипс|алебастр|мягк|дерев|гкл|газоблок/.test(s)) return "Мягкий";
     return null;
   }
-  function normFor(name) { for (const n of NORMS) { if (n.re.test(name)) return n.perHour; } return DEF_NORM; }
+  // Нормы выработки — ЕДИНЫЙ источник в EP.EstimateWorks (там же ими считаются
+  // трудозатраты и срок в смете по работам). Читаем их В МОМЕНТ ВЫЗОВА, а не при загрузке:
+  // порядок подключения скриптов не гарантирован. Таблица ниже остаётся ФОЛБЭКОМ на случай,
+  // если модуль сметы на странице не подключён (эти же нормы жили здесь исторически).
+  function normFor(name) {
+    const W = window.EP && window.EP.EstimateWorks;
+    if (W && W.normFor) return W.normFor(name);
+    for (const n of NORMS) { if (n.re.test(name)) return n.perHour; }
+    return DEF_NORM;
+  }
   // часы для вида работ инструмента: "уборка" = пыльные работы, иначе все работы
   function hoursFor(items, kind) {
     let h = 0;

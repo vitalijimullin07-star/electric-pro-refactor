@@ -74,6 +74,7 @@
         </div>
         <div class="ep-sup-list">${list}</div>
         ${(!isSupply && rs.length) ? `<div class="ep-sup-total">Итого: <b>${money(tot)}</b></div>` : ""}
+        ${isSupply ? "" : stagesBlock(rs)}
         <div class="ep-est-additem">${showAdd ? addForm(isSupply) : `<button type="button" class="btn btn-ghost ep-clickable" data-est-add>➕ Добавить позицию</button>`}</div>
         ${printBlock()}
         <div class="ep-sup-actions">
@@ -87,13 +88,46 @@
       </div>`;
   }
 
+  /* Блок «Этапы и сроки» на вкладке работ. Ничего заново не считает — раскладывает уже
+     посчитанные позиции по этапам (EP.EstimateWorks) и показывает трудозатраты и срок.
+     Свёрнут по умолчанию: на экране главное — список и сумма, а это справка под ним. */
+  let stagesOpen = false;
+  function EW() { return window.EP && window.EP.EstimateWorks; }
+  function stagesBlock(works) {
+    const W = EW();
+    if (!W || !works.length) return "";
+    const br = W.breakdown(works, { extra: "skip" });
+    if (!br.stages.length) return "";
+    const head = `<button type="button" class="ep-est-stghead ep-clickable" data-est-stages>
+        <span>${stagesOpen ? "▾" : "▸"} 🕒 Этапы и сроки</span>
+        <b>${num0(br.hours)} чел.-ч · ${num0(br.days)} дн.</b></button>`;
+    if (!stagesOpen) return `<div class="ep-est-stages">${head}</div>`;
+    const rowsHtml = br.stages.map((s, i) => `
+      <div class="ep-est-stg">
+        <div class="ep-est-stgtitle"><b>Этап ${i + 1}. ${esc(s.name)}</b><span>${num0(s.hours)} ч · ${money(s.sum)}</span></div>
+        ${s.items.map((x) => `<div class="ep-est-stgrow"><span>${esc(x.name)}</span><i>${num0(x.qty)}${x.unit ? " " + esc(x.unit) : ""} · ${num0(x.hours)} ч</i></div>`).join("")}
+      </div>`).join("");
+    return `<div class="ep-est-stages">${head}
+      <div class="ep-est-crew">
+        <label>Бригада, чел.<input type="number" inputmode="numeric" min="1" max="20" step="1" value="${esc(String(br.crew.people))}" data-est-crew></label>
+        <label>Смена, ч<input type="number" inputmode="decimal" min="1" max="24" step="1" value="${esc(String(br.crew.hoursPerDay))}" data-est-shift></label>
+      </div>
+      ${rowsHtml}
+      <div class="ep-est-stgtot">Трудозатраты <b>${num0(br.hours)} чел.-ч</b> · срок при ${br.crew.people} чел. — <b>${num0(br.days)} раб. дн.</b></div>
+      <div class="ep-est-stgnote">Срок расчётный, по нормам выработки: фактический зависит от материала стен и готовности объекта.
+        Позиции, помеченные «доп.», в срок не входят — они идут отдельным актом.</div>
+    </div>`;
+  }
+  const num0 = (v) => { const n = Number(v) || 0; return (Math.round(n * 10) / 10).toString().replace(".", ","); };
+
   // Блок печати: номер сметы, выбор что печатать (смета целиком / только работы /
   // только материалы) и наценка на материалы (%), плюс отдельная кнопка «Заявка
   // поставщику» (материалы без цен). Наценка показывается, только когда в печать
   // попадают материалы (scope ≠ work).
-  const SCOPES = [["all", "Смета целиком"], ["work", "Работы"], ["mat", "Материалы"], ["extra", "Доп. работы"]];
+  const SCOPES = [["all", "Смета целиком"], ["work", "Работы"], ["stages", "По этапам"], ["mat", "Материалы"], ["extra", "Доп. работы"]];
   function printBlock() {
     const printLabel = printScope === "work" ? "🖨 Печать работ"
+      : printScope === "stages" ? "🖨 Печать сметы по работам"
       : printScope === "mat" ? "🖨 Печать материалов"
       : printScope === "extra" ? "🖨 Печать акта доп. работ" : "🖨 Печать сметы";
     return `<div class="ep-est-print">
@@ -101,7 +135,7 @@
         <div class="ep-est-scope"><span class="ep-est-lbl">Печатать:</span>
           ${SCOPES.map(([v, l]) => `<button type="button" class="ep-est-chip ep-clickable ${printScope === v ? "on" : ""}" data-est-scope="${v}">${l}</button>`).join("")}
         </div>
-        ${printScope !== "work" ? `<label class="ep-est-markup">Наценка на материалы, %<input type="number" inputmode="decimal" min="0" step="1" value="${esc(String(matMarkup))}" data-est-markup></label>` : ""}
+        ${(printScope !== "work" && printScope !== "stages") ? `<label class="ep-est-markup">Наценка на материалы, %<input type="number" inputmode="decimal" min="0" step="1" value="${esc(String(matMarkup))}" data-est-markup></label>` : ""}
         <div class="ep-est-prow">
           <button type="button" class="btn btn-primary ep-clickable" data-est-print>${printLabel}</button>
           <button type="button" class="btn btn-ghost ep-clickable" data-est-supply>Заявка поставщику (без цен)</button>
@@ -168,6 +202,10 @@
     if (printScope === "work") {
       if (!works.length) return flash("Работ нет — печатать нечего");
       html = P.estimateHtml({ works, mats: [], heading: "Смета работ" });
+    } else if (printScope === "stages") {
+      // смета ПО РАБОТАМ: те же работы, но по этапам и с трудозатратами/сроком
+      if (!works.length) return flash("Работ нет — печатать нечего");
+      html = P.worksStagesHtml({ works, extraMode: "skip" });
     } else if (printScope === "mat") {
       if (!mats.length) return flash("Материалов нет — печатать нечего");
       html = P.estimateHtml({ works: [], mats, markup: matMarkup, heading: "Смета материалов" });
@@ -253,12 +291,25 @@
     if (t.hasAttribute("data-est-no")) { const P = window.EP && window.EP.EstimatePrint; if (P) P.setDocNo(t.value); }
     // наценку сохраняем на ввод, но НЕ перерисовываем экран (иначе сбился бы фокус поля)
     else if (t.hasAttribute("data-est-markup")) { setMarkup(t.value); }
+    // бригада/смена: сохраняем и обновляем ТОЛЬКО итоговую строку — полный render()
+    // сбил бы фокус поля прямо во время набора числа
+    else if (t.hasAttribute("data-est-crew") || t.hasAttribute("data-est-shift")) {
+      const W = EW(); if (!W) return;
+      const c = document.querySelector("[data-est-crew]"), h = document.querySelector("[data-est-shift]");
+      const crew = W.setCrew(c && c.value, h && h.value);
+      const br = W.breakdown(rows("work"), { extra: "skip", crew });
+      const tot = document.querySelector(".ep-est-stgtot");
+      if (tot) tot.innerHTML = `Трудозатраты <b>${num0(br.hours)} чел.-ч</b> · срок при ${crew.people} чел. — <b>${num0(br.days)} раб. дн.</b>`;
+      const hd = document.querySelector("[data-est-stages] b");
+      if (hd) hd.textContent = `${num0(br.hours)} чел.-ч · ${num0(br.days)} дн.`;
+    }
   });
   document.addEventListener("click", (e) => {
     const t = e.target; let el;
     if ((el = t.closest && t.closest("[data-esttab]"))) { tab = el.dataset.esttab === "supply" ? "supply" : "works"; render(); return; }
     if (document.getElementById("ep-estimate-root")) {
       if ((el = t.closest && t.closest("[data-est-scope]"))) { printScope = el.getAttribute("data-est-scope"); render(); return; }
+      if (t.closest && t.closest("[data-est-stages]")) { stagesOpen = !stagesOpen; render(); return; }
       // добавление позиции в основную смету
       if (t.closest && t.closest("[data-est-add]")) { showAdd = true; addType = tab === "supply" ? "material" : "work"; render(); return; }
       if ((el = t.closest && t.closest("[data-eaf-type]"))) {
