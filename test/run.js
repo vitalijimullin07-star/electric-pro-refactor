@@ -6257,6 +6257,49 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 50. ГОСТ-мини-значки в рамке постов блока =====
+  {
+    const rd = (f) => require("fs").readFileSync(require("path").join(__dirname, "..", f), "utf8");
+
+    test("ГОСТ: в постах блока рисуются мини-символы, а не буквы", () => {
+      const src = rd("assets/js/modules/plan/plan-render.js");
+      ok(/const miniGost = gost && !real;/.test(src), "мини-ГОСТ только в ГОСТ-стиле и не в «1:1»");
+      ok(/drawGostEl\(grp, \{ type: it, keys: pm \? pm\.keys : 1 \}[\s\S]{0,90}k \* 0\.6/.test(src),
+        "тот же drawGostEl, что у отдельного прибора, с уменьшенным k — второй копии символов нет");
+      ok(/if \(drawGostEl\([\s\S]{0,160}\) return;/.test(src),
+        "если у типа ГОСТ-символа нет — падаем на прежнюю букву, а не рисуем пустоту");
+      // рамка обязана стать КОНТУРОМ: символы стро́ятся цветом линии, и на сплошной
+      // заливке того же цвета их просто не видно (поймано скриншотом живого прогона)
+      ok(/style: miniGost \? `fill:none;stroke:\$\{elemColor\(elem\)\}`/.test(src),
+        "в ГОСТ-стиле рамка блока — контур, а не залитая пилюля");
+      ok(/цвет — ИНЛАЙН-стилем, а не атрибутом/.test(src),
+        "и цвет идёт инлайн-стилем: у .ep-plan-blockrect в CSS задан белый stroke, "
+        + "и правило класса побеждает одноимённый presentation-атрибут");
+      const css = rd("assets/css/plan.css");
+      ok(/\.ep-plan-blockrect \{ stroke: rgba\(255, 255, 255, \.8\); \}/.test(css),
+        "белая обводка обычного блока не тронута");
+    });
+
+    test("ГОСТ: у выключателя крючков по числу клавиш", () => {
+      const src = rd("assets/js/modules/plan/plan-render.js");
+      const br = src.slice(src.indexOf('} else if (t === "switch") {'), src.indexOf('} else if (t === "light") {'));
+      ok(/elem\.keys \|\| 1/.test(br), "число крючков берётся из клавишности");
+      ok(/for \(let i = 0; i < nk; i\+\+\)/.test(br), "рисуется nk крючков, а не всегда один");
+      // форма задаётся «внутрь комнаты», поворачивается, и ТОЛЬКО потом отражается по sgn —
+      // иначе веер у стены с другой стороны развернулся бы неверно
+      ok(/const rt = \(x, y, a\)/.test(br) && /sgn \* p1\.y/.test(br) && /sgn \* p2\.y/.test(br),
+        "весь веер отражается целиком по стороне стены");
+    });
+
+    test("ГОСТ: однотипный блок розеток и «1:1» не затронуты", () => {
+      const src = rd("assets/js/modules/plan/plan-render.js");
+      ok(/const gostGroup = gost && !real && items\.length > 1 && items\.every\(\(it\) => it === "socket"\)/.test(src),
+        "у блока из одних розеток остался свой символ — концентрические полукруги");
+      ok(/там рисуются реальные «лица» приборов/.test(src),
+        "а в «1:1» — реальные габариты и лица, мини-ГОСТ туда не лезет");
+    });
+  }
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

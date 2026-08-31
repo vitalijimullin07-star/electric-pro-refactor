@@ -191,9 +191,20 @@
       ln(0, sgn * r, 0, sgn * (r + 6 * k)); // штрих от вершины внутрь комнаты
       if (t !== "socket") sub.appendChild(el("text", { x: 0, y: sgn * (r + 11 * k), "font-size": 7 * k, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-gosttxt", fill: col, stroke: "none" }, t === "tv" ? "TV" : t === "internet" ? "И" : "К"));
     } else if (t === "switch") {
+      // по ГОСТ число «крючков» = числу КЛАВИШ. Раньше рисовался всегда один, и
+      // двухклавишный выключатель на чертеже был не отличим от однокнопочного.
+      const nk = Math.max(1, Math.min(3, elem.keys || 1));
       sub.appendChild(el("circle", { cx: 0, cy: 0, r: 3 * k, fill: col, "stroke-width": lw }));
-      ln(0, 0, 5 * k, sgn * 9 * k);
-      ln(5 * k, sgn * 9 * k, 8.5 * k, sgn * 7 * k); // «крючок» — клавиша
+      // крючки веером вокруг точки: форма одного крючка задана в системе «+y внутрь
+      // комнаты», поворачивается на свой угол, и только потом y умножается на sgn —
+      // так весь веер целиком отражается в нужную сторону стены
+      const rt = (x, y, a) => ({ x: x * Math.cos(a) - y * Math.sin(a), y: x * Math.sin(a) + y * Math.cos(a) });
+      for (let i = 0; i < nk; i++) {
+        const a = (i - (nk - 1) / 2) * 26 * Math.PI / 180;
+        const p1 = rt(5 * k, 9 * k, a), p2 = rt(8.5 * k, 7 * k, a);
+        ln(0, 0, p1.x, sgn * p1.y);
+        ln(p1.x, sgn * p1.y, p2.x, sgn * p2.y);
+      }
     } else if (t === "light") {
       const r = 7 * k, c = r * Math.SQRT1_2;
       sub.appendChild(el("circle", { cx: 0, cy: 0, r, fill: "none", "stroke-width": lw }));
@@ -847,20 +858,46 @@
             grp.appendChild(el("circle", { cx: pt.x, cy: pt.y, r: 2.6 * k, class: "ep-plan-walldot" }));
           }
           if (bad.has(elem.id)) grp.appendChild(el("rect", Object.assign({ x: cx - bw / 2 - 4 * k, y: cy - bh / 2 - 4 * k, width: bw + 8 * k, height: bh + 8 * k, rx: 6 * k, class: "ep-plan-warnring", fill: "none", "stroke-width": sw * 0.7 }, tr ? { transform: tr } : {})));
-          grp.appendChild(el("rect", Object.assign({ x: cx - bw / 2, y: cy - bh / 2, width: bw, height: bh, rx: 5 * k, fill: elemColor(elem), class: "ep-plan-blockrect", "stroke-width": sw * 0.7 }, tr ? { transform: tr } : {})));
+          /* В ГОСТ-стиле рамка блока — КОНТУР, а не залитая пилюля: внутри неё рисуются
+             мини-символы ГОСТ тем же цветом линии QF, и на сплошной заливке того же цвета
+             они были бы попросту не видны (поймано скриншотом живого прогона). Заодно это
+             и правильнее для чертежа: ГОСТ-символ — линия, а не плашка. */
+          const miniGost = gost && !real;
+          grp.appendChild(el("rect", Object.assign({ x: cx - bw / 2, y: cy - bh / 2, width: bw, height: bh, rx: 5 * k,
+            // цвет — ИНЛАЙН-стилем, а не атрибутом: у .ep-plan-blockrect в plan.css задан
+            // белый stroke, и правило класса побеждает одноимённый presentation-атрибут
+            // (тот же приём уже используется у постов развёртки)
+            style: miniGost ? `fill:none;stroke:${elemColor(elem)}` : `fill:${elemColor(elem)}`,
+            class: "ep-plan-blockrect", "stroke-width": sw * 0.7 }, tr ? { transform: tr } : {})));
           const inset = real ? 0.4 : 4 * k;
           const gfs = real ? Math.min(bh * 0.5, step2 * 0.8) : 9 * k;
+          /* В ГОСТ-стиле в постах рисуются МИНИ-СИМВОЛЫ ГОСТ (тот же drawGostEl, что у
+             отдельно стоящего прибора, с уменьшенным k), а не буквы: в смешанном блоке
+             (розетка+выключатель+интернет) буквы «Р В И» на чертеже читаются хуже, чем
+             сами символы. Однотипный блок розеток здесь не участвует — у него свой
+             ГОСТ-символ концентрическими полукругами (gostGroup выше), и в «1:1» тоже:
+             там рисуются реальные «лица» приборов. */
+          const radB = rotB * Math.PI / 180;
           items.forEach((it, i) => {
+            const pcx = cx - bw / 2 + inset + step2 * i + step2 / 2;
+            if (miniGost) {
+              // центр поста ПОСЛЕ поворота рамки: сам drawGostEl ставит себе
+              // translate+rotate, поэтому оборачивающая группа не нужна (и не нужен
+              // отдельный расчёт «внутрь комнаты» — он у него свой, по тому же rotB)
+              const rx = cx + (pcx - cx) * Math.cos(radB), ry = cy + (pcx - cx) * Math.sin(radB);
+              const pm = it === "switch" ? G.postMeta(elem, i) : null;
+              if (drawGostEl(grp, { type: it, keys: pm ? pm.keys : 1 }, rx, ry, rotB, dp, k * 0.6, sw * 0.8, elemColor(elem))) return;
+            }
             // у выключателя-поста дописываем клавишность и вид (В2, В2⇄ проходной,
             // В2⇆ перекрёстный) — раньше все посты выглядели одинаково «В», и двухклавишный
             // в блоке было не отличить от однокнопочного
             let gl = (TY[it] || {}).glyph || "?";
             if (it === "switch") {
-              const pm = G.postMeta(elem, i);
-              gl += (pm.keys > 1 ? String(pm.keys) : "") + (pm.swKind === "pass" ? "⇄" : pm.swKind === "cross" ? "⇆" : "");
+              const pm2 = G.postMeta(elem, i);
+              gl += (pm2.keys > 1 ? String(pm2.keys) : "") + (pm2.swKind === "pass" ? "⇄" : pm2.swKind === "cross" ? "⇆" : "");
             }
             grp.appendChild(el("text", Object.assign({
-              x: cx - bw / 2 + inset + step2 * i + step2 / 2, y: cy,
+              x: pcx, y: cy,
               "font-size": gfs, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph"
             }, tr ? { transform: tr } : {}), gl));
           });
