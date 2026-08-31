@@ -297,6 +297,34 @@ service cloud.firestore {
       allow delete: if signedIn() && request.auth.uid in resource.data.uids;
     }
 
+    /* ОБЩАЯ БАЗА КОНТУРОВ КВАРТИР (шаблоны планировок от всех мастеров).
+       ДВЕ коллекции, а не одна с флагом «одобрено», и это принципиально: Firestore не умеет
+       прятать ОТДЕЛЬНЫЕ ПОЛЯ документа правилами чтения — только документ целиком. Если бы
+       заявка и публикация жили в одном документе, автор (submittedBy) уезжал бы всем, кто
+       видит одобренный шаблон. Поэтому:
+         plan_layout_subs — ПРИВАТНЫЕ заявки: автора видит только он сам и админ;
+         plan_layouts     — ПУБЛИЧНЫЕ одобренные: поля автора там НЕТ ВООБЩЕ (админ
+                            копирует только очищенную геометрию), читают все одобренные. */
+    match /plan_layout_subs/{subId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.by == request.auth.uid);
+      allow create: if (isApproved() || isAdmin())
+        && request.resource.data.by == request.auth.uid
+        && request.resource.data.status == "pending"
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 120
+        && request.resource.data.rooms is list
+        && request.resource.data.rooms.size() > 0
+        && request.resource.data.rooms.size() <= 60
+        && request.resource.data.ts is number;
+      allow update: if false;                    // заявка — снимок: правок задним числом нет
+      allow delete: if isAdmin() || (signedIn() && resource.data.by == request.auth.uid);
+    }
+    match /plan_layouts/{layoutId} {
+      allow read: if isApproved() || isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

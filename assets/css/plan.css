@@ -80,6 +80,10 @@ body[data-visual-mode="day"] .ep-plan-newfield input[type="number"] {
   border: 0; background: rgba(255, 255, 255, .07); color: var(--muted, #cbd5e1);
   width: 40px; height: 40px; border-radius: 10px; cursor: pointer; flex: none;
 }
+/* «‹ Назад» в шапке под-вида шторки — та же кнопка, но с ТЕКСТОМ: у .ep-plan-mini
+   жёсткие 40px под квадратную иконку, и подпись ломалась на две строки (тот же случай,
+   что уже чинили у «✎ Этажи» и «⟳ Обновить») */
+.ep-plan-back { width: auto; padding: 0 12px; white-space: nowrap; font-size: 13px; }
 .ep-plan-toolbar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .ep-plan-flex { flex: 1; }
 .ep-plan-tbtn {

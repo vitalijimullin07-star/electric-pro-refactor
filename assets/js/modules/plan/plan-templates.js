@@ -22,6 +22,8 @@
   const core = () => EP.Plan.Core;
   const G = () => EP.Plan.Geometry;
   const rooms = () => EP.Plan.Rooms;
+  // вставка кладётся ПРАВЕЕ уже нарисованного — без «вписать» она за краем экрана
+  const fitAll = () => { const M = EP.Plan.Mount; if (M && M.fitToProject) M.fitToProject(); };
 
   // ряды комнат: [[{name,w,h}...], ...] — комнаты ряда слева направо, ряды друг
   // под другом (СМ). Смежные прямоугольники касаются координатами — общая
@@ -128,7 +130,8 @@
       <div class="ep-plan-tplgrid">${CATEGORIES.map(card).join("")}</div>
       <div class="ep-plan-modehint">${T.seriesTitle}</div>
       <div class="ep-plan-modehint">${T.seriesNote}</div>
-      <div class="ep-plan-tplgrid">${SERIES.map(card).join("")}</div>`;
+      <div class="ep-plan-tplgrid">${SERIES.map(card).join("")}</div>
+      <div id="ep-plan-laybox"></div>`;
   }
   /* ---------- экран «Размеры комнат» ----------
      Раньше шаблон вставлялся «как есть» (и потому был скрыт за админом: раскладки
@@ -141,7 +144,7 @@
   function sizesHtml(tpl, rows) {
     const area = rows.reduce((s2, row) => s2 + row.reduce((a, r) => a + r.w * r.h, 0), 0) / 10000;
     return `<div class="ep-plan-srow"><b>${esc(tpl.name)}</b><span class="ep-plan-flex"></span>
-        <button type="button" class="ep-plan-mini ep-clickable" data-plan-tpl-back>‹ Назад</button></div>
+        <button type="button" class="ep-plan-mini ep-plan-back ep-clickable" data-plan-tpl-back>‹ Назад</button></div>
       <div class="ep-plan-modehint">${T.sizesHint}</div>
       ${rows.map((row, ri) => `<div class="ep-plan-tplrow">
         ${row.map((r, ci) => `<div class="ep-plan-tplcell">
@@ -168,6 +171,11 @@
     if (!rooms()) return;
     draftRows = draftTpl = null;
     rooms().openSheet(pickerHtml());
+    // общая база контуров (EP.Plan.Layouts) дорисовывается в уже открытую шторку:
+    // список приходит из сети, а шторку показываем сразу — иначе она «подвисала» бы
+    // до ответа Firestore. Модуль может быть не подключён — тогда раздела просто нет.
+    const L = EP.Plan.Layouts;
+    if (L && L.fillSection) L.fillSection();
   }
 
   document.addEventListener("input", (e) => {
@@ -189,7 +197,7 @@
       if (!draftTpl || !draftRows) return;
       const n = apply(draftTpl.id, draftRows);
       rooms().closeSheet();
-      if (n) { rooms().toast(T.applied(n)); rooms().renderScene(); if (rooms().fitToProject) rooms().fitToProject(); }
+      if (n) { rooms().toast(T.applied(n)); rooms().renderScene(); fitAll(); }
       return;
     }
     const btn = e.target.closest("[data-plan-tpl]");
@@ -197,5 +205,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Templates = { CATEGORIES, SERIES, apply, pickerHtml, layoutRows };
+  EP.Plan.Templates = { CATEGORIES, SERIES, apply, pickerHtml, layoutRows, openPicker: sheetPicker };
 })();

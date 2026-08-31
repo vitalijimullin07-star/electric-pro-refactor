@@ -5631,6 +5631,147 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 45. Общая база контуров квартир (Слой 2 шаблонов) =====
+  {
+    const LAY = () => EP.Plan.Layouts;
+
+    test("контуры: уезжают ТОЛЬКО стены и размеры — ни одного персонального поля", () => {
+      const p = EP.Plan.Core.createProject("Моя квартира");
+      p.client = "Иванов Иван";
+      p.address = "ул. Пушкина, 10-42";
+      p.settings.wallThickness = 12;
+      p.settings.wallMaterial = "Кирпич";
+      const r1 = M.newRoom(G.rectPoints(1000, 1000, 400, 300), "Кухня");
+      r1.wallTh = [null, 25, null, null];
+      r1.wallMat = [null, "Бетон", null, null];
+      const r2 = M.newRoom(G.rectPoints(1400, 1000, 500, 300), "Зал");
+      p.rooms.push(r1, r2);
+      const pn = M.newPanel(1100, 1100, "Щит");
+      p.panels.push(pn);
+      p.elements.push(M.newElement("socket", { wallId: r1.id + ":0", offset: 100, height: 30 }));
+      const geo = LAY().strip(p);
+      eq(geo.rooms.length, 2, "обе комнаты уехали");
+      // белый список: у комнаты ровно name/points/wallTh/wallMat, ничего сверх
+      const extra = Object.keys(geo.rooms[0]).filter((k) => ["name", "points", "wallTh", "wallMat"].indexOf(k) < 0);
+      eq(extra.length, 0, "у комнаты нет посторонних полей (было бы: " + extra.join(",") + ")");
+      const dump = JSON.stringify(geo);
+      ok(dump.indexOf("Иванов") < 0 && dump.indexOf("Пушкина") < 0, "заказчик и адрес не уехали");
+      ok(dump.indexOf("elements") < 0 && dump.indexOf("panels") < 0 && dump.indexOf("routes") < 0,
+        "точки, щиты и трассы не уехали");
+      ok(!geo.rooms.some((r) => r.id), "id комнат не уехали — вставка создаёт свои");
+      eq(geo.rooms[0].wallTh[1], 25, "переопределение толщины СТЕНЫ сохранено (это размер, не персональное)");
+      eq(geo.rooms[0].wallMat[1], "Бетон", "материал стены сохранён");
+      eq(geo.wallThickness, 12, "толщина стен проекта по умолчанию сохранена");
+      // координаты приведены к нулю — одобренный шаблон не тащит координаты чужого проекта
+      const minX = Math.min.apply(null, geo.rooms.map((r) => Math.min.apply(null, r.points.map((q) => q.x))));
+      const minY = Math.min.apply(null, geo.rooms.map((r) => Math.min.apply(null, r.points.map((q) => q.y))));
+      eq(minX, 0, "контур сдвинут в ноль по X");
+      eq(minY, 0, "контур сдвинут в ноль по Y");
+      eq(geo.areaM2, 27, "площадь посчитана (4х3 + 5х3 = 27 м²)");
+      EP.Plan.Core.closeProject();
+    });
+
+    test("контуры: без комнат делиться нечем (strip не выдумывает пустой шаблон)", () => {
+      const p = EP.Plan.Core.createProject("пустой");
+      eq(LAY().strip(p), null, "пустой проект — null");
+      eq(LAY().strip(null), null, "нет проекта — null, без падения");
+      EP.Plan.Core.closeProject();
+    });
+
+    test("контуры: strip берёт ТОЛЬКО активный этаж", () => {
+      const p = EP.Plan.Core.createProject("двухэтажный");
+      p.rooms.push(M.newRoom(G.rectPoints(0, 0, 400, 300), "Первый"));
+      const f2 = EP.Plan.Core.addFloor("2 этаж");
+      EP.Plan.Core.setActiveFloor(f2.id);
+      p.rooms.push(M.newRoom(G.rectPoints(0, 0, 500, 400), "Второй"));
+      const geo = LAY().strip(p);
+      eq(geo.rooms.length, 1, "уехала одна комната — только активного этажа");
+      eq(geo.rooms[0].name, "Второй", "именно комната активного этажа");
+      EP.Plan.Core.closeProject();
+    });
+
+    test("контуры: вставка кладёт комнаты правее нарисованного и не трогает чужое", () => {
+      const p = EP.Plan.Core.createProject("объект");
+      p.rooms.push(M.newRoom(G.rectPoints(0, 0, 300, 200), "Своя"));
+      const layout = { rooms: [
+        { name: "Кухня", points: G.rectPoints(0, 0, 400, 300), wallTh: [null, 25, null, null] },
+        { name: "Зал", points: G.rectPoints(400, 0, 500, 300) }
+      ] };
+      const n = LAY().applyLayout(layout);
+      eq(n, 2, "вставлено две комнаты");
+      eq(p.rooms.length, 3, "своя комната на месте");
+      const added = p.rooms.filter((r) => r.name !== "Своя");
+      ok(added.every((r) => Math.min.apply(null, r.points.map((q) => q.x)) >= 300),
+        "вставка правее уже нарисованного, не поверх");
+      eq(added[0].wallTh[1], 25, "переопределение стены доехало до вставленной комнаты");
+      ok(added.every((r) => r.floorId === p.activeFloorId), "вставленные комнаты на активном этаже");
+      EP.Plan.Core.closeProject();
+    });
+
+    test("контуры: публикация обезличивает — автора в общей базе НЕТ вообще", () => {
+      const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-layouts.js"), "utf8");
+      // approve() СОБИРАЕТ публичный документ из белого списка, а не копирует заявку целиком
+      const ap = src.slice(src.indexOf("async function approve"), src.indexOf("async function reject"));
+      ok(/const pub = \{/.test(ap), "публичный документ собирается заново");
+      ok(!/\bby\b\s*:/.test(ap) && !/byName/.test(ap), "ни by, ни byName в публичный документ не попадают");
+      ok(/collection\(PUB\)\.add\(pub\)/.test(ap) && /collection\(SUBS\)\.doc\(sub\.id\)\.delete\(\)/.test(ap),
+        "после публикации заявка удаляется");
+      // strip собирает объект из белого списка, а не удаляет лишнее из копии проекта
+      ok(!/delete\s+\w+\.(client|address|elements|routes)/.test(src),
+        "лишние поля не «удаляются» из копии — иначе новое поле модели уехало бы молча");
+    });
+
+    test("контуры: правила Firestore на заявки и общую базу", () => {
+      const fs2 = require("fs"), path2 = require("path");
+      const r = fs2.readFileSync(path2.join(__dirname, "..", "firestore.rules"), "utf8");
+      const subs = r.slice(r.indexOf("match /plan_layout_subs/"), r.indexOf("match /plan_layouts/"));
+      ok(subs.length > 100, "блок заявок есть в правилах");
+      ok(/allow read: if isAdmin\(\) \|\| \(signedIn\(\) && resource\.data\.by == request\.auth\.uid\)/.test(subs),
+        "заявку видит только её автор и админ");
+      ok(/isApproved\(\) \|\| isAdmin\(\)/.test(subs) && /request\.resource\.data\.by == request\.auth\.uid/.test(subs),
+        "прислать может только одобренный мастер и только от своего имени");
+      ok(/request\.resource\.data\.status == "pending"/.test(subs), "создаётся строго как заявка, не как публикация");
+      ok(/rooms\.size\(\) <= 60/.test(subs) && /title\.size\(\) <= 120/.test(subs), "капы на размер заявки");
+      ok(/allow update: if false;/.test(subs), "заявка — снимок, правок задним числом нет");
+      const pub = r.slice(r.indexOf("match /plan_layouts/"), r.indexOf("match /{document=**}"));
+      ok(/allow read: if isApproved\(\) \|\| isAdmin\(\)/.test(pub), "общую базу читают одобренные мастера");
+      ok(/allow create, update, delete: if isAdmin\(\);/.test(pub), "писать в общую базу может только админ");
+      ok(/match \/\{document=\*\*\} \{\s*\n\s*allow read, write: if false;/.test(r), "финальный запрет-всё на месте");
+    });
+
+    test("контуры: раздел в шторке шаблонов и панель модерации в админке", () => {
+      const fs2 = require("fs"), path2 = require("path");
+      const base = path2.join(__dirname, "..");
+      const tpl = fs2.readFileSync(path2.join(base, "assets/js/modules/plan/plan-templates.js"), "utf8");
+      const adm = fs2.readFileSync(path2.join(base, "assets/js/modules/admin/admin.js"), "utf8");
+      const idx = fs2.readFileSync(path2.join(base, "index.html"), "utf8");
+      ok(/id="ep-plan-laybox"/.test(tpl) && /L\.fillSection\(\)/.test(tpl),
+        "раздел общей базы дорисовывается в уже открытую шторку (не подвешивает её сетью)");
+      ok(/openPicker: sheetPicker/.test(tpl), "«‹ Назад» из «поделиться» возвращает в шторку шаблонов");
+      ok(/data-lay-ok/.test(adm) && /data-lay-no/.test(adm) && /data-lay-del/.test(adm),
+        "в админке кнопки одобрить/отклонить/убрать");
+      ok(/A\.laySubs/.test(adm), "заявка публикуется целиком — по одному id из атрибута публиковать нечего");
+      ok(/\["layouts", "🏠 Контуры квартир"\]/.test(adm), "вкладка в навигации админки");
+      const iTpl = idx.indexOf("plan-templates.js"), iLay = idx.indexOf("plan-layouts.js");
+      ok(iTpl > 0 && iLay > iTpl, "plan-layouts.js подключён после plan-templates.js");
+    });
+
+    test("контуры: вставленный шаблон вписывается в экран (иначе он за краем)", () => {
+      const fs2 = require("fs"), path2 = require("path");
+      const base = path2.join(__dirname, "..");
+      const mnt = fs2.readFileSync(path2.join(base, "assets/js/modules/plan/plan-mount.js"), "utf8");
+      const tpl = fs2.readFileSync(path2.join(base, "assets/js/modules/plan/plan-templates.js"), "utf8");
+      const lay = fs2.readFileSync(path2.join(base, "assets/js/modules/plan/plan-layouts.js"), "utf8");
+      ok(/ctrlsOn: \(\) => V\.ctrlsOn, fitToProject/.test(mnt), "fitToProject экспортируется из plan-mount");
+      // раньше оба модуля звали rooms().fitToProject — такого экспорта у Rooms нет вообще,
+      // guard молча гасил вызов, и вставка ложилась за краем экрана
+      ok(!/rooms\(\)\.fitToProject/.test(tpl) && !/rooms\(\)\.fitToProject/.test(lay),
+        "вызов не идёт через Rooms — там такого метода нет");
+      ok(/EP\.Plan\.Mount[\s\S]{0,60}fitToProject/.test(tpl) && /EP\.Plan\.Mount[\s\S]{0,80}fitToProject/.test(lay),
+        "оба модуля вписывают вид через Mount");
+    });
+  }
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);
