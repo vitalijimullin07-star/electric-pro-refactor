@@ -5995,6 +5995,128 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 47. Цепочка проходных/перекрёстных в автотрассировке =====
+  // Раньше это было записано как известное ОГРАНИЧЕНИЕ модуля: трассировка про цепочки не
+  // знала, и каждое звено тянуло свой кабель к щиту, хотя физически питание приходит только
+  // в первое, звенья соединены между собой, а к лампе идёт последнее.
+  {
+    /* ВАЖНО про фикстуру: цепочка задана ОТ ДАЛЬНЕГО от щита выключателя к ближнему
+       (sws[2] — голова, sws[0] — последнее звено с лампой). Если сделать наоборот, тест
+       НИЧЕГО не проверяет: без распайки трассировка и так собирает точки одной линии в
+       ШЛЕЙФ щит→sw0→sw1→sw2, и «правильный» ответ получается сам собой, по геометрии.
+       Обратный порядок разводит эти два случая: правильно только если код реально идёт по
+       chainNext, а не по близости к щиту (проверено — с отключённой веткой цепочки тест падает). */
+    function chainProject(kinds) {
+      const p = EP.Plan.Core.createProject("цепочка");
+      const r = M.newRoom(G.rectPoints(0, 0, 600, 400), "Коридор");
+      p.rooms.push(r);
+      p.panels.push(M.newPanel(20, 380, "Щит"));
+      const c = M.newCircuit("QF1", "#facc15"); c.cable = null; p.circuits.push(c);
+      const sws = kinds.map((k, i) => {
+        const e = M.newElement("switch", r.id + ":0", 100 + i * 150, 90, "light");
+        e.swKind = k; e.circuitId = c.id; return e;
+      });
+      // голова — ПОСЛЕДНИЙ по счёту (самый дальний от щита), цепочка идёт «назад»
+      for (let i = sws.length - 1; i > 0; i--) sws[i].chainNext = sws[i - 1].id;
+      const head = sws[sws.length - 1], last = sws[0];
+      const lamp = M.newElement("light", null, 0, 270, "light");
+      lamp.params = { x: 300, y: 200 }; lamp.circuitId = c.id;
+      last.targetIds = [lamp.id];
+      p.elements.push.apply(p.elements, sws.concat([lamp]));
+      EP.Plan.Core.commit(); EP.Plan.Core.persist("x");
+      EP.Plan.Routes.build({ silent: true });
+      return { p, sws, lamp, c, head, last };
+    }
+    const routeOf = (p, id) => (p.routes || []).find((r) => r.fromId === id);
+
+    test("цепочка: к щиту идёт ТОЛЬКО голова, звенья питаются друг от друга", () => {
+      const { p, sws, lamp } = chainProject(["pass", "cross", "pass"]);
+      const r0 = routeOf(p, sws[0].id), r1 = routeOf(p, sws[1].id), r2 = routeOf(p, sws[2].id);
+      ok(r2 && r2.toPanel, "голова цепочки (дальняя от щита) идёт к щиту");
+      ok(r1 && !r1.toPanel && r1.toId === sws[2].id, "среднее звено питается от головы, а не от щита");
+      ok(r0 && !r0.toPanel && r0.toId === sws[1].id, "последнее звено — от среднего, хотя к щиту оно ближе всех");
+      eq((p.routes || []).filter((r) => r.toPanel).length, 1,
+        "к щиту от всей цепочки ровно один кабель (раньше было по одному на звено)");
+      const rl = routeOf(p, lamp.id);
+      ok(rl && rl.toId === sws[0].id, "лампа висит на ПОСЛЕДНЕМ звене цепочки");
+      EP.Plan.Core.closeProject();
+    });
+
+    test("цепочка: перегоны помечены и получают своё число жил в смете", () => {
+      const { p, sws } = chainProject(["pass", "cross", "pass"]);
+      const r1 = routeOf(p, sws[1].id), r0 = routeOf(p, sws[0].id);
+      eq(r1.leg, "chain", "перегон между звеньями помечен");
+      ok(r1.chainCross === true, "перегон, упирающийся в перекрёстный, помечен как 5-жильный");
+      ok(r0.chainCross === true, "и следующий за перекрёстным тоже");
+      const items = (EP.Plan.Calc.calcByRoutes(p) || {}).items || [];
+      const chain = items.filter((i) => /между выключателями/.test(i.name));
+      ok(chain.length >= 1, "в смете появилась отдельная позиция кабеля между выключателями");
+      ok(chain.some((i) => /5×1\.5/.test(i.name)), "и она пятижильная: " + chain.map((i) => i.name).join(" | "));
+      // питание головы — обычный трёхжильный свет, отдельной позицией
+      ok(items.some((i) => /^Кабель /.test(i.name) && /3×1\.5/.test(i.name) && !/между/.test(i.name)),
+        "питание головы осталось обычным кабелем: " + items.filter((i) => /^Кабель/.test(i.name)).map((i) => i.name).join(" | "));
+      EP.Plan.Core.closeProject();
+    });
+
+    test("цепочка из двух проходных — перегон трёхжильный", () => {
+      const { p, sws } = chainProject(["pass", "pass"]);
+      eq(routeOf(p, sws[0].id).chainCross, false, "без перекрёстного хватает трёх жил");
+      const items = (EP.Plan.Calc.calcByRoutes(p) || {}).items || [];
+      ok(items.some((i) => /3×1\.5 · между выключателями/.test(i.name)), "3×1.5 между выключателями");
+      EP.Plan.Core.closeProject();
+    });
+
+    test("цепочка: замкнутая сама на себя не оставляет звенья без питания", () => {
+      const { p, sws } = chainProject(["pass", "pass"]);
+      // пользователь замкнул: A→B→A. Головы нет — без защиты оба звена остались бы
+      // без трассы вообще (каждое ждало бы питания от другого)
+      EP.Plan.Core.commit();
+      sws[0].chainNext = sws[1].id;     // sws[1]→sws[0] уже есть, получилось кольцо
+      EP.Plan.Core.persist("loop");
+      EP.Plan.Routes.build({ silent: true });
+      // ГЛАВНОЕ тут — не «есть трасса», а «есть питание»: без защиты оба звена честно
+      // получают по трассе... друг к другу, и к щиту не приходит НИ ОДНА (проверено
+      // отключением защиты: «к щиту: 0»). Цепочка выглядит разведённой, но мертва.
+      ok((p.routes || []).some((r) => r.toPanel), "хотя бы один кабель цепочки доходит до щита");
+      ok(routeOf(p, sws[0].id) && routeOf(p, sws[1].id), "оба звена получили трассу");
+      const issues = EP.Plan.Rules.run(p).issues || [];
+      ok(issues.some((i) => /замкнута сама на себя/.test(i.msg)), "«Проверки» объясняют, что цепочка замкнута");
+      EP.Plan.Core.closeProject();
+    });
+
+    test("цепочка: последнее звено без лампы — «Проверки» это ловят", () => {
+      const { p, sws, lamp } = chainProject(["pass", "pass"]);
+      EP.Plan.Core.commit();
+      sws[0].targetIds = [];            // последнее звено — sws[0] (голова дальняя, см. фикстуру)
+      lamp.circuitId = null;                 // чтобы не нашлась авто-цель той же линии
+      EP.Plan.Core.persist("x");
+      const issues = EP.Plan.Rules.run(p).issues || [];
+      ok(issues.some((i) => /Последнее звено/.test(i.msg)), "предупреждение про звено, которое ни на что не назначено");
+      EP.Plan.Core.closeProject();
+    });
+
+    test("цепочка: одиночный выключатель не считается цепочкой", () => {
+      const p = EP.Plan.Core.createProject("одиночный");
+      const r = M.newRoom(G.rectPoints(0, 0, 400, 300), "К");
+      p.rooms.push(r);
+      p.panels.push(M.newPanel(20, 280, "Щит"));
+      const c = M.newCircuit("QF1", "#facc15"); p.circuits.push(c);
+      const sw = M.newElement("switch", r.id + ":0", 100, 90, "light"); sw.circuitId = c.id;
+      const lamp = M.newElement("light", null, 0, 270, "light");
+      lamp.params = { x: 200, y: 150 }; lamp.circuitId = c.id;
+      sw.targetIds = [lamp.id];
+      p.elements.push(sw, lamp);
+      EP.Plan.Core.commit(); EP.Plan.Core.persist("x");
+      EP.Plan.Routes.build({ silent: true });
+      const rs = (p.routes || []).find((x) => x.fromId === sw.id);
+      ok(rs && rs.toPanel, "обычный выключатель по-прежнему идёт прямо к щиту");
+      ok(!(p.routes || []).some((x) => x.leg === "chain"), "перегонов цепочки нет");
+      eq((EP.Plan.Rules.run(p).issues || []).filter((i) => /цепочк|звено/i.test(i.msg)).length, 0,
+        "и никаких предупреждений про цепочки");
+      EP.Plan.Core.closeProject();
+    });
+  }
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

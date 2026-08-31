@@ -141,6 +141,35 @@
       const shared = [...byCirc.entries()].filter(([k, n]) => k === "_none" || n > 1);
       if (shared.length) issues.push({ msg: "Камеры должны идти отдельными линиями: есть камеры без линии или несколько на одной." });
     }
+    /* Цепочка проходных/перекрёстных. Питание в цепочке приходит ТОЛЬКО в первое звено —
+       трассировка теперь это знает (chainPrevMap в plan-routes.js), но она же молча
+       игнорирует ДВА случая, которые пользователь может собрать кнопками и не заметить:
+       (1) цепочка замкнута сама на себя (A→B→A) — головы нет, питать неоткуда;
+       (2) у последнего звена не назначена лампа — цепочка никуда не ведёт.
+       Про них честно говорим здесь, а не «чиним» догадкой. */
+    {
+      const sws = (p.elements || []).filter((e) => e.type === "switch");
+      const byId = new Map(sws.map((e) => [e.id, e]));
+      const inChain = new Set();
+      sws.forEach((e) => { if (e.chainNext && byId.has(e.chainNext)) inChain.add(e.chainNext); });
+      sws.forEach((e) => {
+        if (!e.chainNext && !inChain.has(e.id)) return;           // одиночный выключатель
+        const seen = new Set([e.id]);
+        let cur = byId.get(e.chainNext);
+        while (cur && !seen.has(cur.id)) { seen.add(cur.id); cur = byId.get(cur.chainNext); }
+        if (cur) {
+          issues.push({ id: e.id, msg: "Цепочка проходных замкнута сама на себя — питать её неоткуда, поправь «следующее звено»." });
+          badIds.add(e.id);
+          return;
+        }
+        // последнее звено (chainNext пуст) обязано вести к лампе — иначе цепочка вникуда
+        if (!e.chainNext) {
+          const tid = (G().allTargetIds ? G().allTargetIds(e) : [])[0];
+          const auto = G().switchTarget ? G().switchTarget(p, e, 0) : null;
+          if (!tid && !auto) { issues.push({ id: e.id, msg: "Последнее звено цепочки проходных ни на что не назначено — свет включать нечем." }); badIds.add(e.id); }
+        }
+      });
+    }
     (p.elements || []).forEach((e) => {
       if (e.type !== "pir" && e.type !== "lux") return;
       const tid = (G().allTargetIds ? G().allTargetIds(e) : [])[0]; // цель может быть массивом (несколько на клавишу)

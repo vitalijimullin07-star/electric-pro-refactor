@@ -1122,6 +1122,45 @@
     });
     return out;
   }
+  /* ЦЕПОЧКА ПРОХОДНЫХ/ПЕРЕКРЁСТНЫХ (el.chainNext): физически питание приходит ТОЛЬКО в
+     первое звено, дальше звенья соединяются между собой, а к лампе идёт последнее. Раньше
+     трассировка про цепочки не знала вовсе — КАЖДОЕ звено тянуло свой кабель к щиту (это и
+     было записано как известное ограничение модуля). Здесь строим «кто чей предшественник»:
+     звено, на которое кто-то ссылается, питается ОТ НЕГО, а не от щита.
+     ЦИКЛ (A→B→A — пользователь может замкнуть цепочку кнопками) обязан быть обезврежен:
+     иначе НИ ОДНО звено не считалось бы головой, и вся цепочка осталась бы без питания.
+     Замкнутые звенья исключаются из карты и routeGroups ведёт их к щиту по-старому, а
+     «Проверки» (plan-rules.js) показывают это пользователем явно. */
+  function chainPrevMap(p) {
+    const fp = G().floorScoped(p);
+    const byId = new Map((fp.elements || []).map((e) => [e.id, e]));
+    const prev = new Map();
+    (fp.elements || []).forEach((sw) => {
+      if (sw.type !== "switch" || !sw.chainNext) return;
+      const nx = byId.get(sw.chainNext);
+      if (!nx || nx.type !== "switch" || nx.id === sw.id) return;
+      if (!prev.has(nx.id)) prev.set(nx.id, sw);           // первая ссылка выигрывает
+    });
+    // снимаем звенья, до которых от головы не дойти (замкнутые сами на себя)
+    const bad = new Set();
+    prev.forEach((_, id) => {
+      const seen = new Set([id]);
+      let cur = prev.get(id);
+      while (cur) {
+        if (seen.has(cur.id)) { bad.add(id); break; }
+        seen.add(cur.id);
+        cur = prev.get(cur.id);
+      }
+    });
+    bad.forEach((id) => prev.delete(id));
+    return prev;
+  }
+  // есть ли в цепочке (по обе стороны звена) перекрёстный выключатель — от этого зависит
+  // число жил кабеля МЕЖДУ звеньями: проходной↔проходной хватает 3 жил (две «путевые» + PE),
+  // а перекрёстному нужны четыре плюс PE
+  function chainSegCross(a, b) {
+    return (a && a.swKind === "cross") || (b && b.swKind === "cross");
+  }
   // сколько клавиш ЭТОГО выключателя назначено на точки «Вывод 24В» — от этого зависит
   // марка кабеля «до щита» (первичка): 1 клавиша — 3 жилы, 2-3 клавиши — 5 жил
   function keys24Of(p, sw) {
@@ -1245,10 +1284,19 @@
     const powerPanels = plainPanels.length ? plainPanels : panels;
     const groups = new Map();
     const feed = switchFeedMap(p);
+    const chainPrev = chainPrevMap(p);
     const viaSw = [];
     pointsToRoute.forEach((el) => {
       const pos = G().routeAnchor(p, el); // блок -> вход штробы (нужный подрозетник)
       if (!pos) return;
+      // звено цепочки проходных/перекрёстных питается от ПРЕДЫДУЩЕГО звена, а не от щита:
+      // к щиту идёт только голова цепочки. Проверяем ДО feed — у последнего звена есть и
+      // цель (лампа), и предшественник, и питание ему нужно именно от предшественника.
+      const prevSw = el.type === "switch" ? chainPrev.get(el.id) : null;
+      if (prevSw) {
+        const ppos = G().routeAnchor(p, prevSw);
+        if (ppos) { viaSw.push({ el, pos, sw: prevSw, spos: ppos, chain: true }); return; }
+      }
       const sw = feed.get(el.id);
       if (sw) {
         const spos = G().routeAnchor(p, sw);
@@ -1263,7 +1311,7 @@
     // своей линией). Если до выключателя не добраться (нет магистрали между комнатами) —
     // фолбэк на прежнее поведение (ближайшая распайка своей линии / щит), чтобы точка не
     // осталась вообще без трассы.
-    viaSw.forEach(({ el, pos, sw, spos }) => {
+    viaSw.forEach(({ el, pos, sw, spos, chain }) => {
       // линия управляемой точки = линия ВЫКЛЮЧАТЕЛЯ (она физически питается через него).
       // Проставляем и здесь, а не только в момент назначения клавиши в редакторе
       // (EP.Plan.Elements.syncTargetCircuit): так автоматика догоняет проекты, где клавиши
@@ -1272,6 +1320,9 @@
       const cid = el.circuitId || sw.circuitId || null;
       const color = colorOf(p, el);
       let rt = addRoute(c, p, el, pos, { kind: "el", id: sw.id, pos: spos, el: sw }, cid, color);
+      // перегон МЕЖДУ звеньями цепочки помечаем — в смете у него своё число жил (см.
+      // chainMark в plan-calc.js): у обычного питания 3 жилы, у перегона с перекрёстным 5
+      if (rt && chain) { rt.leg = "chain"; rt.chainCross = chainSegCross(el, sw); }
       if (rt) return;
       const J = cid ? juncts.filter((n) => n.circuitId === cid) : juncts.slice();
       connectNearest(c, p, el, pos, J.concat(powerPanels), cid, color);
@@ -2793,5 +2844,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { build, buildIncremental, clearRoutes, suggestGuides, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, keys24Of, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
+  EP.Plan.Routes = { build, buildIncremental, clearRoutes, suggestGuides, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, keys24Of, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
 })();
