@@ -104,8 +104,8 @@
   }
 
   // ====== навигация ======
-  function renderNav() { const tabs = [["users", "👥 Пользователи"], ["serverdb", "🗄️ БД сервера"], ["aiserver", "🤖 ИИ-сервер"], ["backups", "💾 Бекапы"], ["contacts", "⚙️ Контакты"]]; const nav = $("#ep-admin-nav"); if (nav) nav.innerHTML = tabs.map((t) => `<button data-tab="${t[0]}" class="${A.tab === t[0] ? "on" : ""}">${t[1]}</button>`).join(""); }
-  function switchTab(tab) { A.tab = tab; renderNav(); if (tab === "users") { renderUsersTab(); if (!A.users.length) loadUsers(); } else if (tab === "serverdb") renderServerDb(); else if (tab === "aiserver") renderAiServer(); else if (tab === "backups") renderBackups(); else if (tab === "contacts") renderContacts(); }
+  function renderNav() { const tabs = [["users", "👥 Пользователи"], ["serverdb", "🗄️ БД сервера"], ["aiserver", "🤖 ИИ-сервер"], ["layouts", "🏠 Контуры квартир"], ["backups", "💾 Бекапы"], ["contacts", "⚙️ Контакты"]]; const nav = $("#ep-admin-nav"); if (nav) nav.innerHTML = tabs.map((t) => `<button data-tab="${t[0]}" class="${A.tab === t[0] ? "on" : ""}">${t[1]}</button>`).join(""); }
+  function switchTab(tab) { A.tab = tab; renderNav(); if (tab === "users") { renderUsersTab(); if (!A.users.length) loadUsers(); } else if (tab === "serverdb") renderServerDb(); else if (tab === "aiserver") renderAiServer(); else if (tab === "layouts") renderLayouts(); else if (tab === "backups") renderBackups(); else if (tab === "contacts") renderContacts(); }
 
   // ====== ИИ-СЕРВЕР (серверные ключи API) ======
   const AIKEY = "ep_ai_v29";
@@ -232,6 +232,73 @@
   }
 
   // ====== БЕКАПЫ ======
+  /* 🏠 КОНТУРЫ КВАРТИР — модерация общей базы шаблонов планировок.
+     Мастера присылают ТОЛЬКО геометрию (стены и размеры) — см. EP.Plan.Layouts.strip.
+     Одобрение КОПИРУЕТ очищенные поля в публичную коллекцию и удаляет заявку: автор
+     (by/byName) в публичную коллекцию не переносится вообще, поэтому одобренный контур
+     обезличен не «скрытием поля на клиенте», а тем, что этого поля там физически нет. */
+  function LAY() { return window.EP && EP.Plan && EP.Plan.Layouts; }
+  function layPreview(x) {
+    const rooms = (x.rooms || []).slice(0, 40);
+    if (!rooms.length) return "";
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    rooms.forEach((r) => (r.points || []).forEach((q) => {
+      if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; if (q.y < y0) y0 = q.y; if (q.y > y1) y1 = q.y;
+    }));
+    if (!isFinite(x0)) return "";
+    const pad = 20;
+    return `<svg class="ep-lay-prev" viewBox="${x0 - pad} ${y0 - pad} ${(x1 - x0) + pad * 2} ${(y1 - y0) + pad * 2}" preserveAspectRatio="xMidYMid meet">
+      ${rooms.map((r) => `<polygon points="${(r.points || []).map((q) => q.x + "," + q.y).join(" ")}"></polygon>`).join("")}
+    </svg>`;
+  }
+  async function renderLayouts() {
+    const host = $("#ep-admin-body"); if (!host) return;
+    const L = LAY();
+    if (!L) { host.innerHTML = `<div class="ep-admin-card"><h3>🏠 Контуры квартир</h3><p class="ep-admin-muted">Модуль плана не загружен на этой странице.</p></div>`; return; }
+    host.innerHTML = `<div class="ep-admin-card"><h3>🏠 Контуры квартир</h3><p class="ep-admin-muted">Загружаю…</p></div>`;
+    const [subs, pub] = await Promise.all([L.pending(), L.list(true)]);
+    A.laySubs = subs;
+    const subCard = (x) => `<div class="ep-lay-item">
+        ${layPreview(x)}
+        <div class="ep-lay-info"><b>${esc(x.title || "Без названия")}</b>
+          <span>${x.areaM2 || 0} м² · комнат ${(x.rooms || []).length}${x.series ? " · " + esc(x.series) : ""}</span>
+          <span class="ep-admin-muted">от ${esc(x.byName || "—")} · ${new Date(x.ts || 0).toLocaleDateString("ru-RU")}</span></div>
+        <div class="ep-lay-btns">
+          <button type="button" class="ep-btn ep-btn-ok" data-lay-ok="${esc(x.id)}">✓ Опубликовать</button>
+          <button type="button" class="ep-btn ep-btn-danger" data-lay-no="${esc(x.id)}">✕ Отклонить</button>
+        </div>
+      </div>`;
+    const pubCard = (x) => `<div class="ep-lay-item">
+        ${layPreview(x)}
+        <div class="ep-lay-info"><b>${esc(x.title || "Без названия")}</b>
+          <span>${x.areaM2 || 0} м² · комнат ${(x.rooms || []).length}${x.series ? " · " + esc(x.series) : ""}</span></div>
+        <div class="ep-lay-btns"><button type="button" class="ep-btn ep-btn-danger" data-lay-del="${esc(x.id)}">🗑 Убрать</button></div>
+      </div>`;
+    host.innerHTML = `<div class="ep-admin-card"><h3>🏠 Контуры квартир</h3>
+        <p class="ep-admin-muted">Мастера присылают только стены и размеры. При публикации автор НЕ переносится — контур становится обезличенным.</p>
+        <h4>На проверке (${subs.length})</h4>
+        ${subs.length ? subs.map(subCard).join("") : `<p class="ep-admin-muted">Заявок нет.</p>`}
+        <h4>В общей базе (${pub.length})</h4>
+        ${pub.length ? pub.map(pubCard).join("") : `<p class="ep-admin-muted">Пока пусто.</p>`}
+        <p id="ep-lay-status" class="ep-act-st"></p></div>`;
+  }
+  // Одобрение работает с ЦЕЛЫМ документом заявки (approve копирует из него геометрию в
+  // публичную коллекцию), поэтому список заявок держим в A.laySubs — по одному id из
+  // атрибута кнопки публиковать было бы нечего.
+  async function layAct(op, id) {
+    const L = LAY(); if (!L) return;
+    const st = $("#ep-lay-status"); if (st) st.textContent = "Выполняю…";
+    let ok = false;
+    if (op === "remove") ok = await L.removePublic(id);
+    else {
+      const sub = (A.laySubs || []).find((x) => x.id === id);
+      if (!sub) { if (st) st.textContent = "Заявка не найдена — обнови вкладку."; return; }
+      ok = op === "approve" ? await L.approve(sub) : await L.reject(sub);
+    }
+    if (!ok) { if (st) st.textContent = "Не получилось — проверь права админа и связь."; return; }
+    renderLayouts();
+  }
+
   async function renderBackups() {
     const host = $("#ep-admin-body"); if (!host) return;
     host.innerHTML = `<div class="ep-admin-card"><h3>💾 Бекапы</h3>
@@ -342,6 +409,9 @@
       const uact = t.closest("[data-u-act]"); if (uact) return uAct(uact.getAttribute("data-u-act"));
       const udata = t.closest("[data-u-data]"); if (udata) return loadUserData(udata.getAttribute("data-u-data"));
       const bk = t.closest("[data-bk]"); if (bk) return doBackup(bk.getAttribute("data-bk"));
+      const lok = t.closest("[data-lay-ok]"); if (lok) return layAct("approve", lok.getAttribute("data-lay-ok"));
+      const lno = t.closest("[data-lay-no]"); if (lno) return layAct("reject", lno.getAttribute("data-lay-no"));
+      const ldel = t.closest("[data-lay-del]"); if (ldel) return layAct("remove", ldel.getAttribute("data-lay-del"));
       const asp = t.closest("[data-aisrv-prov]"); if (asp) { A.aiProv = asp.getAttribute("data-aisrv-prov"); return renderAiServer(); }
       if (t.closest("#ep-srv-add")) return srvAddManual();
       const se = t.closest("[data-srv-edit]"); if (se) return srvEdit(se.getAttribute("data-srv-edit"));
