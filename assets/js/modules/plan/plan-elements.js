@@ -756,6 +756,33 @@
     </div>`;
   }
 
+  /* Клавишность и вид для КАЖДОГО выключателя-поста внутри блока. Раньше их задать было
+     негде вовсе: пост — просто строка-тип в params.items, и любой выключатель в рамке
+     считался однокнопочным обычным (и в символе, и в коннекторах сметы). Свойства лежат
+     ПАРАЛЛЕЛЬНО в params.itemMeta[i] (см. G.postMeta) — форма самих items не менялась,
+     старые проекты читаются как были.
+     ОГРАНИЧЕНИЕ (осознанное): ЦЕПОЧКУ проходных и ЦЕЛЬ клавиши посту задать по-прежнему
+     нельзя — и то и другое ссылается на элемент ПО ID, а у поста своего id нет, индекс же
+     не годится: он съезжает, как только удалить пост левее. Для цепочки ставится
+     отдельный выключатель (не в рамке). */
+  function postMetaSet(el, i, patch) {
+    el.params = el.params || {};
+    const meta = (el.params.itemMeta = el.params.itemMeta || []);
+    meta[i] = Object.assign({ keys: 1, swKind: "normal" }, meta[i] || {}, patch);
+    return meta[i];
+  }
+  function postSwitchRows(el, items) {
+    const idx = items.map((k, i) => (k === "switch" ? i : -1)).filter((i) => i >= 0);
+    if (!idx.length) return "";
+    return idx.map((i) => {
+      const pm = G().postMeta(el, i);
+      const kinds = SW_KINDS.map(([v, lk]) =>
+        `<button type="button" class="ep-plan-chip ep-clickable ${pm.swKind === v ? "on" : ""}" data-pe-pkind="${i}:${v}">${esc(T[lk])}</button>`).join("");
+      const keys = pm.swKind !== "normal" ? "" : [1, 2, 3].map((n) =>
+        `<button type="button" class="ep-plan-chip ep-clickable ${pm.keys === n ? "on" : ""}" data-pe-pkeys="${i}:${n}">${n}</button>`).join("");
+      return `<div class="ep-plan-srow">Пост ${i + 1} (выключатель): ${kinds}${keys ? " · клавиш: " + keys : ""}</div>`;
+    }).join("");
+  }
   // «Сборка блока»: рамка с постами (как на бумажных схемах — 1-6 в общей рамке)
   function blockHtml(el) {
     const items = (el.params && el.params.items) || [];
@@ -772,6 +799,7 @@
         ${items.map((k, i) => `<button type="button" class="ep-plan-chip ep-clickable ${(entrySet ? el.entryPost === i : autoIdx === i) ? "on" : ""}" data-pe-entry="${i}">${i + 1}</button>`).join("")}
         <button type="button" class="ep-plan-chip ep-clickable ${entrySet ? "" : "on"}" data-pe-entry="auto">Авто</button>
       </div>
+      ${postSwitchRows(el, items)}
       <div class="ep-plan-srow">Ориентация:
         <button type="button" class="ep-plan-chip ep-clickable" data-pe-brot="1">⟳ ${el.blockVert ? "Вертикальный" : "Горизонтальный"} · развернуть 90°</button>
       </div>
@@ -1008,7 +1036,23 @@
       const c = core(), el = current(); if (!el || el.type !== "block") return;
       const items = (el.params.items = el.params.items || []);
       if (items.length <= 1) return; // пустых рамок не бывает — удаляй сам блок
-      c.commit(); items.splice(Number(b.getAttribute("data-pe-bdel")), 1); c.persist("block-del"); openEditor(el); return;
+      c.commit();
+      const di = Number(b.getAttribute("data-pe-bdel"));
+      items.splice(di, 1);
+      // мета постов — ПАРАЛЛЕЛЬНЫЙ массив, и он обязан ехать вместе с items: иначе после
+      // удаления поста слева двухклавишность «переползла» бы на соседний
+      if (el.params.itemMeta) el.params.itemMeta.splice(di, 1);
+      c.persist("block-del"); openEditor(el); return;
+    }
+    if ((b = t.closest("[data-pe-pkind]"))) {
+      const c = core(), el = current(); if (!el || el.type !== "block") return;
+      const [i, v] = b.getAttribute("data-pe-pkind").split(":");
+      c.commit(); postMetaSet(el, Number(i), { swKind: v }); c.persist("block-post"); openEditor(el); rooms().renderScene(); return;
+    }
+    if ((b = t.closest("[data-pe-pkeys]"))) {
+      const c = core(), el = current(); if (!el || el.type !== "block") return;
+      const [i, n] = b.getAttribute("data-pe-pkeys").split(":");
+      c.commit(); postMetaSet(el, Number(i), { keys: Number(n) }); c.persist("block-post"); openEditor(el); rooms().renderScene(); return;
     }
     if ((b = t.closest("[data-pe-entry]"))) {
       const c = core(), el = current(); if (!el || el.type !== "block") return;

@@ -850,10 +850,20 @@
           grp.appendChild(el("rect", Object.assign({ x: cx - bw / 2, y: cy - bh / 2, width: bw, height: bh, rx: 5 * k, fill: elemColor(elem), class: "ep-plan-blockrect", "stroke-width": sw * 0.7 }, tr ? { transform: tr } : {})));
           const inset = real ? 0.4 : 4 * k;
           const gfs = real ? Math.min(bh * 0.5, step2 * 0.8) : 9 * k;
-          items.forEach((it, i) => grp.appendChild(el("text", Object.assign({
-            x: cx - bw / 2 + inset + step2 * i + step2 / 2, y: cy,
-            "font-size": gfs, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph"
-          }, tr ? { transform: tr } : {}), (TY[it] || {}).glyph || "?")));
+          items.forEach((it, i) => {
+            // у выключателя-поста дописываем клавишность и вид (В2, В2⇄ проходной,
+            // В2⇆ перекрёстный) — раньше все посты выглядели одинаково «В», и двухклавишный
+            // в блоке было не отличить от однокнопочного
+            let gl = (TY[it] || {}).glyph || "?";
+            if (it === "switch") {
+              const pm = G.postMeta(elem, i);
+              gl += (pm.keys > 1 ? String(pm.keys) : "") + (pm.swKind === "pass" ? "⇄" : pm.swKind === "cross" ? "⇆" : "");
+            }
+            grp.appendChild(el("text", Object.assign({
+              x: cx - bw / 2 + inset + step2 * i + step2 / 2, y: cy,
+              "font-size": gfs, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-elglyph"
+            }, tr ? { transform: tr } : {}), gl));
+          });
           // метка входа штробы (к какому подрозетнику идёт трасса)
           const eIdx = EP.Plan.Geometry.blockEntryIndex(elem);
           const ex = cx - bw / 2 + inset + step2 * Math.min(eIdx, items.length - 1) + step2 / 2;

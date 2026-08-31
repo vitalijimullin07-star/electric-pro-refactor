@@ -492,7 +492,11 @@
         const layId = el.layer || t.layer || "power";
         const lay = doc.layer("EP-" + layerName(layId), layColor(layId, 7));
         const posts = el.type === "block"
-          ? (el.items || []).map((it) => ({ type: it.type || "socket", keys: it.keys }))
+          // ВНИМАНИЕ: посты блока лежат в el.params.items и это СТРОКИ-типы, а не объекты
+          // (так во всём модуле — plan-render/plan-geometry/plan-calc/plan-unfold читают их
+          // именно так). Поля el.items у модели нет вовсе: чтение оттуда молча давало один
+          // пост «розетка» вместо реального состава блока.
+          ? ((el.params && el.params.items) || []).map((k, i) => ({ type: k, keys: g.postMeta(el, i).keys }))
           : [{ type: el.type, keys: el.keys }];
         if (!posts.length) posts.push({ type: "socket" });
         const rot = pt.wall ? (g.wallFrame(p, pt.wall, el.beamSide) || {}).angle || 0 : 0;

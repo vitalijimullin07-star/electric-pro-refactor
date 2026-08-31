@@ -520,8 +520,18 @@
         const cellC = (i) => bg.cell(i);
         const cellR = (i) => bg.rect(i);
         gr.appendChild(svgEl("rect", { x: x - bw / 2, y: y - bh / 2, width: bw, height: bh, rx: real ? 0.4 : 5 * ks, style: "fill:" + col, class: "ep-plan-unfshape" }));
-        if (real) items.forEach((it, i) => { const c = cellC(i); drawFace(gr, it, el.keys, c.cx, c.cy); if (!(RD.deviceFace(it, el.keys) || []).some((o) => o.cls !== "post")) gr.appendChild(svgEl("text", { x: c.cx, y: c.cy, "font-size": 2.6, "text-anchor": "middle", "dominant-baseline": "central", fill: "#0f172a", class: "ep-plan-unfface" }, (TY[it] || {}).glyph || "?")); });
-        else items.forEach((it, i) => { const c = cellC(i); gr.appendChild(svgEl("text", { x: c.cx, y: c.cy, "font-size": 9 * ks, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfglyph" }, (TY[it] || {}).glyph || "?")); });
+        // клавишность берётся У ПОСТА (G.postMeta), а не у блока: в одной рамке могут стоять
+        // одно- и двухклавишный, и на фасаде это ВИДНО — качелек нарисовано ровно столько,
+        // сколько клавиш. Раньше подставлялся el.keys, которого у блока не бывает вовсе.
+        const pk = (i) => G().postMeta(el, i).keys;
+        const pgl = (it, i) => {
+          const base = (TY[it] || {}).glyph || "?";
+          if (it !== "switch") return base;
+          const pm = G().postMeta(el, i);
+          return base + (pm.keys > 1 ? String(pm.keys) : "") + (pm.swKind === "pass" ? "⇄" : pm.swKind === "cross" ? "⇆" : "");
+        };
+        if (real) items.forEach((it, i) => { const c = cellC(i); drawFace(gr, it, pk(i), c.cx, c.cy); if (!(RD.deviceFace(it, pk(i)) || []).some((o) => o.cls !== "post")) gr.appendChild(svgEl("text", { x: c.cx, y: c.cy, "font-size": 2.6, "text-anchor": "middle", "dominant-baseline": "central", fill: "#0f172a", class: "ep-plan-unfface" }, pgl(it, i))); });
+        else items.forEach((it, i) => { const c = cellC(i); gr.appendChild(svgEl("text", { x: c.cx, y: c.cy, "font-size": 9 * ks, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfglyph" }, pgl(it, i))); });
         items.forEach((it, i) => gr.appendChild(svgEl("rect", Object.assign({ "data-pu-post": i, fill: "transparent" }, cellR(i)))));
         const eIdx = G().blockEntryIndex(el), ec = cellC(eIdx);
         gr.appendChild(svgEl("circle", vert

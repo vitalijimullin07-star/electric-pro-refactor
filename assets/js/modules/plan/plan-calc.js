@@ -266,8 +266,15 @@
         const t = SW_TEMPLATES[switchTemplateKey(e2)] || SW_TEMPLATES.switch_1;
         Object.keys(t).forEach((pin) => addPin(Number(pin.replace("pin", "")), t[pin]));
       } else if (e2.type === "block") {
-        // пост "switch" внутри блока — в блоке нет данных о клавишности, считаем простым 1-клавишным
-        ((e2.params && e2.params.items) || []).forEach((it) => { if (it === "switch") addPin(2, 4); });
+        // пост "switch" внутри блока: клавишность и вид берём из меты поста (G.postMeta) —
+        // раньше в блоке этих данных не было вовсе и КАЖДЫЙ выключатель-пост считался
+        // простым однокнопочным, занижая коннекторы на двух- и трёхклавишных
+        ((e2.params && e2.params.items) || []).forEach((it, i) => {
+          if (it !== "switch") return;
+          const pm = G().postMeta(e2, i);
+          const t = SW_TEMPLATES[switchTemplateKey({ keys: pm.keys, swKind: pm.swKind })] || SW_TEMPLATES.switch_1;
+          Object.keys(t).forEach((pin) => addPin(Number(pin.replace("pin", "")), t[pin]));
+        });
       }
     });
     const materials = {}; let shrinkCount = 0;
