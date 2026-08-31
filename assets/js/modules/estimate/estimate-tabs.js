@@ -33,7 +33,10 @@
       const key = String(x.name || "").toLowerCase().trim() + "|" + (x.unit || "");
       const e = m.get(key);
       if (e) { e.qty += Number(x.qty) || 0; if (!e.price && Number(x.price)) e.price = Number(x.price); if (x.extra) e.extra = true; }
-      else m.set(key, { name: x.name, unit: x.unit || "", price: Number(x.price) || 0, qty: Number(x.qty) || 0, extra: !!x.extra });
+      // type в агрегированной строке ОБЯЗАТЕЛЕН: её читают не только вкладки, но и
+      // EP.EstimateWorks (разнос по этапам фильтрует именно по type) — без него смета
+      // по работам молча получала пустой список
+      else m.set(key, { type, name: x.name, unit: x.unit || "", price: Number(x.price) || 0, qty: Number(x.qty) || 0, extra: !!x.extra });
     });
     return [...m.values()].filter(x => x.qty > 0).sort((a, b) => String(a.name).localeCompare(String(b.name), "ru"));
   }

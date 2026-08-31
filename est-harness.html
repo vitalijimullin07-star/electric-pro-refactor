@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>est harness</title>
+<link rel="stylesheet" href="/assets/css/base.css">
+<link rel="stylesheet" href="/assets/css/layout.css">
+<link rel="stylesheet" href="/assets/css/theme.css">
+</head><body>
+<div id="app"><div class="app-shell"><div class="page-container">
+  <div id="ep-estimate-root" data-est-default="works"></div>
+</div></div></div>
+<script>
+  window.EP = window.EP || {};
+  EP.state = { user: { uid: "u1", displayName: "Мастер Тест" } };
+  EP.Auth = { isAdmin: () => true };
+  EP.Firebase = { db: null };
+  EP.Profile = {
+    getMaster: () => ({ type: "ip", name: "Иванов Иван Иванович", inn: "770000000000", ogrn: "300000000000000", phone: "+7 900 000-00-00" }),
+    getClient: () => ({ name: "Петров П.П.", object: "г. Москва, ул. Тестовая 1, кв. 390", phone: "+7 911 111-11-11" })
+  };
+</script>
+<script defer src="/assets/js/modules/estimate/estimate-file.js"></script>
+<script defer src="/assets/js/modules/estimate/estimate-draft.js"></script>
+<script defer src="/assets/js/modules/estimate/estimate-main.js"></script>
+<script defer src="/assets/js/modules/estimate/estimate-works.js"></script>
+<script defer src="/assets/js/modules/estimate/estimate-print.js"></script>
+<script defer src="/assets/js/modules/estimate/estimate-tabs.js"></script>
+<script>
+window.addEventListener("DOMContentLoaded", () => {
+  const W = [
+    ["work","Штробление 25x30 бетон",100,"м",300],
+    ["work","Высверливание подрозетников бетон",40,"шт",250],
+    ["work","Прокладка кабеля ВВГнг(А)-LS 3×2.5",300,"м",60],
+    ["work","Вклейка подрозетников",40,"шт",120],
+    ["work","Сборка и расключение щита",1,"шт",8000],
+    ["work","Установка автоматического выключателя",13,"шт",200],
+    ["work","Установка УЗО/дифавтомата",4,"шт",350],
+    ["work","Внутренняя точка (розетка/выключатель)",40,"шт",350],
+    ["work","Установка светильника",12,"шт",400],
+    ["work","Демонтаж старых розеток",20,"шт",100],
+    ["work","Согласование с УК",1,"усл",3000],
+    ["material","Кабель ВВГнг(А)-LS 3×2.5",300,"м",94],
+    ["material","Подрозетник глубокий",40,"шт",22]
+  ];
+  W.forEach(([type,name,qty,unit,price]) => EP.Estimate.addItem({ type, name, qty, unit, price }));
+  window.dispatchEvent(new CustomEvent("ep:route-loaded", { detail: { route: "estimate" } }));
+});
+</script>
+</body></html>
