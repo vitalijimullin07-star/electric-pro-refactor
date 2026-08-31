@@ -913,7 +913,15 @@
       core().commit(); delete el2.uDim; core().persist("unfdim-move");
       drawStrip(); renderPtPanel(); return;
     }
-    if (t.closest("[data-pu-pt-edit]")) { const el2 = ptEl(); S.ptPanel = null; if (el2 && EL().openEditor) { exitFS(); close(); EL().openEditor(el2); } return; }
+    /* Полный редактор точки — НАКЛАДНЫМ листом ПОВЕРХ развёртки (rooms().overlaySheet
+       внутри openEditor), а не вместо неё. Раньше здесь стояло exitFS()+close(): развёртка
+       и редактор живут в одном #ep-plan-sheet, и открыть редактор значило потерять вид
+       стены — приходилось заново заходить в развёртку после каждой правки полей. */
+    if (t.closest("[data-pu-pt-edit]")) {
+      const el2 = ptEl();
+      if (el2 && EL().openEditor) EL().openEditor(el2, { overlay: true });
+      return;
+    }
     if ((b = t.closest("[data-pu-circ]"))) {
       const el2 = ptEl(); if (!el2) return;
       const id = b.getAttribute("data-pu-circ");
@@ -998,5 +1006,12 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Unfold = { open, close, isOpen, drawStrip, CFG };
+  // перерисовать развёртку и карточку точки — зовётся из plan-elements.js, когда
+  // закрывается НАКЛАДНОЙ редактор точки (высота/отступ/линия могли измениться)
+  function refresh() {
+    if (!S.wallId) return;
+    drawStrip();
+    if (S.ptPanel) renderPtPanel();
+  }
+  EP.Plan.Unfold = { open, close, isOpen, drawStrip, refresh, CFG };
 })();

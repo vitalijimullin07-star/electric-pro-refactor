@@ -6193,6 +6193,70 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 49. Полный редактор точки ПОВЕРХ развёртки стены =====
+  // Раньше «⚙ Полный редактор» из карточки точки делал exitFS()+close(): развёртка и
+  // редактор живут в одном #ep-plan-sheet, и открыть редактор значило потерять вид стены.
+  {
+    const rd = (f) => require("fs").readFileSync(require("path").join(__dirname, "..", f), "utf8");
+
+    test("накладной лист: узел — РЕБЁНОК шторки, а не сосед", () => {
+      const src = rd("assets/js/modules/plan/plan-rooms.js");
+      ok(/function overlaySheet/.test(src), "overlaySheet есть");
+      const fn = src.slice(src.indexOf("function overlaySheet"), src.indexOf("function closeOverlaySheet"));
+      ok(/s\.appendChild\(ov\)/.test(fn),
+        "лист вкладывается В шторку: развёртка — единственное место с НАСТОЯЩИМ Fullscreen API, "
+        + "а там виден только сам fullscreen-элемент и его потомки");
+      ok(/ov\.parentNode !== s/.test(fn), "и пересоздаётся, если шторку пересобрали (узел отцепился)");
+      ok(/closeOverlaySheet\(\);\s*\n\s*R\.sheetCollapsed = false/.test(src),
+        "closeSheet уносит накладной лист первым делом");
+      ok(/overlaySheet, closeOverlaySheet, overlayOpen/.test(src), "все три в экспорте Rooms");
+    });
+
+    test("накладной редактор: режим стики, но не переживает закрытие шторки", () => {
+      const src = rd("assets/js/modules/plan/plan-elements.js");
+      // СТИКИ обязателен: openEditor зовётся заново на каждое действие внутри редактора
+      ok(/editorOverlay = !!\(opts && opts\.overlay\) \|\| \(editorOverlay && rooms\(\)\.overlayOpen\(\)\)/.test(src),
+        "флаг сверяется с РЕАЛЬНЫМ состоянием листа — иначе после closeSheet() следующий "
+        + "обычный редактор с плана ушёл бы в накладной лист поверх пустой шторки");
+      ok(/const put = editorOverlay \? rooms\(\)\.overlaySheet : rooms\(\)\.openSheet;/.test(src),
+        "редактор рисуется туда или сюда одной развилкой");
+      ok(/data-pe-ovclose/.test(src), "у накладного редактора своя кнопка закрытия");
+      // ✓ и «Удалить» не должны сносить развёртку под редактором
+      ok(/if \(!closeEditorOverlayAndRefresh\(\)\) rooms\(\)\.closeSheet\(\);/.test(src),
+        "закрытие: сначала пробуем закрыть НАКЛАДНОЙ лист, и только иначе всю шторку");
+      eq((src.match(/if \(!closeEditorOverlayAndRefresh\(\)\) rooms\(\)\.closeSheet\(\);/g) || []).length, 2,
+        "и в «применить», и в «удалить»");
+      ok(/if \(!editorOverlay\) \{[\s\S]{0,200}ensureVisibleAboveSheet/.test(src),
+        "камеру главного вида накладной редактор не дёргает — под ним развёртка, а не план");
+    });
+
+    test("накладной редактор: развёртка не закрывается и обновляется после правки", () => {
+      const src = rd("assets/js/modules/plan/plan-unfold.js");
+      // берём ОБРАБОТЧИК, а не разметку кнопки: 'data-pu-pt-edit' встречается дважды
+      const i = src.indexOf('t.closest("[data-pu-pt-edit]")');
+      const h = src.slice(i, i + 320);
+      ok(/openEditor\(el2, \{ overlay: true \}\)/.test(h), "редактор открывается накладным листом");
+      ok(!/exitFS\(\)/.test(h) && !/close\(\)/.test(h),
+        "и БОЛЬШЕ НЕ закрывает развёртку (раньше здесь стояло exitFS()+close())");
+      ok(/function refresh\(\)/.test(src) && /drawStrip, refresh, CFG/.test(src),
+        "Unfold.refresh экспортирован — им редактор обновляет стену после правки");
+      ok(/U && U\.refresh/.test(rd("assets/js/modules/plan/plan-elements.js")),
+        "и вызывается при закрытии накладного листа (высота/отступ могли измениться)");
+    });
+
+    test("накладной лист: CSS — нижний лист с непрозрачным фоном", () => {
+      const css = rd("assets/css/plan.css");
+      const b = css.slice(css.indexOf(".ep-plan-sheet2 {"), css.indexOf(".ep-plan-sheet2[hidden]"));
+      ok(/position: absolute/.test(b), "внутри шторки, а не fixed поверх страницы");
+      ok(!/inset: 0/.test(b) && /bottom: 0/.test(b) && /max-height/.test(b),
+        "занимает НИЖНЮЮ часть — чертёж стены остаётся виден над редактором");
+      ok(/background: rgb\(var\(--card-bg-rgb/.test(b) && !/rgba\(var\(--card-bg-rgb/.test(b),
+        "фон непрозрачный: сквозь полупрозрачный поля читались бы поверх линий развёртки");
+      ok(/\.ep-plan-sheet2\[hidden\] \{ display: none; \}/.test(css),
+        "явный [hidden] — авторский display:flex иначе побеждает UA-правило по порядку каскада");
+    });
+  }
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

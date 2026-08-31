@@ -693,8 +693,38 @@
     syncQuickbarForSheet(!keep);
     syncSheetBtn();
   }
+  /* ВТОРОЙ, НАКЛАДНОЙ лист поверх уже открытой шторки. Нужен ровно для одного случая:
+     полный редактор точки ПОВЕРХ развёртки стены. Раньше «⚙ Полный редактор» из карточки
+     точки закрывал развёртку целиком (она живёт в том же #ep-plan-sheet, и openSheet
+     переписывает его innerHTML) — пользователь терял вид стены на каждое обращение к
+     полям точки.
+     КЛЮЧЕВОЕ: узел обязан быть РЕБЁНКОМ #ep-plan-sheet, а не соседом. Развёртка — то
+     единственное место модуля, где остался НАСТОЯЩИЙ Fullscreen API (ради лока
+     горизонтали, см. её инвариант), а в нативном фуллскрине браузер показывает ТОЛЬКО
+     сам fullscreen-элемент и его потомков: сосед с position:fixed просто не был бы виден. */
+  function overlaySheet(html) {
+    const s = sheet();
+    if (!s) return null;
+    let ov = document.getElementById("ep-plan-sheet2");
+    if (!ov || ov.parentNode !== s) {
+      ov = document.createElement("div");
+      ov.id = "ep-plan-sheet2";
+      ov.className = "ep-plan-sheet2";
+      s.appendChild(ov);
+    }
+    ov.innerHTML = html;
+    ov.hidden = false;
+    return ov;
+  }
+  function closeOverlaySheet() {
+    const ov = document.getElementById("ep-plan-sheet2");
+    if (ov) { ov.hidden = true; ov.innerHTML = ""; }
+  }
+  const overlayOpen = () => { const ov = document.getElementById("ep-plan-sheet2"); return !!(ov && !ov.hidden); };
+
   function closeSheet() {
     const s = sheet();
+    closeOverlaySheet();
     R.sheetCollapsed = false; R.sheetTransient = false;
     if (s) s.classList.remove("is-collapsed");
     // is-landscape-forced — CSS-разворот на 90° (Схема ⤢, Развёртка 🔄) на ОБЩЕМ
@@ -2608,7 +2638,7 @@
   EP.Plan.Rooms = {
     attach, detach, setActive, setMode, renderScene, T, CFG,
     // общий доступ для модулей слоёв 2-6
-    openSheet, closeSheet, toast, ensureVisibleAboveSheet, toggleSheetFullscreen,
+    openSheet, closeSheet, overlaySheet, closeOverlaySheet, overlayOpen, toast, ensureVisibleAboveSheet, toggleSheetFullscreen,
     collapseSheet, expandSheet, toggleSheetCollapsed, placeSheetBtn, enableOpeningDrag,
     isActive: () => R.active,
     currentMode: () => R.mode,

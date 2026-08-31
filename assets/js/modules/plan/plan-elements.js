@@ -432,7 +432,25 @@
   const selectedId = () => S.selId;
 
   // ---------- редактор элемента ----------
-  function openEditor(el) {
+  /* opts.overlay — рисовать редактор НАКЛАДНЫМ листом поверх уже открытой шторки
+     (единственный потребитель — «⚙ Полный редактор» из карточки точки в развёртке стены:
+     раньше он закрывал развёртку, потому что оба живут в одном #ep-plan-sheet).
+     Режим СТИКИ: openEditor зовётся заново на каждое действие в редакторе (смена статуса,
+     линии, фото), и без запоминания второй же клик выкинул бы редактор обратно в главную
+     шторку, снова затерев развёртку. Сбрасывается в closeEditorOverlay(). */
+  let editorOverlay = false;
+  function closeEditorOverlay() {
+    if (!editorOverlay) return false;
+    editorOverlay = false;
+    rooms().closeOverlaySheet();
+    return true;
+  }
+  function openEditor(el, opts) {
+    // стики-режим живёт РОВНО пока накладной лист реально открыт: closeSheet() (общая точка
+    // закрытия ЛЮБОЙ шторки — Android-«назад», смена режима) уносит его узел, но про наш
+    // флаг ничего не знает, и без сверки с overlayOpen() следующий обычный редактор с плана
+    // молча ушёл бы в накладной лист поверх пустой шторки (поймано живым прогоном)
+    editorOverlay = !!(opts && opts.overlay) || (editorOverlay && rooms().overlayOpen());
     S.selId = el.id;
     const p = core().project, t = TYPES[el.type] || { name: el.type };
     const hp = p.settings.heightPresets;
@@ -442,8 +460,10 @@
     // если авто-детект по месту тапа ошибся (тап почти точно на оси перегородки).
     const isBeamEl = el.wallId && String(el.wallId).slice(0, 5) === "beam:";
     const wallLen = el.wallId ? Math.round((G().wallById(p, el.wallId) || { len: 0 }).len) : 0;
-    rooms().openSheet(`<div class="ep-plan-srow"><b>${esc(t.name)}</b>
-        ${el.wallId ? `<span>· ${isBeamEl ? "перегородка" : "стена " + esc(el.wallId.split(":")[1] * 1 + 1)} (${wallLen} см)</span>` : "· свободно"}</div>
+    const put = editorOverlay ? rooms().overlaySheet : rooms().openSheet;
+    put(`<div class="ep-plan-srow"><b>${esc(t.name)}</b>
+        ${el.wallId ? `<span>· ${isBeamEl ? "перегородка" : "стена " + esc(el.wallId.split(":")[1] * 1 + 1)} (${wallLen} см)</span>` : "· свободно"}
+        <span class="ep-plan-flex"></span>${editorOverlay ? `<button type="button" class="ep-plan-mini ep-clickable" data-pe-ovclose aria-label="Закрыть редактор">✕</button>` : ""}</div>
       <div class="ep-plan-srow ep-plan-s2">
         ${el.wallId ? `<label>${T.offset}<input id="ep-pe-off" type="number" inputmode="numeric" min="0" max="${wallLen}" value="${Math.round(el.offset)}"></label>` : ""}
         <label>${T.height}<input id="ep-pe-h" type="number" inputmode="numeric" min="0" value="${Math.round(el.height)}"></label>
@@ -473,8 +493,13 @@
       </div>
       <input id="ep-pe-file" type="file" accept="image/*" capture="environment" hidden>`);
     rooms().renderScene();
-    const pt = G().elemPoint(p, el);
-    if (pt && rooms().ensureVisibleAboveSheet) rooms().ensureVisibleAboveSheet(pt);
+    // камеру главного вида двигаем ТОЛЬКО у обычного редактора: накладной висит поверх
+    // развёртки, там своя картина стены, и подвинуть план под ним — значит дёрнуть вид,
+    // которого пользователь сейчас не видит
+    if (!editorOverlay) {
+      const pt = G().elemPoint(p, el);
+      if (pt && rooms().ensureVisibleAboveSheet) rooms().ensureVisibleAboveSheet(pt);
+    }
   }
   function openOpeningEditor(op, opts) {
     S.selId = op.id;
@@ -934,7 +959,20 @@
     const h = Number(($("#ep-pe-h") || {}).value);
     if (Number.isFinite(h)) el.height = Math.max(0, h);
     c.persist("elem-edit");
-    S.selId = null; rooms().closeSheet(); rooms().renderScene(); // ✓ — применить и закрыть
+    // ✓ — применить и закрыть. У НАКЛАДНОГО редактора (поверх развёртки) закрываем только
+    // его самого: под ним развёртка, и closeSheet() снёс бы её вместе с редактором —
+    // ровно то, от чего накладной лист и заводился
+    S.selId = null;
+    if (!closeEditorOverlayAndRefresh()) rooms().closeSheet();
+    rooms().renderScene();
+  }
+  // закрыть накладной редактор и обновить карточку точки в развёртке под ним (поля могли
+  // измениться — высота, отступ, линия)
+  function closeEditorOverlayAndRefresh() {
+    if (!closeEditorOverlay()) return false;
+    const U = EP.Plan.Unfold;
+    if (U && U.refresh) U.refresh();
+    return true;
   }
   function addPhoto(file) {
     const el = current(); if (!el) return;
@@ -1128,6 +1166,7 @@
       const c = core(), el = current(); if (!el) return;
       c.commit(); assignNewCircuit(el); c.persist("circuit-add"); openEditor(el); return;
     }
+    if (t.closest("[data-pe-ovclose]")) { S.selId = null; closeEditorOverlayAndRefresh(); return; }
     if (t.closest("[data-pe-apply]")) return applyEditor();
     if (t.closest("[data-pe-del]")) { deleteElement(current()); return; }
     if (t.closest("[data-pe-photo]")) { const f = $("#ep-pe-file"); if (f) { f.onchange = () => { if (f.files && f.files[0]) addPhoto(f.files[0]); }; f.click(); } return; }
@@ -1300,9 +1339,11 @@
     (c.project.elements || []).forEach((x) => { if (x.riserLink === el.id) x.riserLink = null; });
     c.persist("elem-del");
     if (S.selId === el.id) S.selId = null;
-    rooms().closeSheet(); rooms().renderScene();
+    // удаление из НАКЛАДНОГО редактора (поверх развёртки) не должно уносить саму развёртку
+    if (!closeEditorOverlayAndRefresh()) rooms().closeSheet();
+    rooms().renderScene();
   }
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, SW_TARGET_TYPES, onModeEnter, onOpeningModeEnter, placeAt, placeOpening, hoverSnapPoint, openingNum, hitAt, openEditor, openPanelEditor, openOpeningEditor, openingFlipFor, selectedId, deselect, deleteElement, duplicateElement, circuitRow, assignNewCircuit, syncTargetCircuit, riserMate };
+  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, SW_TARGET_TYPES, onModeEnter, onOpeningModeEnter, placeAt, placeOpening, hoverSnapPoint, openingNum, hitAt, openEditor, closeEditorOverlay, openPanelEditor, openOpeningEditor, openingFlipFor, selectedId, deselect, deleteElement, duplicateElement, circuitRow, assignNewCircuit, syncTargetCircuit, riserMate };
 })();
