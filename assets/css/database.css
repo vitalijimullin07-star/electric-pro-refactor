@@ -101,6 +101,19 @@
 }
 
 /* нижняя панель действий (теперь сверху, компактная) */
+/* Блок «Цены на работы» — постоянный вход в заполнение всей БД. Отдельной плашкой, а не
+   восьмой ghost-кнопкой в общем ряду: иначе его просто не находят. */
+.ep-db-pset {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 0 0 10px; padding: 12px 14px; border-radius: 14px;
+  border: 1px solid rgba(56, 189, 248, .38); background: rgba(56, 189, 248, .10);
+}
+.ep-db-pset.is-done { border-color: rgba(148, 163, 184, .28); background: rgba(148, 163, 184, .08); }
+.ep-db-pset-text { flex: 1 1 210px; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ep-db-pset-text b { font-size: 14px; }
+.ep-db-pset-text span { font-size: 12.5px; color: var(--muted, #94a3b8); line-height: 1.4; }
+.ep-db-pset .btn { flex: 0 0 auto; padding: 9px 14px; font-size: 13px; }
+
 .ep-db-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .ep-db-actions .btn { flex: 1 1 auto; min-width: 92px; padding: 8px 10px; font-size: 13px; }
 .ep-db-danger { color: var(--danger) !important; border-color: rgba(239,68,68,.4) !important; }

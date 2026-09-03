@@ -6300,6 +6300,82 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 51. БД: копирование выделенных позиций и постоянный вход «Цены на работы» =====
+  {
+    // database-ui.js — DOM-код, в plan-харнесс не входит: поднимаем свою мини-песочницу с
+    // ровно теми заглушками, что модуль трогает при загрузке (слушатели событий и
+    // localStorage). Проверяем ФОРМАТ строки — именно его получает клиент в SMS.
+    function loadDbUi() {
+      const vm2 = require("vm"), fs2 = require("fs"), path2 = require("path");
+      const store = {};
+      const noop = () => {};
+      const sb = { console };
+      sb.window = sb; sb.globalThis = sb;
+      sb.localStorage = {
+        getItem: (k) => (k in store ? store[k] : null),
+        setItem: (k, v) => { store[k] = String(v); },
+        removeItem: (k) => { delete store[k]; }
+      };
+      sb.addEventListener = noop;
+      sb.dispatchEvent = () => true;
+      sb.CustomEvent = function (t, o) { this.type = t; this.detail = o && o.detail; };
+      sb.document = { addEventListener: noop, querySelector: () => null, getElementById: () => null };
+      sb.navigator = {};
+      const ctx = vm2.createContext(sb);
+      const dir = path2.join(__dirname, "..", "assets", "js", "modules", "database");
+      ["database-storage", "database-adapter", "database-core", "database-ui"].forEach((n) => {
+        vm2.runInContext(fs2.readFileSync(path2.join(dir, n + ".js"), "utf8"), ctx, { filename: n + ".js" });
+      });
+      return sb.EP;
+    }
+
+    test("БД: строка позиции для SMS — имя, цена, единица", () => {
+      const UI = loadDbUi().Database.UI;
+      eq(UI.itemLine({ name: "Установка розетки", price: 350, unit: "шт" }),
+        "Установка розетки — 350 ₽/шт", "обычная позиция");
+      eq(UI.itemLine({ name: "Штробление 25x30 бетон", price: 450, unit: "м" }),
+        "Штробление 25x30 бетон — 450 ₽/м", "единица берётся своя, а не «шт» по умолчанию");
+      // toLocaleString("ru-RU") разделяет разряды НЕРАЗРЫВНЫМ пробелом — сверяем как есть
+      eq(UI.itemLine({ name: "Монтаж щита", price: 5000 }),
+        "Монтаж щита — " + (5000).toLocaleString("ru-RU") + " ₽", "без единицы — только цена");
+      // цену «0» нельзя показывать как «0 ₽»: клиент прочитает это как «бесплатно»
+      eq(UI.itemLine({ name: "Кабель ВВГ 3×2.5", price: 0, unit: "м" }),
+        "Кабель ВВГ 3×2.5 — цена не указана", "нулевая цена — словами, а не «0 ₽»");
+      eq(UI.itemLine({ name: "  ", price: 10 }), "без названия — 10 ₽", "пустое имя не даёт пустую строку");
+      eq(UI.itemLine({ name: "Дробная", price: "12,5", unit: "м" }), "Дробная — 12,5 ₽/м",
+        "цена строкой с запятой читается (так её вводят руками)");
+    });
+
+    test("БД: копирование — чистый текст, кнопка и фолбэк буфера", () => {
+      const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "database", "database-ui.js"), "utf8");
+      ok(/data-db-sms/.test(src), "кнопка «Скопировать» в панели");
+      eq((src.match(/data-db-sms/g) || []).length, 3,
+        "и в «Моей БД», и в «БД сервера» (оттуда тоже шлют клиенту), плюс обработчик");
+      ok(/\$\{selCount \? "" : "disabled"\}[\s\S]{0,120}data-db-sms|data-db-sms[\s\S]{0,120}\$\{selCount \? "" : "disabled"\}/.test(src),
+        "неактивна, пока ничего не выделено");
+      ok(/navigator\.clipboard[\s\S]{0,400}execCommand\("copy"\)/.test(src),
+        "фолбэк на execCommand — на не-HTTPS и в старом WebView clipboard API недоступен");
+      ok(/visibleItems\(\)\.filter\(\(it\) => sel\.has\(it\.id\)\)/.test(src),
+        "порядок строк — как на экране, а не как отмечали");
+    });
+
+    test("БД: «Цены на работы» — постоянный блок со счётчиком, только у «Моей БД»", () => {
+      const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "database", "database-ui.js"), "utf8");
+      ok(/function priceSetupBlock/.test(src), "блок есть");
+      ok(/\$\{isMy\(\) \? priceSetupBlock\(\) : ""\}/.test(src),
+        "только у «Моей БД»: цены всегда пишутся в неё, серверная read-only");
+      ok(/Заполнено \$\{done\} из \$\{all\}/.test(src), "со счётчиком заполнения");
+      ok(/data-price-setup/.test(src), "открывает тот же экран, что подсказка при первом запуске");
+      // вход РОВНО один и живёт в своём блоке, а не восьмой ghost-кнопкой в ряду действий
+      eq((src.match(/data-price-setup/g) || []).length, 1, "вход в панели один, дублей нет");
+      const blk = src.slice(src.indexOf("function priceSetupBlock"), src.indexOf("выделенные позиции ТЕКСТОМ"));
+      ok(/data-price-setup/.test(blk), "и он внутри блока, а не в .ep-db-actions");
+      const css = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "css", "database.css"), "utf8");
+      ok(/\.ep-db-pset \{/.test(css) && /\.ep-db-pset\.is-done/.test(css),
+        "свой стиль, отдельный вид у заполненного состояния");
+    });
+  }
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

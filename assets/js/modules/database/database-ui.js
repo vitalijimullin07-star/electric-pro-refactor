@@ -38,6 +38,72 @@
   }
   function isMy() { return state.base === "my"; }
 
+  /* ---------- «Цены на работы»: постоянный вход в заполнение всей БД ----------
+     Тот же экран, что показывается подсказкой при первом запуске (EP.PriceSetup) — просьба
+     пользователя иметь его под рукой всегда, а не только пока висит стартовый баннер (тот
+     скрывается навсегда после «Позже»/«Сохранить»). Раньше кнопка была, но терялась восьмой
+     в ряду одинаковых ghost-кнопок; теперь это отдельный блок со счётчиком заполнения.
+     ТОЛЬКО у «Моей БД»: цены всегда пишутся в неё (серверная read-only), и показывать вход
+     при активной серверной базе значило бы писать не туда, куда мастер смотрит. */
+  function priceSetupBlock() {
+    const PS = window.EP.PriceSetup;
+    if (!PS || !PS.pending) return "";
+    let left = 0, all = 0;
+    try { left = PS.pending(); all = PS.total ? PS.total() : 0; } catch (e) { return ""; }
+    const done = all - left;
+    return `<div class="ep-db-pset${left ? "" : " is-done"}">
+      <div class="ep-db-pset-text">
+        <b>💰 Цены на работы</b>
+        <span>${left
+          ? `Все работы, которые приложение считает само, — вписать свои цены разом. Заполнено ${done} из ${all}.`
+          : `Все ${all} позиций заполнены ✓ — можно открыть и поправить цены.`}</span>
+      </div>
+      <button type="button" class="btn ${left ? "btn-primary" : "btn-ghost"} ep-clickable" data-price-setup>${left ? "Ввести данные в БД" : "Открыть"}</button>
+    </div>`;
+  }
+
+  /* ---------- выделенные позиции ТЕКСТОМ (для SMS/мессенджера) ----------
+     Просьба пользователя: «выделить некоторые позиции и отправить в виде смс, чтобы в буфер
+     скопировалось — иногда клиенты просят». Формат намеренно голый, без шапки и рамок:
+     это уходит в SMS/WhatsApp, где каждая лишняя строка занимает место. Позиции берутся в
+     том порядке, в каком они видны на экране (visibleItems), а не в порядке отметки —
+     клиент получит их так же, как их видит мастер.
+     Цена форматируется ТЕМ ЖЕ priceText, что и в списке: показать в сообщении не то, что
+     на экране, — верный способ поспорить с клиентом о цифре. */
+  function itemLine(it) {
+    const name = String((it && it.name) || "").trim() || "без названия";
+    const price = (typeof it.price === "number" ? it.price : parseFloat(String(it.price).replace(",", "."))) || 0;
+    // без цены пишем это словами, а не «0 ₽» — иначе клиент прочитает как «бесплатно»
+    if (!price) return name + " — цена не указана";
+    return name + " — " + priceText(it.price, it.currency) + (it.unit ? "/" + it.unit : "");
+  }
+  function selectedAsText() {
+    const sel = state.selected;
+    return visibleItems().filter((it) => sel.has(it.id)).map(itemLine).join("\n");
+  }
+  // Буфер: сначала штатный clipboard API, при отказе (не-HTTPS, старый WebView) — временная
+  // textarea + execCommand. Тот же приём, что в logger.js и feedback.js.
+  async function copyText(txt) {
+    if (!txt) return false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(txt); return true; }
+    } catch (e) { /* нет доступа к буферу — фолбэк ниже */ }
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = txt; ta.style.cssText = "position:fixed;left:-2000px;top:0";
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      const ok = document.execCommand("copy");
+      ta.remove();
+      return ok;
+    } catch (e) { return false; }
+  }
+  function copySelected() {
+    const txt = selectedAsText();
+    if (!txt) { flash("Отметь позиции галочками"); return; }
+    const n = state.selected.size;
+    copyText(txt).then((ok) => flash(ok ? `Скопировано позиций: ${n} — вставь в SMS` : "Не удалось скопировать"));
+  }
+
   // ---------- выборка под текущие фильтры ----------
   function visibleItems() {
     let items = DB.getItemsByType(state.type, state.base);
@@ -72,18 +138,21 @@
         ${renderSyncBlock()}
         ${isMy() ? renderShareBlock() : ""}
 
+        ${isMy() ? priceSetupBlock() : ""}
+
         <div class="ep-db-actions">
           ${isMy() ? `
             <button class="btn btn-primary ep-clickable" data-db-add type="button">＋ Добавить</button>
+            <button class="btn btn-ghost ep-clickable" data-db-sms type="button" ${selCount ? "" : "disabled"} title="Скопировать выделенные позиции с ценами в буфер — вставить в SMS или мессенджер">📋 Скопировать (${selCount})</button>
             <button class="btn btn-ghost ep-clickable" data-db-move type="button" ${selCount ? "" : "disabled"}>🗂️ Переместить</button>
             <button class="btn btn-ghost ep-clickable ep-db-danger" data-db-del type="button" ${selCount ? "" : "disabled"}>🗑️ Удалить</button>
-            <button class="btn btn-ghost ep-clickable" data-price-setup type="button" title="Все работы, которые приложение считает автоматически — вписать свои цены разом">💰 Цены на работы</button>
             <button class="btn btn-ghost ep-clickable" data-db-import type="button">⬇️ Импорт</button>
             <button class="btn btn-ghost ep-clickable" data-db-export type="button">⬆️ Экспорт</button>
             <button class="btn btn-ghost ep-clickable" data-db-backup type="button">📦 Бэкап всего</button>
             <button class="btn btn-ghost ep-clickable" data-db-restore type="button">📦 Восстановить</button>
           ` : `
             <button class="btn btn-primary ep-clickable" data-db-copy type="button" ${selCount ? "" : "disabled"}>⭐ В Мою БД (${selCount})</button>
+            <button class="btn btn-ghost ep-clickable" data-db-sms type="button" ${selCount ? "" : "disabled"} title="Скопировать выделенные позиции с ценами в буфер — вставить в SMS или мессенджер">📋 Скопировать (${selCount})</button>
             <button class="btn btn-ghost ep-clickable" data-db-export type="button">⬆️ Экспорт</button>
           `}
         </div>
@@ -523,6 +592,7 @@
     if (hit("[data-db-canceladd]")) { state.addOpen = false; render(); return; }
     if (hit("[data-db-saveadd]")) { saveAdd(); return; }
 
+    if (hit("[data-db-sms]")) { copySelected(); return; }
     if (hit("[data-db-move]")) { doMove(); return; }
     if (hit("[data-db-del]")) { doDelete(); return; }
     if (hit("[data-db-import]")) { doImport(); return; }
@@ -684,5 +754,5 @@
   // действия модалок — модалки висят на body
   document.addEventListener("click", onBodyClick);
 
-  EP.Database.UI = { mount, render };
+  EP.Database.UI = { mount, render, itemLine, selectedAsText, copyText };
 })();
