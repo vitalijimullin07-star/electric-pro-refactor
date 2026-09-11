@@ -961,6 +961,45 @@ test("hitAt: тап попадает по ВИДИМОМУ маркеру (elemD
   ok(hit && hit.el && hit.el.id === s1.id, "тап по маркеру находит элемент, а не стену");
 });
 
+// Соответствие «автомат ↔ сечение» живёт в ТРЁХ файлах: plan-scheme.js (SECTION_BY_AMP,
+// подбор кабеля под автомат), plan-furniture.js (SEC_BY_AMP, совет по технике) и
+// plan-rules.js (CABLE_AMP, проверка «сечение под автомат» — та же таблица наоборот).
+// Сейчас они согласованы, но разойтись могут молча: однолинейка посоветует кабель, который
+// тут же пометят «тонкий под автомат». Страж ловит и числовое расхождение, и смысловое.
+test("автомат ↔ сечение: три копии таблицы в scheme/furniture/rules не разошлись", () => {
+  const fs2 = require("fs"), path2 = require("path");
+  const dir = path2.join(__dirname, "..", "assets", "js", "modules", "plan");
+  const read = (f) => fs2.readFileSync(path2.join(dir, f), "utf8");
+  const pairs = (src, name) => {
+    const m = src.match(new RegExp(name + "\\s*=\\s*\\[([^\\]]+)\\]"));
+    ok(m, "таблица " + name + " найдена в исходнике");
+    const out = {};
+    m[1].replace(/amp:\s*(\d+(?:\.\d+)?)\s*,\s*sec:\s*(\d+(?:\.\d+)?)/g, (_, a, s) => { out[a] = parseFloat(s); return ""; });
+    return out;
+  };
+  const scheme = pairs(read("plan-scheme.js"), "SECTION_BY_AMP");
+  const furn = pairs(read("plan-furniture.js"), "SEC_BY_AMP");
+  eq(JSON.stringify(scheme), JSON.stringify(furn), "scheme и furniture дают одно и то же сечение на номинал");
+  const rm = read("plan-rules.js").match(/CABLE_AMP\s*=\s*\{([^}]+)\}/);
+  ok(rm, "CABLE_AMP найдена в plan-rules.js");
+  const rules = {};
+  rm[1].replace(/"(\d+(?:\.\d+)?)":\s*(\d+)/g, (_, sec, amp) => { rules[sec] = parseInt(amp, 10); return ""; });
+  // смысловая сверка: сечение, которое СОВЕТУЮТ под номинал, обязано выдерживать этот
+  // номинал по таблице проверок — иначе совет и претензия противоречат друг другу
+  Object.keys(scheme).forEach((amp) => {
+    const sec = scheme[amp], max = rules[String(sec)];
+    ok(max != null, "сечение " + sec + " есть в таблице проверок");
+    ok(Number(amp) <= max, "совет " + sec + " мм² под " + amp + "A не противоречит проверке (макс " + max + "A)");
+  });
+  // и наоборот: для каждого сечения из проверок совет под его максимальный номинал
+  // не должен оказаться ТОНЬШЕ этого сечения
+  Object.keys(rules).forEach((sec) => {
+    const amp = rules[sec];
+    const advised = Object.keys(scheme).map(Number).sort((a, b) => a - b).find((a) => a >= amp);
+    if (advised != null) ok(scheme[String(advised)] >= parseFloat(sec), "под " + amp + "A советуется не тоньше " + sec + " мм²");
+  });
+});
+
 // ===== 4. Однолинейка + щит =====
 test("scheme: линия с УЗО -> дифавтомат, без -> автомат", () => {
   const q1 = M.newCircuit("QF1", "#e11", 16), q2 = M.newCircuit("QF2", "#1e1", 10);
