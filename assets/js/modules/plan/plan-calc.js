@@ -718,26 +718,28 @@
   if (core().onChange) core().onChange(() => { memo = null; memoTok++; });
 
   // ---------- цены из БД ----------
-  // Сопоставление названия с записью БД. Логика та же (точное совпадение → двунаправленная
-  // подстрока), но ОБЕ строки нормализуются: приложение пишет сечение «3×2.5», а в накладной
-  // поставщика то же самое — «3х2,5» (× против кириллической х, точка против запятой), и без
-  // нормализации это разные строки, цена не находилась вообще. Список символов тот же, что у
-  // поиска в карточке позиции (pick-and-estimate.js cardNorm) — расходиться им нельзя.
-  function priceNorm(s) {
-    return String(s == null ? "" : s).toLowerCase()
-      .replace(/ё/g, "е")
-      .replace(/[×хx*]/g, "x")
-      .replace(/(\d),(\d)/g, "$1.$2")
-      .replace(/\s+/g, " ").trim();
+  // Сопоставление названия с записью БД живёт в ОБЩЕМ модуле EP.NameMatch (name-match.js) —
+  // тем же, которым ищет «Карточка позиции». Раньше здесь была своя копия нормализации, и
+  // она РАЗОШЛАСЬ с копией карточки (та чистила пунктуацию, эта нет): карточка находила
+  // запись поставщика, а цена в смете к ней не подтягивалась. Фолбэк ниже — на случай, если
+  // name-match.js не подключён на странице (порядок скриптов), чтобы расчёт не остался без цен.
+  function nm() {
+    return (EP.NameMatch) || {
+      norm: (s) => String(s == null ? "" : s).toLowerCase().replace(/ё/g, "е")
+        .replace(/[×хx*]/g, "x").replace(/(\d),(\d)/g, "$1.$2")
+        .replace(/[^0-9a-zа-я.]+/g, " ").replace(/\s+/g, " ").trim(),
+      best: (name, items) => {
+        const low = String(name || "").toLowerCase();
+        return (items || []).find((x) => String(x.name || "").toLowerCase() === low) || null;
+      }
+    };
   }
+  function priceNorm(s) { return nm().norm(s); }
   function priceFor(name, type) {
     try {
       const items = (EP.Database && EP.Database.getItemsByType && EP.Database.getItemsByType(type)) || [];
-      const low = priceNorm(name);
-      const exact = items.find((x) => priceNorm(x.name) === low);
-      if (exact) return Number(exact.price) || 0;
-      const part = items.find((x) => { const n = priceNorm(x.name); return n && (low.indexOf(n) >= 0 || n.indexOf(low) >= 0); });
-      return part ? Number(part.price) || 0 : 0;
+      const hit = nm().best(name, items);
+      return hit ? Number(hit.price) || 0 : 0;
     } catch (e) { return 0; }
   }
 

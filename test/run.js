@@ -4851,7 +4851,11 @@ test("фото: deleteProject чистит кэш фото своего прое
     const fs2 = require("fs"), path2 = require("path");
     const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "estimate", "pick-and-estimate.js"), "utf8");
     const body = src.slice(src.indexOf("const CARD_STOP"), src.indexOf("function cardDbByType"));
-    const F = new Function(body + "; return { cardNorm, cardTokens, cardKeywords, cardSearch };")();
+    // нормализация берётся из общего EP.NameMatch — подкладываем настоящий модуль,
+    // чтобы тест проверял ровно тот код, который работает в приложении
+    const nmSrc = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "estimate", "name-match.js"), "utf8");
+    const win = {}; new Function("window", nmSrc)(win);
+    const F = new Function("window", body + "; return { cardNorm, cardTokens, cardKeywords, cardSearch };")(win);
     eq(F.cardNorm("Кабель ВВГнг(А)-LS 3×2.5"), "кабель ввгнг а ls 3x2.5");
     eq(F.cardNorm("ВВГ-Пнг (А)-LS ГОСТ 3х2,5 (ККЗ)"), "ввг пнг а ls гост 3x2.5 ккз", "х и запятая приводятся к тому же виду");
     // поле поиска подставляется без родового первого слова
@@ -4882,7 +4886,9 @@ test("фото: deleteProject чистит кэш фото своего прое
     const fs2 = require("fs"), path2 = require("path");
     const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "estimate", "pick-and-estimate.js"), "utf8");
     const body = src.slice(src.indexOf("const CARD_STOP"), src.indexOf("  function autoFillPrices")).replace(/  function cardDbByType[^\n]*\n/, "");
-    const F = new Function(body + "; return { cardBestMatch };")();
+    const nmSrc = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "estimate", "name-match.js"), "utf8");
+    const win = {}; new Function("window", nmSrc)(win);
+    const F = new Function("window", body + "; return { cardBestMatch };")(win);
     const db = [
       { id: "a", name: "ВВГнг-Ls 3х2,5 Конкорд", price: 94 },
       { id: "b", name: "ВВГ-Пнг (А)-LS ГОСТ КОНКОРД 3х2,5 (N,PE) -0,66", price: 88.78 },
@@ -4914,16 +4920,52 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/d\.setPrice\(it\.id, Number\(found\.price\) \|\| 0, found\.id\)/.test(src), "цена ставится с привязкой к записи базы");
   });
   test("план: priceFor находит цену при разном написании сечения", () => {
+    let items = [{ name: "Кабель ВВГнг(А)-LS 3х2,5", price: 92.25, type: "material" }];
+    sandbox.EP.Database = { getItemsByType: () => items };
+    const PC = EP.Plan.Calc;
+    eq(PC.priceFor("Кабель ВВГнг(А)-LS 3×2.5", "material"), 92.25, "цена находится, хотя в БД другое написание");
+    eq(PC.priceFor("Кабель ВВГнг(А)-LS 3×2.5 · до щита (220В)", "material"), 92.25, "суффикс не мешает (подстрока)");
+    eq(PC.priceFor("Кабель ВВГнг(А)-LS 5×6", "material"), 0, "чужое сечение цену не подхватывает");
+    delete sandbox.EP.Database;
+  });
+  // Реальная ошибка В ДЕНЬГАХ, найденная аудитом: подстрочный поиск брал ПЕРВОЕ совпадение,
+  // поэтому короткая родовая запись мастера («Штробление» 120 ₽) перехватывала цену у
+  // специфичной позиции («Штробление 25x30 бетон» 450 ₽) просто потому, что лежала в базе
+  // выше — в смете молча появлялась заниженная цифра.
+  test("priceFor: среди подстрочных совпадений берётся САМОЕ ТОЧНОЕ, а не первое", () => {
+    const PC = EP.Plan.Calc;
+    const q = "Штробление 25x30 бетон (слаботочка)";
+    const pair = [{ name: "Штробление", price: 120 }, { name: "Штробление 25x30 бетон", price: 450 }];
+    sandbox.EP.Database = { getItemsByType: () => pair };
+    eq(PC.priceFor(q, "work"), 450, "родовая «Штробление» не перехватывает специфичную");
+    sandbox.EP.Database = { getItemsByType: () => pair.slice().reverse() };
+    eq(PC.priceFor(q, "work"), 450, "порядок записей в базе на исход не влияет");
+    sandbox.EP.Database = { getItemsByType: () => [{ name: "Прокладка кабеля", price: 60 }] };
+    eq(PC.priceFor("Прокладка кабеля ВВГнг(А)-LS 3×2.5", "work"), 60, "родовая работает, когда специфичной нет");
+    sandbox.EP.Database = { getItemsByType: () => [{ name: "Кабель ВВГнг(А)-LS 3×2.5 ГОСТ бухта 100 м", price: 94 }] };
+    eq(PC.priceFor("Кабель ВВГнг(А)-LS 3×2.5", "material"), 94, "лишний хвост у записи базы не мешает");
+    sandbox.EP.Database = { getItemsByType: () => [{ name: "Розетка Schneider", price: 300 }] };
+    eq(PC.priceFor("Штробление 25x30 бетон", "work"), 0, "непохожая запись цену не даёт");
+    delete sandbox.EP.Database;
+  });
+  // Нормализация имён ОБЯЗАНА быть одна на «Расчёт» и «Карточку позиции»: копии уже
+  // расходились (карточка чистила пунктуацию, расчёт нет), и запись поставщика находилась
+  // в карточке, но не подхватывалась ценой в смете.
+  test("нормализатор имён — ОДИН общий модуль у расчёта и карточки позиции", () => {
     const fs2 = require("fs"), path2 = require("path");
-    const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-calc.js"), "utf8");
-    const body = src.slice(src.indexOf("function priceNorm"), src.indexOf("// ---------- шторка ----------"));
-    const items = [{ name: "Кабель ВВГнг(А)-LS 3х2,5", price: 92.25, type: "material" }];
-    const fakeEP = { Database: { getItemsByType: () => items } };
-    const F = new Function("EP", body + "; return { priceNorm, priceFor };")(fakeEP);
-    eq(F.priceNorm("Кабель ВВГнг(А)-LS 3×2.5"), F.priceNorm("Кабель ВВГнг(А)-LS 3х2,5"), "× и х, точка и запятая — одно и то же");
-    eq(F.priceFor("Кабель ВВГнг(А)-LS 3×2.5", "material"), 92.25, "цена находится, хотя в БД другое написание");
-    eq(F.priceFor("Кабель ВВГнг(А)-LS 3×2.5 · до щита (220В)", "material"), 92.25, "суффикс не мешает (подстрока)");
-    eq(F.priceFor("Кабель ВВГнг(А)-LS 5×6", "material"), 0, "чужое сечение цену не подхватывает");
+    const dir = path2.join(__dirname, "..", "assets", "js", "modules");
+    ok(fs2.existsSync(path2.join(dir, "estimate", "name-match.js")), "модуль name-match.js существует");
+    const NM = sandbox.EP.NameMatch;
+    ok(NM && typeof NM.norm === "function" && typeof NM.best === "function", "EP.NameMatch.norm/best");
+    eq(NM.norm("Кабель ВВГнг(А)-LS 3×2.5"), "кабель ввгнг а ls 3x2.5", "пунктуация — разделитель");
+    eq(NM.norm("Кабель ВВГнг(А)-LS 3×2.5"), NM.norm("кабель ВВГнг (А) LS 3х2,5"), "× и х, запятая и точка, скобки");
+    const calc = fs2.readFileSync(path2.join(dir, "plan", "plan-calc.js"), "utf8");
+    const card = fs2.readFileSync(path2.join(dir, "estimate", "pick-and-estimate.js"), "utf8");
+    ok(/EP\.NameMatch/.test(calc), "plan-calc читает общий модуль");
+    ok(/EP\.NameMatch/.test(card), "pick-and-estimate читает общий модуль");
+    const html = fs2.readFileSync(path2.join(__dirname, "..", "index.html"), "utf8");
+    ok(html.indexOf("name-match.js") < html.indexOf("pick-and-estimate.js")
+      && html.indexOf("name-match.js") < html.indexOf("plan-calc.js"), "подключён раньше обоих потребителей");
   });
 
 // ===== 39. Упрощение чертежа: разрез, пристройка, размеры шаблона, магнит граней =====

@@ -61,6 +61,8 @@ function loadPlan() {
   // ShieldSchemeSVG нужен для однолинейки, CableConsum — для расходников по трассам (plan-calc)
   runFile(ctx, path.join(ROOT, "assets/js/modules/shield/shield-scheme-svg-v28.js"));
   runFile(ctx, path.join(ROOT, "assets/js/modules/consumables/cable-consum.js"));
+  // NameMatch — общий подбор записи БД по названию (цены в plan-calc.js priceFor)
+  runFile(ctx, path.join(ROOT, "assets/js/modules/estimate/name-match.js"));
   PLAN_ORDER.forEach((n) => runFile(ctx, path.join(PLAN_DIR, n + ".js")));
   P3D_ORDER.forEach((n) => runFile(ctx, path.join(P3D_DIR, n + ".js")));
   return { EP: sandbox.EP, sandbox, store };
