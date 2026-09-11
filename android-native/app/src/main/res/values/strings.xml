@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Electric Pro тест</string>
+    <string name="title_activity_main">Electric Pro тест</string>
+    <string name="package_name">com.electricpro.app</string>
+    <string name="custom_url_scheme">com.electricpro.app</string>
+</resources>

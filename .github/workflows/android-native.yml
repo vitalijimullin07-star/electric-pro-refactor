@@ -1,0 +1,120 @@
+# Сборка НАТИВНОГО APK (Capacitor) — приложение с кодом внутри.
+#
+# Отличие от android-apk.yml (TWA): там APK открывает сайт и обновляется вместе с
+# деплоем, здесь весь интерфейс лежит ВНУТРИ файла. Тестер получает зафиксированную
+# версию, не зависящую от того, что сейчас на проде, и приложение запускается даже
+# без интернета. Цена — каждое обновление требует пересборки и переустановки APK.
+#
+# Секреты те же, что у TWA-сборки:
+#   EP_KEYSTORE_BASE64   — ключ подписи в base64
+#   EP_KEYSTORE_PASSWORD — пароль от него
+#
+# Для входа через Google нужен ещё google-services.json (Firebase → Android-приложение
+# с package com.electricpro.app и отпечатком ключа). Положи его содержимое в секрет
+# EP_GOOGLE_SERVICES_JSON — без него APK соберётся и запустится, но на кнопке входа
+# скажет, что вход для этой сборки не настроен. Подробности — docs/APK.md.
+name: Build Native APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      versionName:
+        description: "Версия (например 1.0.1)"
+        required: false
+        default: ""
+      versionCode:
+        description: "Код версии — целое, обязано расти с каждой сборкой"
+        required: false
+        default: ""
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Проверить секреты подписи
+        env:
+          KS: ${{ secrets.EP_KEYSTORE_BASE64 }}
+          PW: ${{ secrets.EP_KEYSTORE_PASSWORD }}
+        run: |
+          test -n "$KS" || { echo "нет секрета EP_KEYSTORE_BASE64"; exit 1; }
+          test -n "$PW" || { echo "нет секрета EP_KEYSTORE_PASSWORD"; exit 1; }
+
+      - name: Восстановить ключ подписи
+        env:
+          KS: ${{ secrets.EP_KEYSTORE_BASE64 }}
+        run: |
+          mkdir -p android
+          echo "$KS" | base64 -d > android/electric-pro.keystore
+
+      # Без этого файла нативный Google-вход не заработает (Play Services ответят
+      # DEVELOPER_ERROR). Сборка при этом не падает — приложение просто скажет об этом
+      # на экране входа, вместо того чтобы молча ничего не делать.
+      - name: Положить google-services.json, если секрет задан
+        env:
+          GS: ${{ secrets.EP_GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GS" ]; then
+            echo "$GS" > android-native/app/google-services.json
+            echo "google-services.json на месте — нативный вход будет работать"
+          else
+            echo "::warning::секрет EP_GOOGLE_SERVICES_JSON не задан — вход через Google в этой сборке работать не будет"
+          fi
+
+      - name: Установить зависимости
+        run: npm ci || npm i
+
+      - name: Проставить версию, если задана
+        if: inputs.versionName != '' || inputs.versionCode != ''
+        env:
+          VN: ${{ inputs.versionName }}
+          VC: ${{ inputs.versionCode }}
+        run: |
+          node -e '
+            const fs = require("fs"), p = "android-native/app/build.gradle";
+            let s = fs.readFileSync(p, "utf8");
+            if (process.env.VN) s = s.replace(/versionName "[^"]*"/, `versionName "${process.env.VN}"`);
+            if (process.env.VC) s = s.replace(/versionCode \d+/, `versionCode ${parseInt(process.env.VC, 10)}`);
+            fs.writeFileSync(p, s);
+            console.log(s.match(/versionCode \d+|versionName "[^"]*"/g).join(" "));
+          '
+
+      - name: Собрать веб-часть и скопировать в проект
+        run: |
+          node scripts/build-www.js
+          npx cap copy android
+
+      - name: Собрать подписанный APK
+        working-directory: android-native
+        env:
+          EP_KEYSTORE_PATH: ${{ github.workspace }}/android/electric-pro.keystore
+          EP_KEYSTORE_PASSWORD: ${{ secrets.EP_KEYSTORE_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Проверить, что APK подписан и код внутри
+        run: |
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          APK=android-native/app/build/outputs/apk/release/app-release.apk
+          "$BT/apksigner" verify --print-certs "$APK" | grep -i "SHA-256 digest" || { echo "APK не подписан"; exit 1; }
+          # без этого можно случайно выпустить сборку с пустой assets/public,
+          # которая запустится и покажет белый экран
+          N=$(unzip -l "$APK" | grep -c "assets/public/assets/js/" || true)
+          echo "файлов приложения внутри APK: $N"
+          test "$N" -gt 50 || { echo "в APK нет кода приложения"; exit 1; }
+          cp "$APK" android-native/electric-pro-native.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: electric-pro-native-apk
+          path: android-native/electric-pro-native.apk
+          retention-days: 90

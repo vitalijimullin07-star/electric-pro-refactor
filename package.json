@@ -7,5 +7,13 @@
     "test": "node test/run.js",
     "check": "find assets/js -name '*.js' -exec node --check {} \\;",
     "bump-version": "node scripts/bump-cache-version.js"
+  },
+  "dependencies": {
+    "@capacitor-firebase/authentication": "^8.5.1",
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/browser": "^8.0.4",
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/core": "^8.5.2"
   }
 }
