@@ -347,32 +347,14 @@
     // считали габарит блока по легаси-раскладке (18*ks на пост), а сами посты в режиме
     // «1:1» — по реальным рамкам (мм), и штробы уезжали в стороны, «не доходя до точек».
     const RD = EP.Plan.Render, real = !!(p.settings && p.settings.realScale) && !!(RD && RD.deviceFace);
-    const fW = (n) => (RD && RD.frameWcm ? RD.frameWcm(n) : 8.4);
-    const fH = () => (RD && RD.frameHcm ? RD.frameHcm() : 8.4);
-    const blockGeom = (el) => {
-      const items = (el.params && el.params.items) || ["socket"];
-      // вертикальный блок (el.blockVert) — посты «столбиком» по высоте (вдоль y),
-      // горизонтальный — в ряд (вдоль x); просил пользователь. Развёртка — вид фасада,
-      // так что вертикальный блок здесь именно по высоте, а не поворот графики.
-      const vert = !!el.blockVert;
-      // realScale: рамка настоящей ширины (84/155/226/300/368 мм) и высоты 84 мм,
-      // посты внутри — с равным шагом; иначе прежняя «экранная» раскладка
-      const along = real ? fW(items.length) : items.length * 18 * ks + 6 * ks;
-      const across = real ? fH() : 24 * ks;
-      const step = real ? along / items.length : 18 * ks;
-      const inset = real ? 0 : 3 * ks;
-      const bw = vert ? across : along, bh = vert ? along : across;
-      const x = el.offset, y = H - el.height;
-      return {
-        items, vert, bw, bh, step, inset,
-        cell: (i) => (vert
-          ? { cx: x, cy: y - bh / 2 + inset + step * i + step / 2 }
-          : { cx: x - bw / 2 + inset + step * i + step / 2, cy: y }),
-        rect: (i) => (vert
-          ? { x: x - bw / 2, y: y - bh / 2 + inset + step * i, width: bw, height: step }
-          : { x: x - bw / 2 + inset + step * i, y: y - bh / 2, width: step, height: bh })
-      };
-    };
+    // Раскладка постов, углы, антиналожение подписей — из ОБЩЕГО EP.Plan.UnfoldGeo,
+    // одного на живую и печатную развёртку: копии уже расходились, и это стоило нам
+    // «штробы не доходят до точек» и размеров от чужого угла в PDF.
+    const UG = EP.Plan.UnfoldGeo;
+    const fW = (n) => UG.frameW(n);
+    const fH = () => UG.frameH();
+    const gopt = { k: ks, real, H, inA, inB };
+    const blockGeom = (el) => UG.blockGeom(el, gopt);
     if (S.showChases) {
       // Поверхность (пол/потолок) больше НЕ одна на проект: у каждой группы слоёв своя
       // (settings.surfaces). Направление штробы считаем НА КАЖДУЮ точку/пост — по её
@@ -386,14 +368,9 @@
       const isFloor = (layer, el2) => surfFor(layer, el2) === "floor";
       const y0Of = (layer, el2) => (isFloor(layer, el2) ? H : 0);
       const KIND_LAYER = { power: "power", light: "light", lv: "lv", warm: "warm" };
-      const CHASE_COL = { power: "#f59e0b", light: "#facc15", lv: "#38bdf8", warm: "#fb7185" };
-      const SIZE_LBL = {
-        power: `${Math.round(p.settings.chaseW || 25)}×${Math.round(p.settings.chaseH || 30)}`,
-        light: `${Math.round(p.settings.chaseW || 25)}×${Math.round(p.settings.chaseH || 30)}`,
-        lv: `${Math.round(p.settings.chaseW || 25)}×${Math.round(p.settings.chaseH || 30)}`,
-        warm: `${Math.round(p.settings.tpChaseW || 50)}×${Math.round(p.settings.tpChaseH || 50)}`
-      };
-      const chaseKindOf = (layer) => (layer === "warm" ? "warm" : (layer === "lv" || layer === "tv" || layer === "cctv" ? "lv" : (layer === "light" ? "light" : "power")));
+      const CHASE_COL = UG.CHASE_COL;            // цвета и подписи сечений — общие
+      const SIZE_LBL = UG.chaseLabels(p);        // с печатной развёрткой
+      const chaseKindOf = UG.chaseKindOf;
       // одинаковые подписи сечения у соседних штроб блока сливались в «25×3025×30» —
       // рисуем такую подпись рядом (ближе 22см на той же высоте) ОДИН раз
       const lbls = [];
@@ -455,44 +432,12 @@
         else if (o.t === "text") parent.appendChild(svgEl("text", { x: cx + (o.x || 0) / 10, y: cy + (o.y || 0) / 10, "font-size": (o.s || 12) / 10, "text-anchor": "middle", "dominant-baseline": "central", fill: "#0f172a", class: "ep-plan-unfface" }, o.txt));
       });
     }
-    // AABB символов постов — подпись высоты кладём РЯДОМ с постом, а если она
-    // ложится на другой пост (точки на одном offset, разной высоте) — сдвигаем,
-    // чтобы не пересекалось (просьба пользователя).
-    const symHalf = (el) => {
-      if (el.type === "block") { const bg = blockGeom(el); return { hw: bg.bw / 2, hh: bg.bh / 2 }; }
-      return real ? { hw: fW(1) / 2, hh: fH() / 2 } : { hw: 13 * ks, hh: 13 * ks };
-    };
-    const elBoxes = els.map((e) => { const s = symHalf(e); return { x: e.offset, y: H - e.height, hw: s.hw, hh: s.hh }; });
-    // QF-имя (текст над постом) и подпись расстояния от угла (текст на горизонтали
-    // до поста) — тоже места, которые подпись высоты не должна перекрывать, иначе
-    // они сливаются (репорт пользователя со скриншотом: цифры высоты и расстояния
-    // от угла наезжают друг на друга при большом числе близких постов).
-    const qfBoxes = els.map((e) => {
-      const cc = circ(p, e); if (!cc) return null;
-      return { x: e.offset, y: H - e.height - 18 * ks, hw: Math.max(14, cc.name.length * 4.2) * ks, hh: 7 * ks };
-    }).filter(Boolean);
-    // размер поста берётся от БЛИЖАЙШЕГО внутреннего угла стены (просьба пользователя:
-    // «от ближайшего угла брались размеры, и строилась туда линейка») — раньше ВСЕГДА от
-    // левого (inA), из-за чего у поста у правого края через всю стену тянулась длинная
-    // размерная линия поверх остальных постов, хотя до правого угла было 20 см.
-    const cornerOf = (x) => (x - inA <= inB - x ? inA : inB);
-    const offBoxes = els.map((e) => {
-      const x = e.offset, y = H - e.height, c = cornerOf(x);
-      if (Math.abs(x - c) <= 2) return null;
-      return { x: (c + x) / 2, y: y - 3 * ks, hw: 14 * ks, hh: 8 * ks };
-    }).filter(Boolean);
-    const obstacles = elBoxes.concat(qfBoxes, offBoxes);
-    const placeHLabel = (idx) => {
-      const b = elBoxes[idx], lw = 15 * ks, lh = 9 * ks;
-      const hits = (lx, ly) => obstacles.some((o) => o !== b && Math.abs(lx - o.x) < lw + o.hw && Math.abs(ly - o.y) < lh + o.hh);
-      const cand = [
-        [b.x + b.hw + lw + 2 * ks, b.y], [b.x - b.hw - lw - 2 * ks, b.y],
-        [b.x + b.hw + lw + 2 * ks, b.y - b.hh - lh], [b.x - b.hw - lw - 2 * ks, b.y - b.hh - lh],
-        [b.x, b.y - b.hh - lh - 2 * ks], [b.x, b.y + b.hh + lh + 2 * ks]
-      ];
-      for (const [lx, ly] of cand) if (!hits(lx, ly)) return { x: lx, y: ly };
-      return { x: b.x + b.hw + lw + 2 * ks, y: b.y };
-    };
+    // AABB символов постов, имён QF и подписей «от угла» — подпись высоты не должна
+    // ложиться ни на одно из них. Всё считает общий UnfoldGeo, тем же кодом, что и
+    // печатная развёртка (раньше рамки обхода у них уже разъехались: 15×9 против 14×8).
+    const { elBoxes, qfBoxes, obstacles } = UG.labelBoxes(els, gopt, (e) => circ(p, e));
+    const cornerOf = (x) => UG.cornerOf(x, inA, inB);
+    const placeHLabel = (idx) => UG.placeHLabel(idx, elBoxes, obstacles, ks);
     // ДВА прохода: сначала все символы постов, потом ВСЕ размеры/подписи высоты —
     // иначе (при одном проходе) собственный кружок/блок поста рисуется ПОСЛЕ своих
     // размерных линий и закрывает их конец собой («размеры уходят за точку», репорт

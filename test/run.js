@@ -1000,6 +1000,71 @@ test("автомат ↔ сечение: три копии таблицы в sch
   });
 });
 
+// Развёрток стены две — живая (SVG-узлы) и печатная (строка), и они обязаны показывать
+// одно и то же. Раскладка была продублирована файл-в-файл, синхронность держалась вручную,
+// и копии уже расходились: штробы считали габарит блока по легаси-раскладке, размеры в PDF
+// шли от левого угла вместо ближайшего, подпись высоты обходила препятствия по рамке 15×9
+// в живой и 14×8 в печатной. Теперь обе читают общий EP.Plan.UnfoldGeo.
+test("UnfoldGeo: общий модуль раскладки развёртки, обе развёртки читают его", () => {
+  const UG = EP.Plan.UnfoldGeo;
+  ok(UG && UG.blockGeom && UG.cornerOf && UG.symHalf && UG.labelBoxes && UG.placeHLabel, "API модуля");
+  const fs2 = require("fs"), path2 = require("path");
+  const dir = path2.join(__dirname, "..", "assets", "js", "modules", "plan");
+  const live = fs2.readFileSync(path2.join(dir, "plan-unfold.js"), "utf8");
+  const prn = fs2.readFileSync(path2.join(dir, "plan-export.js"), "utf8");
+  ok(/EP\.Plan\.UnfoldGeo/.test(live) && /EP\.Plan\.UnfoldGeo/.test(prn), "обе развёртки читают общий модуль");
+  // своих копий раскладки не осталось ни у одной
+  ok(!/const along = real \? fW\(items\.length\)/.test(live), "в живой нет своей копии blockGeom");
+  ok(!/const along = real \? fW\(items\.length\)/.test(prn), "в печатной нет своей копии blockGeom");
+  ok(!/const cornerOf = \(x\) => \(x - inA/.test(live) && !/const cornerOf = \(x\) => \(x - inA/.test(prn), "нет своих копий cornerOf");
+  const html = fs2.readFileSync(path2.join(__dirname, "..", "index.html"), "utf8");
+  ok(html.indexOf("plan-unfoldgeo.js") < html.indexOf("plan-unfold.js")
+    && html.indexOf("plan-unfoldgeo.js") < html.indexOf("plan-export.js"), "подключён раньше обеих развёрток");
+});
+test("UnfoldGeo.blockGeom: посты в ряд и столбиком, «1:1» даёт реальные габариты", () => {
+  const UG = EP.Plan.UnfoldGeo;
+  const el = { offset: 250, height: 30, params: { items: ["socket", "socket", "internet"] } };
+  const o = { k: 1, real: false, H: 270, inA: 5, inB: 495 };
+  const g = UG.blockGeom(el, o);
+  eq(g.items.length, 3, "три поста"); ok(!g.vert, "по умолчанию в ряд");
+  ok(g.bw > g.bh, "горизонтальный блок шире, чем выше");
+  const cells = [0, 1, 2].map((i) => g.cell(i));
+  near(cells[1].cy, cells[0].cy, 1e-9, "в ряд — все посты на одной высоте");
+  ok(cells[0].cx < cells[1].cx && cells[1].cx < cells[2].cx, "слева направо");
+  cells.forEach((c) => ok(c.cx >= 250 - g.bw / 2 - 0.01 && c.cx <= 250 + g.bw / 2 + 0.01, "пост внутри рамки"));
+  const gv = UG.blockGeom(Object.assign({}, el, { blockVert: true }), o);
+  ok(gv.bh > gv.bw, "вертикальный блок выше, чем шире");
+  const vc = [0, 1, 2].map((i) => gv.cell(i));
+  near(vc[1].cx, vc[0].cx, 1e-9, "столбиком — все посты на одной вертикали");
+  const gr = UG.blockGeom(el, Object.assign({}, o, { real: true }));
+  near(gr.bw, EP.Plan.Render.frameWcm(3), 1e-9, "«1:1» — рамка реальной ширины на 3 поста");
+});
+test("UnfoldGeo: ближайший угол и антиналожение подписи высоты", () => {
+  const UG = EP.Plan.UnfoldGeo;
+  const { inA, inB } = UG.insideEdges(500, 10);
+  near(inA, 5, 1e-9); near(inB, 495, 1e-9);
+  eq(UG.cornerOf(80, inA, inB), inA, "левый пост мерится от левого угла");
+  eq(UG.cornerOf(430, inA, inB), inB, "правый — от ПРАВОГО (раньше всегда тянулось от левого)");
+  const o = { k: 1, real: false, H: 270, inA, inB };
+  // две точки на ОДНОМ offset, разной высоте — подписи обязаны разъехаться
+  const els = [{ offset: 200, height: 30, type: "socket" }, { offset: 200, height: 110, type: "socket" }];
+  const lb = UG.labelBoxes(els, o, () => null);
+  const p0 = UG.placeHLabel(0, lb.elBoxes, lb.obstacles, 1);
+  const p1 = UG.placeHLabel(1, lb.elBoxes, lb.obstacles, 1);
+  ok(Math.abs(p0.x - p1.x) > 1 || Math.abs(p0.y - p1.y) > 1, "подписи высоты не в одной точке");
+  ok(lb.qfBoxes && lb.offBoxes, "qfBoxes/offBoxes отдаются отдельно (цифра «от угла» обходит только их)");
+});
+test("UnfoldGeo: цвета и подписи сечений штроб — одни на экран и бумагу", () => {
+  const UG = EP.Plan.UnfoldGeo;
+  eq(UG.chaseKindOf("warm"), "warm"); eq(UG.chaseKindOf("tv"), "lv");
+  eq(UG.chaseKindOf("cctv"), "lv"); eq(UG.chaseKindOf("light"), "light");
+  eq(UG.chaseKindOf("power"), "power"); eq(UG.chaseKindOf("ac"), "power", "прочие слои — силовая");
+  const lbl = UG.chaseLabels({ settings: { chaseW: 25, chaseH: 30, tpChaseW: 50, tpChaseH: 50 } });
+  eq(lbl.power, "25×30"); eq(lbl.warm, "50×50", "тёплый пол — своё сечение");
+  const custom = UG.chaseLabels({ settings: { chaseW: 40, chaseH: 40 } });
+  eq(custom.lv, "40×40", "подпись берётся из настроек проекта");
+});
+
 // ===== 4. Однолинейка + щит =====
 test("scheme: линия с УЗО -> дифавтомат, без -> автомат", () => {
   const q1 = M.newCircuit("QF1", "#e11", 16), q2 = M.newCircuit("QF2", "#1e1", 10);
