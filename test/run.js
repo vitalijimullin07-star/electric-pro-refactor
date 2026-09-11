@@ -62,6 +62,35 @@ test("newCircuit: полюса/кабель/УЗО", () => {
 });
 
 // ===== 2. Геометрия =====
+// Производительность, закреплённая тестом (аудит модуля): floorScoped зовётся из roomAt/
+// wallAt/snapSmart, то есть из самых горячих путей — без кэша второй этаж, даже пустой,
+// стоил 2,9× времени трассировки, ничего не добавляя к результату.
+test("floorScoped: результат кэшируется и обновляется при изменении состава", () => {
+  const f1 = { id: "f1", name: "1" }, f2 = { id: "f2", name: "2" };
+  const r1 = M.newRoom(G.rectPoints(0, 0, 400, 300), "A"); r1.floorId = "f1";
+  const r2 = M.newRoom(G.rectPoints(0, 0, 400, 300), "B"); r2.floorId = "f2";
+  const p = Object.assign(M.newProject("F"), { rooms: [r1, r2], floors: [f1, f2], activeFloorId: "f1" });
+  const a = G.floorScoped(p), b = G.floorScoped(p);
+  ok(a === b, "повторный вызов на неизменном проекте отдаёт ТОТ ЖЕ объект (кэш)");
+  eq(a.rooms.length, 1, "виден только активный этаж");
+  p.activeFloorId = "f2";
+  const c = G.floorScoped(p);
+  ok(c !== a && c.rooms[0].id === r2.id, "смена активного этажа кэш сбрасывает");
+  const r3 = M.newRoom(G.rectPoints(0, 0, 100, 100), "C"); r3.floorId = "f2"; p.rooms.push(r3);
+  eq(G.floorScoped(p).rooms.length, 2, "добавление комнаты кэш сбрасывает");
+  const one = Object.assign(M.newProject("S"), { rooms: [r1] });
+  ok(G.floorScoped(one) === one, "одноэтажный проект возвращается как есть, без клонирования");
+});
+test("dist/closestOnSeg: sqrt вместо Math.hypot (самый горячий примитив) — результат тот же", () => {
+  const fs2 = require("fs"), path2 = require("path");
+  const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-geometry.js"), "utf8");
+  const head = src.slice(0, src.indexOf("G.wallAt"));
+  ok(!/G\.dist = \(a, b\) => Math\.hypot/.test(head), "G.dist не на Math.hypot (в V8 он втрое медленнее)");
+  near(G.dist({ x: 0, y: 0 }, { x: 3, y: 4 }), 5, 1e-9);
+  near(G.dist({ x: -1200, y: 800 }, { x: 340, y: -260 }), Math.hypot(1540, 1060), 1e-6, "совпадает с hypot");
+  const c = G.closestOnSeg({ x: 50, y: 40 }, { x: 0, y: 0 }, { x: 100, y: 0 });
+  near(c.d, 40, 1e-9, "расстояние до отрезка"); near(c.t, 0.5, 1e-9);
+});
 test("walls: 4 стены у прямоугольника", () => {
   const { P } = install();
   eq(G.walls(P.rooms[0]).length, 4);
