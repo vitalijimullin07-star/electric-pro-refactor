@@ -312,8 +312,8 @@
   EP.Plan = EP.Plan || {};
   EP.Plan.Furniture = {
     CATALOG, byId, needFor, corners, hitAt, placeAt, openEditor, onModeEnter, sheetPalette,
-    selectedId: () => S.selId, deselect: () => { S.selId = null; },
-    setKind: (k) => { S.kind = k === "appl" ? "appl" : "furn"; },
-    setCat: (id) => { if (byId(id)) S.catId = id; }
+    selectedId: () => S.selId, deselect: () => { S.selId = null; }
+    // setKind/setCat отсюда убраны: их не звал никто ни разу — выбор вида и категории
+    // идёт чипами палитры через собственный клик-делегат модуля.
   };
 })();

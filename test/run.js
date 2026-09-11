@@ -62,6 +62,35 @@ test("newCircuit: полюса/кабель/УЗО", () => {
 });
 
 // ===== 2. Геометрия =====
+// Производительность, закреплённая тестом (аудит модуля): floorScoped зовётся из roomAt/
+// wallAt/snapSmart, то есть из самых горячих путей — без кэша второй этаж, даже пустой,
+// стоил 2,9× времени трассировки, ничего не добавляя к результату.
+test("floorScoped: результат кэшируется и обновляется при изменении состава", () => {
+  const f1 = { id: "f1", name: "1" }, f2 = { id: "f2", name: "2" };
+  const r1 = M.newRoom(G.rectPoints(0, 0, 400, 300), "A"); r1.floorId = "f1";
+  const r2 = M.newRoom(G.rectPoints(0, 0, 400, 300), "B"); r2.floorId = "f2";
+  const p = Object.assign(M.newProject("F"), { rooms: [r1, r2], floors: [f1, f2], activeFloorId: "f1" });
+  const a = G.floorScoped(p), b = G.floorScoped(p);
+  ok(a === b, "повторный вызов на неизменном проекте отдаёт ТОТ ЖЕ объект (кэш)");
+  eq(a.rooms.length, 1, "виден только активный этаж");
+  p.activeFloorId = "f2";
+  const c = G.floorScoped(p);
+  ok(c !== a && c.rooms[0].id === r2.id, "смена активного этажа кэш сбрасывает");
+  const r3 = M.newRoom(G.rectPoints(0, 0, 100, 100), "C"); r3.floorId = "f2"; p.rooms.push(r3);
+  eq(G.floorScoped(p).rooms.length, 2, "добавление комнаты кэш сбрасывает");
+  const one = Object.assign(M.newProject("S"), { rooms: [r1] });
+  ok(G.floorScoped(one) === one, "одноэтажный проект возвращается как есть, без клонирования");
+});
+test("dist/closestOnSeg: sqrt вместо Math.hypot (самый горячий примитив) — результат тот же", () => {
+  const fs2 = require("fs"), path2 = require("path");
+  const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-geometry.js"), "utf8");
+  const head = src.slice(0, src.indexOf("G.wallAt"));
+  ok(!/G\.dist = \(a, b\) => Math\.hypot/.test(head), "G.dist не на Math.hypot (в V8 он втрое медленнее)");
+  near(G.dist({ x: 0, y: 0 }, { x: 3, y: 4 }), 5, 1e-9);
+  near(G.dist({ x: -1200, y: 800 }, { x: 340, y: -260 }), Math.hypot(1540, 1060), 1e-6, "совпадает с hypot");
+  const c = G.closestOnSeg({ x: 50, y: 40 }, { x: 0, y: 0 }, { x: 100, y: 0 });
+  near(c.d, 40, 1e-9, "расстояние до отрезка"); near(c.t, 0.5, 1e-9);
+});
 test("walls: 4 стены у прямоугольника", () => {
   const { P } = install();
   eq(G.walls(P.rooms[0]).length, 4);
@@ -930,6 +959,110 @@ test("hitAt: тап попадает по ВИДИМОМУ маркеру (elemD
   ok(G.dist(drawPt, G.elemPoint(P, s1)) > 5, "маркер реально смещён от оси стены (th/2+8)");
   const hit = EP.Plan.Elements.hitAt(drawPt, 5); // маленький радиус — по оси стены не попал бы
   ok(hit && hit.el && hit.el.id === s1.id, "тап по маркеру находит элемент, а не стену");
+});
+
+// Соответствие «автомат ↔ сечение» живёт в ТРЁХ файлах: plan-scheme.js (SECTION_BY_AMP,
+// подбор кабеля под автомат), plan-furniture.js (SEC_BY_AMP, совет по технике) и
+// plan-rules.js (CABLE_AMP, проверка «сечение под автомат» — та же таблица наоборот).
+// Сейчас они согласованы, но разойтись могут молча: однолинейка посоветует кабель, который
+// тут же пометят «тонкий под автомат». Страж ловит и числовое расхождение, и смысловое.
+test("автомат ↔ сечение: три копии таблицы в scheme/furniture/rules не разошлись", () => {
+  const fs2 = require("fs"), path2 = require("path");
+  const dir = path2.join(__dirname, "..", "assets", "js", "modules", "plan");
+  const read = (f) => fs2.readFileSync(path2.join(dir, f), "utf8");
+  const pairs = (src, name) => {
+    const m = src.match(new RegExp(name + "\\s*=\\s*\\[([^\\]]+)\\]"));
+    ok(m, "таблица " + name + " найдена в исходнике");
+    const out = {};
+    m[1].replace(/amp:\s*(\d+(?:\.\d+)?)\s*,\s*sec:\s*(\d+(?:\.\d+)?)/g, (_, a, s) => { out[a] = parseFloat(s); return ""; });
+    return out;
+  };
+  const scheme = pairs(read("plan-scheme.js"), "SECTION_BY_AMP");
+  const furn = pairs(read("plan-furniture.js"), "SEC_BY_AMP");
+  eq(JSON.stringify(scheme), JSON.stringify(furn), "scheme и furniture дают одно и то же сечение на номинал");
+  const rm = read("plan-rules.js").match(/CABLE_AMP\s*=\s*\{([^}]+)\}/);
+  ok(rm, "CABLE_AMP найдена в plan-rules.js");
+  const rules = {};
+  rm[1].replace(/"(\d+(?:\.\d+)?)":\s*(\d+)/g, (_, sec, amp) => { rules[sec] = parseInt(amp, 10); return ""; });
+  // смысловая сверка: сечение, которое СОВЕТУЮТ под номинал, обязано выдерживать этот
+  // номинал по таблице проверок — иначе совет и претензия противоречат друг другу
+  Object.keys(scheme).forEach((amp) => {
+    const sec = scheme[amp], max = rules[String(sec)];
+    ok(max != null, "сечение " + sec + " есть в таблице проверок");
+    ok(Number(amp) <= max, "совет " + sec + " мм² под " + amp + "A не противоречит проверке (макс " + max + "A)");
+  });
+  // и наоборот: для каждого сечения из проверок совет под его максимальный номинал
+  // не должен оказаться ТОНЬШЕ этого сечения
+  Object.keys(rules).forEach((sec) => {
+    const amp = rules[sec];
+    const advised = Object.keys(scheme).map(Number).sort((a, b) => a - b).find((a) => a >= amp);
+    if (advised != null) ok(scheme[String(advised)] >= parseFloat(sec), "под " + amp + "A советуется не тоньше " + sec + " мм²");
+  });
+});
+
+// Развёрток стены две — живая (SVG-узлы) и печатная (строка), и они обязаны показывать
+// одно и то же. Раскладка была продублирована файл-в-файл, синхронность держалась вручную,
+// и копии уже расходились: штробы считали габарит блока по легаси-раскладке, размеры в PDF
+// шли от левого угла вместо ближайшего, подпись высоты обходила препятствия по рамке 15×9
+// в живой и 14×8 в печатной. Теперь обе читают общий EP.Plan.UnfoldGeo.
+test("UnfoldGeo: общий модуль раскладки развёртки, обе развёртки читают его", () => {
+  const UG = EP.Plan.UnfoldGeo;
+  ok(UG && UG.blockGeom && UG.cornerOf && UG.symHalf && UG.labelBoxes && UG.placeHLabel, "API модуля");
+  const fs2 = require("fs"), path2 = require("path");
+  const dir = path2.join(__dirname, "..", "assets", "js", "modules", "plan");
+  const live = fs2.readFileSync(path2.join(dir, "plan-unfold.js"), "utf8");
+  const prn = fs2.readFileSync(path2.join(dir, "plan-export.js"), "utf8");
+  ok(/EP\.Plan\.UnfoldGeo/.test(live) && /EP\.Plan\.UnfoldGeo/.test(prn), "обе развёртки читают общий модуль");
+  // своих копий раскладки не осталось ни у одной
+  ok(!/const along = real \? fW\(items\.length\)/.test(live), "в живой нет своей копии blockGeom");
+  ok(!/const along = real \? fW\(items\.length\)/.test(prn), "в печатной нет своей копии blockGeom");
+  ok(!/const cornerOf = \(x\) => \(x - inA/.test(live) && !/const cornerOf = \(x\) => \(x - inA/.test(prn), "нет своих копий cornerOf");
+  const html = fs2.readFileSync(path2.join(__dirname, "..", "index.html"), "utf8");
+  ok(html.indexOf("plan-unfoldgeo.js") < html.indexOf("plan-unfold.js")
+    && html.indexOf("plan-unfoldgeo.js") < html.indexOf("plan-export.js"), "подключён раньше обеих развёрток");
+});
+test("UnfoldGeo.blockGeom: посты в ряд и столбиком, «1:1» даёт реальные габариты", () => {
+  const UG = EP.Plan.UnfoldGeo;
+  const el = { offset: 250, height: 30, params: { items: ["socket", "socket", "internet"] } };
+  const o = { k: 1, real: false, H: 270, inA: 5, inB: 495 };
+  const g = UG.blockGeom(el, o);
+  eq(g.items.length, 3, "три поста"); ok(!g.vert, "по умолчанию в ряд");
+  ok(g.bw > g.bh, "горизонтальный блок шире, чем выше");
+  const cells = [0, 1, 2].map((i) => g.cell(i));
+  near(cells[1].cy, cells[0].cy, 1e-9, "в ряд — все посты на одной высоте");
+  ok(cells[0].cx < cells[1].cx && cells[1].cx < cells[2].cx, "слева направо");
+  cells.forEach((c) => ok(c.cx >= 250 - g.bw / 2 - 0.01 && c.cx <= 250 + g.bw / 2 + 0.01, "пост внутри рамки"));
+  const gv = UG.blockGeom(Object.assign({}, el, { blockVert: true }), o);
+  ok(gv.bh > gv.bw, "вертикальный блок выше, чем шире");
+  const vc = [0, 1, 2].map((i) => gv.cell(i));
+  near(vc[1].cx, vc[0].cx, 1e-9, "столбиком — все посты на одной вертикали");
+  const gr = UG.blockGeom(el, Object.assign({}, o, { real: true }));
+  near(gr.bw, EP.Plan.Render.frameWcm(3), 1e-9, "«1:1» — рамка реальной ширины на 3 поста");
+});
+test("UnfoldGeo: ближайший угол и антиналожение подписи высоты", () => {
+  const UG = EP.Plan.UnfoldGeo;
+  const { inA, inB } = UG.insideEdges(500, 10);
+  near(inA, 5, 1e-9); near(inB, 495, 1e-9);
+  eq(UG.cornerOf(80, inA, inB), inA, "левый пост мерится от левого угла");
+  eq(UG.cornerOf(430, inA, inB), inB, "правый — от ПРАВОГО (раньше всегда тянулось от левого)");
+  const o = { k: 1, real: false, H: 270, inA, inB };
+  // две точки на ОДНОМ offset, разной высоте — подписи обязаны разъехаться
+  const els = [{ offset: 200, height: 30, type: "socket" }, { offset: 200, height: 110, type: "socket" }];
+  const lb = UG.labelBoxes(els, o, () => null);
+  const p0 = UG.placeHLabel(0, lb.elBoxes, lb.obstacles, 1);
+  const p1 = UG.placeHLabel(1, lb.elBoxes, lb.obstacles, 1);
+  ok(Math.abs(p0.x - p1.x) > 1 || Math.abs(p0.y - p1.y) > 1, "подписи высоты не в одной точке");
+  ok(lb.qfBoxes && lb.offBoxes, "qfBoxes/offBoxes отдаются отдельно (цифра «от угла» обходит только их)");
+});
+test("UnfoldGeo: цвета и подписи сечений штроб — одни на экран и бумагу", () => {
+  const UG = EP.Plan.UnfoldGeo;
+  eq(UG.chaseKindOf("warm"), "warm"); eq(UG.chaseKindOf("tv"), "lv");
+  eq(UG.chaseKindOf("cctv"), "lv"); eq(UG.chaseKindOf("light"), "light");
+  eq(UG.chaseKindOf("power"), "power"); eq(UG.chaseKindOf("ac"), "power", "прочие слои — силовая");
+  const lbl = UG.chaseLabels({ settings: { chaseW: 25, chaseH: 30, tpChaseW: 50, tpChaseH: 50 } });
+  eq(lbl.power, "25×30"); eq(lbl.warm, "50×50", "тёплый пол — своё сечение");
+  const custom = UG.chaseLabels({ settings: { chaseW: 40, chaseH: 40 } });
+  eq(custom.lv, "40×40", "подпись берётся из настроек проекта");
 });
 
 // ===== 4. Однолинейка + щит =====
@@ -4851,7 +4984,11 @@ test("фото: deleteProject чистит кэш фото своего прое
     const fs2 = require("fs"), path2 = require("path");
     const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "estimate", "pick-and-estimate.js"), "utf8");
     const body = src.slice(src.indexOf("const CARD_STOP"), src.indexOf("function cardDbByType"));
-    const F = new Function(body + "; return { cardNorm, cardTokens, cardKeywords, cardSearch };")();
+    // нормализация берётся из общего EP.NameMatch — подкладываем настоящий модуль,
+    // чтобы тест проверял ровно тот код, который работает в приложении
+    const nmSrc = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "estimate", "name-match.js"), "utf8");
+    const win = {}; new Function("window", nmSrc)(win);
+    const F = new Function("window", body + "; return { cardNorm, cardTokens, cardKeywords, cardSearch };")(win);
     eq(F.cardNorm("Кабель ВВГнг(А)-LS 3×2.5"), "кабель ввгнг а ls 3x2.5");
     eq(F.cardNorm("ВВГ-Пнг (А)-LS ГОСТ 3х2,5 (ККЗ)"), "ввг пнг а ls гост 3x2.5 ккз", "х и запятая приводятся к тому же виду");
     // поле поиска подставляется без родового первого слова
@@ -4882,7 +5019,9 @@ test("фото: deleteProject чистит кэш фото своего прое
     const fs2 = require("fs"), path2 = require("path");
     const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "estimate", "pick-and-estimate.js"), "utf8");
     const body = src.slice(src.indexOf("const CARD_STOP"), src.indexOf("  function autoFillPrices")).replace(/  function cardDbByType[^\n]*\n/, "");
-    const F = new Function(body + "; return { cardBestMatch };")();
+    const nmSrc = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "estimate", "name-match.js"), "utf8");
+    const win = {}; new Function("window", nmSrc)(win);
+    const F = new Function("window", body + "; return { cardBestMatch };")(win);
     const db = [
       { id: "a", name: "ВВГнг-Ls 3х2,5 Конкорд", price: 94 },
       { id: "b", name: "ВВГ-Пнг (А)-LS ГОСТ КОНКОРД 3х2,5 (N,PE) -0,66", price: 88.78 },
@@ -4914,16 +5053,52 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/d\.setPrice\(it\.id, Number\(found\.price\) \|\| 0, found\.id\)/.test(src), "цена ставится с привязкой к записи базы");
   });
   test("план: priceFor находит цену при разном написании сечения", () => {
+    let items = [{ name: "Кабель ВВГнг(А)-LS 3х2,5", price: 92.25, type: "material" }];
+    sandbox.EP.Database = { getItemsByType: () => items };
+    const PC = EP.Plan.Calc;
+    eq(PC.priceFor("Кабель ВВГнг(А)-LS 3×2.5", "material"), 92.25, "цена находится, хотя в БД другое написание");
+    eq(PC.priceFor("Кабель ВВГнг(А)-LS 3×2.5 · до щита (220В)", "material"), 92.25, "суффикс не мешает (подстрока)");
+    eq(PC.priceFor("Кабель ВВГнг(А)-LS 5×6", "material"), 0, "чужое сечение цену не подхватывает");
+    delete sandbox.EP.Database;
+  });
+  // Реальная ошибка В ДЕНЬГАХ, найденная аудитом: подстрочный поиск брал ПЕРВОЕ совпадение,
+  // поэтому короткая родовая запись мастера («Штробление» 120 ₽) перехватывала цену у
+  // специфичной позиции («Штробление 25x30 бетон» 450 ₽) просто потому, что лежала в базе
+  // выше — в смете молча появлялась заниженная цифра.
+  test("priceFor: среди подстрочных совпадений берётся САМОЕ ТОЧНОЕ, а не первое", () => {
+    const PC = EP.Plan.Calc;
+    const q = "Штробление 25x30 бетон (слаботочка)";
+    const pair = [{ name: "Штробление", price: 120 }, { name: "Штробление 25x30 бетон", price: 450 }];
+    sandbox.EP.Database = { getItemsByType: () => pair };
+    eq(PC.priceFor(q, "work"), 450, "родовая «Штробление» не перехватывает специфичную");
+    sandbox.EP.Database = { getItemsByType: () => pair.slice().reverse() };
+    eq(PC.priceFor(q, "work"), 450, "порядок записей в базе на исход не влияет");
+    sandbox.EP.Database = { getItemsByType: () => [{ name: "Прокладка кабеля", price: 60 }] };
+    eq(PC.priceFor("Прокладка кабеля ВВГнг(А)-LS 3×2.5", "work"), 60, "родовая работает, когда специфичной нет");
+    sandbox.EP.Database = { getItemsByType: () => [{ name: "Кабель ВВГнг(А)-LS 3×2.5 ГОСТ бухта 100 м", price: 94 }] };
+    eq(PC.priceFor("Кабель ВВГнг(А)-LS 3×2.5", "material"), 94, "лишний хвост у записи базы не мешает");
+    sandbox.EP.Database = { getItemsByType: () => [{ name: "Розетка Schneider", price: 300 }] };
+    eq(PC.priceFor("Штробление 25x30 бетон", "work"), 0, "непохожая запись цену не даёт");
+    delete sandbox.EP.Database;
+  });
+  // Нормализация имён ОБЯЗАНА быть одна на «Расчёт» и «Карточку позиции»: копии уже
+  // расходились (карточка чистила пунктуацию, расчёт нет), и запись поставщика находилась
+  // в карточке, но не подхватывалась ценой в смете.
+  test("нормализатор имён — ОДИН общий модуль у расчёта и карточки позиции", () => {
     const fs2 = require("fs"), path2 = require("path");
-    const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-calc.js"), "utf8");
-    const body = src.slice(src.indexOf("function priceNorm"), src.indexOf("// ---------- шторка ----------"));
-    const items = [{ name: "Кабель ВВГнг(А)-LS 3х2,5", price: 92.25, type: "material" }];
-    const fakeEP = { Database: { getItemsByType: () => items } };
-    const F = new Function("EP", body + "; return { priceNorm, priceFor };")(fakeEP);
-    eq(F.priceNorm("Кабель ВВГнг(А)-LS 3×2.5"), F.priceNorm("Кабель ВВГнг(А)-LS 3х2,5"), "× и х, точка и запятая — одно и то же");
-    eq(F.priceFor("Кабель ВВГнг(А)-LS 3×2.5", "material"), 92.25, "цена находится, хотя в БД другое написание");
-    eq(F.priceFor("Кабель ВВГнг(А)-LS 3×2.5 · до щита (220В)", "material"), 92.25, "суффикс не мешает (подстрока)");
-    eq(F.priceFor("Кабель ВВГнг(А)-LS 5×6", "material"), 0, "чужое сечение цену не подхватывает");
+    const dir = path2.join(__dirname, "..", "assets", "js", "modules");
+    ok(fs2.existsSync(path2.join(dir, "estimate", "name-match.js")), "модуль name-match.js существует");
+    const NM = sandbox.EP.NameMatch;
+    ok(NM && typeof NM.norm === "function" && typeof NM.best === "function", "EP.NameMatch.norm/best");
+    eq(NM.norm("Кабель ВВГнг(А)-LS 3×2.5"), "кабель ввгнг а ls 3x2.5", "пунктуация — разделитель");
+    eq(NM.norm("Кабель ВВГнг(А)-LS 3×2.5"), NM.norm("кабель ВВГнг (А) LS 3х2,5"), "× и х, запятая и точка, скобки");
+    const calc = fs2.readFileSync(path2.join(dir, "plan", "plan-calc.js"), "utf8");
+    const card = fs2.readFileSync(path2.join(dir, "estimate", "pick-and-estimate.js"), "utf8");
+    ok(/EP\.NameMatch/.test(calc), "plan-calc читает общий модуль");
+    ok(/EP\.NameMatch/.test(card), "pick-and-estimate читает общий модуль");
+    const html = fs2.readFileSync(path2.join(__dirname, "..", "index.html"), "utf8");
+    ok(html.indexOf("name-match.js") < html.indexOf("pick-and-estimate.js")
+      && html.indexOf("name-match.js") < html.indexOf("plan-calc.js"), "подключён раньше обоих потребителей");
   });
 
 // ===== 39. Упрощение чертежа: разрез, пристройка, размеры шаблона, магнит граней =====

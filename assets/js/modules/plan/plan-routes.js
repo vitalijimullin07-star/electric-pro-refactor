@@ -51,7 +51,13 @@
 
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const core = () => EP.Plan.Core;
-  const G = () => EP.Plan.Geometry;
+  // G() зовётся из каждого геометрического примитива сборки — на профиле одно только
+  // разыменование EP.Plan.Geometry занимало 6,8% времени. Мемоизируем: модуль геометрии
+  // подключается РАНЬШЕ этого (см. порядок в index.html и PLAN_ORDER харнесса) и никогда
+  // не переопределяется, поэтому ссылку достаточно взять один раз — но лениво, чтобы не
+  // зависеть от порядка выполнения IIFE на момент загрузки файла.
+  let _G = null;
+  const G = () => _G || (_G = EP.Plan.Geometry);
   const rooms = () => EP.Plan.Rooms;
 
   const isJunction = (el) => el.type === "junction";
@@ -767,7 +773,16 @@
     // предпочитаем ветку магистрали СВОЕЙ комнаты, даже если чужая ветка технически ближе
     // по прямой (иначе получаем лишний переход через соседнюю комнату вместо прямого).
     const ra = roomNear(p, a), rb = roomNear(p, b);
-    const inRoom = (room) => room ? (proj) => { const r = G().roomAt(p, proj); return !!r && r.id === room.id; } : null;
+    // Дешёвый отсев ПЕРЕД roomAt: сам roomAt перебирает ВСЕ комнаты этажа, а фильтр зовётся
+    // на каждую кандидат-проекцию каждого ребра графа (замер: 88 740 вызовов за одну сборку
+    // на 300 точках — больше трёх четвертей всех roomAt модуля). Проекция, не лежащая в
+    // «своей» комнате, отсекается одной проверкой полигона; полный roomAt остаётся только
+    // для тех немногих, что прошли, — семантика («именно эта комната, а не наложившаяся
+    // соседняя») сохранена ровно та же.
+    const inRoom = (room) => room ? (proj) => {
+      if (!G().pointInPolygon(proj, room.points || [])) return false;
+      const r = G().roomAt(p, proj); return !!r && r.id === room.id;
+    } : null;
     const pa = nearestOnGraph(graph, a, inRoom(ra)), pb = nearestOnGraph(graph, b, inRoom(rb));
     if (!pa || !pb || pa.d > GUIDE_SNAP_MAX || pb.d > GUIDE_SNAP_MAX) return null;
     if (G().dist({ x: pa.x, y: pa.y }, { x: pb.x, y: pb.y }) < 10) return null; // проекции сошлись — магистраль не нужна

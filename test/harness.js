@@ -15,7 +15,7 @@ const P3D_DIR = path.join(ROOT, "assets/js/modules/plan3d");
 const P3D_ORDER = ["plan3d-materials", "plan3d-scene", "plan3d-electro"];
 const PLAN_ORDER = [
   "plan-core", "plan-geometry", "plan-canvas", "plan-render", "plan-rooms",
-  "plan-elements", "plan-unfold", "plan-routes", "plan-calc", "plan-rules",
+  "plan-elements", "plan-unfoldgeo", "plan-unfold", "plan-routes", "plan-calc", "plan-rules",
   "plan-scheme", "plan-manualscheme", "plan-export", "plan-dxf", "plan-templates", "plan-layouts", "plan-furniture"
 ];
 
@@ -61,6 +61,8 @@ function loadPlan() {
   // ShieldSchemeSVG нужен для однолинейки, CableConsum — для расходников по трассам (plan-calc)
   runFile(ctx, path.join(ROOT, "assets/js/modules/shield/shield-scheme-svg-v28.js"));
   runFile(ctx, path.join(ROOT, "assets/js/modules/consumables/cable-consum.js"));
+  // NameMatch — общий подбор записи БД по названию (цены в plan-calc.js priceFor)
+  runFile(ctx, path.join(ROOT, "assets/js/modules/estimate/name-match.js"));
   PLAN_ORDER.forEach((n) => runFile(ctx, path.join(PLAN_DIR, n + ".js")));
   P3D_ORDER.forEach((n) => runFile(ctx, path.join(P3D_DIR, n + ".js")));
   return { EP: sandbox.EP, sandbox, store };
