@@ -1199,8 +1199,11 @@
   EP.Plan = EP.Plan || {};
   EP.Plan.Render = {
     draw, drawScaled, CFG, hoverPreview, clearHoverPreview,
-    // реальные габариты и «лица» приборов — общие для плана, развёртки и PDF
-    FRAME_MM, FRAME_H_MM, POST_MM, frameWmm, frameWcm, frameHcm, deviceFace, FACE_STYLE, CM_PER_PX_1TO1,
+    // реальные габариты и «лица» приборов — общие для плана, развёртки, PDF и DXF.
+    // Сами таблицы FRAME_MM/FRAME_H_MM наружу не отдаём: снаружи их не читал никто,
+    // ширина и высота рамки берутся через frameWmm/frameWcm/frameHcm (там же
+    // экстраполяция на 6+ постов, мимо которой сырая таблица прошла бы молча).
+    POST_MM, frameWmm, frameWcm, frameHcm, deviceFace, FACE_STYLE, CM_PER_PX_1TO1,
     symbolPreviewSvg
   };
 })();

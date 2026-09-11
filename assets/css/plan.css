@@ -157,7 +157,6 @@ body[data-visual-mode="day"] .ep-plan-moremenu { background: rgba(255, 255, 255,
   pointer-events: none; padding: 20px;
   color: var(--muted, #94a3b8); font: 600 14px system-ui;
 }
-.ep-plan-hint2 { font: 500 12.5px system-ui; opacity: .8; }
 
 /* живой предпросмотр снапа при наведении (мышь/S Pen до касания) в режимах
    рисования комнаты/балки/шахты — направляющая через весь вид + прицел */
@@ -559,7 +558,6 @@ body[data-visual-mode="day"] .ep-plan-notetext { fill: #b45309; stroke: rgba(255
    реальной линии. Пост красится через inline style (см. plan-unfold.js), глиф — своим
    классом .ep-plan-unfglyph, статус «смонтировано» — зелёным stroke у
    .ep-plan-unfel.is-done .ep-plan-unfshape (ниже), точка-ввод — .ep-plan-unfentry. */
-.ep-plan-unftypes { overflow-x: auto; flex-wrap: nowrap; }
 
 /* таблица расчёта и списки */
 .ep-plan-table { width: 100%; border-collapse: collapse; font: 500 12.5px system-ui; }
@@ -857,7 +855,6 @@ body[data-visual-mode="day"] .ep-plan-opnum { fill: #0f172a; stroke: rgba(255,25
 .ep-plan-unfopen.is-win { fill: rgba(56,189,248,.16); }
 .ep-plan-unfopen.is-foreign { stroke-dasharray: 4 3; opacity: .65; }
 .ep-plan-unfopent { fill: #7dd3fc; font-family: system-ui; font-weight: 700; }
-.ep-plan-unfwalls .ep-plan-chip { min-width: 30px; }
 
 /* — v6: щит на развёртке, крупнее в полный экран — */
 .ep-plan-unfpanel { fill: #1d4ed8; stroke: #0b1220; opacity: .92; cursor: pointer; }

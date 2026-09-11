@@ -232,6 +232,8 @@
   });
 
   EP.Plan = EP.Plan || {};
+  // sectionHtml наружу не отдаём — разметку раздела рисует сам модуль через fillSection,
+  // снаружи её никто не звал.
   EP.Plan.Layouts = { strip, submit, list, applyLayout, pending, approve, reject, removePublic,
-    sectionHtml, fillSection, ready, SUBS, PUB, T };
+    fillSection, ready, SUBS, PUB, T };
 })();
