@@ -17,6 +17,8 @@
   ],
   "hosting": {
     "public": ".",
+    "//appAssociation": "БЕЗ ЭТОГО TWA НЕ РАБОТАЕТ: Firebase Hosting по умолчанию (AUTO) сам генерирует /.well-known/assetlinks.json и отдаёт ПУСТОЙ массив [], перекрывая наш статический файл — приложение из APK открывалось бы с адресной строкой Chrome. NONE отключает автогенерацию и отдаёт наш файл с отпечатком ключа подписи.",
+    "appAssociation": "NONE",
     "ignore": [
       "firebase.json",
       ".git/**",
