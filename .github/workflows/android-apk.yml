@@ -1,0 +1,100 @@
+# Сборка APK (TWA — приложение-обёртка над размещённой PWA).
+#
+# Запускается ТОЛЬКО вручную: APK открывает наш же сайт, поэтому обычные обновления
+# приложения доезжают простым деплоем и пересобирать APK для них не нужно. Пересборка
+# нужна, когда меняется имя/иконка/версия самого приложения или ты хочешь раздать
+# свежий файл тестерам.
+#
+# Нужны два секрета репозитория (Settings → Secrets and variables → Actions):
+#   EP_KEYSTORE_BASE64   — android/electric-pro.keystore, закодированный base64
+#                          (base64 -w0 electric-pro.keystore)
+#   EP_KEYSTORE_PASSWORD — пароль от него
+#
+# ВАЖНО: ключ обязан быть ТОТ ЖЕ, что и раньше — Android ставит обновление поверх
+# установленного приложения, только если подпись совпадает. Его отпечаток прописан в
+# .well-known/assetlinks.json; сменишь ключ — обнови и файл, иначе приложение начнёт
+# открываться с адресной строкой Chrome вместо полноэкранного вида.
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      versionName:
+        description: "Версия приложения (например 1.0.1)"
+        required: false
+        default: ""
+      versionCode:
+        description: "Код версии — целое число, обязано расти с каждой сборкой"
+        required: false
+        default: ""
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Android SDK на ubuntu-latest уже установлен; нужен только JDK 17
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Проверить, что секреты заданы
+        env:
+          KS: ${{ secrets.EP_KEYSTORE_BASE64 }}
+          PW: ${{ secrets.EP_KEYSTORE_PASSWORD }}
+        run: |
+          test -n "$KS" || { echo "нет секрета EP_KEYSTORE_BASE64"; exit 1; }
+          test -n "$PW" || { echo "нет секрета EP_KEYSTORE_PASSWORD"; exit 1; }
+
+      - name: Восстановить ключ подписи из секрета
+        env:
+          KS: ${{ secrets.EP_KEYSTORE_BASE64 }}
+        run: echo "$KS" | base64 -d > android/electric-pro.keystore
+
+      - name: Проставить версию, если задана
+        if: inputs.versionName != '' || inputs.versionCode != ''
+        env:
+          VN: ${{ inputs.versionName }}
+          VC: ${{ inputs.versionCode }}
+        run: |
+          node -e '
+            const fs = require("fs"), p = "android/twa-manifest.json";
+            const m = JSON.parse(fs.readFileSync(p, "utf8"));
+            if (process.env.VN) { m.appVersionName = process.env.VN; m.appVersion = process.env.VN; }
+            if (process.env.VC) m.appVersionCode = parseInt(process.env.VC, 10);
+            fs.writeFileSync(p, JSON.stringify(m, null, 2));
+            console.log("версия:", m.appVersionName, "код:", m.appVersionCode);
+          '
+
+      - name: Установить Bubblewrap
+        run: npm i -g @bubblewrap/cli
+
+      - name: Собрать APK
+        env:
+          EP_KEYSTORE_PASSWORD: ${{ secrets.EP_KEYSTORE_PASSWORD }}
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+        run: node scripts/build-apk.js
+
+      - name: Сверить подпись APK с assetlinks.json
+        run: |
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          APK_SHA=$("$BT/apksigner" verify --print-certs android/electric-pro.apk \
+            | grep -i "SHA-256 digest" | head -1 | sed 's/.*: //' | tr -d ' ' | tr 'A-F' 'a-f')
+          LINK_SHA=$(node -e 'console.log(require("./.well-known/assetlinks.json")[0].target.sha256_cert_fingerprints[0].replace(/:/g,"").toLowerCase())')
+          echo "APK:         $APK_SHA"
+          echo "assetlinks:  $LINK_SHA"
+          # расхождение здесь = приложение откроется с адресной строкой Chrome,
+          # и понять это можно только на устройстве — поэтому проверяем в сборке
+          test "$APK_SHA" = "$LINK_SHA" || { echo "подпись APK не совпадает с assetlinks.json"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: electric-pro-apk
+          path: android/electric-pro.apk
+          retention-days: 90
