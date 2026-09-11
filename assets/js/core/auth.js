@@ -91,6 +91,14 @@ EP.Auth = {
       return;
     }
 
+    // НАТИВНАЯ сборка (APK с кодом внутри): ни popup, ни redirect тут не работают —
+    // Google СПЕЦИАЛЬНО отказывает встроенным WebView («disallowed_useragent»), чтобы
+    // приложение не могло подсмотреть чужой пароль. Единственный законный путь —
+    // системный Google Sign-In: нативное окно выбора аккаунта отдаёт idToken, а им уже
+    // логинимся в Firebase обычным signInWithCredential. В TWA и в браузере этой ветки
+    // нет — там полноценный Chrome и работает обычный popup.
+    if (this.isNative()) { await this.signInGoogleNative(); return; }
+
     const provider = new firebase.auth.GoogleAuthProvider();
     provider.setCustomParameters({ prompt: "select_account" });
 
@@ -117,8 +125,52 @@ EP.Auth = {
     }
   },
 
+  // Приложение собрано как нативное (Capacitor), а не открыто в браузере/TWA.
+  isNative() {
+    return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  },
+
+  // Вход в нативной сборке: системное окно Google → idToken → Firebase.
+  async signInGoogleNative() {
+    const plugin = window.Capacitor?.Plugins?.FirebaseAuthentication;
+    if (!plugin) {
+      this.setLoginStatus("В этой сборке не подключён нативный вход Google", "error");
+      return;
+    }
+    try {
+      this.setLoginStatus("Открываю Google вход...", "wait");
+      // skipNativeAuth не ставим: плагин логинит нативный Firebase SDK сам, а нам нужен
+      // credential, чтобы тем же аккаунтом войти в JS SDK — именно его состояние читает
+      // весь остальной код приложения (onAuthStateChanged, правила Firestore, чат).
+      const res = await plugin.signInWithGoogle();
+      const idToken = res?.credential?.idToken;
+      if (!idToken) throw new Error("Google не вернул idToken");
+      const cred = firebase.auth.GoogleAuthProvider.credential(idToken);
+      const out = await EP.Firebase.auth.signInWithCredential(cred);
+      await this.loadProfile(out.user, this.lastMode);
+    } catch (error) {
+      const code = String(error?.code || error?.message || error);
+      console.error("Native Google auth error", error);
+      // Самая частая причина на свежей сборке: в Firebase не заведено Android-приложение
+      // с этим package и отпечатком ключа — Google Play Services отвечают DEVELOPER_ERROR
+      // (код 10) без каких-либо подробностей, и понять это по сообщению невозможно.
+      if (/10|DEVELOPER_ERROR|ApiException/.test(code)) {
+        this.setLoginStatus("Вход не настроен для этой сборки: в Firebase нужно добавить Android-приложение с отпечатком ключа (см. docs/APK.md)", "error");
+        return;
+      }
+      if (/12501|canceled|cancelled/i.test(code)) { this.setLoginStatus("Вход отменён", "error"); return; }
+      this.setLoginStatus(error?.message || "Ошибка входа", "error");
+    }
+  },
+
   async signOut() {
     try {
+      // В нативной сборке выходим и из системного Google-аккаунта: иначе следующий вход
+      // молча возьмёт прежний аккаунт, не показав выбор, — «сменить пользователя» на
+      // общем телефоне станет невозможно.
+      if (this.isNative()) {
+        try { await window.Capacitor.Plugins.FirebaseAuthentication.signOut(); } catch (e) {}
+      }
       await EP.Firebase?.auth?.signOut?.();
     } finally {
       EP.state.user = null;

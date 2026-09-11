@@ -77,7 +77,12 @@
     swReg.update().catch(() => {});
   }
 
-  if ("serviceWorker" in navigator) {
+  // НАТИВНАЯ сборка (APK с кодом внутри, window.EP_NATIVE ставит scripts/build-www.js):
+  // service worker не нужен — файлы и так локальные, а проверка «не вышла ли новая версия
+  // на сайте» бессмысленна: версия приложения меняется только вместе с самим APK, и
+  // автоперезагрузка по чужому отпечатку только сбивала бы работу.
+  const native = !!window.EP_NATIVE;
+  if (!native && "serviceWorker" in navigator) {
     window.addEventListener("load", () => {
       navigator.serviceWorker.register("/sw.js")
         .then((reg) => { swReg = reg; checkForSwUpdate(); })
@@ -86,7 +91,7 @@
     navigator.serviceWorker.addEventListener("controllerchange", reloadNowOrOnHide);
   }
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState !== "visible") return;
+    if (native || document.visibilityState !== "visible") return;
     checkForSwUpdate();
     checkForNewDeploy();
   });
