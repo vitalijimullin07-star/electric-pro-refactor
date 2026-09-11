@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.web.electric_489f7.twa",
+      "sha256_cert_fingerprints": [
+        "68:32:0A:2D:6D:46:82:29:54:70:43:81:EB:50:4C:9A:43:AA:73:48:19:BE:97:01:3F:4C:FB:C6:CE:0F:69:57"
+      ]
+    }
+  }
+]

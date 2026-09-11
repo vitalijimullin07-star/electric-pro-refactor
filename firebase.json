@@ -19,7 +19,10 @@
     "public": ".",
     "ignore": [
       "firebase.json",
-      "**/.*",
+      ".git/**",
+      ".gitignore",
+      ".firebaserc",
+      ".claude/**",
       "**/node_modules/**",
       "functions/**",
       "docs/**",
@@ -48,6 +51,19 @@
       {
         "source": "/manifest.webmanifest",
         "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
+      {
+        "source": "/.well-known/assetlinks.json",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
           {
             "key": "Cache-Control",
             "value": "no-cache"

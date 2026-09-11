@@ -4,3 +4,23 @@ _stage_backups/
 firebase-debug.log
 *-debug.log
 node_modules/
+
+# APK: приватный ключ подписи и артефакты сборки — в репозиторий не попадают.
+# Ключ хранится у владельца и в GitHub Secrets (EP_KEYSTORE_BASE64), см. docs/APK.md.
+android/*.keystore
+android/*.jks
+android/*.apk
+android/*.apk.idsig
+android/*.aab
+android/app/
+android/build/
+android/.gradle/
+android/gradle/
+android/gradlew
+android/gradlew.bat
+android/build.gradle
+android/settings.gradle
+android/gradle.properties
+android/local.properties
+android/store_icon.png
+android/*.pem
