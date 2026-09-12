@@ -3473,7 +3473,7 @@ test("фото: deleteProject чистит кэш фото своего прое
     // основная надпись по ГОСТ 21.101: шифр, объект, стадия/лист/листов, ГИП, организация
     ok(/074\/1\/26-30МС/.test(html), "шифр документа в штампе");
     ok(/ул\. Тестовая/.test(html), "объект (адрес) в штампе");
-    ok(/Электрооборудование и электроосвещение/.test(html), "раздел проекта в штампе");
+    ok(/Электрооборудование силовое/.test(html), "раздел проекта в штампе — по МАРКЕ комплекта (ЭОМ)");
     ok(/>Изм\.</.test(html) && />№ док</.test(html), "таблица изменений");
     ok(/>ГИП</.test(html) && /Лукина/.test(html), "строка ГИП");
     ok(/ВЕКТОР/.test(html), "организация");
@@ -3574,7 +3574,7 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/data-pxp-sec=/.test(src) && /data-pxp-secall=/.test(src), "чекбоксы разделов и «Все/Снять» в шторке");
     ok(/if \(!sections\(\)\.size\)/.test(src), "печать без единого раздела — понятный отказ, а не пустой альбом");
     // порядок разделов в списке = порядок листов в альбоме
-    eq(EX.SECTIONS.map((s) => s.id).join(","), "title,plan,dims,traces,unfolds,expl,spec,circuits,scheme", "порядок разделов");
+    eq(EX.SECTIONS.map((s) => s.id).join(","), "title,gen,plan,dims,traces,unfolds,expl,circuits,loads,cablelog,scheme,spec", "порядок разделов");
   });
   test("PDF: листы по этажам не дублируются и не пустуют", () => {
     // buildUnfolds раньше шла по p.rooms ПРОЕКТА ЦЕЛИКОМ, а usedPointTypes/usedTraceLayers

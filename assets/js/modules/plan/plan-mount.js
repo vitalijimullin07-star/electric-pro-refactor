@@ -544,14 +544,17 @@
       <div class="ep-plan-modehint">Куда смотрит север относительно ВЕРХА плана: 0° — вверх, 90° — вправо. По нему в 🚶 3D солнце светит в окна с правильной стороны.</div>
       <div class="ep-plan-srow"><b>Основная надпись (штамп PDF)</b></div>
       <div class="ep-plan-srow ep-plan-s2">
-        <label>Шифр документа<input type="text" id="ep-plan-meta-code" value="${esc(p.docCode || "")}" placeholder="074/1/26-30МС"></label>
+        <label>Шифр документа<input type="text" id="ep-plan-meta-code" value="${esc(p.docCode || "")}" placeholder="074/1/26"></label>
         <label>Стадия<input type="text" id="ep-plan-meta-stage" value="${esc(p.stage || "Р")}" placeholder="Р" maxlength="3"></label>
       </div>
       <div class="ep-plan-srow ep-plan-s2">
+        <label>Марка комплекта<input type="text" id="ep-plan-meta-mark" value="${esc(p.mark == null ? "ЭОМ" : p.mark)}" placeholder="ЭОМ" maxlength="6"></label>
         <label>ГИП<input type="text" id="ep-plan-meta-gip" value="${esc(p.gip || "")}" placeholder="Фамилия"></label>
+      </div>
+      <div class="ep-plan-srow ep-plan-s2">
         <label>Организация<input type="text" id="ep-plan-meta-org" value="${esc(p.org || "")}" placeholder="Название"></label>
       </div>
-      <div class="ep-plan-modehint">Эти графы печатаются в основной надписи каждого листа PDF (ГОСТ 21.101). Пустые — просто не заполняются.</div>`);
+      <div class="ep-plan-modehint">Эти графы печатаются в основной надписи каждого листа PDF (ГОСТ Р 21.101). Марка комплекта (ЭОМ — силовое, ЭО — освещение, ЭОМС — вместе, СС — слаботочка) приписывается к шифру и подставляет наименование раздела. Пустые графы — просто не заполняются.</div>`);
   }
   function doExport() {
     const c = core(), p = c.project; if (!p) return;
@@ -701,6 +704,7 @@
     // (иначе каждая набранная буква плодила бы снимок undo)
     else if (t.id === "ep-plan-meta-north") { const v = Math.round(Number(t.value)); if (v >= 0 && v <= 359) { c.project.settings.northDeg = v; c.persist("meta-north"); } }
     else if (t.id === "ep-plan-meta-code") { c.project.docCode = t.value; c.persist("meta-code"); }
+    else if (t.id === "ep-plan-meta-mark") { c.project.mark = t.value; c.persist("meta-mark"); }
     else if (t.id === "ep-plan-meta-stage") { c.project.stage = t.value; c.persist("meta-stage"); }
     else if (t.id === "ep-plan-meta-gip") { c.project.gip = t.value; c.persist("meta-gip"); }
     else if (t.id === "ep-plan-meta-org") { c.project.org = t.value; c.persist("meta-org"); }
