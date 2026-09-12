@@ -343,9 +343,10 @@
     const master = (window.EP.state && EP.state.user && EP.state.user.displayName) || "";
     const mark = String(p.mark == null ? "ЭОМ" : p.mark).trim();
     const codeRaw = String(p.docCode || "").trim();
-    // шифр + марка: если пользователь уже вписал марку в шифр («074/1/26-ЭОМ»), второй
-    // раз не приписываем — иначе выходило бы «074/1/26-ЭОМ-ЭОМ»
-    const code = codeRaw && mark && !new RegExp("[-\\s]" + mark.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$", "i").test(codeRaw)
+    // шифр + марка: если в шифре уже есть буквенный суффикс после дефиса («074/1/26-ЭОМ»),
+    // марку НЕ приписываем — пользователь вписал её сам. Сравнивать именно с ТЕКУЩЕЙ маркой
+    // нельзя: сменив её на ЭОМС, он получил бы «074/1/26-ЭОМ-ЭОМС» (поймано живым прогоном).
+    const code = codeRaw && mark && !/[-\s][A-Za-zА-Яа-яЁё]{1,6}$/.test(codeRaw)
       ? codeRaw + "-" + mark : codeRaw;
     return {
       obj: p.name || "—", addr: p.address || "—", client: p.client || "—",
@@ -1305,9 +1306,6 @@
       .tp-cols { display: flex; gap: 6mm; align-items: flex-start; }
       .tp-info { flex: 0 0 105mm; }
       .tp-info th { width: 32mm; white-space: nowrap; }
-      .tp-ved { flex: 1 1 auto; }
-      .tp-ved th:first-child, .tp-ved td:first-child { width: 12mm; }
-      .tp-ved th:last-child, .tp-ved td:last-child { width: 16mm; text-align: center; }
       /* сцена SVG — печатные цвета */
       .gsym { flex: none; vertical-align: middle; }
       .legend .gsym { margin-right: 0; }
@@ -1520,5 +1518,8 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Export = { print, sheetHtml, counts, SECTIONS, sections, toggleSec, setAllSec, albumOutline };
+  // genSheetCount экспортирован ради теста: его сходимость (ведомость перечисляет и сами
+  // «Общие данные») проявляется только на альбоме длиннее листа ведомости — на обычном
+  // тестовом проекте поломку этой арифметики не видно ни по одному другому признаку
+  EP.Plan.Export = { print, sheetHtml, counts, SECTIONS, sections, toggleSec, setAllSec, albumOutline, genSheetCount };
 })();
