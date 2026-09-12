@@ -172,6 +172,9 @@
   const PAGE = { A4: { w: 297, h: 210 }, A3: { w: 420, h: 297 }, A2: { w: 594, h: 420 }, A1: { w: 841, h: 594 }, A0: { w: 1189, h: 841 } };
   let pdfFormat = "A4";
   const pg = () => PAGE[pdfFormat] || PAGE.A4;
+  // подпись формата под рамкой — КИРИЛЛИЦЕЙ («Формат А4»), как в ГОСТ 2.301 и в реальных
+  // проектах; сам pdfFormat остаётся латинским — это значение CSS-свойства @page size
+  const fmtLabel = () => pdfFormat.replace("A", "А");
   // высота поля: лист − (5+5 поля, 6 внутренний отступ рамки, ~9 заголовок листа,
   // 58 основная надпись по ГОСТ 21.101 — она стала выше прежней вольной вёрстки)
   const planArea = () => ({ w: pg().w - 35, h: pg().h - 84 });
@@ -381,7 +384,7 @@
       </colgroup>
       <tr>${six()}<td class="s-c s-code" colspan="4" rowspan="2">${dash(m.code) || esc(p.name || "")}</td></tr>
       <tr>${six()}</tr>
-      <tr>${six()}<td class="s-c s-obj" colspan="4" rowspan="3">${esc(m.addr === "—" ? m.obj : m.addr)}</td></tr>
+      <tr>${six()}<td class="s-c s-obj" colspan="4" rowspan="3">${esc(m.obj)}${m.addr && m.addr !== "—" ? "<br>" + esc(m.addr) : ""}</td></tr>
       <tr>${six()}</tr>
       <tr>${c("Изм.")}${c("Колич.")}${c("Лист")}${c("№ док")}${c("Подп.")}${c("Дата")}</tr>
       <tr><td class="s-l" colspan="2">Разраб.</td><td class="s-c" colspan="2">${dash(m.master)}</td>${c()}${c()}
@@ -429,7 +432,7 @@
       <div class="body${page.contd || page.noHead ? " body-c" : ""}">${page.body}</div>
       ${page.side || ""}
       ${stamp}
-    </div><div class="fmt">Формат ${pdfFormat}</div></div>`;
+    </div><div class="fmt">Формат ${fmtLabel()}</div></div>`;
   }
   // титульный лист: объект/заказчик/площадь/марка комплекта. ВЕДОМОСТЬ листов
   // отсюда УБРАНА — по ГОСТ Р 21.101 она входит в лист «Общие данные», а на титуле
@@ -461,7 +464,7 @@
         </div>
       </div>
       ${stampHtml(p, T.titleSheet, 1, of, null)}
-    </div><div class="fmt">Формат ${pdfFormat}</div></div>`;
+    </div><div class="fmt">Формат ${fmtLabel()}</div></div>`;
   }
 
   /* ---------- ОБЩИЕ ДАННЫЕ (ГОСТ Р 21.101, п. 5.4) ----------
@@ -1224,7 +1227,7 @@
       /* ГОСТ-шрифт: узкий наклонный (тип А). Настоящего ГОСТ-шрифта в системе нет —
          ближайшее из гарантированно доступного это Arial Narrow курсивом, как и
          выглядит присланный пользователем проект. */
-      body { font: italic 10.5px/1.25 "Arial Narrow", "Liberation Sans Narrow", Arial, sans-serif; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      body { font: italic 10.5px/1.25 "Arial Narrow", "Roboto Condensed", "Noto Sans Display", "Liberation Sans Narrow", Arial, sans-serif; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       .sheet { position: relative; width: ${pg().w}mm; height: ${pg().h}mm; padding: 5mm 5mm 5mm 20mm; overflow: hidden; break-after: page; page-break-after: always; }
       /* графы подшивки (ГОСТ 2.104, графы 19-23) — в левом поле, текст на 90° */
       .bind { position: absolute; left: 5mm; bottom: 5mm; width: 15mm; display: flex; flex-direction: column; }
