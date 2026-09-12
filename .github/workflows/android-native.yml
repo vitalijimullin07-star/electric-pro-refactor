@@ -91,10 +91,15 @@ jobs:
             console.log(s.match(/versionCode \d+|versionName "[^"]*"/g).join(" "));
           '
 
-      - name: Собрать веб-часть и скопировать в проект
+      # Именно sync, а не copy: copy кладёт только веб-часть, а папку
+      # capacitor-cordova-android-plugins (её требует app/capacitor.build.gradle)
+      # генерирует update. В репозитории её нет — она в .gitignore самого Capacitor,
+      # поэтому на чистом чекауте Gradle падал «Could not read script
+      # cordova.variables.gradle as it does not exist».
+      - name: Собрать веб-часть и синхронизировать проект
         run: |
           node scripts/build-www.js
-          npx cap copy android
+          npx cap sync android
 
       - name: Собрать подписанный APK
         working-directory: android-native
