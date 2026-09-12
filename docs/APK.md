@@ -180,6 +180,16 @@ Google **специально запрещает** вход через встр�
    имя `EP_GOOGLE_SERVICES_JSON`, значение — скопированное содержимое файла.
 6. Actions → Build Native APK → Run workflow.
 
+Плюс к этому вход требует ДВУХ включений в самом проекте (оба уже сделаны, ломать их
+нельзя — тест `APK: вход через Google` это стережёт):
+
+- `capacitor.config.json` → `plugins.FirebaseAuthentication.providers: ["google.com"]`.
+  Без него плагин отказывает ещё до обращения к Firebase: «Google sign-in provider is
+  not enabled» — и видно это только на устройстве, сборка проходит успешно.
+- `android-native/variables.gradle` → `rgcfaIncludeGoogle = true`. При `false`
+  библиотеки Google Sign-In подключаются как `compileOnly`, то есть в APK их может не
+  оказаться вовсе.
+
 Проверить SHA-1 самому:
 
 ```bash

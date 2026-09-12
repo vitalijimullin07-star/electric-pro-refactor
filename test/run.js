@@ -6549,6 +6549,32 @@ test("фото: deleteProject чистит кэш фото своего прое
       ok(/\.ep-db-pset \{/.test(css) && /\.ep-db-pset\.is-done/.test(css),
         "свой стиль, отдельный вид у заполненного состояния");
     });
+
+    // ===== 52. Нативный APK: вход через Google =====
+    test("APK: вход через Google включён в обеих половинах конфигурации", () => {
+      const fs = require("fs"), path = require("path");
+      const root = path.join(__dirname, "..");
+      // (1) Список провайдеров плагина. Без него вход падает на устройстве с
+      // «Google sign-in provider is not enabled» — плагин проверяет этот список
+      // сам, до обращения к Firebase, и сборка об этом ничего не знает.
+      const cap = JSON.parse(fs.readFileSync(path.join(root, "capacitor.config.json"), "utf8"));
+      const fa = (cap.plugins || {}).FirebaseAuthentication || {};
+      ok(Array.isArray(fa.providers) && fa.providers.indexOf("google.com") >= 0,
+        "providers содержит google.com");
+      // (2) Флаг сборки. При false библиотеки Google Sign-In подключаются как
+      // compileOnly — сейчас они доезжают транзитивно через firebase-auth, но
+      // полагаться на это нельзя: пропадёт зависимость — APK молча соберётся без них.
+      const vars = fs.readFileSync(path.join(root, "android-native", "variables.gradle"), "utf8");
+      ok(/rgcfaIncludeGoogle\s*=\s*true/.test(vars), "rgcfaIncludeGoogle = true");
+      // (3) Секрет с google-services.json не обязателен для сборки, но обязателен
+      // для входа — workflow должен предупреждать, а не падать молча.
+      const wf = fs.readFileSync(path.join(root, ".github", "workflows", "android-native.yml"), "utf8");
+      ok(/EP_GOOGLE_SERVICES_JSON/.test(wf) && /::warning::/.test(wf),
+        "workflow предупреждает об отсутствии google-services.json");
+      // sync, а не copy: папка плагинов Capacitor в репозитории не хранится
+      ok(/npx cap sync android/.test(wf), "cap sync — иначе нет capacitor-cordova-android-plugins");
+      ok(/node-version: 22/.test(wf), "Node 22 — Capacitor CLI 8 на 20 не запускается");
+    });
   }
 
   console.log("\n" + "=".repeat(48));
