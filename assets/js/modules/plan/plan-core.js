@@ -139,7 +139,9 @@
       name: String(name || "").trim() || "Новый проект",
       address: "", client: "", clientId: null,
       // графы основной надписи PDF (ГОСТ 21.101): шифр документа, стадия, ГИП, организация
-      docCode: "", stage: "Р", gip: "", org: "",
+      // mark — МАРКА основного комплекта рабочих чертежей (ЭОМ/ЭО/СС…): уходит в шифр
+      // документа и определяет наименование раздела в штампе (см. MARKS в plan-export.js)
+      docCode: "", mark: "ЭОМ", stage: "Р", gip: "", org: "",
       floors, activeFloorId: floors[0].id,
       settings: {
         ceilingHeight: DEFAULTS.ceilingHeight,
@@ -603,6 +605,7 @@
     // графы основной надписи PDF — у старых проектов их нет
     if (p.settings && p.settings.northDeg == null) p.settings.northDeg = 0;
     if (p.docCode == null) p.docCode = "";
+    if (p.mark == null) p.mark = "ЭОМ";
     if (p.stage == null) p.stage = "Р";
     if (p.gip == null) p.gip = "";
     if (p.org == null) p.org = "";

@@ -8,7 +8,7 @@
 
   const T = { sheet: "План электрики", made: "Исполнитель", obj: "Объект", addr: "Адрес", client: "Заказчик", area: "Площадь", roomsN: "Помещений", date: "Дата", legend: "Условные обозначения", expl: "Экспликация помещений", spec: "Спецификация точек", door: "Дверь", win: "Окно", panel: "Щит", genplan: "Общий план", specSheet: "Экспликация и условные обозначения", tracesOf: (name) => `Трассы: ${name}`,
     stage: "Стадия", stageVal: "Р", sheetNo: "Лист", sheetsN: "Листов", scaleLbl: "Масштаб",
-    album: "Состав альбома", docTitle: "Проект электроснабжения", sheetName: "Наименование листа",
+    docTitle: "Проект электроснабжения", titleSheet: "Титульный лист",
     unfolds: "Развёртки стен", scheme: "Однолинейная схема", circuits: "Линии и щит",
     dimsOf: (name) => `Размеры и высоты: ${name}`,
     // ГОСТ 21.110 — спецификация оборудования, изделий и материалов
@@ -18,6 +18,10 @@
     secShields: "Щитовые устройства", secCables: "Провода и кабели",
     secDevices: "Электроустановочные изделия", secMount: "Монтажные изделия",
     byDesign: "по дизайн-проекту", section: "Электрооборудование и электроосвещение",
+    // ---- основной комплект рабочих чертежей (ГОСТ Р 21.101) ----
+    gen: "Общие данные", vedDraw: "Ведомость рабочих чертежей основного комплекта",
+    vedRef: "Ведомость ссылочных и прилагаемых документов", notes: "Общие указания",
+    loads: "Таблица расчётных нагрузок", cablelog: "Кабельный журнал",
     specNote: `<b>Примечание:</b><br>1. Количество материалов уточняется по месту.<br>2. В спецификации указаны рекомендуемые материалы и оборудование.<br>Допускается замена указанных материалов и оборудования на другие с аналогичными характеристиками, имеющие сертификаты соответствия Госстандарта РФ.` };
   // слои-«трассы» — те, что реально прокладываются кабелем (не считая dims/labels/routes —
   // это служебные оверлеи, не самостоятельный вид работ)
@@ -41,15 +45,18 @@
      «как я обычно печатаю», а не данные объекта — тем же принципом, что
      ep_plan_paper_v1 и настройки quickbar. */
   const SECTIONS = [
-    { id: "title", name: "Титульный лист и состав альбома" },
+    { id: "title", name: "Титульный лист" },
+    { id: "gen", name: "Общие данные (ведомости + общие указания)" },
     { id: "plan", name: "Общий план" },
     { id: "dims", name: "Размеры и высоты (лист на каждый тип точек)" },
     { id: "traces", name: "Трассы (лист на каждый слой)" },
     { id: "unfolds", name: "Развёртки стен" },
     { id: "expl", name: "Экспликация и условные обозначения" },
-    { id: "spec", name: "Спецификация оборудования (ГОСТ 21.110)" },
     { id: "circuits", name: "Линии и щит" },
-    { id: "scheme", name: "Однолинейная схема" }
+    { id: "loads", name: "Таблица расчётных нагрузок" },
+    { id: "cablelog", name: "Кабельный журнал" },
+    { id: "scheme", name: "Однолинейная схема" },
+    { id: "spec", name: "Спецификация оборудования (ГОСТ 21.110)" }
   ];
   const SEC_KEY = "ep_pdf_sections_v1";
   let pdfSections = null;
@@ -165,6 +172,9 @@
   const PAGE = { A4: { w: 297, h: 210 }, A3: { w: 420, h: 297 }, A2: { w: 594, h: 420 }, A1: { w: 841, h: 594 }, A0: { w: 1189, h: 841 } };
   let pdfFormat = "A4";
   const pg = () => PAGE[pdfFormat] || PAGE.A4;
+  // подпись формата под рамкой — КИРИЛЛИЦЕЙ («Формат А4»), как в ГОСТ 2.301 и в реальных
+  // проектах; сам pdfFormat остаётся латинским — это значение CSS-свойства @page size
+  const fmtLabel = () => pdfFormat.replace("A", "А");
   // высота поля: лист − (5+5 поля, 6 внутренний отступ рамки, ~9 заголовок листа,
   // 58 основная надпись по ГОСТ 21.101 — она стала выше прежней вольной вёрстки)
   const planArea = () => ({ w: pg().w - 35, h: pg().h - 84 });
@@ -321,15 +331,34 @@
   // титульный лист — заказчик/объект/площадь (просьба пользователя: «титульный
   // лист где информация о заказчике и квартире/доме»)
   // Общие данные проекта для титула и штампа каждого листа
+  /* МАРКА основного комплекта рабочих чертежей (ГОСТ Р 21.101, приложение с марками).
+     Марка — это и есть «что за комплект»: она уходит В ШИФР документа (074/1/26-ЭОМ)
+     и определяет наименование раздела в штампе. Неизвестная/своя марка не ломает лист:
+     раздел остаётся общим («Электрооборудование и электроосвещение»). */
+  const MARKS = {
+    "ЭОМ": "Электрооборудование силовое",
+    "ЭОМС": "Электрооборудование и электроосвещение",
+    "ЭО": "Электроосвещение",
+    "ЭС": "Электроснабжение",
+    "СС": "Системы связи (слаботочные сети)"
+  };
   function docMeta(p) {
     const master = (window.EP.state && EP.state.user && EP.state.user.displayName) || "";
+    const mark = String(p.mark == null ? "ЭОМ" : p.mark).trim();
+    const codeRaw = String(p.docCode || "").trim();
+    // шифр + марка: если в шифре уже есть буквенный суффикс после дефиса («074/1/26-ЭОМ»),
+    // марку НЕ приписываем — пользователь вписал её сам. Сравнивать именно с ТЕКУЩЕЙ маркой
+    // нельзя: сменив её на ЭОМС, он получил бы «074/1/26-ЭОМ-ЭОМС» (поймано живым прогоном).
+    const code = codeRaw && mark && !/[-\s][A-Za-zА-Яа-яЁё]{1,6}$/.test(codeRaw)
+      ? codeRaw + "-" + mark : codeRaw;
     return {
       obj: p.name || "—", addr: p.address || "—", client: p.client || "—",
       master: master || "—", date: new Date().toLocaleDateString("ru-RU"),
       // поля основной надписи по ГОСТ 21.101 (правятся в шторке ℹ️ проекта):
       // шифр документа, ГИП, организация, стадия. Пустые — прочерк, лист всё равно
       // остаётся оформленным, просто без этих граф.
-      code: p.docCode || "", gip: p.gip || "", org: p.org || "",
+      code, mark, section: MARKS[mark.toUpperCase()] || T.section,
+      gip: p.gip || "", org: p.org || "",
       stage: p.stage || T.stageVal
     };
   }
@@ -355,11 +384,11 @@
       </colgroup>
       <tr>${six()}<td class="s-c s-code" colspan="4" rowspan="2">${dash(m.code) || esc(p.name || "")}</td></tr>
       <tr>${six()}</tr>
-      <tr>${six()}<td class="s-c s-obj" colspan="4" rowspan="3">${esc(m.addr === "—" ? m.obj : m.addr)}</td></tr>
+      <tr>${six()}<td class="s-c s-obj" colspan="4" rowspan="3">${esc(m.obj)}${m.addr && m.addr !== "—" ? "<br>" + esc(m.addr) : ""}</td></tr>
       <tr>${six()}</tr>
       <tr>${c("Изм.")}${c("Колич.")}${c("Лист")}${c("№ док")}${c("Подп.")}${c("Дата")}</tr>
       <tr><td class="s-l" colspan="2">Разраб.</td><td class="s-c" colspan="2">${dash(m.master)}</td>${c()}${c()}
-        <td class="s-c s-sec" rowspan="2">${T.section}</td>
+        <td class="s-c s-sec" rowspan="2">${esc(m.section)}</td>
         <td class="s-c s-h">${T.stage}</td><td class="s-c s-h">${T.sheetNo}</td><td class="s-c s-h">${T.sheetsN}</td></tr>
       <tr><td class="s-l" colspan="2">Пров.</td><td class="s-c" colspan="2"></td>${c()}${c()}
         <td class="s-c">${esc(m.stage)}</td><td class="s-c">${no}</td><td class="s-c">${of}</td></tr>
@@ -403,39 +432,114 @@
       <div class="body${page.contd || page.noHead ? " body-c" : ""}">${page.body}</div>
       ${page.side || ""}
       ${stamp}
-    </div><div class="fmt">Формат ${pdfFormat}</div></div>`;
+    </div><div class="fmt">Формат ${fmtLabel()}</div></div>`;
   }
-  // титульный лист: объект/заказчик/площадь + ВЕДОМОСТЬ листов альбома (состав) —
-  // так документ читается как альбом, а не как набор картинок
+  // титульный лист: объект/заказчик/площадь/марка комплекта. ВЕДОМОСТЬ листов
+  // отсюда УБРАНА — по ГОСТ Р 21.101 она входит в лист «Общие данные», а на титуле
+  // она к тому же физически не помещалась: на альбоме от ~20 листов таблица
+  // переползала на основную надпись (поймано печатью, .tp{padding-bottom:58mm}
+  // резервирует место под штамп, но переполнение таблицы его просто перекрывало).
   function buildTitlePage(p, pages, of) {
     const m = docMeta(p);
     const roomsList = (p.rooms || []).filter((r) => (r.points || []).length >= 3);
     const totalArea = roomsList.reduce((s2, r) => s2 + G().roomNetArea(p, r), 0);
-    const ved = pages.map((pg, i) => `<tr><td class="st-c">${i + 2}</td><td>${esc(pg.title)}</td><td class="st-c">${pg.scale ? "1:" + pg.scale : "—"}</td></tr>`).join("");
     return `<div class="sheet">${bindingHtml()}<div class="fr">
       <div class="tp">
         <div class="tp-top">
           <div class="tp-stage">${T.stage} ${esc(m.stage)}</div>
           <h1>${esc(m.obj)}</h1>
           <div class="tp-sub">${T.docTitle}</div>
+          ${m.code ? `<div class="tp-code">${esc(m.code)}</div>` : ""}
         </div>
-        <div class="tp-cols">
+        <div class="tp-cols tp-one">
           <table class="tb tp-info">
             <tr><th>${T.obj}</th><td>${esc(m.obj)}</td></tr>
             <tr><th>${T.addr}</th><td>${esc(m.addr)}</td></tr>
             <tr><th>${T.client}</th><td>${esc(m.client)}</td></tr>
+            <tr><th>Раздел</th><td>${esc(m.section)}${m.mark ? ` (марка ${esc(m.mark)})` : ""}</td></tr>
             ${roomsList.length ? `<tr><th>${T.area}</th><td>${G().fmtArea(totalArea)}</td></tr><tr><th>${T.roomsN}</th><td>${roomsList.length}</td></tr>` : ""}
             <tr><th>${T.made}</th><td>${esc(m.master)}</td></tr>
             <tr><th>${T.date}</th><td>${esc(m.date)}</td></tr>
           </table>
-          <table class="tb tp-ved">
-            <thead><tr><th colspan="3">${T.album}</th></tr><tr><th>Лист</th><th>Наименование</th><th>М</th></tr></thead>
-            <tbody><tr><td class="st-c">1</td><td>Титульный лист. ${T.album}</td><td class="st-c">—</td></tr>${ved}</tbody>
-          </table>
         </div>
       </div>
-      ${stampHtml(p, "Титульный лист. " + T.album, 1, of, null)}
-    </div><div class="fmt">Формат ${pdfFormat}</div></div>`;
+      ${stampHtml(p, T.titleSheet, 1, of, null)}
+    </div><div class="fmt">Формат ${fmtLabel()}</div></div>`;
+  }
+
+  /* ---------- ОБЩИЕ ДАННЫЕ (ГОСТ Р 21.101, п. 5.4) ----------
+     Обязательный первый лист основного комплекта: ведомость рабочих чертежей
+     основного комплекта, ведомость ссылочных и прилагаемых документов и общие
+     указания. Без него набор чертежей — не комплект рабочей документации. */
+  const REF_DOCS = [
+    ["ГОСТ Р 21.101-2020", "Основные требования к проектной и рабочей документации"],
+    ["ГОСТ 21.110-2013", "Правила выполнения спецификации оборудования, изделий и материалов"],
+    ["ГОСТ 21.210-2014", "Условные графические изображения электрооборудования и проводок на планах"],
+    ["ГОСТ 21.608-2014", "Правила выполнения рабочей документации внутреннего электрического освещения"],
+    ["ПУЭ, 7-е издание", "Правила устройства электроустановок"],
+    ["СП 256.1325800.2016", "Электроустановки жилых и общественных зданий"],
+    ["СП 76.13330.2016", "Электротехнические устройства"],
+    ["СП 6.13130.2021", "Системы противопожарной защиты. Электрооборудование"]
+  ];
+  // Общие указания собираются ИЗ НАСТРОЕК ПРОЕКТА (фазность, вводной автомат, УЗО,
+  // поверхность прокладки), а не берутся заглушкой — иначе лист врал бы о проекте.
+  function genNotes(p) {
+    const s = p.settings || {}, R = EP.Plan.Routes;
+    const ph = s.phases === 3 ? "трёхфазный, 380/220 В" : "однофазный, 220 В";
+    // surfacesUsed() отдаёт МАССИВ ключей ("floor"/"ceiling") по РЕАЛЬНО построенным
+    // трассам; пока трасс нет — опираемся на настройку проекта
+    const surf = (R && R.surfacesUsed ? R.surfacesUsed(p) : []) || [];
+    const has = (k) => surf.indexOf(k) >= 0 || (!surf.length && (k === "floor" ? s.routeType === "floor" : s.routeType !== "floor"));
+    const way = [];
+    if (has("floor")) way.push("по полу в гофрированной трубе ПНД в стяжке");
+    if (has("ceiling")) way.push(s.gofraCeil === false ? "по потолку на стяжках/клипсах" : "по потолку в гофрированной трубе");
+    const rcdN = (p.circuits || []).filter((c) => c.rcd).length;
+    return [
+      `Рабочая документация разработана в соответствии с документами, приведёнными в ведомости ссылочных и прилагаемых документов.`,
+      `Электроснабжение — от вводно-распределительного устройства здания. Ввод ${ph}${s.mainBreaker ? `, вводной аппарат ${s.mainBreaker} А` : ""}${s.meter ? ", с прибором учёта" : ""}. Система заземления TN-C-S.`,
+      `Групповые сети выполнить кабелем с медными жилами с изоляцией пониженной горючести (ВВГнг(А)-LS и аналоги), марки и сечения — по таблице расчётных нагрузок и кабельному журналу.`,
+      `Прокладка кабеля скрытая: в штробах стен${way.length ? ", " + way.join(", ") : ""}. Пересечение строительных конструкций — в гильзах.`,
+      rcdN ? `Групповые линии розеточных сетей и линии помещений с повышенной опасностью защищены устройствами дифференциального тока с током утечки 30 мА (линий с УЗО: ${rcdN}).` : `Защиту от поражения электрическим током выполнить согласно ПУЭ гл. 1.7.`,
+      `Отметки установки электроустановочных изделий — по листам «Размеры и высоты» и развёрткам стен.`,
+      `Все открытые проводящие части и сторонние проводящие части присоединить к основной системе уравнивания потенциалов; в ванной комнате выполнить дополнительную систему уравнивания потенциалов.`,
+      `Монтаж выполнять в соответствии с ПУЭ и СП 76.13330.2016. После монтажа выполнить замеры сопротивления изоляции и проверку цепи «фаза — нуль» с оформлением протоколов.`,
+      `Количество материалов уточняется по месту производства работ.`
+    ];
+  }
+  const VED_ROWS_PER_PAGE = 28;   // столько строк ведомости влезает на лист (замер: строка 4.2мм)
+  // ведомость знает СВОЙ размер: число листов «Общих данных» зависит от длины ведомости,
+  // а длина ведомости — от общего числа листов альбома. Сходится за 1-2 итерации.
+  function genSheetCount(totalWithoutGen) {
+    let n = 1;
+    for (let i = 0; i < 4; i++) {
+      const rows = totalWithoutGen + n;
+      const need = Math.max(1, Math.ceil(rows / VED_ROWS_PER_PAGE));
+      if (need === n) break;
+      n = need;
+    }
+    return n;
+  }
+  function buildGeneralData(p, titles) {
+    const ved = titles.map((t, i) => `<tr><td class="st-c">${i + 1}</td><td>${esc(t.title)}</td><td class="st-c">${t.scale ? "1:" + t.scale : "—"}</td></tr>`);
+    const refs = REF_DOCS.map(([a, b]) => `<tr><td class="gd-ref">${esc(a)}</td><td>${esc(b)}</td></tr>`).join("");
+    const notes = genNotes(p).map((t, i) => `<li>${t}</li>`).join("");
+    const pages = [];
+    for (let i = 0; i < ved.length; i += VED_ROWS_PER_PAGE) {
+      const part = ved.slice(i, i + VED_ROWS_PER_PAGE).join("");
+      pages.push({
+        title: T.gen, contd: i > 0,
+        body: `<div class="gd">
+          <div class="gd-l"><table class="tb gd-ved"><thead><tr><th colspan="3">${T.vedDraw}</th></tr>
+            <tr><th>Лист</th><th>Наименование</th><th>М</th></tr></thead><tbody>${part}</tbody></table></div>
+          ${i === 0 ? `<div class="gd-r">
+            <table class="tb gd-refs"><thead><tr><th colspan="2">${T.vedRef}</th></tr>
+              <tr><th>Обозначение</th><th>Наименование</th></tr></thead><tbody>${refs}</tbody></table>
+            <div class="gd-notes"><h3>${T.notes}</h3><ol>${notes}</ol></div>
+          </div>` : ""}
+        </div>`
+      });
+    }
+    return pages;
   }
 
   // развёртка одной стены для печати (длина × высота, точки с рулетками от угла и от пола)
@@ -752,6 +856,129 @@
       <table class="tb"><thead><tr><th>Линия</th><th>Аппарат защиты</th><th>Кабель</th><th>Полюса</th><th>Длина трасс</th></tr></thead><tbody>${rows}</tbody></table>` }];
   }
 
+  /* ---------- ТАБЛИЦА РАСЧЁТНЫХ НАГРУЗОК ----------
+     Ру берём с ПРИВЯЗАННОЙ техники (p.appliances несёт реальные ватты и фазность),
+     а по точкам без техники — типовую удельную мощность: иначе линия из четырёх
+     розеток дала бы 0 кВт и таблица была бы бессмысленной. Значения ниже — обычная
+     проектная прикидка для квартиры, а не норматив; об этом честно сказано в
+     примечании ПОД таблицей, чтобы никто не принял их за расчёт по ГОСТ. */
+  const PT_W = { socket: 100, output: 500, output3: 1000, output24: 50, ac: 1500, warmfloor: 1000, light: 60, bra: 40, track: 80, led: 50, internet: 15, tv: 15, camera: 10, sensor: 5, intercom: 15, leak: 5, pir: 5, lux: 5, riser: 0, junction: 0 };
+  // коэффициент спроса: выделенная линия работает целиком, розеточная группа — нет
+  const KS = { power: 0.7, light: 1, warm: 1, ac: 1, lv: 1, tv: 1, cctv: 1 };
+  const KS_SUM = 0.7;   // коэффициент одновременности по щиту (типовой для квартиры)
+  function loadRows(p) {
+    const S = p.settings || {}, SC = EP.Plan.Scheme, R = EP.Plan.Routes;
+    const three = S.phases === 3;
+    const applByCirc = {};
+    (p.appliances || []).forEach((a) => {
+      if (a.kind !== "appl" || !a.circuitId) return;
+      (applByCirc[a.circuitId] = applByCirc[a.circuitId] || []).push(a);
+    });
+    return (p.circuits || []).map((c) => {
+      const els = SC && SC.loadEls ? SC.loadEls(p, c) : (p.elements || []).filter((e) => e.circuitId === c.id);
+      const appl = applByCirc[c.id] || [];
+      // техника стоит В точке, поэтому точку с привязанной техникой по удельной
+      // мощности второй раз не считаем — иначе Ру задваивалась бы
+      const taken = {};
+      appl.forEach((a) => { if (a.elementId) taken[a.elementId] = 1; });
+      let w = appl.reduce((s2, a) => s2 + (Number(a.watt) || 0), 0);
+      els.forEach((e) => {
+        if (taken[e.id]) return;
+        if (e.type === "block") ((e.params && e.params.items) || []).forEach((t2) => { w += PT_W[t2] || 0; });
+        else w += PT_W[e.type] || 0;
+      });
+      const lay = (els[0] || {}).layer || "power";
+      const ks = appl.length ? 1 : (KS[lay] == null ? 1 : KS[lay]);
+      // cos φ 0.85 берём, если на линии есть ДВИГАТЕЛЬНАЯ нагрузка (кондиционер,
+      // подключённая техника) — проверяем ВСЕ элементы линии, а не только первый:
+      // на смешанной линии (розетка + кондиционер) первым обычно стоит розетка
+      const motor = appl.length > 0 || els.some((e) => e.type === "ac" || e.layer === "ac");
+      const cos = motor ? 0.85 : 0.95;
+      const pu = w / 1000, pr = pu * ks;
+      const poles3 = c.poles === 3;
+      const ir = pr <= 0 ? 0 : (poles3 ? pr * 1000 / (1.732 * 400 * cos) : pr * 1000 / (230 * cos));
+      const cable = c.cable || (SC && SC.autoCable ? SC.autoCable(p, c) : "") || "—";
+      const surf = R && R.surfacesUsed ? R.surfacesUsed(p) : [];
+      return {
+        name: c.name, load: (SC && SC.loadSummary ? SC.loadSummary(p, c) : "—"),
+        pu, ks, cos, pr, ir, cable,
+        prot: `${poles3 ? "3P " : ""}${c.breaker || 16} А${c.rcd ? " + УЗО 30 мА" : ""}`,
+        way: surf.length === 1 ? (surf[0] === "floor" ? "скрыто, по полу" : "скрыто, по потолку") : "скрыто",
+        three
+      };
+    });
+  }
+  const num = (v, d) => (Math.round(v * Math.pow(10, d || 1)) / Math.pow(10, d || 1)).toFixed(d || 1).replace(".", ",");
+  function buildLoads(p) {
+    const rows = loadRows(p);
+    if (!rows.length) return [];
+    const S = p.settings || {};
+    const sumPr = rows.reduce((s2, r) => s2 + r.pr, 0) * KS_SUM;
+    const cosAvg = 0.95, three = S.phases === 3;
+    const sumIr = sumPr <= 0 ? 0 : (three ? sumPr * 1000 / (1.732 * 400 * cosAvg) : sumPr * 1000 / (230 * cosAvg));
+    const tr = rows.map((r) => `<tr><td class="sp-c">${esc(r.name)}</td><td>${esc(r.load)}</td>
+      <td class="sp-c">${num(r.pu, 2)}</td><td class="sp-c">${num(r.ks, 2)}</td><td class="sp-c">${num(r.cos, 2)}</td>
+      <td class="sp-c">${num(r.pr, 2)}</td><td class="sp-c">${num(r.ir, 1)}</td>
+      <td class="sp-c">${esc(r.prot)}</td><td class="sp-c">${esc(r.cable)}</td><td class="sp-c">${esc(r.way)}</td></tr>`).join("");
+    return [{
+      title: T.loads,
+      body: `<table class="tb tb-s"><thead><tr>
+          <th>Обозна-<br>чение</th><th>Наименование потребителя</th><th>Ру,<br>кВт</th><th>Кс</th><th>cos φ</th>
+          <th>Рр,<br>кВт</th><th>Iр, А</th><th>Аппарат защиты</th><th>Кабель</th><th>Прокладка</th>
+        </tr></thead><tbody>${tr}
+        <tr class="tb-sum"><td class="sp-c">Итого</td><td>По вводу, с коэффициентом одновременности ${num(KS_SUM, 1)}</td>
+          <td class="sp-c">${num(rows.reduce((s2, r) => s2 + r.pu, 0), 2)}</td><td class="sp-c">${num(KS_SUM, 2)}</td>
+          <td class="sp-c">${num(cosAvg, 2)}</td><td class="sp-c">${num(sumPr, 2)}</td><td class="sp-c">${num(sumIr, 1)}</td>
+          <td class="sp-c">${S.mainBreaker ? S.mainBreaker + " А" : "—"}</td><td class="sp-c">—</td><td class="sp-c">—</td></tr>
+        </tbody></table>
+        <p class="note-s">Ру — установленная мощность (по подключённой технике, по остальным точкам — удельная типовая мощность);
+        Кс — коэффициент спроса; Рр = Ру × Кс. Значения Кс и удельных мощностей приняты как типовые для квартиры
+        и уточняются по фактическому составу оборудования.</p>`
+    }];
+  }
+
+  /* ---------- КАБЕЛЬНЫЙ ЖУРНАЛ ----------
+     Ничего не пересчитываем: длины берём у трассировки (те же, что в шторке «Трассы»
+     и в смете), марки — те же, что в однолинейке и спецификации. */
+  function roomOfEl(p, el) {
+    if (!el) return null;
+    if (el.wallId) {
+      const rid = String(el.wallId).split(":")[0];
+      const r = (p.rooms || []).find((x) => x.id === rid);
+      if (r) return r;
+    }
+    const pt = el.params && el.params.x != null ? { x: el.params.x, y: el.params.y } : null;
+    return pt ? G().roomAt(p, pt) : null;
+  }
+  function buildCableLog(p) {
+    const circuits = p.circuits || [];
+    if (!circuits.length) return [];
+    const rl = EP.Plan.Routes ? EP.Plan.Routes.lengths(p) : { byCircuit: {} };
+    const SC = EP.Plan.Scheme, R = EP.Plan.Routes;
+    const panelName = ((p.panels || [])[0] || {}).name || "Щит квартирный";
+    const res = Math.max(0, Number((p.settings || {}).cableReserve) || 0);
+    const rows = circuits.map((c, i) => {
+      const els = (p.elements || []).filter((e) => e.circuitId === c.id && e.type !== "junction");
+      const rr = {};
+      els.forEach((e) => { const r = roomOfEl(p, e); if (r) rr[r.name] = 1; });
+      const to = Object.keys(rr).join(", ") || (SC && SC.loadKindLabel ? SC.loadKindLabel(p, c) : "—");
+      const cm = rl.byCircuit && rl.byCircuit[c.id] ? rl.byCircuit[c.id] : 0;
+      const m = cm ? Math.ceil(cm / 100 * (1 + res / 100)) : 0;
+      const surf = els.length && R && R.surfaceOfEl ? R.surfaceOfEl(p, els[0]) : null;
+      return `<tr><td class="sp-c">${i + 1}</td><td class="sp-c">${esc(c.name)}</td><td>${esc(panelName)}</td>
+        <td>${esc(to)}</td><td class="sp-c">${esc(c.cable || (SC && SC.autoCable ? SC.autoCable(p, c) : "") || "—")}</td>
+        <td class="sp-c">${m || "—"}</td><td class="sp-c">${surf === "floor" ? "в штробе / по полу" : surf === "ceiling" ? "в штробе / по потолку" : "скрыто"}</td>
+        <td class="sp-c">${(c.breaker || 16)} А${c.rcd ? ", УЗО 30 мА" : ""}</td></tr>`;
+    }).join("");
+    return [{
+      title: T.cablelog,
+      body: `<table class="tb tb-s"><thead><tr><th>№</th><th>Обозначение<br>линии</th><th>Начало</th><th>Конец</th>
+          <th>Марка, сечение</th><th>Длина,<br>м</th><th>Способ прокладки</th><th>Аппарат защиты</th>
+        </tr></thead><tbody>${rows}</tbody></table>
+        <p class="note-s">Длины даны по трассировке${res ? ` с запасом ${res} %` : ""} и уточняются по месту.</p>`
+    }];
+  }
+
   function counts(p) {
     const TY = EP.Plan.Elements.TYPES, out = {};
     (p.elements || []).forEach((e) => {
@@ -917,7 +1144,7 @@
      только строки таблицы (SVG там нет), а её данные приходят из мемоизированного
      EP.Plan.Calc.estimateItems — повторный вызов ничего не пересчитывает. */
   function albumOutline(p) {
-    const n = { title: 1, plan: 0, dims: 0, traces: 0, unfolds: 0, expl: 1, spec: 0, circuits: 0, scheme: 0 };
+    const n = { title: 1, gen: 0, plan: 0, dims: 0, traces: 0, unfolds: 0, expl: 1, spec: 0, circuits: 0, loads: 0, cablelog: 0, scheme: 0 };
     floorsOf(p).forEach((f) => withFloor(p, f && f.id, () => {
       n.plan += 1;
       n.dims += usedPointTypes(p).length;
@@ -925,10 +1152,13 @@
       n.unfolds += Math.ceil(unfoldWalls(p).length / UNF_PER_PAGE);
     }));
     try { n.spec = buildSpecPages(p).length; } catch (e) { n.spec = 0; }
-    n.circuits = (p.circuits || []).length ? 1 : 0;
+    n.circuits = n.loads = n.cablelog = (p.circuits || []).length ? 1 : 0;
     n.scheme = (window.ShieldSchemeSVG && EP.Plan.Scheme && (p.circuits || []).length) ? 1 : 0;
     let total = 0;
-    SECTIONS.forEach((s) => { if (secOn(s.id)) total += n[s.id] || 0; });
+    SECTIONS.forEach((s) => { if (s.id !== "gen" && secOn(s.id)) total += n[s.id] || 0; });
+    // «Общие данные» считаем ПОСЛЕДНИМИ: их объём зависит от длины ведомости, т.е. от
+    // всех остальных листов (тот же genSheetCount, что и в сборке — разойтись не могут)
+    if (secOn("gen")) { n.gen = genSheetCount(total); total += n.gen; }
     return { n, total };
   }
   // МНОГОЭТАЖНЫЙ альбом: листы, зависящие от ГЕОМЕТРИИ, печатаются НА КАЖДЫЙ этаж;
@@ -967,15 +1197,27 @@
           <div><h3>${T.spec}</h3><table class="tb"><thead><tr><th></th><th>Тип</th><th>Кол-во</th></tr></thead><tbody>${spec}</tbody></table></div>
           <div class="legend"><h3>${T.legend}</h3>${legendRows}</div>
         </div>` });
-    if (secOn("spec")) buildSpecPages(p).forEach((pg) => pages.push(pg));
     if (secOn("circuits")) buildCircuits(p).forEach((pg) => pages.push(pg));
+    if (secOn("loads")) buildLoads(p).forEach((pg) => pages.push(pg));
+    if (secOn("cablelog")) buildCableLog(p).forEach((pg) => pages.push(pg));
     if (secOn("scheme")) buildScheme(p).forEach((pg) => pages.push(pg));
+    if (secOn("spec")) buildSpecPages(p).forEach((pg) => pages.push(pg));
     // без титульного листа нумерация начинается с первого содержательного листа —
     // «Лист N / Листов M» в штампе обязан сходиться с реальным числом листов альбома
     const tp = secOn("title");
-    const of = pages.length + (tp ? 1 : 0);
+    // «Общие данные» идут ВТОРЫМ листом и перечисляют в ведомости ВЕСЬ комплект,
+    // включая себя — поэтому их количество считаем до сборки (genSheetCount сходится
+    // к n, при котором ceil((остальные + n) / строк_на_лист) === n)
+    const base = pages.length + (tp ? 1 : 0);
+    const genN = secOn("gen") ? genSheetCount(base) : 0;
+    const of = base + genN;
+    const titles = [];
+    if (tp) titles.push({ title: T.titleSheet });
+    for (let i = 0; i < genN; i++) titles.push({ title: T.gen });
+    pages.forEach((pg) => titles.push({ title: pg.title, scale: pg.scale }));
+    const all = (genN ? buildGeneralData(p, titles) : []).concat(pages);
     const sheets = (tp ? buildTitlePage(p, pages, of) : "")
-      + pages.map((pg, i) => sheetWrap(p, pg, i + 1 + (tp ? 1 : 0), of)).join("");
+      + all.map((pg, i) => sheetWrap(p, pg, i + 1 + (tp ? 1 : 0), of)).join("");
     return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>${esc(p.name)} — ${T.sheet}</title><style>
       /* ---- лист альбома: A4 landscape, поля по ГОСТ 2.301 (20мм слева под подшивку,
          5мм остальные), рамка, штамп внизу справа. margin:0 у @page — поля рисуем сами,
@@ -985,8 +1227,12 @@
       /* ГОСТ-шрифт: узкий наклонный (тип А). Настоящего ГОСТ-шрифта в системе нет —
          ближайшее из гарантированно доступного это Arial Narrow курсивом, как и
          выглядит присланный пользователем проект. */
-      body { font: italic 10.5px/1.25 "Arial Narrow", "Liberation Sans Narrow", Arial, sans-serif; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      .sheet { position: relative; width: ${pg().w}mm; height: ${pg().h}mm; padding: 5mm 5mm 5mm 20mm; overflow: hidden; break-after: page; page-break-after: always; }
+      body { font: italic 10.5px/1.25 "Arial Narrow", "Roboto Condensed", "Noto Sans Display", "Liberation Sans Narrow", Arial, sans-serif; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      /* --areaH — РЕАЛЬНАЯ высота поля чертежа на листе (лист − поля − заголовок −
+         основная надпись). По ней ограничиваются развёртки и однолинейка: раньше у них
+         стояли максимумы от высоты ЛИСТА, и на A4 карточка развёртки и схема налезали
+         на штамп (замер: до 41 и 77 мм захода) */
+      .sheet { --areaH: ${planArea().h}mm; position: relative; width: ${pg().w}mm; height: ${pg().h}mm; padding: 5mm 5mm 5mm 20mm; overflow: hidden; break-after: page; page-break-after: always; }
       /* графы подшивки (ГОСТ 2.104, графы 19-23) — в левом поле, текст на 90° */
       .bind { position: absolute; left: 5mm; bottom: 5mm; width: 15mm; display: flex; flex-direction: column; }
       .bind-b { height: 25mm; border: .25mm solid #000; border-right: 0; display: flex; align-items: center; justify-content: center; }
@@ -1041,7 +1287,25 @@
       .spec .sp-nm { padding-left: 3mm; }
       .spec-note { position: absolute; left: 0; bottom: 2mm; width: calc(100% - 188mm); font-size: 8.5px; line-height: 1.3; }
       /* ---- титульный лист ---- */
+      /* ---- Общие данные (ГОСТ Р 21.101): слева ведомость рабочих чертежей,
+             справа ведомость ссылочных документов и общие указания ---- */
+      .gd { display: flex; gap: 4mm; align-items: flex-start; height: 100%; }
+      .gd-l { flex: 0 0 96mm; }
+      .gd-r { flex: 1 1 auto; min-width: 0; }
+      .gd-ved th, .gd-ved td { height: 4.2mm; padding: 0 1mm; font-size: 8px; }
+      .gd-ved th:first-child, .gd-ved td:first-child { width: 12mm; text-align: center; }
+      .gd-ved th:last-child, .gd-ved td:last-child { width: 14mm; text-align: center; }
+      .gd-refs { margin-bottom: 3mm; }
+      .gd-refs .gd-ref { width: 34mm; white-space: nowrap; }
+      .gd-notes h3 { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 1.5mm; }
+      .gd-notes ol { margin: 0; padding-left: 5mm; }
+      .gd-notes li { font-size: 8.5px; line-height: 1.25; margin-bottom: .8mm; }
+      .tb-s th, .tb-s td { font-size: 8px; padding: .6mm 1mm; }
+      .tb-sum td { font-weight: 700; }
+      .note-s { font-size: 8px; line-height: 1.25; margin-top: 2mm; }
       .tp { display: flex; flex-direction: column; height: 100%; padding-bottom: 58mm; }
+      .tp-code { font-size: 12px; margin-top: 3mm; letter-spacing: .04em; }
+      .tp-one { max-width: 150mm; margin: 0 auto; }
       .tp-top { text-align: center; padding: 6mm 0 8mm; }
       .tp-stage { font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: #444; margin-bottom: 3mm; }
       .tp-top h1 { font-size: 22px; font-weight: 700; letter-spacing: .01em; }
@@ -1049,9 +1313,6 @@
       .tp-cols { display: flex; gap: 6mm; align-items: flex-start; }
       .tp-info { flex: 0 0 105mm; }
       .tp-info th { width: 32mm; white-space: nowrap; }
-      .tp-ved { flex: 1 1 auto; }
-      .tp-ved th:first-child, .tp-ved td:first-child { width: 12mm; }
-      .tp-ved th:last-child, .tp-ved td:last-child { width: 16mm; text-align: center; }
       /* сцена SVG — печатные цвета */
       .gsym { flex: none; vertical-align: middle; }
       .legend .gsym { margin-right: 0; }
@@ -1124,10 +1385,10 @@
          у печатного <style> нет) они читались как посторонние диагонали через комнаты. */
       .ep-plan-swlink, .ep-plan-swchain { stroke-dasharray: 7 5; opacity: .45; }
       /* развёртки стен */
-      .unfgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; height: 100%; }
-      .unfcard { border: .25mm solid #000; padding: 1.5mm 2mm; break-inside: avoid; display: flex; flex-direction: column; }
+      .unfgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; height: 100%; min-height: 0; }
+      .unfcard { border: .25mm solid #000; padding: 1.5mm 2mm; break-inside: avoid; display: flex; flex-direction: column; min-height: 0; max-height: var(--areaH); overflow: hidden; }
       .unfcard h4 { font-size: 9px; font-weight: 700; margin-bottom: 1mm; }
-      .unf { width: 100%; flex: 1 1 auto; max-height: ${pg().h - 65}mm; }
+      .unf { width: 100%; flex: 1 1 auto; min-height: 0; max-height: calc(var(--areaH) - 32mm); }
       /* информационная панель карточки развёртки: помещение/стена + ключ-схема с направлением взгляда */
       .unfinfo { display: flex; gap: 2mm; align-items: flex-start; border-bottom: .2mm solid #000; padding-bottom: 1mm; margin-bottom: 1mm; }
       .unfinfot { width: auto; flex: 1 1 auto; border-collapse: collapse; }
@@ -1157,8 +1418,8 @@
       .unfglyph { fill: #fff; font-weight: 700; font-family: system-ui; }
       .unfqf { font-weight: 700; font-family: system-ui; }
       /* однолинейка + линии */
-      .schemebox { border: .25mm solid #000; padding: 2mm; overflow: hidden; height: 100%; display: flex; align-items: center; justify-content: center; }
-      .schemebox svg { max-width: 100%; height: auto; }
+      .schemebox { border: .25mm solid #000; padding: 2mm; overflow: hidden; height: 100%; min-height: 0; max-height: var(--areaH); display: flex; align-items: center; justify-content: center; }
+      .schemebox svg { max-width: 100%; height: auto; max-height: calc(var(--areaH) - 6mm); }
       .cd { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
     </style></head><body>${sheets}</body></html>`;
   }
@@ -1264,5 +1525,8 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Export = { print, sheetHtml, counts, SECTIONS, sections, toggleSec, setAllSec, albumOutline };
+  // genSheetCount экспортирован ради теста: его сходимость (ведомость перечисляет и сами
+  // «Общие данные») проявляется только на альбоме длиннее листа ведомости — на обычном
+  // тестовом проекте поломку этой арифметики не видно ни по одному другому признаку
+  EP.Plan.Export = { print, sheetHtml, counts, SECTIONS, sections, toggleSec, setAllSec, albumOutline, genSheetCount };
 })();
