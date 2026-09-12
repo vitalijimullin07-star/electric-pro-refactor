@@ -9,6 +9,10 @@
     "androidScheme": "https"
   },
   "plugins": {
+    "FirebaseAuthentication": {
+      "providers": ["google.com"],
+      "skipNativeAuth": false
+    },
     "SplashScreen": {
       "launchShowDuration": 400,
       "backgroundColor": "#0f172a",

@@ -13,4 +13,9 @@ ext {
     androidxJunitVersion = '1.3.0'
     androidxEspressoCoreVersion = '3.7.0'
     cordovaAndroidVersion = '14.0.1'
+    // Вход через Google в @capacitor-firebase/authentication. По умолчанию false, и
+    // тогда библиотеки Google Sign-In подключаются как compileOnly — то есть в APK
+    // их нет вовсе, а вход падает уже на устройстве. Нужны обе половины: этот флаг
+    // и providers:["google.com"] в capacitor.config.json.
+    rgcfaIncludeGoogle = true
 }
