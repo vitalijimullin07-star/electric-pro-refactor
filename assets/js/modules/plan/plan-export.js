@@ -1228,7 +1228,11 @@
          ближайшее из гарантированно доступного это Arial Narrow курсивом, как и
          выглядит присланный пользователем проект. */
       body { font: italic 10.5px/1.25 "Arial Narrow", "Roboto Condensed", "Noto Sans Display", "Liberation Sans Narrow", Arial, sans-serif; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      .sheet { position: relative; width: ${pg().w}mm; height: ${pg().h}mm; padding: 5mm 5mm 5mm 20mm; overflow: hidden; break-after: page; page-break-after: always; }
+      /* --areaH — РЕАЛЬНАЯ высота поля чертежа на листе (лист − поля − заголовок −
+         основная надпись). По ней ограничиваются развёртки и однолинейка: раньше у них
+         стояли максимумы от высоты ЛИСТА, и на A4 карточка развёртки и схема налезали
+         на штамп (замер: до 41 и 77 мм захода) */
+      .sheet { --areaH: ${planArea().h}mm; position: relative; width: ${pg().w}mm; height: ${pg().h}mm; padding: 5mm 5mm 5mm 20mm; overflow: hidden; break-after: page; page-break-after: always; }
       /* графы подшивки (ГОСТ 2.104, графы 19-23) — в левом поле, текст на 90° */
       .bind { position: absolute; left: 5mm; bottom: 5mm; width: 15mm; display: flex; flex-direction: column; }
       .bind-b { height: 25mm; border: .25mm solid #000; border-right: 0; display: flex; align-items: center; justify-content: center; }
@@ -1381,10 +1385,10 @@
          у печатного <style> нет) они читались как посторонние диагонали через комнаты. */
       .ep-plan-swlink, .ep-plan-swchain { stroke-dasharray: 7 5; opacity: .45; }
       /* развёртки стен */
-      .unfgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; height: 100%; }
-      .unfcard { border: .25mm solid #000; padding: 1.5mm 2mm; break-inside: avoid; display: flex; flex-direction: column; }
+      .unfgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; height: 100%; min-height: 0; }
+      .unfcard { border: .25mm solid #000; padding: 1.5mm 2mm; break-inside: avoid; display: flex; flex-direction: column; min-height: 0; max-height: var(--areaH); overflow: hidden; }
       .unfcard h4 { font-size: 9px; font-weight: 700; margin-bottom: 1mm; }
-      .unf { width: 100%; flex: 1 1 auto; max-height: ${pg().h - 65}mm; }
+      .unf { width: 100%; flex: 1 1 auto; min-height: 0; max-height: calc(var(--areaH) - 32mm); }
       /* информационная панель карточки развёртки: помещение/стена + ключ-схема с направлением взгляда */
       .unfinfo { display: flex; gap: 2mm; align-items: flex-start; border-bottom: .2mm solid #000; padding-bottom: 1mm; margin-bottom: 1mm; }
       .unfinfot { width: auto; flex: 1 1 auto; border-collapse: collapse; }
@@ -1414,8 +1418,8 @@
       .unfglyph { fill: #fff; font-weight: 700; font-family: system-ui; }
       .unfqf { font-weight: 700; font-family: system-ui; }
       /* однолинейка + линии */
-      .schemebox { border: .25mm solid #000; padding: 2mm; overflow: hidden; height: 100%; display: flex; align-items: center; justify-content: center; }
-      .schemebox svg { max-width: 100%; height: auto; }
+      .schemebox { border: .25mm solid #000; padding: 2mm; overflow: hidden; height: 100%; min-height: 0; max-height: var(--areaH); display: flex; align-items: center; justify-content: center; }
+      .schemebox svg { max-width: 100%; height: auto; max-height: calc(var(--areaH) - 6mm); }
       .cd { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
     </style></head><body>${sheets}</body></html>`;
   }
