@@ -150,6 +150,10 @@ node scripts/build-www.js && npx cap copy android
 cd android-native && ./gradlew assembleRelease
 ```
 
+Нужен **Node 22+** — Capacitor CLI 8 на более старом падает с «The Capacitor CLI requires
+NodeJS >=22.0.0» уже после того, как папка `www/` собрана, так что ошибка выглядит
+странно: веб-часть готова, а копировать её нечем.
+
 `scripts/build-www.js` собирает папку `www/`: копирует только само приложение (без docs,
 test, functions), выключает service worker и **скачивает Firebase SDK локально** — иначе
 приложение при первом запуске без интернета не поднимет даже чтение своих же локальных
