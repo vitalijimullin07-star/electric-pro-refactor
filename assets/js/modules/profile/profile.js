@@ -92,10 +92,10 @@
           ${field("c", "note", "Примечание", "")}
         </div>
         <div class="ep-prof-actions">
-          <button type="button" class="btn btn-primary ep-clickable" data-prof-save>Сохранить</button>
+          <button type="button" class="btn btn-primary ep-clickable" data-prof-save>☁ Синхронизировать</button>
           <button type="button" class="btn btn-ghost ep-clickable" data-route="main">На главный</button>
         </div>
-        <div class="ep-prof-status" data-prof-status></div>
+        <div class="ep-prof-status" data-prof-status>Поля сохраняются сразу, как их заполняешь. Кнопка — чтобы отправить их в облако по аккаунту.</div>
         <div class="ep-prof-sec">
           <div class="ep-prof-h">Приватность и данные</div>
           <p class="ep-prof-note">Мы получаем от Google ваш email и имя — только для работы в приложении.
@@ -146,6 +146,23 @@
   }
 
   let delArmed = false, delTimer = null;
+
+  /* Автосохранение на устройство при вводе. Раньше реквизиты писались ТОЛЬКО по кнопке
+     «Сохранить», и уход с экрана без неё молча терял всё набранное — единственное место
+     в приложении, которое так себя вело (план, смета, БД и остальное пишут сразу).
+     Пишем БЕЗ задержки: объекты крошечные, а отложенная запись не успела бы сработать,
+     если пользователь тут же ушёл на другой роут — форма к тому моменту уже заменена,
+     и readForm() не нашёл бы полей. Облако по-прежнему только по кнопке — незачем
+     дёргать Firestore на каждую букву. */
+  function autoSave(e) {
+    const t = e.target;
+    if (!t || !t.closest || !t.closest("[data-prof]")) return;
+    readForm();
+    const st = document.querySelector("[data-prof-status]");
+    if (st) st.textContent = "Сохранено на устройстве. «☁ Синхронизировать» — отправить в облако.";
+  }
+  document.addEventListener("input", autoSave);
+  document.addEventListener("change", autoSave);   // <select> «Форма» не шлёт input в части браузеров
 
   document.addEventListener("click", (e) => {
     const t = e.target; if (!t || !t.closest) return;

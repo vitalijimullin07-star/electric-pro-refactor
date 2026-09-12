@@ -6575,6 +6575,36 @@ test("фото: deleteProject чистит кэш фото своего прое
       ok(/npx cap sync android/.test(wf), "cap sync — иначе нет capacitor-cordova-android-plugins");
       ok(/node-version: 22/.test(wf), "Node 22 — Capacitor CLI 8 на 20 не запускается");
     });
+
+    // ===== 53. Найдено живой проверкой веба: раскладка и потеря ввода =====
+    test("Пул: строка кнопок переносится и не даёт горизонтальный скролл", () => {
+      const css = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "css", "pool-v29.css"), "utf8");
+      const row = css.slice(css.indexOf(".pv29-actions {"), css.indexOf(".pv29-est {"));
+      ok(/flex-wrap:\s*wrap/.test(row), "у .pv29-actions есть перенос строк");
+      const est = css.slice(css.indexOf(".pv29-est {"), css.indexOf(".pv29-clear {"));
+      // flex:1 без basis растягивал обе зелёные кнопки по длине подписи и выдавливал «Очистить»
+      ok(/flex:\s*1\s+1\s+\d+px/.test(est) && /min-width:\s*0/.test(est),
+        "у .pv29-est задана база и min-width:0 (иначе кнопка не сжимается)");
+    });
+    test("Гайд: длинные примеры без пробелов переносятся", () => {
+      const css = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "css", "base.css"), "utf8");
+      const rule = (css.match(/\.guide-body i[^{]*\{[^}]*\}/) || [""])[0];
+      ok(/overflow-wrap:\s*anywhere/.test(rule), "перенос по любому символу у примеров в гайде");
+      // сам пример-строка в гайде существует — именно она вылезала за экран
+      const g = require("fs").readFileSync(require("path").join(__dirname, "..", "pages", "guide.html"), "utf8");
+      ok(/ep-estimate/.test(g), "пример файла сметы в гайде на месте");
+    });
+    test("Профиль: реквизиты сохраняются сразу, а не только по кнопке", () => {
+      const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "profile", "profile.js"), "utf8");
+      ok(/function autoSave\(e\)/.test(src), "есть автосохранение");
+      ok(/addEventListener\("input", autoSave\)/.test(src) && /addEventListener\("change", autoSave\)/.test(src),
+        "ловим и input, и change (у <select> input шлют не все браузеры)");
+      const fn = src.slice(src.indexOf("function autoSave(e)"), src.indexOf("document.addEventListener(\"input\", autoSave)"));
+      ok(/readForm\(\)/.test(fn), "пишет через тот же readForm, что и кнопка");
+      // отложенная запись не успеет: уход на другой роут заменяет форму, и readForm не найдёт полей
+      ok(!/setTimeout/.test(fn), "пишем сразу, без отложенной записи");
+      ok(/data-prof-save>☁ Синхронизировать/.test(src), "кнопка теперь про облако, а не про сохранение");
+    });
   }
 
   console.log("\n" + "=".repeat(48));

@@ -1078,6 +1078,10 @@ body[data-noanim="1"] *::after{animation-duration:.001s!important;transition-dur
 .guide-body ul,.guide-body ol{margin:8px 0;padding-left:20px}
 .guide-body li{margin:6px 0}
 .guide-body p{margin:8px 0}
+/* Примеры файлов/имён в тексте — одна длинная строка без пробелов (JSON, имя файла,
+   data-атрибут). Без переноса она вылезала за правый край экрана: замер на 412px
+   давал элемент шириной до 479px. Переносим по любому символу, а не только по пробелу. */
+.guide-body i,.guide-body code{overflow-wrap:anywhere;word-break:break-word}
 .guide-foot{padding:14px 16px;margin-top:14px;font:500 calc(13px * var(--eff-text-scale,1))/1.5 system-ui;color:var(--muted,#94a3b8)}
 .guide-actions{margin:16px 0 8px}
 /* Вложенные под-разделы — крупные модули (напр. «Проект квартиры», десятки функций)
