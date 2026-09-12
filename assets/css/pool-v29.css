@@ -70,9 +70,12 @@
 
 .pv29-total { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(120,130,150,.2); font: 600 14px/1 system-ui; }
 .pv29-total b { font: 800 16px/1 system-ui; }
-.pv29-actions { display: flex; gap: 8px; margin-top: 10px; }
-.pv29-est { flex: 1; border: 0; border-radius: 11px; padding: 12px; font: 800 14px/1 system-ui; cursor: pointer; background: #16a34a; color: #fff; }
-.pv29-clear { border: 1px solid rgba(120,130,150,.35); background: transparent; color: var(--muted,#94a3b8); border-radius: 11px; padding: 12px 14px; font: 600 13px/1 system-ui; cursor: pointer; }
+/* wrap ОБЯЗАТЕЛЕН: две зелёные кнопки с длинными подписями («В смету (предварительную)»,
+   «В проект квартиры») растягиваются по flex, и третья кнопка уезжала за правый край
+   экрана вместе с горизонтальным скроллом всей страницы (замер на 412px: строка 33..435). */
+.pv29-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.pv29-est { flex: 1 1 150px; min-width: 0; border: 0; border-radius: 11px; padding: 12px; font: 800 14px/1.2 system-ui; cursor: pointer; background: #16a34a; color: #fff; }
+.pv29-clear { flex: 0 1 auto; min-width: 0; border: 1px solid rgba(120,130,150,.35); background: transparent; color: var(--muted,#94a3b8); border-radius: 11px; padding: 12px 14px; font: 600 13px/1.2 system-ui; cursor: pointer; }
 
 /* редактор шаблонов */
 .pv29-tpls { margin-top: 12px; }
