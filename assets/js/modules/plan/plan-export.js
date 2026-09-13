@@ -176,8 +176,16 @@
   // проектах; сам pdfFormat остаётся латинским — это значение CSS-свойства @page size
   const fmtLabel = () => pdfFormat.replace("A", "А");
   // высота поля: лист − (5+5 поля, 6 внутренний отступ рамки, ~9 заголовок листа,
-  // 58 основная надпись по ГОСТ 21.101 — она стала выше прежней вольной вёрстки)
-  const planArea = () => ({ w: pg().w - 35, h: pg().h - 84 });
+  // 49 основная надпись — 9 строк по 4.6мм плюс зазор. STAMP_MM/STAMP_RESERVE_MM ниже
+  // и это число обязаны меняться ВМЕСТЕ: STAMP_RESERVE_MM резервирует место под надпись
+  // у содержимого листа, а planArea задаёт размер чертежа — разойдись они, чертёж
+  // наехал бы на надпись (или, наоборот, лист остался бы наполовину пустым)
+  const planArea = () => ({ w: pg().w - 35, h: pg().h - 75 });
+  // основная надпись: 9 строк по STAMP_ROW_MM (была 5.5мм — пользователь попросил
+  // «рамку ниже в правом углу сделай меньше»; освободившиеся 8мм уходят чертежу)
+  const STAMP_ROW_MM = 4.6;
+  const STAMP_RESERVE_MM = 49;        // 9×4.6 = 41.4 + зазор, ПОЛНАЯ надпись (форма 3)
+  const STAMP_CONT_RESERVE_MM = 12;   // сокращённая надпись (форма 6) — 2 строки
   // Ряд подбирается «первый, при котором влезает» = САМЫЙ КРУПНЫЙ из подходящих.
   // Шагов стало больше (добавлены 30/40/60/125): на грубой лестнице 25→50→75 чертёж
   // часто занимал 60% поля листа и вокруг оставалась пустота — «проект не
@@ -843,17 +851,43 @@
     } catch (e) { return []; }
   }
   // таблица линий (QF) + щит
+  /* ---------- РАЗБИВКА ДЛИННЫХ ТАБЛИЦ НА ЛИСТЫ ----------
+     «Линии и щит», «Нагрузки» и «Кабельный журнал» раньше строились ОДНИМ листом
+     независимо от числа линий — на проекте с 40 линиями таблица шла прямо поверх
+     основной надписи (замер до фикса: заход 82 / 52 / 45 мм на A4). Число строк на
+     лист считается от РЕАЛЬНОГО поля чертежа planArea(), поэтому на A3+ строк
+     помещается больше, а не остаётся пустое место. Высота строки взята с запасом
+     к замеренной (.tb 5.0мм, .tb-s 4.1мм) — ячейка с длинным перечнем помещений
+     может перенестись на вторую строку. */
+  const fitRows = (headMm, rowMm) => Math.max(5, Math.floor((planArea().h - headMm) / rowMm));
+  const perCircuits = () => fitRows(12, 5.5);   // замер: строка 5.3, шапка+подпись щита 10.3
+  const perLoads = () => fitRows(18, 4.5);      // замер: строка 4.1, шапка+«итого»+примечание 16.2
+  const perCableLog = () => fitRows(12, 5.2);   // замер: строка 4.1, шапка+примечание 9.4;
+  // запас к замеру нужен под ПЕРЕНОС строки в широкой ячейке (перечень помещений в
+  // журнале, наименование потребителя в нагрузках) — у журнала он поэтому самый большой
+  function tablePages(title, rows, per, render) {
+    const n = Math.max(1, Math.ceil(rows.length / per)), out = [];
+    for (let i = 0; i < n; i++) {
+      out.push({
+        title: n > 1 ? `${title} (${i + 1}/${n})` : title,
+        body: render(rows.slice(i * per, (i + 1) * per), i, n)
+      });
+    }
+    return out;
+  }
+
   function buildCircuits(p) {
     const circuits = p.circuits || [];
     if (!circuits.length) return [];
     if (EP.Plan.Scheme && EP.Plan.Scheme.recompute) { try { EP.Plan.Scheme.recompute(p); } catch (e) {} }
     const rl = EP.Plan.Routes ? EP.Plan.Routes.lengths(p) : { byCircuit: {} };
     const cableOf = (c) => c.cable || (EP.Plan.Scheme && EP.Plan.Scheme.autoCable ? EP.Plan.Scheme.autoCable(p, c) : null) || "—";
-    const rows = circuits.map((c) => `<tr><td><i class="cd" style="background:${esc(c.color)}"></i>${esc(c.name)}</td><td>${(c.breaker || 16)}A${c.rcd ? " + УЗО" : ""}</td><td>${esc(cableOf(c))}</td><td>${c.poles === 3 ? "3P" : "1P"}</td><td>${rl.byCircuit && rl.byCircuit[c.id] ? G().fmtLen(rl.byCircuit[c.id]) : "—"}</td></tr>`).join("");
+    const rows = circuits.map((c) => `<tr><td><i class="cd" style="background:${esc(c.color)}"></i>${esc(c.name)}</td><td>${(c.breaker || 16)}A${c.rcd ? " + УЗО" : ""}</td><td>${esc(cableOf(c))}</td><td>${c.poles === 3 ? "3P" : "1P"}</td><td>${rl.byCircuit && rl.byCircuit[c.id] ? G().fmtLen(rl.byCircuit[c.id]) : "—"}</td></tr>`);
     const box = p.settings.panelBox;
     const panelInfo = box && box.modules ? `Щит: <b>${esc(box.brand)}</b> · ${box.modules} мод · ${box.wmm}×${box.hmm}×${box.dmm} мм` : "";
-    return [{ title: T.circuits, body: `${panelInfo ? `<p class="note">${panelInfo}</p>` : ""}
-      <table class="tb"><thead><tr><th>Линия</th><th>Аппарат защиты</th><th>Кабель</th><th>Полюса</th><th>Длина трасс</th></tr></thead><tbody>${rows}</tbody></table>` }];
+    return tablePages(T.circuits, rows, perCircuits(), (part, i) =>
+      `${panelInfo && i === 0 ? `<p class="note">${panelInfo}</p>` : ""}
+      <table class="tb"><thead><tr><th>Линия</th><th>Аппарат защиты</th><th>Кабель</th><th>Полюса</th><th>Длина трасс</th></tr></thead><tbody>${part.join("")}</tbody></table>`);
   }
 
   /* ---------- ТАБЛИЦА РАСЧЁТНЫХ НАГРУЗОК ----------
@@ -919,22 +953,20 @@
     const tr = rows.map((r) => `<tr><td class="sp-c">${esc(r.name)}</td><td>${esc(r.load)}</td>
       <td class="sp-c">${num(r.pu, 2)}</td><td class="sp-c">${num(r.ks, 2)}</td><td class="sp-c">${num(r.cos, 2)}</td>
       <td class="sp-c">${num(r.pr, 2)}</td><td class="sp-c">${num(r.ir, 1)}</td>
-      <td class="sp-c">${esc(r.prot)}</td><td class="sp-c">${esc(r.cable)}</td><td class="sp-c">${esc(r.way)}</td></tr>`).join("");
-    return [{
-      title: T.loads,
-      body: `<table class="tb tb-s"><thead><tr>
-          <th>Обозна-<br>чение</th><th>Наименование потребителя</th><th>Ру,<br>кВт</th><th>Кс</th><th>cos φ</th>
-          <th>Рр,<br>кВт</th><th>Iр, А</th><th>Аппарат защиты</th><th>Кабель</th><th>Прокладка</th>
-        </tr></thead><tbody>${tr}
-        <tr class="tb-sum"><td class="sp-c">Итого</td><td>По вводу, с коэффициентом одновременности ${num(KS_SUM, 1)}</td>
+      <td class="sp-c">${esc(r.prot)}</td><td class="sp-c">${esc(r.cable)}</td><td class="sp-c">${esc(r.way)}</td></tr>`);
+    // строка «Итого» и примечание — только на ПОСЛЕДНЕМ листе таблицы
+    const sum = `<tr class="tb-sum"><td class="sp-c">Итого</td><td>По вводу, с коэффициентом одновременности ${num(KS_SUM, 1)}</td>
           <td class="sp-c">${num(rows.reduce((s2, r) => s2 + r.pu, 0), 2)}</td><td class="sp-c">${num(KS_SUM, 2)}</td>
           <td class="sp-c">${num(cosAvg, 2)}</td><td class="sp-c">${num(sumPr, 2)}</td><td class="sp-c">${num(sumIr, 1)}</td>
-          <td class="sp-c">${S.mainBreaker ? S.mainBreaker + " А" : "—"}</td><td class="sp-c">—</td><td class="sp-c">—</td></tr>
-        </tbody></table>
-        <p class="note-s">Ру — установленная мощность (по подключённой технике, по остальным точкам — удельная типовая мощность);
+          <td class="sp-c">${S.mainBreaker ? S.mainBreaker + " А" : "—"}</td><td class="sp-c">—</td><td class="sp-c">—</td></tr>`;
+    return tablePages(T.loads, tr, perLoads(), (part, i, n) =>
+      `<table class="tb tb-s"><thead><tr>
+          <th>Обозна-<br>чение</th><th>Наименование потребителя</th><th>Ру,<br>кВт</th><th>Кс</th><th>cos φ</th>
+          <th>Рр,<br>кВт</th><th>Iр, А</th><th>Аппарат защиты</th><th>Кабель</th><th>Прокладка</th>
+        </tr></thead><tbody>${part.join("")}${i === n - 1 ? sum : ""}</tbody></table>
+        ${i === n - 1 ? `<p class="note-s">Ру — установленная мощность (по подключённой технике, по остальным точкам — удельная типовая мощность);
         Кс — коэффициент спроса; Рр = Ру × Кс. Значения Кс и удельных мощностей приняты как типовые для квартиры
-        и уточняются по фактическому составу оборудования.</p>`
-    }];
+        и уточняются по фактическому составу оборудования.</p>` : ""}`);
   }
 
   /* ---------- КАБЕЛЬНЫЙ ЖУРНАЛ ----------
@@ -969,14 +1001,55 @@
         <td>${esc(to)}</td><td class="sp-c">${esc(c.cable || (SC && SC.autoCable ? SC.autoCable(p, c) : "") || "—")}</td>
         <td class="sp-c">${m || "—"}</td><td class="sp-c">${surf === "floor" ? "в штробе / по полу" : surf === "ceiling" ? "в штробе / по потолку" : "скрыто"}</td>
         <td class="sp-c">${(c.breaker || 16)} А${c.rcd ? ", УЗО 30 мА" : ""}</td></tr>`;
-    }).join("");
-    return [{
-      title: T.cablelog,
-      body: `<table class="tb tb-s"><thead><tr><th>№</th><th>Обозначение<br>линии</th><th>Начало</th><th>Конец</th>
+    });
+    return tablePages(T.cablelog, rows, perCableLog(), (part, i, n) =>
+      `<table class="tb tb-s"><thead><tr><th>№</th><th>Обозначение<br>линии</th><th>Начало</th><th>Конец</th>
           <th>Марка, сечение</th><th>Длина,<br>м</th><th>Способ прокладки</th><th>Аппарат защиты</th>
-        </tr></thead><tbody>${rows}</tbody></table>
-        <p class="note-s">Длины даны по трассировке${res ? ` с запасом ${res} %` : ""} и уточняются по месту.</p>`
-    }];
+        </tr></thead><tbody>${part.join("")}</tbody></table>
+        ${i === n - 1 ? `<p class="note-s">Длины даны по трассировке${res ? ` с запасом ${res} %` : ""} и уточняются по месту.</p>` : ""}`);
+  }
+
+  /* Экспликация + спецификация точек + условные обозначения — три НЕЗАВИСИМЫЕ колонки
+     на одном листе, но его высоту задаёт самая длинная из них: режем все три одним и
+     тем же шагом, i-й лист показывает i-й кусок каждой колонки. */
+  const perExpl = () => fitRows(12, 5.6);
+  // ЕДИНЫЙ источник трёх колонок — им пользуются и сборка листа, и счётчик листов
+  // в шторке 📄 (albumOutline): считай он длины по-своему, числа разошлись бы
+  function explParts(p) {
+    const gost = (p.settings && p.settings.symbolStyle) === "gost";
+    return {
+      expl: (p.rooms || []).filter((r) => (r.points || []).length >= 3)
+        .map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.name)}</td><td>${G().fmtArea(G().roomNetArea(p, r))}</td><td>${esc(r.material || p.settings.wallMaterial)}</td></tr>`),
+      spec: counts(p).map((c) => `<tr><td>${iconFor(c.k, c.glyph, gost)}</td><td>${esc(c.name)}</td><td>${c.qty}</td></tr>`),
+      legend: counts(p).map((c) => `<div>${iconFor(c.k, c.glyph, gost)}${esc(c.name)}</div>`)
+        .concat((p.elements || []).some((e) => e.type === "junction") ? [`<div>${iconFor("junction", "◇", gost)}Распаечная коробка</div>`] : [])
+        .concat((p.openings || []).some((o) => o.type === "door") ? [`<div><i class="g">Дв</i>${T.door}</div>`] : [])
+        .concat((p.openings || []).some((o) => o.type === "window") ? [`<div><i class="g">Ок</i>${T.win}</div>`] : [])
+        .concat((p.panels || []).length ? [`<div><i class="g">Щ</i>${T.panel}</div>`] : [])
+    };
+  }
+  const explPageCount = (p) => {
+    const q = explParts(p);
+    return Math.max(1, Math.ceil(Math.max(q.expl.length, q.spec.length, q.legend.length) / perExpl()));
+  };
+  function buildExplPages(p) {
+    const q = explParts(p), expl = q.expl, spec = q.spec, legend = q.legend;
+    const per = perExpl();
+    const n = Math.max(1, Math.ceil(Math.max(expl.length, spec.length, legend.length) / per));
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const e = expl.slice(i * per, (i + 1) * per), s = spec.slice(i * per, (i + 1) * per),
+            l = legend.slice(i * per, (i + 1) * per);
+      out.push({
+        title: n > 1 ? `${T.specSheet} (${i + 1}/${n})` : T.specSheet,
+        body: `<div class="cols">
+          ${e.length ? `<div><h3>${T.expl}</h3><table class="tb"><thead><tr><th>№</th><th>Помещение</th><th>S</th><th>Стены</th></tr></thead><tbody>${e.join("")}</tbody></table></div>` : "<div></div>"}
+          ${s.length ? `<div><h3>${T.spec}</h3><table class="tb"><thead><tr><th></th><th>Тип</th><th>Кол-во</th></tr></thead><tbody>${s.join("")}</tbody></table></div>` : "<div></div>"}
+          ${l.length ? `<div class="legend"><h3>${T.legend}</h3>${l.join("")}</div>` : "<div></div>"}
+        </div>`
+      });
+    }
+    return out;
   }
 
   function counts(p) {
@@ -1152,7 +1225,14 @@
       n.unfolds += Math.ceil(unfoldWalls(p).length / UNF_PER_PAGE);
     }));
     try { n.spec = buildSpecPages(p).length; } catch (e) { n.spec = 0; }
-    n.circuits = n.loads = n.cablelog = (p.circuits || []).length ? 1 : 0;
+    // длинные таблицы режутся на листы теми же per*-функциями, что и сама сборка,
+    // иначе счётчик «— N листов» в шторке 📄 разошёлся бы с реальным альбомом
+    const nc = (p.circuits || []).length;
+    const pgs = (rows, per) => (rows ? Math.max(1, Math.ceil(rows / per)) : 0);
+    n.circuits = pgs(nc, perCircuits());
+    n.loads = pgs(nc, perLoads());
+    n.cablelog = pgs(nc, perCableLog());
+    n.expl = explPageCount(p);
     n.scheme = (window.ShieldSchemeSVG && EP.Plan.Scheme && (p.circuits || []).length) ? 1 : 0;
     let total = 0;
     SECTIONS.forEach((s) => { if (s.id !== "gen" && secOn(s.id)) total += n[s.id] || 0; });
@@ -1166,15 +1246,6 @@
   const floorsOf = (p) => ((p.floors || []).length > 1 ? (p.floors || []).slice() : [null]);
 
   function sheetHtml(p) {
-    const expl = (p.rooms || []).filter((r) => (r.points || []).length >= 3)
-      .map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.name)}</td><td>${G().fmtArea(G().roomNetArea(p, r))}</td><td>${esc(r.material || p.settings.wallMaterial)}</td></tr>`).join("");
-    const gost = (p.settings && p.settings.symbolStyle) === "gost";
-    const spec = counts(p).map((c) => `<tr><td>${iconFor(c.k, c.glyph, gost)}</td><td>${esc(c.name)}</td><td>${c.qty}</td></tr>`).join("");
-    const legendRows = counts(p).map((c) => `<div>${iconFor(c.k, c.glyph, gost)}${esc(c.name)}</div>`).join("")
-      + ((p.elements || []).some((e) => e.type === "junction") ? `<div>${iconFor("junction", "◇", gost)}Распаечная коробка</div>` : "")
-      + ((p.openings || []).some((o) => o.type === "door") ? `<div><i class="g">Дв</i>${T.door}</div>` : "")
-      + ((p.openings || []).some((o) => o.type === "window") ? `<div><i class="g">Ок</i>${T.win}</div>` : "")
-      + ((p.panels || []).length ? `<div><i class="g">Щ</i>${T.panel}</div>` : "");
     // ---- альбом: собираем ЛИСТЫ по порядку, потом нумеруем (штамп каждого листа знает
     // свой номер и общее число — «Лист N / Листов M», как в проектной документации) ----
     const pages = [];
@@ -1192,11 +1263,10 @@
       if (secOn("traces")) buildLayerPages(p).forEach((pg) => pages.push(Object.assign({}, pg, { title: pg.title + suf })));
       if (secOn("unfolds")) buildUnfolds(p).forEach((pg) => pages.push(Object.assign({}, pg, { title: pg.title + suf })));
     }));
-    if (secOn("expl")) pages.push({ title: T.specSheet, body: `<div class="cols">
-          <div><h3>${T.expl}</h3><table class="tb"><thead><tr><th>№</th><th>Помещение</th><th>S</th><th>Стены</th></tr></thead><tbody>${expl}</tbody></table></div>
-          <div><h3>${T.spec}</h3><table class="tb"><thead><tr><th></th><th>Тип</th><th>Кол-во</th></tr></thead><tbody>${spec}</tbody></table></div>
-          <div class="legend"><h3>${T.legend}</h3>${legendRows}</div>
-        </div>` });
+    // три колонки листа независимы, но высота его задаётся САМОЙ ДЛИННОЙ из них —
+    // поэтому разбиваем по ней (на доме с двумя десятками помещений экспликация
+    // иначе уходила бы на основную надпись)
+    if (secOn("expl")) buildExplPages(p).forEach((pg) => pages.push(pg));
     if (secOn("circuits")) buildCircuits(p).forEach((pg) => pages.push(pg));
     if (secOn("loads")) buildLoads(p).forEach((pg) => pages.push(pg));
     if (secOn("cablelog")) buildCableLog(p).forEach((pg) => pages.push(pg));
@@ -1244,8 +1314,8 @@
       .fr > h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding-bottom: 1mm; border-bottom: .3mm solid #000; margin-bottom: 2mm; }
       /* содержимое НИКОГДА не залезает под штамп (он position:absolute) */
       /* содержимое НИКОГДА не залезает под штамп: полная надпись 55мм, сокращённая 11мм */
-      .body { flex: 1 1 auto; min-height: 0; padding-bottom: 58mm; }
-      .body-c { padding-bottom: 14mm; }
+      .body { flex: 1 1 auto; min-height: 0; padding-bottom: ${STAMP_RESERVE_MM}mm; }
+      .body-c { padding-bottom: ${STAMP_CONT_RESERVE_MM}mm; }
       .plan { height: 100%; display: flex; align-items: center; justify-content: center; }
       .plan svg { display: block; max-width: 100%; max-height: 100%; }
       .cols { display: flex; gap: 4mm; align-items: flex-start; }
@@ -1259,14 +1329,14 @@
       .g { font-style: normal; display: inline-flex; width: 4.5mm; height: 4.5mm; border-radius: 50%; border: .25mm solid #000; align-items: center; justify-content: center; font-size: 7.5px; font-weight: 700; flex: none; }
       /* ---- основная надпись по ГОСТ 21.101 (форма 3 — первый лист, форма 6 — далее) ---- */
       .stamp { position: absolute; right: 0; bottom: 0; width: 185mm; border-collapse: collapse; table-layout: fixed; }
-      .stamp td { border: .25mm solid #000; padding: 0 .8mm; height: 5.5mm; font-size: 8px; vertical-align: middle; overflow: hidden; }
+      .stamp td { border: .25mm solid #000; padding: 0 .7mm; height: ${STAMP_ROW_MM}mm; font-size: 7px; vertical-align: middle; overflow: hidden; line-height: 1.1; }
       .stamp .s-c { text-align: center; }
       .stamp .s-l { text-align: left; }
-      .stamp .s-code { font-size: 10px; }
-      .stamp .s-obj { font-size: 8.5px; line-height: 1.15; padding: .5mm 2mm; }
-      .stamp .s-sec, .stamp .s-title { font-size: 9px; line-height: 1.15; padding: .5mm 1.5mm; }
-      .stamp .s-h { font-size: 7.5px; }
-      .stamp .s-org { font-size: 11px; letter-spacing: .06em; }
+      .stamp .s-code { font-size: 9px; }
+      .stamp .s-obj { font-size: 7.5px; line-height: 1.12; padding: .4mm 1.6mm; }
+      .stamp .s-sec, .stamp .s-title { font-size: 8px; line-height: 1.12; padding: .4mm 1.2mm; }
+      .stamp .s-h { font-size: 6.5px; }
+      .stamp .s-org { font-size: 9.5px; letter-spacing: .05em; }
       .stamp-c { width: 185mm; }
       /* ---- спецификация оборудования (ГОСТ 21.110, форма 1) ---- */
       .spec { width: 100%; border-collapse: collapse; table-layout: fixed; }

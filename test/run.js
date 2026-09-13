@@ -3659,6 +3659,71 @@ test("фото: deleteProject чистит кэш фото своего прое
     // порядок разделов в списке = порядок листов в альбоме
     eq(EX.SECTIONS.map((s) => s.id).join(","), "title,gen,plan,dims,traces,unfolds,expl,circuits,loads,cablelog,scheme,spec", "порядок разделов");
   });
+  test("PDF: длинные таблицы режутся на листы и не наезжают на основную надпись", () => {
+    // Репорт пользователя: «иногда на неё наезжает сам проект». «Линии и щит»,
+    // «Нагрузки» и «Кабельный журнал» строились ОДНИМ листом независимо от числа
+    // линий — на 40 линиях таблица шла прямо поверх штампа (замер: 82/52/45 мм).
+    const EX = EP.Plan.Export;
+    EX.setAllSec(true);
+    const p = EP.Plan.Core.createProject("длинные таблицы");
+    const r = M.newRoom(G.rectPoints(0, 0, 600, 400), "Зал");
+    p.rooms.push(r);
+    p.panels.push(M.newPanel(300, 20));
+    for (let i = 0; i < 40; i++) {
+      const c = M.newCircuit("QF" + (i + 1), "#ef4444", 16);
+      c.rcd = i % 2 === 0;
+      p.circuits.push(c);
+      const e = M.newElement("socket", r.id + ":0", 20 + (i % 20) * 25, 30, "power");
+      e.circuitId = c.id; p.elements.push(e);
+    }
+    EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+    const html = EX.sheetHtml(p);
+    const titles = [...html.matchAll(/<h2>([^<]+)<\/h2>/g)].map((m) => m[1]);
+    const partsOf = (name) => titles.filter((t) => t.indexOf(name) === 0);
+    ["Линии и щит", "Таблица расчётных нагрузок", "Кабельный журнал"].forEach((name) => {
+      const pp = partsOf(name);
+      ok(pp.length > 1, name + ": 40 линий не помещаются на один лист — таблица разбита");
+      eq(pp[0], `${name} (1/${pp.length})`, name + ": в заголовке номер листа таблицы");
+    });
+    // сумма строк по листам == числу линий: ни одна строка не потерялась при разбивке
+    const rowsOf = (name) => {
+      const out = [];
+      const re = new RegExp("<h2>" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "[^<]*</h2>([\\s\\S]*?)</table>", "g");
+      let m2; while ((m2 = re.exec(html))) out.push((m2[1].match(/<tr>/g) || []).length);
+      return out;
+    };
+    const logRows = rowsOf("Кабельный журнал").reduce((a, b) => a + b, 0);
+    // в каждом куске есть своя строка шапки таблицы — вычитаем по одной на лист
+    eq(logRows - rowsOf("Кабельный журнал").length, 40, "кабельный журнал: 40 строк разложены по листам без потерь");
+    // «Итого» и примечание — только на ПОСЛЕДНЕМ листе таблицы нагрузок
+    eq((html.match(/class="tb-sum"/g) || []).length, 1, "строка «Итого» в нагрузках ровно одна");
+    eq((html.match(/Кс — коэффициент спроса/g) || []).length, 1, "примечание к нагрузкам — только на последнем листе");
+    // счётчик листов в шторке 📄 обязан сойтись с реальным альбомом (разбивка считается
+    // теми же per*-функциями, что и сборка)
+    const out = EX.albumOutline(p);
+    eq((html.match(/<div class="sheet">/g) || []).length, out.total, "счётчик шторки == числу листов альбома");
+    ok(out.n.circuits > 1 && out.n.loads > 1 && out.n.cablelog > 1, "счётчик знает о разбивке таблиц");
+  });
+  test("PDF: основная надпись меньше, поле чертежа согласовано с ней", () => {
+    // Просьба пользователя: «рамку ниже в правом углу сделай меньше». Высота
+    // надписи, резерв места у содержимого листа и planArea() обязаны меняться
+    // ВМЕСТЕ — разойдись они, чертёж наехал бы на надпись или лист остался бы пустым.
+    const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-export.js"), "utf8");
+    const row = /const STAMP_ROW_MM = ([\d.]+);/.exec(src);
+    const res = /const STAMP_RESERVE_MM = ([\d.]+);/.exec(src);
+    const cont = /const STAMP_CONT_RESERVE_MM = ([\d.]+);/.exec(src);
+    const area = /h: pg\(\)\.h - (\d+)/.exec(src);
+    ok(row && res && cont && area, "высота строки надписи, резервы и поле чертежа заданы константами");
+    const rowMm = Number(row[1]), resMm = Number(res[1]);
+    ok(rowMm < 5.5, "строка надписи стала ниже прежних 5.5мм");
+    ok(rowMm * 9 < resMm, "9 строк полной надписи (форма 3) помещаются в зарезервированное место");
+    ok(rowMm * 2 < Number(cont[1]), "2 строки сокращённой надписи (форма 6) помещаются в свой резерв");
+    // поле чертежа = лист − (поля 10 + рамка 6 + заголовок ~9 + резерв под надпись)
+    const slack = Number(area[1]) - resMm;
+    ok(slack >= 20 && slack <= 30, "planArea учитывает поля/рамку/заголовок поверх резерва надписи (получилось " + slack + "мм)");
+    ok(new RegExp("height: \\$\\{STAMP_ROW_MM\\}mm").test(src), "высота строки надписи берётся из той же константы");
+    ok(/padding-bottom: \$\{STAMP_RESERVE_MM\}mm/.test(src), "резерв у .body берётся из той же константы");
+  });
   test("PDF: листы по этажам не дублируются и не пустуют", () => {
     // buildUnfolds раньше шла по p.rooms ПРОЕКТА ЦЕЛИКОМ, а usedPointTypes/usedTraceLayers
     // считали типы/слои тоже проектом целиком — на двухэтажном проекте развёртки первого
