@@ -51,22 +51,41 @@
     ["boxes", "× распаечных коробок"]
   ];
 
-  function params(items) {
-    let modules = 0, circuits = 0, points = 0, cableM = 0, boxes = 0;
+  /* Имена ВСЕХ позиций-спутников — их нельзя считать базой для самих себя. Поймано живым
+     прогоном: «Комплект маркировки автоматов» (материал) попадал под признак модуля щита,
+     и после добавления спутников маркировки становилось 18 вместо 17 — счёт «поехал» от
+     собственного результата. */
+  function ruleNames() {
+    const set = {};
+    getRules().groups.forEach((g) => (g.items || []).forEach((r) => { if (r && r.name) set[low(r.name)] = true; }));
+    return set;
+  }
+
+  /* Один и тот же объём описан в смете ДВАЖДЫ — работой и материалом («Высверливание
+     подрозетников» 42 шт и «Подрозетник Ø68» 42 шт): складывать их нельзя, получится 84.
+     Поэтому считаем отдельно по материалам и по работам, а берём материалы, если они есть
+     (материал — сам предмет счёта), иначе работы (смета без материалов — обычное дело). */
+  function params(items, exclude) {
+    const skip = exclude || {};
+    const M = { modules: 0, circuits: 0, points: 0, cableM: 0, boxes: 0 };
+    const W = { modules: 0, circuits: 0, points: 0, cableM: 0, boxes: 0 };
     (items || []).forEach((x) => {
       const n = low(x.name), q = num(x.qty), u = String(x.unit || "").toLowerCase();
-      if (!n || q <= 0) return;
+      if (!n || q <= 0 || skip[n]) return;
+      const T = x.type === "material" ? M : W;
       const auto = /автомат|диф|узо/.test(n);
       // линия = отходящий автомат (дифавтомат тоже линия); УЗО отдельной строкой —
       // групповая защита, своей линии не даёт. Различить УЗО и дифавтомат в смете точнее
       // нельзя: модель приложения их не разделяет (одна строка «Установка УЗО/дифавтомата»).
-      if (auto) { modules += q; if (/автомат/.test(n)) circuits += q; }
+      if (auto) { T.modules += q; if (/автомат/.test(n)) T.circuits += q; }
       // «выключатель» есть и у автоматического выключателя — его точкой не считаем
-      if (/подрозетник/.test(n) || (/розетк|выключател|светильник|датчик/.test(n) && !auto)) points += q;
-      if (/^м$|^пог м$|^м п$/.test(u) && /кабель|ввг|nym|пвс|сип|провод/.test(n)) cableM += q;
-      if (/распайк|распаечн|распредел/.test(n)) boxes += q;
+      if (/подрозетник/.test(n) || (/розетк|выключател|светильник|датчик/.test(n) && !auto)) T.points += q;
+      if (/^м$|^пог м$|^м п$/.test(u) && /кабель|ввг|nym|пвс|сип|провод/.test(n)) T.cableM += q;
+      if (/распайк|распаечн|распредел/.test(n)) T.boxes += q;
     });
-    return { modules, circuits, points, cableM, boxes };
+    const pick = {};
+    Object.keys(M).forEach((k) => { pick[k] = M[k] || W[k]; });
+    return pick;
   }
 
   // Штучное округляем ВВЕРХ (0.4 коробки не купить), метраж/объём — до сотых.
@@ -264,7 +283,7 @@
   // Полная картина: какие группы сработали, что из них уже в смете, от чего отказались.
   function analyze(items) {
     const list = items || (EST() ? EST().getItems() : []);
-    const prm = params(list), sk = skipped(), sn = seen();
+    const prm = params(list, ruleNames()), sk = skipped(), sn = seen();
     const have = {};
     list.forEach((x) => { have[keyOf(x.type, x.name)] = true; });
     const groups = [];

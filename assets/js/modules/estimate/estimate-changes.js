@@ -239,7 +239,7 @@
     const st = read(), sm = summary();
     const head = `<button type="button" class="ep-est-stghead ep-clickable" data-chg-toggle>
         <span>${V.open ? "▾" : "▸"} 📝 Изменения и доп. работы</span>
-        <b>${sm.count ? sm.count + " · " + (sm.delta >= 0 ? "+" : "") + money(sm.delta) : "нет"}</b></button>`;
+        <b>${sm.count ? sm.count + " · " + (sm.delta >= 0 ? "+" : "") + money(sm.delta) : "изменений нет"}</b></button>`;
     if (!V.open) return `<div class="ep-chg-block">${head}</div>`;
     const d = st.doc || {};
     const f = (key, label, ph) => `<label class="ep-chg-f"><span>${esc(label)}</span>

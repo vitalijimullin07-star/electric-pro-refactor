@@ -6796,6 +6796,24 @@ test("фото: deleteProject чистит кэш фото своего прое
       eq(R.analyze().groups.find((x) => x.id === "shield_power").missing, 1, "вернули — снова не включена");
     });
 
+    test("обязательные: спутники не считают сами себя, работа и материал не складываются", () => {
+      const EP2 = loadEstimate(), E = EP2.Estimate, R = EP2.EstimateRequired;
+      E.addItem({ type: "work", name: "Сборка и расключение щита", unit: "шт", qty: 1, price: 9000 });
+      E.addItem({ type: "work", name: "Установка автоматического выключателя", unit: "шт", qty: 14, price: 300 });
+      E.addItem({ type: "work", name: "Установка УЗО/дифавтомата", unit: "шт", qty: 3, price: 450 });
+      eq(R.analyze().groups.find((x) => x.id === "shield_power").need.find((x) => /Маркировка/.test(x.name)).qty, 17, "17 модулей щита");
+      R.apply("shield_power", ["Маркировка проводников в щите", "Комплект маркировки автоматов"]);
+      // «Комплект маркировки автоматов» — материал со словом «автоматов»: без защиты он
+      // стал бы ещё одним модулем, и счёт поехал бы от собственного результата
+      eq(R.analyze().groups.find((x) => x.id === "shield_power").need.find((x) => /Маркировка провод/.test(x.name)).qty, 17,
+        "добавленный спутник не увеличил базу счёта сам себе");
+      // один и тот же объём в смете описан дважды — работой и материалом
+      E.addItem({ type: "work", name: "Прокладка кабеля ВВГнг(А)-LS 3х2.5", unit: "м", qty: 420, price: 60 });
+      E.addItem({ type: "material", name: "Кабель ВВГнг(А)-LS 3х2.5", unit: "м", qty: 420, price: 92 });
+      eq(R.analyze().groups.find((x) => x.id === "cable").need.find((x) => /Проходка/.test(x.name)).qty, 21,
+        "проходки считаются от 420 м кабеля, а не от 840 (работа + материал)");
+    });
+
     test("обязательные: предложение показывается один раз на группу", () => {
       const EP2 = loadEstimate(), E = EP2.Estimate, R = EP2.EstimateRequired;
       E.addItem({ type: "work", name: "Штробление 25x30 бетон", unit: "м", qty: 80, price: 450 });
