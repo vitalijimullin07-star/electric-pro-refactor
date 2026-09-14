@@ -4675,7 +4675,8 @@ test("фото: deleteProject чистит кэш фото своего прое
     sb.dispatchEvent = () => true;
     const ctx = vm2.createContext(sb);
     const dir = path2.join(__dirname, "..", "assets", "js", "modules", "estimate");
-    ["estimate-file", "estimate-draft", "estimate-main", "estimate-works", "estimate-print"].forEach((n) => {
+    ["name-match", "estimate-file", "estimate-draft", "estimate-main", "estimate-works", "estimate-print",
+      "estimate-changes", "estimate-required"].forEach((n) => {
       vm2.runInContext(fs2.readFileSync(path2.join(dir, n + ".js"), "utf8"), ctx, { filename: n + ".js" });
     });
     return sb.EP;   // { EstimateFile, EstimateDraft, Estimate, EstimatePrint }
@@ -6752,6 +6753,176 @@ test("фото: deleteProject чистит кэш фото своего прое
       // отложенная запись не успеет: уход на другой роут заменяет форму, и readForm не найдёт полей
       ok(!/setTimeout/.test(fn), "пишем сразу, без отложенной записи");
       ok(/data-prof-save>☁ Синхронизировать/.test(src), "кнопка теперь про облако, а не про сохранение");
+    });
+  }
+
+  // ===== 54. Обязательные позиции сметы + юридически корректное изменение =====
+  {
+    const fs54 = require("fs"), path54 = require("path");
+    const dir54 = path54.join(__dirname, "..", "assets", "js", "modules", "estimate");
+    const src54 = (n) => fs54.readFileSync(path54.join(dir54, n + ".js"), "utf8");
+
+    test("обязательные: щит тянет спутников, количество считается от объёма сметы", () => {
+      const EP2 = loadEstimate(), E = EP2.Estimate, R = EP2.EstimateRequired;
+      E.addItem({ type: "work", name: "Сборка и расключение щита", unit: "шт", qty: 1, price: 6000 });
+      E.addItem({ type: "work", name: "Установка автоматического выключателя", unit: "шт", qty: 12, price: 300 });
+      E.addItem({ type: "work", name: "Установка УЗО", unit: "шт", qty: 3, price: 400 });
+      const g = R.analyze().groups.find((x) => x.id === "shield_power");
+      ok(g, "связка щита сработала по названию позиции");
+      const mark = g.need.find((x) => /Маркировка/.test(x.name));
+      eq(mark.qty, 15, "маркировка — по числу модулей щита (12 автоматов + 3 УЗО)");
+      const tst = g.need.find((x) => /Испытания/.test(x.name));
+      eq(tst.qty, 12, "испытания — по числу линий: УЗО отдельной строкой линией не считается");
+      const kit = g.need.find((x) => /Комплект маркировки/.test(x.name));
+      ok(kit.qty === 1 && kit.type === "material", "фиксированное количество и тип материала");
+      // молча в смету ничего не легло
+      eq(E.getItems().length, 3, "предложение не добавляет позиции само");
+    });
+
+    test("обязательные: добавляются только отмеченные, отказ фиксируется", () => {
+      const EP2 = loadEstimate(), E = EP2.Estimate, R = EP2.EstimateRequired;
+      E.addItem({ type: "work", name: "Сборка и расключение щита", unit: "шт", qty: 1, price: 6000 });
+      E.addItem({ type: "work", name: "Установка автоматического выключателя", unit: "шт", qty: 10, price: 300 });
+      const added = R.apply("shield_power", ["Маркировка проводников в щите"]);
+      eq(added, 1, "добавлена ровно одна отмеченная позиция");
+      ok(E.getItems().some((x) => x.name === "Маркировка проводников в щите" && x.qty === 10), "с посчитанным количеством");
+      const sk = R.skipped();
+      ok(sk["shield_power|Испытания и прозвонка линий"], "невыбранная помечена осознанным отказом");
+      ok(!sk["shield_power|Маркировка проводников в щите"], "выбранная отказом не помечена");
+      const g = R.analyze().groups.find((x) => x.id === "shield_power");
+      eq(g.missing, 0, "в сводке не числится пропущенной: часть в смете, часть исключена осознанно");
+      // отказ снимается — позиция снова в списке «не включено»
+      R.unskip("shield_power", "Испытания и прозвонка линий");
+      eq(R.analyze().groups.find((x) => x.id === "shield_power").missing, 1, "вернули — снова не включена");
+    });
+
+    test("обязательные: предложение показывается один раз на группу", () => {
+      const EP2 = loadEstimate(), E = EP2.Estimate, R = EP2.EstimateRequired;
+      E.addItem({ type: "work", name: "Штробление 25x30 бетон", unit: "м", qty: 80, price: 450 });
+      ok(R.pending().some((g) => g.id === "chase"), "после появления триггера группа предлагается");
+      R.skipGroup("chase");
+      ok(!R.pending().some((g) => g.id === "chase"), "после ответа больше не всплывает");
+      ok(R.analyze().groups.some((g) => g.id === "chase"), "но остаётся видимой в сводке");
+      // «спросить заново» снимает и показ, и отказы — иначе предлагать нечего:
+      // осознанно исключённая позиция пропущенной уже не считается
+      R.resetSeen(); R.resetSkips();
+      ok(R.pending().some((g) => g.id === "chase"), "«спросить заново» возвращает предложение");
+    });
+
+    test("обязательные: сдача объекта предлагается без триггера, вывоз мусора — от объёма штробы", () => {
+      const EP2 = loadEstimate(), E = EP2.Estimate, R = EP2.EstimateRequired;
+      E.addItem({ type: "work", name: "Штробление 25x30 бетон", unit: "м", qty: 120, price: 450 });
+      const a = R.analyze();
+      const h = a.groups.find((x) => x.id === "handover");
+      ok(h && h.trigger.always, "сдача объекта — группа без позиции-триггера");
+      ok(h.need.some((x) => /скрытых работ/.test(x.name)) && h.need.every((x) => x.qty >= 1), "акт скрытых работ с фикс. количеством");
+      const g = a.groups.find((x) => x.id === "chase");
+      eq(g.need.find((x) => /мусор/.test(x.name)).qty, 12, "мешки мусора — 0.1 на метр штробы, вверх до штуки");
+      ok(g.need.find((x) => /Заделка штроб/.test(x.name)).pre === false, "спорная позиция («если входит») по умолчанию без галки");
+    });
+
+    test("обязательные: связки правятся без кода, встроенные не теряются и не воскресают", () => {
+      const EP2 = loadEstimate(), R = EP2.EstimateRequired;
+      eq(R.getRules().groups.length, R.DEFAULTS.length, "из коробки — встроенные связки");
+      const g = R.addGroup("Тёплый пол");
+      R.saveGroup(g.id, { match: ["термостат"] });
+      R.addRule(g.id, { name: "Проверка сопротивления нагревательной секции", type: "work", unit: "шт", per: "trigger", k: 1 });
+      const mine = R.getRules().groups.find((x) => x.id === g.id);
+      ok(mine && mine.items.length === 1 && mine.match[0] === "термостат", "своя связка со своим триггером сохранилась");
+      // своя связка реально срабатывает на смете
+      EP2.Estimate.addItem({ type: "work", name: "Установка термостата тёплого пола", unit: "шт", qty: 2, price: 900 });
+      const an = R.analyze().groups.find((x) => x.id === g.id);
+      ok(an && an.need[0].qty === 2, "сработала и посчитала количество от объёма триггера");
+      // удалённая ВСТРОЕННАЯ группа не возвращается при следующем чтении
+      R.removeGroup("wet");
+      ok(!R.getRules().groups.some((x) => x.id === "wet"), "удалённая встроенная связка не воскресает");
+      // а не существовавшая в сохранённом наборе встроенная — добавляется сама
+      const raw = JSON.parse(EP2.Estimate ? "null" : "null") || null;
+      R.setRules({ groups: [mine], removed: [] });
+      const merged = R.getRules().groups.map((x) => x.id);
+      ok(merged.indexOf("shield_power") >= 0 && merged.indexOf(g.id) >= 0,
+        "новые встроенные связки появляются у того, кто уже правил свой набор");
+    });
+
+    test("обязательные: сводка перед печатью считает только реально пропущенное", () => {
+      const EP2 = loadEstimate(), E = EP2.Estimate, R = EP2.EstimateRequired;
+      eq(R.analyze().missing >= 1, true, "на пустой смете напоминает хотя бы про сдачу объекта");
+      E.addItem({ type: "work", name: "Подрозетник высверливание", unit: "шт", qty: 40, price: 120 });
+      const before = R.analyze().missing;
+      R.apply("boxes", ["Вклейка подрозетников"]);
+      const after = R.analyze().missing;
+      ok(after < before, "добавленное и осознанно исключённое из счётчика уходят");
+      ok(/Не включены обязательные позиции/.test(R.warnHtml()) === (after > 0), "предупреждение печатается ровно когда есть что напомнить");
+    });
+
+    test("изменения сметы: журнал считает разницу, процент и порог 10 % ст. 744", () => {
+      const EP2 = loadEstimate(), C = EP2.EstimateChanges;
+      C.log({ op: "add", type: "work", name: "Демонтаж старой проводки", unit: "м", qtyNew: 60, priceNew: 150, basis: "743", reason: "вскрыта старая алюминиевая проводка" });
+      C.log({ op: "qty", type: "work", name: "Штробление 25x30 бетон", unit: "м", qtyOld: 80, priceOld: 450, qtyNew: 95, priceNew: 450, basis: "744" });
+      C.log({ op: "remove", type: "material", name: "Гофра ПНД", unit: "м", qtyOld: 100, priceOld: 20, basis: "450" });
+      const sm = C.summary(100000);
+      eq(Math.round(sm.up), 9000 + 6750, "увеличения сложены (доп. работы + объём штробы)");
+      eq(Math.round(sm.down), -2000, "исключение ушло в минус");
+      eq(Math.round(sm.delta), 13750, "итоговое изменение цены");
+      eq(Math.round(sm.total), 113750, "новая цена договора");
+      ok(sm.over10 === true && Math.abs(sm.percent - 13.75) < 0.01, "порог 10 % считается от ИСХОДНОЙ цены договора");
+      const e = C.list()[0];
+      ok(e.basis === "743" && e.reason === "вскрыта старая алюминиевая проводка", "основание и причина хранятся с записью");
+      C.remove(e.id);
+      eq(C.count(), 2, "запись убирается из журнала");
+    });
+
+    test("изменения сметы: вид сметы меняет правовую оговорку в бланке", () => {
+      const EP2 = loadEstimate(), C = EP2.EstimateChanges, P = EP2.EstimatePrint;
+      eq(C.getKind(), "approx", "по умолчанию смета приблизительная и это указано явно");
+      const approx = P.estimateHtml({ works: [{ name: "Штробление", unit: "м", qty: 10, price: 100 }], mats: [] });
+      ok(/приблизительная/.test(approx) && /709/.test(approx), "в приблизительной — п. 4/5 ст. 709 ГК РФ");
+      C.setKind("firm");
+      const firm = P.estimateHtml({ works: [{ name: "Штробление", unit: "м", qty: 10, price: 100 }], mats: [] });
+      ok(/твёрдая/i.test(firm) && /не вправе требовать увеличения/.test(firm), "в твёрдой — запрет одностороннего увеличения цены");
+      ok(/450/.test(firm) && /452/.test(firm), "и указание, что изменение — только соглашением сторон");
+    });
+
+    test("изменения сметы: акт уведомляет заказчика, доп. соглашение меняет цену договора", () => {
+      const EP2 = loadEstimate(), C = EP2.EstimateChanges, P = EP2.EstimatePrint;
+      C.setDoc("dogNo", "7"); C.setDoc("dogDate", "01.03.2026"); C.setDoc("days", "5");
+      C.log({ op: "swap", type: "material", name: "Кабель ВВГнг(А)-LS 3х4", nameOld: "Кабель ВВГнг(А)-LS 3х2.5", unit: "м", qtyOld: 50, priceOld: 92, qtyNew: 50, priceNew: 140, basis: "swap", reason: "по факту нагрузки варочной панели" });
+      const act = P.changeActHtml({ contractSum: 100000 });
+      ok(/Акт о выявленных дополнительных работах/.test(act), "акт — отдельный документ");
+      ok(/Кабель ВВГнг\(А\)-LS 3х2\.5 → Кабель ВВГнг\(А\)-LS 3х4/.test(act), "замена печатается как «было → стало»");
+      ok(/10 \(десяти\) дней/.test(act) && /п\. 3 ст\. 743/.test(act), "срок ответа заказчика и основание уведомления");
+      ok(/Уведомление получил/.test(act), "подпись заказчика о получении — то, ради чего акт и нужен");
+      ok(/по факту нагрузки варочной панели/.test(act), "причина изменения в документе");
+      const sup = P.supplementHtml({ contractSum: 100000 });
+      ok(/Дополнительное соглашение/.test(sup) && /договору подряда № 7 от 01\.03\.2026/.test(sup), "соглашение ссылается на договор");
+      ok(/ст\. 450/.test(sup) && /ст\. 452/.test(sup), "основание изменения и требование к форме");
+      ok(/продлевается на 5 рабочих дней/.test(sup), "продление срока попадает в соглашение");
+      ok(/Цена договора после изменения/.test(sup) && /102 400,00/.test(sup), "новая цена договора посчитана");
+      ok(/Сто две тысячи четыреста рублей 00 копеек/.test(sup), "и напечатана прописью");
+    });
+
+    test("обязательные/изменения: подключены до экрана сметы и вставлены в него", () => {
+      const idx = fs54.readFileSync(path54.join(__dirname, "..", "index.html"), "utf8");
+      const iReq = idx.indexOf("estimate-required.js"), iChg = idx.indexOf("estimate-changes.js"),
+        iTabs = idx.indexOf("estimate-tabs.js"), iPrn = idx.indexOf("estimate-print.js");
+      ok(iReq > 0 && iChg > 0 && iReq < iTabs && iChg < iTabs && iPrn < iReq, "оба модуля в index.html до estimate-tabs.js");
+      const tabs = src54("estimate-tabs");
+      ok(/R\.bannerHtml\(\)/.test(tabs) && /R\.blockHtml\(\)/.test(tabs) && /CHG\(\)\.blockHtml\(\)/.test(tabs),
+        "экран сметы вставляет предложение, сводку и журнал изменений");
+      ok(/R\.warnHtml\(\)/.test(tabs) && /printBlock/.test(tabs), "предупреждение — в блоке печати, перед выгрузкой");
+      ok(/EP\.EstimateTabs = \{ render, flash \}/.test(tabs), "экран отдаёт перерисовку модулям");
+      const req = src54("estimate-required");
+      ok(/data-req-apply/.test(req) && /data-req-skipall/.test(req) && /data-req-rules/.test(req),
+        "кнопки «добавить отмеченные», «не нужно» и редактор связок");
+      ok(/typeof document !== "undefined"/.test(req) && /typeof document !== "undefined"/.test(src54("estimate-changes")),
+        "обработчики не падают там, где DOM нет (тестовый харнесс, воркер)");
+      ok(/ep:estimate-main-changed/.test(req) && /resetSeen\(\); resetSkips\(\);/.test(req),
+        "очистка сметы = новый объект: предложения и отказы обнуляются");
+      const chg = src54("estimate-changes");
+      ok(/data-chg-act/.test(chg) && /data-chg-sup/.test(chg) && /data-chg-kind/.test(chg),
+        "печать акта, печать соглашения и выбор вида сметы");
+      const css = fs54.readFileSync(path54.join(__dirname, "..", "assets", "css", "base.css"), "utf8");
+      ok(/\.ep-req-banner \{/.test(css) && /\.ep-chg-block/.test(css), "свои стили у предложения и журнала");
     });
   }
 

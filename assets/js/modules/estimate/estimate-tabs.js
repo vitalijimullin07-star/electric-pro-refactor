@@ -42,9 +42,17 @@
   }
   function total(rs) { return rs.reduce((s, x) => s + x.price * x.qty, 0); }
 
+  // Обязательные позиции (связки «триггер → спутники») и журнал изменений сметы —
+  // свои модули: экран только вставляет их готовую разметку и не знает про их данные.
+  function REQ() { return window.EP && window.EP.EstimateRequired; }
+  function CHG() { return window.EP && window.EP.EstimateChanges; }
+
   function render() {
     const root = document.getElementById("ep-estimate-root");
     if (!root) return;
+    const R = REQ();
+    // редактор связок открывается ПОВЕРХ экрана сметы (как под-вид шторок плана)
+    if (R && R.rulesOpen && R.rulesOpen()) { root.innerHTML = R.rulesHtml(); return; }
     const isSupply = tab === "supply";
     const rs = rows(isSupply ? "material" : "work");
     const tot = total(rs);
@@ -75,9 +83,12 @@
           <div class="ep-sup-title">${isSupply ? "Материалы для закупки" : "Работы для заказчика"}</div>
           <div class="ep-sup-sub">${rs.length} позиц.${(!isSupply && rs.length) ? " · итого <b>" + money(tot) + "</b>" : ""}</div>
         </div>
+        ${isSupply || !R || !R.bannerHtml ? "" : R.bannerHtml()}
         <div class="ep-sup-list">${list}</div>
         ${(!isSupply && rs.length) ? `<div class="ep-sup-total">Итого: <b>${money(tot)}</b></div>` : ""}
         ${isSupply ? "" : stagesBlock(rs)}
+        ${isSupply || !R || !R.blockHtml ? "" : R.blockHtml()}
+        ${isSupply || !CHG() || !CHG().blockHtml ? "" : CHG().blockHtml()}
         <div class="ep-est-additem">${showAdd ? addForm(isSupply) : `<button type="button" class="btn btn-ghost ep-clickable" data-est-add>➕ Добавить позицию</button>`}</div>
         ${printBlock()}
         <div class="ep-sup-actions">
@@ -133,7 +144,12 @@
       : printScope === "stages" ? "🖨 Печать сметы по работам"
       : printScope === "mat" ? "🖨 Печать материалов"
       : printScope === "extra" ? "🖨 Печать акта доп. работ" : "🖨 Печать сметы";
+    // сводка перед выгрузкой: чего из обязательного не хватает. НЕ блокирует печать —
+    // это предупреждение, а не запрет (решает мастер, а не программа)
+    const R = REQ();
+    const warn = R && R.warnHtml ? R.warnHtml() : "";
     return `<div class="ep-est-print">
+        ${warn}
         <label class="ep-est-no">Смета №<input type="text" inputmode="numeric" maxlength="12" value="${esc(prnNo())}" data-est-no></label>
         <div class="ep-est-scope"><span class="ep-est-lbl">Печатать:</span>
           ${SCOPES.map(([v, l]) => `<button type="button" class="ep-est-chip ep-clickable ${printScope === v ? "on" : ""}" data-est-scope="${v}">${l}</button>`).join("")}
@@ -355,4 +371,9 @@
     }
   });
   window.addEventListener("ep:estimate-main-changed", () => { if (document.getElementById("ep-estimate-root")) render(); });
+
+  // Экран сметы отдаёт наружу перерисовку и тост: модули обязательных позиций и журнала
+  // изменений вставляют сюда свою разметку и после правки просят перерисовать экран.
+  window.EP = window.EP || {};
+  window.EP.EstimateTabs = { render, flash };
 })();

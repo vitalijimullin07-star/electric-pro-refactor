@@ -1613,6 +1613,70 @@ body[data-noblur="1"] .ep-fb-card{backdrop-filter:none!important;-webkit-backdro
 .ep-est-stgtot { padding: 8px 12px; border-top: 1px solid rgba(148,163,184,.25); font-size: 13px; }
 .ep-est-stgnote { padding: 0 12px 10px; font-size: 11px; color: var(--muted); line-height: 1.35; }
 
+/* ОБЯЗАТЕЛЬНЫЕ ПОЗИЦИИ (EP.EstimateRequired): предложение, сводка, редактор связок */
+.ep-req-banner { margin: 0 0 10px; padding: 10px 12px; border: 1px solid rgba(245,158,11,.45);
+  border-radius: 12px; background: rgba(245,158,11,.10); }
+.ep-req-head { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.ep-req-rows { display: flex; flex-direction: column; gap: 4px; }
+.ep-req-row { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  padding: 6px 8px; border: 1px solid rgba(148,163,184,.25); border-radius: 10px;
+  background: rgba(148,163,184,.06); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
+.ep-req-row.on { border-color: var(--accent); background: rgba(34,197,94,.12); }
+.ep-req-row.static { cursor: default; }
+.ep-req-row.is-have { opacity: .65; }
+.ep-req-row.is-skip { opacity: .75; border-style: dashed; }
+.ep-req-box { flex: none; font-size: 14px; }
+.ep-req-nm { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.ep-req-nm i { font-style: normal; font-size: 11px; color: var(--muted); }
+.ep-req-q { flex: none; font-size: 12px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ep-req-ok { flex: none; font-size: 11px; color: var(--accent); white-space: nowrap; }
+.ep-req-add, .ep-req-back { flex: none; border: 0; background: transparent; color: var(--accent);
+  font: inherit; font-size: 11px; cursor: pointer; white-space: nowrap; }
+.ep-req-back { color: var(--muted); }
+.ep-req-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.ep-req-more { margin-top: 6px; font-size: 11px; color: var(--muted); }
+.ep-req-note { margin-top: 6px; font-size: 11px; color: var(--muted); line-height: 1.35; }
+.ep-req-block, .ep-chg-block { margin-top: 10px; border: 1px solid rgba(148,163,184,.25);
+  border-radius: 12px; background: rgba(148,163,184,.06); overflow: hidden; }
+.ep-req-grp { padding: 6px 12px; border-top: 1px solid rgba(148,163,184,.18); display: flex; flex-direction: column; gap: 4px; }
+.ep-req-gname { font-size: 13px; display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.ep-req-gname span { font-size: 11px; color: var(--muted); text-align: right; }
+.ep-req-foot { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px 12px; border-top: 1px solid rgba(148,163,184,.18); }
+.ep-req-warn { flex: 1 1 100%; font-size: 12px; color: #f59e0b; }
+.ep-req-show { border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 12px;
+  cursor: pointer; text-decoration: underline; }
+.ep-req-editor { display: flex; flex-direction: column; gap: 10px; }
+.ep-req-egrp { border: 1px solid rgba(148,163,184,.25); border-radius: 12px; padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 8px; background: rgba(148,163,184,.06); }
+.ep-req-etop { display: flex; gap: 8px; align-items: center; }
+.ep-req-etop input { flex: 1 1 auto; min-width: 0; }
+.ep-req-match { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
+.ep-req-erow { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.ep-req-erow input[type="text"] { flex: 1 1 140px; min-width: 0; }
+.ep-req-erow input[type="number"] { flex: 0 0 64px; text-align: center; }
+.ep-req-erow select { flex: 0 0 auto; width: auto; }
+.ep-req-del { flex: none; width: 28px; height: 28px; border: 0; border-radius: 8px; background: transparent;
+  color: var(--muted); font-size: 14px; cursor: pointer; }
+
+/* ЖУРНАЛ ИЗМЕНЕНИЙ СМЕТЫ (EP.EstimateChanges) */
+.ep-chg-kind { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 12px 0; }
+.ep-chg-law { padding: 6px 12px 0; font-size: 11px; color: var(--muted); line-height: 1.35; }
+.ep-chg-doc { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 12px; }
+.ep-chg-f { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); flex: 1 1 120px; }
+.ep-chg-list { padding: 0 12px; display: flex; flex-direction: column; gap: 4px; }
+.ep-chg-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-size: 12px;
+  border: 1px solid rgba(148,163,184,.25); border-radius: 10px; }
+.ep-chg-nm { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.ep-chg-nm i { font-style: normal; font-size: 11px; color: var(--muted); }
+.ep-chg-d { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ep-chg-sum { padding: 8px 12px; font-size: 13px; }
+.ep-chg-over { display: block; font-size: 11px; color: #f59e0b; }
+.ep-chg-form { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
+.ep-chg-g4 { display: flex; gap: 6px; flex-wrap: wrap; }
+.ep-chg-g4 > * { flex: 1 1 90px; min-width: 0; }
+.ep-chg-block .ep-est-prow { padding: 0 12px 10px; }
+.ep-chg-block .ep-req-note { padding: 0 12px 10px; margin-top: 0; }
+
 /* добавление позиции в основную смету */
 .ep-est-additem { margin-top: 10px; }
 .ep-est-addform { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;

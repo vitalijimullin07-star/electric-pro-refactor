@@ -112,6 +112,19 @@
     return "НДС не облагается.";
   }
 
+  /* Правовая оговорка сметы. По п. 4 ст. 709 ГК РФ смета бывает приблизительной или
+     твёрдой, и ПРИ ОТСУТСТВИИ УКАЗАНИЙ считается твёрдой — то есть молчание в документе
+     само по себе юридический выбор, причём в пользу заказчика. Поэтому вид сметы всегда
+     печатается явно; текст берётся у EP.EstimateChanges (единый источник формулировок для
+     сметы, акта и доп. соглашения), фолбэк — на случай, если модуль не подключён. */
+  function legalNote(o) {
+    const C = window.EP && window.EP.EstimateChanges;
+    const kind = (o && o.kind) || (C && C.getKind ? C.getKind() : "approx");
+    const base = C && C.kindNote ? C.kindNote(kind)
+      : "Смета носит предварительный характер: фактический объём работ и материалов уточняется по факту выполнения.";
+    return base + " Стоимость материалов может измениться при изменении цен поставщика на дату закупки.";
+  }
+
   /* ---------- общий каркас листа ---------- */
   function pageCss() {
     return `@page { size: A4 portrait; margin: 15mm 12mm 14mm; }
@@ -222,8 +235,7 @@
         <div class="words">Всего к оплате: <b>${esc(rublesInWords(total))}</b>.</div>
         ${vatNote(m) ? `<div class="vat">${esc(vatNote(m))}</div>` : ""}
       </div>
-      <div class="note">Смета носит предварительный характер: фактический объём работ и материалов уточняется по факту выполнения.
-        Стоимость материалов может измениться при изменении цен поставщика.</div>
+      <div class="note">${esc(legalNote(o))}</div>
       ${signBlock("Исполнитель (подпись, ФИО)", "Заказчик (подпись, ФИО)")}
       <div class="foot">${esc(heading)} № ${esc(no)} от ${esc(date)} · ${esc(m.name || "Electric Pro")} · сформировано в Electric Pro</div>`;
     return wrap(heading + " № " + no, body);
@@ -298,6 +310,131 @@
     return wrap("Заявка на материалы № " + no, body);
   }
 
+  /* ---------- ИЗМЕНЕНИЯ СМЕТЫ: общая таблица «было → стало» ----------
+     Одна и та же таблица печатается и в акте о дополнительных работах (уведомление
+     заказчика), и в дополнительном соглашении (само изменение договора) — считать разницу
+     двумя разными способами в двух документах, которые подписываются вместе, нельзя. */
+  function CHG() { return window.EP && window.EP.EstimateChanges; }
+  const OP_LABEL = { add: "Добавление", swap: "Замена", qty: "Изменение объёма", price: "Изменение цены", remove: "Исключение" };
+  function changeTable(entries) {
+    const C = CHG();
+    const rows = (entries || []).map((e, i) => {
+      const d = C && C.deltaOf ? C.deltaOf(e) : (num(e.qtyNew) * num(e.priceNew) - num(e.qtyOld) * num(e.priceOld));
+      const was = num(e.qtyOld) ? qty(e.qtyOld) + " × " + money(e.priceOld) : "—";
+      const now = num(e.qtyNew) ? qty(e.qtyNew) + " × " + money(e.priceNew) : "—";
+      const nm = e.nameOld ? esc(e.nameOld) + " → " + esc(e.name) : esc(e.name);
+      return `<tr><td class="c">${i + 1}</td><td class="c">${esc(OP_LABEL[e.op] || e.op || "")}</td>
+        <td>${nm}${e.reason ? `<br><span style="font-size:9px;color:#444">${esc(e.reason)}</span>` : ""}</td>
+        <td class="c">${esc(e.unit || "")}</td><td class="r">${was}</td><td class="r">${now}</td>
+        <td class="r">${(d >= 0 ? "+" : "") + money(d)}</td></tr>`;
+    }).join("");
+    return `<table class="tb">
+      <colgroup><col style="width:8mm"><col style="width:22mm"><col><col style="width:11mm"><col style="width:27mm"><col style="width:27mm"><col style="width:24mm"></colgroup>
+      <thead><tr><th>№</th><th>Вид изменения</th><th>Наименование</th><th>Ед.</th><th>Было (кол-во × цена)</th><th>Стало (кол-во × цена)</th><th>Разница, ₽</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="7" class="empty">Изменений нет</td></tr>`}</tbody></table>`;
+  }
+  // Правовые основания, реально использованные в этих записях — по одному разу, в порядке
+  // появления: подписывать документ полным списком статей, включая неприменённые, нельзя.
+  function basisList(entries) {
+    const C = CHG(); if (!C || !C.basisInfo) return [];
+    const seen = {}, out = [];
+    (entries || []).forEach((e) => {
+      const b = C.basisInfo(e.basis);
+      if (b && !seen[b.id]) { seen[b.id] = 1; out.push(b); }
+    });
+    return out;
+  }
+
+  /* ---------- АКТ О ВЫЯВЛЕННЫХ ДОПОЛНИТЕЛЬНЫХ РАБОТАХ ----------
+     Уведомление заказчика по п. 3 ст. 743 ГК РФ. Ценность документа не в таблице, а в
+     ДАТЕ и подписи заказчика: подрядчик, не сообщивший о дополнительных работах, по п. 4
+     ст. 743 ГК РФ лишается права требовать их оплаты, даже если работы реально выполнены. */
+  function changeActHtml(o) {
+    o = o || {};
+    const C = CHG();
+    const entries = o.entries || (C && C.list ? C.list() : []);
+    const sm = o.summary || (C && C.summary ? C.summary(o.contractSum) : { delta: 0, up: 0, down: 0, start: 0, total: 0, percent: 0, over10: false });
+    const m = masterOf(o), ci = clientOf(o);
+    const doc = (C && C.getDoc ? C.getDoc() : {}) || {};
+    const no = o.no || doc.actNo || docNo(), date = o.date || today();
+    const dog = doc.dogNo ? `к договору подряда № ${esc(doc.dogNo)}${doc.dogDate ? " от " + esc(doc.dogDate) : ""}` : "";
+    const bases = basisList(entries);
+    const body = `
+      <div class="top"><h1>Акт о выявленных дополнительных работах № ${esc(no)}</h1><div class="date">от ${esc(date)}</div></div>
+      ${reqTable([["Исполнитель", masterFull(m)], ["Заказчик", [ci.name, ci.phone ? "тел. " + ci.phone : ""].filter(Boolean).join(", ")],
+        ["Объект", ci.object], ["Договор", dog ? dog.replace("к договору подряда ", "") : "—"]])}
+      <div class="note" style="margin:0 0 3mm">В ходе выполнения работ ${dog ? dog + " " : ""}Исполнителем выявлена необходимость
+        изменения объёма и стоимости работ. Настоящим Исполнитель уведомляет Заказчика о следующем:</div>
+      ${changeTable(entries)}
+      <div class="tot">
+        <table class="sum">
+          <tr><td class="k">Стоимость по договору</td><td class="v">${money(sm.start)}</td></tr>
+          ${sm.up ? `<tr><td class="k">Увеличение</td><td class="v">+${money(sm.up)}</td></tr>` : ""}
+          ${sm.down ? `<tr><td class="k">Уменьшение</td><td class="v">${money(sm.down)}</td></tr>` : ""}
+          <tr class="grand"><td class="k">Стоимость с учётом изменений</td><td class="v">${money(sm.total)} ₽</td></tr>
+        </table>
+        <div class="words">Изменение стоимости: <b>${(sm.delta >= 0 ? "+" : "") + money(sm.delta)} ₽</b>
+          (${qty(Math.round(sm.percent * 10) / 10)} % от цены договора). ${esc(rublesInWords(Math.abs(sm.delta)))}.</div>
+      </div>
+      <div class="note">
+        ${bases.map((b) => `<div>• ${esc(b.name)}: ${esc(b.note)}</div>`).join("")}
+        <div style="margin-top:2mm">Заказчику надлежит в течение 10 (десяти) дней со дня получения настоящего акта сообщить Исполнителю
+        о принятом решении, если договором не установлен иной срок. При неполучении ответа в указанный срок Исполнитель обязан
+        приостановить соответствующие работы с отнесением убытков на счёт Заказчика (п. 3 ст. 743 ГК РФ).</div>
+        <div>Дополнительные работы выполняются и оплачиваются после подписания сторонами дополнительного соглашения к договору
+        ${sm.over10 ? "и согласованной сторонами дополнительной сметы (ст. 744 ГК РФ — изменение превышает 10 % общей стоимости работ)" : "(ст. 450, 452 ГК РФ)"}.</div>
+      </div>
+      ${signBlock("Уведомил, Исполнитель (подпись, ФИО, дата)", "Уведомление получил, Заказчик (подпись, ФИО, дата)")}
+      <div class="foot">Акт № ${esc(no)} от ${esc(date)} · ${esc(m.name || "Electric Pro")} · сформировано в Electric Pro</div>`;
+    return wrap("Акт о доп. работах № " + no, body);
+  }
+
+  /* ---------- ДОПОЛНИТЕЛЬНОЕ СОГЛАШЕНИЕ К ДОГОВОРУ ----------
+     Само изменение договора: цена и объём меняются соглашением сторон (п. 1 ст. 450 ГК РФ),
+     совершённым в той же форме, что и договор (п. 1 ст. 452 ГК РФ) — то есть письменно и
+     с подписями обеих сторон. Правка таблицы в приложении договор не меняет. */
+  function supplementHtml(o) {
+    o = o || {};
+    const C = CHG();
+    const entries = o.entries || (C && C.list ? C.list() : []);
+    const sm = o.summary || (C && C.summary ? C.summary(o.contractSum) : { delta: 0, start: 0, total: 0, percent: 0, over10: false });
+    const m = masterOf(o), ci = clientOf(o);
+    const doc = (C && C.getDoc ? C.getDoc() : {}) || {};
+    const no = o.no || doc.supNo || "1", date = o.date || today();
+    const days = num(doc.days);
+    const body = `
+      <div class="top"><h1>Дополнительное соглашение № ${esc(no)}</h1><div class="date">от ${esc(date)}</div></div>
+      <div class="note" style="margin:0 0 3mm">к договору подряда № ${esc(doc.dogNo || "____")}${doc.dogDate ? " от " + esc(doc.dogDate) : ""}
+        ${doc.city ? " · г. " + esc(doc.city) : ""}</div>
+      ${reqTable([["Исполнитель", masterFull(m)], ["Заказчик", [ci.name, ci.phone ? "тел. " + ci.phone : ""].filter(Boolean).join(", ")], ["Объект", ci.object]])}
+      <div class="note" style="margin:0 0 3mm">${esc(masterFull(m) || "Исполнитель")} (далее — «Исполнитель») и
+        ${esc(ci.name || "Заказчик")} (далее — «Заказчик»), руководствуясь п. 1 ст. 450 Гражданского кодекса Российской Федерации,
+        заключили настоящее дополнительное соглашение о нижеследующем:</div>
+      <div class="note" style="margin:0 0 2mm"><b>1.</b> Стороны согласовали изменение объёма и стоимости работ по договору
+        согласно таблице изменений:</div>
+      ${changeTable(entries)}
+      <div class="tot">
+        <table class="sum">
+          <tr><td class="k">Цена договора до изменения</td><td class="v">${money(sm.start)}</td></tr>
+          <tr><td class="k">Изменение</td><td class="v">${(sm.delta >= 0 ? "+" : "") + money(sm.delta)}</td></tr>
+          <tr class="grand"><td class="k">Цена договора после изменения</td><td class="v">${money(sm.total)} ₽</td></tr>
+        </table>
+        <div class="words">Цена договора с учётом настоящего соглашения: <b>${esc(rublesInWords(sm.total))}</b>.</div>
+        ${vatNote(m) ? `<div class="vat">${esc(vatNote(m))}</div>` : ""}
+      </div>
+      <div class="note">
+        <div><b>2.</b> Смета (приложение к договору) излагается в новой редакции с учётом изменений, указанных в п. 1
+          настоящего соглашения. Стоимость дополнительных работ оплачивается Заказчиком в порядке, установленном договором.</div>
+        ${days ? `<div><b>3.</b> Срок выполнения работ по договору продлевается на ${esc(String(days))} рабочих дней.</div>` : ""}
+        <div><b>${days ? 4 : 3}.</b> Остальные условия договора, не затронутые настоящим соглашением, остаются неизменными.</div>
+        <div><b>${days ? 5 : 4}.</b> Настоящее соглашение составлено в двух экземплярах, имеющих равную юридическую силу, является
+          неотъемлемой частью договора и вступает в силу с момента подписания обеими сторонами (п. 1 ст. 452 ГК РФ).</div>
+      </div>
+      ${signBlock("Исполнитель (подпись, ФИО)", "Заказчик (подпись, ФИО)")}
+      <div class="foot">Доп. соглашение № ${esc(no)} от ${esc(date)} к договору № ${esc(doc.dogNo || "____")} · сформировано в Electric Pro</div>`;
+    return wrap("Доп. соглашение № " + no, body);
+  }
+
   // Печать. РАНЬШЕ открывала лист в новой вкладке (window.open) и полагалась на
   // авто-print внутри неё — но в мобильных браузерах и в УСТАНОВЛЕННОМ PWA
   // window.open("","_blank") часто блокируется или открывает вкладку без диалога
@@ -342,5 +479,8 @@
     }
   }
 
-  window.EP.EstimatePrint = { estimateHtml, worksStagesHtml, supplyHtml, open, rublesInWords, money, qty, today, docNo, setDocNo, masterFull, vatNote };
+  window.EP.EstimatePrint = {
+    estimateHtml, worksStagesHtml, supplyHtml, changeActHtml, supplementHtml,
+    open, rublesInWords, money, qty, today, docNo, setDocNo, masterFull, vatNote, legalNote
+  };
 })();
