@@ -62,21 +62,78 @@
     return "other";
   }
 
-  // ---- бригада и смена: свойство УСТРОЙСТВА (как наценка на материалы), не проекта ----
+  /* ---- бригада и РЕЖИМ ДНЯ: свойство УСТРОЙСТВА (как наценка на материалы), не проекта ----
+     Режим дня задаётся ИНТЕРВАЛАМИ («с 10 до 13 и с 15 до 18»), а не одним числом
+     «часов в смене»: у бригады обед, и такой день это 6 рабочих часов, а не 8. Число
+     hoursPerDay СЧИТАЕТСЯ из интервалов, поэтому «во сколько работаем» и «сколько часов
+     в дне» физически не могут разойтись. Прежний формат {people, hoursPerDay} без
+     интервалов продолжает читаться (см. getCrew) — у кого он сохранён, срок не поедет. */
   var CREW_KEY = "ep_est_crew_v29";
-  var DEF_CREW = { people: 2, hoursPerDay: 8 };
+  var DEF_SHIFT = [{ from: "10:00", to: "13:00" }, { from: "15:00", to: "18:00" }];
+  var DEF_CREW = { people: 2 };
+  var SHIFT_MAX = 4;                        // больше четырёх заходов в день не бывает
+
+  function hhmm(s) {                        // "10:30" -> минуты от полуночи, иначе null
+    var m = /^\s*(\d{1,2}):(\d{2})\s*$/.exec(String(s == null ? "" : s));
+    if (!m) return null;
+    var h = Number(m[1]), mi = Number(m[2]);
+    if (!(h >= 0 && h <= 23 && mi >= 0 && mi <= 59)) return null;
+    return h * 60 + mi;
+  }
+  function normShift(list) {
+    var out = [];
+    (Array.isArray(list) ? list : []).forEach(function (iv) {
+      if (!iv) return;
+      var a = hhmm(iv.from), b = hhmm(iv.to);
+      if (a == null || b == null || b <= a) return;   // «до» раньше «с» — интервал пустой
+      if (out.length < SHIFT_MAX) out.push({ from: iv.from, to: iv.to });
+    });
+    return out;
+  }
+  function shiftHours(list) {
+    var mins = 0;
+    normShift(list).forEach(function (iv) { mins += hhmm(iv.to) - hhmm(iv.from); });
+    return Math.min(24, Math.round((mins / 60) * 100) / 100);
+  }
+  function shiftText(list) {
+    return normShift(list).map(function (iv) { return iv.from + "–" + iv.to; }).join(", ");
+  }
   function getCrew() {
     var v = null;
     try { v = JSON.parse(localStorage.getItem(CREW_KEY) || "null"); } catch (e) {}
     var people = v && v.people > 0 ? Math.min(20, Math.round(v.people)) : DEF_CREW.people;
-    var hpd = v && v.hoursPerDay > 0 ? Math.min(24, Number(v.hoursPerDay)) : DEF_CREW.hoursPerDay;
-    return { people: people, hoursPerDay: hpd };
+    var shift = normShift(v && v.shift);
+    if (!shift.length && v && v.hoursPerDay > 0) {
+      // старая запись без расписания: синтезируем один заход от 09:00, чтобы число
+      // часов осталось прежним и поля на экране не были пустыми
+      var h = Math.max(1, Math.min(24, Number(v.hoursPerDay)));
+      var end = 9 * 60 + Math.round(h * 60);
+      shift = normShift([{ from: "09:00", to: pad2(Math.floor(end / 60) % 24) + ":" + pad2(end % 60) }]);
+    }
+    if (!shift.length) shift = DEF_SHIFT.slice();
+    return { people: people, shift: shift, hoursPerDay: shiftHours(shift) };
   }
-  function setCrew(people, hoursPerDay) {
-    var c = { people: Math.max(1, Math.min(20, Math.round(Number(people) || DEF_CREW.people))),
-      hoursPerDay: Math.max(1, Math.min(24, Number(hoursPerDay) || DEF_CREW.hoursPerDay)) };
+  function pad2(n) { return (n < 10 ? "0" : "") + n; }
+  /* setCrew(people, shift) — shift это массив интервалов ЛИБО число часов (тогда
+     синтезируем один заход от 09:00): второй вид оставлен, чтобы прежние вызовы и тесты
+     с «часами в смене» продолжали работать. */
+  function setCrew(people, shift) {
+    var list = Array.isArray(shift) ? normShift(shift) : [];
+    if (!list.length && Number(shift) > 0) {
+      var end = 9 * 60 + Math.round(Math.min(24, Number(shift)) * 60);
+      list = normShift([{ from: "09:00", to: pad2(Math.floor(end / 60) % 24) + ":" + pad2(end % 60) }]);
+    }
+    if (!list.length) list = DEF_SHIFT.slice();
+    var c = { people: Math.max(1, Math.min(20, Math.round(Number(people) || DEF_CREW.people))), shift: list };
     try { localStorage.setItem(CREW_KEY, JSON.stringify(c)); } catch (e) {}
-    return c;
+    return { people: c.people, shift: list, hoursPerDay: shiftHours(list) };
+  }
+  // часы в дне у ЛЮБОГО crew: явный hoursPerDay (старый контракт, в т.ч. из тестов и
+  // печати) главнее, иначе считаем из интервалов
+  function crewHours(crew) {
+    if (!crew) return 0;
+    if (crew.hoursPerDay > 0) return Number(crew.hoursPerDay);
+    return shiftHours(crew.shift);
   }
 
   var num = function (v) { var n = Number(v); return isFinite(n) ? n : 0; };
@@ -107,20 +164,28 @@
       st.hours += hours;
     });
     var stages = order.map(function (id) { return byId[id]; }).filter(function (s) { return s.items.length; });
-    stages.forEach(function (s) { s.hours = r1(s.hours); });
+    // срок: часы одного человека делим на бригаду и рабочие часы дня. Округляем ВВЕРХ до
+    // половины дня — «2.1 дня» на объекте всё равно означает три выхода, но дробить до
+    // сотых бессмысленно, а округление вниз занижало бы срок в договоре.
+    var perDay = crew.people * crewHours(crew);
+    var toDays = function (h) { return perDay > 0 ? Math.ceil((h / perDay) * 2) / 2 : 0; };
+    stages.forEach(function (s) { s.hours = r1(s.hours); s.days = toDays(s.hours); });
     var sum = stages.reduce(function (a, s) { return a + s.sum; }, 0);
     var hours = r1(stages.reduce(function (a, s) { return a + s.hours; }, 0));
-    // срок: часы одного человека делим на бригаду и смену. Округляем ВВЕРХ до половины
-    // дня — «2.1 дня» на объекте всё равно означает три выхода, но дробить до сотых
-    // бессмысленно, а округление вниз занижало бы срок в договоре.
-    var perDay = crew.people * crew.hoursPerDay;
-    var days = perDay > 0 ? Math.ceil((hours / perDay) * 2) / 2 : 0;
-    return { stages: stages, sum: sum, hours: hours, days: days, crew: crew };
+    // ОБЩИЙ срок считается от ОБЩИХ часов, а не суммой этапных: иначе округление вверх
+    // у каждого этапа накапливалось бы и срок вырастал на ровном месте (5 этапов дали бы
+    // до +2 дней из воздуха). Сумма этапных дней МОЖЕТ быть больше общего — это нормально
+    // и честно: бригада не начинает чистовой этап в тот же час, когда закончила черновой.
+    return {
+      stages: stages, sum: sum, hours: hours, days: toDays(hours),
+      crew: crew, hoursPerDay: crewHours(crew), shiftText: shiftText(crew.shift)
+    };
   }
 
   window.EP.EstimateWorks = {
-    STAGES: STAGES, NORMS: NORMS, DEF_NORM: DEF_NORM,
+    STAGES: STAGES, NORMS: NORMS, DEF_NORM: DEF_NORM, DEF_SHIFT: DEF_SHIFT, SHIFT_MAX: SHIFT_MAX,
     normFor: normFor, stageOf: stageOf, breakdown: breakdown,
-    getCrew: getCrew, setCrew: setCrew, CREW_KEY: CREW_KEY
+    getCrew: getCrew, setCrew: setCrew, CREW_KEY: CREW_KEY,
+    shiftHours: shiftHours, shiftText: shiftText, crewHours: crewHours
   };
 })();

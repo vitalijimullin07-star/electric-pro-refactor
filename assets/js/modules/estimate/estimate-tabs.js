@@ -149,17 +149,35 @@
     if (!stagesOpen) return `<div class="ep-est-stages">${head}</div>`;
     const rowsHtml = br.stages.map((s, i) => `
       <div class="ep-est-stg">
-        <div class="ep-est-stgtitle"><b>Этап ${i + 1}. ${esc(s.name)}</b><span>${num0(s.hours)} ч · ${money(s.sum)}</span></div>
+        <div class="ep-est-stgtitle"><b>Этап ${i + 1}. ${esc(s.name)}</b><span>${num0(s.hours)} ч · ${num0(s.days)} дн. · ${money(s.sum)}</span></div>
         ${s.items.map((x) => `<div class="ep-est-stgrow"><span>${esc(x.name)}</span><i>${num0(x.qty)}${x.unit ? " " + esc(x.unit) : ""} · ${num0(x.hours)} ч</i></div>`).join("")}
       </div>`).join("");
+    // РЕЖИМ ДНЯ интервалами («с 10 до 13 и с 15 до 18»), а не одним числом часов: у
+    // бригады обед, и такой день это 6 рабочих часов, а не 8. Число часов в дне здесь
+    // не поле ввода, а ИТОГ интервалов — разойтись «во сколько работаем» и «сколько
+    // часов» физически не может.
+    const ivs = br.crew.shift.map((iv, i) => `
+        <div class="ep-est-iv">
+          <input type="time" value="${esc(iv.from)}" data-est-shift-from="${i}" aria-label="Начало заход ${i + 1}">
+          <span>–</span>
+          <input type="time" value="${esc(iv.to)}" data-est-shift-to="${i}" aria-label="Конец заход ${i + 1}">
+          ${br.crew.shift.length > 1 ? `<button type="button" class="ep-est-ivdel ep-clickable" data-est-shift-del="${i}" aria-label="Убрать заход">✕</button>` : ""}
+        </div>`).join("");
+    const canAdd = br.crew.shift.length < (W.SHIFT_MAX || 4);
     return `<div class="ep-est-stages">${head}
       <div class="ep-est-crew">
         <label>Бригада, чел.<input type="number" inputmode="numeric" min="1" max="20" step="1" value="${esc(String(br.crew.people))}" data-est-crew></label>
-        <label>Смена, ч<input type="number" inputmode="decimal" min="1" max="24" step="1" value="${esc(String(br.crew.hoursPerDay))}" data-est-shift></label>
+        <div class="ep-est-shift">
+          <span class="ep-est-shlbl">Часы работы <b data-est-shifth>${num0(br.hoursPerDay)} ч/день</b></span>
+          ${ivs}
+          ${canAdd ? '<button type="button" class="btn btn-ghost ep-clickable ep-est-ivadd" data-est-shift-add>＋ ещё заход</button>' : ""}
+        </div>
       </div>
       ${rowsHtml}
-      <div class="ep-est-stgtot">Трудозатраты <b>${num0(br.hours)} чел.-ч</b> · срок при ${br.crew.people} чел. — <b>${num0(br.days)} раб. дн.</b></div>
-      <div class="ep-est-stgnote">Срок расчётный, по нормам выработки: фактический зависит от материала стен и готовности объекта.
+      <div class="ep-est-stgtot">Трудозатраты <b>${num0(br.hours)} чел.-ч</b> · срок при ${br.crew.people} чел. и ${num0(br.hoursPerDay)} ч/день — <b>${num0(br.days)} раб. дн.</b></div>
+      <div class="ep-est-stgnote">Рабочий день ${esc(br.shiftText)} — ${num0(br.hoursPerDay)} ч.
+        Срок расчётный, по нормам выработки: фактический зависит от материала стен и готовности объекта.
+        Дни по этапам считаются каждый со своим округлением вверх, поэтому их сумма может быть больше общего срока.
         Позиции, помеченные «доп.», в срок не входят — они идут отдельным актом.</div>
     </div>`;
   }
@@ -348,25 +366,66 @@
     if (t.hasAttribute("data-est-no")) { const P = window.EP && window.EP.EstimatePrint; if (P) P.setDocNo(t.value); }
     // наценку сохраняем на ввод, но НЕ перерисовываем экран (иначе сбился бы фокус поля)
     else if (t.hasAttribute("data-est-mk")) { setMarkup(t.getAttribute("data-est-mk"), t.value); }
-    // бригада/смена: сохраняем и обновляем ТОЛЬКО итоговую строку — полный render()
-    // сбил бы фокус поля прямо во время набора числа
-    else if (t.hasAttribute("data-est-crew") || t.hasAttribute("data-est-shift")) {
-      const W = EW(); if (!W) return;
-      const c = document.querySelector("[data-est-crew]"), h = document.querySelector("[data-est-shift]");
-      const crew = W.setCrew(c && c.value, h && h.value);
-      const br = W.breakdown(rows("work"), { extra: "skip", crew });
-      const tot = document.querySelector(".ep-est-stgtot");
-      if (tot) tot.innerHTML = `Трудозатраты <b>${num0(br.hours)} чел.-ч</b> · срок при ${crew.people} чел. — <b>${num0(br.days)} раб. дн.</b>`;
-      const hd = document.querySelector("[data-est-stages] b");
-      if (hd) hd.textContent = `${num0(br.hours)} чел.-ч · ${num0(br.days)} дн.`;
+    // бригада/часы работы: сохраняем и обновляем ТОЛЬКО итоговые строки — полный render()
+    // сбил бы фокус поля прямо во время набора числа или времени
+    else if (t.hasAttribute("data-est-crew") || t.hasAttribute("data-est-shift-from") || t.hasAttribute("data-est-shift-to")) {
+      applyCrew();
     }
   });
+
+  // читает бригаду и ВСЕ интервалы дня из полей, сохраняет и патчит итоговые строки
+  function applyCrew() {
+    const W = EW(); if (!W) return null;
+    const c = document.querySelector("[data-est-crew]");
+    const shift = [];
+    document.querySelectorAll("[data-est-shift-from]").forEach((f) => {
+      const i = f.getAttribute("data-est-shift-from");
+      const to = document.querySelector(`[data-est-shift-to="${i}"]`);
+      shift.push({ from: f.value, to: to ? to.value : "" });
+    });
+    const crew = W.setCrew(c && c.value, shift);
+    const br = W.breakdown(rows("work"), { extra: "skip", crew });
+    const tot = document.querySelector(".ep-est-stgtot");
+    if (tot) tot.innerHTML = `Трудозатраты <b>${num0(br.hours)} чел.-ч</b> · срок при ${crew.people} чел. и ${num0(br.hoursPerDay)} ч/день — <b>${num0(br.days)} раб. дн.</b>`;
+    const hd = document.querySelector("[data-est-stages] b");
+    if (hd) hd.textContent = `${num0(br.hours)} чел.-ч · ${num0(br.days)} дн.`;
+    const hh = document.querySelector("[data-est-shifth]");
+    if (hh) hh.textContent = `${num0(br.hoursPerDay)} ч/день`;
+    // дни по этапам тоже зависят от режима дня — патчим их той же правкой
+    document.querySelectorAll(".ep-est-stgtitle span").forEach((sp, i) => {
+      const s = br.stages[i];
+      if (s) sp.textContent = `${num0(s.hours)} ч · ${num0(s.days)} дн. · ${money(s.sum)}`;
+    });
+    return crew;
+  }
   document.addEventListener("click", (e) => {
     const t = e.target; let el;
     if ((el = t.closest && t.closest("[data-esttab]"))) { tab = el.dataset.esttab === "supply" ? "supply" : "works"; render(); return; }
     if (document.getElementById("ep-estimate-root")) {
       if ((el = t.closest && t.closest("[data-est-scope]"))) { printScope = el.getAttribute("data-est-scope"); render(); return; }
       if (t.closest && t.closest("[data-est-stages]")) { stagesOpen = !stagesOpen; render(); return; }
+      // добавить/убрать заход дня: тут полный render() НУЖЕН — меняется набор полей,
+      // патчем строк это не решается (в отличие от правки самого времени)
+      if (t.closest && t.closest("[data-est-shift-add]")) {
+        const W = EW(); if (!W) return;
+        const crew = applyCrew() || W.getCrew();
+        // новый заход — от конца предыдущего на два часа, но не за полночь (иначе
+        // «до» оказалось бы раньше «с» и интервал молча отбросился бы)
+        const last = crew.shift[crew.shift.length - 1];
+        const from = last ? last.to : "09:00";
+        const mins = Math.min(23 * 60 + 59, (Number(from.slice(0, 2)) || 0) * 60 + (Number(from.slice(3, 5)) || 0) + 120);
+        const p2 = (n) => (n < 10 ? "0" : "") + n;
+        const to = p2(Math.floor(mins / 60)) + ":" + p2(mins % 60);
+        W.setCrew(crew.people, crew.shift.concat([{ from, to }]));
+        render(); return;
+      }
+      if ((el = t.closest && t.closest("[data-est-shift-del]"))) {
+        const W = EW(); if (!W) return;
+        const i = Number(el.getAttribute("data-est-shift-del"));
+        const crew = applyCrew() || W.getCrew();
+        W.setCrew(crew.people, crew.shift.filter((x, k) => k !== i));
+        render(); return;
+      }
       // добавление позиции в основную смету
       if (t.closest && t.closest("[data-est-add]")) { showAdd = true; addType = tab === "supply" ? "material" : "work"; render(); return; }
       if ((el = t.closest && t.closest("[data-eaf-type]"))) {
