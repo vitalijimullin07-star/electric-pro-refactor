@@ -6930,7 +6930,7 @@ test("фото: deleteProject чистит кэш фото своего прое
       ok(/R\.bannerHtml\(\)/.test(tabs) && /R\.blockHtml\(\)/.test(tabs) && /CHG\(\)\.blockHtml\(\)/.test(tabs),
         "экран сметы вставляет предложение, сводку и журнал изменений");
       ok(/R\.warnHtml\(\)/.test(tabs) && /printBlock/.test(tabs), "предупреждение — в блоке печати, перед выгрузкой");
-      ok(/EP\.EstimateTabs = \{ render, flash, markups \}/.test(tabs), "экран отдаёт перерисовку и надбавки модулям");
+      ok(/EP\.EstimateTabs = \{ render, flash, markups, setMarkups \}/.test(tabs), "экран отдаёт перерисовку и надбавки модулям");
       const req = src54("estimate-required");
       ok(/data-req-apply/.test(req) && /data-req-skipall/.test(req) && /data-req-rules/.test(req),
         "кнопки «добавить отмеченные», «не нужно» и редактор связок");
@@ -7035,6 +7035,36 @@ test("фото: deleteProject чистит кэш фото своего прое
       // загрузка возвращает ЧИСТЫЕ цены (надбавка не «запечена»), иначе повторное
       // сохранение накрутило бы процент второй раз
       eq(A.get(r.id).items[0].price, 100, "в снимке хранится цена без надбавки");
+    });
+    test("архив: открытие сохранённой сметы возвращает ЕЁ проценты", () => {
+      // просьба пользователя: «главное, чтобы когда смету открываем, были сохранены
+      // параметры процентов». В снимке лежат ЧИСТЫЕ цены, поэтому без возврата процентов
+      // открытая смета напечаталась бы по тем надбавкам, что случайно стояли на экране.
+      const EPx = loadEstimate(), A = EPx.EstimateArchive, E = EPx.Estimate;
+      let cur = { work: 0, mat: 0, pad: 0, discount: 0 };
+      EPx.EstimateTabs = {                      // тот же контракт, что у estimate-tabs.js
+        render: () => {}, flash: () => {}, markups: () => cur,
+        setMarkups: (o) => {
+          ["work", "mat", "pad", "discount"].forEach((k) => { if (o && o[k] != null) cur[k] = Number(o[k]) || 0; });
+          return cur;
+        }
+      };
+      E.clear();
+      E.addItem({ type: "work", name: "Р", unit: "шт", qty: 1, price: 100 });
+      const r = A.save({ name: "кв. 5", items: E.getItems(), markups: { work: 10, mat: 20, pad: 5, discount: 7 } });
+      cur = { work: 0, mat: 0, pad: 0, discount: 0 };   // мастер поменял проценты на экране
+      E.clear();
+      E.addItem({ type: "work", name: "Другая", unit: "шт", qty: 1, price: 999 });
+      ok(A.loadToMain(r.id), "снимок открыт в текущей смете");
+      eq(E.getItems().length, 1, "позиции заменены снимком");
+      eq(E.getItems()[0].price, 100, "цена из снимка — чистая, без надбавки");
+      eq(cur.work, 10, "процент прораба вернулся");
+      eq(cur.mat, 20, "наценка на материалы вернулась");
+      eq(cur.pad, 5, "резерв вернулся");
+      eq(cur.discount, 7, "скидка вернулась");
+      const tabs = src55("estimate-tabs");
+      ok(/setMarkups/.test(tabs) && /EstimateTabs = \{[^}]*setMarkups/.test(tabs), "экран отдаёт наружу setMarkups");
+      ok(/setMarkup\(k, o\[k\]\)/.test(tabs), "проценты пишутся тем же путём, второй копии хранения нет");
     });
     test("архив: одна арифметика с печатным бланком", () => {
       const EPx = loadEstimate(), A = EPx.EstimateArchive, P = EPx.EstimatePrint;
