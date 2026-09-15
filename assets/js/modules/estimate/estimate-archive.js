@@ -118,12 +118,18 @@
 
   /* Загрузить снимок в текущую смету (заменить). Позиции возвращаются как есть —
      надбавки в них НЕ «запечены» (в снимке хранятся чистые цены и проценты отдельно),
-     иначе повторное сохранение накрутило бы процент второй раз. */
+     иначе повторное сохранение накрутило бы процент второй раз. ПОЭТОМУ ЖЕ вместе с
+     позициями ОБЯЗАТЕЛЬНО возвращаются и проценты (просьба пользователя: «главное, чтобы
+     когда смету открываем, были сохранены параметры процентов»): цены в позициях чистые,
+     и без своих процентов открытая смета напечаталась бы по ЧУЖИМ — по тем, что стояли на
+     экране в момент открытия. Пишем через EstimateTabs.setMarkups — единственный путь
+     записи надбавок, своего хранения архив не заводит. */
   function loadToMain(id) {
-    const r = get(id), d = EST();
+    const r = get(id), d = EST(), T = TABS();
     if (!r || !d || !d.clear || !d.mergeItems) return null;
     d.clear();
     d.mergeItems(r.items.map((x) => Object.assign({}, x)));
+    if (T && T.setMarkups) T.setMarkups(r.markups);
     return r;
   }
   function printOf(id) {
@@ -188,7 +194,7 @@
         <button type="button" class="btn btn-primary ep-clickable" data-arch-payadd>Записать</button>
       </div>
       <div class="ep-arch-acts">
-        <button type="button" class="btn btn-ghost ep-clickable" data-arch-load="${esc(r.id)}">↧ В текущую смету</button>
+        <button type="button" class="btn btn-ghost ep-clickable" data-arch-load="${esc(r.id)}">↧ Открыть в смете</button>
         <button type="button" class="btn btn-ghost ep-clickable" data-arch-print="${esc(r.id)}">🖨 Печать</button>
         <button type="button" class="btn btn-ghost ep-clickable" data-arch-export="${esc(r.id)}">⤓ Экспорт</button>
         <button type="button" class="btn btn-ghost ep-clickable" data-arch-del="${esc(r.id)}">🗑 Удалить</button>
@@ -218,7 +224,7 @@
           <input id="ep-arch-name" type="text" maxlength="60" placeholder="Название (объект, заказчик)">
           <button type="button" class="btn btn-primary ep-clickable" data-arch-save>💾 Сохранить текущую</button>
         </div>
-        <div class="ep-arch-hint">Снимок текущей сметы с надбавками — по нему ведутся авансы и остаток. На текущую смету не влияет.</div>
+        <div class="ep-arch-hint">Снимок текущей сметы с надбавками — по нему ведутся авансы и остаток. На текущую смету не влияет, а «Открыть в смете» вернёт и позиции, и проценты.</div>
         ${rowsHtml || `<div class="ep-arch-empty">Пока ничего не сохранено.</div>`}
       </div></div>`;
   }
@@ -256,9 +262,10 @@
         repaint(); return;
       }
       if ((el = t.closest("[data-arch-load]"))) {
-        if (!window.confirm("Заменить текущую смету сохранённой?")) return;
+        if (!window.confirm("Заменить текущую смету сохранённой? Проценты надбавок тоже вернутся из неё.")) return;
         const r = loadToMain(el.getAttribute("data-arch-load"));
-        repaint(); flash(r ? "Загружено: " + r.name : "Не удалось загрузить");
+        repaint();
+        flash(r ? "Открыто: " + r.name + " · надбавки: " + markupsLine(r.markups || {}) : "Не удалось загрузить");
         return;
       }
       if ((el = t.closest("[data-arch-print]"))) {
