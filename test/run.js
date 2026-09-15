@@ -5006,6 +5006,28 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/data-est-crew/.test(tabs) && /data-est-shift-from/.test(tabs) && /data-est-shift-to/.test(tabs),
       "бригада и часы работы настраиваются на экране");
   });
+  /* ЧИСЛЕННОСТЬ БРИГАДЫ в документе (просьба пользователя: «надо указывать сколько человек
+     на объекте»). Источник тот же, что у блока этапов, — второй копии нет. */
+  test("смета: в документе указано, сколько человек на объекте", () => {
+    const EPx = loadEstimate(), P = EPx.EstimatePrint, W = EPx.EstimateWorks;
+    const crew = W.setCrew(3, [{ from: "10:00", to: "13:00" }, { from: "15:00", to: "18:00" }]);
+    const html = P.estimateHtml({ works: WORKS, mats: [{ name: "Кабель", unit: "м", qty: 10, price: 90 }], crew });
+    ok(/бригада: <b>3 чел\.<\/b>/.test(html), "число людей в обычной смете");
+    ok(/режим работы 10:00–13:00, 15:00–18:00 \(6 ч\/день\)/.test(html), "и режим дня");
+    ok(/ориентировочный срок — <b>[\d,]+ раб\. дн\.<\/b>/.test(html), "и срок");
+    // в «Смете материалов» работ нет — бригада и срок там бессмысленны
+    const mats = P.estimateHtml({ works: [], mats: [{ name: "Кабель", unit: "м", qty: 10, price: 90 }], heading: "Смета материалов", crew });
+    ok(!/На объекте работает бригада/.test(mats), "в смете материалов бригада не указывается");
+    // старый формат crew без расписания: часы есть, «режима работы» нет
+    const old = P.estimateHtml({ works: WORKS, crew: { people: 2, hoursPerDay: 8 } });
+    ok(/бригада: <b>2 чел\.<\/b>/.test(old) && /рабочий день 8 ч/.test(old), "старый формат бригады печатается");
+    ok(!/режим работы/.test(old), "расписания у него нет — не выдумываем");
+    const tabs = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "estimate", "estimate-tabs.js"), "utf8");
+    ok(/data-est-crewedit/.test(tabs) && /crewHintHtml\(\)/.test(tabs), "перед печатью видно, сколько человек уйдёт в документ");
+    ok(/ep-est-crewhint[\s\S]{0,140}crewHintHtml\(\)/.test(tabs), "и строка патчится при смене бригады, а не показывает старое число");
+    ok(/data-est-crewedit[\s\S]{0,200}stagesOpen = true/.test(tabs), "«изменить» раскрывает блок этапов, а не тоглит его");
+    ok(!/data-est-crewhint[^>]*input/.test(tabs), "второго поля ввода численности нет — источник один");
+  });
   /* РЕЖИМ ДНЯ интервалами (просьба пользователя: «у нас часы работы с 10 до 13 и с 15 до 18,
      пиши дни, часы общие»). Ключевое: hoursPerDay не вводится руками, а СЧИТАЕТСЯ из
      интервалов — «во сколько работаем» и «сколько часов в дне» не могут разойтись. */
