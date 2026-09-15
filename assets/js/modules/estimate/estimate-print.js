@@ -159,6 +159,7 @@
       .sign > div { flex: 1 1 0; }
       .sign .ln { border-bottom: 0.2mm solid #000; height: 7mm; }
       .sign .cap { font-size: 9px; color: #333; text-align: center; padding-top: 1mm; }
+      .crew { margin-top: 3mm; font-size: 11px; break-inside: avoid; page-break-inside: avoid; }
       .note { margin-top: 4mm; font-size: 10px; color: #333; }
       .foot { margin-top: 6mm; font-size: 9px; color: #555; border-top: 0.2mm solid #999; padding-top: 1.5mm; }
       .empty { text-align: center; padding: 4mm; }`;
@@ -212,6 +213,25 @@
      o = { works, mats, no, date, master, client, object, markup, workMarkup, pad,
            discount, matMode, title }
      works/mats — уже агрегированные строки {name, unit, qty, price}. */
+  /* ЧИСЛЕННОСТЬ БРИГАДЫ в документе (просьба пользователя: «надо указывать сколько человек
+     на объекте»). Источник ОДИН — EP.EstimateWorks: и поле на экране, и этот текст читают
+     его, разойтись не могут. Срок пишем только когда в листе РЕАЛЬНО есть работы — в
+     «Смете материалов» он бессмыслен, поэтому там строки нет вовсе. */
+  function crewLine(o, works) {
+    const W = window.EP && window.EP.EstimateWorks;
+    if (!W || !works || !works.length) return "";
+    const crew = o.crew || W.getCrew();
+    if (!crew || !(crew.people > 0)) return "";
+    const br = W.breakdown(works, { extra: o.extraMode || "all", crew });
+    const hrs = br.hoursPerDay || num(crew.hoursPerDay);
+    const parts = ["На объекте работает бригада: <b>" + qty(crew.people) + " чел.</b>"];
+    // расписание есть не всегда: у старой записи {people, hoursPerDay} интервалов нет
+    if (br.shiftText) parts.push("режим работы " + esc(br.shiftText) + (hrs ? " (" + qty(hrs) + " ч/день)" : ""));
+    else if (hrs) parts.push("рабочий день " + qty(hrs) + " ч");
+    if (br.days) parts.push("ориентировочный срок — <b>" + qty(br.days) + " раб. дн.</b>");
+    return `<div class="crew">${parts.join(" · ")}</div>`;
+  }
+
   function estimateHtml(o) {
     o = o || {};
     const T = calcTotals(o);
@@ -258,6 +278,7 @@
         <div class="words">Всего к оплате: <b>${esc(rublesInWords(total))}</b>.</div>
         ${vatNote(m) ? `<div class="vat">${esc(vatNote(m))}</div>` : ""}
       </div>
+      ${crewLine(o, works)}
       <div class="note">${esc(legalNote(o))}</div>
       ${signBlock("Исполнитель (подпись, ФИО)", "Заказчик (подпись, ФИО)")}
       <div class="foot">${esc(heading)} № ${esc(no)} от ${esc(date)} · ${esc(m.name || "Electric Pro")} · сформировано в Electric Pro</div>`;

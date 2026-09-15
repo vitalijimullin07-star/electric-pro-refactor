@@ -183,6 +183,20 @@
   }
   const num0 = (v) => { const n = Number(v) || 0; return (Math.round(n * 10) / 10).toString().replace(".", ","); };
 
+  /* Численность бригады ПЕРЕД печатью (просьба пользователя «надо указывать сколько человек
+     на объекте»): само поле остаётся одно — в блоке «Этапы и сроки», здесь только видно,
+     что уйдёт в документ, и кнопка, которая РАСКРЫВАЕТ тот блок (не второе поле ввода:
+     два места записи одного значения рано или поздно разъезжаются). Строки нет, когда
+     печатаются только материалы — бригада в том листе не указывается. */
+  function crewHintHtml() {
+    const W = EW();
+    if (!W || printScope === "mat" || !rows("work").length) return "";
+    const c = W.getCrew(), h = W.crewHours ? W.crewHours(c) : c.hoursPerDay;
+    const sh = W.shiftText ? W.shiftText(c.shift) : "";
+    return `<div class="ep-est-crewhint">👷 На объекте: <b>${num0(c.people)} чел.</b>${h ? " · " + num0(h) + " ч/день" : ""}${sh ? " · " + esc(sh) : ""}
+      <button type="button" class="ep-clickable" data-est-crewedit>изменить</button></div>`;
+  }
+
   // Блок печати: номер сметы, выбор что печатать (смета целиком / только работы /
   // только материалы) и наценка на материалы (%), плюс отдельная кнопка «Заявка
   // поставщику» (материалы без цен). Наценка показывается, только когда в печать
@@ -210,6 +224,7 @@
           <label>Скидка, %<input type="number" inputmode="decimal" min="0" step="1" value="${esc(String(mk.discount))}" data-est-mk="discount"></label>
         </div>
         <div class="ep-est-mkhint">Надбавки входят в цену позиции и в документе отдельной строкой не видны. Скидка — видна.</div>
+        ${crewHintHtml()}
         <div class="ep-est-prow">
           <button type="button" class="btn btn-primary ep-clickable" data-est-print>${printLabel}</button>
           <button type="button" class="btn btn-ghost ep-clickable" data-est-supply>Заявка поставщику (без цен)</button>
@@ -391,6 +406,10 @@
     if (hd) hd.textContent = `${num0(br.hours)} чел.-ч · ${num0(br.days)} дн.`;
     const hh = document.querySelector("[data-est-shifth]");
     if (hh) hh.textContent = `${num0(br.hoursPerDay)} ч/день`;
+    // строка «сколько человек на объекте» в блоке печати — тот же источник, её тоже
+    // патчим здесь: иначе перед печатью показывалось бы старое число (поймано живым прогоном)
+    const ch = document.querySelector(".ep-est-crewhint");
+    if (ch) { const h = crewHintHtml(); if (h) ch.outerHTML = h; }
     // дни по этапам тоже зависят от режима дня — патчим их той же правкой
     document.querySelectorAll(".ep-est-stgtitle span").forEach((sp, i) => {
       const s = br.stages[i];
@@ -404,6 +423,14 @@
     if (document.getElementById("ep-estimate-root")) {
       if ((el = t.closest && t.closest("[data-est-scope]"))) { printScope = el.getAttribute("data-est-scope"); render(); return; }
       if (t.closest && t.closest("[data-est-stages]")) { stagesOpen = !stagesOpen; render(); return; }
+      // «изменить» у строки бригады: ВСЕГДА раскрывает блок этапов (а не тоглит — иначе у
+      // уже открытого блока кнопка его закрывала бы) и подводит к полям
+      if (t.closest && t.closest("[data-est-crewedit]")) {
+        stagesOpen = true; render();
+        const c = document.querySelector("[data-est-crew]");
+        if (c && c.scrollIntoView) { try { c.scrollIntoView({ block: "center" }); } catch (e) { c.scrollIntoView(); } }
+        return;
+      }
       // добавить/убрать заход дня: тут полный render() НУЖЕН — меняется набор полей,
       // патчем строк это не решается (в отличие от правки самого времени)
       if (t.closest && t.closest("[data-est-shift-add]")) {
