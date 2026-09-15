@@ -180,30 +180,53 @@
     </div>`;
   }
 
-  /* ---------- СМЕТА ----------
-     o = { works, mats, no, date, master, client, object, markup, discount, matMode, title }
-     works/mats — уже агрегированные строки {name, unit, qty, price}; наценка (markup, %)
-     применяется к цене МАТЕРИАЛОВ (как в «Документах»), скидка (discount, %) — к подытогу. */
-  function estimateHtml(o) {
+  /* ---------- НАДБАВКИ И ИТОГИ (единый счёт для бланка и для архива) ----------
+     Надбавки меняют ЦЕНУ ПОЗИЦИИ, а не добавляют отдельную строку: 10 ₽ при 10 % — это
+     11 ₽ в колонке «Цена». Заказчику надбавки НЕ раскрываются (в документе их не видно —
+     он видит обычную цену), скидка — видна отдельной строкой, её как раз показывают.
+       markup     — наценка на МАТЕРИАЛЫ (как было, «Документы» шлют её же);
+       workMarkup — процент прорабу, на РАБОТЫ;
+       pad        — резерв под будущую скидку, на ВСЁ (чтобы скидку было из чего дать);
+       discount   — сама скидка, к подытогу.
+     Цена позиции округляется до копейки ДО умножения на количество — иначе итог в шапке
+     не сходился бы с суммой колонки «Сумма» на доли копейки. */
+  function r2(x) { return Math.round(num(x) * 100) / 100; }
+  function factors(o) {
     o = o || {};
+    const pad = 1 + num(o.pad) / 100;
+    return { work: (1 + num(o.workMarkup) / 100) * pad, mat: (1 + num(o.markup) / 100) * pad };
+  }
+  function calcTotals(o) {
+    o = o || {};
+    const f = factors(o);
     const works = (o.works || []).filter((x) => num(x.qty) > 0);
     const mats = (o.mats || []).filter((x) => num(x.qty) > 0);
-    const k = 1 + num(o.markup) / 100;
-    const workSum = works.reduce((s, x) => s + num(x.price) * num(x.qty), 0);
-    const matSum = mats.reduce((s, x) => s + num(x.price) * k * num(x.qty), 0);
+    const workSum = works.reduce((s, x) => s + r2(num(x.price) * f.work) * num(x.qty), 0);
+    const matSum = mats.reduce((s, x) => s + r2(num(x.price) * f.mat) * num(x.qty), 0);
     const subtotal = workSum + matSum;
     const disc = subtotal * num(o.discount) / 100;
-    const total = subtotal - disc;
+    return { works, mats, f, workSum, matSum, subtotal, disc, total: subtotal - disc };
+  }
+
+  /* ---------- СМЕТА ----------
+     o = { works, mats, no, date, master, client, object, markup, workMarkup, pad,
+           discount, matMode, title }
+     works/mats — уже агрегированные строки {name, unit, qty, price}. */
+  function estimateHtml(o) {
+    o = o || {};
+    const T = calcTotals(o);
+    const works = T.works, mats = T.mats, k = T.f.mat;
+    const workSum = T.workSum, matSum = T.matSum, subtotal = T.subtotal, disc = T.disc, total = T.total;
     const m = masterOf(o), ci = clientOf(o);
     const no = o.no || docNo(), date = o.date || today();
 
     let n = 0;
     const rowsOf = (arr, mul) => arr.map((x) => {
-      const price = num(x.price) * (mul || 1), sum = price * num(x.qty);
+      const price = r2(num(x.price) * (mul || 1)), sum = price * num(x.qty);
       return `<tr><td class="c">${++n}</td><td>${esc(x.name)}</td><td class="c">${esc(x.unit || "")}</td>
         <td class="r">${qty(x.qty)}</td><td class="r">${money(price)}</td><td class="r">${money(sum)}</td></tr>`;
     }).join("");
-    const secWorks = works.length ? `<tr class="sec"><td colspan="6">Раздел 1. Работы</td></tr>${rowsOf(works, 1)}
+    const secWorks = works.length ? `<tr class="sec"><td colspan="6">Раздел 1. Работы</td></tr>${rowsOf(works, T.f.work)}
       <tr class="st"><td colspan="5" class="r">Итого по разделу 1</td><td class="r">${money(workSum)}</td></tr>` : "";
     const matBody = (o.matMode === "sum")
       ? `<tr><td class="c">${++n}</td><td>Материалы по проекту (комплект)</td><td class="c">компл</td>
@@ -217,7 +240,7 @@
     const heading = o.heading || "Смета";
     const sumRows = [];
     if (works.length) sumRows.push(["Работы", money(workSum)]);
-    if (mats.length) sumRows.push([o.markup ? "Материалы (с наценкой " + qty(o.markup) + " %)" : "Материалы", money(matSum)]);
+    if (mats.length) sumRows.push(["Материалы", money(matSum)]);
     if (disc > 0) { sumRows.push(["Подытог", money(subtotal)]); sumRows.push(["Скидка " + qty(o.discount) + " %", "−" + money(disc)]); }
     const body = `
       <div class="top"><h1>${esc(heading)} № ${esc(no)}</h1><div class="date">от ${esc(date)}</div></div>
@@ -250,7 +273,11 @@
     o = o || {};
     const W = window.EP && window.EP.EstimateWorks;
     if (!W) return estimateHtml(o);          // модуль не подключён — обычная смета работ
-    const br = W.breakdown(o.works || [], { extra: o.extraMode || "all", crew: o.crew });
+    // надбавки применяются К ЦЕНЕ строки ДО разбивки по этапам — иначе подытоги этапов и
+    // «Всего работ» считались бы по «чистой» цене и разошлись бы с обычной сметой
+    const fw = factors(o).work;
+    const wsrc = (o.works || []).map((x) => (fw === 1 ? x : Object.assign({}, x, { price: r2(num(x.price) * fw) })));
+    const br = W.breakdown(wsrc, { extra: o.extraMode || "all", crew: o.crew });
     const m = masterOf(o), ci = clientOf(o);
     const no = o.no || docNo(), date = o.date || today();
     const heading = o.heading || "Смета по работам";
@@ -481,6 +508,7 @@
 
   window.EP.EstimatePrint = {
     estimateHtml, worksStagesHtml, supplyHtml, changeActHtml, supplementHtml,
-    open, rublesInWords, money, qty, today, docNo, setDocNo, masterFull, vatNote, legalNote
+    open, rublesInWords, money, qty, today, docNo, setDocNo, masterFull, vatNote, legalNote,
+    factors, calcTotals
   };
 })();
