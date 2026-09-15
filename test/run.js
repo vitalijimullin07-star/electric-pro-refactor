@@ -4676,7 +4676,7 @@ test("фото: deleteProject чистит кэш фото своего прое
     const ctx = vm2.createContext(sb);
     const dir = path2.join(__dirname, "..", "assets", "js", "modules", "estimate");
     ["name-match", "estimate-file", "estimate-draft", "estimate-main", "estimate-works", "estimate-print",
-      "estimate-changes", "estimate-required"].forEach((n) => {
+      "estimate-changes", "estimate-required", "estimate-archive"].forEach((n) => {
       vm2.runInContext(fs2.readFileSync(path2.join(dir, n + ".js"), "utf8"), ctx, { filename: n + ".js" });
     });
     return sb.EP;   // { EstimateFile, EstimateDraft, Estimate, EstimatePrint }
@@ -4878,20 +4878,21 @@ test("фото: deleteProject чистит кэш фото своего прое
     const hm = P.estimateHtml({ works: [], mats, heading: "Смета материалов" });
     ok(/<h1>Смета материалов №/.test(hm), "заголовок листа материалов");
     ok(hm.indexOf("Раздел 1. Материалы") > 0 && hm.indexOf("Работы") < 0, "в листе материалов нет раздела работ");
-    // наценка на материалы — в цене и в подписи строки итога
+    // наценка на материалы — в ЦЕНЕ позиции; в документе она НЕ раскрывается (заказчик
+    // видит обычную цену, а не «сколько сверху») — метки «с наценкой» быть не должно
     const h20 = P.estimateHtml({ works: [], mats, markup: 20, heading: "Смета материалов" });
     ok(h20.indexOf("1 200,00") > 0, "цена материалов с наценкой 20%");
-    ok(h20.indexOf("Материалы (с наценкой 20 %)") > 0, "в итогах помечена наценка");
-    ok(hm.indexOf("(с наценкой") < 0, "без наценки метки нет");
+    ok(h20.indexOf("60,00") > 0, "наценка сидит в цене позиции: 50 → 60");
+    ok(h20.indexOf("с наценкой") < 0, "надбавка в документе не раскрывается");
   });
   test("печать: экран сметы умеет scope (работы/материалы) и наценку на материалы", () => {
     const fs2 = require("fs"), path2 = require("path");
     const tabs = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "estimate", "estimate-tabs.js"), "utf8");
     ok(/data-est-scope/.test(tabs), "чипы выбора что печатать");
-    ok(/data-est-markup/.test(tabs), "поле наценки на материалы");
+    ok(/data-est-mk="mat"/.test(tabs), "поле наценки на материалы");
     ok(/data-est-supply/.test(tabs), "отдельная кнопка заявки поставщику");
     ok(/heading:\s*"Смета работ"/.test(tabs) && /heading:\s*"Смета материалов"/.test(tabs), "печатает работы и материалы отдельными документами");
-    ok(/markup:\s*matMarkup/.test(tabs), "наценка передаётся в бланк");
+    ok(/markup:\s*mk\.mat/.test(tabs), "наценка передаётся в бланк");
     ok(/ep_est_matmarkup_v29/.test(tabs), "наценка сохраняется на устройстве");
   });
   test("печать: диалог через скрытый iframe (window.open как фолбэк), без авто-print в листе", () => {
@@ -5000,7 +5001,8 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/display: table-header-group/.test(html) && /page-break-inside: avoid/.test(html), "печатная механика — общая с остальными бланками");
     const tabs = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "estimate", "estimate-tabs.js"), "utf8");
     ok(/\["stages", "По этапам"\]/.test(tabs), "режим печати «По этапам» в блоке печати");
-    ok(/worksStagesHtml\(\{ works, extraMode: "skip" \}\)/.test(tabs), "печатается основной объём, без доп. работ");
+    ok(/worksStagesHtml\(Object\.assign\(\{\}, M, \{ works, extraMode: "skip" \}\)\)/.test(tabs),
+      "печатается основной объём, без доп. работ, и с надбавками");
     ok(/data-est-crew/.test(tabs) && /data-est-shift/.test(tabs), "бригада и смена настраиваются на экране");
   });
 
@@ -6928,7 +6930,7 @@ test("фото: deleteProject чистит кэш фото своего прое
       ok(/R\.bannerHtml\(\)/.test(tabs) && /R\.blockHtml\(\)/.test(tabs) && /CHG\(\)\.blockHtml\(\)/.test(tabs),
         "экран сметы вставляет предложение, сводку и журнал изменений");
       ok(/R\.warnHtml\(\)/.test(tabs) && /printBlock/.test(tabs), "предупреждение — в блоке печати, перед выгрузкой");
-      ok(/EP\.EstimateTabs = \{ render, flash \}/.test(tabs), "экран отдаёт перерисовку модулям");
+      ok(/EP\.EstimateTabs = \{ render, flash, markups \}/.test(tabs), "экран отдаёт перерисовку и надбавки модулям");
       const req = src54("estimate-required");
       ok(/data-req-apply/.test(req) && /data-req-skipall/.test(req) && /data-req-rules/.test(req),
         "кнопки «добавить отмеченные», «не нужно» и редактор связок");
@@ -6941,6 +6943,140 @@ test("фото: deleteProject чистит кэш фото своего прое
         "печать акта, печать соглашения и выбор вида сметы");
       const css = fs54.readFileSync(path54.join(__dirname, "..", "assets", "css", "base.css"), "utf8");
       ok(/\.ep-req-banner \{/.test(css) && /\.ep-chg-block/.test(css), "свои стили у предложения и журнала");
+    });
+  }
+
+  // ===== 55. Надбавки перед печатью + архив сохранённых смет =====
+  {
+    const fs55 = require("fs"), path55 = require("path");
+    const dir55 = path55.join(__dirname, "..", "assets", "js", "modules", "estimate");
+    const src55 = (n) => fs55.readFileSync(path55.join(dir55, n + ".js"), "utf8");
+
+    test("надбавки: процент прораба и резерв поднимают ЦЕНУ позиции, а не строку итога", () => {
+      const P = loadEstimate().EstimatePrint;
+      const works = [{ name: "Точка", unit: "шт", qty: 10, price: 10 }];
+      // ровно случай пользователя: 10 позиций по 10 ₽, +10 % прорабу → цена 11 ₽
+      const h = P.estimateHtml({ works, mats: [], workMarkup: 10 });
+      ok(h.indexOf("11,00") > 0, "цена позиции стала 11 ₽");
+      ok(h.indexOf("110,00") > 0, "сумма по строке — 110 ₽");
+      ok(h.indexOf("прораб") < 0 && h.indexOf("надбав") < 0, "надбавка в документе не названа");
+      // резерв под будущую скидку умножается ПОВЕРХ процента прораба
+      const t = P.calcTotals({ works, mats: [], workMarkup: 10, pad: 10 });
+      eq(Math.round(t.workSum * 100) / 100, 121, "10 % прорабу и 10 % резерва: 10 → 12,10 ₽ × 10 шт");
+      const t0 = P.calcTotals({ works, mats: [] });
+      eq(t0.total, 100, "без надбавок цена не меняется");
+    });
+    test("надбавки: скидка видна отдельной строкой и берётся с уже поднятого подытога", () => {
+      const P = loadEstimate().EstimatePrint;
+      const o = { works: [{ name: "Р", unit: "шт", qty: 1, price: 1000 }], mats: [], workMarkup: 10, discount: 10 };
+      const t = P.calcTotals(o);
+      eq(t.workSum, 1100, "цена работ с надбавкой");
+      eq(Math.round(t.disc), 110, "скидка считается от поднятого подытога");
+      eq(Math.round(t.total), 990, "итог после скидки");
+      const h = P.estimateHtml(o);
+      ok(h.indexOf("Скидка 10 %") > 0, "скидка в документе показана — её и предъявляют");
+    });
+    test("надбавки: итог сходится с колонкой «Сумма» (цена округляется до копейки)", () => {
+      const P = loadEstimate().EstimatePrint;
+      // 33,33 × 1,1 = 36,663 — в колонке напечатается 36,66, и итог обязан быть по ней
+      const t = P.calcTotals({ works: [{ name: "Р", unit: "шт", qty: 3, price: 33.33 }], mats: [], workMarkup: 10 });
+      eq(Math.round(t.workSum * 100) / 100, 109.98, "итог = округлённая цена × количество");
+    });
+    test("надбавки: смета по этапам считает по тем же поднятым ценам", () => {
+      const EPx = loadEstimate(), P = EPx.EstimatePrint;
+      const works = [{ type: "work", name: "Штробление 25x30 бетон", unit: "м", qty: 10, price: 100 }];
+      const h = P.worksStagesHtml({ works, workMarkup: 10 });
+      ok(h.indexOf("110,00") > 0, "цена этапа поднята надбавкой");
+      ok(h.indexOf("1 100,00") > 0, "итог «Всего работ» — по поднятой цене");
+    });
+    test("архив: снимок хранит позиции, надбавки и свой итог", () => {
+      const A = loadEstimate().EstimateArchive;
+      const r = A.save({
+        name: "кв. 12", items: [
+          { type: "work", name: "Точка", unit: "шт", qty: 10, price: 10 },
+          { type: "material", name: "Кабель", unit: "м", qty: 100, price: 50 }
+        ],
+        markups: { work: 10, mat: 20, pad: 0, discount: 0 }, client: "Иванов"
+      });
+      ok(r && r.id, "запись создана");
+      eq(r.totals.workSum, 110, "работы с процентом прораба");
+      eq(r.totals.matSum, 6000, "материалы с наценкой");
+      eq(r.totals.total, 6110, "итог снимка");
+      eq(A.list().length, 1, "запись в списке");
+      eq(A.get(r.id).items.length, 2, "позиции сохранены");
+      eq(A.save({ items: [] }), null, "пустую смету не сохраняем");
+    });
+    test("архив: авансы считают полученное и остаток, переплата не уходит в минус", () => {
+      const A = loadEstimate().EstimateArchive;
+      const r = A.save({ name: "объект", items: [{ type: "work", name: "Р", unit: "шт", qty: 1, price: 1000 }], markups: {} });
+      A.addPayment(r.id, { sum: 300, note: "аванс" });
+      A.addPayment(r.id, { sum: 200 });
+      let cur = A.get(r.id);
+      eq(A.paid(cur), 500, "получено — сумма платежей");
+      eq(A.left(cur), 500, "осталось получить");
+      eq(cur.payments[0].note, "аванс", "комментарий платежа сохранён");
+      A.addPayment(r.id, { sum: 900 });
+      cur = A.get(r.id);
+      eq(A.paid(cur), 1400, "переплата видна в «получено»");
+      eq(A.left(cur), 0, "остаток не уходит в минус");
+      A.removePayment(r.id, cur.payments[0].id);
+      eq(A.paid(A.get(r.id)), 1100, "платёж удалён");
+      eq(A.addPayment(r.id, { sum: 0 }), null, "нулевой платёж не записывается");
+    });
+    test("архив: снимок заморожен — правка текущей сметы его не меняет", () => {
+      const EPx = loadEstimate(), A = EPx.EstimateArchive, E = EPx.Estimate;
+      E.clear();
+      E.addItem({ type: "work", name: "Р", unit: "шт", qty: 1, price: 100 });
+      const r = A.save({ name: "снимок", items: E.getItems(), markups: { work: 10 } });
+      eq(r.totals.total, 110, "итог снимка");
+      E.addItem({ type: "work", name: "Ещё", unit: "шт", qty: 1, price: 900 });
+      eq(A.get(r.id).items.length, 1, "в снимке по-прежнему одна позиция");
+      eq(A.get(r.id).totals.total, 110, "и прежний итог");
+      // загрузка возвращает ЧИСТЫЕ цены (надбавка не «запечена»), иначе повторное
+      // сохранение накрутило бы процент второй раз
+      eq(A.get(r.id).items[0].price, 100, "в снимке хранится цена без надбавки");
+    });
+    test("архив: одна арифметика с печатным бланком", () => {
+      const EPx = loadEstimate(), A = EPx.EstimateArchive, P = EPx.EstimatePrint;
+      const items = [
+        { type: "work", name: "Р", unit: "шт", qty: 7, price: 33.33 },
+        { type: "material", name: "М", unit: "м", qty: 13, price: 12.7 }
+      ];
+      const mk = { work: 12, mat: 7, pad: 3, discount: 5 };
+      const t = A.totalsOf(items, mk);
+      const p = P.calcTotals({
+        works: items.filter((x) => x.type === "work"), mats: items.filter((x) => x.type !== "work"),
+        workMarkup: mk.work, markup: mk.mat, pad: mk.pad, discount: mk.discount
+      });
+      eq(t.total, p.total, "архив и бланк считают одинаково");
+      const arc = src55("estimate-archive");
+      ok(/calcTotals/.test(arc), "архив зовёт расчёт печатного модуля");
+      ok(arc.indexOf("workMarkup") > 0, "и передаёт ему надбавки снимка");
+    });
+    test("архив: разметка, обработчики и подключение", () => {
+      const arc = src55("estimate-archive"), tabs = src55("estimate-tabs");
+      ok(/ep_estimate_archive_v29/.test(arc), "своё хранилище");
+      ["data-arch-save", "data-arch-open", "data-arch-load", "data-arch-print",
+        "data-arch-export", "data-arch-del", "data-arch-payadd", "data-arch-paydel"].forEach((a) =>
+        ok(arc.indexOf(a) > 0, "есть " + a));
+      ok(/typeof document !== "undefined"/.test(arc), "обработчики не падают без DOM");
+      ok(/ARC\(\)\.blockHtml\(\)/.test(tabs), "экран сметы вставляет блок архива");
+      ok(/EstimateTabs.*markups/.test(tabs) || /markups\(\)/.test(arc), "надбавки берутся у экрана, второй копии хранения нет");
+      const idx = fs55.readFileSync(path55.join(__dirname, "..", "index.html"), "utf8");
+      ok(idx.indexOf("estimate/estimate-archive.js") > 0, "модуль подключён");
+      ok(idx.indexOf("estimate/estimate-print.js") < idx.indexOf("estimate/estimate-archive.js"),
+        "после печатного модуля — он считает итоги");
+      const css = fs55.readFileSync(path55.join(__dirname, "..", "assets", "css", "base.css"), "utf8");
+      ok(/\.ep-arch \{/.test(css) && /\.ep-est-mkgrid \{/.test(css), "свои стили у архива и полей надбавок");
+    });
+    test("надбавки: четыре поля на экране и своё хранение на устройстве", () => {
+      const tabs = src55("estimate-tabs");
+      ["mat", "work", "pad", "discount"].forEach((f) =>
+        ok(tabs.indexOf('data-est-mk="' + f + '"') > 0, "поле " + f));
+      ["ep_est_matmarkup_v29", "ep_est_workmarkup_v29", "ep_est_pad_v29", "ep_est_discount_v29"].forEach((k) =>
+        ok(tabs.indexOf(k) > 0, "ключ " + k));
+      ok(/prnMk\(\)/.test(tabs), "надбавки уходят в бланк одним объектом");
+      ok(/workMarkup:\s*mk\.work/.test(tabs) && /pad:\s*mk\.pad/.test(tabs), "процент прораба и резерв — в контракте бланка");
     });
   }
 

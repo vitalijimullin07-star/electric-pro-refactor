@@ -9,18 +9,35 @@
     return (Number(v || 0).toFixed(2)) + " \u20bd";
   }
   let tab = "works"; // works | supply
-  // Печать — что печатать (scope) и наценка на материалы (%). Просьба пользователя:
-  // «печатать как материалы так и работы, и на материалы перед печатью задавать процент».
-  // scope: "all" (смета целиком) | "work" (только работы) | "mat" (только материалы).
-  // Наценка применяется к цене материалов в самом бланке (EstimatePrint) — сессионно,
-  // но сохраняется в localStorage, чтобы не вводить её заново при каждом заходе.
-  const MK_KEY = "ep_est_matmarkup_v29";
+  // Печать — что печатать (scope). Просьба пользователя: «печатать как материалы так и
+  // работы». scope: "all" (целиком) | "work" | "stages" | "mat" | "extra".
+  // НАДБАВКИ (просьба пользователя: «перед печатью заложить надбавки, чтобы отдать прорабу
+  // процент… и заложить под будущую скидку»). Все четыре — проценты, живут на УСТРОЙСТВЕ
+  // мастера (как наценка на материалы раньше), потому что это его способ считать, а не
+  // свойство конкретной сметы. Надбавки меняют ЦЕНУ ПОЗИЦИИ в бланке (10 ₽ → 11 ₽ при
+  // 10 %), а не добавляют строку: заказчику видна обычная цена, а не «сколько сверху».
+  // Скидка, наоборот, показывается отдельной строкой — её как раз и предъявляют.
+  const MK = {
+    mat: "ep_est_matmarkup_v29",          // ключ НЕ менялся — у мастеров уже сохранён процент
+    work: "ep_est_workmarkup_v29",
+    pad: "ep_est_pad_v29",
+    discount: "ep_est_discount_v29"
+  };
   let printScope = "all";
   // добавление позиции прямо в основную смету (просьба пользователя): showAdd —
   // раскрыта ли форма, addType — работа/материал (по умолчанию по текущей вкладке)
   let showAdd = false, addType = "work";
-  let matMarkup = (() => { try { return Number(localStorage.getItem(MK_KEY)) || 0; } catch (e) { return 0; } })();
-  function setMarkup(v) { matMarkup = Math.max(0, Number(v) || 0); try { localStorage.setItem(MK_KEY, String(matMarkup)); } catch (e) {} }
+  const rdPct = (k) => { try { return Math.max(0, Number(localStorage.getItem(k)) || 0); } catch (e) { return 0; } };
+  let mk = { mat: rdPct(MK.mat), work: rdPct(MK.work), pad: rdPct(MK.pad), discount: rdPct(MK.discount) };
+  function setMarkup(field, v) {
+    if (!MK[field]) return;
+    mk[field] = Math.max(0, Number(v) || 0);
+    try { localStorage.setItem(MK[field], String(mk[field])); } catch (e) {}
+  }
+  // читает архив снимков при сохранении — единственный внешний потребитель
+  function markups() { return { work: mk.work, mat: mk.mat, pad: mk.pad, discount: mk.discount }; }
+  // о = что уходит в печатный бланк (имена полей — его контракт)
+  function prnMk() { return { workMarkup: mk.work, markup: mk.mat, pad: mk.pad, discount: mk.discount }; }
   // номер сметы — ТОТ ЖЕ счётчик, что у «Документов» (ep_smeta_no_v29), чтобы номер
   // документа не расходился между экранами
   function prnNo() { const P = window.EP && window.EP.EstimatePrint; return P ? P.docNo() : "1"; }
@@ -46,6 +63,7 @@
   // свои модули: экран только вставляет их готовую разметку и не знает про их данные.
   function REQ() { return window.EP && window.EP.EstimateRequired; }
   function CHG() { return window.EP && window.EP.EstimateChanges; }
+  function ARC() { return window.EP && window.EP.EstimateArchive; }
 
   function render() {
     const root = document.getElementById("ep-estimate-root");
@@ -89,6 +107,7 @@
         ${isSupply ? "" : stagesBlock(rs)}
         ${isSupply || !R || !R.blockHtml ? "" : R.blockHtml()}
         ${isSupply || !CHG() || !CHG().blockHtml ? "" : CHG().blockHtml()}
+        ${isSupply || !ARC() || !ARC().blockHtml ? "" : ARC().blockHtml()}
         <div class="ep-est-additem">${showAdd ? addForm(isSupply) : `<button type="button" class="btn btn-ghost ep-clickable" data-est-add>➕ Добавить позицию</button>`}</div>
         ${printBlock()}
         <div class="ep-sup-actions">
@@ -154,7 +173,13 @@
         <div class="ep-est-scope"><span class="ep-est-lbl">Печатать:</span>
           ${SCOPES.map(([v, l]) => `<button type="button" class="ep-est-chip ep-clickable ${printScope === v ? "on" : ""}" data-est-scope="${v}">${l}</button>`).join("")}
         </div>
-        ${(printScope !== "work" && printScope !== "stages") ? `<label class="ep-est-markup">Наценка на материалы, %<input type="number" inputmode="decimal" min="0" step="1" value="${esc(String(matMarkup))}" data-est-markup></label>` : ""}
+        <div class="ep-est-mkgrid">
+          ${(printScope !== "work" && printScope !== "stages") ? `<label>Наценка на материалы, %<input type="number" inputmode="decimal" min="0" step="1" value="${esc(String(mk.mat))}" data-est-mk="mat"></label>` : ""}
+          ${printScope !== "mat" ? `<label>Прорабу (на работы), %<input type="number" inputmode="decimal" min="0" step="1" value="${esc(String(mk.work))}" data-est-mk="work"></label>` : ""}
+          <label>Резерв под скидку, %<input type="number" inputmode="decimal" min="0" step="1" value="${esc(String(mk.pad))}" data-est-mk="pad"></label>
+          <label>Скидка, %<input type="number" inputmode="decimal" min="0" step="1" value="${esc(String(mk.discount))}" data-est-mk="discount"></label>
+        </div>
+        <div class="ep-est-mkhint">Надбавки входят в цену позиции и в документе отдельной строкой не видны. Скидка — видна.</div>
         <div class="ep-est-prow">
           <button type="button" class="btn btn-primary ep-clickable" data-est-print>${printLabel}</button>
           <button type="button" class="btn btn-ghost ep-clickable" data-est-supply>Заявка поставщику (без цен)</button>
@@ -218,25 +243,26 @@
     if (!P) return flash("Печать недоступна");
     const works = rows("work"), mats = rows("material");
     let html;
+    const M = prnMk();
     if (printScope === "work") {
       if (!works.length) return flash("Работ нет — печатать нечего");
-      html = P.estimateHtml({ works, mats: [], heading: "Смета работ" });
+      html = P.estimateHtml(Object.assign({}, M, { works, mats: [], heading: "Смета работ" }));
     } else if (printScope === "stages") {
       // смета ПО РАБОТАМ: те же работы, но по этапам и с трудозатратами/сроком
       if (!works.length) return flash("Работ нет — печатать нечего");
-      html = P.worksStagesHtml({ works, extraMode: "skip" });
+      html = P.worksStagesHtml(Object.assign({}, M, { works, extraMode: "skip" }));
     } else if (printScope === "mat") {
       if (!mats.length) return flash("Материалов нет — печатать нечего");
-      html = P.estimateHtml({ works: [], mats, markup: matMarkup, heading: "Смета материалов" });
+      html = P.estimateHtml(Object.assign({}, M, { works: [], mats, heading: "Смета материалов" }));
     } else if (printScope === "extra") {
       // ОТДЕЛЬНЫЙ акт: только помеченные «доп.» — то, что выявилось на объекте и в
       // основной договор не входило. Основная смета при этом остаётся как была.
       const ew = works.filter((x) => x.extra), em = mats.filter((x) => x.extra);
       if (!ew.length && !em.length) return flash("Нет позиций, помеченных «доп.»");
-      html = P.estimateHtml({ works: ew, mats: em, markup: matMarkup, heading: "Дополнительные работы" });
+      html = P.estimateHtml(Object.assign({}, M, { works: ew, mats: em, heading: "Дополнительные работы" }));
     } else {
       if (!works.length && !mats.length) return flash("Смета пуста — печатать нечего");
-      html = P.estimateHtml({ works, mats, markup: matMarkup, heading: "Смета" });
+      html = P.estimateHtml(Object.assign({}, M, { works, mats, heading: "Смета" }));
     }
     if (!P.open(html)) flash("Разреши всплывающие окна, чтобы напечатать");
   }
@@ -309,7 +335,7 @@
     if (!t || !t.hasAttribute || !document.getElementById("ep-estimate-root")) return;
     if (t.hasAttribute("data-est-no")) { const P = window.EP && window.EP.EstimatePrint; if (P) P.setDocNo(t.value); }
     // наценку сохраняем на ввод, но НЕ перерисовываем экран (иначе сбился бы фокус поля)
-    else if (t.hasAttribute("data-est-markup")) { setMarkup(t.value); }
+    else if (t.hasAttribute("data-est-mk")) { setMarkup(t.getAttribute("data-est-mk"), t.value); }
     // бригада/смена: сохраняем и обновляем ТОЛЬКО итоговую строку — полный render()
     // сбил бы фокус поля прямо во время набора числа
     else if (t.hasAttribute("data-est-crew") || t.hasAttribute("data-est-shift")) {
@@ -375,5 +401,7 @@
   // Экран сметы отдаёт наружу перерисовку и тост: модули обязательных позиций и журнала
   // изменений вставляют сюда свою разметку и после правки просят перерисовать экран.
   window.EP = window.EP || {};
-  window.EP.EstimateTabs = { render, flash };
+  // markups() читает архив снимков: надбавки — состояние ЭТОГО экрана, и второй копии
+  // их хранения быть не должно.
+  window.EP.EstimateTabs = { render, flash, markups };
 })();
