@@ -287,7 +287,7 @@
       ${s.items.map((x) => `<tr><td class="c">${++n}</td><td>${esc(x.name)}</td><td class="c">${esc(x.unit)}</td>
         <td class="r">${qty(x.qty)}</td><td class="r">${money(x.price)}</td><td class="r">${money(x.sum)}</td>
         <td class="r">${qty(Math.round(x.hours * 10) / 10)}</td></tr>`).join("")}
-      <tr class="st"><td colspan="5" class="r">Итого по этапу ${i + 1}</td><td class="r">${money(s.sum)}</td><td class="r">${qty(s.hours)}</td></tr>`).join("");
+      <tr class="st"><td colspan="5" class="r">Итого по этапу ${i + 1}${s.days ? " · " + qty(s.days) + " раб. дн." : ""}</td><td class="r">${money(s.sum)}</td><td class="r">${qty(s.hours)}</td></tr>`).join("");
     const body = `
       <div class="top"><h1>${esc(heading)} № ${esc(no)}</h1><div class="date">от ${esc(date)}</div></div>
       ${reqTable([["Исполнитель", masterFull(m)], ["Заказчик", [ci.name, ci.phone ? "тел. " + ci.phone : ""].filter(Boolean).join(", ")], ["Объект", ci.object]])}
@@ -299,7 +299,8 @@
       <div class="tot">
         <table class="sum">
           <tr><td class="k">Трудозатраты</td><td class="v">${qty(br.hours)} чел.-ч</td></tr>
-          <tr><td class="k">Бригада</td><td class="v">${br.crew.people} чел. × ${qty(br.crew.hoursPerDay)} ч/смена</td></tr>
+          <tr><td class="k">Бригада</td><td class="v">${br.crew.people} чел. × ${qty(br.hoursPerDay || br.crew.hoursPerDay)} ч/день</td></tr>
+          ${br.shiftText ? `<tr><td class="k">Режим работы</td><td class="v">${esc(br.shiftText)}</td></tr>` : ""}
           <tr><td class="k">Ориентировочный срок</td><td class="v">${qty(br.days)} раб. дн.</td></tr>
           <tr class="grand"><td class="k">Всего работ</td><td class="v">${money(br.sum)} ₽</td></tr>
         </table>
@@ -307,7 +308,8 @@
         ${vatNote(m) ? `<div class="vat">${esc(vatNote(m))}</div>` : ""}
       </div>
       <div class="note">Трудозатраты и срок — расчётные, по нормам выработки: фактическое время зависит от материала стен,
-        готовности объекта и доступа к фронту работ. Материалы в настоящий документ не входят.</div>
+        готовности объекта и доступа к фронту работ. Дни по этапам округлены вверх каждый по отдельности, поэтому их сумма
+        может превышать общий срок. Материалы в настоящий документ не входят.</div>
       ${signBlock("Исполнитель (подпись, ФИО)", "Заказчик (подпись, ФИО)")}
       <div class="foot">${esc(heading)} № ${esc(no)} от ${esc(date)} · ${esc(m.name || "Electric Pro")} · сформировано в Electric Pro</div>`;
     return wrap(heading + " № " + no, body);
