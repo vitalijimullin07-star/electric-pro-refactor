@@ -2237,7 +2237,13 @@ test("estimateItems: без движка пула (PoolEngine не подклю�
   const s1 = M.newElement("socket", w(0), 100, 30, "power");
   P.elements.push(s1);
   noThrow(() => EP.Plan.Calc.estimateItems(P), "не бросает без EP.PoolEngine");
-  eq(EP.Plan.Calc.estimateItems(P), null, "нет ни точного счёта, ни движка — null (как и runEngine напрямую)");
+  // черновых работ посчитать нечем — но розетка на плане есть, и её УСТАНОВКА (чистовая,
+  // считается по точкам, а не по движку) в смету попадает, как АВР и стояк
+  const got = EP.Plan.Calc.estimateItems(P) || [];
+  eq(got.map((x) => x.name).join(","), "Установка розетки 220В", "только чистовая работа по точке");
+  EP.FinishWorks.setOn("socket", false);
+  eq(EP.Plan.Calc.estimateItems(P), null, "а без неё — null, как и runEngine напрямую");
+  EP.FinishWorks.reset();
 });
 
 // ===== 18. Этажи =====
@@ -5586,7 +5592,7 @@ test("фото: deleteProject чистит кэш фото своего прое
     // 2) каталог price-setup (модуль DOM-only — вытаскиваем чистую часть из исходника)
     const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "database", "price-setup.js"), "utf8");
     const part = src.slice(src.indexOf("  const PD = ()"), src.indexOf("// ---------- что уже есть"));
-    const F = new Function("window", part + "; return catalog;")({ EP: { Plan: { Core: { DEFAULTS: EP.Plan.Core.DEFAULTS } } } });
+    const F = new Function("window", part + "; return catalog;")({ EP: { Plan: { Core: { DEFAULTS: EP.Plan.Core.DEFAULTS } }, FinishWorks: EP.FinishWorks } });
     const names = [];
     F().forEach((g) => g.items.forEach((it) => names.push(it.name)));
     ok(names.length > 40, "каталог непустой (" + names.length + ")");
@@ -7919,6 +7925,157 @@ test("фото: deleteProject чистит кэш фото своего прое
       P.routes = [R("a", [{ x: 200, y: 150 }, { x: 1000, y: 150 }])];
       const sc = RT.scoreRoutes(P);
       ok("turns" in sc && "offTrunk" in sc, "метрика отдаёт оба признака");
+    });
+  }
+
+  // ===== 65. Прайс черновых и чистовых работ: общий каталог чистовых с выбором =====
+  {
+    const FW = EP.FinishWorks;
+    const fs3 = require("fs"), path3 = require("path");
+    const rd = (...pp) => fs3.readFileSync(path3.join(__dirname, "..", ...pp), "utf8");
+    test("чистовые: счёт по точкам плана (одиночные, посты блока, проходной, 3ф, лента)", () => {
+      FW.reset();
+      const { P, w } = install();
+      const blk = M.newElement("block", w(0), 100, 30, "power");
+      blk.params = { items: ["socket", "switch", "internet", "tv"], itemMeta: [null, { keys: 2 }] };
+      const sw = M.newElement("switch", w(1), 80, 90, "light"); sw.swKind = "pass";
+      const s3 = M.newElement("switch", w(1), 150, 90, "light"); s3.keys = 3;
+      const o3 = M.newElement("output3", null, 0, 0, "power"); o3.params = { x: 200, y: 150 }; o3.threeKind = "socket";
+      const o3c = M.newElement("output3", null, 0, 0, "power"); o3c.params = { x: 210, y: 150 };
+      const lt = M.newElement("light", null, 0, 0, "light"); lt.params = { x: 200, y: 100 };
+      const jn = M.newElement("junction", null, 0, 0, "routes"); jn.params = { x: 100, y: 100 };
+      P.elements.push(blk, sw, s3, o3, o3c, lt, jn, M.newElement("socket", w(2), 50, 30, "power"));
+      P.ledStrips.push({ id: "ls1", wallId: w(0), offsetA: 20, offsetB: 270, height: 250 });
+      const r = FW.countPlan(P, () => "R");
+      eq(r.counts.socket, 2, "розетки: пост блока + одиночная");
+      eq(r.counts.sw2, 1, "двухклавишный пост блока по его мете");
+      eq(r.counts.pass, 1, "проходной — отдельной работой, независимо от клавиш");
+      eq(r.counts.sw3, 1, "трёхклавишный");
+      eq(r.counts.internet, 1); eq(r.counts.tv, 1); eq(r.counts.light, 1);
+      eq(r.counts.socket3, 1, "вывод 3ф «розетка» — установка розетки 380В");
+      eq(r.counts.output3, 1, "вывод 3ф «пятижилка» — подключение оборудования");
+      eq(r.counts.led, 2.5, "лента в метрах по стене");
+      ok(!("junction" in r.counts), "у распайки чистовой работы нет");
+      eq(r.rooms.socket.R, 2, "разбивка по помещениям для «ⓘ Откуда взялось»");
+    });
+    test("чистовые: в смету идут только отмеченные «делаю сам», ручные — никогда", () => {
+      FW.reset();
+      const res = { counts: { socket: 3, ac: 1, chandelier: 5, light: 2 } };
+      let names = FW.items(res).map((x) => x.name);
+      ok(names.indexOf("Установка розетки 220В") >= 0 && names.indexOf("Установка светильника") >= 0, "отмеченные по умолчанию — в смете");
+      ok(names.indexOf("Подключение кондиционера") < 0, "кондиционер по умолчанию выключен (его подключают климатчики)");
+      ok(names.indexOf("Сборка и установка люстры") < 0, "ручная работа в автосчёт не идёт");
+      ok(FW.items(res).every((x) => x.finish === true && x.type === "work"), "помечены как чистовые работы");
+      FW.setOn("light", false);
+      ok(FW.items(res).map((x) => x.name).indexOf("Установка светильника") < 0, "снял «делаю сам» — из сметы ушло");
+      eq(Object.keys(FW.snapshot()).join(","), "light", "хранятся только отличия от умолчания");
+      FW.setOn("light", true);
+      eq(Object.keys(FW.snapshot()).length, 0, "вернул к умолчанию — отличий нет");
+      FW.setMany(["sw1", "sw2"], false);
+      eq(Object.keys(FW.snapshot()).sort().join(","), "sw1,sw2", "групповая отметка");
+      FW.reset();
+    });
+    test("чистовые: ни одно имя не подстрока другого (цена ищется подстрокой)", () => {
+      const norm = EP.NameMatch.norm;
+      const engine = ["Установка автоматического выключателя", "Установка УЗО/дифавтомата", "Установка счётчика",
+        "Монтаж щита в нишу/стену", "Прокладка кабеля", "Вклейка подрозетников обычных бетон"];
+      const all = FW.CATALOG.map((c) => c.name).concat(engine).map(norm);
+      const bad = [];
+      FW.CATALOG.forEach((c) => {
+        const a = norm(c.name);
+        all.forEach((b) => { if (a !== b && (a.indexOf(b) >= 0 || b.indexOf(a) >= 0)) bad.push(c.name + " ~ " + b); });
+      });
+      eq(bad.join(" | "), "", "иначе незаполненная работа молча брала бы чужую цену");
+    });
+    test("чистовые: этап «Чистовой» и нормы выработки в смете по работам", () => {
+      const vm4 = require("vm");
+      const sb = { console, localStorage: { getItem: () => null, setItem: () => {} } }; sb.window = sb;
+      vm4.runInContext(rd("assets", "js", "modules", "estimate", "estimate-works.js"), vm4.createContext(sb));
+      const W = sb.EP.EstimateWorks;
+      const wrong = FW.CATALOG.filter((c) => W.stageOf(c.name) !== "fine").map((c) => c.name);
+      eq(wrong.join(" | "), "", "все чистовые работы попадают в «Чистовой этап»");
+      eq(W.normFor("Монтаж светодиодной ленты"), 6, "лента — метры в час, а не штуки как у люстры");
+      ok(W.normFor("Установка розетки интернет RJ45") < W.normFor("Установка розетки 220В"), "RJ45 дольше обычной розетки");
+      ok(W.normFor("Сборка и расключение щита") <= 0.5, "щит по-прежнему не попадает под установку аппаратов");
+    });
+    test("чистовые: точный счёт по трассам — позиции, раздел, «Откуда взялось»", () => {
+      FW.reset();
+      const { P, w } = install();
+      P.panels.push(M.newPanel(40, 40, "Щ"));
+      P.elements.push(M.newElement("socket", w(0), 150, 30, "power"), M.newElement("socket", w(2), 200, 30, "power"));
+      EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+      EP.Plan.Routes.build({ silent: true });
+      ok((P.routes || []).length > 0, "трассы построены");
+      const ex = EP.Plan.Calc.calcByRoutes(P);
+      const it = ex.items.find((x) => x.name === "Установка розетки 220В");
+      ok(it && it.qty === 2 && it.finish, "установка розеток по числу точек");
+      const o = ex.origin["work|Установка розетки 220В"];
+      ok(o && o.byRoom[0].room === "R" && o.byRoom[0].qty === 2, "разбивка по помещениям");
+      ok(ex.items.some((x) => /^Штробление/.test(x.name)), "черновые никуда не делись");
+      // смена отметки меняет смету, хотя проект НЕ менялся (кэш сверяет снимок выбора)
+      ok((EP.Plan.Calc.estimateItems(P) || []).some((x) => x.name === "Установка розетки 220В"), "до: есть");
+      FW.setOn("socket", false);
+      ok(!(EP.Plan.Calc.estimateItems(P) || []).some((x) => x.name === "Установка розетки 220В"), "после: ушла без изменения проекта");
+      FW.reset();
+      const calc = rd("assets", "js", "modules", "plan", "plan-calc.js");
+      ok(/\["fine", "✨ Чистовые работы"\]/.test(calc), "в Расчёте — своим разделом");
+      ok(/data-price-setup data-pset-focus="fine"/.test(calc), "кнопка «Что делаю» ведёт прямо к чистовым");
+      ok(/addFinishItems\(p, \(res && res\.draftItems\) \|\| null\)/.test(calc), "приближённый путь тоже считает чистовые");
+    });
+    test("чистовые: пул считает по постам, не задваивая через движок", () => {
+      FW.reset();
+      const r = FW.countPool([{ sockets: 3, sw1: 1, sw2: 2, pass: 1, tv: 1, internet: 2, warmFloor: 1 },
+        { dedicated: "Стиралка" }, { dedicated: "Кондей" }, { dedicated: "Нептун" }]);
+      eq(r.counts.socket, 4, "розетки блоков + отдельная линия стиралки");
+      eq(r.counts.sw2, 2); eq(r.counts.pass, 1); eq(r.counts.internet, 2);
+      eq(r.counts.thermo, 1, "пост тёплого пола — терморегулятор");
+      eq(r.counts.ac, 1, "кондиционер посчитан (а в смету пойдёт, только если отмечен)");
+      const pool = rd("assets", "js", "modules", "pool", "pool-v29.js");
+      ok(/\(r\.draftItems \|\| \[\]\)\.concat\(finishItems\(\)\)/.test(pool), "добавляются в черновик пула");
+      ok(!/FinishWorks/.test(rd("assets", "js", "modules", "pool", "pool-engine-v29.js")), "а НЕ в движок — им считает и приближённый путь плана");
+    });
+    test("«Цены на работы»: три этапа, чистовые с отметкой, снятые не в счётчике", () => {
+      FW.reset();
+      const src = rd("assets", "js", "modules", "database", "price-setup.js");
+      const part = src.slice(src.indexOf("  const PD = ()"), src.indexOf("// ---------- что уже есть"));
+      const cat = () => new Function("window", part + "; return catalog;")({ EP: { Plan: { Core: { DEFAULTS: EP.Plan.Core.DEFAULTS } }, FinishWorks: FW } })();
+      const g = cat();
+      const seq = g.map((x) => x.stage).filter((x, i, a) => i === 0 || a[i - 1] !== x);
+      eq(seq.join(","), "rough,shield,fine", "черновые → щит → чистовые, и ни один этап не повторяется (заголовок раздела один)");
+      const fine = g.filter((x) => x.stage === "fine");
+      ok(fine.length >= 4 && fine.every((x) => x.finish && x.core), "чистовые — группами, в счётчике");
+      const ac = [].concat(...fine.map((x) => x.items)).find((it) => it.fw === "ac");
+      ok(ac && ac.off, "выключенная работа помечена");
+      FW.setOn("ac", true);
+      ok(![].concat(...cat().filter((x) => x.stage === "fine").map((x) => x.items)).find((it) => it.fw === "ac").off, "отметка читается из общего каталога");
+      FW.reset();
+      ok(/if \(it\.off\) return;/.test(src) && /filter\(\(it\) => !it\.off\)\.length/.test(src), "снятые не тянут счётчик «осталось без цены»");
+      ok(/if \(inp\.disabled\) return;/.test(src), "цену снятой работы в базу не пишем");
+      ok(/if \(!i\.disabled\) i\.value = v;/.test(src), "«одна цена на группу» снятые не заполняет");
+      ok(/patchFw\(id, on\);\s*patchCounts\(\);/.test(src), "отметка — точечно, без перерисовки (не теряем набранные цены)");
+    });
+    test("ниша щита в смете не зависит от модуля однолинейки (фоновый вычислитель его не грузит)", () => {
+      const { P, w } = install();
+      P.panels.push(M.newPanel(40, 40, "Щ"));
+      const c1 = M.newCircuit("QF1", "#f00", 16); P.circuits.push(c1);
+      const s1 = M.newElement("socket", w(0), 150, 30, "power"); s1.circuitId = c1.id; P.elements.push(s1);
+      EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+      EP.Plan.Routes.build({ silent: true });
+      const niche = (items) => (items.find((x) => /^Вырубка ниши под щит/.test(x.name)) || {}).qty;
+      const withScheme = niche(EP.Plan.Calc.calcByRoutes(P).items);
+      ok(withScheme > 0, "ниша посчитана");
+      const keep = EP.Plan.Scheme; EP.Plan.Scheme = undefined;
+      try { eq(niche(EP.Plan.Calc.calcByRoutes(P).items), withScheme, "без однолинейки — те же модули через движок цепей"); }
+      finally { EP.Plan.Scheme = keep; }
+    });
+    test("чистовые: подключение и фоновый вычислитель", () => {
+      const idx = rd("index.html");
+      const at = (n) => idx.indexOf(n);
+      ok(at("finish-works.js") > 0 && at("finish-works.js") < at("plan-calc.js") && at("finish-works.js") < at("price-setup.js"), "каталог подключён до расчёта и цен");
+      const wk = rd("assets", "js", "modules", "plan", "solver-worker.js");
+      ok(/"\.\.\/estimate\/finish-works\.js" \+ q, "plan-calc\.js"/.test(wk), "воркер грузит каталог до расчёта");
+      ok(/FinishWorks\.load\(msg\.fine \|\| \{\}\)/.test(wk), "и получает выбор снимком (у него нет хранилища устройства)");
+      ok(/mode: "estimate", consum, fine \}/.test(rd("assets", "js", "modules", "plan", "plan-routes.js")), "предрасчёт отправляет снимок выбора");
     });
   }
 

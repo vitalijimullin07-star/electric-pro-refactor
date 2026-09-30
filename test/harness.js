@@ -63,6 +63,8 @@ function loadPlan() {
   runFile(ctx, path.join(ROOT, "assets/js/modules/consumables/cable-consum.js"));
   // NameMatch — общий подбор записи БД по названию (цены в plan-calc.js priceFor)
   runFile(ctx, path.join(ROOT, "assets/js/modules/estimate/name-match.js"));
+  // FinishWorks — каталог чистовых работ (plan-calc считает по нему установку механизмов)
+  runFile(ctx, path.join(ROOT, "assets/js/modules/estimate/finish-works.js"));
   PLAN_ORDER.forEach((n) => runFile(ctx, path.join(PLAN_DIR, n + ".js")));
   P3D_ORDER.forEach((n) => runFile(ctx, path.join(P3D_DIR, n + ".js")));
   return { EP: sandbox.EP, sandbox, store };

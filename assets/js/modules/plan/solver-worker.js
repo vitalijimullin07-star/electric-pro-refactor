@@ -57,8 +57,10 @@ const q = ver ? "?" + ver : "";
 // другой папке модулей. Расчёт/проверки нужны для режима "estimate" (предрасчёт сметы и
 // ПУЭ-проверок в фоне) — оба чистые вычисления, DOM не трогают (обработчики шторок
 // регистрируются на заглушку document выше и просто никогда не сработают).
+// finish-works.js — каталог чистовых работ, из него plan-calc.js считает установку
+// механизмов/светильников по точкам (выбор «делаю сам» приходит снимком, см. ниже)
 importScripts("plan-core.js" + q, "plan-geometry.js" + q, "plan-circuits.js" + q, "plan-routes.js" + q,
-  "../consumables/cable-consum.js" + q, "plan-calc.js" + q, "plan-rules.js" + q);
+  "../consumables/cable-consum.js" + q, "../estimate/finish-works.js" + q, "plan-calc.js" + q, "plan-rules.js" + q);
 
 // ВАЖНО: НЕ объявлять здесь `const EP` — топ-левел lexical-объявление в воркере
 // затеняет глобальное свойство self.EP, которое создают сами модули, и любой их
@@ -96,6 +98,7 @@ self.onmessage = (e) => {
     // ---- смета + ПУЭ-проверки (фоновый предрасчёт; трассы здесь НЕ строим) ----
     if (msg.mode === "estimate") {
       if (msg.consum && self.EP.CableConsum && self.EP.CableConsum.set) self.EP.CableConsum.set(msg.consum);
+      if (self.EP.FinishWorks && self.EP.FinishWorks.load) self.EP.FinishWorks.load(msg.fine || {});
       const C = self.EP.Plan.Calc, R = self.EP.Plan.Rules;
       const items = C && C.estimateItems ? C.estimateItems(msg.project) : null;
       const per = C && C.perCircuit ? C.perCircuit(msg.project) : null;
