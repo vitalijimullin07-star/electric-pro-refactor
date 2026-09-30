@@ -66,10 +66,18 @@
   // ── расчёт через движок ──
   function engineInput() { return Object.assign({}, settings, { templates, blocks }); }
   function compute() { const E = ENGINE(); if (!E) return { draftItems: [], byMat: {}, junctions: {}, cable: {}, conn: {} }; return E.calc(engineInput()); }
+  // ЧИСТОВЫЕ работы по постам блоков — общий каталог EP.FinishWorks (тот же, что у
+  // «Проекта квартиры» и «Цен на работы»): только отмеченные «делаю сам». Добавляются ЗДЕСЬ,
+  // а не в движке pool-engine: движком пула считает и приближённый путь плана, и там
+  // чистовые уже добавляет сам план — в движке они задвоились бы.
+  function finishItems() {
+    const FW = window.EP && EP.FinishWorks;
+    return (FW && FW.countPool) ? FW.items(FW.countPool(blocks)) : [];
+  }
   function draftItemsWithPrices() {
     const r = compute();
     let db = []; try { if (window.EP && EP.Database && EP.Database.getItems) db = EP.Database.getItems("my") || []; } catch (e) {}
-    return (r.draftItems || []).map(it => {
+    return (r.draftItems || []).concat(finishItems()).map(it => {
       const p = priceMap[it.name]; let price = 0, dbName = "";
       if (p) {
         price = n(p.price); dbName = p.dbName || "";
@@ -461,6 +469,8 @@
 
   // ── API ──
   function open() { bindOnce(); load(); render(); }
+  // окно «Цены на работы» закрылось — могли поменяться отметки «делаю сам» у чистовых
+  document.addEventListener("ep:price-setup-closed", () => { if (document.getElementById("ep-pool-root")) render(); });
   function close() { const o = document.getElementById("pv29-dbmodal"); if (o) o.remove(); }
   function buildDraft() { /* расчёт ленивый — ничего не нужно, draft() считает сам */ }
   function draft() { return draftItemsWithPrices(); }

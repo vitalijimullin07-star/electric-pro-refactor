@@ -2237,7 +2237,13 @@ test("estimateItems: без движка пула (PoolEngine не подклю�
   const s1 = M.newElement("socket", w(0), 100, 30, "power");
   P.elements.push(s1);
   noThrow(() => EP.Plan.Calc.estimateItems(P), "не бросает без EP.PoolEngine");
-  eq(EP.Plan.Calc.estimateItems(P), null, "нет ни точного счёта, ни движка — null (как и runEngine напрямую)");
+  // черновых работ посчитать нечем — но розетка на плане есть, и её УСТАНОВКА (чистовая,
+  // считается по точкам, а не по движку) в смету попадает, как АВР и стояк
+  const got = EP.Plan.Calc.estimateItems(P) || [];
+  eq(got.map((x) => x.name).join(","), "Установка розетки 220В", "только чистовая работа по точке");
+  EP.FinishWorks.setOn("socket", false);
+  eq(EP.Plan.Calc.estimateItems(P), null, "а без неё — null, как и runEngine напрямую");
+  EP.FinishWorks.reset();
 });
 
 // ===== 18. Этажи =====
@@ -5586,7 +5592,7 @@ test("фото: deleteProject чистит кэш фото своего прое
     // 2) каталог price-setup (модуль DOM-only — вытаскиваем чистую часть из исходника)
     const src = fs2.readFileSync(path2.join(__dirname, "..", "assets", "js", "modules", "database", "price-setup.js"), "utf8");
     const part = src.slice(src.indexOf("  const PD = ()"), src.indexOf("// ---------- что уже есть"));
-    const F = new Function("window", part + "; return catalog;")({ EP: { Plan: { Core: { DEFAULTS: EP.Plan.Core.DEFAULTS } } } });
+    const F = new Function("window", part + "; return catalog;")({ EP: { Plan: { Core: { DEFAULTS: EP.Plan.Core.DEFAULTS } }, FinishWorks: EP.FinishWorks } });
     const names = [];
     F().forEach((g) => g.items.forEach((it) => names.push(it.name)));
     ok(names.length > 40, "каталог непустой (" + names.length + ")");

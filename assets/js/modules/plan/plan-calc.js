@@ -24,6 +24,8 @@
     stubHint: "Выпуск кабеля на разделку (добавляется к длине каждого конца кабеля отдельно от самой трассы)",
     stubPoint: "У точки, см", stubJunction: "У распайки, см", stubPanel: "В щите, см",
     tempHint: "Временные сети на время ремонта (организация — не выводится из чертежа, вводится вручную)",
+    fineHint: "Считаются по точкам плана. В смету идут только работы, отмеченные «делаю сам».",
+    fineCfg: "⚙ Что делаю",
     tempLighting: "Врем. освещение, точек", tempSockets: "Врем. розетки, точек",
     noPrice: "нет цены в БД", total: "Итого по ценам БД",
     priceTitle: "Цена", priceLabel: "Цена за", priceSave: "✓ Сохранить в БД",
@@ -53,10 +55,13 @@
   function sectionOf(it) {
     const n = String(it.name || "");
     if (it.type === "material" && /^кабель/i.test(n)) return "cable";
+    // чистовые работы (EP.FinishWorks) — своим разделом: так видно, что в смете есть и
+    // черновой этап, и чистовой, и сколько стоит каждый
+    if (it.type === "work" && (it.finish || (EP.FinishWorks && EP.FinishWorks.isFinishName(n)))) return "fine";
     if (CONSUM_RE.test(n)) return "consum";
     return it.type === "work" ? "work" : "material";
   }
-  const SECTIONS = [["cable", "🔌 Кабель"], ["work", "🔨 Работы"], ["material", "📦 Материалы"], ["consum", "🧰 Расходники"]];
+  const SECTIONS = [["cable", "🔌 Кабель"], ["work", "🔨 Черновые работы и щит"], ["fine", "✨ Чистовые работы"], ["material", "📦 Материалы"], ["consum", "🧰 Расходники"]];
 
   // Разбивка по линиям QF (информ. сводка, не пересчёт сметы): по каждой линии —
   // автомат/УЗО, длина кабеля (марка) по трассам, число точек и подрозетников,
@@ -659,6 +664,10 @@
     // считается по routeType/gofraCeil) — не пересчитываем заново, чтобы не разойтись
     const gofraM = items.filter((it) => it.type === "material" && /^гофра/i.test(it.name)).reduce((sum, it) => sum + it.qty, 0);
     if (gofraM > 0) add("work", "Затяжка кабеля в гофру", gofraM, "м");
+    // ЧИСТОВЫЕ работы (установка механизмов, светильников, датчиков…) — по точкам проекта,
+    // общим каталогом EP.FinishWorks; в смету идут только отмеченные «делаю сам»
+    const fin = finishOf(p, roomNameOf);
+    if (fin) EP.FinishWorks.items(fin).forEach((it) => { const q = Math.round(it.qty * 10) / 10; if (q > 0) items.push(Object.assign({}, it, { qty: q })); });
     // правки пользователя (скрыть/заменить/добавить) — В САМОМ КОНЦЕ, после всего
     // авто-счёта: gofraM выше читает items ДО правок (метраж затяжки не должен
     // зависеть от того, скрыл ли пользователь строку гофры из сметы)
@@ -677,6 +686,12 @@
         origin["work|Высверливание подрозетников " + nm + " " + low(mat)] = o;
         origin["work|Вклейка подрозетников " + nm + " " + low(mat)] = o;
       });
+    });
+    if (fin) EP.FinishWorks.CATALOG.forEach((c) => {
+      const byR = fin.rooms[c.id];
+      if (!byR) return;
+      origin["work|" + c.name] = { kind: "finish", unit: c.unit,
+        byRoom: Object.keys(byR).map((room) => ({ room, qty: byR[room] })).sort((a, b) => b.qty - a.qty) };
     });
     Object.keys(cableBy).forEach((m) => {
       const o = { kind: "cable", unit: "м", mark: m, rawCm: cableRaw[m], reservePct: Math.round((reserve - 1) * 1000) / 10,
@@ -730,6 +745,21 @@
     items.push({ type: "material", name: "Труба (гильза) для прохода через перекрытие", qty: n, unit: "шт" });
     return items;
   }
+  // ЧИСТОВЫЕ работы по точкам — общий каталог EP.FinishWorks (тот же, что у «Цен на
+  // работы» и Пула). Как АВР и стояк — не зависят от того, построены ли трассы: розетка
+  // на плане есть, значит её установка в смете есть, в ОБОИХ путях расчёта.
+  function finishOf(p, roomOf) {
+    const FW = EP.FinishWorks;
+    return (FW && FW.countPlan) ? FW.countPlan(p, roomOf) : null;
+  }
+  function addFinishItems(p, items) {
+    const fin = finishOf(p, null);
+    const add = fin ? EP.FinishWorks.items(fin) : [];
+    if (!add.length) return items;
+    if (!Array.isArray(items)) items = [];
+    add.forEach((it) => items.push(it));
+    return items;
+  }
   function addAvrItems(p, items) {
     const n = (p.panels || []).filter((pn) => pn.avr).length;
     if (!n) return items;
@@ -746,7 +776,7 @@
     const exact = exactOf(p);
     if (exact && exact.items.length) return exact.items; // правки уже применены внутри calcByRoutes
     const res = runEngine(p, stats);
-    return applyCalcEdits(p, addRiserItems(p, addAvrItems(p, (res && res.draftItems) || null))); // приближённый счёт — те же правки
+    return applyCalcEdits(p, addRiserItems(p, addAvrItems(p, addFinishItems(p, (res && res.draftItems) || null)))); // приближённый счёт — те же правки
   }
 
   // ---------- МЕМО-КЭШ расчёта ----------
@@ -759,23 +789,34 @@
   // правка цены видна сразу).
   let memo = null;      // { exact, per }
   let memoTok = 0;      // токен состояния: результат воркера с чужим токеном не принимаем
+  // выбор «делаю сам» у чистовых работ меняет состав сметы, не меняя проекта: сверяем его
+  // снимок с тем, при котором считали (событие каталога тоже сбрасывает кэш, но хранилище
+  // могли поменять и из другой вкладки — сверка по снимку надёжнее)
+  const fineSig = () => { try { return EP.FinishWorks ? JSON.stringify(EP.FinishWorks.snapshot()) : ""; } catch (e) { return ""; } };
+  function memoFresh() {
+    const fs = fineSig();
+    if (memo && memo.fs !== fs) { memo = null; memoTok++; }
+    memo = memo || { fs };
+  }
   function exactOf(p) {
-    if (memo && memo.exact !== undefined) return memo.exact;
+    memoFresh();
+    if (memo.exact !== undefined) return memo.exact;
     const v = calcByRoutes(p);
-    memo = memo || {}; memo.exact = v;
+    memo.exact = v;
     return v;
   }
   function perOf(p) {
-    if (memo && memo.per !== undefined) return memo.per;
+    memoFresh();
+    if (memo.per !== undefined) return memo.per;
     const v = perCircuit(p);
-    memo = memo || {}; memo.per = v;
+    memo.per = v;
     return v;
   }
   // фоновый предрасчёт из воркера (plan-routes.js prefetchEstimate): готовые items/perCircuit
   // на ТЕКУЩЕЕ состояние — шторка «Расчёт» открывается без счёта на главном потоке
   function setPrefetched(tok, items, per) {
     if (tok !== memoTok) return false; // проект успел измениться — данные уже не про него
-    memo = memo || {};
+    memo = memo || { fs: fineSig() };
     // из результата calcByRoutes и шторка, и estimateItems читают ТОЛЬКО .items
     // (cableBy/strobe/conn/podroz/junctBoxes используются внутри самой calcByRoutes) —
     // поэтому предрасчёту достаточно вернуть items; форму специально не раздуваем
@@ -785,6 +826,14 @@
   }
   const memoToken = () => memoTok;
   if (core().onChange) core().onChange(() => { memo = null; memoTok++; });
+  // выбор «делаю сам» у чистовых работ — свойство мастера, а не проекта: проект при этом
+  // не меняется, поэтому кэш расчёта сбрасываем отдельным событием каталога
+  if (window.addEventListener) window.addEventListener("ep:finish-works-changed", () => { memo = null; memoTok++; });
+  // окно «Цены на работы» открывают прямо из Расчёта («⚙ Что делаю») — после закрытия
+  // шторка перерисовывается: цены и состав чистовых работ могли поменяться
+  if (document.addEventListener) document.addEventListener("ep:price-setup-closed", () => {
+    if (core().project && document.querySelector && document.querySelector("#ep-plan-sheet [data-pc-close]")) sheet();
+  });
 
   // ---------- цены из БД ----------
   // Сопоставление названия с записью БД живёт в ОБЩЕМ модуле EP.NameMatch (name-match.js) —
@@ -869,7 +918,7 @@
         </div>`;
     } else {
       const res = runEngine(p, stats);
-      items = applyCalcEdits(p, addRiserItems(p, addAvrItems(p, res && res.draftItems ? res.draftItems : null)));
+      items = applyCalcEdits(p, addRiserItems(p, addAvrItems(p, addFinishItems(p, res && res.draftItems ? res.draftItems : null))));
       headHtml = `<div class="ep-plan-srow"><b>${T.workHead}</b></div>
         <div class="ep-plan-srow ep-plan-hintrow">${T.approxHint}</div>`;
     }
@@ -939,6 +988,7 @@
         if (!rows.length) return "";
         const secSum = rows.reduce((s, x) => s + (x.price > 0 ? x.lineSum : 0), 0);
         return `<div class="ep-plan-srow ep-plan-sechead"><b>${label}</b><span class="ep-plan-flex"></span><span class="ep-plan-mshint">${secSum > 0 ? esc(fmtRub(secSum)) : ""}</span></div>
+          ${key === "fine" ? `<div class="ep-plan-srow ep-plan-hintrow"><span>${T.fineHint}</span><span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-plan-finecfg ep-clickable" data-price-setup data-pset-focus="fine">${T.fineCfg}</button></div>` : ""}
           <div class="ep-plan-items ep-plan-secitems">${rows.map(irow).join("")}</div>`;
       }).join("");
       // скрытые позиции — под итогом, каждую можно вернуть (↩), «вернуть все» разом

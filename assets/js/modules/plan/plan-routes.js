@@ -2343,6 +2343,10 @@
     let snapshot, consum = null;
     try { snapshot = JSON.parse(JSON.stringify(p)); } catch (e) { return; }
     try { consum = (EP.CableConsum && EP.CableConsum.get) ? EP.CableConsum.get() : null; } catch (e) {}
+    // выбор «делаю сам» у чистовых работ живёт в хранилище устройства — у воркера его нет,
+    // без снимка он посчитал бы смету по умолчаниям каталога и разошёлся с главным потоком
+    let fine = null;
+    try { fine = (EP.FinishWorks && EP.FinishWorks.snapshot) ? EP.FinishWorks.snapshot() : null; } catch (e) {}
     const tokC = CALC.memoToken(), tokR = RULES.memoToken();
     const onMsg = (e) => {
       const d = (e && e.data) || {};
@@ -2353,7 +2357,7 @@
       RULES.setPrefetched(tokR, d.checks);
     };
     w.addEventListener("message", onMsg);
-    w.postMessage({ type: "solve", project: snapshot, mode: "estimate", consum });
+    w.postMessage({ type: "solve", project: snapshot, mode: "estimate", consum, fine });
   }
   // есть ли готовый фоновый результат РОВНО на текущее состояние (подсказка в шторке и
   // живые проверки)
