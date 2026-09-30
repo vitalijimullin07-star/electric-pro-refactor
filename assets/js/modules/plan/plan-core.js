@@ -765,7 +765,14 @@
     p.dims = p.dims.filter((d) => isPt(d.a) && isPt(d.b));
     p.dims.forEach((d) => { const o = fin(d.off); d.off = o == null ? 40 : o; });
     list("guides"); ids(p.guides, "gd");
-    p.guides.forEach((g) => { g.points = Array.isArray(g.points) ? g.points.filter(isPt) : []; });
+    p.guides.forEach((g) => {
+      g.points = Array.isArray(g.points) ? g.points.filter(isPt) : [];
+      // группы трасс магистрали: только известные ключи, пустой список = общая (поле убираем)
+      if (g.kinds != null) {
+        const ks = Array.isArray(g.kinds) ? g.kinds.filter((k) => ["light", "power", "lv", "v24"].indexOf(k) >= 0) : [];
+        if (ks.length) g.kinds = ks; else delete g.kinds;
+      }
+    });
     p.guides = p.guides.filter((g) => g.points.length >= 2);
     list("ledStrips"); ids(p.ledStrips, "ls");
     p.ledStrips = p.ledStrips.filter((l) => typeof l.wallId === "string" && fin(l.offsetA) != null && fin(l.offsetB) != null);
