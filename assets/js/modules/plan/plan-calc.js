@@ -106,7 +106,7 @@
         });
         auto220 = EP.Plan.Core.cableMark(p, k >= 2 ? "5×1.5" : "3×1.5");
       }
-      return { id: c.id, name: c.name, color: c.color, breaker: c.breaker, rcd: c.rcd, is24: i24, rgb: c.rgb == null ? null : !!c.rgb, auto24, auto220,
+      return { id: c.id, name: c.name, color: c.color, breaker: c.breaker, rcd: c.rcd, protText: EP.Plan.Circuits ? EP.Plan.Circuits.protLabel(p, c) : (c.rcd ? "УЗО" : ""), is24: i24, rgb: c.rgb == null ? null : !!c.rgb, auto24, auto220,
         cableLen: Math.round((r.cableLen / 100) * reserve * 10) / 10, mark: r.mark, points: r.points, posts: r.posts, crossings: r.crossings,
         has24: r.has24, cable: c.cable || null, cable220: c.cable220 || null };
     }).filter((r) => r.points > 0 || r.cableLen > 0);
@@ -589,8 +589,13 @@
       // только breaker (есть всегда) и rcd (bool — УЗО/дифавтомат одной галкой, без
       // подтипа) — раздельного «узо vs диф» поля нет, считаем их одной строкой.
       const circAll = p.circuits || [];
-      const breakerCnt = 1 + circAll.length; // вводной + по одному на линию
-      const rcdCnt = (s.mainRcd ? 1 : 0) + circAll.filter((c) => c.rcd).length; // вводное + по линиям
+      // аппараты — из движка цепей (EP.Plan.Circuits.devices): дифавтомат это ОДИН аппарат
+      // (раньше он считался и автоматом, и УЗО разом), групповое УЗО — одно на группу, а не
+      // по одному на каждую его линию
+      const CX = EP.Plan.Circuits;
+      const devs = CX ? CX.devices(p) : null;
+      const breakerCnt = 1 + (devs ? devs.filter((d) => d.kind === "mcb").length : circAll.length); // вводной + автоматы линий
+      const rcdCnt = (s.mainRcd ? 1 : 0) + (devs ? devs.filter((d) => d.kind !== "mcb").length : circAll.filter((c) => c.rcd).length);
       add("work", "Установка автоматического выключателя", breakerCnt, "шт");
       if (rcdCnt) add("work", "Установка УЗО/дифавтомата", rcdCnt, "шт");
       if (s.meter) add("work", "Установка счётчика", 1, "шт");
@@ -827,7 +832,7 @@
               ${r.rgb == null ? `<span class="ep-plan-mshint">не указано</span>` : ""}</div>` : "";
             return `<div class="ep-plan-qfrow">
             <span class="ep-plan-cdot" style="background:${esc(r.color)}"></span><b>${esc(r.name)}</b>
-            <span class="ep-plan-qfmeta">${r.breaker || "—"}A${r.rcd ? " · УЗО" : ""}</span>
+            <span class="ep-plan-qfmeta">${r.breaker || "—"}A${r.protText ? " · " + esc(r.protText) : ""}</span>
             <span class="ep-plan-flex"></span>
             <span class="ep-plan-qfnums">${marksHtml}${r.cableLen ? G().fmtLen(r.cableLen * 100) : "—"} · ${r.points} тчк${r.crossings ? " · " + r.crossings + " прох." : ""}</span>
           </div>${rgbHtml}`;

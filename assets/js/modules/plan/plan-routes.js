@@ -1297,6 +1297,16 @@
     // обратная совместимость сохранена, флаг сам по себе щит из силовых не исключает.
     const plainPanels = panels.filter((pn) => !pn.router && !pn.transformer);
     const powerPanels = plainPanels.length ? plainPanels : panels;
+    // ЯВНЫЙ щит линии (circuit.panelId, движок цепей) главнее любых эвристик выше: мастер
+    // сказал «эта линия — из ЩС», и трасса идёт туда, даже если другой щит ближе. Щит не на
+    // этом этаже / удалён — остаётся прежний выбор.
+    const pinned = (cid, list) => {
+      const cc = cid && (p.circuits || []).find((x) => x.id === cid);
+      const pid = cc && cc.panelId;
+      if (!pid) return list;
+      const hit = panels.filter((pn) => pn.id === pid);
+      return hit.length ? hit : list;
+    };
     const groups = new Map();
     const feed = switchFeedMap(p);
     const chainPrev = chainPrevMap(p);
@@ -1340,10 +1350,10 @@
       if (rt && chain) { rt.leg = "chain"; rt.chainCross = chainSegCross(el, sw); }
       if (rt) return;
       const J = cid ? juncts.filter((n) => n.circuitId === cid) : juncts.slice();
-      connectNearest(c, p, el, pos, J.concat(powerPanels), cid, color);
+      connectNearest(c, p, el, pos, J.concat(pinned(cid, powerPanels)), cid, color);
     });
     groups.forEach((g) => {
-      const targetPanels = g.kind === "24" ? trafoPanels : g.kind === "leak" ? neptunPanels : g.kind === "lv" ? routerPanels : powerPanels;
+      const targetPanels = pinned(g.circuitId, g.kind === "24" ? trafoPanels : g.kind === "leak" ? neptunPanels : g.kind === "lv" ? routerPanels : powerPanels);
       // распайки, доступные этой линии (своей QF; «без линии» — любые распайки)
       const J = g.circuitId ? juncts.filter((n) => n.circuitId === g.circuitId) : juncts.slice();
       // 24В — НИКОГДА не шлейфом: у каждого вывода 24В свой кабель от трансформаторного
@@ -1372,13 +1382,20 @@
     // (см. powerPanels в routeGroups): слаботочный щит принимает распайку только если
     // других щитов в проекте нет вообще
     const plain = panelsAll.filter((pn) => !pn.router && !pn.transformer);
-    const panels = plain.length ? plain : panelsAll;
+    const panelsDef = plain.length ? plain : panelsAll;
+    // явный щит линии распайки (circuit.panelId) — как в routeGroups
+    const panelsFor = (cid) => {
+      const cc = cid && (core().project.circuits || []).find((x) => x.id === cid);
+      const hit = cc && cc.panelId ? panelsAll.filter((pn) => pn.id === cc.panelId) : [];
+      return hit.length ? hit : panelsDef;
+    };
+    const panels = panelsDef;
     const panelDist = (pos) => { const n = nearest(pos, panels); return n ? dist(pos, n.pos) : Infinity; };
     const js = allJuncts.map((n) => ({ n, d: panelDist(n.pos) }));
     juncstToRoute.forEach((n) => {
       const d = panelDist(n.pos);
       const closerJ = js.filter((x) => x.d < d - 1 && (!n.circuitId || x.n.circuitId === n.circuitId)).map((x) => x.n);
-      connectNearest(c, p, n.el, n.pos, panels.concat(closerJ), n.circuitId, colorOf(p, n.el));
+      connectNearest(c, p, n.el, n.pos, panelsFor(n.circuitId).concat(closerJ), n.circuitId, colorOf(p, n.el));
     });
   }
 
@@ -2118,7 +2135,7 @@
   // ---- автоперестройка: геометрия сдвинулась (точка/стена/перегородка) —
   // ранее построенные трассы устарели бы молча (кривые длины/штробы в Расчёте).
   // Перестраиваем тихо, только если трассы уже были построены.
-  const AUTOREBUILD_ON = { "elem-move": 1, "room-reshape": 1, "room-merge": 1, "room-move": 1, "wall-th": 1, "wall-mat": 1, "beam-move": 1, "beam-w": 1, "panel-move": 1, "panel-router": 1, "panel-neptun": 1, "panel-trafo": 1, "opening-move": 1, "elem-target": 1, "riser-pair": 1 };
+  const AUTOREBUILD_ON = { "elem-move": 1, "room-reshape": 1, "room-merge": 1, "room-move": 1, "wall-th": 1, "wall-mat": 1, "beam-move": 1, "beam-w": 1, "panel-move": 1, "panel-router": 1, "panel-neptun": 1, "panel-trafo": 1, "opening-move": 1, "elem-target": 1, "riser-pair": 1, "circuit-panel": 1 };
   let rebuilding = false;
   // ---- АВТОПЕРЕСТРОЙКА БЕЗ ФРИЗА: тяжёлый build() уходит в фоновый воркер ----
   // Замерено на стресс-проекте (30 комнат / 150 точек / 56 трасс) с эмуляцией слабого
@@ -2689,7 +2706,8 @@
             <span>${st.byCircuit[c.id] ? G().fmtLen(st.byCircuit[c.id]) : "—"}</span>
             <button type="button" class="ep-plan-mini ep-clickable" data-prt-hide="${esc(c.id)}" aria-label="Скрыть/показать линию">${c.hidden ? "🚫" : "👁"}</button>
             <select data-prt-brk="${esc(c.id)}" class="ep-plan-sel">${breakers.map((b) => `<option value="${b}" ${c.breaker === b ? "selected" : ""}>${b}A</option>`).join("")}</select>
-            <label class="ep-plan-chk"><input type="checkbox" data-prt-rcd="${esc(c.id)}" ${c.rcd ? "checked" : ""}>${T.rcd}</label>
+            ${EP.Plan.Circuits ? EP.Plan.Circuits.protSelectHtml(p, c, "data-pcx-prot") + EP.Plan.Circuits.panelSelectHtml(p, c, "data-pcx-panel")
+              : `<label class="ep-plan-chk"><input type="checkbox" data-prt-rcd="${esc(c.id)}" ${c.rcd ? "checked" : ""}>${T.rcd}</label>`}
             <button type="button" class="ep-plan-mini ep-plan-danger ep-clickable" data-prt-cdel="${esc(c.id)}">✕</button>
           </div>`).join("") +
         (st.byCircuit._none ? `<div class="ep-plan-lineRow"><span class="ep-plan-cdot" style="background:#94a3b8"></span>${T.noLine}<span class="ep-plan-flex"></span><span>${G().fmtLen(st.byCircuit._none)}</span></div>` : "")
@@ -2841,6 +2859,10 @@
   document.addEventListener("change", (e) => {
     if (!rooms() || !rooms().isActive()) return;
     const t = e.target;
+    // защита УЗО / щит линии — общий обработчик движка цепей (тот же, что у схемы);
+    // перерисовываем «Трассы», только если открыта именно она
+    if (EP.Plan.Circuits && document.querySelector("[data-prt-close]") &&
+      EP.Plan.Circuits.handleChange(t, () => { if (document.querySelector("[data-prt-close]")) sheet(); })) return;
     if (t.getAttribute && t.getAttribute("data-prt-brk")) {
       const c = core(), circ = c.project.circuits.find((x) => x.id === t.getAttribute("data-prt-brk"));
       if (circ) { c.commit(); circ.breaker = Number(t.value) || 16; c.persist("circuit-brk"); }

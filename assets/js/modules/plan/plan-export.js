@@ -830,11 +830,24 @@
   }
 
   // однолинейная схема в лист (тем же движком, что и в приложении)
+  // щиты, по которым печатается схема: линии разнесены по 2+ щитам (движок цепей) —
+  // по листу на щит; иначе один лист со всеми линиями, как было
+  function schemePanels(p) {
+    const SC = EP.Plan.Scheme;
+    if (!SC || !SC.panelsWithLines || p.settings.schemeMode === "manual") return [null];
+    const ps = SC.panelsWithLines(p);
+    return ps.length >= 2 ? ps : [null];
+  }
   function buildScheme(p) {
     if (!window.ShieldSchemeSVG || !EP.Plan.Scheme || !(p.circuits || []).length) return [];
+    const out = [];
+    schemePanels(p).forEach((pn) => { const pg = buildSchemeOne(p, pn); if (pg) out.push(pg); });
+    return out;
+  }
+  function buildSchemeOne(p, pn) {
     try {
       const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      window.ShieldSchemeSVG.render(svg, EP.Plan.Scheme.buildTree(p));
+      window.ShieldSchemeSVG.render(svg, EP.Plan.Scheme.buildTree(p, pn ? pn.id : null));
       // render() ставит ТОЛЬКО пиксельные width/height, БЕЗ viewBox (рассчитан на
       // живой просмотр с горизонтальным скроллом при много QF в ряд — трогать
       // общий модуль shield-scheme-svg-v28.js нельзя, им пользуются и живые экраны).
@@ -847,8 +860,8 @@
       const w0 = svg.getAttribute("width"), h0 = svg.getAttribute("height");
       if (w0 && h0) svg.setAttribute("viewBox", `0 0 ${w0} ${h0}`);
       svg.setAttribute("width", "100%");
-      return [{ title: T.scheme, body: `<div class="schemebox">${svg.outerHTML}</div>` }];
-    } catch (e) { return []; }
+      return { title: pn ? `${T.scheme} · ${pn.name}` : T.scheme, body: `<div class="schemebox">${svg.outerHTML}</div>` };
+    } catch (e) { return null; }
   }
   // таблица линий (QF) + щит
   /* ---------- РАЗБИВКА ДЛИННЫХ ТАБЛИЦ НА ЛИСТЫ ----------
@@ -882,7 +895,10 @@
     if (EP.Plan.Scheme && EP.Plan.Scheme.recompute) { try { EP.Plan.Scheme.recompute(p); } catch (e) {} }
     const rl = EP.Plan.Routes ? EP.Plan.Routes.lengths(p) : { byCircuit: {} };
     const cableOf = (c) => c.cable || (EP.Plan.Scheme && EP.Plan.Scheme.autoCable ? EP.Plan.Scheme.autoCable(p, c) : null) || "—";
-    const rows = circuits.map((c) => `<tr><td><i class="cd" style="background:${esc(c.color)}"></i>${esc(c.name)}</td><td>${(c.breaker || 16)}A${c.rcd ? " + УЗО" : ""}</td><td>${esc(cableOf(c))}</td><td>${c.poles === 3 ? "3P" : "1P"}</td><td>${rl.byCircuit && rl.byCircuit[c.id] ? G().fmtLen(rl.byCircuit[c.id]) : "—"}</td></tr>`);
+    const CX = EP.Plan.Circuits;
+    const protOf = (c) => CX ? (CX.protLabel(p, c) ? " + " + CX.protLabel(p, c) : "") : (c.rcd ? " + УЗО" : "");
+    const pnOf = (c) => { const r = CX ? CX.panelOf(p, c) : null; return r && r.panel && (p.panels || []).length > 1 ? " · " + esc(r.panel.name) : ""; };
+    const rows = circuits.map((c) => `<tr><td><i class="cd" style="background:${esc(c.color)}"></i>${esc(c.name)}${pnOf(c)}</td><td>${(c.breaker || 16)}A${esc(protOf(c))}</td><td>${esc(cableOf(c))}</td><td>${c.poles === 3 ? "3P" : "1P"}</td><td>${rl.byCircuit && rl.byCircuit[c.id] ? G().fmtLen(rl.byCircuit[c.id]) : "—"}</td></tr>`);
     const box = p.settings.panelBox;
     const panelInfo = box && box.modules ? `Щит: <b>${esc(box.brand)}</b> · ${box.modules} мод · ${box.wmm}×${box.hmm}×${box.dmm} мм` : "";
     return tablePages(T.circuits, rows, perCircuits(), (part, i) =>
@@ -936,7 +952,7 @@
       return {
         name: c.name, load: (SC && SC.loadSummary ? SC.loadSummary(p, c) : "—"),
         pu, ks, cos, pr, ir, cable,
-        prot: `${poles3 ? "3P " : ""}${c.breaker || 16} А${c.rcd ? " + УЗО 30 мА" : ""}`,
+        prot: `${poles3 ? "3P " : ""}${c.breaker || 16} А${EP.Plan.Circuits ? (EP.Plan.Circuits.protLabel(p, c) ? " + " + EP.Plan.Circuits.protLabel(p, c) : "") : (c.rcd ? " + УЗО 30 мА" : "")}`,
         way: surf.length === 1 ? (surf[0] === "floor" ? "скрыто, по полу" : "скрыто, по потолку") : "скрыто",
         three
       };
@@ -1090,11 +1106,17 @@
     if (S.meter) push(T.secShields, "Счётчик электроэнергии", "", "шт.", 1);
     if (S.mainRcd) push(T.secShields, `Устройство защитного отключения ${S.mainBreaker || 63}А 30mA`, "", "шт.", 1);
     const byKey = {};
-    (p.circuits || []).forEach((c2) => {
-      const amp = c2.breaker || 16, poles = c2.poles === 3 ? "3P" : "1P";
-      const key = (c2.rcd ? "d" : "a") + poles + amp;
+    // аппараты — из движка цепей: дифавтомат линии, автомат линии под групповым УЗО и само
+    // групповое УЗО (одно на группу) — тот же список, что считает смета и корпус щита
+    const CX = EP.Plan.Circuits;
+    const devs = CX ? CX.devices(p) : (p.circuits || []).map((c2) => ({ kind: c2.rcd ? "rcbo" : "mcb", poles: c2.poles === 3 ? 3 : 1, amp: c2.breaker || 16, leak: 30 }));
+    devs.forEach((d) => {
+      const amp = d.amp, poles = d.poles === 3 ? (d.kind === "mcb" ? "3P" : "4P") : (d.kind === "mcb" ? "1P" : "2P");
+      const key = d.kind + poles + amp + (d.leak || "");
       byKey[key] = byKey[key] || {
-        n: 0, name: c2.rcd ? `Автоматический выключатель дифференциального тока ${amp}А` : `Автоматический выключатель ${poles} ${amp}А`
+        n: 0, name: d.kind === "rcbo" ? `Автоматический выключатель дифференциального тока ${d.poles === 3 ? "4P " : ""}${amp}А ${d.leak || 30}mA`
+          : d.kind === "rcd" ? `Устройство защитного отключения ${poles} ${amp}А ${d.leak || 30}mA`
+          : `Автоматический выключатель ${poles} ${amp}А`
       };
       byKey[key].n++;
     });
@@ -1233,7 +1255,7 @@
     n.loads = pgs(nc, perLoads());
     n.cablelog = pgs(nc, perCableLog());
     n.expl = explPageCount(p);
-    n.scheme = (window.ShieldSchemeSVG && EP.Plan.Scheme && (p.circuits || []).length) ? 1 : 0;
+    n.scheme = (window.ShieldSchemeSVG && EP.Plan.Scheme && (p.circuits || []).length) ? schemePanels(p).length : 0;
     let total = 0;
     SECTIONS.forEach((s) => { if (s.id !== "gen" && secOn(s.id)) total += n[s.id] || 0; });
     // «Общие данные» считаем ПОСЛЕДНИМИ: их объём зависит от длины ведомости, т.е. от

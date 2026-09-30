@@ -475,6 +475,7 @@
         ${[hp.socket, hp.switch, hp.kitchen].map((v) => `<button type="button" class="ep-plan-chip ep-clickable" data-pe-preset="${v}">${v}</button>`).join("")}
       </div>
       ${circuitRow(el)}
+      ${EP.Plan.Circuits ? EP.Plan.Circuits.chainHtml(p, el) : ""}
       ${t.layerChoice ? outLayerRow(el) : ""}
       ${el.type === "output3" ? threeKindRow(el) : ""}
       ${el.type === "switch" ? switchKindRow(el) + switchKeysRow(el) + switchChainRow(el) + (el.chainNext ? "" : switchTargetRow(el)) : ""}

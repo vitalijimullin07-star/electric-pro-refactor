@@ -1353,9 +1353,10 @@ test("calcByRoutes: сборка щита — автоматы/УЗО по чи�
   P.routes.push(rt1, rt2);
   const res = EP.Plan.Calc.calcByRoutes(P);
   const breakers = res.items.find((i) => i.name === "Установка автоматического выключателя");
-  ok(breakers && breakers.qty === 3, "вводной + 2 линии"); // 1 вводной + cc1 + cc2
+  // дифавтомат линии cc1 — ОДИН аппарат (движок цепей): не автомат + УЗО разом, как раньше
+  ok(breakers && breakers.qty === 2, "вводной + автомат линии cc2"); // 1 вводной + cc2
   const rcds = res.items.find((i) => i.name === "Установка УЗО/дифавтомата");
-  ok(rcds && rcds.qty === 2, "вводное УЗО + УЗО линии cc1"); // mainRcd + cc1.rcd
+  ok(rcds && rcds.qty === 2, "вводное УЗО + дифавтомат линии cc1"); // mainRcd + cc1
   // работы по распайкам разделены по МЕСТУ: коробка на потолке vs распайка в подрозетнике
   const junctWork = res.items.find((i) => i.name === "Собрать распаянную коробку на потолке");
   ok(junctWork && junctWork.qty === 1, "сборка потолочной коробки по числу распаек");
@@ -7257,6 +7258,121 @@ test("фото: deleteProject чистит кэш фото своего прое
       ok(!/Number\(\(\$\("#ep-pe-h"\)/.test(el) && !/Number\(\(\$\("#ep-po-sill"\)/.test(el), "прямого Number(поле) не осталось");
       ok(/if \(!raw\) return; \/\/ пусто = не менять/.test(un), "карточка развёртки не ставит 0 на пустом");
       ok(/const watt = nv\("#ep-pf-watt"\)/.test(fu), "мощность техники тоже");
+    });
+  }
+
+  // ===== 57. Движок цепей: щит у линии, групповые УЗО, аппараты, цепочка точки =====
+  {
+    const CX = EP.Plan.Circuits;
+    // квартира: две комнаты, два силовых щита (ЩК слева, ЩР справа) + роутер-щит
+    const seed57 = () => {
+      const p = EP.Plan.Core.createProject("c57");
+      const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "A"), B = M.newRoom(G.rectPoints(400, 0, 400, 300), "B");
+      p.rooms.push(A, B);
+      const pk = M.newPanel(40, 250, "ЩК"), pr = M.newPanel(760, 250, "ЩР"), pl = M.newPanel(40, 60, "ЩС");
+      pl.router = true; p.panels.push(pk, pr, pl);
+      const q1 = M.newCircuit("QF1", "#e11", 16), q2 = M.newCircuit("QF2", "#1e1", 16), q3 = M.newCircuit("QF3", "#11e", 25), qi = M.newCircuit("Int1", "#888", 6);
+      p.circuits.push(q1, q2, q3, qi);
+      const put = (type, wall, off, h, layer, c) => { const e = M.newElement(type, wall, off, h, layer); e.circuitId = c.id; p.elements.push(e); return e; };
+      put("socket", A.id + ":0", 120, 30, "power", q1); put("socket", A.id + ":2", 150, 30, "power", q2);
+      put("socket", B.id + ":0", 200, 30, "power", q3); put("internet", A.id + ":2", 300, 30, "lv", qi);
+      const g = { id: "rg1", name: "УЗО1", rating: 40, leak: 30 };
+      p.rcdGroups = [g];
+      EP.Plan.Core.persist("seed");
+      return { p, A, B, pk, pr, pl, q1, q2, q3, qi, g };
+    };
+    test("защита линии: без УЗО / своё (диф) / групповое, удаление группы не снимает защиту", () => {
+      const { p, q1, q2, g } = seed57();
+      eq(CX.protOf(p, q1).kind, "none");
+      CX.setProtection(p, q1, "own"); eq(CX.protOf(p, q1).kind, "own"); ok(q1.rcd, "own → rcd");
+      CX.setProtection(p, q1, "grp:" + g.id); eq(CX.protOf(p, q1).kind, "group"); eq(q1.rcdGroupId, g.id);
+      CX.setProtection(p, q2, "new"); ok(CX.groups(p).length === 2 && q2.rcdGroupId && q2.rcdGroupId !== g.id, "«+ групповое УЗО» создаёт группу");
+      eq(CX.groups(p)[1].name, "УЗО2", "номер следующей группы");
+      CX.removeGroup(p, g.id);
+      eq(CX.protOf(p, q1).kind, "own", "линия удалённой группы осталась защищённой — своим дифом");
+      CX.setProtection(p, q1, "none"); ok(!q1.rcd && !q1.rcdGroupId, "без УЗО");
+    });
+    test("аппараты и модули: групповое УЗО — одно на группу, дифавтомат — один аппарат", () => {
+      const { p, q1, q2, q3, g } = seed57();
+      q1.panelId = q2.panelId = q3.panelId = null;
+      CX.setProtection(p, q1, "grp:" + g.id); CX.setProtection(p, q2, "grp:" + g.id); CX.setProtection(p, q3, "own");
+      const d = CX.devices(p);
+      eq(d.filter((x) => x.kind === "rcd").length, 1, "одно УЗО на две линии");
+      eq(d.find((x) => x.kind === "rcd").lineIds.length, 2);
+      eq(d.filter((x) => x.kind === "rcbo").length, 1, "диф у QF3");
+      eq(d.filter((x) => x.kind === "mcb").length, 3, "автоматы QF1, QF2, Int1");
+      p.settings.panelReserve = 0;
+      // ЩК: без трасс линии распределяются по роду нагрузки и близости: QF1/QF2 (комната A)
+      // → ЩК, QF3 (комната B) → ЩР, Int1 → роутер-щит ЩС
+      const pk = p.panels[0];
+      eq(CX.panelOf(p, q3).panel.name, "ЩР", "линия комнаты B — в ближний силовой щит");
+      eq(CX.panelOf(p, p.circuits[3]).panel.name, "ЩС", "слаботочная — в роутер-щит");
+      // ЩК: вводной 1 + QF1 1 + QF2 1 + УЗО 2 = 5 (раньше УЗО на КАЖДУЮ линию и все 4 линии разом)
+      eq(CX.modules(p, pk.id), 5, "модули ЩК");
+      eq(EP.Plan.Scheme.neededModules(p), 5, "корпус щита считается по главному щиту");
+    });
+    test("щит линии: явный щит главнее близости, и трасса идёт именно в него", () => {
+      const { p, q1, pr } = seed57();
+      eq(CX.panelOf(p, q1).panel.name, "ЩК", "авто — ближний");
+      CX.setPanel(p, q1, pr.id);
+      const r = CX.panelOf(p, q1); ok(r.explicit && r.panel.id === pr.id, "явный щит");
+      p.guides.push(M.newGuide([{ x: 50, y: 150 }, { x: 750, y: 150 }]));
+      EP.Plan.Routes.build({ silent: true });
+      const toPanel = (p.routes || []).filter((x) => x.circuitId === q1.id && x.toPanel);
+      ok(toPanel.length && toPanel.every((x) => x.toId === pr.id), "трасса QF1 пришла в ЩР, хотя ЩК ближе");
+      CX.setPanel(p, q1, "нет-такого"); eq(q1.panelId, null, "несуществующий щит не ставится");
+    });
+    test("схема: линии группы под своим УЗО, фильтр по щиту", () => {
+      const { p, q1, q2, g, pk } = seed57();
+      CX.setProtection(p, q1, "grp:" + g.id); CX.setProtection(p, q2, "grp:" + g.id);
+      const t = EP.Plan.Scheme.buildTree(p);
+      const rcd = t.children.find((n) => n.type === "rcd");
+      ok(rcd && rcd.id === "УЗО1" && rcd.children.length === 2, "узел УЗО1 с двумя линиями");
+      ok(rcd.children.every((n) => n.type === "mcb"), "под УЗО — автоматы, не дифы");
+      const tk = EP.Plan.Scheme.buildTree(p, pk.id);
+      eq(tk.children.length, 1, "в схеме ЩК только его линии (одна группа)");
+      const tr = EP.Plan.Scheme.buildTree(p, p.panels[1].id);
+      ok(/Питание от ЩК/.test(tr.label), "у второго щита — питание от главного");
+      eq(EP.Plan.Scheme.panelsWithLines(p).length, 3, "линии разнесены по трём щитам");
+    });
+    test("смета и спецификация: групповое УЗО считается один раз", () => {
+      const { p, q1, q2, g } = seed57();
+      CX.setProtection(p, q1, "grp:" + g.id); CX.setProtection(p, q2, "grp:" + g.id);
+      EP.Plan.Routes.build({ silent: true });
+      const res = EP.Plan.Calc.calcByRoutes(p);
+      const rc = res && res.items.find((i) => i.name === "Установка УЗО/дифавтомата");
+      ok(rc && rc.qty === 1, "одно УЗО на две линии");
+      const html = EP.Plan.Export.sheetHtml(p);
+      ok(/Устройство защитного отключения 2P 40А 30mA/.test(html), "в спецификации — групповое УЗО");
+      ok(/Однолинейная схема · ЩК/.test(html) && /Однолинейная схема · ЩР/.test(html), "схема по листу на щит");
+    });
+    test("проверки: номинал группового УЗО ниже автомата, линии одного УЗО в разных щитах", () => {
+      const { p, q1, q3, g } = seed57();
+      g.rating = 25; q3.breaker = 32;
+      CX.setProtection(p, q1, "grp:" + g.id); CX.setProtection(p, q3, "grp:" + g.id);
+      const msgs = EP.Plan.Rules.run(p).issues.map((x) => x.msg).join("\n");
+      ok(/УЗО1: номинал 25A ниже автомата своей линии \(32A\)/.test(msgs), "слабое УЗО");
+      ok(/УЗО1: линии этого УЗО назначены в разные щиты/.test(msgs), "УЗО на два щита");
+    });
+    test("цепочка точки: линия → автомат → УЗО → щит → кабель", () => {
+      const { p, q1, g } = seed57();
+      CX.setProtection(p, q1, "grp:" + g.id);
+      const el = p.elements.find((e) => e.circuitId === q1.id);
+      const ch = CX.chain(p, el);
+      eq(ch.circuit.id, q1.id); eq(ch.breaker, 16); eq(ch.protText, "УЗО1 40A 30мА"); eq(ch.panel.name, "ЩК");
+      ok(/3×2\.5/.test(ch.cable), "кабель из автоподбора");
+      ok(/УЗО1 40A 30мА/.test(CX.chainHtml(p, el)), "разметка цепочки");
+      eq(CX.chain(p, M.newElement("socket", null, 0, 30, "power")).circuit, null, "точка без линии");
+    });
+    test("санитайзер: ссылки на несуществующее групповое УЗО и щит обнуляются", () => {
+      const { p, q1 } = seed57();
+      const raw = JSON.parse(JSON.stringify(p));
+      raw.circuits[0].rcdGroupId = "ghost"; raw.circuits[0].panelId = "ghost";
+      raw.rcdGroups.push({ id: "rg2", name: 5, rating: "abc" });
+      const P = EP.Plan.Core.importJSON(JSON.stringify({ project: raw }));
+      eq(P.circuits[0].rcdGroupId, null); eq(P.circuits[0].panelId, null);
+      eq(P.rcdGroups[1].rating, 40, "мусорный номинал — 40A"); eq(typeof P.rcdGroups[1].name, "string");
+      ok(q1, "");
     });
   }
 
