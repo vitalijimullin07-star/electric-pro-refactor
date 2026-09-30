@@ -7376,6 +7376,93 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 58. «Сформировать проект»: линии, автоматы и УЗО по точкам и технике =====
+  {
+    const AP = EP.Plan.AutoProject;
+    const seed58 = () => {
+      const p = EP.Plan.Core.createProject("ap58");
+      const K = M.newRoom(G.rectPoints(0, 0, 400, 300), "Кухня"), L = M.newRoom(G.rectPoints(400, 0, 400, 300), "Гостиная"), B = M.newRoom(G.rectPoints(0, 300, 200, 200), "Санузел");
+      p.rooms.push(K, L, B); p.panels.push(M.newPanel(420, 280, "ЩК"));
+      const E = (t, w, o, h, layer) => { const e = M.newElement(t, w, o, h, layer); p.elements.push(e); return e; };
+      const free = (t, x, y, layer) => { const e = E(t, null, 0, 270, layer); e.wallId = null; e.params = { x, y }; return e; };
+      for (let i = 0; i < 6; i++) E("socket", K.id + ":0", 60 + i * 50, 110, "power");
+      const fr = E("socket", K.id + ":3", 100, 30, "power"), hb = E("output", K.id + ":2", 300, 80, "power");
+      const lamp = free("light", 200, 150, "light");
+      const sw = E("switch", K.id + ":1", 50, 90, "light"); sw.targetIds = [lamp.id];
+      for (let i = 0; i < 4; i++) E("socket", L.id + ":" + i, 100, 30, "power");
+      free("light", 600, 150, "light");
+      const wet = E("socket", B.id + ":0", 100, 110, "power");
+      const tv = E("tv", L.id + ":0", 200, 130, "tv"), net = E("internet", L.id + ":2", 200, 30, "lv");
+      const ap = (cat, el) => { const a = M.newAppliance("appl", cat, 0, 0); a.elementId = el.id; p.appliances.push(a); return a; };
+      const aFr = ap("fridge", fr), aHb = ap("hob", hb);
+      EP.Plan.Core.persist("seed");
+      return { p, K, L, B, fr, hb, lamp, sw, wet, tv, net, aFr, aHb };
+    };
+    const lineOfEl = (p, el) => p.circuits.find((c) => c.id === el.circuitId);
+    test("предложение: кухня отдельно, техника по мощности, влажная зона с дифом, свет с выключателем", () => {
+      const { p, fr, hb, lamp, sw, wet, tv, net } = seed58();
+      const prop = AP.propose(p, "free");
+      const byEl = (el) => prop.lines.find((l) => l.elIds.indexOf(el.id) >= 0);
+      ok(/Розетки: Кухня/.test(prop.lines[0].title) && prop.lines[0].elIds.length === 6, "первая линия — розетки кухни");
+      eq(byEl(fr).kind, "ded", "холодильник — своя линия"); eq(byEl(fr).breaker, 16);
+      eq(byEl(hb).breaker, 32, "варочная 7.2 кВт — 32A (по мощности прибора)");
+      eq(byEl(wet).prot, "own", "розетки санузла — свой диф");
+      eq(byEl(lamp), byEl(sw), "выключатель на линии своей лампы"); eq(byEl(lamp).breaker, 10, "свет 10A");
+      ok(byEl(tv) !== byEl(net) && byEl(tv).prefix === "TV" && byEl(net).prefix === "Int", "слаботочка — каждая точка своей линией");
+      eq(prop.groups.length, 1, "одно групповое УЗО на розеточные линии");
+      ok(prop.lines.filter((l) => l.kind === "sock").every((l) => l.prot === "group"), "розеточные линии под групповым УЗО");
+      const names = prop.lines.map((l) => l.name);
+      ok(names.indexOf("QF1") === 0 && names.indexOf("TV1") > 0 && names.indexOf("Int1") > 0, "своя нумерация у префиксов");
+    });
+    test("применение: все точки на линиях, техника на линии своей точки, проверки без «розетки без УЗО»", () => {
+      const { p, aFr, hb, aHb } = seed58();
+      const made = AP.apply(AP.propose(p, "free"));
+      ok(made.length >= 8, "линии созданы");
+      eq(p.elements.filter((e) => e.type !== "panel" && !e.circuitId).length, 0, "все точки на линиях");
+      eq(aFr.circuitId, lineOfEl(p, p.elements.find((e) => e.id === aFr.elementId)).id, "холодильник — на линии своей розетки");
+      eq(lineOfEl(p, hb).breaker, 32); eq(aHb.circuitId, hb.circuitId);
+      eq(p.rcdGroups.length, 1, "групповое УЗО создано в модели");
+      const msgs = EP.Plan.Rules.run(p).issues.map((i) => i.msg).join("\n");
+      ok(!/розетки без УЗО/.test(msgs), "по ПУЭ УЗО на розетках есть");
+      ok(!/не назначена линия/.test(msgs), "технике назначена линия");
+      eq(AP.propose(p, "free").lines.length, 0, "повторно предлагать нечего");
+    });
+    test("лимит розеток на линию из «Проверок»: 20 розеток комнаты → 3 линии", () => {
+      const p = EP.Plan.Core.createProject("ap58b");
+      const R = M.newRoom(G.rectPoints(0, 0, 800, 600), "Зал"); p.rooms.push(R); p.panels.push(M.newPanel(20, 20, "Щ"));
+      for (let i = 0; i < 20; i++) p.elements.push(M.newElement("socket", R.id + ":" + (i % 4), 40 + (i >> 2) * 60, 30, "power"));
+      const prop = AP.propose(p, "free");
+      const sock = prop.lines.filter((l) => l.kind === "sock");
+      eq(sock.length, 3); ok(sock.every((l) => l.n <= 8), "не больше 8 на линию");
+      p.settings.rules = { maxSocketsPerCircuit: 10 };
+      eq(AP.propose(p, "free").lines.filter((l) => l.kind === "sock").length, 2, "порог берётся из настроек проверок");
+    });
+    test("режимы: «только без линии» продолжает нумерацию, «пересобрать» заменяет, ↶ возвращает", () => {
+      const { p, fr } = seed58();
+      const q = M.newCircuit("QF5", "#000", 16); p.circuits.push(q); fr.circuitId = q.id;
+      const prop = AP.propose(p, "free");
+      ok(prop.lines.every((l) => l.elIds.indexOf(fr.id) < 0), "точка на линии не трогается");
+      eq(prop.lines[0].name, "QF6", "нумерация продолжает существующие");
+      const C0 = EP.Plan.Core;
+      C0.importJSON(C0.exportJSON());
+      const P = C0.project;
+      AP.apply(AP.propose(P, "all"));
+      ok(!P.circuits.some((c) => c.name === "QF5" && !c.title), "старые линии заменены");
+      eq(P.circuits[0].name, "QF1", "нумерация с начала");
+      C0.undo();
+      ok(C0.project.circuits.length === 1 && C0.project.circuits[0].name === "QF5", "↶ вернул как было, одним шагом");
+    });
+    test("кнопка и подключение модуля", () => {
+      const fs58 = require("fs"), path58 = require("path");
+      const mount = fs58.readFileSync(path58.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-mount.js"), "utf8");
+      ok(/data-plan-grp="elec" data-plan-autoproj/.test(mount), "кнопка ⚡ во вкладке «Электрика»");
+      const idx = fs58.readFileSync(path58.join(__dirname, "..", "index.html"), "utf8");
+      ok(idx.indexOf("plan/plan-autoproject.js") > idx.indexOf("plan/plan-scheme.js") && idx.indexOf("plan/plan-circuits.js") > 0, "модуль подключён после схемы");
+      const rt = fs58.readFileSync(path58.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-routes.js"), "utf8");
+      ok(/"autoproject": 1/.test(rt), "после применения трассы перестраиваются");
+    });
+  }
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

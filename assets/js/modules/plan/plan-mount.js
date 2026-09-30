@@ -177,6 +177,7 @@
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="ruler" aria-label="Рулетка">📏</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="underlay" aria-label="Подложка-фото">🖼</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-mode="elem" aria-label="Точки: розетки, свет">🔌</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-autoproj aria-label="Сформировать проект: линии, автоматы, УЗО по точкам" title="Сформировать проект: линии, автоматы и УЗО по расставленным точкам">⚡</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-mode="guide" aria-label="Магистраль трасс — приоритетное направление автотрассировки" title="Нарисуй линию по коридору — трассы пойдут по ней">⇉</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-layers aria-label="Слои">🗂</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-routes aria-label="Трассы">🧵</button>
