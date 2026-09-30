@@ -597,7 +597,178 @@
   // Бэкофилл проектов, сохранённых/экспортированных до появления новых полей —
   // применяется и при открытии (openProject), и при импорте JSON (importJSON),
   // чтобы старые/сторонние проекты не теряли настройки молча.
+  // ---- санитайзер модели: проект приходит из чата (от ДРУГИХ мастеров), из облака и
+  // из файлов — и раньше не проверялся вообще. Фаззинг показал: одной трассы без точек,
+  // цели выключателя строкой вместо массива или перегородки без конца хватало, чтобы
+  // падали трассировка, план на экране, PDF и DXF целиком (весь проект, а не один
+  // объект), а мусорные числа (высота/отступ/высота потолка строкой или NaN) протекали
+  // в смету и PDF как «NaN». Правило: ЧИНИМ то, что можно починить (строку-число → число,
+  // одиночную цель → массив, мусорное число → значение по умолчанию), и ВЫБРАСЫВАЕМ
+  // только то, что без координат физически не существует (трасса/перегородка/магистраль
+  // без точек). Корректный проект не меняется ни на байт — тест это стережёт.
+  function sanitizeProject(p) {
+    if (!p || typeof p !== "object") return p;
+    const num = (v) => (typeof v === "string" && v.trim() !== "" ? Number(v) : v);
+    const fin = (v) => { const n = num(v); return typeof n === "number" && Number.isFinite(n) ? n : null; };
+    const str = (v) => (typeof v === "string" ? v : null);
+    const isPt = (q) => q && typeof q === "object" && Number.isFinite(q.x) && Number.isFinite(q.y);
+    const obj = (v) => (v && typeof v === "object" && !Array.isArray(v));
+    const list = (k) => { p[k] = Array.isArray(p[k]) ? p[k].filter(obj) : []; return p[k]; };
+    const ids = (arr, pfx) => {
+      const seen = new Set();
+      arr.forEach((x) => { if (typeof x.id !== "string" || !x.id || seen.has(x.id)) x.id = uid(pfx); seen.add(x.id); });
+    };
+    if (typeof p.name !== "string") p.name = String(p.name == null ? "Проект" : p.name);
+    // --- настройки: у числовых по DEFAULTS мусор → значение по умолчанию (null не трогаем —
+    // часть настроек null осознанно, их проставит бэкофилл)
+    if (!obj(p.settings)) p.settings = {};
+    const S0 = p.settings;
+    Object.keys(DEFAULTS).forEach((k) => {
+      if (typeof DEFAULTS[k] !== "number" || S0[k] == null) return;
+      const n = fin(S0[k]);
+      S0[k] = n == null ? DEFAULTS[k] : n;
+    });
+    ["cableReserve", "cableStubPoint", "cableStubJunction", "cableStubPanel", "tempLightingPts", "tempSocketsPts", "northDeg"].forEach((k) => {
+      if (S0[k] == null) return; const n = fin(S0[k]); S0[k] = n == null ? (DEFAULTS[k] != null ? DEFAULTS[k] : 0) : n;
+    });
+    if (!(S0.ceilingHeight > 0)) S0.ceilingHeight = DEFAULTS.ceilingHeight;
+    const ceil = S0.ceilingHeight;
+    if (Array.isArray(p.floors)) {
+      p.floors = p.floors.filter(obj);
+      p.floors.forEach((f) => { if (f.height != null) { const n = fin(f.height); f.height = n > 0 ? n : null; } if (typeof f.name !== "string") f.name = "Этаж"; });
+      ids(p.floors, "fl");
+    }
+    // --- линии
+    const circuits = list("circuits"); ids(circuits, "cc");
+    circuits.forEach((c) => {
+      const b = fin(c.breaker); c.breaker = b > 0 ? b : 16;
+      const pl = fin(c.poles); c.poles = pl === 3 ? 3 : 1;
+      if (typeof c.name !== "string") c.name = String(c.name == null ? "Линия" : c.name);
+      if (typeof c.color !== "string") c.color = DEFAULTS.circuitColors[0];
+      c.rcd = !!c.rcd;
+      if (c.cable != null && typeof c.cable !== "string") c.cable = null;
+      if (c.cable220 != null && typeof c.cable220 !== "string") c.cable220 = null;
+    });
+    const cSet = new Set(circuits.map((c) => c.id));
+    const cid = (v) => (typeof v === "string" && cSet.has(v) ? v : null);
+    // --- комнаты
+    list("rooms"); ids(p.rooms, "rm");
+    p.rooms = p.rooms.filter((r) => {
+      if (!Array.isArray(r.points)) return false;
+      r.points = r.points.filter(isPt);
+      if (r.points.length < 3) return false;
+      if (typeof r.name !== "string") r.name = String(r.name == null ? "Комната" : r.name);
+      if (r.height != null) { const n = fin(r.height); r.height = n > 0 ? n : null; }
+      if (r.material != null && typeof r.material !== "string") r.material = null;
+      // переопределения по стенам: массив ИЛИ разреженный объект {индекс: значение}
+      // (оба формата живут в проектах) — чиним значения, форму не меняем
+      const perWall = (key, fix) => {
+        const v = r[key];
+        if (v == null) return;
+        if (Array.isArray(v)) { r[key] = v.map(fix); return; }
+        if (typeof v !== "object") { delete r[key]; return; }
+        Object.keys(v).forEach((i) => { v[i] = fix(v[i]); });
+      };
+      perWall("wallTh", (v) => { const n = fin(v); return n > 0 ? n : null; });
+      perWall("wallMat", (v) => (typeof v === "string" ? v : null));
+      perWall("wallDimOff", (v) => fin(v));
+      if (!Array.isArray(r.zones)) r.zones = [];
+      return true;
+    });
+    // --- точки
+    list("elements");
+    p.elements = p.elements.filter((el) => typeof el.type === "string" && el.type);
+    ids(p.elements, "el");
+    p.elements.forEach((el) => {
+      if (el.wallId != null && typeof el.wallId !== "string") el.wallId = null;
+      const o = fin(el.offset); el.offset = o == null ? 0 : o;
+      const h = fin(el.height); el.height = h == null ? (el.wallId ? 30 : ceil) : h;
+      el.circuitId = cid(el.circuitId);
+      if (!obj(el.params)) el.params = {};
+      ["x", "y"].forEach((k) => { if (el.params[k] != null && fin(el.params[k]) == null) delete el.params[k]; else if (el.params[k] != null) el.params[k] = fin(el.params[k]); });
+      if (el.params.items != null) el.params.items = Array.isArray(el.params.items) ? el.params.items.filter((t) => typeof t === "string" && t) : [];
+      if (el.params.itemMeta != null && !Array.isArray(el.params.itemMeta)) el.params.itemMeta = [];
+      if (!Array.isArray(el.photos)) el.photos = [];
+      el.photos = el.photos.filter((x) => typeof x === "string");
+      if (typeof el.status !== "string") el.status = "planned";
+      const k = fin(el.keys); el.keys = k >= 1 && k <= 3 ? Math.round(k) : 1;
+      // цели клавиш: строка (одна цель) ИЛИ массив строк (несколько) на КАЖДУЮ клавишу
+      let t = el.targetIds;
+      if (typeof t === "string") t = [t];
+      if (!Array.isArray(t)) t = [];
+      el.targetIds = t.map((e) => {
+        if (typeof e === "string") return e;
+        if (Array.isArray(e)) { const a = e.filter((x) => typeof x === "string" && x); return a.length > 1 ? a : (a[0] || null); }
+        return null;
+      });
+      if (el.targetId != null && typeof el.targetId !== "string") el.targetId = null;
+      if (el.chainNext != null && typeof el.chainNext !== "string") el.chainNext = null;
+      if (el.riserLink != null && typeof el.riserLink !== "string") el.riserLink = null;
+    });
+    // --- щиты
+    list("panels"); ids(p.panels, "pn");
+    p.panels.forEach((pn) => {
+      pn.x = fin(pn.x) == null ? 0 : fin(pn.x); pn.y = fin(pn.y) == null ? 0 : fin(pn.y);
+      if (pn.height != null) { const n = fin(pn.height); pn.height = n == null ? null : n; }
+      if (typeof pn.name !== "string") pn.name = String(pn.name == null ? "Щит" : pn.name);
+    });
+    // --- проёмы
+    list("openings"); ids(p.openings, "op");
+    p.openings.forEach((o) => {
+      if (o.wallId != null && typeof o.wallId !== "string") o.wallId = null;
+      const d = OPENING_KINDS[o.kind] || OPENING_KINDS[o.type === "window" ? "window" : "door"];
+      const w = fin(o.width); o.width = w > 0 ? w : d.w;
+      const of = fin(o.offset); o.offset = of == null ? 0 : of;
+      if (o.height != null) { const n = fin(o.height); o.height = n > 0 ? n : d.h; }
+      if (o.sill != null) { const n = fin(o.sill); o.sill = n == null ? d.sill : n; }
+      if (o.flip !== 1 && o.flip !== -1) o.flip = 1;
+    });
+    // --- трассы: без двух настоящих точек трассы физически нет — убираем (build построит заново)
+    list("routes"); ids(p.routes, "rt");
+    p.routes = p.routes.filter((r) => Array.isArray(r.points) && r.points.length >= 2 && r.points.every(isPt));
+    p.routes.forEach((r) => {
+      if (!Array.isArray(r.throughWalls)) r.throughWalls = [];
+      r.throughWalls = r.throughWalls.filter((x) => obj(x) && (!x.p || isPt(x.p)));
+      if (r.fromId != null && typeof r.fromId !== "string") r.fromId = null;
+      if (r.toId != null && typeof r.toId !== "string") r.toId = null;
+      if (r.circuitId != null) r.circuitId = cid(r.circuitId);
+    });
+    // --- перегородки/пустоты/размеры: два конца обязательны
+    list("beams"); ids(p.beams, "bm");
+    p.beams = p.beams.filter((b) => isPt(b.a) && isPt(b.b));
+    p.beams.forEach((b) => { const w = fin(b.width); b.width = w > 0 ? w : DEFAULTS.wallThickness; });
+    list("voids"); ids(p.voids, "vd");
+    p.voids = p.voids.filter((v) => isPt(v.a) && isPt(v.b));
+    list("dims"); ids(p.dims, "dm");
+    p.dims = p.dims.filter((d) => isPt(d.a) && isPt(d.b));
+    p.dims.forEach((d) => { const o = fin(d.off); d.off = o == null ? 40 : o; });
+    list("guides"); ids(p.guides, "gd");
+    p.guides.forEach((g) => { g.points = Array.isArray(g.points) ? g.points.filter(isPt) : []; });
+    p.guides = p.guides.filter((g) => g.points.length >= 2);
+    list("ledStrips"); ids(p.ledStrips, "ls");
+    p.ledStrips = p.ledStrips.filter((l) => typeof l.wallId === "string" && fin(l.offsetA) != null && fin(l.offsetB) != null);
+    p.ledStrips.forEach((l) => { l.offsetA = fin(l.offsetA); l.offsetB = fin(l.offsetB); l.height = fin(l.height) == null ? 0 : fin(l.height); l.circuitId = cid(l.circuitId); });
+    list("notes"); ids(p.notes, "nt");
+    p.notes = p.notes.filter((n) => fin(n.x) != null && fin(n.y) != null);
+    p.notes.forEach((n) => {
+      n.x = fin(n.x); n.y = fin(n.y);
+      if (typeof n.text !== "string") n.text = n.text == null ? "" : String(n.text);
+      if (fin(n.ax) == null || fin(n.ay) == null) { n.ax = null; n.ay = null; }
+    });
+    list("appliances"); ids(p.appliances, "ap");
+    p.appliances = p.appliances.filter((a) => fin(a.x) != null && fin(a.y) != null);
+    p.appliances.forEach((a) => {
+      a.x = fin(a.x); a.y = fin(a.y);
+      const w = fin(a.w), d = fin(a.d), r = fin(a.rot);
+      a.w = w > 0 ? w : 60; a.d = d > 0 ? d : 60; a.rot = r == null ? 0 : r % 360;
+      if (a.watt != null) { const n = fin(a.watt); a.watt = n >= 0 ? n : null; }
+      a.circuitId = cid(a.circuitId);
+    });
+    return p;
+  }
+  // (экспорт для тестов — см. EP.Plan.Core.sanitizeProject)
   function backfillProject(p) {
+    sanitizeProject(p);
     if (p.client == null) p.client = "";
     // «до какой версии проект доехал в облако» — у старых проектов метки нет; 0 значит
     // «в облаке не видели», и первое же расхождение будет разрешено в пользу облака
@@ -981,6 +1152,7 @@
     commit, undo, redo, canUndo, canRedo, persist,
     flushPersist, // добить отложенную запись немедленно (уход со страницы, тесты)
     exportJSON, exportJSONById, importJSON, cloudPullIndex, syncState, cloudReady,
+    sanitizeProject, // проверка/починка модели на входе (импорт/облако/чат) — см. функцию
     addFloor, renameFloor, setActiveFloor, setFloorHeight, deleteFloor,
     photoUrl, addPhoto,
     model: { newProject, newRoom, newPanel, newElement, newRoute, newCircuit, newOpening, newBeam, newVoid, newAppliance, newGuide, newNote, newDim, newManualScheme, newSchemeGroup, newSchemeLine, newLedStrip, newFloor }

@@ -1462,6 +1462,12 @@
     // полос): не пишем ни в undo-историю, ни на диск, иначе один клик «Построить» оставил
     // бы десятки снимков undo и столько же записей в localStorage
     const quiet = !!(opts && opts.noCommit);
+    // noUndo — запись на диск ЕСТЬ, а undo-снимка НЕТ: автоперестройка трасс после правки
+    // геометрии. Снимок перед самой правкой (перенос комнаты/точки) уже сделан тем, кто
+    // правил, — и в нём лежат СТАРЫЕ трассы. Свой снимок здесь делил бы одно действие на
+    // ДВА шага истории, и первый ↶ возвращал бы старые трассы при сдвинутой комнате
+    // (трассы «висели» мимо неё до второго ↶), а реальная глубина отмены падала вдвое.
+    const noUndo = quiet || !!(opts && opts.noUndo);
     const c = core(), p = c.project;
     p.circuits = p.circuits || [];
     const fp = G().floorScoped(p); // щиты/точки/распайки ТОЛЬКО активного этажа — иначе
@@ -1475,7 +1481,7 @@
     const points = (fp.elements || []).filter((el) => isPoint(el) && !sinkIds.has(el.id));
     if (!points.length) { if (!silent) rooms().toast(T.noElems); return; }
     setAutoLane(fp);                 // порядок полос по геометрии (см. computeAutoLane)
-    if (!quiet) c.commit();
+    if (!noUndo) c.commit();
     // Чистим/перестраиваем ТОЛЬКО трассы АКТИВНОГО этажа — трассы других этажей
     // изолированы (своя геометрия) и не трогаются: иначе «Построить» на этаже 2
     // незаметно стирал бы уже готовые трассы этажа 1.
@@ -2131,7 +2137,7 @@
     const w = many ? getWorker() : null;
     if (!w) { // мало точек или воркеров нет — как раньше, синхронно
       rebuilding = true;
-      try { build({ silent: true }); } finally { rebuilding = false; }
+      try { build({ silent: true, noUndo: true }); } finally { rebuilding = false; }
       return;
     }
     // коалесинг: важен только последний результат. solverBusy — воркеры заняты тяжёлым
@@ -2141,7 +2147,7 @@
     if (autoBusy || solverBusy) { autoPending = true; return; }
     let snapshot;
     try { snapshot = JSON.parse(JSON.stringify(p)); } catch (e) {
-      rebuilding = true; try { build({ silent: true }); } finally { rebuilding = false; } return;
+      rebuilding = true; try { build({ silent: true, noUndo: true }); } finally { rebuilding = false; } return;
     }
     const seq = ++autoSeq, pid = p.id;
     autoBusy = true;
@@ -2157,7 +2163,7 @@
         const c = core();
         rebuilding = true; // не зацикливаться на своём же persist
         try {
-          c.commit();
+          // БЕЗ c.commit(): снимок «до правки» уже в истории (см. noUndo в build)
           const fid0 = cur.floors && cur.floors[0] && cur.floors[0].id;
           cur.routes = d.routes.map((r) => (r.floorId ? r : Object.assign({}, r, { floorId: cur.activeFloorId || fid0 })));
           c.persist("routes-build");
@@ -2173,6 +2179,9 @@
     core().onChange((what) => {
       // другой проект открыт — список «Без трассы» от прошлого проекта больше не про него
       if (what === "open" || what === "import") { lastUnrouted = []; lastUnroutedPid = null; graphCache = null; wallsCache = null; autoSeq++; autoPending = false; precalc = null; schedulePrecalc(); return; }
+      // ↶/↷ восстанавливают трассы из снимка вместе с геометрией — результат фоновой
+      // автоперестройки, начатой ДО отмены, считался по уже отменённой геометрии: не применять
+      if (what === "undo" || what === "redo") { autoSeq++; autoPending = false; }
       // ЛЮБОЕ изменение обесценивает фоновый предрасчёт (он был на прошлом состоянии) —
       // сбрасываем кэш и переводим таймер на новую точку простоя
       if (!rebuilding) { precalc = null; schedulePrecalc(); }

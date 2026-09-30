@@ -2246,9 +2246,11 @@ test("newProject: floors — один этаж по умолчанию, activeFl
 });
 test("backfillProject: старый проект без floors — миграция на один этаж, все сущности получают floorId", () => {
   const old = {
-    name: "old", settings: {}, rooms: [{ id: "r1", points: [] }], elements: [{ id: "e1" }],
-    panels: [{ id: "p1", x: 0, y: 0 }], routes: [{ id: "rt1" }], beams: [{ id: "b1" }],
-    voids: [{ id: "v1" }], ledStrips: [{ id: "l1" }], openings: [{ id: "o1", type: "door", wallId: "r1:0" }]
+    // минимально ЦЕЛЫЕ объекты старого формата (без floorId и новых полей): санитайзер
+    // выбрасывает только то, что без координат физически не существует
+    name: "old", settings: {}, rooms: [{ id: "r1", points: [{ x: 0, y: 0 }, { x: 300, y: 0 }, { x: 300, y: 300 }] }], elements: [{ id: "e1", type: "socket", wallId: "r1:0", offset: 50, height: 30 }],
+    panels: [{ id: "p1", x: 0, y: 0 }], routes: [{ id: "rt1", points: [{ x: 0, y: 0 }, { x: 10, y: 0 }] }], beams: [{ id: "b1", a: { x: 0, y: 50 }, b: { x: 100, y: 50 } }],
+    voids: [{ id: "v1", a: { x: 10, y: 10 }, b: { x: 40, y: 40 } }], ledStrips: [{ id: "l1", wallId: "r1:0", offsetA: 10, offsetB: 90 }], openings: [{ id: "o1", type: "door", wallId: "r1:0" }]
   };
   const imp = EP.Plan.Core.importJSON(JSON.stringify({ project: old }));
   ok(Array.isArray(imp.floors) && imp.floors.length === 1, "миграция создала один этаж");
@@ -2394,7 +2396,7 @@ test("Стояк: «Проверки» ловят стояк без пары и 
   ok(res.issues.some((i) => /нет щита и нет связанного стояка/i.test(i.msg)), "этаж без питания помечен");
 });
 test("Стояк: бэкофилл — высота этажа и slabThickness у старых проектов", () => {
-  const imp = EP.Plan.Core.importJSON(JSON.stringify({ project: { name: "o", settings: {}, rooms: [], elements: [{ id: "e1" }] } }));
+  const imp = EP.Plan.Core.importJSON(JSON.stringify({ project: { name: "o", settings: {}, rooms: [], elements: [{ id: "e1", type: "socket" }] } }));
   eq(imp.floors[0].height, null, "высота этажа по умолчанию не задана");
   eq(imp.settings.slabThickness, 20, "перекрытие 20 см по умолчанию");
   eq(imp.elements[0].riserLink, null, "riserLink проставлен бэкофиллом");
@@ -7162,6 +7164,99 @@ test("фото: deleteProject чистит кэш фото своего прое
         ok(tabs.indexOf(k) > 0, "ключ " + k));
       ok(/prnMk\(\)/.test(tabs), "надбавки уходят в бланк одним объектом");
       ok(/workMarkup:\s*mk\.work/.test(tabs) && /pad:\s*mk\.pad/.test(tabs), "процент прораба и резерв — в контракте бланка");
+    });
+  }
+
+  // ===== 56. Фундамент «Проекта квартиры»: undo без двойного шага, санитайзер импорта =====
+  {
+    const fs56 = require("fs"), path56 = require("path");
+    const pdir56 = path56.join(__dirname, "..", "assets", "js", "modules", "plan");
+    const psrc56 = (n) => fs56.readFileSync(path56.join(pdir56, n + ".js"), "utf8");
+    // квартира из двух комнат с дверью, щитом и точками — трассы строятся
+    const seed56 = () => {
+      const p = EP.Plan.Core.createProject("u56");
+      const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "A"), B = M.newRoom(G.rectPoints(400, 0, 300, 300), "B");
+      p.rooms.push(A, B);
+      const q = M.newCircuit("QF1", "#e11", 16); p.circuits.push(q);
+      p.panels.push(M.newPanel(40, 250, "Щит"));
+      [[A.id + ":0", 120], [A.id + ":2", 200]].forEach(([w, o]) => { const e = M.newElement("socket", w, o, 30, "power"); e.circuitId = q.id; p.elements.push(e); });
+      EP.Plan.Core.persist("seed");
+      EP.Plan.Routes.build({ silent: true });
+      return { p, A };
+    };
+    test("undo: правка геометрии = ОДИН шаг истории, ↶ возвращает и комнату, и трассы разом", () => {
+      const { A } = seed56();
+      const C = EP.Plan.Core;
+      const routes0 = JSON.stringify(C.project.routes.map((r) => r.points));
+      const x0 = A.points[0].x;
+      // сбрасываем историю (сборка трасс выше сделала свой шаг) и двигаем комнату
+      C.importJSON(C.exportJSON());
+      const P = C.project, A2 = P.rooms.find((r) => r.name === "A");
+      EP.Plan.Rooms.moveRoom(A2.id, 50, 0, { raw: true });   // → автоперестройка трасс
+      ok(JSON.stringify(P.routes.map((r) => r.points)) !== routes0, "трассы перестроились после переноса");
+      ok(C.canUndo(), "шаг в истории есть");
+      C.undo();
+      const P1 = C.project;
+      eq(P1.rooms.find((r) => r.name === "A").points[0].x, x0, "комната вернулась");
+      eq(JSON.stringify(P1.routes.map((r) => r.points)), routes0, "трассы вернулись ВМЕСТЕ с ней, с первого ↶");
+      ok(!C.canUndo(), "второго (лишнего) шага истории нет");
+      C.redo();
+      eq(C.project.rooms.find((r) => r.name === "A").points[0].x, x0 + 50, "↷ возвращает перенос");
+      ok(JSON.stringify(C.project.routes.map((r) => r.points)) !== routes0, "…и перестроенные трассы");
+    });
+    test("санитайзер: испорченный проект открывается и считается без исключений и NaN", () => {
+      const { p } = seed56();
+      const bad = JSON.parse(JSON.stringify(p));
+      const sw = M.newElement("switch", bad.rooms[0].id + ":3", 60, "90", "light");
+      sw.targetIds = "ghost"; sw.keys = "7"; bad.elements.push(sw);           // цель строкой, клавиши строкой
+      bad.elements[0].offset = "abc"; bad.elements[1].height = null;           // мусор в числах
+      bad.elements.push(null, 5, { id: "x" });                                  // не объекты / без типа
+      bad.routes.push({ id: "rz", points: null }, { id: "ry", points: [{ x: NaN, y: 1 }, { x: 2, y: 2 }] });
+      bad.beams = [{ id: "b1", a: null, b: { x: 1, y: 1 } }];
+      bad.guides = [{ id: "g1", points: [{ x: 0, y: 0 }] }];
+      bad.settings.ceilingHeight = "abc"; bad.settings.routeOffset = "20"; bad.settings.cableReserve = NaN;
+      bad.circuits[0].breaker = "abc"; bad.circuits[0].poles = "3";
+      bad.rooms.push({ id: "rr", name: "пустая", points: [{ x: 0, y: 0 }] });
+      const P = EP.Plan.Core.importJSON(JSON.stringify({ project: bad }));
+      ok(P, "проект открылся");
+      eq(P.settings.ceilingHeight, 270, "высота потолка — по умолчанию"); eq(P.settings.routeOffset, 20, "строка-число стала числом");
+      eq(P.circuits[0].breaker, 16, "мусорный номинал — 16A"); eq(P.circuits[0].poles, 3, "«3» стало 3");
+      const s2 = P.elements.find((e) => e.type === "switch" && e.keys === 1 && Array.isArray(e.targetIds));
+      ok(s2 && s2.targetIds[0] === "ghost", "одиночная цель стала массивом, клавиши в пределах 1..3");
+      ok(P.elements.every((e) => typeof e.type === "string" && Number.isFinite(e.offset) && Number.isFinite(e.height)), "у точек тип и конечные числа");
+      ok(P.routes.every((r) => r.points.length >= 2), "трассы без точек выброшены");
+      eq(P.beams.length, 0, "перегородка без конца выброшена"); eq(P.guides.length, 0, "магистраль из одной точки выброшена");
+      eq(P.rooms.length, 2, "комната без контура выброшена");
+      const run = [
+        () => EP.Plan.Routes.build({ silent: true, noCommit: true }), () => EP.Plan.Calc.calcByRoutes(P),
+        () => EP.Plan.Rules.run(P), () => EP.Plan.Render.draw(fakeCanvas(), P, {}),
+        () => EP.Plan.Export.sheetHtml(P), () => EP.Plan.Dxf.build(P)
+      ];
+      run.forEach((f, i) => { try { f(); } catch (e) { ok(false, "шаг " + i + " упал: " + e.message); } });
+      const items = EP.Plan.Calc.estimateItems(P) || [];
+      ok(items.every((it) => Number.isFinite(it.qty)), "в смете нет NaN");
+    });
+    test("санитайзер: ЦЕЛЫЙ проект не меняется ни на байт", () => {
+      const { p } = seed56();
+      p.rooms[0].wallTh = { 0: 20 }; p.rooms[1].wallMat = ["ГКЛ", null];
+      const sw = M.newElement("switch", p.rooms[0].id + ":3", 60, 90, "light"); sw.targetIds = [["a", "b"], "c", null]; p.elements.push(sw);
+      p.notes.push(M.newNote(10, 10, "т")); p.dims.push(M.newDim({ x: 0, y: 0 }, { x: 100, y: 0 }));
+      const before = JSON.stringify(p);
+      EP.Plan.Core.sanitizeProject(p);
+      eq(JSON.stringify(p), before, "sanitize(целый) === целый");
+    });
+    test("однолинейка: имя линии уходит в схему как есть (экранирует сама схема — без двойного &amp;)", () => {
+      const { p } = seed56();
+      p.circuits[0].name = "Свет & кухня";
+      const t = EP.Plan.Scheme.buildTree(p);
+      eq(t.children[0].id, "Свет & кухня", "id без предварительного экранирования");
+    });
+    test("пустое числовое поле = «не менять», а не 0", () => {
+      const el = psrc56("plan-elements"), un = psrc56("plan-unfold"), fu = psrc56("plan-furniture");
+      ok(/function numVal\(sel\)/.test(el) && /numVal\("#ep-pe-h"\)/.test(el) && /numVal\("#ep-po-sill"\)/.test(el), "редакторы точки и проёма читают через numVal");
+      ok(!/Number\(\(\$\("#ep-pe-h"\)/.test(el) && !/Number\(\(\$\("#ep-po-sill"\)/.test(el), "прямого Number(поле) не осталось");
+      ok(/if \(!raw\) return; \/\/ пусто = не менять/.test(un), "карточка развёртки не ставит 0 на пустом");
+      ok(/const watt = nv\("#ep-pf-watt"\)/.test(fu), "мощность техники тоже");
     });
   }
 

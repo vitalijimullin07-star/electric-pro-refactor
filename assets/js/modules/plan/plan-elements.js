@@ -947,16 +947,23 @@
     });
   }
   function current() { return core().project.elements.find((e) => e.id === S.selId) || null; }
+  // значение числового поля: ПУСТОЕ поле = NaN («не менять»), а не 0. Раньше
+  // Number("") давал 0 — стёр «Высоту», нажал ✓, и розетка молча вставала на пол.
+  // Запятая как десятичный разделитель тоже понимается (так печатают на телефоне).
+  function numVal(sel) {
+    const n = $(sel); const v = n && n.value != null ? String(n.value).trim() : "";
+    return v ? Number(v.replace(",", ".")) : NaN;
+  }
 
   function applyEditor() {
     const c = core(), el = current(); if (!el) return;
     c.commit();
     if (el.wallId) {
       const w = G().wallById(c.project, el.wallId);
-      const off = Number(($("#ep-pe-off") || {}).value);
+      const off = numVal("#ep-pe-off");
       if (Number.isFinite(off) && w) el.offset = Math.max(0, Math.min(w.len, off));
     }
-    const h = Number(($("#ep-pe-h") || {}).value);
+    const h = numVal("#ep-pe-h");
     if (Number.isFinite(h)) el.height = Math.max(0, h);
     c.persist("elem-edit");
     // ✓ — применить и закрыть. У НАКЛАДНОГО редактора (поверх развёртки) закрываем только
@@ -1203,8 +1210,8 @@
       const c = core(), op = currentOpening(); if (!op) return;
       const wall = G().wallById(c.project, op.wallId);
       c.commit();
-      const off = Number(($("#ep-po-off") || {}).value), wd = Number(($("#ep-po-w") || {}).value);
-      const hd = Number(($("#ep-po-h") || {}).value), sill = Number(($("#ep-po-sill") || {}).value);
+      const off = numVal("#ep-po-off"), wd = numVal("#ep-po-w");
+      const hd = numVal("#ep-po-h"), sill = numVal("#ep-po-sill");
       if (Number.isFinite(wd) && wd >= 40) op.width = wd;
       if (Number.isFinite(hd) && hd >= 40) op.height = hd;
       if (Number.isFinite(sill) && sill >= 0) op.sill = sill;

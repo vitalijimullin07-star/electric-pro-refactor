@@ -86,7 +86,9 @@
   function buildTree(p) {
     const s = p.settings, circuits = p.circuits || [];
     const children = circuits.map((c) => ({
-      id: esc(c.name), label: loadSummary(p, c), rating: (c.breaker || 16) + "A",
+      // БЕЗ esc(): ShieldSchemeSVG сам экранирует node.id/label при выводе — здесь это
+      // давало ДВОЙНОЕ экранирование («Свет &amp;amp; кухня» на экране и в PDF)
+      id: String(c.name == null ? "" : c.name), label: loadSummary(p, c), rating: (c.breaker || 16) + "A",
       type: c.rcd ? "rcbo" : "mcb", poles: c.poles === 3 ? 3 : 1,
       cable: (c.cable || autoCable(p, c)),
       children: [{ type: "load", label: loadKindLabel(p, c), children: [] }]
