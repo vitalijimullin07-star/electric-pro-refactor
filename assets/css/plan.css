@@ -1211,3 +1211,10 @@ body[data-flatshadow="1"] .ep-plan-furn.is-sel .ep-plan-furnrect { filter: none;
 .ep-plan-syncb.is-cloud { background: rgba(56, 189, 248, .2); color: #38bdf8; }
 .ep-plan-syncb.is-pending { background: rgba(245, 158, 11, .2); color: #f59e0b; }
 .ep-plan-syncb.is-local { background: rgba(148, 163, 184, .2); color: var(--muted); }
+
+/* ⇉ магистрали по группам трасс (пакет 7): список в шторке + номер у начала линии */
+.ep-plan-slabel { font: 700 11.5px system-ui; letter-spacing: .02em; color: var(--muted, #94a3b8); margin-top: 4px; }
+.ep-plan-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ep-plan-gdrow { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; border-top: 1px solid rgba(148, 163, 184, .22); }
+.ep-plan-guidenum { font: 800 12px system-ui; paint-order: stroke; stroke: rgba(11, 18, 32, .75); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+body[data-visual-mode="day"] .ep-plan-guidenum, .ep-plan.is-paper .ep-plan-guidenum { stroke: rgba(255, 255, 255, .85); }

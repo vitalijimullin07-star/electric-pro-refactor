@@ -7751,6 +7751,108 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 63. ⇉ Магистрали: дерево по смежным комнатам и группы трасс =====
+  {
+    const RT = EP.Plan.Routes;
+    const crossAt = (pts, x0) => { // y, на котором путь пересекает вертикаль x = x0
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i], b = pts[i + 1];
+        if ((a.x - x0) * (b.x - x0) <= 0 && Math.abs(b.x - a.x) > 0.01) return a.y + (b.y - a.y) * (x0 - a.x) / (b.x - a.x);
+      }
+      return null;
+    };
+    const enfilade = (n) => {
+      const rooms = []; for (let i = 0; i < n; i++) rooms.push(M.newRoom(G.rectPoints(i * 400, 0, 400, 300), "К" + (i + 1)));
+      const cc = M.newCircuit("QF1", "#f00", 16);
+      const r = install({ rooms, circuits: [cc], panels: [M.newPanel(40, 150, "Щ")] });
+      return Object.assign(r, { cc });
+    };
+    test("анфилада без коридора: дерево от комнаты щита доходит до дальней, по стене на переход", () => {
+      const { P, cc } = enfilade(4);
+      const e = M.newElement("socket", P.rooms[3].id + ":0", 200, 30); e.circuitId = cc.id; P.elements.push(e);
+      const tr = RT.suggestTree(P);
+      ok(tr && tr.polys.length === 3, "три перехода A→B→C→D, получили " + (tr && tr.polys.length));
+      eq(tr.root, P.rooms[0].id, "корень — комната щита");
+      const n = RT.suggestGuides();
+      eq(n, 3, "в проект положены три ветки");
+      RT.build();
+      eq(P.routes.length, 1, "дальняя розетка отрассирована");
+      // общая стена записана за ОБЕ комнаты — физическое место одно (так же группирует sleeveGroups)
+      const xs = [...new Set((P.routes[0].throughWalls || []).map((c) => Math.round(c.x / 10) * 10 + ":" + Math.round(c.y / 10) * 10))];
+      eq(xs.length, 3, "ровно три места проходки: " + xs.join(" "));
+      ok(["400:150", "800:150", "1200:150"].every((k) => xs.indexOf(k) >= 0), "по одной в каждой общей стене");
+    });
+    test("переход между комнатами — через дверь на общей стене, а не посередине стены", () => {
+      const { P, cc } = enfilade(2);
+      const op = M.newOpening("door", P.rooms[0].id + ":1", 40, 90); op.sill = 0; P.openings.push(op);
+      const e = M.newElement("socket", P.rooms[1].id + ":1", 150, 30); e.circuitId = cc.id; P.elements.push(e);
+      const tr = RT.suggestTree(P);
+      eq(tr.doors, 1, "переход через дверь");
+      const y = crossAt(tr.polys[0], 400);
+      ok(y != null && Math.abs(y - 85) < 3, "ветка пересекает стену в центре двери (y=85): " + y);
+    });
+    test("глухая стена короче двери не перевешивает: дерево выбирает путь через дверь", () => {
+      // A слева, B справа, C под обоими; A-B — глухая стена, A-C и C-B — с дверьми
+      const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "A"), B = M.newRoom(G.rectPoints(400, 0, 400, 300), "B");
+      const C = M.newRoom(G.rectPoints(0, 300, 800, 200), "C");
+      const cc = M.newCircuit("QF1", "#f00", 16);
+      const { P } = install({ rooms: [A, B, C], circuits: [cc], panels: [M.newPanel(40, 150, "Щ")] });
+      const d1 = M.newOpening("door", P.rooms[0].id + ":2", 150, 90); d1.sill = 0;
+      const d2 = M.newOpening("door", P.rooms[1].id + ":2", 150, 90); d2.sill = 0;
+      P.openings.push(d1, d2);
+      const e = M.newElement("socket", P.rooms[1].id + ":0", 200, 30); e.circuitId = cc.id; P.elements.push(e);
+      const tr = RT.suggestTree(P);
+      ok(tr.polys.length === 1 && tr.doors === 0, "глухая A–B дешевле обхода двумя дверьми (короче на 4+ м): " + tr.polys.length + "/" + tr.doors);
+    });
+    test("магистраль для группы: слаботочка идёт своим коридором, силовая — своим", () => {
+      const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "A"), B = M.newRoom(G.rectPoints(400, 0, 400, 300), "B");
+      const qf = M.newCircuit("QF1", "#f00", 16), it = M.newCircuit("Int1", "#00f", 16);
+      const { P } = install({ rooms: [A, B], circuits: [qf, it], panels: [M.newPanel(40, 150, "Щ")] });
+      const s1 = M.newElement("socket", P.rooms[1].id + ":0", 150, 30, "power"); s1.circuitId = qf.id;
+      const i1 = M.newElement("internet", P.rooms[1].id + ":0", 250, 30, "lv"); i1.circuitId = it.id;
+      P.elements.push(s1, i1);
+      const gP = M.newGuide([{ x: 100, y: 100 }, { x: 700, y: 100 }]); gP.kinds = ["power"];
+      const gL = M.newGuide([{ x: 100, y: 250 }, { x: 700, y: 250 }]); gL.kinds = ["lv"];
+      P.guides.push(gP, gL);
+      eq(RT.routeKind(P, i1, it.id), "lv"); eq(RT.routeKind(P, s1, qf.id), "power");
+      RT.build();
+      const rOf = (el) => P.routes.find((r) => r.fromId === el.id);
+      const yP = crossAt(rOf(s1).points, 400), yL = crossAt(rOf(i1).points, 400);
+      ok(Math.abs(yP - 100) < 8, "силовая по своей магистрали (y≈100): " + yP);
+      ok(Math.abs(yL - 250) < 8, "интернет по слаботочной, хотя силовая ближе (y≈250): " + yL);
+    });
+    test("нет магистрали для группы — трасса не строится, причина названа", () => {
+      const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "A"), B = M.newRoom(G.rectPoints(400, 0, 400, 300), "B");
+      const qf = M.newCircuit("QF1", "#f00", 16);
+      const { P } = install({ rooms: [A, B], circuits: [qf], panels: [M.newPanel(40, 150, "Щ")] });
+      const s1 = M.newElement("socket", P.rooms[1].id + ":0", 150, 30, "power"); s1.circuitId = qf.id; P.elements.push(s1);
+      const gL = M.newGuide([{ x: 100, y: 250 }, { x: 700, y: 250 }]); gL.kinds = ["lv"]; P.guides.push(gL);
+      RT.build();
+      eq(P.routes.length, 0, "силовой магистрали нет — межкомнатной трассы нет");
+      const un = RT.unroutedList();
+      ok(un.length === 1 && /другим группам/.test(un[0].reason) && /Розетки/.test(un[0].reason), "причина: " + (un[0] && un[0].reason));
+      delete P.guides[0].kinds; // стала общей
+      RT.build();
+      eq(P.routes.length, 1, "общая магистраль ведёт любую группу");
+    });
+    test("группы магистрали: санитайзер, рендер цветом группы, шторка ⇉", () => {
+      const fs63 = require("fs"), path63 = require("path");
+      const src = (n) => fs63.readFileSync(path63.join(__dirname, "..", "assets", "js", "modules", "plan", n + ".js"), "utf8");
+      const p = M.newProject("k");
+      p.rooms.push(M.newRoom(G.rectPoints(0, 0, 400, 300), "R"));
+      const g1 = M.newGuide([{ x: 0, y: 0 }, { x: 100, y: 0 }]); g1.kinds = ["lv", "мусор", 5];
+      const g2 = M.newGuide([{ x: 0, y: 50 }, { x: 100, y: 50 }]); g2.kinds = "power";
+      p.guides.push(g1, g2);
+      const P = EP.Plan.Core.importJSON(JSON.stringify({ project: p }));
+      eq(P.guides[0].kinds.join(), "lv", "лишнее вычищено");
+      ok(P.guides[1].kinds === undefined, "не массив — магистраль общая");
+      ok(/GUIDE_COL/.test(src("plan-render")) && /ep-plan-guidenum/.test(src("plan-render")), "цвет группы и номер у начала");
+      const r = src("plan-rooms");
+      ok(/data-pg-newkind/.test(r) && /data-pg-kind-/.test(r) && /data-pg-del/.test(r) && /data-pg-suggest/.test(r), "шторка ⇉: группы новой, группы нарисованных, удаление, дерево");
+      ok(/"guide-kinds": 1/.test(src("plan-routes")), "смена групп перестраивает трассы");
+    });
+  }
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

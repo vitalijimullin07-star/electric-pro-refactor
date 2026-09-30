@@ -265,8 +265,11 @@
       // шторку открываем ТОЛЬКО если уже есть сохранённые магистрали (ради 🗑) —
       // иначе она закрывает низ холста и первый же тап рисования попадает в неё,
       // а не в план (поймано живым тестом); свежее рисование — только подсказка
+      // Без магистралей шторка открывается СВЁРНУТОЙ (кнопка ︿ в углу): рисовать не мешает,
+      // а «🌳 Предложить по комнатам» и выбор групп в ней под рукой (пакет 7).
       const hasGuides = (G().floorScoped(core().project).guides || []).length > 0;
-      if (hasGuides) sheetGuide(); else closeSheet();
+      sheetGuide();
+      if (!hasGuides) collapseSheet();
     }
     else closeSheet();
     renderScene();
@@ -451,7 +454,7 @@
       const sp = G().snapSmart(p, orthoG, step, CFG.cornerSnapCm);
       if (sp.snapped) vibrate(10);
       pts.push({ x: sp.x, y: sp.y });
-      if (pts.length === 1) closeSheet(); // шторка не мешает рисовать; вернётся после сохранения
+      if (pts.length === 1) collapseSheet(); // шторка не мешает рисовать (свёрнута, ︿ вернёт); развернётся после сохранения
       renderScaled();
       return;
     }
@@ -848,24 +851,47 @@
   // пользователя со скриншотом «каши»: трассы должны идти по нарисованному стволу
   // по коридору, заходить в комнаты от него). Полупрозрачная линия; после
   // «⚡ Построить» скрывается с плана (guide.hidden, см. plan-routes.js hideGuides).
+  // группы трасс для магистрали (пакет 7): те же четыре, что у поверхностей трасс
+  const GUIDE_KIND_CHIPS = [["light", "💡 Свет"], ["power", "🔌 Розетки"], ["lv", "🌐 Слаботочка"], ["v24", "24В"]];
+  const guideKindsOf = (gd) => (Array.isArray(gd.kinds) ? gd.kinds : []);
+  function guideKindChips(sel, attr) {
+    const all = !sel.length;
+    return `<button type="button" class="ep-plan-chip ep-clickable${all ? " on" : ""}" ${attr}="all">Все</button>`
+      + GUIDE_KIND_CHIPS.map(([k, l]) => `<button type="button" class="ep-plan-chip ep-clickable${sel.indexOf(k) >= 0 ? " on" : ""}" ${attr}="${k}">${l}</button>`).join("");
+  }
+  const toggleKind = (list, k) => (k === "all" ? [] : (list.indexOf(k) >= 0 ? list.filter((x) => x !== k) : list.concat([k])));
   function sheetGuide() {
     const p = core().project;
-    const saved = (G().floorScoped(p).guides || []).length;
+    const gs = (G().floorScoped(p).guides || []);
+    const saved = gs.length;
     const draftN = R.guideDraft.points.length;
+    R.guideKinds = R.guideKinds || [];
+    const rows = gs.map((gd, i) => {
+      const len = G().polylineLen(gd.points || []);
+      return `<div class="ep-plan-gdrow"><div class="ep-plan-srow"><b>⇉${i + 1}</b><span class="ep-plan-mshint">${(len / 100).toFixed(1).replace(".", ",")} м${gd.hidden ? " · скрыта" : ""}</span><span class="ep-plan-flex"></span>
+          <button type="button" class="ep-plan-mini ep-plan-danger ep-clickable" data-pg-del="${esc(gd.id)}" aria-label="Убрать магистраль ${i + 1}">🗑</button></div>
+        <div class="ep-plan-chips">${guideKindChips(guideKindsOf(gd), `data-pg-kind-${esc(gd.id)}`)}</div></div>`;
+    }).join("");
     openSheet(`<div class="ep-plan-srow"><b>⇉ Магистраль трасс</b><span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-pg-close>✕</button></div>
       <div class="ep-plan-modehint">${T.modeHint.guide} Нарисованных: ${saved}${draftN ? ` · точек в текущей: ${draftN}` : ""}. Трассы пойдут по магистрали между комнатами, внутри комнат — как обычно. После построения линия скрывается.</div>
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="btn btn-primary ep-clickable" data-pg-done ${draftN >= 2 ? "" : "disabled"}>✓ Готово</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pg-undo ${draftN ? "" : "disabled"}>↩ Точка</button>
-        ${saved ? `<button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pg-clear>🗑 Убрать все</button>` : ""}
-      </div>`);
+        ${saved ? `<button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pg-clear>🗑 Убрать все</button>` : `<button type="button" class="ep-plan-tbtn ep-clickable" data-pg-suggest>🌳 Предложить по комнатам</button>`}
+      </div>
+      <div class="ep-plan-slabel">Новая магистраль — для каких трасс</div>
+      <div class="ep-plan-chips">${guideKindChips(R.guideKinds, "data-pg-newkind")}</div>
+      ${saved ? `<div class="ep-plan-slabel">Нарисованные (номер — у начала линии на плане)</div>${rows}
+      <div class="ep-plan-mshint">«Все» — магистраль общая. Если выбрать группы, трассы других групп пойдут по общим магистралям, а не по этой (например, слаботочку — своим коридором подальше от силовых).</div>` : ""}`);
   }
   function finishGuide() {
     const c = core(), p = c.project;
     if (R.guideDraft.points.length < 2) return;
     c.commit();
     p.guides = p.guides || [];
-    p.guides.push(c.model.newGuide(R.guideDraft.points.slice()));
+    const gd = c.model.newGuide(R.guideDraft.points.slice());
+    if ((R.guideKinds || []).length) gd.kinds = R.guideKinds.slice(); // для каких групп трасс (пусто = все)
+    p.guides.push(gd);
     c.persist("guide-add");
     R.guideDraft = { points: [] };
     toast("Магистраль добавлена — можно рисовать следующую или строить трассы");
@@ -2531,6 +2557,32 @@
       sheetGuide(); renderScene(); return;
     }
     if (t.closest("[data-pg-close]")) { setMode("view"); return; }
+    if ((el = t.closest("[data-pg-newkind]"))) { R.guideKinds = toggleKind(R.guideKinds || [], el.getAttribute("data-pg-newkind")); sheetGuide(); return; }
+    if ((el = t.closest("[data-pg-del]"))) {
+      const c = core(), id = el.getAttribute("data-pg-del");
+      c.commit(); c.project.guides = (c.project.guides || []).filter((gd) => gd.id !== id); c.persist("guide-del");
+      sheetGuide(); renderScene(); return;
+    }
+    if (t.closest("[data-pg-suggest]")) {
+      const n = EP.Plan.Routes && EP.Plan.Routes.suggestGuides ? EP.Plan.Routes.suggestGuides() : 0;
+      if (!n) { toast("Не из чего строить: нужны смежные комнаты с точками"); return; }
+      renderScene(); sheetGuide(); return;
+    }
+    {
+      const kb = t.closest("button") ? [...t.closest("button").attributes].find((a) => a.name.indexOf("data-pg-kind-") === 0) : null;
+      if (kb) {
+        const c = core(), id = kb.name.slice("data-pg-kind-".length);
+        const gd = (c.project.guides || []).find((g) => g.id === id);
+        if (gd) {
+          c.commit();
+          const ks = toggleKind(guideKindsOf(gd), kb.value);
+          if (ks.length && ks.length < GUIDE_KIND_CHIPS.length) gd.kinds = ks; else delete gd.kinds; // все четыре = общая
+          c.persist("guide-kinds");
+          sheetGuide(); renderScene();
+        }
+        return;
+      }
+    }
     if ((el = t.closest("[data-prt2-mode]"))) {
       const c = core(), rt = (c.project.routes || []).find((r) => r.id === R.selectedRoute);
       R.routeDragMode = el.getAttribute("data-prt2-mode") === "segment" ? "segment" : "point";
