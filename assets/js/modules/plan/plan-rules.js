@@ -253,19 +253,128 @@
     return p ? runCached(p).badIds : new Set();
   }
 
+  // ---------- ПРОВЕРКА ПРОЕКТА (🔍): отчёт «✓ пройдено / ⚠ проблема» ----------
+  // К замечаниям run() добавляются ПОЛОЖИТЕЛЬНЫЕ пункты (что уже в порядке — мастеру важно
+  // видеть и это перед монтажом) и проверки полноты: помещения без точек, точки без линии,
+  // точки без трассы, влажные по имени без отметки зоны, свободные модули щита. У каждого
+  // замечания — ссылка ref {kind:"el"|"room"|"circuit"|"appl"|"panel", id}: тап ведёт к объекту.
+  const NOT_POINT = { junction: 1, riser: 1, panel: 1, door: 1, window: 1 };
+  const WET_NAME = /ванн|санузел|с\/у|туалет|уборн|душ|сауна/i;
+  function report(p) {
+    const res = runCached(p);
+    const passed = [], issues = [];
+    const tname = (t) => { const X = EP.Plan.Elements && EP.Plan.Elements.TYPES; return (X && X[t] && X[t].name) || t; };
+    const refOf = (i) => i.id ? { kind: "el", id: i.id } : i.applId ? { kind: "appl", id: i.applId } : i.circuitId ? { kind: "circuit", id: i.circuitId } : i.roomId ? { kind: "room", id: i.roomId } : null;
+    res.issues.forEach((i) => issues.push({ level: "warn", msg: i.msg, ref: refOf(i) }));
+    const pts = (p.elements || []).filter((e) => !NOT_POINT[e.type] && e.status !== "existing");
+    const cIds = new Set((p.circuits || []).map((c) => c.id));
+    // 1. помещения с точками
+    const emptyRooms = (p.rooms || []).filter((r) => (r.points || []).length >= 3 && !G().elementsInRoom(p, r.id).length);
+    if (!(p.rooms || []).length) issues.push({ level: "err", msg: "Нет ни одного помещения — нарисуй комнаты (▭ / ⬠)." });
+    else if (emptyRooms.length) emptyRooms.forEach((r) => issues.push({ level: "warn", msg: `«${r.name}»: в помещении нет ни одной точки.`, ref: { kind: "room", id: r.id } }));
+    else passed.push("Во всех помещениях есть точки");
+    // 2. высоты
+    const noH = pts.filter((e) => !Number.isFinite(e.height));
+    if (!noH.length && pts.length) passed.push("У всех точек задана высота");
+    noH.forEach((e) => issues.push({ level: "err", msg: `${tname(e.type)}: не задана высота установки.`, ref: { kind: "el", id: e.id } }));
+    // 3. линии
+    const noLine = pts.filter((e) => !e.circuitId || !cIds.has(e.circuitId));
+    if (pts.length && !noLine.length) passed.push(`Все точки на линиях (${pts.length})`);
+    noLine.slice(0, 30).forEach((e) => issues.push({ level: "err", msg: `${tname(e.type)}: линия не назначена.`, ref: { kind: "el", id: e.id } }));
+    if (noLine.length > 30) issues.push({ level: "err", msg: `…и ещё ${noLine.length - 30} точек без линии — «⚡ Сформировать проект» разложит их разом.` });
+    const cs = p.circuits || [];
+    if (cs.length) {
+      if (cs.every((c) => Number(c.breaker) > 0)) passed.push(`У всех линий есть автомат (${cs.length})`);
+      const SC = EP.Plan.Scheme;
+      if (cs.every((c) => c.cable || (SC && SC.autoCable && SC.autoCable(p, c)))) passed.push("У всех линий определён кабель");
+    }
+    // 4. трассы
+    const routes = p.routes || [];
+    if (pts.length && !routes.length) issues.push({ level: "warn", msg: "Трассы не построены — «🧵 Трассы» → «⚡ Построить»." });
+    else if (routes.length) {
+      const from = new Set(routes.map((r) => r.fromId));
+      const noRoute = pts.filter((e) => !from.has(e.id) && e.circuitId);
+      if (!noRoute.length) passed.push(`Все точки соединены трассами (${routes.length})`);
+      noRoute.slice(0, 20).forEach((e) => issues.push({ level: "warn", msg: `${tname(e.type)}: нет трассы до щита.`, ref: { kind: "el", id: e.id } }));
+      const RT = EP.Plan.Routes;
+      if (RT && RT.sleeveHoles) { try { passed.push(`Проходки рассчитаны: ${RT.sleeveHoles(p)} отв.`); } catch (e) {} }
+    }
+    // 5. влажные помещения по имени, но без отметки зоны — от неё зависят проверки УЗО/высот
+    (p.rooms || []).forEach((r) => {
+      if (WET_NAME.test(r.name || "") && (r.zones || []).indexOf("wet") < 0)
+        issues.push({ level: "warn", msg: `«${r.name}»: отметь зону «влажная» в свойствах помещения — от неё зависят проверки УЗО и высот.`, ref: { kind: "room", id: r.id } });
+    });
+    // 6. щит: свободные модули в корпусе главного щита
+    const CX = EP.Plan.Circuits, SCH = EP.Plan.Scheme;
+    const main = CX && CX.mainPanel(p);
+    if (main && cs.length && SCH && SCH.recompute) {
+      try {
+        const box = SCH.recompute(p);
+        const need = CX.modules(p, main.id, { noReserve: true });
+        const free = (box && box.modules || 0) - need;
+        if (box && box.overflow) issues.push({ level: "err", msg: `Щит ${main.name}: ${need} мод. не помещаются в самый большой корпус ${box.brand} — нужен второй щит.`, ref: { kind: "panel", id: main.id } });
+        else if (free < 2) issues.push({ level: "warn", msg: `Щит ${main.name}: свободно ${Math.max(0, free)} мод. — запаса почти нет.`, ref: { kind: "panel", id: main.id } });
+        else passed.push(`Щит ${main.name}: корпус ${box.modules} мод., свободно ${free}`);
+      } catch (e) {}
+    }
+    // 7. УЗО по ПУЭ — если run() не нашёл замечаний про УЗО, это тоже пройденный пункт
+    if (cs.length && !res.issues.some((i) => /УЗО/.test(i.msg))) passed.push("Линии розеток и влажных зон защищены УЗО");
+    if (!(p.panels || []).length && pts.length) issues.push({ level: "err", msg: "Нет щита — поставь щит (🔌 → Щит)." });
+    // у замечаний про ТОЧКУ — какая и где («Розетка · Кухня: …»): иначе «Точка попадает в
+    // проём» не говорит, какую из сорока точек смотреть
+    const roomOfEl = (el) => {
+      const rid = el.wallId && String(el.wallId).indexOf("beam:") !== 0 ? String(el.wallId).split(":")[0] : null;
+      let r = rid ? (p.rooms || []).find((x) => x.id === rid) : null;
+      if (!r) { const pt = G().elemPoint(p, el); r = pt ? (p.rooms || []).find((x) => (x.points || []).length >= 3 && G().pointInPolygon(pt, x.points)) : null; }
+      return r ? r.name : "";
+    };
+    issues.forEach((i) => {
+      if (!i.ref || i.ref.kind !== "el") return;
+      const el = (p.elements || []).find((e) => e.id === i.ref.id); if (!el) return;
+      const who = tname(el.type) + (roomOfEl(el) ? " · " + roomOfEl(el) : "");
+      if (i.msg.indexOf(tname(el.type)) !== 0) i.msg = who + ": " + i.msg.charAt(0).toLowerCase() + i.msg.slice(1);
+      else if (roomOfEl(el)) i.msg = who + i.msg.slice(tname(el.type).length);
+    });
+    // ⛔ ошибки — первыми (без них проект не собрать), дальше ⚠
+    issues.sort((a, b) => (a.level === "err" ? 0 : 1) - (b.level === "err" ? 0 : 1));
+    const errN = issues.filter((i) => i.level === "err").length;
+    return { passed, issues, errN, warnN: issues.length - errN };
+  }
+  // тап по замечанию — к объекту на плане (камера + его редактор)
+  function goTo(ref) {
+    const p = core().project; if (!p || !ref) return false;
+    const R = rooms(), E = EP.Plan.Elements;
+    if (ref.kind === "el") { const el = (p.elements || []).find((e) => e.id === ref.id); if (el && E) { if (el.floorId && p.activeFloorId !== el.floorId && core().setActiveFloor) core().setActiveFloor(el.floorId); E.openEditor(el); return true; } }
+    if (ref.kind === "room") { const r = (p.rooms || []).find((x) => x.id === ref.id); if (r && R.sheetRoom) { R.sheetRoom(r); return true; } }
+    if (ref.kind === "panel") { const pn = (p.panels || []).find((x) => x.id === ref.id); if (pn && E && E.openPanelEditor) { E.openPanelEditor(pn); return true; } }
+    if (ref.kind === "appl") { const a = (p.appliances || []).find((x) => x.id === ref.id); const F = EP.Plan.Furniture; if (a && F && F.openEditor) { F.openEditor(a); return true; } }
+    if (ref.kind === "circuit") { if (R.setSoloCircuit) R.setSoloCircuit(ref.id); if (EP.Plan.Routes && EP.Plan.Routes.sheet) EP.Plan.Routes.sheet(); return true; }
+    return false;
+  }
+
   // ---------- шторка ----------
+  let lastRep = null;
   function sheet() {
     const p = core().project, R = rules(p);
-    const { issues } = runCached(p);
-    rooms().openSheet(`<div class="ep-plan-srow"><b>✅ ${T.title}</b>
-        <span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-sheet-fs aria-label="Во весь экран">⛶</button><button type="button" class="ep-plan-mini ep-clickable" data-pl-close>✕</button></div>
-      ${issues.length
-        ? `<div class="ep-plan-items">${issues.map((i) => `<div class="ep-plan-irow ep-plan-warnrow"><span>⚠ ${esc(i.msg)}</span></div>`).join("")}</div>`
-        : `<div class="ep-plan-srow">${T.ok}</div>`}
+    const rep = report(p); lastRep = rep;
+    const issueRow = (i, k) => i.ref
+      ? `<button type="button" class="ep-plan-qa ep-clickable is-${i.level}" data-pl-go="${k}"><span>${i.level === "err" ? "⛔" : "⚠"} ${esc(i.msg)}</span><span class="ep-plan-qago">→</span></button>`
+      : `<div class="ep-plan-qa is-${i.level}"><span>${i.level === "err" ? "⛔" : "⚠"} ${esc(i.msg)}</span></div>`;
+    rooms().openSheet(`<div class="ep-plan-srow"><b>🔍 Проверка проекта</b>
+        <span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-sheet-fs aria-label="Во весь экран">⛶</button><button type="button" class="ep-plan-mini ep-clickable" data-pl-close aria-label="Закрыть">✕</button></div>
+      <div class="ep-plan-qasum">
+        <span class="ep-plan-qachip is-ok">✓ ${rep.passed.length}</span>
+        <span class="ep-plan-qachip is-warn">⚠ ${rep.warnN}</span>
+        <span class="ep-plan-qachip is-err">⛔ ${rep.errN}</span>
+        <span class="ep-plan-mshint">${rep.issues.length ? "тап по замечанию — к объекту на плане" : T.ok}</span>
+      </div>
+      ${rep.issues.length ? `<div class="ep-plan-qalist">${rep.issues.map(issueRow).join("")}</div>` : ""}
+      ${rep.passed.length ? `<details class="ep-plan-qapass" ${rep.issues.length ? "" : "open"}><summary>✓ Пройдено: ${rep.passed.length}</summary>${rep.passed.map((t) => `<div class="ep-plan-qa is-ok"><span>✓ ${esc(t)}</span></div>`).join("")}</details>` : ""}
+      <details class="ep-plan-qapass"><summary>⚙ Пороги проверок</summary>
       <div class="ep-plan-srow ep-plan-s2">
         ${Object.keys(T.labels).map((k) => `<label>${T.labels[k]}<input type="number" inputmode="numeric" data-pl-rule="${k}" value="${R[k]}"></label>`).join("")}
       </div>
-      <div class="ep-plan-srow ep-plan-sbtns"><button type="button" class="ep-plan-tbtn ep-clickable" data-pl-save>${T.save}</button></div>`);
+      <div class="ep-plan-srow ep-plan-sbtns"><button type="button" class="ep-plan-tbtn ep-clickable" data-pl-save>${T.save}</button></div></details>`);
   }
   function saveRules() {
     const c = core(), p = c.project;
@@ -285,6 +394,8 @@
     if (t.closest("[data-plan-checks]")) return sheet();
     if (t.closest("[data-pl-close]")) { rooms().closeSheet(); return; }
     if (t.closest("[data-pl-save]")) return saveRules();
+    const go = t.closest("[data-pl-go]");
+    if (go && lastRep) { const i = lastRep.issues[Number(go.getAttribute("data-pl-go"))]; if (i && i.ref) goTo(i.ref); return; }
   });
 
   EP.Plan = EP.Plan || {};
@@ -306,5 +417,5 @@
   }
   if (core().onChange) core().onChange(() => { memo = null; memoTok++; });
 
-  EP.Plan.Rules = { run, runCached, rules, badSet, sheet, RULES_DEFAULTS, setPrefetched, memoToken: () => memoTok };
+  EP.Plan.Rules = { run, runCached, report, goTo, rules, badSet, sheet, RULES_DEFAULTS, setPrefetched, memoToken: () => memoTok };
 })();
