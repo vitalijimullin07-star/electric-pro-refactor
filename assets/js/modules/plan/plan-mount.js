@@ -182,7 +182,7 @@
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-layers aria-label="Слои">🗂</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-routes aria-label="Трассы">🧵</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-calc aria-label="Расчёт и смета">🧮</button>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-checks aria-label="Проверки норм">✅</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-checks aria-label="Проверить проект: что готово и что забыто" title="Проверить проект">🔍</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-scheme aria-label="Однолинейная схема">▤</button>
         <span class="ep-plan-modesep" aria-hidden="true"></span>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="wall" aria-label="Развёртка: выбрать комнату">📐</button>

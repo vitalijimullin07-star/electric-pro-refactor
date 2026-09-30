@@ -2638,7 +2638,7 @@
   EP.Plan.Rooms = {
     attach, detach, setActive, setMode, renderScene, T, CFG,
     // общий доступ для модулей слоёв 2-6
-    openSheet, closeSheet, overlaySheet, closeOverlaySheet, overlayOpen, toast, ensureVisibleAboveSheet, toggleSheetFullscreen,
+    openSheet, closeSheet, overlaySheet, closeOverlaySheet, overlayOpen, toast, ensureVisibleAboveSheet, toggleSheetFullscreen, sheetRoom,
     collapseSheet, expandSheet, toggleSheetCollapsed, placeSheetBtn, enableOpeningDrag,
     isActive: () => R.active,
     currentMode: () => R.mode,

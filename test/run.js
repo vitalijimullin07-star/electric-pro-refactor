@@ -7602,6 +7602,67 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 61. 🔍 Проверка проекта: ✓ пройдено / ⚠ проблема, переход к объекту, модули щита =====
+  {
+    const RL = EP.Plan.Rules;
+    const seed61 = () => {
+      const p = EP.Plan.Core.createProject("q61");
+      const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "Кухня"), B = M.newRoom(G.rectPoints(400, 0, 300, 300), "Ванная"), C = M.newRoom(G.rectPoints(0, 300, 300, 200), "Кладовая");
+      p.rooms.push(A, B, C); p.panels.push(M.newPanel(40, 250, "ЩК"));
+      p.elements.push(M.newElement("socket", A.id + ":0", 100, 30, "power"), M.newElement("socket", B.id + ":0", 100, 110, "power"));
+      const l = M.newElement("light", null, 0, 270, "light"); l.params = { x: 200, y: 150 }; p.elements.push(l);
+      p.guides.push(M.newGuide([{ x: 60, y: 150 }, { x: 650, y: 150 }]));
+      EP.Plan.Core.persist("seed");
+      return { p, A, B, C };
+    };
+    test("отчёт: пустое помещение, точки без линии, влажная без отметки, трассы не построены — со ссылками", () => {
+      const { p, B, C } = seed61();
+      const r = RL.report(p);
+      const f = (re) => r.issues.find((i) => re.test(i.msg));
+      ok(f(/«Кладовая»: в помещении нет/) && f(/«Кладовая»/).ref.kind === "room" && f(/«Кладовая»/).ref.id === C.id, "пустое помещение → комната");
+      const nl = r.issues.filter((i) => /линия не назначена/.test(i.msg));
+      eq(nl.length, 3, "три точки без линии"); ok(nl.every((i) => i.ref.kind === "el"), "ссылка на точку");
+      ok(f(/«Ванная»: отметь зону/) && f(/«Ванная»: отметь зону/).ref.id === B.id, "влажная по имени без отметки зоны");
+      ok(f(/Трассы не построены/), "трассы не построены");
+      ok(r.passed.some((t) => /высота/.test(t)), "пройденный пункт про высоты");
+      ok(r.errN >= 3 && r.warnN >= 3, "счётчики");
+    });
+    test("после «Сформировать проект» и трасс: точки на линиях и соединены, проходки посчитаны, щит со свободными модулями", () => {
+      const { p, B } = seed61();
+      B.zones = ["wet"];
+      EP.Plan.AutoProject.apply(EP.Plan.AutoProject.propose(p, "free"));
+      EP.Plan.Routes.build({ silent: true });
+      const r = RL.report(p);
+      ok(!r.issues.some((i) => /линия не назначена|нет трассы|Трассы не построены|отметь зону/.test(i.msg)), "замечаний по полноте нет");
+      ok(r.passed.some((t) => /Все точки на линиях/.test(t)) && r.passed.some((t) => /соединены трассами/.test(t)), "пройдено: линии и трассы");
+      ok(r.passed.some((t) => /Проходки рассчитаны/.test(t)), "проходки");
+      ok(r.passed.some((t) => /Щит ЩК: корпус \d+ мод\., свободно \d+/.test(t)), "свободные модули щита");
+    });
+    test("модули щита: запаса нет — предупреждение со ссылкой на щит", () => {
+      const { p } = seed61();
+      for (let i = 0; i < 11; i++) { const c = M.newCircuit("QF" + (i + 1), "#e11", 16); p.circuits.push(c); }
+      p.settings.panelReserve = 0;
+      const r = RL.report(p);
+      const w = r.issues.find((i) => /Щит ЩК: свободно \d+ мод/.test(i.msg));
+      ok(w && w.ref.kind === "panel", "12 модулей впритык в 12-модульном корпусе");
+    });
+    test("переход к объекту: точка — её редактор, помещение — его свойства, линия — выделение", () => {
+      const { p, C } = seed61();
+      const E = EP.Plan.Elements, R0 = EP.Plan.Rooms;
+      const saved = { oe: E.openEditor, sr: R0.sheetRoom, ss: R0.setSoloCircuit };
+      const got = [];
+      E.openEditor = (el) => got.push("el:" + el.type); R0.sheetRoom = (r) => got.push("room:" + r.name); R0.setSoloCircuit = (id) => got.push("circ:" + id);
+      try {
+        ok(RL.goTo({ kind: "el", id: p.elements[0].id }), "точка");
+        ok(RL.goTo({ kind: "room", id: C.id }), "помещение");
+        p.circuits.push(M.newCircuit("QF9", "#000", 16));
+        ok(RL.goTo({ kind: "circuit", id: p.circuits[0].id }), "линия");
+        eq(got.join(","), "el:socket,room:Кладовая,circ:" + p.circuits[0].id);
+        ok(!RL.goTo({ kind: "el", id: "нет" }), "несуществующий объект — false");
+      } finally { E.openEditor = saved.oe; R0.sheetRoom = saved.sr; R0.setSoloCircuit = saved.ss; }
+    });
+  }
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);
