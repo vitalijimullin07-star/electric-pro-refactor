@@ -2935,8 +2935,8 @@
   let qualityMemo = null;
   function qualityRowHtml(p) {
     const rs = p.routes || [];
-    let key = rs.length + "#" + guideSig(G().floorScoped(p).guides || []);
-    rs.forEach((r) => { key += "|" + ptsSig(r.points || []); });
+    let key = rs.length + "#" + guideSig(G().floorScoped(p).guides || []) + "#" + geomSig(p) + "#" + (p.activeFloorId || "");
+    rs.forEach((r) => { key += "|" + ptsSig(r.points || []) + (r.circuitId || ""); });
     if (!qualityMemo || qualityMemo.key !== key || qualityMemo.pid !== p.id) qualityMemo = { key, pid: p.id, sc: scoreRoutes(p) };
     const sc = qualityMemo.sc;
     const parts = [`пересечений линий: <b>${sc.crossings}</b>`, `изломов: <b>${sc.turns}</b>`];
