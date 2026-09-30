@@ -105,7 +105,10 @@
     const l = (p.layers || []).find((x) => x.id === el.layer);
     return (l && l.color) || "#94a3b8";
   }
-  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  // sqrt вместо Math.hypot: hypot в V8 втрое медленнее из-за защиты от переполнения, которая
+  // координатам в сантиметрах не нужна (тот же приём, что у G.dist) — здесь это 28% времени
+  // сборки+оценки трасс на большом проекте
+  const dist = (a, b) => { const dx = a.x - b.x, dy = a.y - b.y; return Math.sqrt(dx * dx + dy * dy); };
   function nearest(pos, nodes, filter) {
     let best = null;
     nodes.forEach((n) => {
@@ -1871,17 +1874,40 @@
     const mine = anyGuideKinds(ctx.gs) ? ctx.gs.filter((gd) => guideServes(gd, kind)) : ctx.gs;
     const segs = [];
     (mine.length ? mine : ctx.gs).forEach((gd) => { for (let i = 1; i < gd.points.length; i++) segs.push([gd.points[i - 1], gd.points[i]]); });
+    // проверка «рядом с магистралью» — горячая точка метрики (выборка каждые 20 см по всем
+    // трассам проекта): соседние выборки почти всегда у ТОГО ЖЕ отрезка магистрали, поэтому
+    // сначала проверяем последний совпавший, а остальные отсеиваем по габариту с допуском
+    let last = 0;
+    const nearGuide = (q, tol) => {
+      if (segs.length && G().closestOnSeg(q, segs[last][0], segs[last][1]).d <= tol) return true;
+      for (let j = 0; j < segs.length; j++) {
+        if (j === last) continue;
+        const A = segs[j][0], B = segs[j][1];
+        if (q.x < Math.min(A.x, B.x) - tol || q.x > Math.max(A.x, B.x) + tol || q.y < Math.min(A.y, B.y) - tol || q.y > Math.max(A.y, B.y) + tol) continue;
+        if (G().closestOnSeg(q, A, B).d <= tol) { last = j; return true; }
+      }
+      return false;
+    };
+    // «по магистрали» — это не только сама ось: линия едет по своей полосе веера (+2 см на
+    // линию) и отводится от стены, если магистраль нарисована вплотную к ней. Без этого
+    // допуска на проекте из 90 линий дальние полосы (до 1.8 м от оси) считались бы
+    // «мимо магистрали», хотя идут строго вдоль неё — живой прогон дал 1.2 км ложного штрафа.
+    const st = p.settings || {};
+    const tol = TRUNK_NEAR + Math.max(0, circuitIdx(p, r.circuitId)) * 2 + 4 + (+st.routeOffset || 15) + (+st.wallThickness || 10) / 2;
+    const inPoly = G().pointInPolygon;
     let off = 0;
     for (let i = 1; i < pts.length; i++) {
       const a = pts[i - 1], b = pts[i], L = dist(a, b);
       const n = Math.max(1, Math.round(L / TRUNK_STEP));
       for (let k = 0; k < n; k++) {
         const t = (k + 0.5) / n, q = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+        // сначала дешёвое: своя комната / комната цели (большинство выборок) и близость к
+        // магистрали; поиск комнаты по всему этажу — только для реально далёких точек
+        if (inPoly(q, ra.points) || inPoly(q, rb.points)) continue;
+        if (nearGuide(q, tol)) continue;
         const rq = G().roomAt(p, q);
         if (!rq || rq.id === ra.id || rq.id === rb.id) continue;
-        let d = Infinity;
-        for (let j = 0; j < segs.length && d > TRUNK_NEAR; j++) d = Math.min(d, G().closestOnSeg(q, segs[j][0], segs[j][1]).d);
-        if (d > TRUNK_NEAR) off += L / n;
+        off += L / n;
       }
     }
     return off;
@@ -1890,7 +1916,7 @@
   // к ссылке на массив в подписи добавлена сама геометрия — иначе кэш отдал бы старые изломы
   function ptsSig(pts) { let s = 0; for (let i = 0; i < pts.length; i++) s += pts[i].x * (31 + i) + pts[i].y * (17 + i); return pts.length + ":" + Math.round(s * 10); }
   function routePenalty(p, r, ctx) {
-    const sig = ctx.sig + "|" + ptsSig(r.points) + "|" + (r.circuitId || "");
+    const sig = ctx.sig + "|" + ptsSig(r.points) + "|" + (r.circuitId || "") + "|" + circuitIdx(p, r.circuitId);
     const hit = penCache.get(r.points);
     if (hit && hit.sig === sig) return hit.pen;
     const pen = { turns: routeTurns(r.points), offTrunk: routeOffTrunk(p, r, ctx) };
@@ -1899,7 +1925,7 @@
   }
   function scoreRoutes(p) {
     const rs = (p.routes || []).filter((r) => (r.points || []).length > 1);
-    const near = (a, b) => dist(a, b) < 2;
+    const near = (a, b) => { const dx = a.x - b.x, dy = a.y - b.y; return dx * dx + dy * dy < 4; };
     let crossSame = 0, crossDiff = 0, len = 0, turns = 0, offTrunk = 0;
     const boxes = rs.map((r) => ({ r, bb: bboxOf(r.points) }));
     const ctx = penaltyCtx(p);
@@ -1910,11 +1936,17 @@
       if ((A.r.floorId || null) !== (B.r.floorId || null)) continue;
       if (A.bb.x1 < B.bb.x0 || A.bb.x0 > B.bb.x1 || A.bb.y1 < B.bb.y0 || A.bb.y0 > B.bb.y1) continue;
       const P1 = A.r.points, P2 = B.r.points;
-      for (let x = 1; x < P1.length; x++) for (let y = 1; y < P2.length; y++) {
-        const a1 = P1[x - 1], a2 = P1[x], b1 = P2[y - 1], b2 = P2[y];
-        if (near(a1, b1) || near(a1, b2) || near(a2, b1) || near(a2, b2)) continue;
-        if (!G().segIntersect(a1, a2, b1, b2)) continue;
-        if ((A.r.circuitId || null) === (B.r.circuitId || null)) crossSame++; else crossDiff++;
+      for (let x = 1; x < P1.length; x++) {
+        const a1 = P1[x - 1], a2 = P1[x];
+        const ax0 = Math.min(a1.x, a2.x), ax1 = Math.max(a1.x, a2.x), ay0 = Math.min(a1.y, a2.y), ay1 = Math.max(a1.y, a2.y);
+        if (ax1 < B.bb.x0 || ax0 > B.bb.x1 || ay1 < B.bb.y0 || ay0 > B.bb.y1) continue;
+        for (let y = 1; y < P2.length; y++) {
+          const b1 = P2[y - 1], b2 = P2[y];
+          if (Math.max(b1.x, b2.x) < ax0 || Math.min(b1.x, b2.x) > ax1 || Math.max(b1.y, b2.y) < ay0 || Math.min(b1.y, b2.y) > ay1) continue;
+          if (near(a1, b1) || near(a1, b2) || near(a2, b1) || near(a2, b2)) continue;
+          if (!G().segIntersect(a1, a2, b1, b2)) continue;
+          if ((A.r.circuitId || null) === (B.r.circuitId || null)) crossSame++; else crossDiff++;
+        }
       }
     }
     const holes = sleeveHoles(p);
@@ -2039,16 +2071,21 @@
   // считается штроба), т.е. выигрыш по пересечениям пришёл бы ценой физически неверных трасс.
   function crossPerRoute(p) {
     const rs = (p.routes || []).filter((r) => (r.points || []).length > 1);
-    const near = (a, b) => dist(a, b) < 2;
+    const near = (a, b) => { const dx = a.x - b.x, dy = a.y - b.y; return dx * dx + dy * dy < 4; };
     const cnt = {};
     for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) {
       if ((rs[i].floorId || null) !== (rs[j].floorId || null)) continue;
       const P1 = rs[i].points, P2 = rs[j].points;
       let n = 0;
-      for (let x = 1; x < P1.length; x++) for (let y = 1; y < P2.length; y++) {
-        const a1 = P1[x - 1], a2 = P1[x], b1 = P2[y - 1], b2 = P2[y];
-        if (near(a1, b1) || near(a1, b2) || near(a2, b1) || near(a2, b2)) continue;
-        if (G().segIntersect(a1, a2, b1, b2)) n++;
+      for (let x = 1; x < P1.length; x++) {
+        const a1 = P1[x - 1], a2 = P1[x];
+        const ax0 = Math.min(a1.x, a2.x), ax1 = Math.max(a1.x, a2.x), ay0 = Math.min(a1.y, a2.y), ay1 = Math.max(a1.y, a2.y);
+        for (let y = 1; y < P2.length; y++) {
+          const b1 = P2[y - 1], b2 = P2[y];
+          if (Math.max(b1.x, b2.x) < ax0 || Math.min(b1.x, b2.x) > ax1 || Math.max(b1.y, b2.y) < ay0 || Math.min(b1.y, b2.y) > ay1) continue;
+          if (near(a1, b1) || near(a1, b2) || near(a2, b1) || near(a2, b2)) continue;
+          if (G().segIntersect(a1, a2, b1, b2)) n++;
+        }
       }
       if (n) { cnt[rs[i].id] = (cnt[rs[i].id] || 0) + n; cnt[rs[j].id] = (cnt[rs[j].id] || 0) + n; }
     }
