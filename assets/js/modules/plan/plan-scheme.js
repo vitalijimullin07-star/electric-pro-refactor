@@ -305,6 +305,7 @@
       ${CX ? `<div class="ep-plan-srow"><b>Групповые УЗО</b></div>${CX.groupsEditorHtml(p)}` : ""}
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="btn btn-primary ep-clickable" data-psc-add>+ линия</button>
+        ${(p.circuits || []).length && EP.Plan.Circuits ? `<button type="button" class="btn ep-clickable" data-psc-toshield>🔲 В конфигуратор щита</button>` : ""}
       </div>`;
   }
 
@@ -318,6 +319,30 @@
       ${ps.map((pn) => `<button type="button" class="ep-plan-chip ep-clickable ${cur === pn.id ? "on" : ""}" data-psc-panel="${esc(pn.id)}">${esc(pn.name)}</button>`).join("")}</div>`;
   }
   function refresh() { draw(); editor(); }
+
+  // ---- щит из проекта → «Конфигуратор щита» (без второго движка): модель ручной схемы
+  // строит движок цепей (EP.Plan.Circuits.toManualModel), дальше работает штатная связка
+  // «Однолинейная схема ⟷ Конфигуратор»: модель пишется в ep_manual_scheme_v28 (конструктор
+  // откроет её же по «✍️ Править однолинейку», живой ре-синк конфигуратора её же и
+  // подтянет) и отдаётся ShieldConfiguratorV28.loadManual — расчёт по ней.
+  const MANUAL_KEY = "ep_manual_scheme_v28";
+  function toShield() {
+    const p = core().project, CX = EP.Plan.Circuits;
+    if (!p || !CX) return false;
+    const main = CX.mainPanel(p);
+    const pid = schemePanel(p) || (main ? main.id : null);
+    const model = CX.toManualModel(p, pid);
+    const n = model.groups.reduce((k, g) => k + g.lines.length, 0);
+    if (!n) { if (rooms().toast) rooms().toast("В этом щите нет линий"); return false; }
+    let prev = null; try { prev = JSON.parse(localStorage.getItem(MANUAL_KEY) || "null"); } catch (e) {}
+    const hadOwn = prev && Array.isArray(prev.groups) && prev.groups.length && !(prev.source && prev.source.kind === "plan");
+    if (hadOwn && typeof confirm === "function" && !confirm("В разделе «Однолинейная схема» уже есть своя ручная схема — заменить её схемой из проекта?")) return false;
+    try { localStorage.setItem(MANUAL_KEY, JSON.stringify(model)); } catch (e) {}
+    const go = () => { try { if (window.ShieldConfiguratorV28 && window.ShieldConfiguratorV28.loadManual) window.ShieldConfiguratorV28.loadManual(JSON.parse(JSON.stringify(model))); } catch (e) {} };
+    if (window.Router && window.Router.load) { window.Router.load("shield"); setTimeout(go, 350); }
+    else go();
+    return true;
+  }
 
   // ---- события ----
   document.addEventListener("click", (e) => {
@@ -336,6 +361,7 @@
     if (t.closest("[data-psc-fullplain]")) return toggleFull();
     if (!isOpen()) return;
     if ((b = t.closest("[data-psc-panel]"))) { S.panel = b.getAttribute("data-psc-panel") || ""; refresh(); return; }
+    if (t.closest("[data-psc-toshield]")) { toShield(); return; }
     if (EP.Plan.Circuits && EP.Plan.Circuits.handleClick(t, refresh)) return;
     if ((b = t.closest("[data-psc-mode]"))) { const c = core(); c.commit(); c.project.settings.schemeMode = b.getAttribute("data-psc-mode") === "manual" ? "manual" : "auto"; c.persist("scheme-mode"); refresh(); return; }
     if ((b = t.closest("[data-psc-ph]"))) { const c = core(); c.commit(); c.project.settings.phases = Number(b.getAttribute("data-psc-ph")) === 3 ? 3 : 1; c.persist("scheme-ph"); refresh(); return; }
@@ -385,5 +411,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Scheme = { open, close, isOpen, buildTree, panelsWithLines, recompute: recomputePanel, neededModules, draw, refresh, loadEls, autoCable, loadSummary, loadKindLabel, phaseBalance, autoBalancePhases };
+  EP.Plan.Scheme = { open, close, isOpen, buildTree, panelsWithLines, toShield, recompute: recomputePanel, neededModules, draw, refresh, loadEls, autoCable, loadSummary, loadKindLabel, phaseBalance, autoBalancePhases };
 })();
