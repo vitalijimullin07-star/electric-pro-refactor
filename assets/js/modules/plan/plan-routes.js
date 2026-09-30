@@ -45,7 +45,7 @@
     buildConfirmGo: "✓ Построить", buildConfirmBack: "‹ Назад",
     suggestGuide: "✨ Предложить магистраль",
     suggestNone: "Не удалось предложить: нужна хотя бы одна комната, смежная с другими, и точки в комнатах.",
-    suggestOk: (n) => `Черновик магистрали построен (${n} линий) — проверьте в режиме ⇉ и правьте как обычную`,
+    suggestOk: (n, tr) => `Магистраль-дерево: ${n} перех. между комнатами${tr && tr.doors ? `, через двери — ${tr.doors}` : ""}${tr && tr.unreachable ? ` · не достать: ${tr.unreachable} (комната не касается соседей)` : ""} — проверь в режиме ⇉`,
     noGuideHint: "Магистрали (⇉) нет — межкомнатные трассы не построятся. Нарисуйте её или нажмите «Предложить магистраль»."
   };
 
@@ -301,6 +301,7 @@
   // Точки, которым нужна трасса, но её нет — с ПРИЧИНОЙ (её видно в баннере шторки).
   // Причина определяется по тем же данным, на которых buildPath принимал решение:
   // нет комнаты у самой точки / нет щита-приёмника её рода / нет магистрали до её комнаты.
+  const KIND_NAME = { light: "Свет", power: "Розетки и сила", lv: "Слаботочка", v24: "24В" };
   function unroutedReason(p, el, panels) {
     const room = roomOfEl(p, el);
     if (!room) return "точка вне комнат — обведите это место комнатой";
@@ -309,8 +310,11 @@
       : "нет щита для её линии";
     const sameRoom = panels.some((pn) => { const r = roomNear(p, pn.pos); return r && r.id === room.id; });
     if (sameRoom) return "щит в этой же комнате, но контур трассировки не построился";
-    const gs = (G().floorScoped(p).guides || []).filter((gd) => (gd.points || []).length >= 2);
+    const gs = guidesUsable(p);
     if (!gs.length) return "нет магистрали (⇉) — щит в другой комнате";
+    const kind = routeKind(p, el, el.circuitId);
+    if (anyGuideKinds(gs) && !gs.some((gd) => guideServes(gd, kind)))
+      return "магистрали назначены другим группам — нужна общая или для «" + (KIND_NAME[kind] || kind) + "»";
     return "магистраль не доходит до её комнаты";
   }
   function collectUnrouted(p, points, juncts, panels) {
@@ -404,7 +408,7 @@
   // арифметических операций против 338 closestOnSeg, которые защищает. gd.hidden в
   // сигнатуру НЕ входит — на геометрию графа он не влияет (buildGuideGraph получает уже
   // отфильтрованный список, а скрытые магистрали продолжают работать, см. hideGuides).
-  let graphCache = null;
+  let graphCache = new Map(); // сигнатура набора магистралей → граф (наборов несколько: у групп трасс свои)
   function guideSig(gs) {
     let s = gs.length + "|", sum = 0, n = 0;
     for (let i = 0; i < gs.length; i++) {
@@ -507,7 +511,8 @@
   }
   function buildGuideGraph(guides, p) {
     const sig = guideSig(guides) + "#" + (p ? geomSig(p) : "");
-    if (graphCache && graphCache.sig === sig) return graphCache.g;
+    const hit = graphCache.get(sig);
+    if (hit) return hit;
     const g = buildGuideGraphRaw(guides);
     if (p) {
       const walls = floorWallsWithTh(p);
@@ -515,7 +520,10 @@
       const clear = Math.max(0, p.settings && p.settings.routeOffset != null ? p.settings.routeOffset : 15);
       g.edgeAdj = g.edges.map((e) => edgeWallAdjust(p, g.nodes[e.a], g.nodes[e.b], walls, lanes, clear));
     }
-    graphCache = { sig, g };
+    // несколько наборов за одну сборку (общая + по группам); кэп — чтобы правки магистралей
+    // не копили старые графы
+    if (graphCache.size >= 8) graphCache.delete(graphCache.keys().next().value);
+    graphCache.set(sig, g);
     return g;
   }
   function buildGuideGraphRaw(guides) {
@@ -763,9 +771,45 @@
   // оттягивает путь к себе и обратно (см. фикс крюка в buildPath). Читает ТОЛЬКО
   // buildPath сразу после вызова guideRoute.
   let lastGuideTrunkShare = 1;
-  function guideRoute(p, a, b, circuitId) {
+  // ---- МАГИСТРАЛЬ ДЛЯ ГРУППЫ ТРАСС (пакет 7 плана V2) ----
+  // gd.kinds — для каких групп магистраль: null/[] = для всех (прежнее поведение), иначе
+  // подмножество GUIDE_KINDS (те же четыре группы, что у поверхностей трасс: свет /
+  // розетки-сила / слаботочка / 24В). Слаботочку обычно ведут своим коридором подальше от
+  // силовых, а 24В — к трансформаторному щиту другим путём. Группа трассы — по ЛИНИИ
+  // (большинство её точек), а не по точке-источнику: распайка и выключатель сами по себе
+  // «ничьи», а идут они в составе своей линии.
+  const GUIDE_KINDS = ["light", "power", "lv", "v24"];
+  const guideKindsOf = (gd) => (Array.isArray(gd.kinds) ? gd.kinds.filter((k) => GUIDE_KINDS.indexOf(k) >= 0) : []);
+  const guideServes = (gd, kind) => { const ks = guideKindsOf(gd); return !ks.length || !kind || ks.indexOf(kind) >= 0; };
+  let kindCache = null; // {pid, sig, map: circuitId → группа}
+  function circuitKind(p, circuitId) {
+    const els = p.elements || [];
+    const sig = els.length + ":" + (p.circuits || []).length;
+    if (!kindCache || kindCache.pid !== p.id || kindCache.sig !== sig) {
+      const cnt = {};
+      els.forEach((e) => {
+        if (!e.circuitId || e.type === "junction" || e.type === "riser") return;
+        const k = G().surfaceKeyOf(e.layer, e);
+        (cnt[e.circuitId] = cnt[e.circuitId] || {})[k] = (cnt[e.circuitId][k] || 0) + 1;
+      });
+      const map = {};
+      Object.keys(cnt).forEach((cid) => { map[cid] = Object.keys(cnt[cid]).sort((x, y) => cnt[cid][y] - cnt[cid][x])[0]; });
+      kindCache = { pid: p.id, sig, map };
+    }
+    return kindCache.map[circuitId] || null;
+  }
+  function routeKind(p, fromEl, circuitId) {
+    if (fromEl && fromEl.type === "output24") return "v24";
+    const k = circuitId ? circuitKind(p, circuitId) : null;
+    if (k) return k;
+    return fromEl && fromEl.type !== "junction" ? G().surfaceKeyOf(fromEl.layer, fromEl) : "power";
+  }
+  const guidesUsable = (p) => (G().floorScoped(p).guides || []).filter((gd) => (gd.points || []).length >= 2);
+  const anyGuideKinds = (gs) => gs.some((gd) => guideKindsOf(gd).length);
+  function guideRoute(p, a, b, circuitId, kind) {
     lastGuideTrunkShare = 1;
-    const gs = (G().floorScoped(p).guides || []).filter((gd) => (gd.points || []).length >= 2);
+    let gs = guidesUsable(p);
+    if (anyGuideKinds(gs)) gs = gs.filter((gd) => guideServes(gd, kind));
     if (!gs.length) return null;
     const graph = buildGuideGraph(gs, p);
     if (!graph.edges.length) return null;
@@ -833,15 +877,147 @@
     }
     return cnt;
   }
+  // ---- АВТОПРЕДЛОЖЕНИЕ ДЕРЕВОМ (пакет 7 плана V2) ----
+  // Прежний черновик строил ЗВЕЗДУ от одной «коридорной» комнаты: ствол по её длинной оси и
+  // прямые ножки к центрам остальных. На анфиладе (комнаты цепочкой, без коридора) ножка к
+  // дальней комнате шла напролёт через промежуточные — пересекала стены где попало, мимо
+  // дверей, и каждая такая стена давала гильзу. Теперь магистраль — ДЕРЕВО по смежности:
+  // от комнаты щита по общим стенам к каждой комнате с точками, переход между соседями —
+  // через ДВЕРЬ, если она есть на общей стене (без гильзы при трассе по полу), иначе через
+  // середину общего участка стены. Путь по дереву — кратчайший (Дейкстра), лишний переход
+  // через стену без двери штрафуется SUGGEST_WALL_PEN — предпочитаем обход через двери.
+  const SUGGEST_WALL_PEN = 150; // см «цены» перехода через глухую стену (гильза) против двери
+  const SUGGEST_IN = 40;        // насколько заходим за стену в комнату, прежде чем повернуть
+  // центр комнаты, ГАРАНТИРОВАННО внутри контура (у Г-образной центр bbox может быть снаружи)
+  function roomHub(r) {
+    const bb = G().bbox(r.points), c = { x: bb.x + bb.w / 2, y: bb.y + bb.h / 2 };
+    if (G().pointInPolygon(c, r.points)) return c;
+    let best = null, bd = Infinity;
+    for (let i = 1; i < 12; i++) for (let j = 1; j < 12; j++) {
+      const q = { x: bb.x + bb.w * i / 12, y: bb.y + bb.h * j / 12 };
+      if (!G().pointInPolygon(q, r.points)) continue;
+      const d = G().dist(q, c); if (d < bd) { bd = d; best = q; }
+    }
+    return best || c;
+  }
+  // общие участки стен соседних комнат: {i, j, x (точка перехода), n (нормаль в сторону i),
+  // door (переход через дверь)}. Допуск по расстоянию между осями — до толщины стены: у
+  // пользователя комнаты нередко разъезжаются на несколько см.
+  function roomLinks(p, rs) {
+    const out = [];
+    for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) {
+      let best = null;
+      G().walls(rs[i]).forEach((w1) => {
+        const L = w1.len || 1; if (L < 30) return;
+        const d = { x: (w1.b.x - w1.a.x) / L, y: (w1.b.y - w1.a.y) / L }, n = { x: -d.y, y: d.x };
+        const tol = Math.max(3, G().wallThOf(p, w1) * 1.2);
+        G().walls(rs[j]).forEach((w2) => {
+          const l2 = w2.len || 1;
+          if (Math.abs(d.x * (w2.b.y - w2.a.y) / l2 - d.y * (w2.b.x - w2.a.x) / l2) > 0.05) return; // не параллельны
+          const off = (w2.mx - w1.a.x) * n.x + (w2.my - w1.a.y) * n.y;
+          if (Math.abs(off) > tol) return;
+          const ta = (w2.a.x - w1.a.x) * d.x + (w2.a.y - w1.a.y) * d.y, tb = (w2.b.x - w1.a.x) * d.x + (w2.b.y - w1.a.y) * d.y;
+          const s0 = Math.max(0, Math.min(ta, tb)), s1 = Math.min(L, Math.max(ta, tb));
+          if (s1 - s0 < 40) return; // касание углом / короткий стык — не проход
+          let t = (s0 + s1) / 2, door = false;
+          const dsp = G().wallOpeningSpans(p, w1).find((o) => !(o.sill > 5) && o.offset + o.width / 2 > s0 + 10 && o.offset + o.width / 2 < s1 - 10);
+          if (dsp) { t = dsp.offset + dsp.width / 2; door = true; }
+          const x = { x: w1.a.x + d.x * t + n.x * off / 2, y: w1.a.y + d.y * t + n.y * off / 2 };
+          // нормаль — В СТОРОНУ комнаты i (проба точкой)
+          const pr = { x: x.x + n.x * (Math.abs(off) / 2 + 5), y: x.y + n.y * (Math.abs(off) / 2 + 5) };
+          const ni = G().pointInPolygon(pr, rs[i].points) ? n : { x: -n.x, y: -n.y };
+          const cand = { i, j, x, d, n: ni, door, len: s1 - s0 };
+          if (!best || (cand.door && !best.door) || (cand.door === best.door && cand.len > best.len)) best = cand;
+        });
+      });
+      if (best) out.push(best);
+    }
+    return out;
+  }
+  // полилиния ребра дерева: центр родителя → вдоль стены до оси перехода → поперёк стены →
+  // вдоль стены к центру ребёнка. Поперёк стены — строго перпендикулярно (проходка в плане
+  // прямая, гильза короткая).
+  function linkPolyline(hP, hC, lk, parentIsI) {
+    const nP = parentIsI ? lk.n : { x: -lk.n.x, y: -lk.n.y };
+    const xP = { x: lk.x.x + nP.x * SUGGEST_IN, y: lk.x.y + nP.y * SUGGEST_IN };
+    const xC = { x: lk.x.x - nP.x * SUGGEST_IN, y: lk.x.y - nP.y * SUGGEST_IN };
+    const along = (h, q) => { const t = (q.x - h.x) * lk.d.x + (q.y - h.y) * lk.d.y; return { x: h.x + lk.d.x * t, y: h.y + lk.d.y * t }; };
+    const kP = along(hP, xP), kC = along(hC, xC);
+    // колено = ТА ЖЕ ось поперёк стены: kP лежит на линии xP-xC, значит kP→kC — одна прямая
+    const pts = [hP, kP, kC, hC].map((q) => ({ x: Math.round(q.x), y: Math.round(q.y) }));
+    return pts.filter((q, k) => k === 0 || G().dist(q, pts[k - 1]) > 1);
+  }
+  function suggestTree(p) {
+    const fp = G().floorScoped(p);
+    const rs = (fp.rooms || []).filter((r) => (r.points || []).length >= 3);
+    if (rs.length < 2) return null;
+    const links = roomLinks(p, rs);
+    if (!links.length) return null;
+    const hubs = rs.map(roomHub);
+    // корень — комната главного щита этажа (иначе самая «связная» комната)
+    const panels = fp.panels || [];
+    const CX = EP.Plan.Circuits;
+    const main = (CX && CX.mainPanel ? CX.mainPanel(fp) : null) || panels[0] || null;
+    let root = -1;
+    if (main) { const r = roomNear(p, { x: main.x, y: main.y }); if (r) root = rs.findIndex((x) => x.id === r.id); }
+    if (root < 0) {
+      const deg = rs.map((_, k) => links.filter((l) => l.i === k || l.j === k).length);
+      root = deg.indexOf(Math.max.apply(null, deg));
+    }
+    // нужные комнаты: с точками + со щитами
+    const need = new Set();
+    (fp.elements || []).forEach((el) => { const r = roomOfEl(p, el); if (r) need.add(r.id); });
+    panels.forEach((pn) => { const r = roomNear(p, { x: pn.x, y: pn.y }); if (r) need.add(r.id); });
+    // Дейкстра от корня (комнат единицы-десятки — простой перебор без кучи)
+    const dist = rs.map(() => Infinity), prev = rs.map(() => null), done = rs.map(() => false);
+    dist[root] = 0;
+    for (;;) {
+      let u = -1;
+      for (let k = 0; k < rs.length; k++) if (!done[k] && dist[k] < Infinity && (u < 0 || dist[k] < dist[u])) u = k;
+      if (u < 0) break;
+      done[u] = true;
+      links.forEach((l) => {
+        if (l.i !== u && l.j !== u) return;
+        const v = l.i === u ? l.j : l.i;
+        const w = G().dist(hubs[u], l.x) + G().dist(l.x, hubs[v]) + (l.door ? 0 : SUGGEST_WALL_PEN);
+        if (dist[u] + w < dist[v]) { dist[v] = dist[u] + w; prev[v] = { u, l }; }
+      });
+    }
+    const edges = new Map(); // ключ ребра дерева → {u, v, l}
+    let unreachable = 0;
+    rs.forEach((r, k) => {
+      if (k === root || !need.has(r.id)) return;
+      if (dist[k] === Infinity) { unreachable++; return; }
+      let v = k;
+      while (prev[v]) { const e = prev[v]; edges.set(e.u + ">" + v, { u: e.u, v, l: e.l }); v = e.u; }
+    });
+    const polys = [];
+    edges.forEach((e) => polys.push(linkPolyline(hubs[e.u], hubs[e.v], e.l, e.l.i === e.u)));
+    return { polys, unreachable, root: rs[root].id, doors: [...edges.values()].filter((e) => e.l.door).length };
+  }
   // строит и КЛАДЁТ в p.guides черновик магистрали; возвращает число добавленных линий
   function suggestGuides() {
     const c = core(), p = c.project;
+    const tr = suggestTree(p);
+    if (tr && tr.polys.length) {
+      c.commit();
+      p.guides = (p.guides || []).concat(tr.polys.filter((pts) => pts.length >= 2).map((pts) => c.model.newGuide(pts)));
+      graphCache.clear(); wallsCache = null;
+      c.persist("guide-add");
+      lastSuggest = tr;
+      return tr.polys.length;
+    }
+    return suggestStar(p);
+  }
+  let lastSuggest = null;
+  // запасной вариант — прежняя звезда от «коридора» (комнаты не соприкасаются стенами, но
+  // стоят рядом: дерево построить не из чего)
+  function suggestStar(p) {
+    const c = core();
     const fp = G().floorScoped(p);
     const rs = fp.rooms || [];
     if (rs.length < 2) return 0;
     const adj = roomsAdjacency(p);
-    // «коридор» — комната с максимумом смежных стен; при равенстве берём вытянутую (по
-    // отношению сторон bbox) — коридор почти всегда самый узкий и длинный
     const scored = rs.map((r) => {
       const bb = G().bbox(r.points);
       const elong = Math.max(bb.w, bb.h) / Math.max(1, Math.min(bb.w, bb.h));
@@ -849,33 +1025,30 @@
     }).sort((x, y) => (y.adj - x.adj) || (y.elong - x.elong));
     const hub = scored[0];
     if (!hub || hub.adj < 1) return 0;
-    // ствол — по длинной оси коридора, по его центру
     const hb = hub.bb, horiz = hb.w >= hb.h;
     const cx = hb.x + hb.w / 2, cy = hb.y + hb.h / 2;
-    const pad = 30; // не упираемся в самые углы
+    const pad = 30;
     const trunk = horiz
       ? [{ x: hb.x + pad, y: cy }, { x: hb.x + hb.w - pad, y: cy }]
       : [{ x: cx, y: hb.y + pad }, { x: cx, y: hb.y + hb.h - pad }];
-    const added = [];
-    added.push(c.model.newGuide(trunk));
-    // ножка в каждую комнату, где есть точки (кроме самого коридора)
+    const added = [c.model.newGuide(trunk)];
     const withPts = new Set();
     (fp.elements || []).forEach((el) => { const r = roomOfEl(p, el); if (r) withPts.add(r.id); });
     rs.forEach((r) => {
       if (r.id === hub.r.id || !withPts.has(r.id)) return;
       const bb = G().bbox(r.points), rc = { x: bb.x + bb.w / 2, y: bb.y + bb.h / 2 };
-      // от ствола к центру комнаты — строго перпендикулярным отростком
       const from = horiz ? { x: Math.max(trunk[0].x, Math.min(trunk[1].x, rc.x)), y: cy }
                          : { x: cx, y: Math.max(trunk[0].y, Math.min(trunk[1].y, rc.y)) };
       const to = horiz ? { x: from.x, y: rc.y } : { x: rc.x, y: from.y };
       if (G().dist(from, to) < 20) return;
       added.push(c.model.newGuide([from, to]));
     });
-    if (added.length < 2) return 0; // один ствол без ножек — толку нет
+    if (added.length < 2) return 0;
     c.commit();
     p.guides = (p.guides || []).concat(added);
-    graphCache = null; wallsCache = null;
+    graphCache.clear(); wallsCache = null;
     c.persist("guide-add");
+    lastSuggest = null;
     return added.length;
   }
 
@@ -1017,7 +1190,7 @@
       if (path) return path;
       return ortho(p, a, b, skip);
     }
-    const gp = guideRoute(p, a, b, circuitId); // разные комнаты — только по магистрали, иначе null
+    const gp = guideRoute(p, a, b, circuitId, routeKind(p, fromEl, circuitId)); // разные комнаты — только по магистрали, иначе null
     if (!gp) return null;
     // ФИКС «крюка». Узкий случай, замеренный на реальной форме плана: путь по магистрали
     // почти целиком состоит из ПОДХОДОВ к ней, а сам ствол — мелочь (замерено 50см ствола
@@ -2135,7 +2308,7 @@
   // ---- автоперестройка: геометрия сдвинулась (точка/стена/перегородка) —
   // ранее построенные трассы устарели бы молча (кривые длины/штробы в Расчёте).
   // Перестраиваем тихо, только если трассы уже были построены.
-  const AUTOREBUILD_ON = { "elem-move": 1, "room-reshape": 1, "room-merge": 1, "room-move": 1, "wall-th": 1, "wall-mat": 1, "beam-move": 1, "beam-w": 1, "panel-move": 1, "panel-router": 1, "panel-neptun": 1, "panel-trafo": 1, "opening-move": 1, "elem-target": 1, "riser-pair": 1, "circuit-panel": 1, "autoproject": 1 };
+  const AUTOREBUILD_ON = { "elem-move": 1, "room-reshape": 1, "room-merge": 1, "room-move": 1, "wall-th": 1, "wall-mat": 1, "beam-move": 1, "beam-w": 1, "panel-move": 1, "panel-router": 1, "panel-neptun": 1, "panel-trafo": 1, "opening-move": 1, "elem-target": 1, "riser-pair": 1, "circuit-panel": 1, "autoproject": 1, "guide-kinds": 1 };
   let rebuilding = false;
   // ---- АВТОПЕРЕСТРОЙКА БЕЗ ФРИЗА: тяжёлый build() уходит в фоновый воркер ----
   // Замерено на стресс-проекте (30 комнат / 150 точек / 56 трасс) с эмуляцией слабого
@@ -2195,7 +2368,7 @@
   if (core().onChange) {
     core().onChange((what) => {
       // другой проект открыт — список «Без трассы» от прошлого проекта больше не про него
-      if (what === "open" || what === "import") { lastUnrouted = []; lastUnroutedPid = null; graphCache = null; wallsCache = null; autoSeq++; autoPending = false; precalc = null; schedulePrecalc(); return; }
+      if (what === "open" || what === "import") { lastUnrouted = []; lastUnroutedPid = null; graphCache.clear(); wallsCache = null; autoSeq++; autoPending = false; precalc = null; schedulePrecalc(); return; }
       // ↶/↷ восстанавливают трассы из снимка вместе с геометрией — результат фоновой
       // автоперестройки, начатой ДО отмены, считался по уже отменённой геометрии: не применять
       if (what === "undo" || what === "redo") { autoSeq++; autoPending = false; }
@@ -2798,7 +2971,7 @@
       const n = suggestGuides();
       if (!n) { rooms().toast(T.suggestNone); return; }
       rooms().renderScene();
-      rooms().toast(T.suggestOk(n));
+      rooms().toast(T.suggestOk(n, lastSuggest));
       sheetBuildConfirm();
       return;
     }
@@ -2890,5 +3063,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { build, buildIncremental, clearRoutes, suggestGuides, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, keys24Of, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
+  EP.Plan.Routes = { build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, keys24Of, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
 })();

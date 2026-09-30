@@ -625,13 +625,23 @@
     // магистрали трасс (p.guides): полупрозрачное приоритетное направление —
     // ПОД трассами (рисуются раньше). Скрытые (hidden после построения) видны
     // ТОЛЬКО в режиме рисования ⇉ (ui.guideMode) — там их можно убрать/дополнить.
-    (project.guides || []).forEach((gd) => {
+    // Магистраль, назначенная ОДНОЙ группе трасс (gd.kinds, пакет 7), красится цветом группы —
+    // по плану сразу видно, где коридор слаботочки, а где силовой; общая — прежним синим.
+    // В режиме ⇉ у начала каждой линии её номер — тот же, что в списке шторки.
+    const GUIDE_COL = { light: "#f59e0b", power: "#ef4444", lv: "#3b82f6", v24: "#a855f7" };
+    (project.guides || []).forEach((gd, gi) => {
       if ((gd.hidden || montage) && !(ui && ui.guideMode)) return;
       if ((gd.points || []).length < 2) return;
-      g.appendChild(el("polyline", {
+      const ks = Array.isArray(gd.kinds) ? gd.kinds : [];
+      const col = ks.length === 1 ? GUIDE_COL[ks[0]] : null;
+      g.appendChild(el("polyline", Object.assign({
         points: gd.points.map((q) => q.x + "," + q.y).join(" "),
-        class: "ep-plan-guide", "stroke-width": sw * 3
-      }));
+        class: "ep-plan-guide" + (ks.length ? " is-kind" : ""), "stroke-width": sw * 3
+      }, col ? { style: "stroke:" + col } : {})));
+      if (ui && ui.guideMode) {
+        const q0 = gd.points[0];
+        g.appendChild(el("text", { x: q0.x + 8 * k, y: q0.y - 8 * k, "font-size": 12 * k, class: "ep-plan-guidenum", fill: col || "#60a5fa" }, "⇉" + (gi + 1)));
+      }
     });
     // черновик рисуемой магистрали (режим ⇉): ярче и пунктиром + точки
     const gDraft = ui && ui.guideDraft;
