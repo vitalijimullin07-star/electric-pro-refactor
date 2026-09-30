@@ -161,7 +161,8 @@
     let lines, heads;
     if (cfg.manualMode && Array.isArray(cfg.manualGroups) && cfg.manualGroups.length) {
       lines = cfg.manualGroups.reduce((n, g) => n + ((g.lines || []).length), 0);
-      heads = cfg.manualGroups.length * (Number(cfg.difWidth) || 2);
+      // голова-УЗО только у групп с защитой; линия-дифавтомат шире автомата на (difWidth-1)
+      heads = headCount(cfg.manualGroups) * (Number(cfg.difWidth) || 2) + rcboCount(cfg.manualGroups) * ((Number(cfg.difWidth) || 2) - 1);
     } else {
       lines = lightGroups + socketGroups + wet + warm + clim + sepLines;
       heads = 5 * (Number(cfg.difWidth) || 2);
@@ -210,6 +211,20 @@
     return { dbFound: false };
   }
 
+  // Группа БЕЗ головы-УЗО (kind:"none" — линии прямо от вводного) и линия-ДИФАВТОМАТ
+  // (line.rcbo — сама себе защита, отдельной головы нет). Приходят из «Проекта квартиры»
+  // (движок цепей: линии без УЗО и линии со своим дифом); в обычном и ручном режиме
+  // конструктора их нет — всё ниже для них ведёт себя как раньше.
+  const isNoneG = g => !!g && (g.kind === "none" || (g.prot && g.prot.kind === "none"));
+  const headCount = gs => (gs || []).filter(g => !isNoneG(g)).length;
+  const rcboCount = gs => (gs || []).reduce((n, g) => n + (g.lines || []).filter(l => l.rcbo).length, 0);
+  function resolveDif(amp, curve, leak) {
+    const R = window.ShieldDbResolverV28;
+    if (!R || !amp) return { dbFound: false };
+    const res = R.resolve({ kind: "dif", amp, leakMA: leak || 30, curve: curve || cfg.curve, rcdType: cfg.rcdType || "A" }, { rule: cfg.dbRule === "max" ? "max" : "min", preferBrand: brandPref() });
+    if (res.found) return { dbFound: true, dbName: res.item.name, dbPrice: res.price, dbCount: res.candidates, alts: (res.alternatives || []).slice(0, 12), showAlts: false };
+    return { dbFound: false };
+  }
   // Группированный черновик: 5 групп -> свой диф/УЗО + автоматы линий, всё из БД.
   function resolveDraft(plan) {
     const R = window.ShieldDbResolverV28;
@@ -218,19 +233,20 @@
     if (cfg.manualMode && Array.isArray(cfg.manualGroups) && cfg.manualGroups.length) {
       // ручная схема: группы заданы напрямую
       groups = cfg.manualGroups.map((g, i) => {
-        const kind = g.kind === "dif" ? "dif" : "uzo";
+        const kind = g.kind === "dif" ? "dif" : g.kind === "none" ? "none" : "uzo";
         const leak = Number(g.leak) || 30;
         const gcurve = g.curve || "C";
         const gamp = Number(g.amp) || 40;
         const grtype = g.rcdType || "A";
         let prot = { kind, amp: gamp, leakMA: leak, curve: kind === "dif" ? gcurve : "", rcdType: grtype, found: false, showAlts: false };
-        if (R) {
+        if (R && kind !== "none") {
           const res = R.resolve(kind === "dif" ? { kind, amp: gamp, leakMA: leak, curve: gcurve, rcdType: grtype } : { kind, amp: gamp, leakMA: leak, rcdType: grtype }, { rule, preferBrand: brandPref() });
           if (res.found) { prot.found = true; prot.name = res.item.name; prot.price = res.price; prot.count = res.candidates; prot.alts = (res.alternatives || []).slice(0, 12); }
         }
         const lines = (g.lines || []).map(line => {
           const amp = Number(String(line.nom).replace(/[^\d]/g, "")) || null;
-          return Object.assign({ name: line.name, nom: line.nom, note: "", amp, curve: line.curve || "C", phase: line.phase || "1", cable: line.cable || "", cableLen: Number(line.cableLen) || 0, apps: line.apps || [] }, resolveAvt(amp, line.curve));
+          return Object.assign({ name: line.name, nom: line.nom, note: "", amp, curve: line.curve || "C", phase: line.phase || "1", cable: line.cable || "", cableLen: Number(line.cableLen) || 0, apps: line.apps || [], rcbo: !!line.rcbo, leak: Number(line.leak) || 30 },
+            line.rcbo ? resolveDif(amp, line.curve, Number(line.leak) || 30) : resolveAvt(amp, line.curve));
         });
         return { key: g.key || ("m" + i), title: g.title || ("Группа " + (i + 1)), leak, prot, lines, apps: g.apps || [], appsAfter: g.appsAfter || [], phase: g.phase || "1", phaseSel: g.phaseSel || "1", amp: gamp, curve: gcurve, rcdType: grtype, collapsed: true };
       }).filter(g => g.lines.length);
@@ -286,8 +302,8 @@
   // Расходка и шины — считаются формулой, цены ищутся в БД по ключевым словам.
   function buildConsumables(groups) {
     const R = window.ShieldDbResolverV28;
-    const automats = groups.reduce((s, g) => s + g.lines.length, 0);
-    const rcds = groups.length;
+    const automats = groups.reduce((s, g) => s + g.lines.length, 0) - rcboCount(groups);
+    const rcds = headCount(groups) + rcboCount(groups);
     const rule = cfg.dbRule === "max" ? "max" : "min";
     const sec = Number(cfg.pugvSec) || 6;
     const items = [];
@@ -347,8 +363,8 @@
     const R = window.ShieldDbResolverV28;
     const works = R ? R.readWorks() : [];
     const rule = cfg.dbRule === "max" ? "max" : "min";
-    const automats = groups.reduce((s, g) => s + g.lines.length, 0) + (cfg.opts.vvod ? 1 : 0);
-    const rcds = groups.length;
+    const automats = groups.reduce((s, g) => s + g.lines.length, 0) - rcboCount(groups) + (cfg.opts.vvod ? 1 : 0);
+    const rcds = headCount(groups) + rcboCount(groups);
     const items = [];
     const addW = (label, kws, qty, exclude, perModule) => {
       const res = R ? R.findByKeywords(kws, { rows: works, rule, exclude }) : { found: false };
@@ -376,13 +392,16 @@
       add({ des: a.des, label: a.isVvod ? "Ввод" : a.title.split(" ")[0], nom: a.nom || "", serves: a.title, w: a.w, type: a.isVvod ? "input" : "extra" });
     });
     draft.groups.forEach(g => {
-      qd++;
-      add({ des: "QD" + qd, label: g.prot.kind === "dif" ? "ДИФ" : "УЗО", nom: `40А ${g.leak}мА`, serves: `${g.title} — защита группы`, w: headW, type: "rcd", grp: g.key, dbName: g.prot.found ? g.prot.name : "", price: g.prot.found ? g.prot.price : 0, found: g.prot.found });
+      if (!isNoneG(g)) {
+        qd++;
+        add({ des: "QD" + qd, label: g.prot.kind === "dif" ? "ДИФ" : "УЗО", nom: `40А ${g.leak}мА`, serves: `${g.title} — защита группы`, w: headW, type: "rcd", grp: g.key, dbName: g.prot.found ? g.prot.name : "", price: g.prot.found ? g.prot.price : 0, found: g.prot.found });
+      }
       // мастер-контактор: сразу после УЗО/диф освещения, до автоматов
       if (g.key === "light" && masterKM) {
         add({ des: "KM1", label: "Контактор", nom: "мастер", serves: "Контактор мастер-кнопки (отключает всё освещение)", w: cfg.phase === "3" ? 3 : 1, type: "extra", grp: g.key });
       }
       g.lines.forEach(l => {
+        if (l.rcbo) { qd++; add({ des: "QD" + qd, label: "ДИФ", nom: `${l.nom} ${l.leak || 30}мА`, serves: l.name, w: headW, type: "rcd", grp: g.key, dbName: l.dbFound ? l.dbName : "", price: l.dbFound ? l.dbPrice : 0, found: l.dbFound }); return; }
         qf++;
         add({ des: "QF" + qf, label: l.nom, nom: l.nom, serves: l.name, w: 1, type: "avt", grp: g.key, dbName: l.dbFound ? l.dbName : "", price: l.dbFound ? l.dbPrice : 0, found: l.dbFound });
       });
@@ -446,17 +465,20 @@
     const chainToC = (keys, tail, poles) => { keys = keys || []; const ns = keys.map(k => appNodeC(k, poles)); for (let i = 0; i < ns.length; i++) ns[i].children = [i + 1 < ns.length ? ns[i + 1] : tail]; return ns.length ? ns[0] : tail; };
     const chainAfterC = (device, keys, tail, poles) => { keys = keys || []; if (!keys.length) { device.children = tail; return; } const ns = keys.map(k => appNodeC(k, poles, "gapp")); for (let i = 0; i < ns.length; i++) ns[i].children = i + 1 < ns.length ? [ns[i + 1]] : tail; device.children = [ns[0]]; };
     const groupNodes = draft.groups.map(g => {
-      qd++;
+      if (!isNoneG(g)) qd++;
       const gp = effP(g.phase);
       const autom = g.lines.map(l => {
-        qf++;
+        if (l.rcbo) qd++; else qf++;
         const cab = (l.cable && window.EPCableV28) ? (() => { let s = window.EPCableV28.resolveByValue(l.cable).label.replace(/^Кабель\s+/i, ""); if (s.length > 20) s = s.slice(0, 19) + "…"; const ln = Number(l.cableLen) || 0; return s + (ln > 0 ? " · " + ln + "м" : ""); })() : "";
         const lp = effP(l.phase);
-        const brk = { id: "QF" + qf, type: "mcb", label: l.name, rating: amp(l.nom), poles: lp, children: [] };
+        const brk = l.rcbo
+          ? { id: "QD" + qd, type: "rcbo", label: l.name, rating: amp(l.nom) + "/" + (l.leak || 30) + "мА", poles: lp, children: [] }
+          : { id: "QF" + qf, type: "mcb", label: l.name, rating: amp(l.nom), poles: lp, children: [] };
         if ((l.apps || []).length) { const load = { id: "", type: "load", label: "", rating: "", cable: cab, children: [] }; brk.children = [chainToC(l.apps, load, lp)]; }
         else { brk.cable = cab; }
         return brk;
       });
+      if (isNoneG(g)) return autom; // линии без головы-УЗО — прямо на шину (плоский список ниже)
       const qdNode = { id: "QD" + qd, type: g.prot.kind === "dif" ? "rcbo" : "rcd", label: g.title + " " + g.leak + "мА", rating: (g.rcdType || "A") + " " + (g.prot.kind === "dif" && g.curve ? g.curve + " " : "") + (g.amp || 40) + "А/" + g.leak + "мА", poles: gp, children: autom };
       // мастер-контактор: между УЗО/диф освещения и автоматами освещения
       if (g.key === "light" && masterKM) {
@@ -481,7 +503,7 @@
     }
     tail.isCrossModule = (cfg.distribution === "cross");
     const extraBranches = branch.map(a => ({ id: a.des, type: a.symbol, label: a.title, rating: a.nom || "", children: [] }));
-    tail.children = groupNodes.concat(extraBranches);
+    tail.children = groupNodes.reduce((a, n) => a.concat(n), []).concat(extraBranches);
     return root;
   }
 
@@ -659,10 +681,11 @@
     if (!draft || !draft.groups || !draft.groups.length) return `<div class="shv28-draft-empty">Нажми «Сгенерировать черновик».</div>`;
     let foundDev = 0, totalDev = 0, total = 0;
     const groupsHtml = draft.groups.map((g, gi) => {
-      // групповой диф/УЗО
-      totalDev++;
+      // групповой диф/УЗО (у группы «без УЗО» головы нет)
       let protHtml;
-      if (g.prot.found) {
+      if (isNoneG(g)) {
+        protHtml = `<div class="shv28-prot ok">${g.lines.some(l => l.rcbo) ? "Каждая линия — свой дифавтомат" : "Без УЗО — линии прямо от вводного"}</div>`;
+      } else if ((totalDev++, g.prot.found)) {
         foundDev++; total += Number(g.prot.price) || 0;
         protHtml = `<div class="shv28-prot ok" data-palts="${gi}">${g.prot.kind === "dif" ? "ДИФ" : "УЗО"} 40А ${g.leak}мА — ${esc(g.prot.name)}${brandTag(g.prot.name)} · <b>${cur(g.prot.price)}</b>${g.prot.count > 1 ? ` <i>(заменить)</i>` : ""}</div>`;
         if (g.prot.showAlts) protHtml += altsHtml(g.prot.alts, g.prot.name, "data-ppick", String(gi));
@@ -678,19 +701,21 @@
           db = `<div class="shv28-draft-db ok" data-alts="${gi}:${li}">✅ ${esc(p.dbName)}${brandTag(p.dbName)} · <b>${cur(p.dbPrice)}</b>${p.dbCount > 1 ? ` <i>(заменить)</i>` : ""}</div>`;
           if (p.showAlts) db += altsHtml(p.alts, p.dbName, "data-pick", gi + ":" + li);
         } else {
-          db = `<div class="shv28-draft-db no">⚠️ автомат ${esc(p.nom)} не найден</div>`;
+          db = `<div class="shv28-draft-db no">⚠️ ${p.rcbo ? "дифавтомат" : "автомат"} ${esc(p.nom)} не найден</div>`;
         }
-        return `<div class="shv28-draft-row2"><div class="r1"><span class="nm">${esc(p.name)}</span><span class="nom">${esc(p.nom)}</span></div>${db}</div>`;
+        return `<div class="shv28-draft-row2"><div class="r1"><span class="nm">${esc(p.name)}</span><span class="nom">${p.rcbo ? "ДИФ " : ""}${esc(p.nom)}</span></div>${db}</div>`;
       }).join("");
-      return `<div class="shv28-group"><div class="shv28-group-head" data-gcollapse="${gi}"><span class="gt">${esc(g.title)}</span><span class="gl">${g.leak}мА</span><span class="gc">${g.lines.length} лин.</span><span class="gx">${g.collapsed ? "▸" : "▾"}</span></div>${protHtml}${g.collapsed ? "" : `<div class="shv28-group-lines">${linesHtml}</div>`}</div>`;
+      return `<div class="shv28-group"><div class="shv28-group-head" data-gcollapse="${gi}"><span class="gt">${esc(g.title)}</span><span class="gl">${isNoneG(g) ? (g.lines.some(l => l.rcbo) ? "диф" : "без УЗО") : g.leak + "мА"}</span><span class="gc">${g.lines.length} лин.</span><span class="gx">${g.collapsed ? "▸" : "▾"}</span></div>${protHtml}${g.collapsed ? "" : `<div class="shv28-group-lines">${linesHtml}</div>`}</div>`;
     }).join("");
     // краткий итог: все группы (вкл. ненайденные 10мА), автоматы по номиналу, аппараты
     const avtAgg = {}, protMap = {};
     draft.groups.forEach(g => {
-      const k = `${g.prot.kind === "dif" ? "ДИФ" : "УЗО"} 40А ${g.leak}мА`;
-      const m = (protMap[k] = protMap[k] || { c: 0, t: 0, found: false });
-      m.c++; m.t += Number(g.prot.price) || 0; if (g.prot.found) m.found = true;
-      g.lines.forEach(l => { if (l.dbFound) { const ka = `Автомат ${l.nom}`; (avtAgg[ka] = avtAgg[ka] || { c: 0, t: 0 }); avtAgg[ka].c++; avtAgg[ka].t += Number(l.dbPrice) || 0; } });
+      if (!isNoneG(g)) {
+        const k = `${g.prot.kind === "dif" ? "ДИФ" : "УЗО"} 40А ${g.leak}мА`;
+        const m = (protMap[k] = protMap[k] || { c: 0, t: 0, found: false });
+        m.c++; m.t += Number(g.prot.price) || 0; if (g.prot.found) m.found = true;
+      }
+      g.lines.forEach(l => { if (l.dbFound) { const ka = `${l.rcbo ? "Дифавтомат" : "Автомат"} ${l.nom}`; (avtAgg[ka] = avtAgg[ka] || { c: 0, t: 0 }); avtAgg[ka].c++; avtAgg[ka].t += Number(l.dbPrice) || 0; } });
     });
     const apps = draft.apparatus || [];
     const protRows = Object.entries(protMap).map(([k, v]) =>
@@ -854,7 +879,7 @@
     root.innerHTML = `
       <div class="shv28">
         ${cfg.manualMode
-          ? `<div class="shv28-manual-banner">✍️ Активна <b>ручная схема</b> из конструктора (${(cfg.manualGroups || []).length} групп). Расчёт идёт по ней, правки в конструкторе подтягиваются автоматически. <button type="button" data-openscheme>✍️ Править однолинейку</button> <button type="button" data-manualoff>Вернуться к шаблонам</button></div>`
+          ? `<div class="shv28-manual-banner">✍️ Активна <b>${cfg.manualSource ? `схема из проекта квартиры «${esc(cfg.manualSource.name)}»` : "ручная схема из конструктора"}</b> (${(cfg.manualGroups || []).length} групп). Расчёт идёт по ней, правки в конструкторе подтягиваются автоматически. <button type="button" data-openscheme>✍️ Править однолинейку</button> <button type="button" data-manualoff>Вернуться к шаблонам</button></div>`
           : `<button type="button" class="shv28-scheme-entry" data-openscheme>✍️ Собрать по ручной однолинейке →</button>`}
         <details class="shv28-foldcard" data-fold="tpl" ${openState.tpl?"open":""}>
           <summary><span class="shv28-fi">📋</span><span class="shv28-ftx"><b>Шаблоны</b><i>Тип объекта и профиль Бюджет / Стандарт / Топ</i></span><span class="shv28-arrow">⌄</span></summary>
@@ -1143,6 +1168,8 @@
     if (ap.master !== undefined) cfg.opts.master = !!ap.master;
     if (model.brand) { cfg.autoBrand = model.brand; cfg.brand = model.brand; }
     cfg.manualGroups = Array.isArray(model.groups) ? model.groups : [];
+    // откуда пришла схема: из «Проекта квартиры» (движок цепей) или из конструктора
+    cfg.manualSource = model.source && model.source.kind === "plan" ? { kind: "plan", name: String(model.source.projectName || "") } : null;
     cfg.manualMode = true;
     // сразу строим черновик
     cfg.draft = resolveDraft(buildPlan());

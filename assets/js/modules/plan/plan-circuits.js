@@ -269,7 +269,60 @@
     return true;
   }
 
+  // ---- проект → модель ручной однолинейки (ManualSchemeV28 / конфигуратор щита) ----
+  // Формат тот же, что пишет конструктор «📐 Однолинейная схема» (ep_manual_scheme_v28):
+  // input/apparatus/groups[{title,kind,leak,amp,lines[{name,nom,amp,curve,phase,cable,cableLen}]}].
+  // Групповое УЗО → группа kind:"uzo" со своими линиями; линии без УЗО → группа kind:"none"
+  // (прямо от вводного — конфигуратор понимает её с этого пакета); свои дифы → группа
+  // kind:"none" с линиями rcbo:true (дифавтомат — один аппарат, отдельной головы нет).
+  // Кабель — строкой "fix:<марка>" (так его понимает EPCableV28), длина — по трассам с
+  // запасом, как в «По линиям». Линия помнит circuitId — связь с проектом не теряется.
+  function toManualModel(p, panelId) {
+    const s = p.settings || {};
+    const lines = linesOf(p, panelId || null);
+    const SC = EP.Plan.Scheme, R = EP.Plan.Routes;
+    let L = null; try { L = R && R.lengths ? R.lengths(p) : null; } catch (e) {}
+    const res = 1 + (Number(s.cableReserve) || 0) / 100;
+    const ln = (c, extra) => {
+      const amp = Number(c.breaker) || 16;
+      const cab = String(c.cable || (SC && SC.autoCable ? SC.autoCable(p, c) : "") || "").replace(/×/g, "х");
+      const cm = L && L.byCircuit ? (L.byCircuit[c.id] || 0) : 0;
+      return Object.assign({
+        id: "pl" + c.id, circuitId: c.id, name: (c.name || "") + (c.title ? " " + c.title : ""),
+        curve: "C", amp, nom: "C" + amp, phase: c.poles === 3 ? "3" : "1",
+        cable: cab ? "fix:" + cab : "", cableLen: cm ? Math.round(cm / 100 * res * 10) / 10 : "", cableAuto: false, apps: []
+      }, extra || {});
+    };
+    const groupsOut = [];
+    const byG = new Map(), plain = [], difs = [];
+    lines.forEach((c) => {
+      const pr = protOf(p, c);
+      if (pr.kind === "group") { if (!byG.has(pr.group.id)) byG.set(pr.group.id, { g: pr.group, ls: [] }); byG.get(pr.group.id).ls.push(c); }
+      else if (pr.kind === "own") difs.push(c);
+      else plain.push(c);
+    });
+    byG.forEach(({ g, ls }) => groupsOut.push({
+      id: "pg" + g.id, title: g.name, kind: "uzo", leak: Number(g.leak) || 30, amp: Number(g.rating) || 40, rcdType: "A", curve: "C",
+      phase: ls.some((c) => c.poles === 3) ? "3" : "1", phaseSel: "1", apps: [], appsAfter: [], lines: ls.map((c) => ln(c))
+    }));
+    if (difs.length) groupsOut.push({ id: "pgdif", title: "Дифавтоматы", kind: "none", leak: 30, amp: 40, rcdType: "A", curve: "C", phase: "1", phaseSel: "1", apps: [], appsAfter: [],
+      lines: difs.map((c) => ln(c, { rcbo: true, leak: Number(c.rcdRating) || 30 })) });
+    if (plain.length) groupsOut.push({ id: "pgnone", title: "Без УЗО", kind: "none", leak: 30, amp: 40, rcdType: "A", curve: "C", phase: "1", phaseSel: "1", apps: [], appsAfter: [], lines: plain.map((c) => ln(c)) });
+    const main = mainPanel(p);
+    const isMain = !panelId || !main || panelId === main.id;
+    return {
+      input: { phase: s.phases === 3 ? "3" : "1", amp: Number(s.mainBreaker) || 40, cable: "", cableLen: "", segCables: {} },
+      brand: s.panelBrand || "Любой",
+      apparatus: { vvod: true, meter: isMain && !!s.meter, opn: false, uzm: false, rubilnik: false, contactor: false, bell: false, serviceSocket: false, uzdp: false, phaseSwitch: false, avr: false, priority: false, master: false },
+      apparatusOrder: ["vvod"].concat(isMain && s.meter ? ["meter"] : []),
+      layout: { offsets: {} },
+      groups: groupsOut,
+      source: { kind: "plan", projectId: p.id, projectName: p.name || "", panelId: panelId || null }
+    };
+  }
+
   EP.Plan.Circuits = {
+    toManualModel,
     RCD_RATINGS, RCD_LEAKS,
     groups, groupById, newGroup, removeGroup,
     protOf, setProtection, protLabel,

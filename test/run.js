@@ -7463,6 +7463,75 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 59. Щит из проекта → «Конфигуратор щита» (без второго движка) =====
+  {
+    const fs59 = require("fs"), path59 = require("path"), vm59 = require("vm");
+    const root59 = path59.join(__dirname, "..");
+    const CX = EP.Plan.Circuits;
+    // конфигуратор и конструктор однолинейки — в ту же песочницу (DOM у них заглушен)
+    ["assets/js/modules/shield/cable-v28.js", "assets/js/modules/shield/shield-configurator-v28.js", "assets/js/modules/scheme/manual-scheme-v28.js"]
+      .forEach((f) => vm59.runInContext(fs59.readFileSync(path59.join(root59, f), "utf8"), sandbox));
+    const seed59 = () => {
+      const p = EP.Plan.Core.createProject("s59");
+      const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "A"); p.rooms.push(A);
+      p.panels.push(M.newPanel(40, 250, "ЩК"));
+      p.settings.meter = true; p.settings.mainBreaker = 50;
+      const mk = (n, br) => { const c = M.newCircuit(n, "#e11", br); p.circuits.push(c); const e = M.newElement("socket", A.id + ":0", 50 + p.circuits.length * 40, 30, "power"); e.circuitId = c.id; p.elements.push(e); return c; };
+      const q1 = mk("QF1", 16), q2 = mk("QF2", 16), q3 = mk("QF3", 16), q4 = mk("QF4", 10);
+      q4.title = "Свет";
+      p.rcdGroups = [{ id: "rg1", name: "УЗО1", rating: 40, leak: 30 }];
+      CX.setProtection(p, q1, "grp:rg1"); CX.setProtection(p, q2, "grp:rg1"); CX.setProtection(p, q3, "own");
+      EP.Plan.Core.persist("seed");
+      EP.Plan.Routes.build({ silent: true });
+      return { p, q1, q2, q3, q4 };
+    };
+    test("модель для конфигуратора: групповое УЗО, дифы и линии без УЗО — отдельными группами", () => {
+      const { p } = seed59();
+      const m = CX.toManualModel(p, null);
+      eq(m.groups.map((g) => g.title + ":" + g.kind + ":" + g.lines.length).join(","), "УЗО1:uzo:2,Дифавтоматы:none:1,Без УЗО:none:1");
+      ok(m.groups[1].lines[0].rcbo, "свой диф — линия-дифавтомат");
+      eq(m.groups[0].amp, 40, "номинал группового УЗО");
+      ok(/^fix:ВВГнг\(А\)-LS 3х2\.5$/.test(m.groups[0].lines[0].cable), "кабель в формате конфигуратора (кириллическая х)");
+      ok(Number(m.groups[0].lines[0].cableLen) > 0, "длина кабеля — по трассам");
+      eq(m.groups[2].lines[0].name, "QF4 Свет", "описание линии в имени");
+      ok(m.apparatus.meter && m.apparatusOrder.join() === "vvod,meter", "счётчик главного щита");
+      eq(m.input.amp, 50); eq(m.source.kind, "plan");
+    });
+    test("конфигуратор считает группу без УЗО и линию-дифавтомат правильно", () => {
+      const { p } = seed59();
+      const SC = sandbox.ShieldConfiguratorV28;
+      SC.loadManual(CX.toManualModel(p, null));
+      const c = SC.getConfig();
+      ok(c.manualMode && c.manualSource && c.manualSource.kind === "plan", "ручной режим, источник — проект");
+      eq(c.draft.cons.automats, 3, "автоматы: 2 под УЗО + 1 без УЗО (дифавтомат автоматом не считается)");
+      eq(c.draft.cons.rcds, 2, "УЗО1 + дифавтомат линии QF3");
+      const wk = (lbl) => (c.draft.work.items.find((i) => i.label === lbl) || {}).qty;
+      eq(wk("Установка автоматов"), 4, "+ вводной"); eq(wk("Установка УЗО/диф"), 2);
+      ok(c.draft.groups[1].lines[0].rcbo, "черновик помнит дифавтомат");
+    });
+    test("конструктор однолинейки открывает ту же схему (группа «Без УЗО» не превращается в УЗО)", () => {
+      const { p } = seed59();
+      sandbox.localStorage.setItem("ep_manual_scheme_v28", JSON.stringify(CX.toManualModel(p, null)));
+      const m = sandbox.ManualSchemeV28.loadSaved();
+      eq(m.groups.map((g) => g.kind).join(","), "uzo,none,none");
+      const src = fs59.readFileSync(path59.join(root59, "assets/js/modules/scheme/manual-scheme-v28.js"), "utf8");
+      ok(/data-gkind="\$\{gi\}:none"/.test(src) && /if \(noneG\) return autom;/.test(src), "кнопка «Без УЗО» и дерево без головы");
+    });
+    test("кнопка «В конфигуратор щита»: пишет схему в общий ключ и переходит на экран щита", () => {
+      seed59();
+      let routed = null;
+      sandbox.Router = { load: (r) => { routed = r; } };
+      sandbox.confirm = () => true;
+      ok(EP.Plan.Scheme.toShield(), "передача состоялась");
+      eq(routed, "shield", "переход на экран конфигуратора");
+      const saved = JSON.parse(sandbox.localStorage.getItem("ep_manual_scheme_v28"));
+      eq(saved.source.kind, "plan"); eq(saved.groups.length, 3);
+      delete sandbox.Router;
+      const src = fs59.readFileSync(path59.join(root59, "assets/js/modules/plan/plan-scheme.js"), "utf8");
+      ok(/data-psc-toshield/.test(src), "кнопка в однолинейке плана");
+    });
+  }
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

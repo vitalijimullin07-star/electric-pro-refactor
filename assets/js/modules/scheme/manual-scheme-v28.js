@@ -161,17 +161,23 @@
     const inlineA = ordered.filter(a => a.inline);
     const branchA = ordered.filter(a => !a.inline);
     const groupNodes = m.groups.map((g, gi) => {
-      qd++;
+      // kind:"none" — группа без головы-УЗО (линии прямо от вводного; приходит и из
+      // «Проекта квартиры»), line.rcbo — линия сама себе дифавтомат
+      const noneG = g.kind === "none";
+      if (!noneG) qd++;
       const gp = effPhase(g.phase);
       const autom = (g.lines || []).map((l, li) => {
-        qf++;
+        if (l.rcbo) qd++; else qf++;
         const lp = effPhase(l.phase);
-        const brk = { id: "QF" + qf, type: "mcb", label: l.name || "Линия", rating: l.nom || "", poles: lp, children: [] };
+        const brk = l.rcbo
+          ? { id: "QD" + qd, type: "rcbo", label: l.name || "Линия", rating: (l.nom || "") + "/" + (l.leak || 30) + "мА", poles: lp, children: [] }
+          : { id: "QF" + qf, type: "mcb", label: l.name || "Линия", rating: l.nom || "", poles: lp, children: [] };
         const cab = cableShort(l);
         if ((l.apps || []).length) { const load = { id: "", type: "load", label: "", rating: "", cable: cab, children: [] }; brk.children = [chainTo(l.apps, load, lp, "la:" + gi + ":" + li)]; }
         else { brk.cable = cab; }
         return brk;
       });
+      if (noneG) return autom; // плоско на шину (разворачивается ниже)
       const rcd = { id: "QD" + qd, type: g.kind === "dif" ? "rcbo" : "rcd", label: (g.title || "Группа") + " " + (g.leak || 30) + "мА" + (m.input.phase === "3" && g.phase !== "3" ? " · L" + (g.phaseSel || "1") : ""), rating: (g.rcdType || "A") + " " + (g.kind === "dif" ? (g.curve || "C") + " " : "") + (g.amp || 40) + "А/" + (g.leak || 30) + "мА", poles: gp, children: autom };
       chainAfter(rcd, g.appsAfter || [], autom, gp, "ga:" + gi);
       return chainTo(g.apps || [], rcd, gp, "gb:" + gi);
@@ -187,7 +193,7 @@
       tail = rt;
     }
     const extra = branchA.map(a => ({ id: "", type: a.sym, label: a.title, rating: "", poles: 1, children: [] }));
-    tail.children = groupNodes.concat(extra);
+    tail.children = groupNodes.reduce((a, n) => a.concat(n), []).concat(extra);
     rt.busbarCable = cableShort({ cable: m.input.cable, cableLen: m.input.cableLen });
     rt.offsets = {};
     rt.interactive = true;
@@ -296,8 +302,9 @@
         </div>
         <div class="ms-group-row">
           <div class="ms-seg">
-            <button type="button" class="${g.kind !== "dif" ? "on" : ""}" data-gkind="${gi}:uzo">УЗО</button>
+            <button type="button" class="${g.kind !== "dif" && g.kind !== "none" ? "on" : ""}" data-gkind="${gi}:uzo">УЗО</button>
             <button type="button" class="${g.kind === "dif" ? "on" : ""}" data-gkind="${gi}:dif">Диф</button>
+            <button type="button" class="${g.kind === "none" ? "on" : ""}" data-gkind="${gi}:none" title="Линии прямо от вводного, без УЗО (или каждая — свой дифавтомат)">Без УЗО</button>
           </div>
           <select class="ms-gsel" data-gleak="${gi}" title="Ток утечки">${opt("30", String(g.leak || 30), "30 мА")}${opt("10", String(g.leak || 30), "10 мА")}</select>
           <select class="ms-gsel" data-grtype="${gi}" title="Тип по току утечки (AC/A/B)">${RCD_TYPES.map(tp => opt(tp, g.rcdType || "A", "тип " + tp)).join("")}</select>
