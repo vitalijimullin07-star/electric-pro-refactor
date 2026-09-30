@@ -265,8 +265,11 @@
       // шторку открываем ТОЛЬКО если уже есть сохранённые магистрали (ради 🗑) —
       // иначе она закрывает низ холста и первый же тап рисования попадает в неё,
       // а не в план (поймано живым тестом); свежее рисование — только подсказка
+      // Без магистралей шторка открывается СВЁРНУТОЙ (кнопка ︿ в углу): рисовать не мешает,
+      // а «🌳 Предложить по комнатам» и выбор групп в ней под рукой (пакет 7).
       const hasGuides = (G().floorScoped(core().project).guides || []).length > 0;
-      if (hasGuides) sheetGuide(); else closeSheet();
+      sheetGuide();
+      if (!hasGuides) collapseSheet();
     }
     else closeSheet();
     renderScene();
@@ -451,7 +454,7 @@
       const sp = G().snapSmart(p, orthoG, step, CFG.cornerSnapCm);
       if (sp.snapped) vibrate(10);
       pts.push({ x: sp.x, y: sp.y });
-      if (pts.length === 1) closeSheet(); // шторка не мешает рисовать; вернётся после сохранения
+      if (pts.length === 1) collapseSheet(); // шторка не мешает рисовать (свёрнута, ︿ вернёт); развернётся после сохранения
       renderScaled();
       return;
     }
