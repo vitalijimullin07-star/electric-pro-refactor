@@ -1825,6 +1825,13 @@ body[data-noblur="1"] .ep-fb-card{backdrop-filter:none!important;-webkit-backdro
 .ep-pset-n { font-size: calc(12.5px * var(--eff-text-scale, 1)); color: var(--text); min-width: 0; overflow-wrap: anywhere; }
 .ep-pset-u { font-size: 11px; color: var(--muted); white-space: nowrap; }
 .ep-pset-row input { width: 100%; min-width: 0; text-align: right; }
+/* поля цены — своя рамка и фон (нейтральный slate, читается в ОБЕИХ темах): общий стиль
+   input на дневной теме давал белое поле на белой строке, и было не видно, куда вписывать */
+.ep-pset-row input, .ep-pset-fill input {
+  background: rgba(148, 163, 184, .12); border: 1px solid rgba(148, 163, 184, .40);
+  border-radius: 8px; color: var(--text); min-height: 34px; padding: 4px 8px;
+}
+.ep-pset-row input:focus, .ep-pset-fill input:focus { outline: 2px solid rgba(34, 197, 94, .55); outline-offset: 1px; }
 /* этапы прайса: черновые → щит → чистовые (как работы идут на объекте) */
 .ep-pset-stage {
   display: flex; flex-direction: column; gap: 2px; margin-top: 6px; padding: 8px 2px 2px;
