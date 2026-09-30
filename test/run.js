@@ -7853,6 +7853,75 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 64. Качество разводки: изломы и отход от магистрали в метрике =====
+  {
+    const RT = EP.Plan.Routes;
+    const R = (id, pts, extra) => Object.assign({ id, fromId: "e" + id, toId: "pn", circuitId: null, layer: "power", routeType: "ceiling", points: pts, throughWalls: [] }, extra || {});
+    test("routeTurns: считает только настоящие изломы", () => {
+      eq(RT.routeTurns([{ x: 0, y: 0 }, { x: 100, y: 0 }]), 0, "прямая");
+      eq(RT.routeTurns([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }]), 1, "один угол");
+      eq(RT.routeTurns([{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }]), 1, "точка на прямой изломом не считается");
+      eq(RT.routeTurns([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 1 }, { x: 200, y: 1 }]), 0, "ступенька 1 см — не излом");
+      eq(RT.routeTurns([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 200, y: 10 }]), 0, "огрех 6° — не излом");
+      eq(RT.routeTurns([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 200, y: 100 }, { x: 200, y: 200 }]), 3, "лесенка");
+      eq(RT.routeTurns([]), 0); eq(RT.routeTurns(null), 0);
+    });
+    const three = () => {
+      const rooms = [0, 1, 2].map((i) => M.newRoom(G.rectPoints(i * 400, 0, 400, 300), "К" + (i + 1)));
+      const r = install({ rooms });
+      r.P.guides.push(M.newGuide([{ x: 100, y: 270 }, { x: 1100, y: 270 }]));
+      return r;
+    };
+    test("отход от магистрали: транзит через чужую комнату штрафуется, вдоль магистрали — нет", () => {
+      const { P } = three();
+      P.routes = [R("a", [{ x: 200, y: 150 }, { x: 1000, y: 150 }])];
+      const s1 = RT.scoreRoutes(P);
+      ok(Math.abs(s1.offTrunk - 400) < 25, "в средней комнате мимо магистрали ~4 м: " + s1.offTrunk);
+      P.routes = [R("b", [{ x: 200, y: 150 }, { x: 200, y: 265 }, { x: 1000, y: 265 }, { x: 1000, y: 150 }])];
+      const s2 = RT.scoreRoutes(P);
+      eq(s2.offTrunk, 0, "по магистрали штрафа нет");
+      eq(s2.turns, 2, "два излома");
+      ok(s1.cost > s2.cost, "срезать через чужую комнату дороже, чем идти коридором: " + s1.cost + " > " + s2.cost);
+      P.routes = [R("c", [{ x: 100, y: 50 }, { x: 350, y: 250 }])];
+      eq(RT.scoreRoutes(P).offTrunk, 0, "внутри своей комнаты магистраль ни при чём");
+      P.guides = [];
+      P.routes = [R("d", [{ x: 200, y: 150 }, { x: 1000, y: 150 }])];
+      eq(RT.scoreRoutes(P).offTrunk, 0, "без магистралей штрафа нет");
+    });
+    test("метрика: изломы в цене, трассы разных этажей не пересекаются", () => {
+      const { P } = three();
+      P.guides = [];
+      const a = R("a", [{ x: 0, y: 100 }, { x: 300, y: 100 }]), b = R("b", [{ x: 150, y: 0 }, { x: 150, y: 250 }]);
+      a.circuitId = "c1"; b.circuitId = "c2";
+      P.routes = [a, b];
+      eq(RT.scoreRoutes(P).crossings, 1, "на одном этаже — пересечение");
+      b.floorId = "flX";
+      eq(RT.scoreRoutes(P).crossings, 0, "разные этажи в одних координатах не встречаются");
+      P.routes = [R("s", [{ x: 0, y: 0 }, { x: 100, y: 0 }])];
+      const c0 = RT.scoreRoutes(P);
+      P.routes = [R("t", [{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 50, y: 20 }, { x: 100, y: 20 }, { x: 100, y: 0 }])];
+      const c1 = RT.scoreRoutes(P);
+      eq(c1.turns, 3); ok(c1.cost >= c0.cost + 12, "изломы добавляют цену: " + c0.cost + " → " + c1.cost);
+    });
+    test("кэш штрафов: правка точек на месте (ручная тяга) видна сразу", () => {
+      const { P } = three();
+      const r = R("m", [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 200, y: 0 }]);
+      P.routes = [r];
+      eq(RT.scoreRoutes(P).turns, 0);
+      r.points[1].y = 100; // как enableRouteDrag: тот же массив, сдвинутый излом
+      eq(RT.scoreRoutes(P).turns, 1, "излом появился без пересоздания массива");
+    });
+    test("строка качества в шторке Трассы и учёт штрафов в оптимизаторе", () => {
+      const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-routes.js"), "utf8");
+      ok(/qualityRowHtml\(p\)/.test(src) && /ep-plan-rqual/.test(src), "строка качества под метражом");
+      ok(/pen\.offTrunk \/ 100 \* OFF_TRUNK_W/.test(src), "rip-up выбирает и трассы с отходом/лесенкой");
+      const { P } = three();
+      P.routes = [R("a", [{ x: 200, y: 150 }, { x: 1000, y: 150 }])];
+      const sc = RT.scoreRoutes(P);
+      ok("turns" in sc && "offTrunk" in sc, "метрика отдаёт оба признака");
+    });
+  }
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

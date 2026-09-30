@@ -22,7 +22,7 @@
     heavyBusy: "Просчёт уже идёт — подожди результат.",
     heavyFail: "Фоновый просчёт недоступен — построил обычным способом.",
     heavyStale: "Проект изменился во время просчёта — результат отброшен, нажми ещё раз.",
-    heavyDone: (sc, ms, it, cores) => `Готово за ${(ms / 1000).toFixed(1)}с (вариантов: ${it}${cores > 1 ? ", ядер: " + cores : ""}). Пересечений линий: ${sc ? sc.crossings : "—"}, отверстий: ${sc ? sc.holes : "—"}`,
+    heavyDone: (sc, ms, it, cores) => `Готово за ${(ms / 1000).toFixed(1)}с (вариантов: ${it}${cores > 1 ? ", ядер: " + cores : ""}). Пересечений линий: ${sc ? sc.crossings : "—"}, отверстий: ${sc ? sc.holes : "—"}, изломов: ${sc && sc.turns != null ? sc.turns : "—"}`,
     buildDone: (sc, ms) => `Трассы построены (${(ms / 1000).toFixed(1)}с). Пересечений линий: ${sc ? sc.crossings : "—"}, отверстий: ${sc ? sc.holes : "—"}`,
     title: "Трассы", build: "⚡ Построить", clear: "✕ Очистить",
     noPanel: "Поставь щит: режим 🔌, тип «Щ», тап по плану. На этаже без щита — стояк «СТ», связанный с этажом, где щит есть.",
@@ -105,7 +105,10 @@
     const l = (p.layers || []).find((x) => x.id === el.layer);
     return (l && l.color) || "#94a3b8";
   }
-  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  // sqrt вместо Math.hypot: hypot в V8 втрое медленнее из-за защиты от переполнения, которая
+  // координатам в сантиметрах не нужна (тот же приём, что у G.dist) — здесь это 28% времени
+  // сборки+оценки трасс на большом проекте
+  const dist = (a, b) => { const dx = a.x - b.x, dy = a.y - b.y; return Math.sqrt(dx * dx + dy * dy); };
   function nearest(pos, nodes, filter) {
     let best = null;
     nodes.forEach((n) => {
@@ -1828,29 +1831,131 @@
   // другом (segIntersect, общие узлы не считаем: у щита/распайки кабели физически
   // сходятся в одну коробку, это не «каша»), sleeves — число физических отверстий,
   // len — суммарная длина трасс (см), unrouted — сколько точек осталось без трассы.
+  // ---- ШТРАФЫ ФОРМЫ ТРАССЫ (пакет 8 плана V2) ----
+  // Кроме пересечений/отверстий/метража у варианта разводки есть ещё два честных признака
+  // качества, которые мастер видит глазами на плане и чувствует руками на объекте:
+  //  · ИЗЛОМЫ — каждый поворот штробы/гофры это лишняя работа (угол в бетоне, изгиб кабеля
+  //    в гофре), и лесенка из пяти изломов там, где хватило бы двух, читается как брак;
+  //  · ОТХОД ОТ МАГИСТРАЛИ — транзит через ТРЕТЬЮ комнату (не свою и не комнату цели) мимо
+  //    нарисованной магистрали: ради магистрали её и рисуют, чтобы кабель шёл общим коридором,
+  //    а не срезал через чужую спальню.
+  // Оба штрафа легче пересечения (100): 25 изломов ≈ одно пересечение, 5 м транзита ≈ одно.
+  const TURN_W = 4, OFF_TRUNK_W = 20;        // за излом / за метр вне магистрали
+  const TURN_COS = Math.cos(15 * Math.PI / 180); // меньше 15° — не излом, а огрех округления
+  const TURN_MIN_SEG = 3;                     // отрезки короче 3 см (ступенька у анкера) не считаем
+  const TRUNK_NEAR = 45;                      // до магистрали ближе — это ещё «по магистрали»
+  const TRUNK_STEP = 20;                      // шаг выборки вдоль трассы, см
+  function routeTurns(pts) {
+    const q = [];
+    (pts || []).forEach((v) => { if (!q.length || dist(v, q[q.length - 1]) >= TURN_MIN_SEG) q.push(v); });
+    let n = 0;
+    for (let i = 1; i < q.length - 1; i++) {
+      const ax = q[i].x - q[i - 1].x, ay = q[i].y - q[i - 1].y, bx = q[i + 1].x - q[i].x, by = q[i + 1].y - q[i].y;
+      const la = Math.sqrt(ax * ax + ay * ay), lb = Math.sqrt(bx * bx + by * by);
+      if (la < 0.01 || lb < 0.01) continue;
+      if ((ax * bx + ay * by) / (la * lb) < TURN_COS) n++;
+    }
+    return n;
+  }
+  const penCache = new WeakMap(); // points-массив трассы → {sig, pen}: build/откат дают НОВЫЙ массив
+  function penaltyCtx(p) {
+    const fp = G().floorScoped(p);
+    const gs = (fp.guides || []).filter((gd) => (gd.points || []).length >= 2);
+    return { fp, gs, active: new Set((fp.routes || []).map((r) => r.id)), sig: guideSig(gs) + "#" + geomSig(p) };
+  }
+  // длина трассы, идущая через ЧУЖУЮ комнату дальше TRUNK_NEAR от магистрали её группы
+  function routeOffTrunk(p, r, ctx) {
+    if (!ctx.gs.length || !ctx.active.has(r.id)) return 0;
+    const pts = r.points || [];
+    const ra = roomNear(p, pts[0]), rb = roomNear(p, pts[pts.length - 1]);
+    if (!ra || !rb || ra.id === rb.id) return 0; // трасса в своей комнате — магистраль ни при чём
+    const fromEl = (p.elements || []).find((e) => e.id === String(r.fromId || "").replace(/^sw24:/, "").split("@")[0]);
+    const kind = routeKind(p, fromEl, r.circuitId);
+    const mine = anyGuideKinds(ctx.gs) ? ctx.gs.filter((gd) => guideServes(gd, kind)) : ctx.gs;
+    const segs = [];
+    (mine.length ? mine : ctx.gs).forEach((gd) => { for (let i = 1; i < gd.points.length; i++) segs.push([gd.points[i - 1], gd.points[i]]); });
+    // проверка «рядом с магистралью» — горячая точка метрики (выборка каждые 20 см по всем
+    // трассам проекта): соседние выборки почти всегда у ТОГО ЖЕ отрезка магистрали, поэтому
+    // сначала проверяем последний совпавший, а остальные отсеиваем по габариту с допуском
+    let last = 0;
+    const nearGuide = (q, tol) => {
+      if (segs.length && G().closestOnSeg(q, segs[last][0], segs[last][1]).d <= tol) return true;
+      for (let j = 0; j < segs.length; j++) {
+        if (j === last) continue;
+        const A = segs[j][0], B = segs[j][1];
+        if (q.x < Math.min(A.x, B.x) - tol || q.x > Math.max(A.x, B.x) + tol || q.y < Math.min(A.y, B.y) - tol || q.y > Math.max(A.y, B.y) + tol) continue;
+        if (G().closestOnSeg(q, A, B).d <= tol) { last = j; return true; }
+      }
+      return false;
+    };
+    // «по магистрали» — это не только сама ось: линия едет по своей полосе веера (+2 см на
+    // линию) и отводится от стены, если магистраль нарисована вплотную к ней. Без этого
+    // допуска на проекте из 90 линий дальние полосы (до 1.8 м от оси) считались бы
+    // «мимо магистрали», хотя идут строго вдоль неё — живой прогон дал 1.2 км ложного штрафа.
+    const st = p.settings || {};
+    const tol = TRUNK_NEAR + Math.max(0, circuitIdx(p, r.circuitId)) * 2 + 4 + (+st.routeOffset || 15) + (+st.wallThickness || 10) / 2;
+    const inPoly = G().pointInPolygon;
+    let off = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i], L = dist(a, b);
+      const n = Math.max(1, Math.round(L / TRUNK_STEP));
+      for (let k = 0; k < n; k++) {
+        const t = (k + 0.5) / n, q = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+        // сначала дешёвое: своя комната / комната цели (большинство выборок) и близость к
+        // магистрали; поиск комнаты по всему этажу — только для реально далёких точек
+        if (inPoly(q, ra.points) || inPoly(q, rb.points)) continue;
+        if (nearGuide(q, tol)) continue;
+        const rq = G().roomAt(p, q);
+        if (!rq || rq.id === ra.id || rq.id === rb.id) continue;
+        off += L / n;
+      }
+    }
+    return off;
+  }
+  // ручная тяга трассы правит массив точек НА МЕСТЕ (plan-rooms.js enableRouteDrag), поэтому
+  // к ссылке на массив в подписи добавлена сама геометрия — иначе кэш отдал бы старые изломы
+  function ptsSig(pts) { let s = 0; for (let i = 0; i < pts.length; i++) s += pts[i].x * (31 + i) + pts[i].y * (17 + i); return pts.length + ":" + Math.round(s * 10); }
+  function routePenalty(p, r, ctx) {
+    const sig = ctx.sig + "|" + ptsSig(r.points) + "|" + (r.circuitId || "") + "|" + circuitIdx(p, r.circuitId);
+    const hit = penCache.get(r.points);
+    if (hit && hit.sig === sig) return hit.pen;
+    const pen = { turns: routeTurns(r.points), offTrunk: routeOffTrunk(p, r, ctx) };
+    penCache.set(r.points, { sig, pen });
+    return pen;
+  }
   function scoreRoutes(p) {
     const rs = (p.routes || []).filter((r) => (r.points || []).length > 1);
-    const near = (a, b) => dist(a, b) < 2;
-    let crossSame = 0, crossDiff = 0, len = 0;
+    const near = (a, b) => { const dx = a.x - b.x, dy = a.y - b.y; return dx * dx + dy * dy < 4; };
+    let crossSame = 0, crossDiff = 0, len = 0, turns = 0, offTrunk = 0;
     const boxes = rs.map((r) => ({ r, bb: bboxOf(r.points) }));
-    rs.forEach((r) => { len += G().polylineLen(r.points); });
+    const ctx = penaltyCtx(p);
+    rs.forEach((r) => { len += G().polylineLen(r.points); const pen = routePenalty(p, r, ctx); turns += pen.turns; offTrunk += pen.offTrunk; });
     for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
       const A = boxes[i], B = boxes[j];
+      // трассы РАЗНЫХ этажей живут в одних координатах, но физически не встречаются
+      if ((A.r.floorId || null) !== (B.r.floorId || null)) continue;
       if (A.bb.x1 < B.bb.x0 || A.bb.x0 > B.bb.x1 || A.bb.y1 < B.bb.y0 || A.bb.y0 > B.bb.y1) continue;
       const P1 = A.r.points, P2 = B.r.points;
-      for (let x = 1; x < P1.length; x++) for (let y = 1; y < P2.length; y++) {
-        const a1 = P1[x - 1], a2 = P1[x], b1 = P2[y - 1], b2 = P2[y];
-        if (near(a1, b1) || near(a1, b2) || near(a2, b1) || near(a2, b2)) continue;
-        if (!G().segIntersect(a1, a2, b1, b2)) continue;
-        if ((A.r.circuitId || null) === (B.r.circuitId || null)) crossSame++; else crossDiff++;
+      for (let x = 1; x < P1.length; x++) {
+        const a1 = P1[x - 1], a2 = P1[x];
+        const ax0 = Math.min(a1.x, a2.x), ax1 = Math.max(a1.x, a2.x), ay0 = Math.min(a1.y, a2.y), ay1 = Math.max(a1.y, a2.y);
+        if (ax1 < B.bb.x0 || ax0 > B.bb.x1 || ay1 < B.bb.y0 || ay0 > B.bb.y1) continue;
+        for (let y = 1; y < P2.length; y++) {
+          const b1 = P2[y - 1], b2 = P2[y];
+          if (Math.max(b1.x, b2.x) < ax0 || Math.min(b1.x, b2.x) > ax1 || Math.max(b1.y, b2.y) < ay0 || Math.min(b1.y, b2.y) > ay1) continue;
+          if (near(a1, b1) || near(a1, b2) || near(a2, b1) || near(a2, b2)) continue;
+          if (!G().segIntersect(a1, a2, b1, b2)) continue;
+          if ((A.r.circuitId || null) === (B.r.circuitId || null)) crossSame++; else crossDiff++;
+        }
       }
     }
     const holes = sleeveHoles(p);
     const unrouted = unroutedForSheet(p).length;
     // вес: пересечение линий — главное зло (просьба пользователя), потом лишние отверстия,
-    // потом метраж; unrouted — запретительный вес, вариант без трасс не может «выиграть»
-    const cost = crossDiff * 100 + crossSame * 40 + holes * 30 + len / 100 + unrouted * 10000;
-    return { crossings: crossDiff, crossSame, holes, len: Math.round(len), unrouted, cost: Math.round(cost) };
+    // потом транзит мимо магистрали и изломы, потом метраж; unrouted — запретительный вес,
+    // вариант без трасс не может «выиграть»
+    const cost = crossDiff * 100 + crossSame * 40 + holes * 30 + offTrunk / 100 * OFF_TRUNK_W + turns * TURN_W + len / 100 + unrouted * 10000;
+    return { crossings: crossDiff, crossSame, holes, len: Math.round(len), turns, offTrunk: Math.round(offTrunk), unrouted, cost: Math.round(cost) };
   }
   // ================== ОПТИМИЗАТОР РАЗВОДКИ (тяжёлый режим) ==================
   // Просьба пользователя: «готов дополнительно задействовать CPU телефона, если нужно
@@ -1966,15 +2071,21 @@
   // считается штроба), т.е. выигрыш по пересечениям пришёл бы ценой физически неверных трасс.
   function crossPerRoute(p) {
     const rs = (p.routes || []).filter((r) => (r.points || []).length > 1);
-    const near = (a, b) => dist(a, b) < 2;
+    const near = (a, b) => { const dx = a.x - b.x, dy = a.y - b.y; return dx * dx + dy * dy < 4; };
     const cnt = {};
     for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) {
+      if ((rs[i].floorId || null) !== (rs[j].floorId || null)) continue;
       const P1 = rs[i].points, P2 = rs[j].points;
       let n = 0;
-      for (let x = 1; x < P1.length; x++) for (let y = 1; y < P2.length; y++) {
-        const a1 = P1[x - 1], a2 = P1[x], b1 = P2[y - 1], b2 = P2[y];
-        if (near(a1, b1) || near(a1, b2) || near(a2, b1) || near(a2, b2)) continue;
-        if (G().segIntersect(a1, a2, b1, b2)) n++;
+      for (let x = 1; x < P1.length; x++) {
+        const a1 = P1[x - 1], a2 = P1[x];
+        const ax0 = Math.min(a1.x, a2.x), ax1 = Math.max(a1.x, a2.x), ay0 = Math.min(a1.y, a2.y), ay1 = Math.max(a1.y, a2.y);
+        for (let y = 1; y < P2.length; y++) {
+          const b1 = P2[y - 1], b2 = P2[y];
+          if (Math.max(b1.x, b2.x) < ax0 || Math.min(b1.x, b2.x) > ax1 || Math.max(b1.y, b2.y) < ay0 || Math.min(b1.y, b2.y) > ay1) continue;
+          if (near(a1, b1) || near(a1, b2) || near(a2, b1) || near(a2, b2)) continue;
+          if (G().segIntersect(a1, a2, b1, b2)) n++;
+        }
       }
       if (n) { cnt[rs[i].id] = (cnt[rs[i].id] || 0) + n; cnt[rs[j].id] = (cnt[rs[j].id] || 0) + n; }
     }
@@ -2014,8 +2125,16 @@
     let iterations = (r1 && r1.iterations) || 0;
     const skip = {};
     while (Date.now() - t0 < budget) {
-      const cnt = crossPerRoute(p);
-      const cand = Object.keys(cnt).filter((id) => !skip[id]).sort((x, y) => cnt[y] - cnt[x])[0];
+      // кандидат на перекладку — трасса с худшей «виной»: пересечения главнее, но трасса,
+      // срезающая через чужую комнату или лесенкой изломов, тоже в очереди (пакет 8)
+      const cnt = crossPerRoute(p), ctx = penaltyCtx(p);
+      (p.routes || []).forEach((r) => {
+        if ((r.points || []).length < 2) return;
+        const pen = routePenalty(p, r, ctx);
+        const bad = pen.offTrunk / 100 * OFF_TRUNK_W + Math.max(0, pen.turns - 2) * TURN_W;
+        if (bad > 0) cnt[r.id] = (cnt[r.id] || 0) * 100 + bad; else if (cnt[r.id]) cnt[r.id] *= 100;
+      });
+      const cand = Object.keys(cnt).filter((id) => !skip[id] && cnt[id] > 0).sort((x, y) => (cnt[y] - cnt[x]) || (x < y ? -1 : 1))[0];
       if (!cand) break;
       const rt = (p.routes || []).find((r) => r.id === cand);
       if (!rt || rt.manual) { skip[cand] = 1; continue; }
@@ -2846,6 +2965,21 @@
     if (lv) out.ceiling = 1;
     return out;
   }
+  // строка «качество разводки» в шторке 🧵 Трассы: пересечения линий, изломы, транзит через
+  // чужие комнаты мимо магистрали — те же числа, по которым выбирает вариант ✨ Оптимизировать.
+  // Шторка перерисовывается на каждый клик, scoreRoutes квадратичен по трассам — держим
+  // последний результат, пока геометрия трасс и магистралей не менялась.
+  let qualityMemo = null;
+  function qualityRowHtml(p) {
+    const rs = p.routes || [];
+    let key = rs.length + "#" + guideSig(G().floorScoped(p).guides || []) + "#" + geomSig(p) + "#" + (p.activeFloorId || "");
+    rs.forEach((r) => { key += "|" + ptsSig(r.points || []) + (r.circuitId || ""); });
+    if (!qualityMemo || qualityMemo.key !== key || qualityMemo.pid !== p.id) qualityMemo = { key, pid: p.id, sc: scoreRoutes(p) };
+    const sc = qualityMemo.sc;
+    const parts = [`пересечений линий: <b>${sc.crossings}</b>`, `изломов: <b>${sc.turns}</b>`];
+    if (sc.offTrunk >= 50) parts.push(`мимо магистрали через чужие комнаты: <b>${G().fmtLen(sc.offTrunk)}</b>`);
+    return `<div class="ep-plan-srow ep-plan-rlens ep-plan-rqual" title="чем меньше, тем чище разводка — по этим числам выбирает ✨ Оптимизировать">${parts.map((x) => `<span>${x}</span>`).join("")}</div>`;
+  }
   // чипы поверхности НА ГРУППУ СЛОЁВ: «общее» (null — по settings.routeType) / потолок / пол
   function surfRowsHtml(p) {
     const cur = (p.settings && p.settings.surfaces) || {};
@@ -2915,7 +3049,7 @@
       ${unrouted.length ? `<div class="ep-plan-modehint ep-plan-warnhint">${T.unroutedBanner(unrouted.length)}
         ${!((G().floorScoped(p).guides || []).filter((gd) => (gd.points || []).length >= 2)).length ? `<div class="ep-plan-srow"><button type="button" class="ep-plan-tbtn ep-clickable" data-prt-suggest>${T.suggestGuide}</button></div>` : ""}
         <div class="ep-plan-unrlist">${unrouted.slice(0, 12).map((u) => `<div class="ep-plan-unrrow"><button type="button" class="ep-plan-mini ep-clickable" data-prt-show="${esc(u.id)}" aria-label="Показать на плане">👁</button><b>${esc(u.name)}</b> — ${esc(u.reason)}</div>`).join("")}${unrouted.length > 12 ? `<div class="ep-plan-unrrow">…и ещё ${unrouted.length - 12}</div>` : ""}</div></div>` : ""}
-      ${p.routes.length ? `<div class="ep-plan-srow ep-plan-rlens"><span>${T.total}: <b>${G().fmtLen(st.total)}</b></span><span title="физических отверстий сверлить">${holes} ${T.crossings}</span>${st.crossings !== holes ? `<span class="ep-plan-dim">(кабеле-пересечений ${st.crossings})</span>` : ""}</div>` : ""}
+      ${p.routes.length ? `<div class="ep-plan-srow ep-plan-rlens"><span>${T.total}: <b>${G().fmtLen(st.total)}</b></span><span title="физических отверстий сверлить">${holes} ${T.crossings}</span>${st.crossings !== holes ? `<span class="ep-plan-dim">(кабеле-пересечений ${st.crossings})</span>` : ""}</div>${qualityRowHtml(p)}` : ""}
       ${linesHtml}
       <div class="ep-plan-srow">${T.qualityLbl}
         ${["fast", "precise", "max"].map((q) => `<button type="button" class="ep-plan-chip ep-clickable ${qualityOf(p) === q ? "on" : ""}" data-prt-quality="${q}">${q === "fast" ? T.qFast : q === "precise" ? T.qPrecise : T.qMax}</button>`).join("")}
@@ -3063,5 +3197,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, keys24Of, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
+  EP.Plan.Routes = { routeTurns, build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, keys24Of, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
 })();
