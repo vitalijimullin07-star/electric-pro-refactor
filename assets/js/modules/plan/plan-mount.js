@@ -144,6 +144,7 @@
           <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-undo aria-label="Отменить">${T.undo}</button>
           <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-redo aria-label="Вернуть">${T.redo}</button>
           <span class="ep-plan-savenote" id="ep-plan-savenote"></span>
+          <button type="button" class="ep-plan-ready ep-clickable" id="ep-plan-ready" data-plan-daytask hidden aria-label="Готовность объекта — задание на день"></button>
           <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-more aria-label="Ещё: PDF, экспорт, импорт">⋯</button>
         </div>
       </div>
@@ -177,6 +178,8 @@
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="ruler" aria-label="Рулетка">📏</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="underlay" aria-label="Подложка-фото">🖼</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-mode="elem" aria-label="Точки: розетки, свет">🔌</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable${EP.Plan.Rooms && EP.Plan.Rooms.montageOn && EP.Plan.Rooms.montageOn() ? " on" : ""}" data-plan-grp="elec" data-plan-montage aria-label="Режим монтажника: только нужное на объекте, статусы точек" title="Режим монтажника">👷</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-daytask aria-label="Задание на день и готовность объекта" title="Задание на день">📋</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-autoproj aria-label="Сформировать проект: линии, автоматы, УЗО по точкам" title="Сформировать проект: линии, автоматы и УЗО по расставленным точкам">⚡</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-mode="guide" aria-label="Магистраль трасс — приоритетное направление автотрассировки" title="Нарисуй линию по коридору — трассы пойдут по ней">⇉</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-layers aria-label="Слои">🗂</button>
@@ -432,6 +435,25 @@
     document.querySelectorAll("[data-plan-redo]").forEach((b) => { b.disabled = !c.canRedo(); });
     const note = $("#ep-plan-savenote");
     if (note) note.textContent = V.saveNote;
+    refreshReady();
+  }
+  // чип «Готовность N%» — только в режиме монтажника (там он и нужен); считается по
+  // статусам точек и отметкам задач (EP.Plan.Work.readiness — без пересчёта сметы, дёшево)
+  function refreshReady() {
+    const chip = $("#ep-plan-ready"), p = core().project;
+    const on = !!(EP.Plan.Rooms && EP.Plan.Rooms.montageOn && EP.Plan.Rooms.montageOn());
+    if (!chip) return;
+    chip.hidden = !(on && p && EP.Plan.Work);
+    if (!chip.hidden) chip.textContent = "Готовность " + EP.Plan.Work.readiness(p) + "%";
+  }
+  function toggleMontage(root) {
+    const R = EP.Plan.Rooms; if (!R || !R.setMontage) return;
+    const on = !R.montageOn();
+    R.setMontage(on);
+    const btn = (root || document).querySelector("[data-plan-montage]");
+    if (btn) btn.classList.toggle("on", on);
+    refreshReady();
+    if (R.toast) R.toast(on ? "Режим монтажника: размеры и мебель скрыты, тап по точке — её статус (○ ◐ ✓)." : "Режим проектирования.");
   }
 
   // ---------- действия ----------
@@ -616,6 +638,7 @@
     if (t.closest("[data-plan-back]")) { core().closeProject(); return renderList(r); }
     if (t.closest("[data-plan-ctrls]")) return toggleTopCtrls(r);
     if (t.closest("[data-plan-paper]")) return togglePaper(r);
+    if (t.closest("[data-plan-montage]")) return toggleMontage(r);
     if (t.closest("[data-plan-realscale]")) return toggleRealScale(r);
     if (t.closest("[data-plan-rename]")) return doRename();
     if (t.closest("[data-plan-meta]")) return doMeta();

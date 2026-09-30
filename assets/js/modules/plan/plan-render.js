@@ -284,7 +284,11 @@
     if (!project) { clear(g); return; }
     const k = canvas.cmPerPx(); // см в одном экранном пикселе
     const fs = CFG.labelPx * k, fsName = CFG.namePx * k, sw = CFG.wallPx * k, off = CFG.labelOffsetPx * k;
-    const dimsOn = layerOn(project, "dims"), labelsOn = layerOn(project, "labels");
+    // режим МОНТАЖНИКА (ui.montage, 👷 в шапке): на плане остаётся нужное на объекте —
+    // точки, трассы, номера линий, высоты, щит, проходки, заметки; размеры, мебель и
+    // магистрали прячутся. Слои проекта при этом НЕ трогаются (это вид, а не настройка)
+    const montage = !!(ui && ui.montage);
+    const dimsOn = layerOn(project, "dims") && !montage, labelsOn = layerOn(project, "labels");
     // Работа по линиям (QF): солo — показать только одну линию ярко, остальные приглушить
     // (ui.soloCircuit); видимость — circuit.hidden скрывает линию целиком. В режиме solo
     // hidden игнорируем (solo и так приглушает всё, кроме выбранной). Общие хелперы —
@@ -622,7 +626,7 @@
     // ПОД трассами (рисуются раньше). Скрытые (hidden после построения) видны
     // ТОЛЬКО в режиме рисования ⇉ (ui.guideMode) — там их можно убрать/дополнить.
     (project.guides || []).forEach((gd) => {
-      if (gd.hidden && !(ui && ui.guideMode)) return;
+      if ((gd.hidden || montage) && !(ui && ui.guideMode)) return;
       if ((gd.points || []).length < 2) return;
       g.appendChild(el("polyline", {
         points: gd.points.map((q) => q.x + "," + q.y).join(" "),
@@ -642,7 +646,7 @@
     // мебель и бытовая техника (p.appliances) — прямоугольник на полу с поворотом,
     // свой слой "furn" (можно выключить). Рисуется ДО точек и трасс, чтобы электрика
     // всегда была ПОВЕРХ мебели (она главная на этом чертеже).
-    if (layerOn(project, "furn")) {
+    if (layerOn(project, "furn") && !montage) {
       const FN = EP.Plan.Furniture;
       const selAp = FN && FN.selectedId && FN.selectedId();
       (project.appliances || []).forEach((a) => {
@@ -796,10 +800,10 @@
       const cc0 = elem.circuitId && circ(elem.circuitId);
       const eSig = JSON.stringify([elem, cx, cy, rot, k, elem.id === selId, bad.has(elem.id),
         gost, design, labelsOn, lodQf, lodDims, cc0 ? [cc0.color, cc0.name] : null,
-        layerColor2(elem.layer), circDim(elem.circuitId)]);
+        layerColor2(elem.layer), circDim(elem.circuitId), montage]);
       const eCached = nc.els.get(elem.id);
       if (eCached && eCached.sig === eSig) { g.appendChild(eCached.node); return; }
-      const grp = el("g", { class: "ep-plan-el" + (elem.status === "mounted" ? " is-done" : "") + (elem.status === "existing" ? " is-exist" : "") + (elem.id === selId ? " is-sel" : "") });
+      const grp = el("g", { class: "ep-plan-el" + (elem.status === "mounted" ? " is-done" : "") + (elem.status === "work" ? " is-work" : "") + (elem.status === "existing" ? " is-exist" : "") + (elem.id === selId ? " is-sel" : "") });
       nc.els.set(elem.id, { sig: eSig, node: grp });
       if (elem.type === "junction") {
         if (gost) {
@@ -951,6 +955,8 @@
         }
       }
       if (elem.status === "mounted") grp.appendChild(el("text", { x: cx + r0, y: cy - r0, "font-size": 10 * k, class: "ep-plan-eldone" }, "✓"));
+      else if (elem.status === "work") grp.appendChild(el("text", { x: cx + r0, y: cy - r0, "font-size": 10 * k, class: "ep-plan-elwork" }, "◐"));
+      else if (montage && elem.status !== "existing") grp.appendChild(el("circle", { cx: cx + r0, cy: cy - r0 - 3 * k, r: 3 * k, class: "ep-plan-elplan", "stroke-width": 1.2 * k }));
       // QF-подпись линии (обозначение автомата) над точкой; lodQf — скрыта на сильном отдалении
       if (labelsOn && lodQf && elem.circuitId) {
         const cc = circ(elem.circuitId);

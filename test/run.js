@@ -7663,6 +7663,86 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 62. 👷 Режим монтажника, задачи, готовность объекта, задание на день =====
+  {
+    const WK = EP.Plan.Work;
+    const seed62 = () => {
+      const p = EP.Plan.Core.createProject("w62");
+      const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "Кухня"), B = M.newRoom(G.rectPoints(400, 0, 400, 300), "Зал");
+      p.rooms.push(A, B); p.panels.push(M.newPanel(40, 250, "ЩК"));
+      const q = M.newCircuit("QF1", "#e11", 16); q.title = "Розетки"; p.circuits.push(q);
+      const put = (w, o, t) => { const e = M.newElement(t || "socket", w, o, 30, "power"); e.circuitId = q.id; p.elements.push(e); return e; };
+      put(A.id + ":0", 100); put(A.id + ":0", 250); put(B.id + ":0", 150);
+      const blk = put(B.id + ":2", 200, "block"); blk.params = { items: ["socket", "socket", "internet"] };
+      const j = M.newElement("junction", null, 0, 270, "power"); j.wallId = null; j.params = { x: 600, y: 150 }; p.elements.push(j);
+      EP.Plan.Core.persist("seed");
+      return { p, A, B, q };
+    };
+    test("задачи выводятся из проекта: штробы/подрозетники по комнатам, линия, распайка, щит, механизмы", () => {
+      const { p, A, B, q } = seed62();
+      const t = WK.tasks(p), key = (k) => t.find((x) => x.key === k);
+      ok(key("strobe:" + A.id) && key("strobe:" + B.id), "штробы по комнатам");
+      eq(key("boxes:" + B.id).qty, "4 шт", "подрозетники зала: розетка + блок на 3 поста");
+      ok(/Проложить QF1 — Розетки/.test(key("cable:" + q.id).title), "линия с описанием");
+      ok(t.some((x) => x.stage === "junct" && /распайку №1 — Зал/.test(x.title)), "распайка");
+      ok(t.some((x) => x.stage === "panel" && /Собрать щит ЩК/.test(x.title)), "щит");
+      const mech = key("mech:" + A.id); ok(mech && mech.auto && mech.qty === "0/2", "механизмы — автоматически по статусам");
+    });
+    test("готовность: 0% → половина за «в работе» → 100% когда всё сделано", () => {
+      const { p } = seed62();
+      eq(WK.readiness(p), 0);
+      const pts = p.elements.filter((e) => e.type !== "junction");
+      pts.forEach((e) => { e.status = "work"; });
+      const t = WK.tasks(p);
+      const mechN = t.filter((x) => x.stage === "mech").length;
+      eq(WK.readiness(p), Math.round(mechN * 0.5 / t.length * 100), "«в работе» — половина механизмов");
+      pts.forEach((e) => { e.status = "mounted"; });
+      t.filter((x) => !x.auto).forEach((x) => WK.toggleDone(x.key));
+      eq(WK.readiness(p), 100, "всё сделано");
+    });
+    test("задание на день: добавить/отметить/убрать — по шагу истории, вчерашнее переносится, текст для бригады", () => {
+      const { p, A } = seed62();
+      const C0 = EP.Plan.Core;
+      C0.importJSON(C0.exportJSON());
+      const P = C0.project;
+      const k = "strobe:" + P.rooms[0].id;
+      WK.setToday([k]); eq(WK.todayKeys(P).join(), k, "добавлено на сегодня");
+      WK.toggleDone(k); ok(P.work.done[k], "отмечено");
+      C0.undo(); ok(!C0.project.work.done[k], "↶ снимает отметку одним шагом");
+      const P2 = C0.project;
+      P2.work.today.date = "2000-01-01";
+      eq(WK.todayKeys(P2).length, 0, "вчерашнее задание не считается сегодняшним");
+      eq(WK.staleKeys(P2).join(), k, "незавершённое со вчера — к переносу");
+      WK.setToday(WK.staleKeys(P2)); eq(WK.todayKeys(C0.project).join(), k, "перенесено");
+      const txt = WK.dayText(C0.project);
+      ok(/^Задание на \d\d\.\d\d — /.test(txt) && /☐ Штробы — Кухня/.test(txt) && /Готовность объекта: \d+%/.test(txt), "текст задания");
+      ok(A, "");
+    });
+    test("режим монтажника: вид устройства, статус «в работе», карточка статуса, скрытие размеров и мебели", () => {
+      const fs62 = require("fs"), path62 = require("path");
+      const src = (n) => fs62.readFileSync(path62.join(__dirname, "..", "assets", "js", "modules", "plan", n + ".js"), "utf8");
+      const R0 = EP.Plan.Rooms;
+      R0.setMontage(true); ok(R0.montageOn(), "включён"); eq(sandbox.localStorage.getItem("ep_plan_montage_v1"), "1", "хранится на устройстве");
+      R0.setMontage(false); ok(!R0.montageOn(), "выключен");
+      ok(/\["work", "В работе ◐"\]/.test(src("plan-elements")) && /function openStatusCard/.test(src("plan-elements")), "статус «в работе» и карточка");
+      const r = src("plan-render");
+      ok(/const dimsOn = layerOn\(project, "dims"\) && !montage/.test(r) && /layerOn\(project, "furn"\) && !montage/.test(r), "размеры и мебель скрыты в режиме монтажника");
+      ok(/circDim\(elem\.circuitId\), montage\]/.test(r), "режим — в подписи кэша узла точки");
+      ok(/hit\.el && R\.montage && EP\.Plan\.Elements\.openStatusCard/.test(src("plan-rooms")), "тап по точке — карточка статуса");
+      const m = src("plan-mount");
+      ok(/data-plan-montage/.test(m) && /data-plan-daytask/.test(m) && /id="ep-plan-ready"/.test(m), "кнопки 👷 📋 и чип готовности");
+    });
+    test("санитайзер: испорченный p.work чинится", () => {
+      const { p } = seed62();
+      const raw = JSON.parse(JSON.stringify(p));
+      raw.work = { done: 5, today: { date: 7, keys: ["a", 3, null] } };
+      const P = EP.Plan.Core.importJSON(JSON.stringify({ project: raw }));
+      ok(P.work && typeof P.work.done === "object" && P.work.today.date === "" && P.work.today.keys.join() === "a", "починено");
+      raw.work = "мусор";
+      ok(EP.Plan.Core.importJSON(JSON.stringify({ project: raw })).work === undefined, "не объект — убран");
+    });
+  }
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

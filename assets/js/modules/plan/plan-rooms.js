@@ -190,7 +190,15 @@
   }
 
   // ---------- сцена ----------
-  function ui() { return { selectedRoomId: R.selectedRoomId, draft: R.draft, ruler: R.ruler, beamDraft: R.beamDraft, voidDraft: R.voidDraft, soloCircuit: R.soloCircuit, guideDraft: R.guideDraft, guideMode: R.mode === "guide", selectedDimId: R.selectedDimId }; }
+  // режим монтажника — вид УСТРОЙСТВА (как 📄 бумага), не проекта: в модель не пишется
+  const MONTAGE_KEY = "ep_plan_montage_v1";
+  R.montage = (() => { try { return localStorage.getItem(MONTAGE_KEY) === "1"; } catch (e) { return false; } })();
+  function setMontage(on) {
+    R.montage = !!on;
+    try { localStorage.setItem(MONTAGE_KEY, R.montage ? "1" : "0"); } catch (e) {}
+    renderScene();
+  }
+  function ui() { return { montage: !!R.montage, selectedRoomId: R.selectedRoomId, draft: R.draft, ruler: R.ruler, beamDraft: R.beamDraft, voidDraft: R.voidDraft, soloCircuit: R.soloCircuit, guideDraft: R.guideDraft, guideMode: R.mode === "guide", selectedDimId: R.selectedDimId }; }
   // solo линии QF (изоляция на плане): тап по линии в шторке 🧵 Трассы — только она ярко,
   // остальные приглушены. Повторный тап по той же линии — снять solo. Не персистится.
   function setSoloCircuit(id) { R.soloCircuit = (R.soloCircuit === id) ? null : (id || null); renderScene(); }
@@ -500,7 +508,10 @@
       const hit = EP.Plan.Elements.hitAt(w, EP.Plan.Elements.CFG.hitPx * k);
       if (hit) {
         R.selectedRoomId = null;
-        if (hit.el) EP.Plan.Elements.openEditor(hit.el);
+        // режим монтажника: тап по точке — крупная карточка статуса (план / в работе /
+        // готово), полный редактор — кнопкой из неё; на объекте нужен статус, а не поля
+        if (hit.el && R.montage && EP.Plan.Elements.openStatusCard) EP.Plan.Elements.openStatusCard(hit.el);
+        else if (hit.el) EP.Plan.Elements.openEditor(hit.el);
         else if (hit.panel) EP.Plan.Elements.openPanelEditor(hit.panel);
         else if (hit.opening) EP.Plan.Elements.openOpeningEditor(hit.opening);
         return;
@@ -2646,7 +2657,7 @@
     selectedVoidId: () => R.selectedVoid || null,
     selectedRouteId: () => R.selectedRoute || null,
     soloCircuitId: () => R.soloCircuit || null,
-    setSoloCircuit, clearSolo,
+    setSoloCircuit, clearSolo, setMontage, montageOn: () => !!R.montage,
     canvasCmPerPx: () => (R.canvas ? R.canvas.cmPerPx() : 1),
     // для plan-furniture.js: своего доступа к канвасу у модулей слоёв нет (инвариант —
     // вся drag-инфраструктура живёт в plan-rooms.js), поэтому тягу мебели ставим через
