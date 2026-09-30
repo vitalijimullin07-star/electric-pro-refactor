@@ -1304,6 +1304,7 @@ test("calcByRoutes: штробы/подрозетники/кабель/ниша 
   const rt = M.newRoute("power", "ceiling", [{ x: 100, y: 18 }, { x: 100, y: 50 }, { x: 50, y: 50 }], s1.id, pn.id);
   rt.toPanel = true;
   P.routes.push(rt);
+  P.settings.cableRoundM = 0; // точная формула (до 0,1 м); округление до метра — отдельный тест
   const res = EP.Plan.Calc.calcByRoutes(P);
   ok(res && res.items.length, "есть позиции");
   // спуск точки: 270-30=240; спуск щита: 270-150=120 → 3.6 м штробы 25x30 по бетону
@@ -1392,6 +1393,7 @@ test("calcByRoutes: своя высота щита (pn.height) меняет ме
   const rt = M.newRoute("power", "ceiling", [{ x: 100, y: 18 }, { x: 100, y: 50 }, { x: 50, y: 50 }], s1.id, pn.id);
   rt.toPanel = true;
   P.routes.push(rt);
+  P.settings.cableRoundM = 0;
   const res = EP.Plan.Calc.calcByRoutes(P);
   // (32+50)горизонталь + 240(точка) + 20(щит, 270-250) = 342 см + выпуск (20 точка + 50 щит) = 412 см × 1.1 запас = 4.5 м
   const cab = res.items.find((i) => i.name.indexOf("3×2.5") >= 0);
@@ -7529,6 +7531,74 @@ test("фото: deleteProject чистит кэш фото своего прое
       delete sandbox.Router;
       const src = fs59.readFileSync(path59.join(root59, "assets/js/modules/plan/plan-scheme.js"), "utf8");
       ok(/data-psc-toshield/.test(src), "кнопка в однолинейке плана");
+    });
+  }
+
+  // ===== 60. «Откуда взялось»: расшифровка позиций сметы и округление кабеля =====
+  {
+    const seed60 = () => {
+      const p = EP.Plan.Core.createProject("o60");
+      const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "Кухня"), B = M.newRoom(G.rectPoints(400, 0, 400, 300), "Зал");
+      p.rooms.push(A, B); p.panels.push(M.newPanel(40, 250, "ЩК"));
+      const q1 = M.newCircuit("QF1", "#e11", 16), q2 = M.newCircuit("QF2", "#1e1", 16); p.circuits.push(q1, q2);
+      const put = (w, o, c) => { const e = M.newElement("socket", w, o, 30, "power"); e.circuitId = c.id; p.elements.push(e); return e; };
+      put(A.id + ":0", 100, q1); put(A.id + ":0", 250, q1); put(B.id + ":0", 150, q2); put(B.id + ":2", 200, q2);
+      p.guides.push(M.newGuide([{ x: 60, y: 150 }, { x: 740, y: 150 }]));
+      EP.Plan.Core.persist("seed");
+      EP.Plan.Routes.build({ silent: true });
+      return p;
+    };
+    const near60 = (a, b, tol) => Math.abs(a - b) <= (tol || 0.01);
+    test("кабель: слагаемые трасс = итог, запас и округление вверх до метра = количество в смете", () => {
+      const p = seed60();
+      const res = EP.Plan.Calc.calcByRoutes(p);
+      const cab = res.items.find((i) => /^Кабель .*3×2\.5$/.test(i.name));
+      ok(cab, "кабель в смете");
+      const o = res.origin["material|" + cab.name];
+      ok(o && o.kind === "cable", "расшифровка есть");
+      const partsSum = o.rows.reduce((a, r) => a + r.part.geom + r.part.vert + r.part.panel + r.part.riser + r.part.stub, 0);
+      ok(near60(partsSum, o.rawCm, 0.001), "сумма слагаемых = итог по трассам");
+      eq(o.rows.length, p.routes.length, "каждая трасса марки в расшифровке");
+      const exact = o.rawCm / 100 * 1.1;
+      ok(cab.qty >= exact && cab.qty - exact < 1 && Number.isInteger(cab.qty), "округлено вверх до целого метра");
+      eq(res.items.find((i) => i.name === "Прокладка кабеля " + o.mark).qty, cab.qty, "прокладка = материал, той же цифрой");
+      const rooms = o.byRoom.reduce((a, x) => a + x.qty, 0);
+      ok(near60(rooms, o.rawCm, 0.001), "по помещениям в сумме = итог");
+      ok(o.byRoom.some((x) => x.room === "Кухня") && o.byRoom.some((x) => x.room === "Зал"), "помещения названы");
+    });
+    test("округление: шаг 0 — прежние 0,1 м, настройка по умолчанию — 1 м", () => {
+      const p = seed60();
+      eq(p.settings.cableRoundM, 1, "по умолчанию до метра");
+      p.settings.cableRoundM = 0;
+      const res = EP.Plan.Calc.calcByRoutes(p);
+      const cab = res.items.find((i) => /^Кабель .*3×2\.5$/.test(i.name));
+      const o = res.origin["material|" + cab.name];
+      ok(near60(cab.qty, Math.round(o.rawCm / 100 * 1.1 * 10) / 10, 0.001), "до 0,1 м");
+      const imp = EP.Plan.Core.importJSON(JSON.stringify({ project: { name: "o", settings: {}, rooms: [], elements: [] } }));
+      eq(imp.settings.cableRoundM, 1, "бэкофилл");
+    });
+    test("штробы и подрозетники: разбивка по помещениям сходится с количеством", () => {
+      const p = seed60();
+      const res = EP.Plan.Calc.calcByRoutes(p);
+      res.items.filter((i) => /^Штробление|^Высверливание подрозетников|^Вклейка подрозетников/.test(i.name)).forEach((it) => {
+        const o = res.origin[it.type + "|" + it.name];
+        ok(o, "расшифровка: " + it.name);
+        const tot = o.byRoom.reduce((a, x) => a + x.qty, 0);
+        ok(near60(Math.round(tot * 10) / 10, it.qty, 0.051), it.name + ": " + tot + " ≈ " + it.qty);
+      });
+      const drill = res.origin["work|Высверливание подрозетников обычных бетон"];
+      ok(drill.byRoom.find((x) => x.room === "Кухня").qty === 2 && drill.byRoom.find((x) => x.room === "Зал").qty === 2, "по 2 подрозетника в комнате");
+    });
+    test("шторка расшифровки: формула, помещения и линии", () => {
+      const p = seed60();
+      const res = EP.Plan.Calc.calcByRoutes(p);
+      const cab = res.items.find((i) => /^Кабель .*3×2\.5$/.test(i.name));
+      const html = EP.Plan.Calc.originHtml(p, "material|" + cab.name, res.origin["material|" + cab.name]);
+      ok(/Трассы по плану/.test(html) && /запас 10%/.test(html) && /Округление вверх до 1 м/.test(html), "формула");
+      ok(/Кухня/.test(html) && /QF1/.test(html) && /QF2/.test(html), "помещения и линии");
+      const fs60 = require("fs"), path60 = require("path");
+      const src = fs60.readFileSync(path60.join(__dirname, "..", "assets", "js", "modules", "plan", "plan-calc.js"), "utf8");
+      ok(/data-pc-origin=/.test(src) && /data-pc-round=/.test(src), "название позиции — кнопка, переключатель округления");
     });
   }
 

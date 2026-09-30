@@ -16,7 +16,11 @@
     exactHead: "Работы и материалы — ПО ТРАССАМ (точный счёт)",
     exactHint: "Штробы, подрозетники и кабель посчитаны по фактическому чертежу: длина спуска × материал стены, ёмкость штробы — из движка пула.",
     approxHint: "⚠ Приближённый счёт по комнатам. Построй трассы (🧵) — расчёт станет точным по чертежу.",
-    reserve: "Запас кабеля, %",
+    reserve: "Запас кабеля, %", roundLbl: "Кабель округлять до",
+    noLine: "без линии", originTitle: "Откуда взялось", byRooms: "По помещениям", byLinesO: "По линиям", tapLine: "нажми линию — трассы",
+    withReserve: "с запасом, до округления", oGeom: "Трассы по плану", oVert: "Спуски и подъёмы к точкам", oPanel: "Спуск в щит",
+    oRiser: "Стояк между этажами", oStub: "Выпуски на разделку (точки, распайки, щит)", oSum: "Итого по трассам",
+    oReserve: (r) => `+ запас ${String(r).replace(".", ",")}%`, oRound: (st) => `Округление вверх до ${st} м`, oRound01: "Округление до 0,1 м",
     stubHint: "Выпуск кабеля на разделку (добавляется к длине каждого конца кабеля отдельно от самой трассы)",
     stubPoint: "У точки, см", stubJunction: "У распайки, см", stubPanel: "В щите, см",
     tempHint: "Временные сети на время ремонта (организация — не выводится из чертежа, вводится вручную)",
@@ -388,11 +392,25 @@
     const strobeSurf = { floor: 0, ceiling: 0 }, cableSurf = { floor: 0, ceiling: 0 };
     const genSurf = s.routeType === "floor" ? "floor" : "ceiling";
     const sfOf = (v) => (v === "floor" || v === "ceiling") ? v : genSurf;
-    const addStrobe = (sizeK, mat, cm, kind, surf) => {
+    // ПРОИСХОЖДЕНИЕ позиций (просьба «показать, откуда взялась каждая позиция»): по ходу
+    // того же счёта складываем вклад в разрезе помещений — ОТДЕЛЬНОГО пересчёта нет,
+    // поэтому расшифровка физически не может разойтись с количеством в смете
+    const roomsArr = p.rooms || [];
+    const roomNameOf = (e2) => {
+      if (!e2) return "без помещения";
+      const rid = e2.wallId && String(e2.wallId).indexOf("beam:") !== 0 ? String(e2.wallId).split(":")[0] : null;
+      let r = rid ? roomsArr.find((x) => x.id === rid) : null;
+      if (!r) { const pt = G2.elemPoint(p, e2); r = pt ? roomsArr.find((x) => (x.points || []).length >= 3 && G2.pointInPolygon(pt, x.points)) : null; }
+      return r ? r.name : "без помещения";
+    };
+    const tr = {}; // ключ позиции → { помещение: количество }
+    const trAdd = (key, room, q) => { if (!(q > 0)) return; const t = (tr[key] = tr[key] || {}); t[room] = (t[room] || 0) + q; };
+    const addStrobe = (sizeK, mat, cm, kind, surf, room) => {
       if (cm > 1) {
         const k = sizeK + "|" + mat + "|" + (kind || "power");
         strobe[k] = (strobe[k] || 0) + cm / 100;
         strobeSurf[sfOf(surf)] += cm / 100;
+        trAdd("strobe|" + k, room || "—", cm / 100);
       }
     };
     const matOfEl = (e2) => { const w = e2.wallId && G2.wallById(p, e2.wallId); return w ? G2.wallMatOf(p, w) : ((s && s.wallMaterial) || "Бетон"); };
@@ -406,9 +424,10 @@
       if (e2.type === "junction") { junctBoxes++; return; }
       const mat = matOfEl(e2);
       // подрозетники по материалу СВОЕЙ стены (выключатели/ТП — глубокие, как в пуле)
+      const rn = roomNameOf(e2);
       const addPost = (t) => {
-        if (t === "switch" || t === "warmfloor") P(mat).deep++;
-        else if (t === "socket" || t === "tv" || t === "internet" || t === "ac" || t === "sensor") P(mat).std++;
+        if (t === "switch" || t === "warmfloor") { P(mat).deep++; trAdd("podroz|deep|" + mat, rn, 1); }
+        else if (t === "socket" || t === "tv" || t === "internet" || t === "ac" || t === "sensor") { P(mat).std++; trAdd("podroz|std|" + mat, rn, 1); }
       };
       if (e2.type === "block") ((e2.params && e2.params.items) || []).forEach(addPost);
       else addPost(e2.type);
@@ -422,14 +441,14 @@
       if (e2.layer === "warm") {
         // ТП: подача к термостату — обычная штроба (потолок/пол, куда бы ни шла трасса);
         // от термостата ВНИЗ в пол, к самому греющему кабелю — ВСЕГДА 50×50, отдельно
-        addStrobe(keyStd, mat, vert, "power", esurf);
+        addStrobe(keyStd, mat, vert, "power", esurf, rn);
         const toFloor = Math.max(0, e2.height || 0);
-        if (toFloor > 1) addStrobe(sizeKey(s.tpChaseW || 50, s.tpChaseH || 50), mat, toFloor, "warm", "floor");
+        if (toFloor > 1) addStrobe(sizeKey(s.tpChaseW || 50, s.tpChaseH || 50), mat, toFloor, "warm", "floor", rn);
         return;
       }
-      if (LV_LAYERS[e2.layer]) { addStrobe(keyStd, mat, vert, "lv", esurf); return; } // слаботочка — своя штроба и своя строка
+      if (LV_LAYERS[e2.layer]) { addStrobe(keyStd, mat, vert, "lv", esurf, rn); return; } // слаботочка — своя штроба и своя строка
       const cables = (outCnt[e2.id] || 0) + (inCnt[e2.id] || 0); // вход+выход шлейфа в одном спуске
-      addStrobe(keyStd, mat, Math.max(1, Math.ceil(cables / capOf(keyStd))) * vert, "power", esurf);
+      addStrobe(keyStd, mat, Math.max(1, Math.ceil(cables / capOf(keyStd))) * vert, "power", esurf, rn);
     });
     // спуск у щита: линии приходят в одну точку — ёмкость из пула; слаботочку
     // считаем ОТДЕЛЬНОЙ штробой у щита (не мешаем её с силовой и там)
@@ -450,22 +469,33 @@
         const lvN = inSf.filter((r) => LV_LAYERS[r.layer]).length;
         const powN = inSf.length - lvN;
         const vert = RT.panelVert(p, null, sf);
-        if (powN > 0) addStrobe(keyStd, pm, Math.ceil(powN / capOf(keyStd)) * vert, "power", sf);
-        if (lvN > 0) addStrobe(keyStd, pm, Math.ceil(lvN / capOf(keyStd)) * vert, "lv", sf);
+        if (powN > 0) addStrobe(keyStd, pm, Math.ceil(powN / capOf(keyStd)) * vert, "power", sf, "у щита");
+        if (lvN > 0) addStrobe(keyStd, pm, Math.ceil(lvN / capOf(keyStd)) * vert, "lv", sf, "у щита");
       });
     }
 
     // кабель по МАРКАМ: марка линии (QF) или по слою; с настраиваемым запасом
     const cableBy = {};
     const reserve = 1 + (Number(s.cableReserve == null ? 10 : s.cableReserve) || 0) / 100;
+    const cableRows = []; // слагаемые КАЖДОЙ трассы — для расшифровки «откуда N м»
     routes.forEach((r) => {
       const e2 = elById(r.fromId);
       const pn = (r.toPanel && !r.toRiser) ? (p.panels || []).find((x) => x.id === r.toId) : null;
       // без распайки на конце кабель проходит штробу туда-обратно (нет коробки,
       // принимающей горизонталь на месте) — hopVertMul=2 для такого хопа; + выпуск
       // на разделку/подключение (RT.cableStub — см. её инвариант)
-      const L = G2.polylineLen(r.points || []) + (e2 ? RT.pointVert(p, e2, r.routeType) * RT.hopVertMul(p, r) : 0)
-        + (pn ? RT.panelVert(p, pn, r.routeType) : 0) + (RT.riserRun ? RT.riserRun(p, e2) : 0) + RT.cableStub(p, e2, r);
+      const part = {
+        geom: G2.polylineLen(r.points || []),
+        vert: e2 ? RT.pointVert(p, e2, r.routeType) * RT.hopVertMul(p, r) : 0,
+        panel: pn ? RT.panelVert(p, pn, r.routeType) : 0,
+        riser: RT.riserRun ? RT.riserRun(p, e2) : 0,
+        stub: RT.cableStub(p, e2, r)
+      };
+      const L = part.geom + part.vert + part.panel + part.riser + part.stub;
+      const toEl = r.toPanel ? null : elById(r.toId);
+      const row = { routeId: r.id, circuitId: r.circuitId || null, room: roomNameOf(e2), part, L,
+        from: e2 ? (e2.type) : "", to: pn ? ("щит " + (pn.name || "")) : (toEl ? toEl.type : (r.toRiser ? "стояк" : "")) };
+      const note = (mark) => { cableRows.push(Object.assign({ mark }, row)); trAdd("cable|" + mark, row.room, L); };
       const cc = (p.circuits || []).find((c) => c.id === r.circuitId);
       // 24В-линия: «до щита» (leg pri24, выключатель→трансформатор, 220В — марка
       // circuit.cable220) и «от щита» (leg sec24, трансформатор→точка 24В — circuit.cable)
@@ -493,15 +523,27 @@
         const dataMark = srcEl.data === "fiber" ? "Оптический кабель" : "Витая пара (UTP)";
         cableBy["КГ ВВГнг-LS 3×1.5 · питание"] = (cableBy["КГ ВВГнг-LS 3×1.5 · питание"] || 0) + L;
         cableBy[dataMark + " · данные"] = (cableBy[dataMark + " · данные"] || 0) + L;
+        note("КГ ВВГнг-LS 3×1.5 · питание"); note(dataMark + " · данные");
         return; // общий key для этой трассы не нужен — обе марки уже учтены
       }
       if (srcEl && (srcEl.type === "camera" || srcEl.type === "intercom") && srcEl.data === "fiber") {
         cableBy["Оптический кабель · данные+PoE"] = (cableBy["Оптический кабель · данные+PoE"] || 0) + L;
+        note("Оптический кабель · данные+PoE");
         return;
       }
       cableBy[key] = (cableBy[key] || 0) + L;
+      note(key);
     });
-    Object.keys(cableBy).forEach((m) => { cableBy[m] = Math.round((cableBy[m] / 100) * reserve * 10) / 10; });
+    // запас % и ОКРУГЛЕНИЕ ВВЕРХ до шага settings.cableRoundM (1 — до целых метров: кабель
+    // покупают метрами; 0 — до 0,1 м, как было раньше). Округляется ИТОГ по марке, а не
+    // каждая трасса — иначе на 40 трассах набежали бы лишние десятки метров
+    const roundStep = Number(s.cableRoundM == null ? 1 : s.cableRoundM) || 0;
+    const cableRaw = {};
+    Object.keys(cableBy).forEach((m) => {
+      const exact = (cableBy[m] / 100) * reserve;
+      cableRaw[m] = cableBy[m];
+      cableBy[m] = roundStep > 0 ? Math.ceil(Math.round(exact * 1000) / 1000 / roundStep) * roundStep : Math.round(exact * 10) / 10;
+    });
     // тем же запасом и в метры — иначе расходники считались бы по «сырым» сантиметрам
     Object.keys(cableSurf).forEach((k) => { cableSurf[k] = Math.round((cableSurf[k] / 100) * reserve * 10) / 10; });
 
@@ -620,7 +662,29 @@
     // правки пользователя (скрыть/заменить/добавить) — В САМОМ КОНЦЕ, после всего
     // авто-счёта: gofraM выше читает items ДО правок (метраж затяжки не должен
     // зависеть от того, скрыл ли пользователь строку гофры из сметы)
-    return { items: applyCalcEdits(p, addRiserItems(p, addAvrItems(p, items))), cableBy, strobe, conn, podroz, junctBoxes };
+    // происхождение: позиция сметы → разбивка по помещениям (+ у кабеля слагаемые трасс)
+    const origin = {};
+    const byRoomList = (key) => Object.keys(tr[key] || {}).map((room) => ({ room, qty: tr[key][room] })).sort((a, b) => b.qty - a.qty);
+    Object.keys(strobe).forEach((k) => {
+      const [size, mat, kind] = k.split("|");
+      origin["work|Штробление " + size + " " + low(mat) + (STROBE_KIND_SUFFIX[kind] || "")] = { kind: "strobe", unit: "м", byRoom: byRoomList("strobe|" + k) };
+    });
+    Object.keys(podroz).forEach((mat) => {
+      ["std", "deep"].forEach((d) => {
+        if (!podroz[mat][d]) return;
+        const o = { kind: "podroz", unit: "шт", byRoom: byRoomList("podroz|" + d + "|" + mat) };
+        const nm = d === "std" ? "обычных" : "глубоких";
+        origin["work|Высверливание подрозетников " + nm + " " + low(mat)] = o;
+        origin["work|Вклейка подрозетников " + nm + " " + low(mat)] = o;
+      });
+    });
+    Object.keys(cableBy).forEach((m) => {
+      const o = { kind: "cable", unit: "м", mark: m, rawCm: cableRaw[m], reservePct: Math.round((reserve - 1) * 1000) / 10,
+        roundStep, qty: cableBy[m], rows: cableRows.filter((r) => r.mark === m), byRoom: byRoomList("cable|" + m) };
+      origin["material|Кабель " + m] = o;
+      origin["work|Прокладка кабеля " + m] = o;
+    });
+    return { items: applyCalcEdits(p, addRiserItems(p, addAvrItems(p, items))), cableBy, strobe, conn, podroz, junctBoxes, origin };
   }
 
   // ---------- правки сметы (p.calcEdits, бэкофилл в plan-core.js): скрытые позиции,
@@ -774,6 +838,9 @@
         <div class="ep-plan-srow ep-plan-hintrow">${T.exactHint}</div>
         <div class="ep-plan-srow"><label class="ep-plan-range" style="flex:0 0 150px">${T.reserve}
           <input type="number" inputmode="numeric" min="0" max="50" value="${Math.round(p.settings.cableReserve == null ? 10 : p.settings.cableReserve)}" data-pc-reserve></label>
+          <span class="ep-plan-roundchips">${T.roundLbl}
+            <button type="button" class="ep-plan-chip ep-clickable ${Number(p.settings.cableRoundM) === 0 ? "on" : ""}" data-pc-round="0">0,1 м</button>
+            <button type="button" class="ep-plan-chip ep-clickable ${Number(p.settings.cableRoundM == null ? 1 : p.settings.cableRoundM) === 1 ? "on" : ""}" data-pc-round="1">1 м</button></span>
           <label class="ep-plan-range" style="flex:1 1 180px">${T.brandLbl}
             <input type="text" value="${esc(p.settings.cableBrand == null ? "" : p.settings.cableBrand)}" data-pc-cablebrand></label></div>
         <div class="ep-plan-srow ep-plan-hintrow">${T.brandHint}</div>
@@ -856,7 +923,14 @@
         const editBtns = it.custom != null
           ? `<button type="button" class="ep-plan-mini ep-clickable" data-pc-editcustom="${it.custom}" aria-label="Изменить позицию">✎</button><button type="button" class="ep-plan-mini ep-clickable" data-pc-delcustom="${it.custom}" aria-label="Удалить позицию">✕</button>`
           : `<button type="button" class="ep-plan-mini ep-clickable" data-pc-editname data-pc-ekey="${esc(k)}" data-pc-ecur="${esc(it.name)}" aria-label="Заменить позицию">✎</button><button type="button" class="ep-plan-mini ep-clickable" data-pc-hide data-pc-ekey="${esc(k)}" aria-label="Убрать из сметы">✕</button>`;
-        return `<div class="ep-plan-irow"><span>${esc(it.name)}${it.origName ? ` <span class="ep-plan-mshint">✎</span>` : ""}</span><span class="ep-plan-irow-r"><b>${it.qty} ${esc(it.unit)}</b><button type="button" class="ep-plan-iprice${price > 0 ? "" : " is-noprice"} ep-clickable" data-pc-setprice data-pc-pname="${esc(it.name)}" data-pc-ptype="${esc(it.type)}" data-pc-punit="${esc(it.unit)}" data-pc-pcur="${price > 0 ? price : ""}">${price > 0 ? esc(fmtRub(lineSum)) : esc(T.noPrice)}</button>${editBtns}</span></div>`;
+        // название — кнопка «откуда взялось», если у позиции есть расшифровка (кабель,
+        // штробы, подрозетники): тот же счёт, что дал количество, в разрезе помещений/линий
+        const okey = it.type + "|" + (it.origName || it.name);
+        const hasOrigin = exact && exact.origin && exact.origin[okey];
+        const nameHtml = hasOrigin
+          ? `<button type="button" class="ep-plan-iname ep-clickable" data-pc-origin="${esc(okey)}" aria-label="Откуда взялось: ${esc(it.name)}">${esc(it.name)} <span class="ep-plan-orig">ⓘ</span></button>`
+          : esc(it.name);
+        return `<div class="ep-plan-irow"><span>${nameHtml}${it.origName ? ` <span class="ep-plan-mshint">✎</span>` : ""}</span><span class="ep-plan-irow-r"><b>${it.qty} ${esc(it.unit)}</b><button type="button" class="ep-plan-iprice${price > 0 ? "" : " is-noprice"} ep-clickable" data-pc-setprice data-pc-pname="${esc(it.name)}" data-pc-ptype="${esc(it.type)}" data-pc-punit="${esc(it.unit)}" data-pc-pcur="${price > 0 ? price : ""}">${price > 0 ? esc(fmtRub(lineSum)) : esc(T.noPrice)}</button>${editBtns}</span></div>`;
       };
       // группировка по секциям (Кабель / Работы / Материалы / Расходники) —
       // просьба пользователя «информативно по расходке», чтобы расходка читалась отдельно
@@ -949,6 +1023,57 @@
   // ту же самую, что читает priceFor() ниже — точное совпадение по имени находит её
   // сразу на следующем рендере sheet() (и в «В смету», т.к. estimateItems тоже идёт
   // через priceFor). Просьба пользователя: «назначать стоимость, и чтобы сохранялась в БД».
+  // ---- «Откуда взялось»: расшифровка позиции сметы ----
+  // Данные — из того же calcByRoutes (res.origin), что дал количество: у кабеля слагаемые
+  // каждой трассы (план, спуски, в щит, стояк, выпуски), запас и округление; у штроб и
+  // подрозетников — разбивка по помещениям. Отдельного пересчёта нет — расшифровка не может
+  // разойтись с цифрой в смете.
+  const TN = (t) => { const X = EP.Plan.Elements && EP.Plan.Elements.TYPES; return (X && X[t] && X[t].name) || t || "—"; };
+  const m1 = (cm) => (Math.round(cm) / 100).toFixed(1).replace(".", ",");
+  function originHtml(p, key, o) {
+    const nm = key.split("|").slice(1).join("|");
+    const rowsRoom = (list, k, unit) => list.map((x) => `<div class="ep-plan-irow"><span>${esc(x.room)}</span><b>${unit === "шт" ? Math.round(x.qty * k) : (Math.round(x.qty * k * 10) / 10).toString().replace(".", ",")} ${unit}</b></div>`).join("");
+    if (o.kind !== "cable") {
+      const tot = o.byRoom.reduce((a, x) => a + x.qty, 0);
+      return `<div class="ep-plan-srow"><b>${esc(nm)}</b><span class="ep-plan-flex"></span><b>${o.unit === "шт" ? Math.round(tot) : (Math.round(tot * 10) / 10).toString().replace(".", ",")} ${esc(o.unit)}</b></div>
+        <div class="ep-plan-srow"><b>${T.byRooms}</b></div>${rowsRoom(o.byRoom, 1, o.unit)}`;
+    }
+    const sum = (f) => o.rows.reduce((a, r) => a + r.part[f], 0);
+    const parts = [["geom", T.oGeom], ["vert", T.oVert], ["panel", T.oPanel], ["riser", T.oRiser], ["stub", T.oStub]]
+      .map(([f, l]) => ({ l, v: sum(f) })).filter((x) => x.v > 0.5);
+    const exactM = (o.rawCm / 100) * (1 + o.reservePct / 100);
+    const k = 1 + o.reservePct / 100;
+    const byC = new Map();
+    o.rows.forEach((r) => { const c = (p.circuits || []).find((x) => x.id === r.circuitId); const kk = c ? c.id : "_"; if (!byC.has(kk)) byC.set(kk, { c, rows: [] }); byC.get(kk).rows.push(r); });
+    const circHtml = [...byC.values()].sort((a, b) => b.rows.reduce((s2, r) => s2 + r.L, 0) - a.rows.reduce((s2, r) => s2 + r.L, 0)).map(({ c, rows }) => {
+      const tot = rows.reduce((s2, r) => s2 + r.L, 0);
+      return `<details class="ep-plan-origc"><summary><span class="ep-plan-cdot" style="background:${esc(c ? c.color : "#94a3b8")}"></span><b>${esc(c ? c.name : T.noLine)}</b>${c && c.title ? ` <span class="ep-plan-mshint">${esc(c.title)}</span>` : ""}<span class="ep-plan-flex"></span><b>${m1(tot * k)} м</b></summary>
+        ${rows.map((r) => `<div class="ep-plan-origr"><span>${esc(TN(r.from))} → ${esc(/^щит/.test(r.to) || r.to === "стояк" ? r.to : TN(r.to))} · ${esc(r.room)}</span>
+          <span class="ep-plan-mshint">${[["geom", "план"], ["vert", "спуск"], ["panel", "в щит"], ["riser", "стояк"], ["stub", "выпуск"]].filter(([f]) => r.part[f] > 0.5).map(([f, l]) => l + " " + m1(r.part[f])).join(" + ")} = <b>${m1(r.L)}</b></span></div>`).join("")}
+      </details>`;
+    }).join("");
+    return `<div class="ep-plan-srow"><b>${esc(nm)}</b><span class="ep-plan-flex"></span><b>${String(o.qty).replace(".", ",")} м</b></div>
+      <div class="ep-plan-origcalc">
+        ${parts.map((x) => `<div class="ep-plan-irow"><span>${esc(x.l)}</span><b>${m1(x.v)} м</b></div>`).join("")}
+        <div class="ep-plan-irow is-sum"><span>${T.oSum}</span><b>${m1(o.rawCm)} м</b></div>
+        <div class="ep-plan-irow"><span>${T.oReserve(o.reservePct)}</span><b>${(Math.round(exactM * 100) / 100).toString().replace(".", ",")} м</b></div>
+        <div class="ep-plan-irow is-sum"><span>${o.roundStep > 0 ? T.oRound(o.roundStep) : T.oRound01}</span><b>${String(o.qty).replace(".", ",")} м</b></div>
+      </div>
+      <div class="ep-plan-srow"><b>${T.byRooms}</b><span class="ep-plan-flex"></span><span class="ep-plan-mshint">${T.withReserve}</span></div>
+      ${rowsRoom(o.byRoom.map((x) => ({ room: x.room, qty: x.qty / 100 })), k, "м")}
+      <div class="ep-plan-srow"><b>${T.byLinesO}</b><span class="ep-plan-flex"></span><span class="ep-plan-mshint">${T.tapLine}</span></div>
+      ${circHtml}`;
+  }
+  function sheetOrigin(key) {
+    const p = core().project; if (!p) return;
+    const ex = exactOf(p);
+    const o = ex && ex.origin && ex.origin[key];
+    if (!o) return sheet();
+    rooms().openSheet(`<div class="ep-plan-srow"><b>ⓘ ${T.originTitle}</b><span class="ep-plan-flex"></span>
+        <button type="button" class="ep-plan-mini ep-clickable" data-sheet-fs aria-label="Во весь экран">⛶</button>
+        <button type="button" class="ep-plan-mini ep-clickable" data-pc-priceback>${T.back}</button></div>
+      ${originHtml(p, key, o)}`);
+  }
   function sheetSetPrice(name, type, unit, curPrice) {
     rooms().openSheet(`<div class="ep-plan-srow"><b>💰 ${T.priceTitle}</b>
         <span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-pc-priceback>${T.back}</button></div>
@@ -1064,6 +1189,12 @@
     if (t.closest("[data-pc-close]")) { rooms().closeSheet(); return; }
     if (t.closest("[data-pc-consumcfg]")) return sheetConsumSettings();
     if (t.closest("[data-pc-consumback]")) return sheet();
+    if (t.closest("[data-pc-origin]")) { sheetOrigin(t.closest("[data-pc-origin]").getAttribute("data-pc-origin")); return; }
+    if (t.closest("[data-pc-round]")) {
+      const c = core(); c.commit();
+      c.project.settings.cableRoundM = Number(t.closest("[data-pc-round]").getAttribute("data-pc-round")) === 0 ? 0 : 1;
+      c.persist("cable-round"); sheet(); return;
+    }
     if (t.closest("[data-pc-setprice]")) {
       const b = t.closest("[data-pc-setprice]");
       return sheetSetPrice(b.getAttribute("data-pc-pname"), b.getAttribute("data-pc-ptype"), b.getAttribute("data-pc-punit"), b.getAttribute("data-pc-pcur"));
@@ -1150,5 +1281,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Calc = { sheet, buildBlocks, runEngine, priceFor, calcByRoutes, estimateItems, perCircuit, setPrefetched, memoToken, sheetConsumSettings, applyCalcEdits, defaultCableMark, is24Circuit };
+  EP.Plan.Calc = { sheet, sheetOrigin, originHtml, buildBlocks, runEngine, priceFor, calcByRoutes, estimateItems, perCircuit, setPrefetched, memoToken, sheetConsumSettings, applyCalcEdits, defaultCableMark, is24Circuit };
 })();

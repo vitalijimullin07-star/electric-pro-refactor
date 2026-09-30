@@ -48,6 +48,7 @@
     // масштабе 1:1 смотреть». Кнопка «1:1» в шапке редактора плана.
     realScale: false,
     cableReserve: 10,      // % запаса кабеля при расчёте по трассам
+    cableRoundM: 1,        // округление ИТОГА кабеля по марке вверх, м (1 — до целых метров; 0 — до 0,1 м)
     // марка кабеля ПО УМОЛЧАНИЮ (просьба пользователя: «кабель по умолчанию ВВГнг») —
     // подставляется ПЕРЕД сечением всюду, где марка линии (circuit.cable) не задана вручную:
     // однолинейка (autoCable), «По линиям (QF)» и смета. Редактируется в шапке шторки
@@ -161,7 +162,7 @@
         tpChaseW: DEFAULTS.tpChaseW, tpChaseH: DEFAULTS.tpChaseH,
         mainBreaker: DEFAULTS.mainBreaker, phases: DEFAULTS.phases, meter: false, mainRcd: false,
         panelBrand: DEFAULTS.panelBrand, panelReserve: DEFAULTS.panelReserve, panelBox: null,
-        symbolStyle: DEFAULTS.symbolStyle, realScale: DEFAULTS.realScale, cableReserve: DEFAULTS.cableReserve, cableBrand: DEFAULTS.cableBrand,
+        symbolStyle: DEFAULTS.symbolStyle, realScale: DEFAULTS.realScale, cableReserve: DEFAULTS.cableReserve, cableRoundM: DEFAULTS.cableRoundM, cableBrand: DEFAULTS.cableBrand,
         cable24: DEFAULTS.cable24, cable24Rgb: DEFAULTS.cable24Rgb, routeQuality: DEFAULTS.routeQuality, routePrecalc: DEFAULTS.routePrecalc,
         cableStubPoint: DEFAULTS.cableStubPoint, cableStubJunction: DEFAULTS.cableStubJunction, cableStubPanel: DEFAULTS.cableStubPanel,
         routeOffset: DEFAULTS.routeOffset, sleeveD: DEFAULTS.sleeveD, connectorMode: DEFAULTS.connectorMode,
@@ -831,6 +832,7 @@
     if (p.settings.realScale == null) p.settings.realScale = DEFAULTS.realScale;
     if (!(p.settings.dimOffset >= 0)) p.settings.dimOffset = DEFAULTS.dimOffset;
     if (p.settings.cableReserve == null) p.settings.cableReserve = DEFAULTS.cableReserve;
+    if (p.settings.cableRoundM == null) p.settings.cableRoundM = DEFAULTS.cableRoundM;
     if (p.settings.cableBrand == null) p.settings.cableBrand = DEFAULTS.cableBrand;
     if (p.settings.routeQuality == null) p.settings.routeQuality = DEFAULTS.routeQuality;
     if (p.settings.routePrecalc == null) p.settings.routePrecalc = DEFAULTS.routePrecalc;
