@@ -7699,6 +7699,14 @@ test("фото: deleteProject чистит кэш фото своего прое
       pts.forEach((e) => { e.status = "mounted"; });
       t.filter((x) => !x.auto).forEach((x) => WK.toggleDone(x.key));
       eq(WK.readiness(p), 100, "всё сделано");
+      pts.forEach((e) => { e.status = "planned"; });
+      t.filter((x) => !x.auto).forEach((x) => WK.toggleDone(x.key));
+      eq(WK.readyLabel(p), "0%", "ничего не начато — 0%");
+      pts[0].status = "mounted"; ok(WK.readyLabel(p) !== "0%", "первая отметка не выглядит как «0%»");
+      const fake = { rooms: [], elements: [], panels: [], circuits: [], work: { done: {} } };
+      for (let i = 0; i < 300; i++) fake.panels.push({ id: "pn" + i, name: "Щ" + i });
+      fake.work.done["panel:pn0"] = 1;
+      ok(WK.readiness(fake) === 0 && WK.readyLabel(fake) === "<1%", "начатая работа меньше полупроцента — «<1%»: " + WK.readyLabel(fake));
     });
     test("задание на день: добавить/отметить/убрать — по шагу истории, вчерашнее переносится, текст для бригады", () => {
       const { p, A } = seed62();

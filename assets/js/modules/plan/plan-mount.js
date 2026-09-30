@@ -141,10 +141,10 @@
       <div class="ep-plan-compactrow">
         ${floorsBarHtml(p)}
         <div class="ep-plan-toolbar ep-plan-savebar">
+          <button type="button" class="ep-plan-ready ep-clickable" id="ep-plan-ready" data-plan-daytask hidden aria-label="Готовность объекта — задание на день"></button>
           <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-undo aria-label="Отменить">${T.undo}</button>
           <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-redo aria-label="Вернуть">${T.redo}</button>
           <span class="ep-plan-savenote" id="ep-plan-savenote"></span>
-          <button type="button" class="ep-plan-ready ep-clickable" id="ep-plan-ready" data-plan-daytask hidden aria-label="Готовность объекта — задание на день"></button>
           <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-more aria-label="Ещё: PDF, экспорт, импорт">⋯</button>
         </div>
       </div>
@@ -444,7 +444,7 @@
     const on = !!(EP.Plan.Rooms && EP.Plan.Rooms.montageOn && EP.Plan.Rooms.montageOn());
     if (!chip) return;
     chip.hidden = !(on && p && EP.Plan.Work);
-    if (!chip.hidden) chip.textContent = "Готовность " + EP.Plan.Work.readiness(p) + "%";
+    if (!chip.hidden) chip.textContent = "Готовность " + EP.Plan.Work.readyLabel(p);
   }
   function toggleMontage(root) {
     const R = EP.Plan.Rooms; if (!R || !R.setMontage) return;

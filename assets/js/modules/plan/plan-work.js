@@ -87,6 +87,13 @@
     if (!t.length) return 0;
     return Math.round(t.reduce((s, x) => s + x.progress, 0) / t.length * 100);
   }
+  // подпись готовности: работа начата, но до 1% не дотянула — «<1%», а не «0%»
+  // (иначе мастер отметил первую розетку и видит «0%» — будто отметка не сработала)
+  function readyLabel(p) {
+    const t = tasks(p);
+    const raw = t.length ? t.reduce((s, x) => s + x.progress, 0) / t.length * 100 : 0;
+    return raw > 0 && raw < 0.5 ? "<1%" : Math.round(raw) + "%";
+  }
   // уточнения количества для задания (метры/штуки) — из расшифровки Расчёта, если трассы есть
   function detailsFor(p) {
     const det = {};
@@ -134,7 +141,7 @@
     const d = new Date();
     const lines = todayKeys(p).map((k) => t.get(k)).filter(Boolean)
       .map((x) => `${x.progress >= 1 ? "☑" : "☐"} ${x.title}${det[x.key] || x.qty ? " · " + (det[x.key] || x.qty) : ""}`);
-    return `Задание на ${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")} — ${p.name || "объект"}\n` + lines.join("\n") + `\nГотовность объекта: ${readiness(p)}%`;
+    return `Задание на ${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")} — ${p.name || "объект"}\n` + lines.join("\n") + `\nГотовность объекта: ${readyLabel(p)}`;
   }
 
   // ---- шторка «Задание на день» ----
@@ -167,7 +174,7 @@
     rooms().openSheet(`<div class="ep-plan-srow"><b>📋 Задание на ${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}</b><span class="ep-plan-flex"></span>
         <button type="button" class="ep-plan-mini ep-clickable" data-sheet-fs aria-label="Во весь экран">⛶</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-pw-close aria-label="Закрыть">✕</button></div>
-      <div class="ep-work-ready"><span>Готовность объекта</span><b>${rd}%</b></div>
+      <div class="ep-work-ready"><span>Готовность объекта</span><b>${readyLabel(p)}</b></div>
       <div class="ep-work-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${rd}"><i style="width:${rd}%"></i></div>
       ${stale.length ? `<button type="button" class="btn ep-clickable ep-work-carry" data-pw-carry>Перенести незавершённое со вчера (${stale.length})</button>` : ""}
       <div class="ep-plan-srow"><b>Сегодня</b><span class="ep-plan-mshint">${today.length ? today.filter((x) => x.progress >= 1).length + " из " + today.length : "пусто — добавь задачи ниже"}</span></div>
@@ -205,5 +212,5 @@
     }, true);
   }
 
-  EP.Plan.Work = { STAGES, tasks, readiness, detailsFor, toggleDone, setToday, todayKeys, staleKeys, dayText, sheet, todayStr };
+  EP.Plan.Work = { STAGES, tasks, readiness, readyLabel, detailsFor, toggleDone, setToday, todayKeys, staleKeys, dayText, sheet, todayStr };
 })();
