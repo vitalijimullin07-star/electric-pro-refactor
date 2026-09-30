@@ -22,7 +22,7 @@
     heavyBusy: "Просчёт уже идёт — подожди результат.",
     heavyFail: "Фоновый просчёт недоступен — построил обычным способом.",
     heavyStale: "Проект изменился во время просчёта — результат отброшен, нажми ещё раз.",
-    heavyDone: (sc, ms, it, cores) => `Готово за ${(ms / 1000).toFixed(1)}с (вариантов: ${it}${cores > 1 ? ", ядер: " + cores : ""}). Пересечений линий: ${sc ? sc.crossings : "—"}, отверстий: ${sc ? sc.holes : "—"}`,
+    heavyDone: (sc, ms, it, cores) => `Готово за ${(ms / 1000).toFixed(1)}с (вариантов: ${it}${cores > 1 ? ", ядер: " + cores : ""}). Пересечений линий: ${sc ? sc.crossings : "—"}, отверстий: ${sc ? sc.holes : "—"}, изломов: ${sc && sc.turns != null ? sc.turns : "—"}`,
     buildDone: (sc, ms) => `Трассы построены (${(ms / 1000).toFixed(1)}с). Пересечений линий: ${sc ? sc.crossings : "—"}, отверстий: ${sc ? sc.holes : "—"}`,
     title: "Трассы", build: "⚡ Построить", clear: "✕ Очистить",
     noPanel: "Поставь щит: режим 🔌, тип «Щ», тап по плану. На этаже без щита — стояк «СТ», связанный с этажом, где щит есть.",
@@ -1886,11 +1886,15 @@
     }
     return off;
   }
+  // ручная тяга трассы правит массив точек НА МЕСТЕ (plan-rooms.js enableRouteDrag), поэтому
+  // к ссылке на массив в подписи добавлена сама геометрия — иначе кэш отдал бы старые изломы
+  function ptsSig(pts) { let s = 0; for (let i = 0; i < pts.length; i++) s += pts[i].x * (31 + i) + pts[i].y * (17 + i); return pts.length + ":" + Math.round(s * 10); }
   function routePenalty(p, r, ctx) {
+    const sig = ctx.sig + "|" + ptsSig(r.points) + "|" + (r.circuitId || "");
     const hit = penCache.get(r.points);
-    if (hit && hit.sig === ctx.sig) return hit.pen;
+    if (hit && hit.sig === sig) return hit.pen;
     const pen = { turns: routeTurns(r.points), offTrunk: routeOffTrunk(p, r, ctx) };
-    penCache.set(r.points, { sig: ctx.sig, pen });
+    penCache.set(r.points, { sig, pen });
     return pen;
   }
   function scoreRoutes(p) {
@@ -2924,6 +2928,21 @@
     if (lv) out.ceiling = 1;
     return out;
   }
+  // строка «качество разводки» в шторке 🧵 Трассы: пересечения линий, изломы, транзит через
+  // чужие комнаты мимо магистрали — те же числа, по которым выбирает вариант ✨ Оптимизировать.
+  // Шторка перерисовывается на каждый клик, scoreRoutes квадратичен по трассам — держим
+  // последний результат, пока геометрия трасс и магистралей не менялась.
+  let qualityMemo = null;
+  function qualityRowHtml(p) {
+    const rs = p.routes || [];
+    let key = rs.length + "#" + guideSig(G().floorScoped(p).guides || []);
+    rs.forEach((r) => { key += "|" + ptsSig(r.points || []); });
+    if (!qualityMemo || qualityMemo.key !== key || qualityMemo.pid !== p.id) qualityMemo = { key, pid: p.id, sc: scoreRoutes(p) };
+    const sc = qualityMemo.sc;
+    const parts = [`пересечений линий: <b>${sc.crossings}</b>`, `изломов: <b>${sc.turns}</b>`];
+    if (sc.offTrunk >= 50) parts.push(`мимо магистрали через чужие комнаты: <b>${G().fmtLen(sc.offTrunk)}</b>`);
+    return `<div class="ep-plan-srow ep-plan-rlens ep-plan-rqual" title="чем меньше, тем чище разводка — по этим числам выбирает ✨ Оптимизировать">${parts.map((x) => `<span>${x}</span>`).join("")}</div>`;
+  }
   // чипы поверхности НА ГРУППУ СЛОЁВ: «общее» (null — по settings.routeType) / потолок / пол
   function surfRowsHtml(p) {
     const cur = (p.settings && p.settings.surfaces) || {};
@@ -2993,7 +3012,7 @@
       ${unrouted.length ? `<div class="ep-plan-modehint ep-plan-warnhint">${T.unroutedBanner(unrouted.length)}
         ${!((G().floorScoped(p).guides || []).filter((gd) => (gd.points || []).length >= 2)).length ? `<div class="ep-plan-srow"><button type="button" class="ep-plan-tbtn ep-clickable" data-prt-suggest>${T.suggestGuide}</button></div>` : ""}
         <div class="ep-plan-unrlist">${unrouted.slice(0, 12).map((u) => `<div class="ep-plan-unrrow"><button type="button" class="ep-plan-mini ep-clickable" data-prt-show="${esc(u.id)}" aria-label="Показать на плане">👁</button><b>${esc(u.name)}</b> — ${esc(u.reason)}</div>`).join("")}${unrouted.length > 12 ? `<div class="ep-plan-unrrow">…и ещё ${unrouted.length - 12}</div>` : ""}</div></div>` : ""}
-      ${p.routes.length ? `<div class="ep-plan-srow ep-plan-rlens"><span>${T.total}: <b>${G().fmtLen(st.total)}</b></span><span title="физических отверстий сверлить">${holes} ${T.crossings}</span>${st.crossings !== holes ? `<span class="ep-plan-dim">(кабеле-пересечений ${st.crossings})</span>` : ""}</div>` : ""}
+      ${p.routes.length ? `<div class="ep-plan-srow ep-plan-rlens"><span>${T.total}: <b>${G().fmtLen(st.total)}</b></span><span title="физических отверстий сверлить">${holes} ${T.crossings}</span>${st.crossings !== holes ? `<span class="ep-plan-dim">(кабеле-пересечений ${st.crossings})</span>` : ""}</div>${qualityRowHtml(p)}` : ""}
       ${linesHtml}
       <div class="ep-plan-srow">${T.qualityLbl}
         ${["fast", "precise", "max"].map((q) => `<button type="button" class="ep-plan-chip ep-clickable ${qualityOf(p) === q ? "on" : ""}" data-prt-quality="${q}">${q === "fast" ? T.qFast : q === "precise" ? T.qPrecise : T.qMax}</button>`).join("")}
