@@ -52,7 +52,8 @@
     balcony: { name: "Балкон",     glyph: "Бл" },
     opening: { name: "Проём",      glyph: "Пр" }
   };
-  const STATUS = [["planned", "План"], ["mounted", "Готово ✓"], ["existing", "Было"]];
+  // статусы монтажа: ○ план → ◐ в работе → ✓ готово (+ «было» — существующая, в смету не идёт)
+  const STATUS = [["planned", "План"], ["work", "В работе ◐"], ["mounted", "Готово ✓"], ["existing", "Было"]];
   const CFG = { hitPx: 22, wallSnapPx: 26, photoMax: 4, photoSide: 640, blockMax: 6 };
   // тактильный отклик на примыкание к стене при установке точки/проёма — тот же
   // паттерн/интенсивность, что уже даёт снап угла при рисовании комнаты (plan-rooms.js)
@@ -555,6 +556,22 @@
   }
   function currentOpening() { return (core().project.openings || []).find((o) => o.id === S.selId) || null; }
 
+  // ---- карточка статуса (режим монтажника 👷): на объекте нужен статус, а не поля.
+  // Три крупные кнопки + «Полный редактор»; после выбора карточка остаётся открытой —
+  // видно, что отметилось, а следующий тап по точке просто откроет её карточку.
+  function openStatusCard(el) {
+    S.selId = el.id;
+    const p = core().project, t = TYPES[el.type] || { name: el.type };
+    const c = (p.circuits || []).find((x) => x.id === el.circuitId);
+    const r = (p.rooms || []).find((x) => el.wallId && String(el.wallId).split(":")[0] === x.id);
+    const btn = (v, l, ic) => `<button type="button" class="ep-mstat ep-clickable is-${v}${(el.status || "planned") === v ? " on" : ""}" data-pe-mstat="${v}"><b>${ic}</b><span>${l}</span></button>`;
+    rooms().openSheet(`<div class="ep-plan-srow"><b>${esc(t.name)}</b>${r ? `<span>· ${esc(r.name)}</span>` : ""}<span class="ep-plan-flex"></span>
+        <button type="button" class="ep-plan-mini ep-clickable" data-pe-mclose aria-label="Закрыть">✕</button></div>
+      <div class="ep-plan-srow ep-plan-mshint">h=${Math.round(el.height)} см${c ? ` · линия <b style="color:${esc(c.color)}">${esc(c.name)}</b>` : " · без линии"}</div>
+      <div class="ep-mstats">${btn("planned", "План", "○")}${btn("work", "В работе", "◐")}${btn("mounted", "Готово", "✓")}</div>
+      <div class="ep-plan-srow ep-plan-sbtns"><button type="button" class="btn ep-clickable" data-pe-mfull>✎ Полный редактор</button></div>`);
+    rooms().renderScene();
+  }
   function openPanelEditor(pn) {
     S.selId = pn.id;
     rooms().openSheet(`<div class="ep-plan-srow"><b>${esc(pn.name || "Щит")}</b></div>
@@ -1068,6 +1085,12 @@
       c.commit(); el.riserLink = null; if (m) m.riserLink = null;
       c.persist("riser-pair"); openEditor(el); return;
     }
+    if ((b = t.closest("[data-pe-mstat]"))) {
+      const c = core(), el = current(); if (!el) return;
+      c.commit(); el.status = b.getAttribute("data-pe-mstat"); c.persist("elem-status"); openStatusCard(el); return;
+    }
+    if (t.closest("[data-pe-mfull]")) { const el = current(); if (el) openEditor(el); return; }
+    if (t.closest("[data-pe-mclose]")) { S.selId = null; rooms().closeSheet(); rooms().renderScene(); return; }
     if ((b = t.closest("[data-pe-status]"))) {
       const c = core(), el = current(); if (!el) return;
       c.commit(); el.status = b.getAttribute("data-pe-status"); c.persist("elem-status"); openEditor(el); return;
@@ -1353,5 +1376,5 @@
   }
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, SW_TARGET_TYPES, onModeEnter, onOpeningModeEnter, placeAt, placeOpening, hoverSnapPoint, openingNum, hitAt, openEditor, closeEditorOverlay, openPanelEditor, openOpeningEditor, openingFlipFor, selectedId, deselect, deleteElement, duplicateElement, circuitRow, assignNewCircuit, syncTargetCircuit, riserMate };
+  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, SW_TARGET_TYPES, onModeEnter, onOpeningModeEnter, placeAt, placeOpening, hoverSnapPoint, openingNum, hitAt, openEditor, openStatusCard, closeEditorOverlay, openPanelEditor, openOpeningEditor, openingFlipFor, selectedId, deselect, deleteElement, duplicateElement, circuitRow, assignNewCircuit, syncTargetCircuit, riserMate };
 })();

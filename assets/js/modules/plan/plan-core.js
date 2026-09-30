@@ -777,6 +777,16 @@
       if (typeof n.text !== "string") n.text = n.text == null ? "" : String(n.text);
       if (fin(n.ax) == null || fin(n.ay) == null) { n.ax = null; n.ay = null; }
     });
+    // задачи монтажа (EP.Plan.Work): отметки {ключ: время} и задание на день {date, keys}
+    if (p.work != null) {
+      if (!obj(p.work)) delete p.work;
+      else {
+        if (!obj(p.work.done)) p.work.done = {};
+        if (!obj(p.work.today)) p.work.today = { date: "", keys: [] };
+        if (typeof p.work.today.date !== "string") p.work.today.date = "";
+        p.work.today.keys = Array.isArray(p.work.today.keys) ? p.work.today.keys.filter((k) => typeof k === "string") : [];
+      }
+    }
     list("appliances"); ids(p.appliances, "ap");
     p.appliances = p.appliances.filter((a) => fin(a.x) != null && fin(a.y) != null);
     p.appliances.forEach((a) => {
