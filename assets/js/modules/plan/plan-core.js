@@ -171,6 +171,7 @@
       },
       underlay: null, // { imageDataUri, scale (см/пиксель), opacity }
       rooms: [], panels: [], elements: [], routes: [], circuits: [],
+      rcdGroups: [], // групповые УЗО щита [{id,name,rating,leak}] — см. EP.Plan.Circuits
       openings: [], // двери и окна в стенах
       beams: [],    // перемычки/балки на потолке (свободные отрезки)
       voids: [],    // внутренние препятствия: вентшахта / мини-комната внутри комнаты
@@ -214,7 +215,10 @@
   // отдельным пунктом, до щита и от щита тоже отдельным пунктом».
   // rgb: null — НЕ УКАЗАНО (для линии 24В это подсветится в «Проверках»: от него зависит
   // кабель «от щита» — 2 жилы у монохрома, 5 у RGB), false — монохром, true — RGB
-  function newCircuit(name, color, breaker) { return { id: uid("cc"), name: name || "Линия", color: color || DEFAULTS.circuitColors[0], breaker: breaker || 16, rcd: false, poles: 1, phase: 1, cable: null, cable220: null, rcdRating: 30, rgb: null }; }
+  // panelId — ЯВНЫЙ щит линии (null = определяется автоматически, см. EP.Plan.Circuits.panelOf);
+  // rcdGroupId — линия под ГРУППОВЫМ УЗО из p.rcdGroups (null — без группы: своё УЗО-диф,
+  // если rcd:true, иначе без УЗО). rcd остаётся признаком «линия защищена УЗО».
+  function newCircuit(name, color, breaker) { return { id: uid("cc"), name: name || "Линия", color: color || DEFAULTS.circuitColors[0], breaker: breaker || 16, rcd: false, poles: 1, phase: 1, cable: null, cable220: null, rcdRating: 30, rgb: null, panelId: null, rcdGroupId: null }; }
   // ручная однолинейка (Слой 7б): группы (УЗО/Диф) -> линии, линия может ссылаться
   // на линию плана (circuitId в p.circuits) — тогда она уходит из «не расставлено» в чек-листе.
   // Вводной автомат/счётчик/вводное УЗО НЕ дублируются здесь — те же settings.mainBreaker/
@@ -649,6 +653,22 @@
       if (c.cable != null && typeof c.cable !== "string") c.cable = null;
       if (c.cable220 != null && typeof c.cable220 !== "string") c.cable220 = null;
     });
+    // групповые УЗО и ссылки линий на них / на щиты (щиты санитизируются ниже, поэтому
+    // ссылку на щит проверяем по сырому списку id — он не меняется, кроме дублей)
+    if (p.rcdGroups != null) {
+      list("rcdGroups"); ids(p.rcdGroups, "rg");
+      p.rcdGroups.forEach((g) => {
+        const r = fin(g.rating), l = fin(g.leak);
+        g.rating = r > 0 ? r : 40; g.leak = l > 0 ? l : 30;
+        if (typeof g.name !== "string") g.name = "УЗО";
+      });
+    }
+    const gSet = new Set((p.rcdGroups || []).map((g) => g.id));
+    const pnSet = new Set((Array.isArray(p.panels) ? p.panels : []).filter(obj).map((x) => x.id));
+    circuits.forEach((c) => {
+      if (c.rcdGroupId != null && !(typeof c.rcdGroupId === "string" && gSet.has(c.rcdGroupId))) c.rcdGroupId = null;
+      if (c.panelId != null && !(typeof c.panelId === "string" && pnSet.has(c.panelId))) c.panelId = null;
+    });
     const cSet = new Set(circuits.map((c) => c.id));
     const cid = (v) => (typeof v === "string" && cSet.has(v) ? v : null);
     // --- комнаты
@@ -800,7 +820,8 @@
     p.ledStrips = p.ledStrips || [];
     p.appliances = p.appliances || [];
     p.circuits = p.circuits || [];
-    p.circuits.forEach((c) => { if (c.phase !== 1 && c.phase !== 2 && c.phase !== 3) c.phase = 1; if (c.cable220 === undefined) c.cable220 = null; if (c.rgb === undefined) c.rgb = null; });
+    p.circuits.forEach((c) => { if (c.phase !== 1 && c.phase !== 2 && c.phase !== 3) c.phase = 1; if (c.cable220 === undefined) c.cable220 = null; if (c.rgb === undefined) c.rgb = null; if (c.panelId === undefined) c.panelId = null; if (c.rcdGroupId === undefined) c.rcdGroupId = null; });
+    p.rcdGroups = Array.isArray(p.rcdGroups) ? p.rcdGroups : [];
     p.panels = p.panels || [];
     (p.elements || []).forEach((el) => { if (el.riserLink === undefined) el.riserLink = null; });
     p.panels.forEach((pn) => { if (pn.transformer == null) pn.transformer = false; if (pn.router == null) pn.router = false; if (pn.avr == null) pn.avr = false; if (pn.neptun == null) pn.neptun = false; });

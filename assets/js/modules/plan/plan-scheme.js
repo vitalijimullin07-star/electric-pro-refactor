@@ -13,7 +13,7 @@
   const rooms = () => EP.Plan.Rooms;
   const NS = "http://www.w3.org/2000/svg";
 
-  const S = { full: false };
+  const S = { full: false, panel: "" }; // panel — какой щит показывает схема ("" = все линии)
 
   // ---- нагрузка и параметры линии ----
   function loadEls(p, c) {
@@ -83,19 +83,28 @@
   }
 
   // ---- дерево для ShieldSchemeSVG.render ----
-  function buildTree(p) {
-    const s = p.settings, circuits = p.circuits || [];
-    const children = circuits.map((c) => ({
+  // panelId — только линии ЭТОГО щита (движок цепей решает, чья линия); без него — все
+  // линии проекта, как было раньше. Линии под групповым УЗО рисуются ПОД узлом УЗО.
+  function buildTree(p, panelId) {
+    const s = p.settings;
+    const CX = EP.Plan.Circuits;
+    const lineNode = (c, type) => ({
       // БЕЗ esc(): ShieldSchemeSVG сам экранирует node.id/label при выводе — здесь это
       // давало ДВОЙНОЕ экранирование («Свет &amp;amp; кухня» на экране и в PDF)
       id: String(c.name == null ? "" : c.name), label: loadSummary(p, c), rating: (c.breaker || 16) + "A",
-      type: c.rcd ? "rcbo" : "mcb", poles: c.poles === 3 ? 3 : 1,
+      type, poles: c.poles === 3 ? 3 : 1,
       cable: (c.cable || autoCable(p, c)),
       children: [{ type: "load", label: loadKindLabel(p, c), children: [] }]
-    }));
+    });
+    const children = CX ? CX.tree(p, panelId || null, lineNode)
+      : (p.circuits || []).map((c) => lineNode(c, c.rcd ? "rcbo" : "mcb"));
+    const main = CX ? CX.mainPanel(p) : null;
+    const sub = panelId && main && panelId !== main.id;
+    const pn = sub ? (p.panels || []).find((x) => x.id === panelId) : null;
     return {
-      id: s.phases === 3 ? "QF ввод" : "QF ввод",
-      label: (s.phases === 3 ? "Ввод 3ф" : "Ввод 1ф") + (s.meter ? " · счётчик" : "") + (s.mainRcd ? " · УЗО" : ""),
+      id: sub ? "QF пит." : "QF ввод",
+      label: sub ? `Питание от ${main.name}${pn ? " → " + pn.name : ""}`
+        : (s.phases === 3 ? "Ввод 3ф" : "Ввод 1ф") + (s.meter ? " · счётчик" : "") + (s.mainRcd ? " · УЗО" : ""),
       rating: (s.mainBreaker || 40) + "A", type: "mcb", poles: s.phases === 3 ? 3 : 1,
       children: children.length ? children : [{ id: "—", label: "нет линий (QF)", rating: "", type: "load", children: [] }]
     };
@@ -107,7 +116,12 @@
     if (c.rcd) return p3 ? 4 : 2; // дифавтомат
     return p3 ? 3 : 1;            // автомат
   }
-  function neededModules(p) {
+  // модули ГЛАВНОГО щита (panelId — любого) — через движок цепей: считает только линии
+  // этого щита и групповое УЗО ОДИН раз на группу. Раньше: УЗО на каждую линию и ВСЕ линии
+  // проекта в одном корпусе (слаботочные Int/TV из роутер-щита тоже) — корпус завышался.
+  function neededModules(p, panelId) {
+    const CX = EP.Plan.Circuits;
+    if (CX) { const main = CX.mainPanel(p); return CX.modules(p, panelId || (main ? main.id : null)); }
     const s = p.settings;
     let m = s.phases === 3 ? 3 : 1;         // вводной автомат
     if (s.mainRcd) m += s.phases === 3 ? 4 : 2;
@@ -196,6 +210,17 @@
     if (sheet) sheet.classList.toggle("ep-plan-sheet-full", S.full);
   }
 
+  // щит, который показывает схема: "" — все линии проекта (как раньше); выбор есть, только
+  // когда линии реально разнесены по двум и более щитам
+  function panelsWithLines(p) {
+    const CX = EP.Plan.Circuits; if (!CX) return [];
+    const ids = new Set((p.circuits || []).map((c) => { const r = CX.panelOf(p, c); return r.panel ? r.panel.id : null; }).filter(Boolean));
+    return (p.panels || []).filter((pn) => ids.has(pn.id));
+  }
+  function schemePanel(p) {
+    if (!S.panel) return null;
+    return (p.panels || []).some((x) => x.id === S.panel) ? S.panel : null;
+  }
   function draw() {
     const host = $("#ep-psc-scroll"); if (!host || !window.ShieldSchemeSVG) return;
     const p = core().project;
@@ -210,7 +235,7 @@
     host.appendChild(svg);
     try {
       if (p.settings.schemeMode === "manual" && EP.Plan.ManualScheme) EP.Plan.ManualScheme.render(svg, p);
-      else window.ShieldSchemeSVG.render(svg, buildTree(p));
+      else window.ShieldSchemeSVG.render(svg, buildTree(p, schemePanel(p)));
     } catch (e) { host.innerHTML = `<div class="ep-plan-modehint">Не удалось нарисовать схему: ${esc(e.message)}</div>`; }
   }
 
@@ -227,6 +252,7 @@
       box.innerHTML = modeRow(s) + (EP.Plan.ManualScheme ? EP.Plan.ManualScheme.editorHtml(p) : "");
       return;
     }
+    const CX = EP.Plan.Circuits;
     const breakers = EP.Plan.Core.DEFAULTS.breakers, cables = EP.Plan.Core.DEFAULTS.cables;
     const brkSel = (val, attr) => `<select ${attr} class="ep-plan-sel">${breakers.map((b) => `<option value="${b}" ${Number(val) === b ? "selected" : ""}>${b}A</option>`).join("")}</select>`;
     const cabSel = (val, id) => `<select data-psc-cab="${esc(id)}" class="ep-plan-sel"><option value="">авто</option>${cables.map((cb) => `<option value="${cb}" ${val === cb ? "selected" : ""}>${cb}</option>`).join("")}</select>`;
@@ -239,7 +265,8 @@
         ${brkSel(c.breaker, `data-psc-brk="${esc(c.id)}"`)}
         <button type="button" class="ep-plan-chip ep-clickable ${c.poles === 3 ? "on" : ""}" data-psc-poles="${esc(c.id)}">${c.poles === 3 ? "3P" : "1P"}</button>
         ${phaseChip(c)}
-        <label class="ep-plan-chk"><input type="checkbox" data-psc-rcd="${esc(c.id)}" ${c.rcd ? "checked" : ""}>УЗО</label>
+        ${CX ? CX.protSelectHtml(p, c, "data-pcx-prot") : `<label class="ep-plan-chk"><input type="checkbox" data-psc-rcd="${esc(c.id)}" ${c.rcd ? "checked" : ""}>УЗО</label>`}
+        ${CX ? CX.panelSelectHtml(p, c, "data-pcx-panel") : ""}
         ${cabSel(c.cable, c.id)}
         <span class="ep-plan-flex"></span>
         <button type="button" class="ep-plan-mini ep-plan-danger ep-clickable" data-psc-del="${esc(c.id)}">✕</button>
@@ -272,12 +299,23 @@
       </div>
       <div class="ep-plan-srow ep-plan-rlens">${boxLine}</div>
       ${balanceHtml}
+      ${panelChipsHtml(p)}
       ${rows || `<div class="ep-plan-modehint">Линий (QF) нет. Назначь линии точкам в 🔌 или добавь ниже.</div>`}
+      ${CX ? `<div class="ep-plan-srow"><b>Групповые УЗО</b></div>${CX.groupsEditorHtml(p)}` : ""}
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="btn btn-primary ep-clickable" data-psc-add>+ линия</button>
       </div>`;
   }
 
+  // выбор щита для схемы: только если линии реально разнесены по 2+ щитам
+  function panelChipsHtml(p) {
+    const ps = panelsWithLines(p);
+    if (ps.length < 2) return "";
+    const cur = schemePanel(p) || "";
+    return `<div class="ep-plan-srow"><b>Схема щита:</b>
+      <button type="button" class="ep-plan-chip ep-clickable ${cur ? "" : "on"}" data-psc-panel="">все линии</button>
+      ${ps.map((pn) => `<button type="button" class="ep-plan-chip ep-clickable ${cur === pn.id ? "on" : ""}" data-psc-panel="${esc(pn.id)}">${esc(pn.name)}</button>`).join("")}</div>`;
+  }
   function refresh() { draw(); editor(); }
 
   // ---- события ----
@@ -296,6 +334,8 @@
     }
     if (t.closest("[data-psc-fullplain]")) return toggleFull();
     if (!isOpen()) return;
+    if ((b = t.closest("[data-psc-panel]"))) { S.panel = b.getAttribute("data-psc-panel") || ""; refresh(); return; }
+    if (EP.Plan.Circuits && EP.Plan.Circuits.handleClick(t, refresh)) return;
     if ((b = t.closest("[data-psc-mode]"))) { const c = core(); c.commit(); c.project.settings.schemeMode = b.getAttribute("data-psc-mode") === "manual" ? "manual" : "auto"; c.persist("scheme-mode"); refresh(); return; }
     if ((b = t.closest("[data-psc-ph]"))) { const c = core(); c.commit(); c.project.settings.phases = Number(b.getAttribute("data-psc-ph")) === 3 ? 3 : 1; c.persist("scheme-ph"); refresh(); return; }
     if ((b = t.closest("[data-psc-poles]"))) { const c = core(), cc = c.project.circuits.find((x) => x.id === b.getAttribute("data-psc-poles")); if (cc) { c.commit(); cc.poles = cc.poles === 3 ? 1 : 3; c.persist("scheme-poles"); refresh(); } return; }
@@ -327,6 +367,7 @@
     if (!rooms() || !rooms().isActive() || !isOpen()) return;
     const t = e.target, ga = (a) => t.getAttribute && t.getAttribute(a);
     const c = core();
+    if (EP.Plan.Circuits && EP.Plan.Circuits.handleChange(t, refresh)) return;
     if (ga("data-psc-main") != null || t.hasAttribute("data-psc-main")) { c.commit(); c.project.settings.mainBreaker = Number(t.value) || 40; c.persist("scheme-main"); draw(); return; }
     if (t.hasAttribute("data-psc-meter")) { c.commit(); c.project.settings.meter = !!t.checked; c.persist("scheme-meter"); draw(); return; }
     if (t.hasAttribute("data-psc-mainrcd")) { c.commit(); c.project.settings.mainRcd = !!t.checked; c.persist("scheme-mainrcd"); draw(); return; }
@@ -343,5 +384,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Scheme = { open, close, isOpen, buildTree, recompute: recomputePanel, neededModules, draw, refresh, loadEls, autoCable, loadSummary, loadKindLabel, phaseBalance, autoBalancePhases };
+  EP.Plan.Scheme = { open, close, isOpen, buildTree, panelsWithLines, recompute: recomputePanel, neededModules, draw, refresh, loadEls, autoCable, loadSummary, loadKindLabel, phaseBalance, autoBalancePhases };
 })();

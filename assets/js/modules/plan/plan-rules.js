@@ -41,6 +41,8 @@
     noLight: (r) => `«${r}»: нет света`,
     noPanel: "Есть точки, но нет щита — трассы не построить",
     needRcd: (q) => `${q}: розетки без УЗО — по ПУЭ нужна защита 30 мА`,
+    rcdWeak: (g, a, br) => `${g}: номинал ${a}A ниже автомата своей линии (${br}A) — возьми УЗО не меньше ${br}A`,
+    rcdSplit: (g) => `${g}: линии этого УЗО назначены в разные щиты — одно УЗО стоит в одном щите`,
     heavySep: (q) => `${q}: мощный потребитель смешан с другими — выдели отдельную линию`,
     tooMany: (q, n, m) => `${q}: розеток ${n} на одной линии (реком. ≤ ${m})`,
     thinCable: (q, s, br) => `${q}: кабель ${s} мм² мал для автомата ${br}A`,
@@ -123,6 +125,19 @@
       // обязательно на линии 24в»), от него зависит кабель «от щита до точки» (2 или 5 жил).
       // Пока не указано, смета считает как монохром — поэтому это подсказка, а не блокировка.
       if (c.rgb == null && els.every((e) => e.type === "output24")) issues.push({ circuitId: c.id, msg: T.rgb24(c.name) });
+    });
+
+    // — групповые УЗО (движок цепей): номинал УЗО не ниже автомата любой его линии
+    // (иначе УЗО перегружается раньше, чем сработает автомат), и все линии одного УЗО
+    // — в ОДНОМ щите (физически УЗО стоит в конкретном щите)
+    const CX = EP.Plan.Circuits;
+    if (CX) CX.groups(p).forEach((g) => {
+      const ls = (p.circuits || []).filter((c) => c.rcdGroupId === g.id);
+      if (!ls.length) return;
+      const maxBr = ls.reduce((m, c) => Math.max(m, Number(c.breaker) || 0), 0);
+      if ((Number(g.rating) || 0) < maxBr) issues.push({ circuitId: ls[0].id, msg: T.rcdWeak(g.name, g.rating, maxBr) });
+      const pns = new Set(ls.map((c) => { const r = CX.panelOf(p, c); return r.panel ? r.panel.id : ""; }));
+      if (pns.size > 1) issues.push({ circuitId: ls[0].id, msg: T.rcdSplit(g.name) });
     });
 
     // — СЛАБОТОЧКА: датчики протечки / камеры / датчики движения-освещённости —

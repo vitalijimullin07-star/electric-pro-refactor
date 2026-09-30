@@ -57,7 +57,7 @@ const q = ver ? "?" + ver : "";
 // другой папке модулей. Расчёт/проверки нужны для режима "estimate" (предрасчёт сметы и
 // ПУЭ-проверок в фоне) — оба чистые вычисления, DOM не трогают (обработчики шторок
 // регистрируются на заглушку document выше и просто никогда не сработают).
-importScripts("plan-core.js" + q, "plan-geometry.js" + q, "plan-routes.js" + q,
+importScripts("plan-core.js" + q, "plan-geometry.js" + q, "plan-circuits.js" + q, "plan-routes.js" + q,
   "../consumables/cable-consum.js" + q, "plan-calc.js" + q, "plan-rules.js" + q);
 
 // ВАЖНО: НЕ объявлять здесь `const EP` — топ-левел lexical-объявление в воркере
