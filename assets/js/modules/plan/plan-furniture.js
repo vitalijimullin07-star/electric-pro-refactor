@@ -242,8 +242,10 @@
   function editApply() {
     const a = cur(); if (!a) return;
     const c = core();
-    const w = Number(($("#ep-pf-w") || {}).value), d = Number(($("#ep-pf-d") || {}).value);
-    const watt = Number(($("#ep-pf-watt") || {}).value);
+    // пустое поле = «не менять» (Number("") дал бы 0 — у мощности это «0 Вт»)
+    const nv = (sel) => { const n = $(sel); const v = n && n.value != null ? String(n.value).trim() : ""; return v ? Number(v.replace(",", ".")) : NaN; };
+    const w = nv("#ep-pf-w"), d = nv("#ep-pf-d");
+    const watt = nv("#ep-pf-watt");
     const p3 = !!($("#ep-pf-p3") || {}).checked;
     c.commit();
     if (Number.isFinite(w) && w >= 10) a.w = w;

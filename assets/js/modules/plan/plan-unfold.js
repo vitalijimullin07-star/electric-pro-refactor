@@ -941,11 +941,13 @@
     if (!rooms() || !rooms().isActive() || !isOpen()) return;
     if (e.target.getAttribute && e.target.getAttribute("data-pu-wth") != null) setWallTh(e.target.value);
     if (e.target.getAttribute && e.target.getAttribute("data-pu-pt-h") != null) {
-      const v = Number(e.target.value) || 0;
+      const raw = String(e.target.value || "").trim(); if (!raw) return; // пусто = не менять
+      const v = Number(raw.replace(",", ".")); if (!Number.isFinite(v)) return;
       ptChange((el2, lim) => { el2.height = Math.max(0, Math.min(lim.H, Math.round(v))); }, "elem-edit");
     }
     if (e.target.getAttribute && e.target.getAttribute("data-pu-pt-o") != null) {
-      const v = Number(e.target.value) || 0;
+      const raw = String(e.target.value || "").trim(); if (!raw) return;
+      const v = Number(raw.replace(",", ".")); if (!Number.isFinite(v)) return;
       ptChange((el2, lim) => { el2.offset = Math.max(0, Math.min(lim.L, Math.round(v))); }, "elem-edit");
     }
   });
