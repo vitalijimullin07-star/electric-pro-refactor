@@ -623,7 +623,7 @@
     // ниша под щит — как в конфигураторе щита (вырубка × модули + монтаж)
     if ((p.panels || []).length) {
       const modules = (s.panelBox && s.panelBox.modules) ||
-        (EP.Plan.Scheme && EP.Plan.Scheme.neededModules ? EP.Plan.Scheme.neededModules(p) : 0);
+        (EP.Plan.Scheme && EP.Plan.Scheme.neededModules ? EP.Plan.Scheme.neededModules(p) : circuitsModules(p));
       if (modules > 0) add("work", `Вырубка ниши под щит (${low(panelMat())})`, modules, "мод");
       add("work", "Монтаж щита в нишу/стену", 1, "шт");
       // система АВР (автоматический ввод резерва: второй ввод/генератор) — отмечается
@@ -744,6 +744,16 @@
     items.push({ type: "work", name: "Проход через перекрытие (стояк между этажами)", qty: n, unit: "шт" });
     items.push({ type: "material", name: "Труба (гильза) для прохода через перекрытие", qty: n, unit: "шт" });
     return items;
+  }
+  // Модули главного щита без модуля однолинейки: фоновый вычислитель (solver-worker.js)
+  // plan-scheme.js не грузит, и «Вырубка ниши под щит» там молча выпадала из сметы —
+  // предрасчёт расходился с главным потоком (поймано живым сравнением). Scheme.neededModules
+  // сама считает через EP.Plan.Circuits — берём тот же движок напрямую.
+  function circuitsModules(p) {
+    const CX = EP.Plan.Circuits;
+    if (!CX || !CX.modules) return 0;
+    const main = CX.mainPanel ? CX.mainPanel(p) : null;
+    return CX.modules(p, main ? main.id : null);
   }
   // ЧИСТОВЫЕ работы по точкам — общий каталог EP.FinishWorks (тот же, что у «Цен на
   // работы» и Пула). Как АВР и стояк — не зависят от того, построены ли трассы: розетка

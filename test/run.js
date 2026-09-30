@@ -8040,8 +8040,8 @@ test("фото: deleteProject чистит кэш фото своего прое
       const part = src.slice(src.indexOf("  const PD = ()"), src.indexOf("// ---------- что уже есть"));
       const cat = () => new Function("window", part + "; return catalog;")({ EP: { Plan: { Core: { DEFAULTS: EP.Plan.Core.DEFAULTS } }, FinishWorks: FW } })();
       const g = cat();
-      const stages = g.map((x) => x.stage).filter((x, i, a) => a.indexOf(x) === i);
-      eq(stages.join(","), "rough,shield,fine", "черновые → щит → чистовые, как работы идут на объекте");
+      const seq = g.map((x) => x.stage).filter((x, i, a) => i === 0 || a[i - 1] !== x);
+      eq(seq.join(","), "rough,shield,fine", "черновые → щит → чистовые, и ни один этап не повторяется (заголовок раздела один)");
       const fine = g.filter((x) => x.stage === "fine");
       ok(fine.length >= 4 && fine.every((x) => x.finish && x.core), "чистовые — группами, в счётчике");
       const ac = [].concat(...fine.map((x) => x.items)).find((it) => it.fw === "ac");
@@ -8053,6 +8053,20 @@ test("фото: deleteProject чистит кэш фото своего прое
       ok(/if \(inp\.disabled\) return;/.test(src), "цену снятой работы в базу не пишем");
       ok(/if \(!i\.disabled\) i\.value = v;/.test(src), "«одна цена на группу» снятые не заполняет");
       ok(/patchFw\(id, on\);\s*patchCounts\(\);/.test(src), "отметка — точечно, без перерисовки (не теряем набранные цены)");
+    });
+    test("ниша щита в смете не зависит от модуля однолинейки (фоновый вычислитель его не грузит)", () => {
+      const { P, w } = install();
+      P.panels.push(M.newPanel(40, 40, "Щ"));
+      const c1 = M.newCircuit("QF1", "#f00", 16); P.circuits.push(c1);
+      const s1 = M.newElement("socket", w(0), 150, 30, "power"); s1.circuitId = c1.id; P.elements.push(s1);
+      EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
+      EP.Plan.Routes.build({ silent: true });
+      const niche = (items) => (items.find((x) => /^Вырубка ниши под щит/.test(x.name)) || {}).qty;
+      const withScheme = niche(EP.Plan.Calc.calcByRoutes(P).items);
+      ok(withScheme > 0, "ниша посчитана");
+      const keep = EP.Plan.Scheme; EP.Plan.Scheme = undefined;
+      try { eq(niche(EP.Plan.Calc.calcByRoutes(P).items), withScheme, "без однолинейки — те же модули через движок цепей"); }
+      finally { EP.Plan.Scheme = keep; }
     });
     test("чистовые: подключение и фоновый вычислитель", () => {
       const idx = rd("index.html");
