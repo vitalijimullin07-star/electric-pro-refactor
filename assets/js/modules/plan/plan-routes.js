@@ -1828,14 +1828,82 @@
   // другом (segIntersect, общие узлы не считаем: у щита/распайки кабели физически
   // сходятся в одну коробку, это не «каша»), sleeves — число физических отверстий,
   // len — суммарная длина трасс (см), unrouted — сколько точек осталось без трассы.
+  // ---- ШТРАФЫ ФОРМЫ ТРАССЫ (пакет 8 плана V2) ----
+  // Кроме пересечений/отверстий/метража у варианта разводки есть ещё два честных признака
+  // качества, которые мастер видит глазами на плане и чувствует руками на объекте:
+  //  · ИЗЛОМЫ — каждый поворот штробы/гофры это лишняя работа (угол в бетоне, изгиб кабеля
+  //    в гофре), и лесенка из пяти изломов там, где хватило бы двух, читается как брак;
+  //  · ОТХОД ОТ МАГИСТРАЛИ — транзит через ТРЕТЬЮ комнату (не свою и не комнату цели) мимо
+  //    нарисованной магистрали: ради магистрали её и рисуют, чтобы кабель шёл общим коридором,
+  //    а не срезал через чужую спальню.
+  // Оба штрафа легче пересечения (100): 25 изломов ≈ одно пересечение, 5 м транзита ≈ одно.
+  const TURN_W = 4, OFF_TRUNK_W = 20;        // за излом / за метр вне магистрали
+  const TURN_COS = Math.cos(15 * Math.PI / 180); // меньше 15° — не излом, а огрех округления
+  const TURN_MIN_SEG = 3;                     // отрезки короче 3 см (ступенька у анкера) не считаем
+  const TRUNK_NEAR = 45;                      // до магистрали ближе — это ещё «по магистрали»
+  const TRUNK_STEP = 20;                      // шаг выборки вдоль трассы, см
+  function routeTurns(pts) {
+    const q = [];
+    (pts || []).forEach((v) => { if (!q.length || dist(v, q[q.length - 1]) >= TURN_MIN_SEG) q.push(v); });
+    let n = 0;
+    for (let i = 1; i < q.length - 1; i++) {
+      const ax = q[i].x - q[i - 1].x, ay = q[i].y - q[i - 1].y, bx = q[i + 1].x - q[i].x, by = q[i + 1].y - q[i].y;
+      const la = Math.sqrt(ax * ax + ay * ay), lb = Math.sqrt(bx * bx + by * by);
+      if (la < 0.01 || lb < 0.01) continue;
+      if ((ax * bx + ay * by) / (la * lb) < TURN_COS) n++;
+    }
+    return n;
+  }
+  const penCache = new WeakMap(); // points-массив трассы → {sig, pen}: build/откат дают НОВЫЙ массив
+  function penaltyCtx(p) {
+    const fp = G().floorScoped(p);
+    const gs = (fp.guides || []).filter((gd) => (gd.points || []).length >= 2);
+    return { fp, gs, active: new Set((fp.routes || []).map((r) => r.id)), sig: guideSig(gs) + "#" + geomSig(p) };
+  }
+  // длина трассы, идущая через ЧУЖУЮ комнату дальше TRUNK_NEAR от магистрали её группы
+  function routeOffTrunk(p, r, ctx) {
+    if (!ctx.gs.length || !ctx.active.has(r.id)) return 0;
+    const pts = r.points || [];
+    const ra = roomNear(p, pts[0]), rb = roomNear(p, pts[pts.length - 1]);
+    if (!ra || !rb || ra.id === rb.id) return 0; // трасса в своей комнате — магистраль ни при чём
+    const fromEl = (p.elements || []).find((e) => e.id === String(r.fromId || "").replace(/^sw24:/, "").split("@")[0]);
+    const kind = routeKind(p, fromEl, r.circuitId);
+    const mine = anyGuideKinds(ctx.gs) ? ctx.gs.filter((gd) => guideServes(gd, kind)) : ctx.gs;
+    const segs = [];
+    (mine.length ? mine : ctx.gs).forEach((gd) => { for (let i = 1; i < gd.points.length; i++) segs.push([gd.points[i - 1], gd.points[i]]); });
+    let off = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i], L = dist(a, b);
+      const n = Math.max(1, Math.round(L / TRUNK_STEP));
+      for (let k = 0; k < n; k++) {
+        const t = (k + 0.5) / n, q = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+        const rq = G().roomAt(p, q);
+        if (!rq || rq.id === ra.id || rq.id === rb.id) continue;
+        let d = Infinity;
+        for (let j = 0; j < segs.length && d > TRUNK_NEAR; j++) d = Math.min(d, G().closestOnSeg(q, segs[j][0], segs[j][1]).d);
+        if (d > TRUNK_NEAR) off += L / n;
+      }
+    }
+    return off;
+  }
+  function routePenalty(p, r, ctx) {
+    const hit = penCache.get(r.points);
+    if (hit && hit.sig === ctx.sig) return hit.pen;
+    const pen = { turns: routeTurns(r.points), offTrunk: routeOffTrunk(p, r, ctx) };
+    penCache.set(r.points, { sig: ctx.sig, pen });
+    return pen;
+  }
   function scoreRoutes(p) {
     const rs = (p.routes || []).filter((r) => (r.points || []).length > 1);
     const near = (a, b) => dist(a, b) < 2;
-    let crossSame = 0, crossDiff = 0, len = 0;
+    let crossSame = 0, crossDiff = 0, len = 0, turns = 0, offTrunk = 0;
     const boxes = rs.map((r) => ({ r, bb: bboxOf(r.points) }));
-    rs.forEach((r) => { len += G().polylineLen(r.points); });
+    const ctx = penaltyCtx(p);
+    rs.forEach((r) => { len += G().polylineLen(r.points); const pen = routePenalty(p, r, ctx); turns += pen.turns; offTrunk += pen.offTrunk; });
     for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
       const A = boxes[i], B = boxes[j];
+      // трассы РАЗНЫХ этажей живут в одних координатах, но физически не встречаются
+      if ((A.r.floorId || null) !== (B.r.floorId || null)) continue;
       if (A.bb.x1 < B.bb.x0 || A.bb.x0 > B.bb.x1 || A.bb.y1 < B.bb.y0 || A.bb.y0 > B.bb.y1) continue;
       const P1 = A.r.points, P2 = B.r.points;
       for (let x = 1; x < P1.length; x++) for (let y = 1; y < P2.length; y++) {
@@ -1848,9 +1916,10 @@
     const holes = sleeveHoles(p);
     const unrouted = unroutedForSheet(p).length;
     // вес: пересечение линий — главное зло (просьба пользователя), потом лишние отверстия,
-    // потом метраж; unrouted — запретительный вес, вариант без трасс не может «выиграть»
-    const cost = crossDiff * 100 + crossSame * 40 + holes * 30 + len / 100 + unrouted * 10000;
-    return { crossings: crossDiff, crossSame, holes, len: Math.round(len), unrouted, cost: Math.round(cost) };
+    // потом транзит мимо магистрали и изломы, потом метраж; unrouted — запретительный вес,
+    // вариант без трасс не может «выиграть»
+    const cost = crossDiff * 100 + crossSame * 40 + holes * 30 + offTrunk / 100 * OFF_TRUNK_W + turns * TURN_W + len / 100 + unrouted * 10000;
+    return { crossings: crossDiff, crossSame, holes, len: Math.round(len), turns, offTrunk: Math.round(offTrunk), unrouted, cost: Math.round(cost) };
   }
   // ================== ОПТИМИЗАТОР РАЗВОДКИ (тяжёлый режим) ==================
   // Просьба пользователя: «готов дополнительно задействовать CPU телефона, если нужно
@@ -1969,6 +2038,7 @@
     const near = (a, b) => dist(a, b) < 2;
     const cnt = {};
     for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) {
+      if ((rs[i].floorId || null) !== (rs[j].floorId || null)) continue;
       const P1 = rs[i].points, P2 = rs[j].points;
       let n = 0;
       for (let x = 1; x < P1.length; x++) for (let y = 1; y < P2.length; y++) {
@@ -2014,8 +2084,16 @@
     let iterations = (r1 && r1.iterations) || 0;
     const skip = {};
     while (Date.now() - t0 < budget) {
-      const cnt = crossPerRoute(p);
-      const cand = Object.keys(cnt).filter((id) => !skip[id]).sort((x, y) => cnt[y] - cnt[x])[0];
+      // кандидат на перекладку — трасса с худшей «виной»: пересечения главнее, но трасса,
+      // срезающая через чужую комнату или лесенкой изломов, тоже в очереди (пакет 8)
+      const cnt = crossPerRoute(p), ctx = penaltyCtx(p);
+      (p.routes || []).forEach((r) => {
+        if ((r.points || []).length < 2) return;
+        const pen = routePenalty(p, r, ctx);
+        const bad = pen.offTrunk / 100 * OFF_TRUNK_W + Math.max(0, pen.turns - 2) * TURN_W;
+        if (bad > 0) cnt[r.id] = (cnt[r.id] || 0) * 100 + bad; else if (cnt[r.id]) cnt[r.id] *= 100;
+      });
+      const cand = Object.keys(cnt).filter((id) => !skip[id] && cnt[id] > 0).sort((x, y) => (cnt[y] - cnt[x]) || (x < y ? -1 : 1))[0];
       if (!cand) break;
       const rt = (p.routes || []).find((r) => r.id === cand);
       if (!rt || rt.manual) { skip[cand] = 1; continue; }
@@ -3063,5 +3141,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, keys24Of, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
+  EP.Plan.Routes = { routeTurns, build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, keys24Of, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
 })();
