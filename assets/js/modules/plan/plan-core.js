@@ -652,6 +652,7 @@
       c.rcd = !!c.rcd;
       if (c.cable != null && typeof c.cable !== "string") c.cable = null;
       if (c.cable220 != null && typeof c.cable220 !== "string") c.cable220 = null;
+      if (c.title != null && typeof c.title !== "string") c.title = String(c.title);
     });
     // групповые УЗО и ссылки линий на них / на щиты (щиты санитизируются ниже, поэтому
     // ссылку на щит проверяем по сырому списку id — он не меняется, кроме дублей)

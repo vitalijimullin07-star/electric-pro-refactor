@@ -91,7 +91,8 @@
     const lineNode = (c, type) => ({
       // БЕЗ esc(): ShieldSchemeSVG сам экранирует node.id/label при выводе — здесь это
       // давало ДВОЙНОЕ экранирование («Свет &amp;amp; кухня» на экране и в PDF)
-      id: String(c.name == null ? "" : c.name), label: loadSummary(p, c), rating: (c.breaker || 16) + "A",
+      // описание линии («Розетки: кухня» — задаёт «⚡ Сформировать проект») главнее перечня нагрузки
+      id: String(c.name == null ? "" : c.name), label: c.title || loadSummary(p, c), rating: (c.breaker || 16) + "A",
       type, poles: c.poles === 3 ? 3 : 1,
       cable: (c.cable || autoCable(p, c)),
       children: [{ type: "load", label: loadKindLabel(p, c), children: [] }]
