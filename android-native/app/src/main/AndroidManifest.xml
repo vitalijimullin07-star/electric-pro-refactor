@@ -24,6 +24,18 @@
 
         </activity>
 
+        <!-- уведомления чата (FCM): одноцветный значок-молния, акцентный цвет и канал
+             «Чат» по умолчанию — канал создаёт приложение при включении уведомлений -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_ep" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/ep_accent" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="ep-chat" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -38,4 +50,8 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- тактильный отклик (navigator.vibrate): привязка точки к стене, долгое нажатие -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- уведомления чата (Android 13+ спрашивает разрешение при включении 🔔) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

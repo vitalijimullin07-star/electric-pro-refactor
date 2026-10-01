@@ -13,6 +13,10 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <!-- цвет под строкой состояния и полосой навигации: Capacitor (SystemBars)
+             закрашивает их фоном окна, а белые полосы над тёмным приложением смотрелись
+             бы чужими -->
+        <item name="android:windowBackground">@color/ep_bg</item>
     </style>
 
 

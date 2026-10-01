@@ -10,13 +10,19 @@
   },
   "plugins": {
     "FirebaseAuthentication": {
-      "providers": ["google.com"],
+      "providers": [
+        "google.com"
+      ],
       "skipNativeAuth": false
     },
     "SplashScreen": {
       "launchShowDuration": 400,
       "backgroundColor": "#0f172a",
       "showSpinner": false
+    },
+    "SystemBars": {
+      "style": "DARK"
     }
-  }
+  },
+  "backgroundColor": "#0f172a"
 }

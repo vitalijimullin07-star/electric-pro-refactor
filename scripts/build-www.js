@@ -62,6 +62,15 @@ const idx = path.join(OUT, "index.html");
 let html = fs.readFileSync(idx, "utf8");
 html = html.replace(/\?v=\d+/g, "");
 
+/* Системные панели Android. Capacitor 8 (плагин SystemBars) при viewport-fit=cover на
+   свежем WebView (140+) рисует страницу ПОД строкой состояния и полосой навигации и
+   ждёт, что вёрстка сама отступит через env(safe-area-inset-*). В приложении так
+   отступает только шапка — контент, шторки плана и плавающие кнопки уехали бы под
+   системные панели. Без cover оболочка сама отодвигает WebView от панелей (и красит их
+   фоном окна, см. android-native/.../styles.xml) — ровно как вкладка браузера. */
+html = html.replace(/,\s*viewport-fit=cover/, "");
+if (/viewport-fit=cover/.test(html)) throw new Error("не удалось убрать viewport-fit=cover из index.html");
+
 /* Флаг нативной сборки ОТДЕЛЬНЫМ ФАЙЛОМ, а не инлайном: CSP приложения разрешает
    script-src 'self', и встроенный <script> просто не выполняется (проверено — флаг
    не доезжал). По нему pwa.js не регистрирует service worker и не проверяет «не вышла
