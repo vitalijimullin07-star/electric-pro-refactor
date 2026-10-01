@@ -4351,8 +4351,16 @@ test("фото: deleteProject чистит кэш фото своего прое
       "функция САМА читает сообщение и проверяет авторство — чужой id подсунуть нельзя");
     ok(/if \(m\.pushedAt\) return \{ sent: 0, already: true \}/.test(fn),
       "повторный вызов не рассылает второй раз (защита от ретрая и от спама)");
-    ok(/sendEachForMulticast/.test(fn) && !/notification:/.test(fn),
-      "отправляем ТОЛЬКО data — иначе FCM покажет уведомление в обход нашего sw.js");
+    // веб/TWA и APK получают РАЗНЫЕ сообщения: вебу — только data (показывает наш sw.js),
+    // APK — notification (service worker'а там нет, data-only при свёрнутом приложении
+    // никто бы не показал)
+    const webBr = fn.slice(fn.indexOf("if (web.length) {"), fn.indexOf("if (nat.length) {"));
+    const natBr = fn.slice(fn.indexOf("if (nat.length) {"), fn.indexOf('logger.info("chatPush"'));
+    ok(/sendEachForMulticast/.test(fn) && webBr.length > 20 && !/notification:/.test(webBr),
+      "вебу и TWA отправляем ТОЛЬКО data — иначе FCM покажет уведомление в обход нашего sw.js");
+    ok(natBr.length > 20 && /notification: \{ title: data\.title, body: data\.body \}/.test(natBr) && /channelId: "ep-chat"/.test(natBr),
+      "APK (токен native:true) — notification в канал «Чат», его показывает сама система");
+    ok(/native: t\.native === true/.test(fn), "функция различает токены APK и веба");
     ok(/function dropDeadTokens/.test(fn) && /registration-token-not-registered/.test(fn), "мёртвые токены удаляются");
     ok(/t\.mute !== true/.test(fn), "функция уважает «не беспокоить»");
     ok(/for \(let i = 0; i < list\.length; i \+= 30\)/.test(fn), "whereIn режется по 30 значений — предел Firestore");

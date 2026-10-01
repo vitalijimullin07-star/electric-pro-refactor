@@ -299,13 +299,32 @@
   }
 
   // ---------- уведомления, звук, метка ----------
-  const canNotify = () => (typeof Notification !== "undefined" && Notification.permission === "granted");
+  /* НАТИВНАЯ сборка (APK): во встроенном WebView нет ни Notification API, ни web push.
+     Токен там даёт нативный FCM (плагин @capacitor-firebase/messaging), а уведомление
+     показывает сама система Android: сервер шлёт таким токенам (native:true) обычное
+     notification-сообщение, см. functions/index.js. natPerm — кэш разрешения для
+     синхронного canNotify() (у плагина проверка асинхронная). */
+  const natMsg = () => {
+    try {
+      const c = window.Capacitor;
+      return (c && c.isNativePlatform && c.isNativePlatform() && c.Plugins && c.Plugins.FirebaseMessaging) || null;
+    } catch (e) { return null; }
+  };
+  let natPerm = "";
+  const canNotify = () => (natMsg() ? natPerm === "granted" : (typeof Notification !== "undefined" && Notification.permission === "granted"));
   function askNotify() {
+    const nm = natMsg();
+    if (nm) {
+      return Promise.resolve(nm.requestPermissions()).then((r) => { natPerm = (r && r.receive) || ""; return natPerm === "granted"; }).catch(() => false);
+    }
     if (typeof Notification === "undefined") return Promise.resolve(false);
     try { return Promise.resolve(Notification.requestPermission()).then((r) => r === "granted"); }
     catch (e) { return Promise.resolve(false); }
   }
   function notify(title, body, tag) {
+    // в APK уведомление при свёрнутом приложении показывает система по push, а при
+    // открытом хватает звука и метки — своего всплывающего там нет
+    if (natMsg()) return;
     if (!canNotify()) return;
     const opts = { body: body, tag: tag || "ep-chat", icon: "assets/icon-192.png", badge: "assets/icon-192.png", data: { chat: 1 } };
     try {
@@ -330,15 +349,15 @@
     try { return !!(window.firebase && firebase.messaging && firebase.messaging.isSupported && firebase.messaging.isSupported()); }
     catch (e) { return false; }
   };
-  function saveToken(token) {
+  function saveToken(token, native) {
     const d = fdb(), uid = myUid();
     if (!d || !uid || !token) return;
     const ua = String(navigator.userAgent || "").slice(0, 200);
-    try {
-      d.collection(TOKENS).doc(token).set({
-        uid: uid, name: myName(), mute: quiet(), ua: ua, at: Date.now(), srv: stamp()
-      }, { merge: true }).catch(() => {});
-    } catch (e) {}
+    const doc = { uid: uid, name: myName(), mute: quiet(), ua: ua, at: Date.now(), srv: stamp() };
+    // токен приложения APK: серверу нужно знать, что показывать уведомление надо
+    // силами системы (notification-сообщение), а не своим service worker'ом
+    if (native) doc.native = true;
+    try { d.collection(TOKENS).doc(token).set(doc, { merge: true }).catch(() => {}); } catch (e) {}
   }
   /* Регистрация НАШЕГО sw.js. `ready` умеет висеть вечно, если SW почему-то не
      зарегистрирован (тогда getToken не вызовется вовсе), поэтому сначала спрашиваем
@@ -352,7 +371,28 @@
       .then((r) => r || Promise.race([sw.ready, wait]))
       .catch(() => null);
   }
+  function registerNativePush(nm) {
+    if (!myUid()) return;
+    Promise.resolve(nm.checkPermissions()).then((r) => {
+      natPerm = (r && r.receive) || "";
+      if (natPerm !== "granted") return null;
+      // свой канал «Чат» (со звуком и всплывающим окном): без него Android положил бы
+      // уведомления в безымянное «Прочее» с тихой важностью
+      const ch = nm.createChannel
+        ? Promise.resolve(nm.createChannel({ id: "ep-chat", name: "Чат", description: "Сообщения общего чата, личные и групповые", importance: 4, vibration: true, visibility: 1 })).catch(() => null)
+        : Promise.resolve(null);
+      return ch.then(() => nm.getToken());
+    }).then((res) => {
+      const token = res && res.token;
+      if (!token) return;
+      pushToken = token;
+      saveToken(token, true);
+      if (isOpen()) patch();
+    }).catch(() => {});
+  }
   function registerPush() {
+    const nm = natMsg();
+    if (nm) { registerNativePush(nm); return; }
     if (!pushSupported() || !canNotify() || !myUid()) return;
     if (!window.EP_VAPID_KEY) return;                 // ключ не прошит — тихо выходим
     if (!navigator.serviceWorker) return;
@@ -1699,6 +1739,37 @@
   // приложение открыто — сразу слушаем чат (метка/звук/уведомление работают и при
   // закрытом окне чата), кнопка вызова доступна с любого экрана
   setTimeout(() => { ensureFab(); if (myUid()) { startAll(); registerPush(); } }, 1500);
+
+  // тап по системному уведомлению в APK — открываем именно ту переписку, о которой оно
+  // было (тег уведомления ставит сервер: ep-chat-pub / ep-chat-dm-<uid> / ep-chat-room-<id>)
+  (function bindNativeTap() {
+    const nm = natMsg();
+    if (!nm || !nm.addListener) return;
+    const go = (tag) => {
+      if (/^ep-chat-dm-/.test(tag)) { openDm(tag.slice(11)); return; }
+      if (/^ep-chat-room-/.test(tag)) {
+        const id = tag.slice(13);
+        if (id) { roomId = id; view = "room"; roomShowPeople = false; }
+        open();
+        return;
+      }
+      open({ view: "chat" });
+    };
+    try {
+      nm.addListener("notificationActionPerformed", (ev) => {
+        const data = (ev && ev.notification && ev.notification.data) || {};
+        const tag = String(data.tag || "");
+        // приложение могло подняться с нуля прямо по тапу — сначала дожидаемся входа
+        if (myUid()) { setTimeout(() => go(tag), 200); return; }
+        const once = () => {
+          if (!myUid()) return;
+          window.removeEventListener("ep:auth-changed", once);
+          setTimeout(() => go(tag), 400);
+        };
+        window.addEventListener("ep:auth-changed", once);
+      });
+    } catch (e) {}
+  })();
 
   EP.Feedback = {
     open, close, add, read, asText, copyAll, count: () => read().length,
