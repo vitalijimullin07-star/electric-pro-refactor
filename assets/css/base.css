@@ -67,6 +67,11 @@ body[data-button-shape="minimal"]{--button-radius:8px;--button-opacity:.55}
 body.pwa-fullscreen .topbar-title{justify-content:space-between}
 body.pwa-fullscreen .topbar-clock,body.pwa-fullscreen .topbar-sysinfo{display:inline-flex}
 .status-btn{border:0;background:transparent;height:30px;display:grid;place-items:center;cursor:pointer}.status-dot{width:13px;height:13px;border-radius:999px;display:block;box-shadow:0 0 0 4px rgba(255,255,255,.08)}.status-ok{background:var(--accent);box-shadow:0 0 16px var(--accent)}.status-error{background:var(--danger);box-shadow:0 0 16px var(--danger)}.status-wait{background:var(--warning);box-shadow:0 0 16px var(--warning)}.status-cache{background:#38bdf8;box-shadow:0 0 16px #38bdf8}
+/* Офлайн-вход (EP.Auth.enterOffline): под точкой статуса — подпись «офлайн». Точку
+   красит логгер (ошибки/предупреждения), поэтому состояние связи показываем ОТДЕЛЬНО,
+   а не цветом точки: без сети логгер почти наверняка пожелтеет от неудачных запросов. */
+body[data-offline="1"] .status-btn{gap:1px}
+body[data-offline="1"] .status-btn::after{content:"офлайн";font:700 8px/1 system-ui,sans-serif;color:var(--warning);letter-spacing:.02em;white-space:nowrap;pointer-events:none}
 .side-menu{position:fixed;z-index:70;left:8px;top:44px;bottom:8px;width:min(330px,calc(100vw - 22px));padding:14px;transform:translateX(calc(-100% - 18px));transition:transform var(--menu-transition-ms) var(--anim-ease);display:flex;flex-direction:column;gap:14px}.side-menu.open{transform:translateX(0)}
 .menu-overlay{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:opacity var(--menu-transition-ms) ease}.menu-overlay.open{opacity:1;pointer-events:auto}
 .side-head{display:flex;align-items:center;gap:12px}.avatar{width:44px;height:44px;display:grid;place-items:center;border-radius:16px;background:color-mix(in srgb,var(--accent) 36%,transparent)}.side-head strong,.side-head span{display:block}.side-head span{color:var(--muted);font-size:calc(12px * var(--eff-text-scale,1))}

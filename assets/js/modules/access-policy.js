@@ -139,6 +139,20 @@
         return this.current;
       }
 
+      // ОФЛАЙН (вход по сохранённому профилю, см. EP.Auth.enterOffline): сервер
+      // недоступен, а резервное чтение Firestore без связи ещё и ждёт до 10 секунд —
+      // показываем политику из того же сохранённого профиля, а не «Нет подписки»,
+      // которая только напугала бы мастера посреди объекта без интернета.
+      const offline = (typeof navigator !== "undefined" && navigator.onLine === false) ||
+        Boolean(window.EP && window.EP.state && window.EP.state.offline);
+      const cachedPolicy = window.EP && window.EP.state && window.EP.state.policy;
+      if (offline && cachedPolicy) {
+        this.current = normalizePolicy(Object.assign({}, cachedPolicy, { uid: user.uid, source: "offline-cache" }));
+        renderPolicy(this.current);
+        window.dispatchEvent(new CustomEvent("ep:access-policy", { detail: { policy: this.current } }));
+        return this.current;
+      }
+
       try {
         const result = await callFunction("getAccessPolicy", {});
         this.current = normalizePolicy(Object.assign({}, result.data || {}, { source: "cloud-function" }));
