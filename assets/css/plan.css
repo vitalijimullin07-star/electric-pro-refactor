@@ -150,6 +150,13 @@ body[data-visual-mode="day"] .ep-plan-moremenu { background: rgba(255, 255, 255,
    (см. инвариант .ep-plan выше). height:100% — определённый процент, однозначно
    берёт всю высоту .ep-plan-canvas, никакого intrinsic-ratio сайзинга. */
 .ep-plan-svg { flex: 1 1 auto; width: auto; height: 100%; display: block; cursor: grab; }
+/* Обёртка холста (plan-canvas.js): во время пана/пинча/колеса двигается её transform, а
+   не viewBox — отдельный композитный слой (will-change) видеокарта сдвигает без
+   раскладки и перерисовки тысяч узлов. Обёртка — flex-элемент холста (растягивается
+   flex'ом, как раньше сам svg), а svg внутри — абсолютный на всю обёртку: размер всегда
+   определённый, без процентной высоты против flex-родителя (см. комментарий выше). */
+.ep-plan-svgwrap { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; will-change: transform; transform-origin: 0 0; }
+.ep-plan-svgwrap > .ep-plan-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .ep-plan-grid-line { stroke: rgba(148, 163, 184, .14); }
 .ep-plan-grid-major { stroke: rgba(148, 163, 184, .30); }
 .ep-plan-grid-axis { stroke: rgba(56, 189, 248, .45); }
@@ -755,7 +762,7 @@ body[data-visual-mode="day"] .ep-plan-wall.mat-soft { stroke: #94a3b8; }
    его инвариант) — здесь остаётся только min-width холста, чтобы боковая
    шторка не сжимала его до неюзабельной ширины. */
 @media (min-width: 1024px) {
-  .ep-plan-svg { min-width: 280px; }
+  .ep-plan-svgwrap { min-width: 280px; }
   .ep-plan-sheet {
     position: static; left: auto; right: auto; bottom: auto;
     flex: 0 1 380px; min-width: 260px; width: auto; height: auto; max-height: none;
