@@ -1461,6 +1461,9 @@ body[data-kb="1"] .ep-fb-ov.is-full .ep-fb-card{max-height:none}
    в нативном фуллскрине выглядел бы как серая заливка, показывать сквозь него нечего */
 .ep-fb-ov:fullscreen{background:rgb(var(--card-bg-rgb))}
 .ep-fb-ov:-webkit-full-screen{background:rgb(var(--card-bg-rgb))}
+/* Нативная сборка (APK): «полный экран» эмулируется классом ep-vfs (native-bridge.js),
+   потому что настоящий fullscreen встроенный WebView тут же отменяет. */
+.ep-fb-ov.ep-vfs{background:rgb(var(--card-bg-rgb))}
 /* ПРЕИМУЩЕСТВА развёрнутого окна: списку достаётся вся высота, сообщения читаются
    шире, поле ввода может вырасти выше (JS-кап grow() не мешает — он в px от экрана) */
 .ep-fb-ov.is-full .ep-fb-list{min-height:0}

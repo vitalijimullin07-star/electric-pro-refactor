@@ -492,6 +492,11 @@
   // СКРЫТОГО iframe с явным focus()+print() — системный диалог выбора принтера/
   // «Сохранить как PDF» поднимается надёжно. Вызывается синхронно из обработчика клика.
   function open(html) {
+    // Нативная сборка (APK): window.print() во встроенном WebView — пустая операция,
+    // и печать из iframe молча ничего не делала бы. Там лист уходит в системный диалог
+    // печати Android (принтер или «Сохранить как PDF») через EP.Native.
+    const N = window.EP && window.EP.Native;
+    if (N && N.available && N.available()) { N.printHtml(html); return true; }
     try {
       if (!document || !document.body) throw new Error("no dom");
       const frame = document.createElement("iframe");
