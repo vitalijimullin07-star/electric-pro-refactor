@@ -6005,6 +6005,37 @@ test("фото: deleteProject чистит кэш фото своего прое
       detachCloud();
     });
 
+    await test("облако: правка БЕЗ СЕТИ досылается при входе, чужая новая версия не затирается", async () => {
+      attachCloud();
+      const C = EP.Plan.Core;
+      // проект A: правили офлайн (syncedAt старее updatedAt), в облаке не менялся
+      const a = C.createProject("офлайн-правка");
+      C.commit(); a.rooms.push(M.newRoom(G.rectPoints(0, 0, 400, 300), "К")); C.persist("seed"); C.flushPersist();
+      const la = JSON.parse(sandbox.localStorage.getItem("ep_plan_v1_p_" + a.id));
+      la.syncedAt = la.updatedAt - 5000;
+      sandbox.localStorage.setItem("ep_plan_v1_p_" + a.id, JSON.stringify(la));
+      // проект B: тоже правили офлайн, НО на другом устройстве уже есть версия новее
+      const b = C.createProject("чужая-новее");
+      C.commit(); b.rooms.push(M.newRoom(G.rectPoints(0, 0, 300, 300), "Моя")); C.persist("seed"); C.flushPersist();
+      const lb = JSON.parse(sandbox.localStorage.getItem("ep_plan_v1_p_" + b.id));
+      lb.syncedAt = lb.updatedAt - 5000;
+      sandbox.localStorage.setItem("ep_plan_v1_p_" + b.id, JSON.stringify(lb));
+      const remote = JSON.parse(JSON.stringify(lb)); remote.rooms[0].name = "Чужая"; remote.updatedAt = lb.updatedAt + 9000;
+      cloud.docs = {
+        ["plan-" + b.id]: { project: remote, updatedAt: remote.updatedAt },
+        "plan-index": { rows: [{ id: b.id, name: "чужая-новее", updatedAt: remote.updatedAt, rooms: 1, elements: 0 }], deleted: [] }
+      };
+      C.closeProject();
+      const sent = await C.cloudPushPending();
+      ok(cloud.docs["plan-" + a.id] && cloud.docs["plan-" + a.id].project.rooms.length === 1, "офлайн-правка уехала в облако");
+      eq(cloud.docs["plan-" + b.id].project.rooms[0].name, "Чужая", "новая версия с другого устройства НЕ затёрта");
+      ok(sent >= 1, "отправлены неотправленные проекты");
+      const after = JSON.parse(sandbox.localStorage.getItem("ep_plan_v1_p_" + a.id));
+      eq(after.syncedAt, after.updatedAt, "проект отмечен синхронизированным");
+      eq(await C.cloudPushPending(), 0, "повторный вызов ничего не шлёт");
+      detachCloud();
+    });
+
     await test("облако: недоступно — всё работает как раньше, локально", async () => {
       detachCloud();
       const p = EP.Plan.Core.createProject("офлайн");

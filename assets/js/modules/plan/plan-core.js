@@ -1172,7 +1172,45 @@
   // ---------- init ----------
   loadIndex();
   loadTombs();
-  if (window.EP.Cloud && EP.Cloud.onLogin) EP.Cloud.onLogin(() => { cloudPullIndex(); });
+  // Правки, сделанные БЕЗ СЕТИ (офлайн-APK, метро, подвал), уезжают в облако только
+  // при следующем пуше — а если приложение закрыли до появления связи, следующего пуша
+  // могло не случиться никогда: проект так и жил «только здесь». Поэтому при входе и при
+  // возврате сети досылаем всё неотправленное. Шлём ТОЛЬКО если облачная копия с нашей
+  // последней синхронизации не менялась (cloudAt <= syncedAt) — иначе затёрли бы работу
+  // с другого устройства; такой случай разбирает openProject (копия «с другого устройства»).
+  let pushingPending = false;
+  async function cloudPushPending() {
+    if (pushingPending || !cloudReady()) return 0;
+    pushingPending = true;
+    let sent = 0;
+    try {
+      flushPersist();
+      await cloudPullIndex();
+      for (const row of S.index.slice()) {
+        const p = (S.project && S.project.id === row.id) ? S.project : lsGet(LS_PROJECT + row.id, null);
+        if (!p || !p.id) continue;
+        const at = p.updatedAt || 0, synced = p.syncedAt || 0;
+        if (!(at > synced) || (row.cloudAt || 0) > synced) continue;
+        const ok = await EP.Cloud.push(CLOUD_PROJECT + p.id, { project: p, updatedAt: at });
+        if (!ok) continue;
+        p.syncedAt = at;
+        lsSet(LS_PROJECT + p.id, p);
+        if (S.project && S.project.id === p.id) S.project.syncedAt = at;
+        row.cloudAt = Math.max(row.cloudAt || 0, at);
+        sent++;
+      }
+      if (sent) {
+        saveIndex(); emit("index");
+        await EP.Cloud.push(CLOUD_INDEX, { rows: S.index, deleted: S.tombs || [], updatedAt: now() });
+      }
+    } catch (e) { /* облако best-effort: локальная копия цела в любом случае */ }
+    finally { pushingPending = false; }
+    return sent;
+  }
+  if (window.EP.Cloud && EP.Cloud.onLogin) EP.Cloud.onLogin(() => { cloudPushPending(); });
+  if (typeof window.addEventListener === "function") {
+    window.addEventListener("online", () => setTimeout(cloudPushPending, 1500));
+  }
 
   // Марка кабеля по умолчанию = settings.cableBrand + сечение. ЕДИНЫЙ источник для
   // однолинейки (autoCable), «По линиям (QF)» и сметы: раньше каждый модуль подставлял
@@ -1192,7 +1230,7 @@
     listProjects, createProject, openProject, closeProject, deleteProject, renameProject,
     commit, undo, redo, canUndo, canRedo, persist,
     flushPersist, // добить отложенную запись немедленно (уход со страницы, тесты)
-    exportJSON, exportJSONById, importJSON, cloudPullIndex, syncState, cloudReady,
+    exportJSON, exportJSONById, importJSON, cloudPullIndex, cloudPushPending, syncState, cloudReady,
     sanitizeProject, // проверка/починка модели на входе (импорт/облако/чат) — см. функцию
     addFloor, renameFloor, setActiveFloor, setFloorHeight, deleteFloor,
     photoUrl, addPhoto,
