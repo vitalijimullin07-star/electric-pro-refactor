@@ -4351,8 +4351,16 @@ test("фото: deleteProject чистит кэш фото своего прое
       "функция САМА читает сообщение и проверяет авторство — чужой id подсунуть нельзя");
     ok(/if \(m\.pushedAt\) return \{ sent: 0, already: true \}/.test(fn),
       "повторный вызов не рассылает второй раз (защита от ретрая и от спама)");
-    ok(/sendEachForMulticast/.test(fn) && !/notification:/.test(fn),
-      "отправляем ТОЛЬКО data — иначе FCM покажет уведомление в обход нашего sw.js");
+    // веб/TWA и APK получают РАЗНЫЕ сообщения: вебу — только data (показывает наш sw.js),
+    // APK — notification (service worker'а там нет, data-only при свёрнутом приложении
+    // никто бы не показал)
+    const webBr = fn.slice(fn.indexOf("if (web.length) {"), fn.indexOf("if (nat.length) {"));
+    const natBr = fn.slice(fn.indexOf("if (nat.length) {"), fn.indexOf('logger.info("chatPush"'));
+    ok(/sendEachForMulticast/.test(fn) && webBr.length > 20 && !/notification:/.test(webBr),
+      "вебу и TWA отправляем ТОЛЬКО data — иначе FCM покажет уведомление в обход нашего sw.js");
+    ok(natBr.length > 20 && /notification: \{ title: data\.title, body: data\.body \}/.test(natBr) && /channelId: "ep-chat"/.test(natBr),
+      "APK (токен native:true) — notification в канал «Чат», его показывает сама система");
+    ok(/native: t\.native === true/.test(fn), "функция различает токены APK и веба");
     ok(/function dropDeadTokens/.test(fn) && /registration-token-not-registered/.test(fn), "мёртвые токены удаляются");
     ok(/t\.mute !== true/.test(fn), "функция уважает «не беспокоить»");
     ok(/for \(let i = 0; i < list\.length; i \+= 30\)/.test(fn), "whereIn режется по 30 значений — предел Firestore");
@@ -8077,6 +8085,224 @@ test("фото: deleteProject чистит кэш фото своего прое
       ok(/FinishWorks\.load\(msg\.fine \|\| \{\}\)/.test(wk), "и получает выбор снимком (у него нет хранилища устройства)");
       ok(/mode: "estimate", consum, fine \}/.test(rd("assets", "js", "modules", "plan", "plan-routes.js")), "предрасчёт отправляет снимок выбора");
     });
+
+    // ===== 66. Офлайн-приложение (нативный APK) и пан холста =====
+    {
+      const vm66 = require("vm"), fs66 = require("fs"), path66 = require("path");
+      const rd66 = (...pp) => fs66.readFileSync(path66.join(__dirname, "..", ...pp), "utf8");
+
+      // ---- прослойка натива в подставном WebView ----
+      function shellSandbox(native) {
+        const calls = [], fired = [];
+        let back = null, minimized = 0, blobN = 0;
+        const plug = {
+          print: (o) => { calls.push(["print", o]); return Promise.resolve({ ok: true }); },
+          saveFile: (o) => { calls.push(["save", o]); return Promise.resolve({ ok: true }); },
+          share: (o) => { calls.push(["share", o]); return Promise.resolve({ ok: true }); },
+          setOrientation: (o) => { calls.push(["orient", o.mode]); return Promise.resolve(); },
+          getInfo: () => Promise.resolve({ versionName: "1.1.0" })
+        };
+        function cls() { const set = new Set(); return { add: (c) => set.add(c), remove: (c) => set.delete(c), contains: (c) => set.has(c) }; }
+        class El { constructor() { this.attrs = {}; this.classList = cls(); this.isConnected = true; }
+          getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; } hasAttribute(k) { return k in this.attrs; }
+          setAttribute(k, v) { this.attrs[k] = String(v); } dispatchEvent(ev) { fired.push(ev.type); } }
+        class A extends El { click() { calls.push(["navclick"]); } }
+        class Doc { addEventListener() {} getElementById() { return null; } createElement() { return { style: {} }; } dispatchEvent(ev) { fired.push(ev.type); } }
+        const sb = {
+          console, Promise, Map, Set, JSON, Math, String, Array, Object, Error, RegExp, isFinite, parseFloat,
+          Blob, Event, btoa, unescape, encodeURIComponent, decodeURIComponent,
+          // короткие таймеры — сразу, долгие (отзыв blob-URL через минуту) — никогда
+          setTimeout: (f, ms) => { if (!ms || ms < 1000) f(); return 0; }, clearTimeout: () => {},
+          Element: El, HTMLAnchorElement: A, Document: Doc,
+          URL: { createObjectURL: () => "blob:x" + (++blobN), revokeObjectURL: () => {} },
+          FileReader: class { readAsDataURL(b) { b.arrayBuffer().then((ab) => { this.result = "data:x;base64," + Buffer.from(ab).toString("base64"); this.onload(); }); } },
+          fetch: () => Promise.reject(new Error("no fetch")),
+          navigator: {}, screen: { orientation: {} },
+          history: { back: () => calls.push(["histback"]) }
+        };
+        sb.window = sb;
+        sb.document = new Doc();
+        sb.document.documentElement = { dataset: {} };
+        sb.document.body = { appendChild() {} };
+        if (native) sb.Capacitor = { isNativePlatform: () => true, Plugins: { EpNative: plug,
+          App: { addListener: (n, f) => { back = f; }, minimizeApp: () => { minimized++; } },
+          Browser: { open: (o) => calls.push(["browser", o.url]) } } };
+        vm66.createContext(sb);
+        vm66.runInContext(rd66("assets", "js", "core", "native-shell.js"), sb);
+        return { sb, calls, fired, A, El, back: () => back, minimized: () => minimized };
+      }
+
+      test("APK: печать из window.open(\"\") уходит в системный диалог с форматом и полями листа", () => {
+        const t = shellSandbox(true);
+        const w = t.sb.window.open("", "_blank");
+        ok(w && w.document, "вместо пустой страницы поверх приложения — «окно печати»");
+        w.document.open();
+        w.document.write("<html><head><title>Альбом</title><style>@page { size: A3 landscape; margin: 0; }</style></head><body>лист<script>window.print()</script></body></html>");
+        w.document.close();
+        w.print(); w.print();
+        const pr = t.calls.filter((c) => c[0] === "print");
+        eq(pr.length, 1, "печать ровно одна, даже если print() позвали дважды");
+        eq(pr[0][1].size, "A3"); ok(pr[0][1].landscape === true, "альбомная");
+        eq(pr[0][1].title, "Альбом");
+        ok(!/<script/i.test(pr[0][1].html), "скрипты листа в печать не идут");
+        const N = t.sb.EP.Native;
+        const sm = N._pageOf("<style>@page { size: A4 portrait; margin: 15mm 12mm 14mm; }</style>");
+        eq(JSON.stringify(sm.margins), JSON.stringify({ top: 15, right: 12, bottom: 14, left: 12 }), "поля сметы (CSS-поля WebView сам не учтёт)");
+        eq(N._mimeFor("plan.dxf"), "application/octet-stream", "незнакомый тип — без второго расширения");
+      });
+      test("APK: лист с собственным авто-print печатается после закрытия документа", () => {
+        const t = shellSandbox(true);
+        const w = t.sb.window.open("");
+        w.document.write("<html><body><svg></svg><script>window.onload=function(){window.print();}</script></body></html>");
+        w.document.close();
+        eq(t.calls.filter((c) => c[0] === "print").length, 1, "раскладка щита тоже печатается");
+        t.sb.window.open("https://example.com/x");
+        ok(t.calls.some((c) => c[0] === "browser" && c[1] === "https://example.com/x"), "внешняя ссылка — в системный браузер, приложение остаётся");
+      });
+      await test("APK: скачивание по ссылке (blob и data) — системный «Сохранить как»", async () => {
+        const t = shellSandbox(true);
+        const url = t.sb.URL.createObjectURL(new Blob(['{"a":1}'], { type: "application/json" }));
+        const a = new t.A(); a.setAttribute("href", url); a.setAttribute("download", "проект.json");
+        t.sb.URL.revokeObjectURL(url); // модули часто отзывают URL сразу после click()
+        a.click();
+        await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r));
+        const sv = t.calls.filter((c) => c[0] === "save");
+        eq(sv.length, 1, "сохранение вызвано");
+        eq(sv[0][1].name, "проект.json"); eq(sv[0][1].mime, "application/json");
+        eq(Buffer.from(sv[0][1].data, "base64").toString(), '{"a":1}', "содержимое файла целое, хотя URL уже отозван");
+        ok(!t.calls.some((c) => c[0] === "navclick"), "в WebView ссылку НЕ открываем");
+        const d = new t.A(); d.setAttribute("href", "data:text/csv;charset=utf-8,%D0%B0%2Cb"); d.setAttribute("download", "затраты.csv");
+        d.click();
+        const sv2 = t.calls.filter((c) => c[0] === "save")[1];
+        eq(Buffer.from(sv2[1].data, "base64").toString(), "а,b", "data-ссылка (CSV) декодируется в UTF-8");
+        const plain = new t.A(); plain.setAttribute("href", "#/main"); plain.click();
+        ok(t.calls.some((c) => c[0] === "navclick"), "обычные ссылки работают как раньше");
+      });
+      await test("APK: «Поделиться», полный экран, ориентация и кнопка «назад»", async () => {
+        const t = shellSandbox(true);
+        await t.sb.navigator.share({ title: "Смета", text: "итого 100" });
+        ok(t.calls.some((c) => c[0] === "share" && c[1].text === "итого 100"), "navigator.share есть и уходит в нативный «Поделиться»");
+        const el = new t.El();
+        await el.requestFullscreen();
+        ok(t.sb.document.fullscreenElement === el && el.classList.contains("ep-vfs"), "«полный экран» держится (Capacitor настоящий сразу отменяет)");
+        ok(t.fired.indexOf("fullscreenchange") >= 0, "событие fullscreenchange приходит, как в браузере");
+        await t.sb.screen.orientation.lock("landscape");
+        ok(t.calls.some((c) => c[0] === "orient" && c[1] === "landscape"), "развёртка может повернуть экран");
+        t.back()({ canGoBack: true });
+        ok(t.sb.document.fullscreenElement === null, "«назад» сперва выходит из полного экрана");
+        ok(t.calls.some((c) => c[0] === "orient" && c[1] === "unlock"), "выход снимает блокировку ориентации");
+        ok(!t.calls.some((c) => c[0] === "histback"), "и больше ничего не делает");
+        t.back()({ canGoBack: true });
+        ok(t.calls.some((c) => c[0] === "histback"), "дальше — назад по истории приложения");
+        t.back()({ canGoBack: false });
+        eq(t.minimized(), 1, "на первом экране — свернуть приложение");
+      });
+      test("браузер и TWA: прослойка ничего не трогает", () => {
+        const t = shellSandbox(false);
+        ok(!t.sb.navigator.share && !t.sb.Element.prototype.requestFullscreen, "share и fullscreen не подменены");
+        ok(typeof t.sb.window.open === "undefined", "window.open не подменён");
+        const a = new t.A(); a.setAttribute("href", "blob:x"); a.setAttribute("download", "f"); a.click();
+        ok(t.calls.some((c) => c[0] === "navclick"), "ссылки работают штатно");
+        ok(t.sb.EP.Native.available() === false, "печать идёт обычным путём");
+      });
+
+      // ---- офлайн-вход ----
+      function authSandbox(opts) {
+        const ls = {}, events = [];
+        const o = Object.assign({ online: true, policy: null, fail: null }, opts || {});
+        const sb = {
+          console: { warn() {}, error() {}, log() {} }, Promise, JSON, Math, String, Object, Error, Number, Date, setTimeout, clearTimeout,
+          setInterval: () => 0, clearInterval: () => {},
+          navigator: { onLine: o.online },
+          localStorage: { getItem: (k) => (k in ls ? ls[k] : null), setItem: (k, v) => { ls[k] = String(v); }, removeItem: (k) => { delete ls[k]; } },
+          sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+          document: { querySelector: () => null, getElementById: () => null, createElement: () => ({ style: {} }), body: { dataset: {}, appendChild() {} } },
+          CustomEvent: class { constructor(t, i) { this.type = t; this.detail = i && i.detail; } },
+          addEventListener() {}, dispatchEvent: (e) => events.push(e.type)
+        };
+        sb.window = sb;
+        vm66.createContext(sb);
+        vm66.runInContext("window.EP = window.EP || {};", sb);
+        const fetches = { n: 0 };
+        sb.EP.state = { currentRoute: "main", history: [] };
+        sb.EP.Router = { go() {} };
+        sb.EP.Firebase = { db: { collection: () => ({ doc: () => ({ get: () => Promise.reject(Object.assign(new Error("Failed to get document because the client is offline."), { code: "unavailable" })) }) }) },
+          auth: { signOut: () => Promise.resolve(), currentUser: null } };
+        vm66.runInContext(rd66("assets", "js", "core", "auth.js"), sb);
+        sb.EP.Auth.callFunction = () => { fetches.n++; if (o.fail) return Promise.reject(o.fail); return Promise.resolve(o.policy); };
+        return { sb, ls, events, fetches, o };
+      }
+      const APPROVED = { uid: "u1", accessStatus: "approved", role: "master", displayName: "Мастер", subscription: { plan: "basic", active: true } };
+      await test("офлайн-вход: после проверки на сервере мастер входит и без сети", async () => {
+        const t = authSandbox({ policy: APPROVED });
+        await t.sb.EP.Auth.loadProfile({ uid: "u1", email: "m@x" }, "login");
+        ok(t.sb.EP.state.user && t.sb.EP.state.offline === false, "онлайн-вход");
+        ok(t.ls.ep_auth_offline_v1, "профиль сохранён для входа без сети");
+        // перезапуск без сети: тот же кэш, сервер недоступен
+        const t2 = authSandbox({ online: false });
+        t2.ls.ep_auth_offline_v1 = t.ls.ep_auth_offline_v1;
+        await t2.sb.EP.Auth.loadProfile({ uid: "u1", email: "m@x" }, "auto");
+        ok(t2.sb.EP.state.user && t2.sb.EP.state.offline === true, "вошёл офлайн");
+        eq(t2.fetches.n, 0, "без сети сервер даже не дёргаем (иначе ждали бы 10 с Firestore)");
+        ok(t2.events.indexOf("ep:auth-changed") >= 0, "приложение узнало о входе");
+        // сеть «есть», но сервер не отвечает — тоже по кэшу
+        const t3 = authSandbox({ online: true, fail: Object.assign(new Error("internal"), { code: "internal" }) });
+        t3.ls.ep_auth_offline_v1 = t.ls.ep_auth_offline_v1;
+        await t3.sb.EP.Auth.loadProfile({ uid: "u1", email: "m@x" }, "auto");
+        ok(t3.sb.EP.state.user && t3.sb.EP.state.offline === true, "сервер недоступен — вход по кэшу");
+      });
+      await test("офлайн-вход: чужой, просроченный и закрытый профиль не пускает", async () => {
+        const mk = (uid, at, pol) => JSON.stringify({ uid: uid, at: at, policy: pol || APPROVED });
+        const a = authSandbox({ online: false }); a.ls.ep_auth_offline_v1 = mk("u2", Date.now());
+        await a.sb.EP.Auth.loadProfile({ uid: "u1" }, "auto");
+        ok(!a.sb.EP.state.user, "кэш другого аккаунта не подходит");
+        const b = authSandbox({ online: false }); b.ls.ep_auth_offline_v1 = mk("u1", Date.now() - 31 * 86400000);
+        await b.sb.EP.Auth.loadProfile({ uid: "u1" }, "auto");
+        ok(!b.sb.EP.state.user, "старше 30 дней — нужен интернет");
+        const c = authSandbox({ online: false }); c.ls.ep_auth_offline_v1 = mk("u1", Date.now(), Object.assign({}, APPROVED, { accessStatus: "blocked" }));
+        await c.sb.EP.Auth.loadProfile({ uid: "u1" }, "auto");
+        ok(!c.sb.EP.state.user, "закрытый аккаунт не входит и офлайн");
+        // свежий ответ сервера главнее кэша: закрыли — кэш стирается
+        const d = authSandbox({ policy: Object.assign({}, APPROVED, { accessStatus: "blocked" }) }); d.ls.ep_auth_offline_v1 = mk("u1", Date.now());
+        await d.sb.EP.Auth.loadProfile({ uid: "u1" }, "auto");
+        ok(!d.ls.ep_auth_offline_v1 && !d.sb.EP.state.user, "закрытие доступа на сервере стирает офлайн-профиль");
+        const e = authSandbox({ policy: APPROVED }); e.ls.ep_auth_offline_v1 = mk("u1", Date.now());
+        await e.sb.EP.Auth.signOut();
+        ok(!e.ls.ep_auth_offline_v1, "явный выход стирает офлайн-профиль");
+      });
+
+      test("APK: сборка и оболочка (плагин, разрешения, системные панели, пуш)", () => {
+        const bw = rd66("scripts", "build-www.js");
+        ok(/viewport-fit=cover/.test(bw) && /throw new Error\("не удалось убрать viewport-fit=cover/.test(bw),
+          "без cover оболочка сама отодвигает страницу от строки состояния");
+        const ma = rd66("android-native", "app", "src", "main", "java", "com", "electricpro", "app", "MainActivity.java");
+        ok(/registerPlugin\(EpNativePlugin\.class\);\s*super\.onCreate/.test(ma), "плагин регистрируется ДО сборки моста");
+        const pl = rd66("android-native", "app", "src", "main", "java", "com", "electricpro", "app", "EpNativePlugin.java");
+        ["print", "saveFile", "share", "setOrientation", "getInfo"].forEach((m) => ok(new RegExp("public void " + m + "\\(").test(pl), "метод плагина " + m));
+        ok(/ACTION_CREATE_DOCUMENT/.test(pl) && /createPrintDocumentAdapter/.test(pl), "сохранение — системный диалог, печать — PrintManager");
+        const mf = rd66("android-native", "app", "src", "main", "AndroidManifest.xml");
+        ok(/android\.permission\.VIBRATE/.test(mf) && /POST_NOTIFICATIONS/.test(mf) && /default_notification_channel_id/.test(mf), "разрешения и канал уведомлений");
+        const cap = JSON.parse(rd66("capacitor.config.json"));
+        eq(cap.plugins.SystemBars.style, "DARK", "светлые значки на тёмной полосе");
+        const idx = rd66("index.html");
+        ok(idx.indexOf("native-shell.js") > 0 && idx.indexOf("native-shell.js") < idx.indexOf("app-state.js"), "прослойка подключена до модулей");
+        const fb = rd66("assets", "js", "modules", "ui", "feedback.js");
+        ok(/c\.Plugins\.FirebaseMessaging/.test(fb) && /saveToken\(token, true\)/.test(fb), "токен APK помечается native");
+        ok(/notificationActionPerformed/.test(fb), "тап по уведомлению открывает переписку");
+        ok(/N\.available\(\)\) \{ N\.printHtml\(html\)/.test(rd66("assets", "js", "modules", "estimate", "estimate-print.js")), "смета и документы печатают через натив");
+      });
+      test("холст: пан и зум двигают слой-обёртку, а не viewBox и не сам svg", () => {
+        const cv = rd66("assets", "js", "modules", "plan", "plan-canvas.js");
+        ok(/wrap\.style\.transform = "translate\(/.test(cv) && !/svg\.style\.transform/.test(cv),
+          "transform у самого svg заставляет заново раскладывать SVG-текст — только обёртка");
+        ok(/else \{ userAdjusted = true; view\.x -= dx; view\.y -= dy; applyLive\(\); \}/.test(cv), "пан — живым сдвигом");
+        ok(/if \(pts\.size === 0 && liveT\) apply\(\);/.test(cv), "по окончании жеста вид фиксируется в viewBox");
+        ok(/if \(liveT\) \{ left -= liveT\.tx;/.test(cv), "попадание тапом учитывает сдвиг во время жеста");
+        const css = rd66("assets", "css", "plan.css");
+        ok(/\.ep-plan-svgwrap \{[^}]*will-change: transform/.test(css), "обёртка — свой композитный слой");
+        ok(!/\.ep-plan-svg \{[^}]*overflow: visible/.test(css), "overflow: visible у svg не возвращать: раскладка слоя в 4 раза дороже");
+      });
+    }
   }
 
   console.log("\n" + "=".repeat(48));

@@ -164,6 +164,9 @@ EP.Auth = {
   },
 
   async signOut() {
+    // вышел явно — офлайн-профиль больше не нужен (на общем телефоне следующий
+    // мастер не должен войти без сети под чужим профилем)
+    this.clearOfflineProfile();
     try {
       // В нативной сборке выходим и из системного Google-аккаунта: иначе следующий вход
       // молча возьмёт прежний аккаунт, не показав выбор, — «сменить пользователя» на
@@ -238,18 +241,161 @@ EP.Auth = {
     }
   },
 
+  /* ---------- ОФЛАЙН-ВХОД ----------
+     Без сети приложение не пускало даже мастера, который уже входил: профиль проверяется
+     на сервере (ensureUserProfile → резервное чтение users/{uid}), а Firestore без связи
+     ещё и ждёт до 10 секунд, прежде чем сдаться. Итог — экран входа с «client is
+     offline», хотя все проекты, сметы и база лежат на самом устройстве.
+     Теперь после КАЖДОЙ успешной проверки профиль кэшируется (тот же uid, срок
+     OFFLINE_DAYS), и при отсутствии связи вход идёт по кэшу. Это не ослабляет защиту:
+     облачные данные по-прежнему закрыты правилами Firestore, а свежий ответ сервера
+     (закрыли доступ, кончилась подписка) применяется сразу, как только появится сеть.
+     Первый вход на устройстве — только с интернетом: кэшировать ещё нечего. */
+  OFFLINE_KEY: "ep_auth_offline_v1",
+  OFFLINE_DAYS: 30,
+  OFFLINE_WAIT_MS: 6000,
+
+  saveOfflineProfile(uid, policy) {
+    try { localStorage.setItem(this.OFFLINE_KEY, JSON.stringify({ uid: uid, policy: policy, at: Date.now() })); } catch (e) {}
+  },
+
+  readOfflineProfile(uid) {
+    try {
+      const o = JSON.parse(localStorage.getItem(this.OFFLINE_KEY) || "null");
+      if (!o || !uid || o.uid !== uid || !o.policy || typeof o.policy !== "object" || typeof o.at !== "number") return null;
+      if (Date.now() - o.at > this.OFFLINE_DAYS * 86400000) return null;
+      return o;
+    } catch (e) { return null; }
+  },
+
+  clearOfflineProfile() {
+    try { localStorage.removeItem(this.OFFLINE_KEY); } catch (e) {}
+  },
+
+  isOffline() {
+    return typeof navigator !== "undefined" && navigator.onLine === false;
+  },
+
+  // Ошибка «нет связи», а не «сервер ответил отказом»: только в первом случае можно
+  // войти по кэшу. Отказ сервера (профиль удалён, нет прав) кэшем не перекрываем.
+  isNetworkError(error) {
+    if (this.isOffline()) return true;
+    const s = String((error && error.code) || "") + " " + String((error && error.message) || "");
+    return /unavailable|offline|network|timeout|deadline-exceeded|failed to fetch/i.test(s);
+  },
+
+  withTimeout(promise, ms) {
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => { const e = new Error("timeout"); e.code = "timeout"; reject(e); }, ms);
+      promise.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+    });
+  },
+
+  notice(text) {
+    try {
+      let el = document.getElementById("ep-log-toast");
+      if (!el) { el = document.createElement("div"); el.id = "ep-log-toast"; document.body.appendChild(el); }
+      el.textContent = text; el.style.opacity = "1";
+      clearTimeout(this._noticeT);
+      this._noticeT = setTimeout(() => { try { el.style.opacity = "0"; } catch (e) {} }, 3500);
+    } catch (e) {}
+  },
+
+  // Вход по сохранённому профилю. Закрытый в кэше доступ не открываем и офлайн.
+  enterOffline(firebaseUser, cached, mode) {
+    const profile = this.makeCompatProfile(cached.policy, firebaseUser);
+    if (profile.accessStatus === "blocked" || !this.canEnter(profile, firebaseUser)) {
+      this.setLoginStatus("Нет связи с сервером, а доступ этого аккаунта не подтверждён. Подключись к интернету.", "error");
+      return false;
+    }
+    this.applyProfile(firebaseUser, cached.policy, profile, true);
+    const d = new Date(cached.at);
+    const when = String(d.getDate()).padStart(2, "0") + "." + String(d.getMonth() + 1).padStart(2, "0");
+    this.setLoginStatus("Офлайн: профиль от " + when, "ok");
+    this.notice("Нет сети — работаю офлайн. Чат, облако и ИИ включатся, когда появится интернет.");
+    this.watchOnline(firebaseUser, mode);
+    return true;
+  },
+
+  // Связь вернулась — перепроверяем профиль на сервере (там могли закрыть доступ или
+  // продлить подписку). Плюс страховка таймером: navigator.onLine бывает true и в сети
+  // без интернета, тогда события «online» просто не будет.
+  watchOnline(firebaseUser, mode) {
+    const recheck = () => {
+      if (!EP.state.offline || this._rechecking) return;
+      const u = EP.Firebase?.auth?.currentUser;
+      if (!u || u.uid !== firebaseUser.uid || this.isOffline()) return;
+      this._rechecking = true;
+      this.loadProfile(u, mode || "auto").finally(() => { this._rechecking = false; });
+    };
+    if (!this._onlineHooked) {
+      this._onlineHooked = true;
+      window.addEventListener("online", () => setTimeout(recheck, 800));
+    }
+    clearInterval(this._offlineTimer);
+    this._offlineTimer = setInterval(() => {
+      if (!EP.state.offline) { clearInterval(this._offlineTimer); return; }
+      recheck();
+    }, 60000);
+  },
+
+  applyProfile(firebaseUser, policy, profile, offline) {
+    EP.state.user = {
+      uid: firebaseUser.uid,
+      email: firebaseUser.email || "",
+      displayName: profile.displayName || firebaseUser.email || "Мастер",
+      role: profile.role
+    };
+    EP.state.profile = profile;
+    EP.state.policy = policy;
+    EP.state.offline = !!offline;
+    try { document.body.dataset.offline = offline ? "1" : "0"; } catch (e) {}
+
+    this.updateShell(EP.state.user, profile);
+    window.dispatchEvent(new CustomEvent("ep:auth-changed", { detail: { user: EP.state.user, profile, offline: !!offline } }));
+
+    if (EP.state.currentRoute === "login") {
+      EP.Router.go("main", { replace: true });
+    }
+  },
+
   async loadProfile(firebaseUser, mode) {
     if (!EP.Firebase.db) {
       this.setLoginStatus("Firestore не готов", "error");
       return;
     }
 
+    const cached = this.readOfflineProfile(firebaseUser.uid);
+    // сети нет совсем — не ждём таймаутов Firestore (до 10 с), сразу входим по кэшу
+    if (cached && this.isOffline()) {
+      this.enterOffline(firebaseUser, cached, mode);
+      return;
+    }
+
     try {
       this.setLoginStatus("Проверяю профиль...", "wait");
 
-      const policy = await this.fetchPolicy(firebaseUser);
+      let policy;
+      try {
+        // с кэшем ждём сервер недолго: плохая связь не должна держать мастера на
+        // экране входа — войдёт по кэшу, а свежий профиль подтянется позже
+        policy = cached
+          ? await this.withTimeout(this.fetchPolicy(firebaseUser), this.OFFLINE_WAIT_MS)
+          : await this.fetchPolicy(firebaseUser);
+      } catch (error) {
+        if (cached && this.isNetworkError(error)) {
+          this.enterOffline(firebaseUser, cached, mode);
+          return;
+        }
+        if (!cached && this.isNetworkError(error)) {
+          this.setLoginStatus("Нет связи с сервером. Первый вход — с интернетом, дальше приложение работает и без сети.", "error");
+          return;
+        }
+        throw error;
+      }
 
       if (!policy) {
+        this.clearOfflineProfile();
         this.setLoginStatus("Профиль не найден и сервер недоступен. Попробуйте позже.", "error");
         await EP.Firebase.auth.signOut();
         return;
@@ -258,12 +404,15 @@ EP.Auth = {
       const profile = this.makeCompatProfile(policy, firebaseUser);
 
       if (profile.accessStatus === "blocked") {
+        // свежий ответ сервера главнее кэша: закрытый аккаунт не войдёт и офлайн
+        this.clearOfflineProfile();
         this.setLoginStatus("Аккаунт закрыт администратором. Обратитесь к администратору.", "error");
         await EP.Firebase.auth.signOut();
         return;
       }
 
       if (!this.canEnter(profile, firebaseUser)) {
+        this.clearOfflineProfile();
         this.setLoginStatus(
           mode === "register"
             ? "Регистрация отправлена. Ожидайте подтверждения администратора."
@@ -274,22 +423,10 @@ EP.Auth = {
         return;
       }
 
-      EP.state.user = {
-        uid: firebaseUser.uid,
-        email: firebaseUser.email || "",
-        displayName: profile.displayName || firebaseUser.email || "Мастер",
-        role: profile.role
-      };
-      EP.state.profile = profile;
-      EP.state.policy = policy;
-
-      this.updateShell(EP.state.user, profile);
-      window.dispatchEvent(new CustomEvent("ep:auth-changed", { detail: { user: EP.state.user, profile } }));
+      // профиль подтверждён сервером — его и кэшируем для входа без сети
+      this.saveOfflineProfile(firebaseUser.uid, policy);
+      this.applyProfile(firebaseUser, policy, profile, false);
       this.setLoginStatus("Вход выполнен", "ok");
-
-      if (EP.state.currentRoute === "login") {
-        EP.Router.go("main", { replace: true });
-      }
     } catch (error) {
       console.error("Profile load error", error);
       this.setLoginStatus(error.message || "Ошибка профиля", "error");

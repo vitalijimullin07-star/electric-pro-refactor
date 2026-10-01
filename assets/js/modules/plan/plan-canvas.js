@@ -36,7 +36,14 @@
       overlay: el("g", { "data-l": "overlay" })
     };
     Object.values(layers).forEach((g) => svg.appendChild(g));
-    host.appendChild(svg);
+    // обёртка — её двигает transform во время жеста (см. applyLive). Именно ОБЁРТКА, а не
+    // сам <svg>: смена transform у svg заставляет браузер заново раскладывать весь
+    // SVG-текст (масштаб шрифта считается от экранного преобразования) — замер дал ту же
+    // раскладку и перерисовку на каждый кадр, что и смена viewBox
+    const wrap = document.createElement("div");
+    wrap.className = "ep-plan-svgwrap";
+    wrap.appendChild(svg);
+    host.appendChild(wrap);
 
     const view = { ...CFG.startView };
     const cb = { tap: null, viewChanged: null, hover: null, hoverEnd: null, longPress: null };
@@ -59,7 +66,45 @@
       view.w = w; view.h *= k;
       view.x = cx - view.w / 2; view.y = cy - view.h / 2;
     }
+    /* ---------- «живой» вид во время жеста (пан, пинч, колесо) ----------
+       Раньше КАЖДЫЙ шаг пана/зума менял viewBox, а это для браузера — новая раскладка
+       ВСЕГО svg: пересчёт геометрии тысяч узлов, перерисовка и растр всего холста на
+       каждый кадр движения пальца. Замер (30 комнат, ~2500 узлов, CPU ×4): Layout ~12 мс
+       + Paint ~9 мс + раскладка слоёв ~13 мс на ОДИН шаг — на слабом телефоне 80+ мс,
+       то есть рывки, а на части GPU (Mali) ещё и «мусор» полосами там, где растр не
+       успел (не нарисованные тайлы драйвер показывает чем попало).
+       Теперь во время жеста двигаем не viewBox, а CSS-transform обёртки svg
+       (композитный слой, will-change: transform в plan.css): браузер просто сдвигает и
+       масштабирует уже отрисованную картинку, без раскладки и перерисовки. Замер на том
+       же проекте: раскладка 41→1, перерисовка 78→2, растр 552→20 мс за 40 шагов.
+       За краем вида при сдвиге — пустой фон (overflow: visible у svg пробовали: слой
+       тогда записывается с запасом вокруг экрана, и его раскладка на кадр выходила
+       в 4 раза дороже, чем вся экономия). Поэтому viewBox фиксируется (apply) по
+       окончании жеста, при паузе пальца/колеса и если жест ушёл далеко (полэкрана или
+       масштаб ×2) — пустота по краям и размытие не копятся.
+       committed — вид, который сейчас реально стоит в viewBox; view — живой вид. */
+    let committed = null;   // {x,y,w,h} — под этот вид отрисована сцена (viewBox)
+    let liveT = null;       // {tx,ty,s} — текущий CSS-transform svg; null — его нет
+    let commitTimer = 0;    // отложенная фиксация (пауза колеса)
+    function applyLive() {
+      if (!committed || !cw) { apply(); return; }
+      const s = committed.w / view.w;
+      const k = cw / view.w; // экранных px на см в живом виде
+      const tx = (committed.x - view.x) * k, ty = (committed.y - view.y) * k;
+      if (!(s >= 0.5 && s <= 2) || Math.abs(tx) > cw * 0.5 || Math.abs(ty) > (ch || cw) * 0.5) { apply(); return; }
+      liveT = { tx: tx, ty: ty, s: s };
+      wrap.style.transform = "translate(" + tx + "px," + ty + "px) scale(" + s + ")";
+      commitSoon(140); // палец остановился — дорисуем открывшиеся края
+    }
+    function commitSoon(ms) {
+      clearTimeout(commitTimer);
+      commitTimer = setTimeout(() => { commitTimer = 0; if (liveT) apply(); }, ms);
+    }
     function apply() {
+      clearTimeout(commitTimer); commitTimer = 0;
+      committed = { x: view.x, y: view.y, w: view.w, h: view.h };
+      // viewBox и сброс transform — в ОДНОМ кадре: иначе сцена на миг «прыгнула» бы
+      if (liveT) { liveT = null; wrap.style.transform = ""; }
       svg.setAttribute("viewBox", view.x + " " + view.y + " " + view.w + " " + view.h);
       drawGrid();
       if (cb.viewChanged) cb.viewChanged({ ...view });
@@ -67,7 +112,11 @@
     function pxToCm() { if (!cw) measureBox(); return view.w / Math.max(1, cw); } // читает КЭШ (см. measureBox), не форсит reflow
     function toWorld(clientX, clientY) {
       const r = svg.getBoundingClientRect();
-      return { x: view.x + (clientX - r.left) * (view.w / r.width), y: view.y + (clientY - r.top) * (view.h / r.height) };
+      // во время жеста svg сдвинут/масштабирован transform'ом, а живой вид (view)
+      // описывает НЕсдвинутый прямоугольник холста — восстанавливаем его
+      let left = r.left, top = r.top, w = r.width, h = r.height;
+      if (liveT) { left -= liveT.tx; top -= liveT.ty; w /= liveT.s; h /= liveT.s; }
+      return { x: view.x + (clientX - left) * (view.w / w), y: view.y + (clientY - top) * (view.h / h) };
     }
 
     // ---------- сетка (адаптивный шаг) ----------
@@ -77,20 +126,23 @@
       const px = pxToCm();
       let step = CFG.gridSteps[CFG.gridSteps.length - 1];
       for (const s of CFG.gridSteps) { if (s / px >= CFG.gridMinPx) { step = s; break; } }
-      const x0 = Math.floor(view.x / step) * step, x1 = view.x + view.w;
-      const y0 = Math.floor(view.y / step) * step, y1 = view.y + view.h;
+      // сетка с запасом в экран во все стороны: во время жеста холст двигается
+      // transform'ом без перерисовки (см. applyLive), и за краем вида сетка уже есть
+      const gx = view.x - view.w, gy = view.y - view.h, gw = view.w * 3, gh = view.h * 3;
+      const x0 = Math.floor(gx / step) * step, x1 = gx + gw;
+      const y0 = Math.floor(gy / step) * step, y1 = gy + gh;
       const sw = px; // ~1px в мировых единицах
       for (let x = x0; x <= x1; x += step) {
         const major = x % CFG.gridMajorEvery === 0;
-        g.appendChild(el("line", { x1: x, y1: view.y, x2: x, y2: y1, class: major ? "ep-plan-grid-major" : "ep-plan-grid-line", "stroke-width": sw * (major ? 1.4 : 1) }));
+        g.appendChild(el("line", { x1: x, y1: gy, x2: x, y2: y1, class: major ? "ep-plan-grid-major" : "ep-plan-grid-line", "stroke-width": sw * (major ? 1.4 : 1) }));
       }
       for (let y = y0; y <= y1; y += step) {
         const major = y % CFG.gridMajorEvery === 0;
-        g.appendChild(el("line", { x1: view.x, y1: y, x2: x1, y2: y, class: major ? "ep-plan-grid-major" : "ep-plan-grid-line", "stroke-width": sw * (major ? 1.4 : 1) }));
+        g.appendChild(el("line", { x1: gx, y1: y, x2: x1, y2: y, class: major ? "ep-plan-grid-major" : "ep-plan-grid-line", "stroke-width": sw * (major ? 1.4 : 1) }));
       }
       // оси координат (начало — точка отсчёта квартиры)
-      g.appendChild(el("line", { x1: 0, y1: view.y, x2: 0, y2: y1, class: "ep-plan-grid-axis", "stroke-width": sw * 1.6 }));
-      g.appendChild(el("line", { x1: view.x, y1: 0, x2: x1, y2: 0, class: "ep-plan-grid-axis", "stroke-width": sw * 1.6 }));
+      g.appendChild(el("line", { x1: 0, y1: gy, x2: 0, y2: y1, class: "ep-plan-grid-axis", "stroke-width": sw * 1.6 }));
+      g.appendChild(el("line", { x1: gx, y1: 0, x2: x1, y2: 0, class: "ep-plan-grid-axis", "stroke-width": sw * 1.6 }));
     }
 
     // ---------- указатели: пан / пинч / тап ----------
@@ -181,7 +233,7 @@
         // доводим панораму за средней точкой
         view.x -= (cur.cx - pinch.cx) * pxToCm(); view.y -= (cur.cy - pinch.cy) * pxToCm();
         pinch = cur;
-        apply();
+        applyLive();
       } else if (pts.size === 1) {
         const k = pxToCm();
         const dx = (e.clientX - prev.x) * k, dy = (e.clientY - prev.y) * k;
@@ -193,11 +245,11 @@
             if (downClient && Math.hypot(e.clientX - downClient.x, e.clientY - downClient.y) < CFG.dragStartPx) return;
             // хендлер может отказаться (вернуть false) — тогда жест панорамирует
             const res = dragHandler(0, 0, "start", toWorld((downClient || e).x, (downClient || e).y), { dbl: dblDown });
-            if (res === false) { dragVeto = true; userAdjusted = true; view.x -= dx; view.y -= dy; apply(); }
+            if (res === false) { dragVeto = true; userAdjusted = true; view.x -= dx; view.y -= dy; applyLive(); }
             else { dragMoved = true; clearLongPress(); dragHandler(dx, dy, "move"); }
           } else dragHandler(dx, dy, "move");
         }
-        else { userAdjusted = true; view.x -= dx; view.y -= dy; apply(); }
+        else { userAdjusted = true; view.x -= dx; view.y -= dy; applyLive(); }
         if (tapStart && Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y) > CFG.tapMaxPx) { tapStart = null; clearLongPress(); }
       }
     });
@@ -209,6 +261,8 @@
       clearLongPress();
       pts.delete(e.pointerId);
       if (pts.size < 2) pinch = null;
+      // жест закончен — фиксируем живой вид в viewBox (одна перерисовка на весь жест)
+      if (pts.size === 0 && liveT) apply();
       if (dragHandler && dragMoved && pts.size === 0) { dragMoved = false; dragHandler(0, 0, "end"); }
       if (tapStart && tapStart.id === e.pointerId) {
         const dt = Date.now() - tapStart.t;
@@ -239,7 +293,10 @@
       }
     }
     svg.addEventListener("pointerup", endPointer);
-    svg.addEventListener("pointercancel", (e) => { clearLongPress(); pts.delete(e.pointerId); pinch = null; tapStart = null; });
+    svg.addEventListener("pointercancel", (e) => {
+      clearLongPress(); pts.delete(e.pointerId); pinch = null; tapStart = null;
+      if (pts.size === 0 && liveT) apply();
+    });
 
     svg.addEventListener("wheel", (e) => {
       e.preventDefault();
@@ -250,7 +307,8 @@
       clampView();
       const wc2 = toWorld(e.clientX, e.clientY);
       view.x += wc.x - wc2.x; view.y += wc.y - wc2.y;
-      apply();
+      // колесо — серия событий без явного «конца»: фиксируем после паузы
+      applyLive();
     }, { passive: false });
 
     // ---------- вписать содержимое ----------
@@ -335,7 +393,7 @@
       onHoverEnd: (fn) => { cb.hoverEnd = fn; }, // указатель ушёл с холста — убрать предпросмотр
       onLongPress: (fn) => { cb.longPress = fn; }, // (worldPt, e) — держали палец на месте, e.clientX/Y для позиционирования UI
       setDragHandler: (fn) => { dragHandler = fn || null; dragMoved = false; },
-      destroy: () => { if (ro) ro.disconnect(); if (svg.parentNode) svg.parentNode.removeChild(svg); }
+      destroy: () => { clearTimeout(commitTimer); if (ro) ro.disconnect(); if (wrap.parentNode) wrap.parentNode.removeChild(wrap); }
     };
   }
 

@@ -456,7 +456,8 @@ async function tokensFor(uids, exceptUid) {
       snap.forEach((d) => docs.push({ id: d.id, ...d.data() }));
     }
   }
-  return docs.filter((t) => t.uid && t.uid !== exceptUid && t.mute !== true).map((t) => t.id);
+  return docs.filter((t) => t.uid && t.uid !== exceptUid && t.mute !== true)
+    .map((t) => ({ id: t.id, native: t.native === true }));
 }
 
 /* Мёртвые токены (переустановили приложение, отозвали разрешение) удаляем — иначе
@@ -472,25 +473,47 @@ async function dropDeadTokens(tokens, responses) {
   logger.info("chatPush: удалено мёртвых токенов", { count: dead.length });
 }
 
-async function sendChatPush(uids, exceptUid, title, body, tag) {
-  const tokens = await tokensFor(uids, exceptUid);
-  if (!tokens.length) return 0;
+async function sendBatches(tokens, message) {
   let sent = 0;
   for (let i = 0; i < tokens.length; i += PUSH_BATCH) {
     const part = tokens.slice(i, i + PUSH_BATCH);
-    // ТОЛЬКО data: поле notification заставило бы FCM показать уведомление своими
-    // силами в обход нашего обработчика в sw.js (и мы потеряли бы проверку «окно
-    // открыто — не дублировать»)
-    const res = await admin.messaging().sendEachForMulticast({
-      tokens: part,
-      data: { title: cut(title, 80), body: cut(body, 160), tag: String(tag || "ep-chat") },
-      android: { priority: "high" },
-      webpush: { headers: { Urgency: "high", TTL: "86400" } }
-    });
+    const res = await admin.messaging().sendEachForMulticast(Object.assign({ tokens: part }, message));
     sent += res.successCount;
     await dropDeadTokens(part, res.responses);
   }
-  logger.info("chatPush", { tokens: tokens.length, sent: sent, tag: tag });
+  return sent;
+}
+
+async function sendChatPush(uids, exceptUid, title, body, tag) {
+  const all = await tokensFor(uids, exceptUid);
+  if (!all.length) return 0;
+  const data = { title: cut(title, 80), body: cut(body, 160), tag: String(tag || "ep-chat") };
+  const web = all.filter((t) => !t.native).map((t) => t.id);
+  const nat = all.filter((t) => t.native).map((t) => t.id);
+  let sent = 0;
+  // ВЕБ и TWA: ТОЛЬКО data — поле notification заставило бы FCM показать уведомление
+  // своими силами в обход нашего обработчика в sw.js (и мы потеряли бы проверку «окно
+  // открыто — не дублировать»)
+  if (web.length) {
+    sent += await sendBatches(web, {
+      data: data,
+      android: { priority: "high" },
+      webpush: { headers: { Urgency: "high", TTL: "86400" } }
+    });
+  }
+  // APK (нативная сборка, токен с native:true): service worker'а там нет, и data-only
+  // сообщение при свёрнутом/закрытом приложении никто бы не показал. Поэтому шлём
+  // notification — его показывает сама система Android в канал «Чат» (его создаёт
+  // приложение). При открытом приложении система уведомление не рисует — хватает звука
+  // и метки чата, дублей нет. data оставляем: по тегу тап открывает нужную переписку.
+  if (nat.length) {
+    sent += await sendBatches(nat, {
+      data: data,
+      notification: { title: data.title, body: data.body },
+      android: { priority: "high", notification: { channelId: "ep-chat", tag: data.tag, sound: "default" } }
+    });
+  }
+  logger.info("chatPush", { tokens: all.length, web: web.length, native: nat.length, sent: sent, tag: tag });
   return sent;
 }
 
