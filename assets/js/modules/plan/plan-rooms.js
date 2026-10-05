@@ -224,7 +224,19 @@
   function dropLiftNodes() {
     if (R.canvas && EP.Plan.Render && EP.Plan.Render.isLifted && EP.Plan.Render.isLifted(R.canvas)) { EP.Plan.Render.dropLift(R.canvas); renderScene(); }
   }
-  function renderScaled() { if (R.canvas && EP.Plan.Render) EP.Plan.Render.drawScaled(R.canvas, G().floorScoped(core().project), ui()); }
+  // Перерисовка ПОСЛЕ ЗУМА — нарезанная по кадрам (ui.sliceMs, см. drawScaled): узлы,
+  // у которых сменился только масштаб, перестраиваются порциями по ~12 мс, а не одним
+  // куском на весь чертёж. Пока что-то осталось — продолжаем в следующем кадре.
+  let sliceRaf = 0;
+  function renderScaled() {
+    if (!R.canvas || !EP.Plan.Render) return;
+    if (EP.Plan.Render.isLifted && EP.Plan.Render.isLifted(R.canvas)) return;
+    const more = EP.Plan.Render.drawScaled(R.canvas, G().floorScoped(core().project), Object.assign(ui(), { sliceMs: 12 }));
+    if (more && !sliceRaf) {
+      const raf = window.requestAnimationFrame || ((f) => setTimeout(f, 16));
+      sliceRaf = raf(() => { sliceRaf = 0; renderScaled(); });
+    }
+  }
   // перерисовка не чаще кадра — тяга пальцем остаётся плавной
   let sceneRaf = 0;
   function renderSceneSoon() {
@@ -661,7 +673,18 @@
   // скроллится внутри себя — фиксированная кнопка в углу висела бы поверх её
   // содержимого на любой позиции скролла, паддинга снизу тут не хватает). Свёрнутая
   // шторка / «во весь экран» — кнопка на своём CSS-месте в правом нижнем углу.
+  // Положение кнопки читает высоту шторки (offsetHeight) — а зовётся сразу после записи
+  // её содержимого (openSheet), то есть заставляла браузер раскладывать страницу посреди
+  // обработчика тапа (замер CPU ×4: до 50 мс на открытии редактора точки). Теперь замер —
+  // в следующем кадре (requestAnimationFrame): там раскладка всё равно происходит, и
+  // несколько вызовов подряд (открытие + наблюдатель размера) сливаются в один.
+  let sheetBtnRaf = 0;
   function placeSheetBtn() {
+    if (sheetBtnRaf) return;
+    const raf = window.requestAnimationFrame || ((f) => setTimeout(f, 16));
+    sheetBtnRaf = raf(() => { sheetBtnRaf = 0; placeSheetBtnNow(); });
+  }
+  function placeSheetBtnNow() {
     const s = sheet(), b = sheetBtn(); if (!s || !b) return;
     const overlay = s.classList.contains("ep-plan-sheet-full") || s.classList.contains("is-landscape-forced");
     // на широком экране шторка — БОКОВАЯ панель (position:static, plan.css @media
@@ -791,7 +814,19 @@
   // редактируемый объект может оказаться под шторкой (она до 60% высоты холста
   // снизу) — сдвигаем вид вверх, чтобы точку/комнату было видно, пока её правишь.
   // Вызывается ПОСЛЕ openSheet(...) с мировой точкой объекта.
+  // Подвести вид так, чтобы объект не прятался под шторкой. Замер прямоугольников — в
+  // следующем кадре (как у placeSheetBtn: сразу после записи шторки он заставлял браузер
+  // раскладывать страницу посреди тапа), а сам сдвиг — плавный (panBy с анимацией живым
+  // transform'ом, без перерисовки сцены на кадре), а не прыжок вида.
+  let evRaf = 0, evPt = null;
   function ensureVisibleAboveSheet(worldPt) {
+    if (!R.canvas || !worldPt) return;
+    evPt = worldPt;
+    if (evRaf) return;
+    const raf = window.requestAnimationFrame || ((f) => setTimeout(f, 16));
+    evRaf = raf(() => { evRaf = 0; const pt = evPt; evPt = null; ensureVisibleNow(pt); });
+  }
+  function ensureVisibleNow(worldPt) {
     if (!R.canvas || !worldPt) return;
     const host = document.querySelector("#ep-plan-canvas"); if (!host) return;
     const hb = host.getBoundingClientRect();
@@ -803,7 +838,7 @@
     const margin = 40; // px запаса над шторкой
     if (sy < sheetTopScreen - margin) return; // и так видно — не дёргаем вид
     const dyPx = sy - (sheetTopScreen - margin);
-    R.canvas.panBy(0, dyPx * R.canvas.cmPerPx());
+    R.canvas.panBy(0, dyPx * R.canvas.cmPerPx(), { animate: true });
   }
 
   // ---------- живой предпросмотр снапа при наведении (мышь/S-Pen до тапа) ----------
@@ -2447,7 +2482,7 @@
     // общая кнопка «во весь экран» шторки — используется ЛЮБЫМ модулем слоёв 2-6
     // (Расчёт/Трассы/Проверки/Слои и т.п.), поэтому обработчик один здесь, а не в каждом
     if (t.closest("[data-sheet-fs]")) return toggleSheetFullscreen();
-    if (t.closest("[data-plan-fit]")) { if (R.canvas) R.canvas.fit(G().projectBBox(core().project)); return; }
+    if (t.closest("[data-plan-fit]")) { if (R.canvas) R.canvas.fit(G().projectBBox(core().project), null, { animate: true }); return; }
     if (t.closest("[data-pr-cancel]")) { setMode(R.mode === "underlay" ? "view" : R.mode); return; }
     if (t.closest("[data-pr-create-rect]")) return createRect();
     if (t.closest("[data-pr-create-rect2]")) return createRectFromPoint();

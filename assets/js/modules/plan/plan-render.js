@@ -319,7 +319,7 @@
     const G = EP.Plan.Geometry;
     if (!project) { clear(canvas.layers.overlay); return; }
     if (G.beginFrame) G.beginFrame(project);
-    try { drawScaledFrame(canvas, project, ui); } finally { if (G.endFrame) G.endFrame(); }
+    try { return drawScaledFrame(canvas, project, ui); } finally { if (G.endFrame) G.endFrame(); }
   }
   function drawScaledFrame(canvas, project, ui) {
     const G = EP.Plan.Geometry;
@@ -371,6 +371,24 @@
     // при разборе LOD). Квантованное ведро зума (шаг ~26%) — пересборка только на
     // ЗАМЕТНОМ изменении зума, а не на каждом тике колеса/пинча.
     const kBucket = Math.round(Math.log2(k || 1) * 3);
+    // НАРЕЗКА перестройки после зума (ui.sliceMs — бюджет кадра в мс). Почти все размеры
+    // значков/подписей считаются от масштаба, поэтому конец каждого зума пересобирал ВСЕ
+    // узлы разом (замер 20 комнат, CPU ×4: ~260 мс одним куском — заметный рывок после
+    // пинча). Теперь узел, у которого изменился ТОЛЬКО масштаб (base — подпись без него
+    // совпала), при исчерпании бюджета остаётся прежним на пару кадров, и сцена дорисовывается
+    // в следующих кадрах (drawScaled вернёт true — вызывающий запланирует продолжение).
+    // Любая правка содержимого рисуется сразу: у неё не совпадёт base.
+    const sliceUntil = ui && ui.sliceMs ? performance.now() + ui.sliceMs : 0;
+    let staleLeft = false;
+    const sliceOver = () => !!sliceUntil && performance.now() > sliceUntil;
+    // кэш-попадание: точное — берём; отличие только масштабом при исчерпанном бюджете —
+    // тоже берём (дорисуется в следующем кадре)
+    const reuse = (c, sig, base) => {
+      if (!c) return false;
+      if (c.sig === sig) return true;
+      if (base != null && c.base === base && sliceOver()) { staleLeft = true; return true; }
+      return false;
+    };
 
     // ---------- стены/маски/проёмы/балки/пустоты/лента — кэшируемый <g> ----------
     // Самая дорогая часть рендера (профилировано headless Chromium CPU-профилем на
@@ -410,7 +428,7 @@
     const wc = wallsCacheFor(canvas);
     const selBeamId = EP.Plan.Rooms && EP.Plan.Rooms.selectedBeamId && EP.Plan.Rooms.selectedBeamId();
     const selVoidId = EP.Plan.Rooms && EP.Plan.Rooms.selectedVoidId && EP.Plan.Rooms.selectedVoidId();
-    const glob = JSON.stringify([stW.wallThickness, stW.wallMaterial, dimsOn, labelsOn, lodDims, kBucket, !!(ui && ui.noWallLabels)]);
+    const globBase = JSON.stringify([stW.wallThickness, stW.wallMaterial, dimsOn, labelsOn, lodDims, !!(ui && ui.noWallLabels)]);
     let maxTh = Math.max(4, stW.wallThickness || 10);
     roomsW.forEach((r) => { const t = r.wallTh; if (t) Object.keys(t).forEach((i) => { const v = Number(t[i]); if (v > maxTh) maxTh = v; }); });
     (project.beams || []).forEach((bm) => { if (bm.width > maxTh) maxTh = bm.width; });
@@ -438,12 +456,13 @@
       beamBBs.forEach((x) => { if (bbHit(roomBBs[roomI], x.bb)) nb.push(["b", x.bm.id, x.bm.a, x.bm.b, x.bm.width, opsByOwner.get("beam:" + x.bm.id) || 0]); });
       // пустоты внутри — площадь в подписи комнаты (roomNetArea)
       voidBBs.forEach((x) => { if (bbHit(roomBBs[roomI], x.bb)) nb.push(["v", x.vd.a, x.vd.b]); });
-      const sig = JSON.stringify([room, opsByOwner.get(room.id) || 0, nb, glob, labelNudges[roomI], !!(ui && ui.selectedRoomId === room.id)]);
+      const base = JSON.stringify([room, opsByOwner.get(room.id) || 0, nb, globBase, labelNudges[roomI], !!(ui && ui.selectedRoomId === room.id)]);
+      const sig = base + "|" + kBucket;
       const cached = wc.rooms.get(room.id);
-      if (cached && cached.sig === sig) { wallParts.push(cached.node); return; }
+      if (reuse(cached, sig, base)) { wallParts.push(cached.node); return; }
       const rg = el("g", { "data-rw": room.id });
       buildRoomWalls(rg, room, roomI);
-      wc.rooms.set(room.id, { sig, node: rg });
+      wc.rooms.set(room.id, { sig, base, node: rg });
       wallParts.push(rg);
     });
     if (wc.rooms.size > liveRoomW.size) wc.rooms.forEach((v, id) => { if (!liveRoomW.has(id)) wc.rooms.delete(id); });
@@ -712,12 +731,13 @@
       roomsW.forEach((room) => {
         if ((room.points || []).length < 3) return;
         liveCh.add(room.id);
-        const sigC = JSON.stringify([room.points, room.wallTh, room.wallDimOff, opsByOwner.get(room.id) || 0, elsByRoom.get(room.id) || 0, stW.wallThickness, stW.dimOffset, k]);
+        const baseC = JSON.stringify([room.points, room.wallTh, room.wallDimOff, opsByOwner.get(room.id) || 0, elsByRoom.get(room.id) || 0, stW.wallThickness, stW.dimOffset]);
+        const sigC = baseC + "|" + k;
         const cc = wc.chains.get(room.id);
-        if (cc && cc.sig === sigC) { chainParts.push(cc.node); return; }
+        if (reuse(cc, sigC, baseC)) { chainParts.push(cc.node); return; }
         const cg = el("g", { "data-rc": room.id });
         buildRoomChain(cg, room);
-        wc.chains.set(room.id, { sig: sigC, node: cg });
+        wc.chains.set(room.id, { sig: sigC, base: baseC, node: cg });
         chainParts.push(cg);
       });
       if (wc.chains.size > liveCh.size) wc.chains.forEach((v, id) => { if (!liveCh.has(id)) wc.chains.delete(id); });
@@ -877,13 +897,14 @@
         const ptsStr = (rt.points || []).map((p) => p.x + "," + p.y).join(" ");
         const routeColor = rt.color || layerColor(rt.layer);
         // подпись входов рендера ЭТОЙ трассы: совпала — переиспользуем готовый <g>
-        const rSig = ptsStr + "|" + routeColor + "|" + (rt.manual ? 1 : 0) + (inChain ? 1 : 0)
+        const rBase = ptsStr + "|" + routeColor + "|" + (rt.manual ? 1 : 0) + (inChain ? 1 : 0)
           + (otherDim ? 1 : 0) + (dimR ? 1 : 0) + (rt.id === selRoute ? 1 : 0) + (flatShadow ? 1 : 0)
-          + "|" + k + "|" + JSON.stringify(rt.throughWalls || []);
+          + "|" + JSON.stringify(rt.throughWalls || []);
+        const rSig = rBase + "|" + k;
         const rCached = nc.routes.get(rt.id);
-        if (rCached && rCached.sig === rSig) { g.appendChild(rCached.node); return; }
+        if (reuse(rCached, rSig, rBase)) { g.appendChild(rCached.node); return; }
         const rg = el("g", { "data-r": rt.id });
-        nc.routes.set(rt.id, { sig: rSig, node: rg });
+        nc.routes.set(rt.id, { sig: rSig, base: rBase, node: rg });
         if (inChain && !flatShadow) {
           const baseSw = sw * 0.8;
           [[baseSw * 7, .09], [baseSw * 4.4, .17], [baseSw * 2.6, .30]].forEach(([w, op]) => {
@@ -953,15 +974,16 @@
       // считаются от k напрямую, приблизительное совпадение дало бы «плывущие» символы при
       // зуме — тот же баг, что уже ловили на кэше стен.
       const cc0 = elem.circuitId && circ(elem.circuitId);
-      const eSig = JSON.stringify([elem, cx, cy, rot, k, elem.id === selId, bad.has(elem.id),
+      const eBase = JSON.stringify([elem, cx, cy, rot, elem.id === selId, bad.has(elem.id),
         gost, design, labelsOn, lodQf, lodDims, cc0 ? [cc0.color, cc0.name] : null,
-        layerColor2(elem.layer), circDim(elem.circuitId), montage]);
+        layerColor2(elem.layer), circDim(elem.circuitId), montage, real]);
+      const eSig = eBase + "|" + k;
       const eCached = nc.els.get(elem.id);
-      if (eCached && eCached.sig === eSig) { g.appendChild(eCached.node); return; }
+      if (reuse(eCached, eSig, eBase)) { g.appendChild(eCached.node); return; }
       // data-e / data-eo — метки для «подъёма» на время тяги (liftForDrag): какая это точка
       // и на стене какой комнаты она стоит (едет вместе с комнатой при её переносе)
       const grp = el("g", Object.assign({ class: "ep-plan-el" + (elem.status === "mounted" ? " is-done" : "") + (elem.status === "work" ? " is-work" : "") + (elem.status === "existing" ? " is-exist" : "") + (elem.id === selId ? " is-sel" : ""), "data-e": elem.id }, elem.wallId ? { "data-eo": ownerOf(elem.wallId) } : {}));
-      nc.els.set(elem.id, { sig: eSig, node: grp });
+      nc.els.set(elem.id, { sig: eSig, base: eBase, node: grp });
       if (elem.type === "junction") {
         if (gost) {
           // ГОСТ: соединительная коробка — закрашенный кружок
@@ -1293,6 +1315,7 @@
       }
     }
     reconcile(gOut, outNodes);
+    return staleLeft;
   }
 
   // ---------- «подъём» объекта на время тяги ----------

@@ -8326,7 +8326,7 @@ test("фото: deleteProject чистит кэш фото своего прое
         const cv = rd66("assets", "js", "modules", "plan", "plan-canvas.js");
         ok(/wrap\.style\.transform = "translate\(/.test(cv) && !/svg\.style\.transform/.test(cv),
           "transform у самого svg заставляет заново раскладывать SVG-текст — только обёртка");
-        ok(/else \{ userAdjusted = true; view\.x -= dx; view\.y -= dy; applyLive\(\); \}/.test(cv), "пан — живым сдвигом");
+        ok(/else \{ userAdjusted = true; view\.x -= dx; view\.y -= dy; trackPan\(e\.clientX, e\.clientY\); applyLive\(\); \}/.test(cv), "пан — живым сдвигом");
         ok(/if \(pts\.size === 0 && liveT\) apply\(\);/.test(cv), "по окончании жеста вид фиксируется в viewBox");
         ok(/if \(liveT\) \{ left -= liveT\.tx;/.test(cv), "попадание тапом учитывает сдвиг во время жеста");
         const css = rd66("assets", "css", "plan.css");
