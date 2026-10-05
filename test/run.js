@@ -5738,9 +5738,9 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(!/const off2 = \(p*r*o*j*e*c*t*\.?settings/.test(rnd), "своей копии формулы в рендере не осталось");
     ok(/data-pr-chainoff/.test(rms), "поле общего выноса в шторке «Слои»");
     ok(/data-pr-wdimoff/.test(rms), "поле выноса конкретной стены в её карточке");
-    // кэш стен: без dimOffset в подписи смена общего выноса переиспользовала бы старый узел
-    ok(/settings\.dimOffset,/.test(rnd.slice(rnd.indexOf("const structSig"), rnd.indexOf("const wallsCached"))),
-      "общий вынос входит в подпись кэша стен");
+    // кэш цепочек (по комнатам): без dimOffset в подписи смена общего выноса
+    // переиспользовала бы старый узел цепочки
+    ok(/const sigC = JSON\.stringify\(\[[^\n]*stW\.dimOffset/.test(rnd), "общий вынос входит в подпись кэша цепочек");
   });
   test("автоматические размеры двигаются и переживают сохранение", () => {
     const fs2 = require("fs"), path2 = require("path");
