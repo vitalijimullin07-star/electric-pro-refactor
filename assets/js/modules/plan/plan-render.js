@@ -162,9 +162,15 @@
      на своём месте, не трогается вовсе: двигаются только новые/переставленные, лишние
      удаляются в конце. Порядок детей — ровно порядок списка (порядок отрисовки SVG). */
   function reconcile(parent, list) {
+    // устаревший узел убираем СРАЗУ, как только до него дошли: иначе каждый следующий
+    // узел вставлялся бы перед ним, т.е. ПЕРЕСТАВЛЯЛСЯ (снять + вставить), и замена одной
+    // точки в середине списка двигала бы все узлы после неё (поймано трассировкой: тап по
+    // точке переставлял все 177 значков и пересчитывал стили 1400 узлов)
+    const want = new Set(list);
     let cur = parent.firstChild;
     for (let i = 0; i < list.length; i++) {
       const n = list[i];
+      while (cur && !want.has(cur)) { const nx = cur.nextSibling; parent.removeChild(cur); cur = nx; }
       if (cur === n) { cur = cur.nextSibling; continue; }
       parent.insertBefore(n, cur);
     }
