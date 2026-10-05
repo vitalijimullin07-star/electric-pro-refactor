@@ -224,18 +224,10 @@
   function dropLiftNodes() {
     if (R.canvas && EP.Plan.Render && EP.Plan.Render.isLifted && EP.Plan.Render.isLifted(R.canvas)) { EP.Plan.Render.dropLift(R.canvas); renderScene(); }
   }
-  // Перерисовка ПОСЛЕ ЗУМА — нарезанная по кадрам (ui.sliceMs, см. drawScaled): узлы,
-  // у которых сменился только масштаб, перестраиваются порциями по ~12 мс, а не одним
-  // куском на весь чертёж. Пока что-то осталось — продолжаем в следующем кадре.
-  let sliceRaf = 0;
   function renderScaled() {
     if (!R.canvas || !EP.Plan.Render) return;
     if (EP.Plan.Render.isLifted && EP.Plan.Render.isLifted(R.canvas)) return;
-    const more = EP.Plan.Render.drawScaled(R.canvas, G().floorScoped(core().project), Object.assign(ui(), { sliceMs: 12 }));
-    if (more && !sliceRaf) {
-      const raf = window.requestAnimationFrame || ((f) => setTimeout(f, 16));
-      sliceRaf = raf(() => { sliceRaf = 0; renderScaled(); });
-    }
+    EP.Plan.Render.drawScaled(R.canvas, G().floorScoped(core().project), ui());
   }
   // перерисовка не чаще кадра — тяга пальцем остаётся плавной
   let sceneRaf = 0;

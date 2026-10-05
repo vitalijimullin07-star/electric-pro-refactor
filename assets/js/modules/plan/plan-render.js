@@ -319,7 +319,7 @@
     const G = EP.Plan.Geometry;
     if (!project) { clear(canvas.layers.overlay); return; }
     if (G.beginFrame) G.beginFrame(project);
-    try { return drawScaledFrame(canvas, project, ui); } finally { if (G.endFrame) G.endFrame(); }
+    try { drawScaledFrame(canvas, project, ui); } finally { if (G.endFrame) G.endFrame(); }
   }
   function drawScaledFrame(canvas, project, ui) {
     const G = EP.Plan.Geometry;
@@ -371,24 +371,8 @@
     // при разборе LOD). Квантованное ведро зума (шаг ~26%) — пересборка только на
     // ЗАМЕТНОМ изменении зума, а не на каждом тике колеса/пинча.
     const kBucket = Math.round(Math.log2(k || 1) * 3);
-    // НАРЕЗКА перестройки после зума (ui.sliceMs — бюджет кадра в мс). Почти все размеры
-    // значков/подписей считаются от масштаба, поэтому конец каждого зума пересобирал ВСЕ
-    // узлы разом (замер 20 комнат, CPU ×4: ~260 мс одним куском — заметный рывок после
-    // пинча). Теперь узел, у которого изменился ТОЛЬКО масштаб (base — подпись без него
-    // совпала), при исчерпании бюджета остаётся прежним на пару кадров, и сцена дорисовывается
-    // в следующих кадрах (drawScaled вернёт true — вызывающий запланирует продолжение).
-    // Любая правка содержимого рисуется сразу: у неё не совпадёт base.
-    const sliceUntil = ui && ui.sliceMs ? performance.now() + ui.sliceMs : 0;
-    let staleLeft = false;
-    const sliceOver = () => !!sliceUntil && performance.now() > sliceUntil;
-    // кэш-попадание: точное — берём; отличие только масштабом при исчерпанном бюджете —
-    // тоже берём (дорисуется в следующем кадре)
-    const reuse = (c, sig, base) => {
-      if (!c) return false;
-      if (c.sig === sig) return true;
-      if (base != null && c.base === base && sliceOver()) { staleLeft = true; return true; }
-      return false;
-    };
+    // кэш-попадание узла: подпись совпала целиком
+    const reuse = (c, sig) => !!(c && c.sig === sig);
 
     // ---------- стены/маски/проёмы/балки/пустоты/лента — кэшируемый <g> ----------
     // Самая дорогая часть рендера (профилировано headless Chromium CPU-профилем на
@@ -459,7 +443,7 @@
       const base = JSON.stringify([room, opsByOwner.get(room.id) || 0, nb, globBase, labelNudges[roomI], !!(ui && ui.selectedRoomId === room.id)]);
       const sig = base + "|" + kBucket;
       const cached = wc.rooms.get(room.id);
-      if (reuse(cached, sig, base)) { wallParts.push(cached.node); return; }
+      if (reuse(cached, sig)) { wallParts.push(cached.node); return; }
       const rg = el("g", { "data-rw": room.id });
       buildRoomWalls(rg, room, roomI);
       wc.rooms.set(room.id, { sig, base, node: rg });
@@ -732,9 +716,9 @@
         if ((room.points || []).length < 3) return;
         liveCh.add(room.id);
         const baseC = JSON.stringify([room.points, room.wallTh, room.wallDimOff, opsByOwner.get(room.id) || 0, elsByRoom.get(room.id) || 0, stW.wallThickness, stW.dimOffset]);
-        const sigC = baseC + "|" + k;
+        const sigC = baseC + "|" + kBucket; // засечки и цифры — по ведру масштаба, как стены
         const cc = wc.chains.get(room.id);
-        if (reuse(cc, sigC, baseC)) { chainParts.push(cc.node); return; }
+        if (reuse(cc, sigC)) { chainParts.push(cc.node); return; }
         const cg = el("g", { "data-rc": room.id });
         buildRoomChain(cg, room);
         wc.chains.set(room.id, { sig: sigC, base: baseC, node: cg });
@@ -902,7 +886,7 @@
           + "|" + JSON.stringify(rt.throughWalls || []);
         const rSig = rBase + "|" + k;
         const rCached = nc.routes.get(rt.id);
-        if (reuse(rCached, rSig, rBase)) { g.appendChild(rCached.node); return; }
+        if (reuse(rCached, rSig)) { g.appendChild(rCached.node); return; }
         const rg = el("g", { "data-r": rt.id });
         nc.routes.set(rt.id, { sig: rSig, base: rBase, node: rg });
         if (inChain && !flatShadow) {
@@ -979,11 +963,26 @@
         layerColor2(elem.layer), circDim(elem.circuitId), montage, real]);
       const eSig = eBase + "|" + k;
       const eCached = nc.els.get(elem.id);
-      if (reuse(eCached, eSig, eBase)) { g.appendChild(eCached.node); return; }
+      if (reuse(eCached, eSig)) { g.appendChild(eCached.node); return; }
+      // Изменился ТОЛЬКО масштаб (конец зума): значок не пересобираем, а масштабируем уже
+      // готовый узел вокруг его точки. Все размеры значка заданы как «точка + c·k» (круг,
+      // буква, подпись линии, h=NNN, рамка блока, ГОСТ-символ), так что масштаб k/kb вокруг
+      // (cx, cy) даёт ровно ту же геометрию, что и пересборка при новом k. Раньше конец
+      // каждого пинча пересобирал все значки разом (замер 20 комнат, CPU ×4: ~260 мс рывка).
+      // Не масштабируются значки с геометрией от ДРУГОЙ точки (выноска «Дизайна» к стене,
+      // распайка на стене, сдвинутая подпись высоты, реальная рамка «1:1») — те пересобираются.
+      if (eCached && eCached.base === eBase && eCached.scalable) {
+        const sc = k / eCached.kb;
+        if (Math.abs(sc - 1) < 1e-9) eCached.node.removeAttribute("transform");
+        else eCached.node.setAttribute("transform", "translate(" + cx + " " + cy + ") scale(" + sc + ") translate(" + (-cx) + " " + (-cy) + ")");
+        eCached.sig = eSig;
+        g.appendChild(eCached.node); return;
+      }
       // data-e / data-eo — метки для «подъёма» на время тяги (liftForDrag): какая это точка
       // и на стене какой комнаты она стоит (едет вместе с комнатой при её переносе)
       const grp = el("g", Object.assign({ class: "ep-plan-el" + (elem.status === "mounted" ? " is-done" : "") + (elem.status === "work" ? " is-work" : "") + (elem.status === "existing" ? " is-exist" : "") + (elem.id === selId ? " is-sel" : ""), "data-e": elem.id }, elem.wallId ? { "data-eo": ownerOf(elem.wallId) } : {}));
-      nc.els.set(elem.id, { sig: eSig, base: eBase, node: grp });
+      const scalable = !(design && pt && pt.wall) && !(real && elem.wallId) && !elem.hOff && !(elem.type === "junction" && elem.wallId);
+      nc.els.set(elem.id, { sig: eSig, base: eBase, node: grp, kb: k, scalable });
       if (elem.type === "junction") {
         if (gost) {
           // ГОСТ: соединительная коробка — закрашенный кружок
@@ -1315,7 +1314,6 @@
       }
     }
     reconcile(gOut, outNodes);
-    return staleLeft;
   }
 
   // ---------- «подъём» объекта на время тяги ----------
