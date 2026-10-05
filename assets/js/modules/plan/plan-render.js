@@ -1442,7 +1442,7 @@
   EP.Plan = EP.Plan || {};
   EP.Plan.Render = {
     draw, drawScaled, CFG, hoverPreview, clearHoverPreview,
-    liftForDrag, moveLift, dropLift, isLifted,
+    liftForDrag, moveLift, dropLift, isLifted, reconcile,
     // реальные габариты и «лица» приборов — общие для плана, развёртки, PDF и DXF.
     // Сами таблицы FRAME_MM/FRAME_H_MM наружу не отдаём: снаружи их не читал никто,
     // ширина и высота рамки берутся через frameWmm/frameWcm/frameHcm (там же

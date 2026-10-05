@@ -8156,7 +8156,7 @@ test("фото: deleteProject чистит кэш фото своего прое
         sb.document.documentElement = { dataset: {} };
         sb.document.body = { appendChild() {} };
         if (native) sb.Capacitor = { isNativePlatform: () => true, Plugins: { EpNative: plug,
-          App: { addListener: (n, f) => { back = f; }, minimizeApp: () => { minimized++; } },
+          App: { addListener: (n, f) => { if (n === "backButton") back = f; }, minimizeApp: () => { minimized++; } },
           Browser: { open: (o) => calls.push(["browser", o.url]) } } };
         vm66.createContext(sb);
         vm66.runInContext(rd66("assets", "js", "core", "native-shell.js"), sb);
@@ -8334,6 +8334,81 @@ test("фото: deleteProject чистит кэш фото своего прое
         ok(!/\.ep-plan-svg \{[^}]*overflow: visible/.test(css), "overflow: visible у svg не возвращать: раскладка слоя в 4 раза дороже");
       });
     }
+  }
+
+  // ===== 67. Плавность «Проекта квартиры» (APK 1.2.0) =====
+  {
+    const fs67 = require("fs"), path67 = require("path");
+    const rd67 = (...pp) => fs67.readFileSync(path67.join(__dirname, "..", ...pp), "utf8");
+    test("отрисовка: сверка узлов не переставляет соседей при замене одного", () => {
+      // живой порядок детей, как у DOM: insertBefore снимает узел и вставляет на новое место
+      const mk = () => {
+        const P = { kids: [], moves: 0 };
+        const fix = () => P.kids.forEach((n, i) => { n.nextSibling = P.kids[i + 1] || null; });
+        Object.defineProperty(P, "firstChild", { get: () => P.kids[0] || null });
+        P.insertBefore = (n, ref) => { const j = P.kids.indexOf(n); if (j !== -1) P.kids.splice(j, 1); const k = ref ? P.kids.indexOf(ref) : -1; if (k === -1) P.kids.push(n); else P.kids.splice(k, 0, n); P.moves++; fix(); };
+        P.removeChild = (n) => { P.kids.splice(P.kids.indexOf(n), 1); fix(); };
+        return P;
+      };
+      const R = EP.Plan.Render, par = mk();
+      const nodes = Array.from({ length: 50 }, (_, i) => ({ id: i }));
+      R.reconcile(par, nodes);
+      eq(par.kids.length, 50, "первая сборка");
+      par.moves = 0;
+      const next = nodes.slice(); next[10] = { id: "new10" };
+      R.reconcile(par, next);
+      eq(par.moves, 1, "заменили ОДИН узел — одна вставка, остальные на месте");
+      ok(par.kids.every((n, i) => n === next[i]), "порядок совпал со списком");
+      par.moves = 0;
+      R.reconcile(par, next);
+      eq(par.moves, 0, "ничего не изменилось — DOM не трогается");
+      R.reconcile(par, next.slice(0, 20));
+      eq(par.kids.length, 20, "лишние удалены");
+    });
+    test("отрисовка: стены и цепочки кэшируются по комнатам, значки на зуме масштабируются", () => {
+      const r = rd67("assets", "js", "modules", "plan", "plan-render.js");
+      ok(/wc\.rooms\.set\(room\.id/.test(r) && /data-rw/.test(r), "у каждой комнаты свой узел стен");
+      ok(/nb\.push\(\[r2\.id, r2\.points, r2\.wallTh, opsByOwner\.get\(r2\.id\)/.test(r), "подпись комнаты включает соседей и их проёмы (вырез общей стены)");
+      ok(/wc\.chains\.set\(room\.id/.test(r), "размерные цепочки — по комнатам");
+      ok(/eCached\.base === eBase && eCached\.scalable/.test(r) && /scale\(" \+ sc \+ "\)/.test(r), "зум масштабирует готовый значок");
+      ok(/!\(design && pt && pt\.wall\) && !\(real && elem\.wallId\) && !elem\.hOff/.test(r), "значки с геометрией от другой точки пересобираются");
+      ok(/G\.beginFrame\(project\)/.test(r) && /G\.endFrame\(\)/.test(r), "кадр рендера — группировка точек по стенам один раз");
+    });
+    test("тяга: жёсткий перенос поднимает копию и двигает её transform'ом", () => {
+      const r = rd67("assets", "js", "modules", "plan", "plan-render.js"), rm = rd67("assets", "js", "modules", "plan", "plan-rooms.js");
+      ok(/function liftForDrag/.test(r) && /n\.setAttribute\("visibility", "hidden"\)/.test(r) && /-lift/.test(r), "копия поверх холста, оригинал спрятан, маски переименованы");
+      ok(/L\.px\.style\.transform = "translate\(/.test(r), "кадр тяги — только transform копии");
+      ok(/isLifted\(R\.canvas\)\) return;/.test(rm), "пока объект поднят, сцена не перерисовывается (нет двойного изображения)");
+      ok(/if \(!moveLiftBy\(acc\.x, acc\.y\)\) renderSceneSoon\(\);/.test(rm), "перенос комнаты — без перерисовки на кадре");
+      ok(/data-pl-void/.test(rm) && /data-nt/.test(rm) && /data-ap/.test(rd67("assets", "js", "modules", "plan", "plan-furniture.js")), "пустота, заметка и мебель — тоже подъёмом");
+      // G.elemOverlapIndex в кадре и вне кадра даёт одно и то же
+      const G = EP.Plan.Geometry, M = EP.Plan.Core.model;
+      const p = M.newProject("t"); const room = M.newRoom(G.rectPoints(0, 0, 400, 300), "К"); p.rooms.push(room);
+      const a = M.newElement("socket", room.id + ":0", 100, 30, "power"), b2 = M.newElement("socket", room.id + ":0", 101, 60, "power");
+      p.elements.push(a, b2);
+      const out = [G.elemOverlapIndex(p, a), G.elemOverlapIndex(p, b2)];
+      G.beginFrame(p); const inF = [G.elemOverlapIndex(p, a), G.elemOverlapIndex(p, b2)]; G.endFrame();
+      eq(JSON.stringify(inF), JSON.stringify(out), "«лесенка» в кадре = вне кадра");
+      eq(G.wallById(p, room.id + ":2").len, 400, "быстрый wallById даёт ту же стену");
+      eq(G.wallById(p, room.id + ":9"), null, "несуществующая стена — null");
+    });
+    test("холст: плавный вид (анимация, инерция) без замера раскладки на каждом шаге жеста", () => {
+      const cv = rd67("assets", "js", "modules", "plan", "plan-canvas.js");
+      ok(/function animateTo/.test(cv) && /function startInertia/.test(cv), "анимация вида и инерция");
+      ok(/prefers-reduced-motion/.test(cv), "уважаем «уменьшить движение»");
+      ok(/\(liveT && restRect\) \? restRect : measureRest\(\)/.test(cv), "во время жеста — замер начала, без принудительной раскладки");
+      ok(/animateTo\(target, 240\)/.test(cv), "двойной тап зумит плавно");
+      const rm = rd67("assets", "js", "modules", "plan", "plan-rooms.js");
+      ok(/panBy\(0, dyPx \* R\.canvas\.cmPerPx\(\), \{ animate: true \}\)/.test(rm), "подвод вида над шторкой — плавно");
+      ok(/sheetBtnRaf = raf/.test(rm) && /evRaf = raf/.test(rm), "замеры шторки — в следующем кадре");
+    });
+    test("APK: сохранение при уходе в фон и облако без сети", () => {
+      const ns = rd67("assets", "js", "core", "native-shell.js"), pc = rd67("assets", "js", "modules", "plan", "plan-core.js");
+      ok(/appStateChange/.test(ns) && /ep:app-pause/.test(ns), "натив сообщает об уходе в фон");
+      ok(/addEventListener\("ep:app-pause", \(\) => \{ flushPersist\(\);/.test(pc), "план записывается сразу");
+      ok(/navigator\.onLine === false\) return;/.test(pc), "без сети проект в очередь Firestore не кладём");
+      ok(/requestIdleCallback/.test(pc), "отправка — в простое потока");
+    });
   }
 
   console.log("\n" + "=".repeat(48));
