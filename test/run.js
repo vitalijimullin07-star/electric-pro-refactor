@@ -5740,7 +5740,7 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/data-pr-wdimoff/.test(rms), "поле выноса конкретной стены в её карточке");
     // кэш цепочек (по комнатам): без dimOffset в подписи смена общего выноса
     // переиспользовала бы старый узел цепочки
-    ok(/const sigC = JSON\.stringify\(\[[^\n]*stW\.dimOffset/.test(rnd), "общий вынос входит в подпись кэша цепочек");
+    ok(/const baseC = JSON\.stringify\(\[[^\n]*stW\.dimOffset/.test(rnd), "общий вынос входит в подпись кэша цепочек");
   });
   test("автоматические размеры двигаются и переживают сохранение", () => {
     const fs2 = require("fs"), path2 = require("path");
@@ -7780,7 +7780,7 @@ test("фото: deleteProject чистит кэш фото своего прое
       ok(/\["work", "В работе ◐"\]/.test(src("plan-elements")) && /function openStatusCard/.test(src("plan-elements")), "статус «в работе» и карточка");
       const r = src("plan-render");
       ok(/const dimsOn = layerOn\(project, "dims"\) && !montage/.test(r) && /layerOn\(project, "furn"\) && !montage/.test(r), "размеры и мебель скрыты в режиме монтажника");
-      ok(/circDim\(elem\.circuitId\), montage\]/.test(r), "режим — в подписи кэша узла точки");
+      ok(/circDim\(elem\.circuitId\), montage, real\]/.test(r), "режим — в подписи кэша узла точки");
       ok(/hit\.el && R\.montage && EP\.Plan\.Elements\.openStatusCard/.test(src("plan-rooms")), "тап по точке — карточка статуса");
       const m = src("plan-mount");
       ok(/data-plan-montage/.test(m) && /data-plan-daytask/.test(m) && /id="ep-plan-ready"/.test(m), "кнопки 👷 📋 и чип готовности");
