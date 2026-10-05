@@ -214,6 +214,7 @@
   function enableDrag(id) {
     const R = rooms();
     if (!R || !R.canvasSetDrag) return;
+    let acc = null, lifted = false;
     R.canvasSetDrag((dx, dy, phase, start) => {
       const c = core(), p = c.project;
       const a = (p.appliances || []).find((x) => x.id === id);
@@ -221,10 +222,20 @@
       if (phase === "start") {
         if (!G().pointInPolygon(start, corners(a))) return false;
         c.commit();
+        // жёсткий перенос — копия поверх холста двигается transform'ом, сцена
+        // перерисовывается один раз на отпускании (см. liftNodes в plan-rooms.js)
+        acc = { x: 0, y: 0 };
+        lifted = !!(R.liftNodes && R.liftNodes(["[data-ap=\"" + a.id + "\"]"]));
         return;
       }
-      if (phase === "move") { a.x += dx; a.y += dy; R.renderSceneSoon ? R.renderSceneSoon() : R.renderScene(); }
+      if (phase === "move") {
+        a.x += dx; a.y += dy;
+        if (acc) { acc.x += dx; acc.y += dy; }
+        if (!(lifted && R.moveLiftBy(acc.x, acc.y))) { if (R.renderSceneSoon) R.renderSceneSoon(); else R.renderScene(); }
+      }
       else if (phase === "end") {
+        if (lifted) { lifted = false; R.dropLiftNodes(); }
+        acc = null;
         const step = p.settings.gridStep || 10;
         const sp = G().snapPoint({ x: a.x, y: a.y }, step);
         a.x = sp.x; a.y = sp.y;

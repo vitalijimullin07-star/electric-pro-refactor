@@ -137,7 +137,13 @@
     const [roomId, iStr] = s.split(":");
     const room = (project.rooms || []).find((r) => r.id === roomId);
     if (!room) return null;
-    return G.walls(room)[Number(iStr)] || null;
+    // ровно тот объект, что дал бы G.walls(room)[i], но без сборки ВСЕХ стен комнаты:
+    // wallById зовётся на каждую точку при каждой отрисовке (позиция маркера), и
+    // выделение массива стен на каждый вызов было заметной долей рендера плана
+    const pts = room.points || [], i = Number(iStr);
+    if (pts.length < 2 || !(i >= 0 && i < pts.length) || Math.floor(i) !== i) return null;
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    return { id: room.id + ":" + i, roomId: room.id, i, n: i + 1, a, b, len: G.dist(a, b), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
   };
 
   // ---- толщина/материал КОНКРЕТНОЙ стены (переопределение на стену поверх настроек) ----
@@ -915,10 +921,25 @@
   // у остальных k-я точка смещается дальше от стены И вдоль неё на k шагов —
   // видно и можно тапнуть все, включая те, что раньше были полностью скрыты.
   G.STACK_STEP_CM = 14;
+  // Кадр отрисовки: на время ОДНОГО прохода рендера точки группируются по стенам один раз
+  // (иначе «лесенка» на каждую точку перебирала все точки проекта — квадрат от их числа
+  // на каждом кадре). Вне кадра (трассировка, хит-тесты, смета) — прежний полный перебор:
+  // там модель может меняться между вызовами, кэшировать нельзя.
+  let frameEls = null, frameByWall = null;
+  G.beginFrame = (project) => { frameEls = (project && project.elements) || null; frameByWall = null; };
+  G.endFrame = () => { frameEls = null; frameByWall = null; };
   G.elemOverlapIndex = (project, el) => {
     if (!el.wallId) return 0;
     const STACK_CM = 3; // порог "то же место" — фиксированный, не зависит от зума
-    const group = (project.elements || []).filter((e) =>
+    let pool = project.elements || [];
+    if (frameEls && frameEls === project.elements) {
+      if (!frameByWall) {
+        frameByWall = new Map();
+        frameEls.forEach((e) => { if (!e.wallId) return; if (!frameByWall.has(e.wallId)) frameByWall.set(e.wallId, []); frameByWall.get(e.wallId).push(e); });
+      }
+      pool = frameByWall.get(el.wallId) || [];
+    }
+    const group = pool.filter((e) =>
       e.wallId === el.wallId && Math.abs((e.offset || 0) - (el.offset || 0)) <= STACK_CM);
     if (group.length < 2) return 0;
     group.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)); // стабильный порядок

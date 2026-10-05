@@ -317,8 +317,13 @@
   // ---------- масштабируемая часть: контуры, подписи, черновик, рулетка ----------
   function drawScaled(canvas, project, ui) {
     const G = EP.Plan.Geometry;
+    if (!project) { clear(canvas.layers.overlay); return; }
+    if (G.beginFrame) G.beginFrame(project);
+    try { drawScaledFrame(canvas, project, ui); } finally { if (G.endFrame) G.endFrame(); }
+  }
+  function drawScaledFrame(canvas, project, ui) {
+    const G = EP.Plan.Geometry;
     const gOut = canvas.layers.overlay;
-    if (!project) { clear(gOut); return; }
     // узлы верхнего уровня собираются в список и в конце сверяются с тем, что уже стоит
     // в overlay (reconcile) — неизменившиеся узлы DOM вообще не трогаются
     const outNodes = [];
@@ -566,9 +571,12 @@
 
     }
 
-    function buildOpenings(g) {
-      // проёмы: дверь (дуга) / раздвижная / окно (двойная линия) / балкон (окно+дверь)
+    function buildOpenings(gOps) {
+      // проёмы: дверь (дуга) / раздвижная / окно (двойная линия) / балкон (окно+дверь).
+      // Каждый — в своей группе с меткой комнаты-хозяйки стены (data-opo): при переносе
+      // комнаты её проёмы «поднимаются» вместе с ней (liftForDrag)
       (project.openings || []).forEach((op) => {
+        const g = el("g", { "data-opo": ownerOf(op.wallId) }); gOps.appendChild(g);
         const w = G.wallById(project, op.wallId);
         if (!w) return;
         const a = G.pointAtOffset(w, op.offset), b = G.pointAtOffset(w, op.offset + op.width);
@@ -616,11 +624,13 @@
 
     }
 
-    function buildBeams(g) {
+    function buildBeams(gBeams) {
       // балки / перемычки / перегородки — рисуются КАК СТЕНА: тем же материалом и толщиной
       const matClassOf = MATCLASS;
+      let g = gBeams;
       const wallTh = Math.max(4, (project.settings && project.settings.wallThickness) || 10);
       (project.beams || []).forEach((bm) => {
+        g = el("g", { "data-bm": bm.id }); gBeams.appendChild(g); // своя группа — метка для liftForDrag
         const bw = Math.max(4, bm.width || wallTh);
         const matB = bm.material || (project.settings && project.settings.wallMaterial) || "Бетон";
         const mc = matClassOf(matB);
@@ -643,6 +653,7 @@
         // ручки-концы, когда балка выбрана (тянуть пальцем)
         if (sel) [bm.a, bm.b].forEach((v) => g.appendChild(el("circle", { cx: v.x, cy: v.y, r: CFG.pointPx * 1.3 * k, class: "ep-plan-beamhandle" })));
       });
+      g = gBeams;
       // черновик балки
       if (ui && ui.beamDraft && ui.beamDraft.a) {
         const d2 = ui.beamDraft;
@@ -674,10 +685,11 @@
 
     }
 
-    function buildLeds(g) {
+    function buildLeds(gLeds) {
       // светодиодная лента — сегмент ВДОЛЬ стены (offsetA..offsetB), с небольшим отступом
       // внутрь комнаты, чтобы не сливаться с самой стеной
       (project.ledStrips || []).forEach((ls) => {
+        const g = el("g", { "data-ledo": ownerOf(ls.wallId) }); gLeds.appendChild(g);
         const lw = G.wallById(project, ls.wallId); if (!lw) return;
         const fr = G.wallFrame(project, lw);
         const d3 = 4; // см, чисто визуальный отступ от грани стены
@@ -794,7 +806,7 @@
       const selAp = FN && FN.selectedId && FN.selectedId();
       (project.appliances || []).forEach((a) => {
         const isAp = a.kind === "appl";
-        const grpA = el("g", { class: "ep-plan-furn" + (isAp ? " is-appl" : "") + (a.id === selAp ? " is-sel" : "") });
+        const grpA = el("g", { class: "ep-plan-furn" + (isAp ? " is-appl" : "") + (a.id === selAp ? " is-sel" : ""), "data-ap": a.id });
         const tr = a.rot ? `rotate(${a.rot} ${a.x} ${a.y})` : null;
         grpA.appendChild(el("rect", Object.assign({
           x: a.x - a.w / 2, y: a.y - a.d / 2, width: a.w, height: a.d, rx: 2,
@@ -946,7 +958,9 @@
         layerColor2(elem.layer), circDim(elem.circuitId), montage]);
       const eCached = nc.els.get(elem.id);
       if (eCached && eCached.sig === eSig) { g.appendChild(eCached.node); return; }
-      const grp = el("g", { class: "ep-plan-el" + (elem.status === "mounted" ? " is-done" : "") + (elem.status === "work" ? " is-work" : "") + (elem.status === "existing" ? " is-exist" : "") + (elem.id === selId ? " is-sel" : "") });
+      // data-e / data-eo — метки для «подъёма» на время тяги (liftForDrag): какая это точка
+      // и на стене какой комнаты она стоит (едет вместе с комнатой при её переносе)
+      const grp = el("g", Object.assign({ class: "ep-plan-el" + (elem.status === "mounted" ? " is-done" : "") + (elem.status === "work" ? " is-work" : "") + (elem.status === "existing" ? " is-exist" : "") + (elem.id === selId ? " is-sel" : ""), "data-e": elem.id }, elem.wallId ? { "data-eo": ownerOf(elem.wallId) } : {}));
       nc.els.set(elem.id, { sig: eSig, node: grp });
       if (elem.type === "junction") {
         if (gost) {
@@ -1199,7 +1213,7 @@
       // габарит щита = реальный корпус (мм→см), иначе типовой квадрат
       const wc = pbox && pbox.wmm ? pbox.wmm / 10 : 28;
       const hc = pbox && pbox.hmm ? pbox.hmm / 10 : 20;
-      const grp = el("g", { class: "ep-plan-panel" + (pn.id === selId ? " is-sel" : "") });
+      const grp = el("g", { class: "ep-plan-panel" + (pn.id === selId ? " is-sel" : ""), "data-pn": pn.id });
       grp.appendChild(el("rect", { x: pn.x - wc / 2, y: pn.y - hc / 2, width: wc, height: hc, rx: 2, "stroke-width": sw * 0.8 }));
       if (gost) {
         // ГОСТ: щиток — прямоугольник, половина закрашена (по диагонали)
@@ -1281,6 +1295,58 @@
     reconcile(gOut, outNodes);
   }
 
+  // ---------- «подъём» объекта на время тяги ----------
+  /* Жёсткий перенос (комната целиком со всем, что в ней; пустота; заметка; мебель) раньше
+     перерисовывал сцену на КАЖДОМ кадре тяги: пересборка самой комнаты, её соседей, точек на
+     её стенах, плюс пересчёт стилей, раскладка и перерисовка ВСЕГО svg — на большой квартире
+     120-230 мс на кадр (CPU ×4), то есть 4-8 кадров в секунду. Теперь на старте тяги узлы
+     объекта КОПИРУЮТСЯ в отдельный прозрачный svg поверх холста (свой композитный слой,
+     will-change), оригиналы прячутся, и каждый кадр меняется ТОЛЬКО CSS-transform этого
+     слоя: браузер сдвигает готовую картинку, не трогая DOM, стили и отрисовку. На
+     отпускании слой снимается, и сцена рисуется один раз — уже в новом положении.
+     Маски вырезов проёмов у копий переименовываются: иначе url(#id) нашёл бы маску
+     оригинала, а он на время тяги спрятан. */
+  const lifts = new WeakMap(); // canvas -> { px, nodes, k }
+  function liftForDrag(canvas, selectors) {
+    dropLift(canvas);
+    const svg = canvas && canvas.svg;
+    if (!svg || !svg.parentNode || !svg.querySelectorAll) return false;
+    const found = [];
+    (selectors || []).forEach((sel) => { try { svg.querySelectorAll(sel).forEach((n) => { if (found.indexOf(n) === -1) found.push(n); }); } catch (e) {} });
+    // вложенный узел, чей предок уже выбран, — копируется вместе с предком
+    const nodes = found.filter((n) => !found.some((m) => m !== n && m.contains(n)));
+    if (!nodes.length) return false;
+    nodes.sort((a, b) => (a.compareDocumentPosition(b) & 4 ? -1 : 1)); // порядок документа = порядок перекрытия
+    const px = el("svg", { class: "ep-plan-svg ep-plan-dragproxy", viewBox: svg.getAttribute("viewBox") || "", "aria-hidden": "true" });
+    nodes.forEach((n) => {
+      const c = n.cloneNode(true);
+      c.querySelectorAll("mask[id]").forEach((m) => {
+        const old = m.getAttribute("id"), nu = old + "-lift";
+        m.setAttribute("id", nu);
+        c.querySelectorAll("[mask]").forEach((x) => { if (x.getAttribute("mask") === "url(#" + old + ")") x.setAttribute("mask", "url(#" + nu + ")"); });
+      });
+      px.appendChild(c);
+      n.setAttribute("visibility", "hidden");
+    });
+    svg.parentNode.appendChild(px);
+    lifts.set(canvas, { px, nodes, k: canvas.cmPerPx() || 1 });
+    return true;
+  }
+  function moveLift(canvas, dxCm, dyCm) {
+    const L = lifts.get(canvas);
+    if (!L) return false;
+    L.px.style.transform = "translate(" + (dxCm / L.k) + "px," + (dyCm / L.k) + "px)";
+    return true;
+  }
+  function dropLift(canvas) {
+    const L = canvas && lifts.get(canvas);
+    if (!L) return;
+    lifts.delete(canvas);
+    if (L.px.parentNode) L.px.parentNode.removeChild(L.px);
+    L.nodes.forEach((n) => n.removeAttribute("visibility"));
+  }
+  const isLifted = (canvas) => !!(canvas && lifts.get(canvas));
+
   // ---------- живой предпросмотр снапа (наведение мышью/пером до тапа) ----------
   // Отдельный узел в overlay, обновляется атрибутами БЕЗ полного renderScaled —
   // тот же принцип, что и тяга (см. CLAUDE.md: во время движения — только
@@ -1349,6 +1415,7 @@
   EP.Plan = EP.Plan || {};
   EP.Plan.Render = {
     draw, drawScaled, CFG, hoverPreview, clearHoverPreview,
+    liftForDrag, moveLift, dropLift, isLifted,
     // реальные габариты и «лица» приборов — общие для плана, развёртки, PDF и DXF.
     // Сами таблицы FRAME_MM/FRAME_H_MM наружу не отдаём: снаружи их не читал никто,
     // ширина и высота рамки берутся через frameWmm/frameWcm/frameHcm (там же
