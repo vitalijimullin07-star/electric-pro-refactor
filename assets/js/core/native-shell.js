@@ -330,6 +330,17 @@
         if (ev && ev.canGoBack) { window.history.back(); return; }
         if (App.minimizeApp) App.minimizeApp();
       });
+      // 7) приложение уходит в фон (свернули, переключились, «смахнули» из недавних) —
+      // в WebView это НЕ всегда доходит до страницы событием visibilitychange/pagehide,
+      // а именно на них модули записывают отложенные правки (план пишет на диск с задержкой
+      // 400 мс). Отдаём своё событие ep:app-pause — по нему сохраняем немедленно; при
+      // возврате — ep:app-resume (перепроверить облако).
+      App.addListener("appStateChange", function (st) {
+        try { window.dispatchEvent(new CustomEvent(st && st.isActive ? "ep:app-resume" : "ep:app-pause")); } catch (e) {}
+      });
+      App.addListener("pause", function () {
+        try { window.dispatchEvent(new CustomEvent("ep:app-pause")); } catch (e) {}
+      });
     }
   } catch (e) {}
 })();

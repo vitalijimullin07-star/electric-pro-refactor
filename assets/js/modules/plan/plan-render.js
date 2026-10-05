@@ -104,10 +104,18 @@
     pin: { fill: "#e2e8f0", stroke: "none", sw: 0 }
   };
 
-  // кэш собранного <g> со стенами/масками/проёмами/балками/пустотами/лентой на
-  // canvas (см. buildWalls() внутри drawScaled) — WeakMap, не свойство на canvas,
-  // чтобы не полагаться на форму объекта canvas (в т.ч. в тестовом fakeCanvas())
-  const wallsCache = new WeakMap();
+  // кэш стен ПО ЧАСТЯМ на canvas (см. блок стен в drawScaled): у каждой комнаты свой <g>,
+  // отдельные группы у проёмов/балок/пустот/ленты и у размерных цепочек комнат. WeakMap, не
+  // свойство на canvas, — чтобы не полагаться на форму объекта (в т.ч. тестового fakeCanvas)
+  const wallsCaches = new WeakMap();
+  function wallsCacheFor(canvas) {
+    let c = wallsCaches.get(canvas);
+    if (!c) {
+      c = { root: null, rooms: new Map(), parts: {}, chainsRoot: null, chains: new Map() };
+      wallsCaches.set(canvas, c);
+    }
+    return c;
+  }
   // ---- кэш УЗЛОВ отдельных точек и трасс (частичный рендер) ----
   // Раньше drawScaled() пересобирал ВСЕ узлы точек/трасс на каждый вызов: на стресс-проекте
   // (30 комнат / 150 точек / 150 трасс) это 55-59мс при CPU ×8 — доминанта того, что осталось
@@ -125,6 +133,12 @@
     if (!c) { c = { els: new Map(), routes: new Map() }; nodeCache.set(canvas, c); }
     return c;
   }
+  const staticCaches = new WeakMap(); // canvas -> { underlay, underlaySrc, rooms: Map(id -> path) }
+  function staticCache(canvas) {
+    let c = staticCaches.get(canvas);
+    if (!c) { c = { underlay: null, underlaySrc: null, rooms: new Map() }; staticCaches.set(canvas, c); }
+    return c;
+  }
   // выкинуть из кэша узлы удалённых объектов (иначе Map росла бы весь сеанс)
   function pruneCache(map, seen) {
     if (map.size <= seen.size) return;
@@ -140,6 +154,28 @@
     return n;
   }
   const clear = (g) => { while (g.firstChild) g.removeChild(g.firstChild); };
+  /* Сверка детей узла со списком — вместо «снести всё и добавить заново». Раньше каждый
+     рендер делал clear(overlay) и заново вставлял ВСЕ узлы (кэшированные тоже): браузер
+     при этом заново считает стили и раскладку каждого из тысяч SVG-узлов, хотя почти все
+     они не изменились. Замер (20 комнат, ~2500 узлов, CPU ×4): removeChild — самая
+     дорогая строка профиля тяги комнаты, кадр 130-240 мс. Теперь узел, который уже стоит
+     на своём месте, не трогается вовсе: двигаются только новые/переставленные, лишние
+     удаляются в конце. Порядок детей — ровно порядок списка (порядок отрисовки SVG). */
+  function reconcile(parent, list) {
+    // устаревший узел убираем СРАЗУ, как только до него дошли: иначе каждый следующий
+    // узел вставлялся бы перед ним, т.е. ПЕРЕСТАВЛЯЛСЯ (снять + вставить), и замена одной
+    // точки в середине списка двигала бы все узлы после неё (поймано трассировкой: тап по
+    // точке переставлял все 177 значков и пересчитывал стили 1400 узлов)
+    const want = new Set(list);
+    let cur = parent.firstChild;
+    for (let i = 0; i < list.length; i++) {
+      const n = list[i];
+      while (cur && !want.has(cur)) { const nx = cur.nextSibling; parent.removeChild(cur); cur = nx; }
+      if (cur === n) { cur = cur.nextSibling; continue; }
+      parent.insertBefore(n, cur);
+    }
+    while (cur) { const nx = cur.nextSibling; parent.removeChild(cur); cur = nx; }
+  }
   // материал стены/перегородки -> css-класс (цвет/штрих)
   const MATMAP = { "Бетон": " mat-concrete", "Кирпич": " mat-brick", "Панель": " mat-panel", "Мягкий": " mat-soft", "Газоблок": " mat-block", "Пеноблок": " mat-block", "ГКЛ": " mat-gkl", "ПГП": " mat-pgp", "Дерево": " mat-wood" };
   const MATCLASS = (m) => MATMAP[m] || " mat-concrete";
@@ -249,30 +285,37 @@
   function draw(canvas, project, ui) {
     const G = EP.Plan.Geometry;
     ensureDefs(canvas);
-    clear(canvas.layers.underlay);
-    clear(canvas.layers.rooms);
-    if (!project) { drawScaled(canvas, project, ui); return; }
+    if (!project) { clear(canvas.layers.underlay); clear(canvas.layers.rooms); drawScaled(canvas, project, ui); return; }
+    const sc = staticCache(canvas);
 
+    // подложка: тот же <image> переиспользуется, пока она не изменилась — иначе браузер
+    // заново декодировал бы картинку (data URI на сотни КБ) на КАЖДЫЙ рендер
     const u = project.underlay;
     if (u && u.imageDataUri && u.nw && u.nh) {
-      const img = el("image", {
-        x: u.x || 0, y: u.y || 0,
-        width: u.nw * u.scale, height: u.nh * u.scale,
-        opacity: u.opacity == null ? 0.5 : u.opacity,
-        preserveAspectRatio: "none"
-      });
-      img.setAttribute("href", u.imageDataUri);
-      canvas.layers.underlay.appendChild(img);
-    }
+      const ua = { x: u.x || 0, y: u.y || 0, width: u.nw * u.scale, height: u.nh * u.scale, opacity: u.opacity == null ? 0.5 : u.opacity };
+      let img = sc.underlay;
+      if (!img || sc.underlaySrc !== u.imageDataUri) {
+        img = el("image", { preserveAspectRatio: "none" });
+        img.setAttribute("href", u.imageDataUri);
+        sc.underlay = img; sc.underlaySrc = u.imageDataUri;
+      }
+      for (const a in ua) if (img.getAttribute(a) !== String(ua[a])) img.setAttribute(a, ua[a]);
+      reconcile(canvas.layers.underlay, [img]);
+    } else { sc.underlay = null; sc.underlaySrc = null; reconcile(canvas.layers.underlay, []); }
 
+    const roomNodes = [];
     (project.rooms || []).forEach((room) => {
       if ((room.points || []).length < 3) return;
       const d = "M" + room.points.map((p) => p.x + " " + p.y).join(" L") + " Z";
-      const sel = ui && ui.selectedRoomId === room.id;
-      canvas.layers.rooms.appendChild(el("path", {
-        d, class: "ep-plan-room" + (sel ? " is-sel" : ""), "data-room": room.id
-      }));
+      const cls = "ep-plan-room" + (ui && ui.selectedRoomId === room.id ? " is-sel" : "");
+      let n = sc.rooms.get(room.id);
+      if (!n) { n = el("path", { "data-room": room.id }); sc.rooms.set(room.id, n); }
+      if (n.getAttribute("d") !== d) n.setAttribute("d", d);
+      if (n.getAttribute("class") !== cls) n.setAttribute("class", cls);
+      roomNodes.push(n);
     });
+    if (sc.rooms.size > roomNodes.length) { const live = new Set(roomNodes); sc.rooms.forEach((n, id) => { if (!live.has(n)) sc.rooms.delete(id); }); }
+    reconcile(canvas.layers.rooms, roomNodes);
 
     drawScaled(canvas, project, ui);
   }
@@ -280,8 +323,17 @@
   // ---------- масштабируемая часть: контуры, подписи, черновик, рулетка ----------
   function drawScaled(canvas, project, ui) {
     const G = EP.Plan.Geometry;
-    const g = canvas.layers.overlay;
-    if (!project) { clear(g); return; }
+    if (!project) { clear(canvas.layers.overlay); return; }
+    if (G.beginFrame) G.beginFrame(project);
+    try { drawScaledFrame(canvas, project, ui); } finally { if (G.endFrame) G.endFrame(); }
+  }
+  function drawScaledFrame(canvas, project, ui) {
+    const G = EP.Plan.Geometry;
+    const gOut = canvas.layers.overlay;
+    // узлы верхнего уровня собираются в список и в конце сверяются с тем, что уже стоит
+    // в overlay (reconcile) — неизменившиеся узлы DOM вообще не трогаются
+    const outNodes = [];
+    const g = { appendChild: (n) => { outNodes.push(n); return n; } };
     const k = canvas.cmPerPx(); // см в одном экранном пикселе
     const fs = CFG.labelPx * k, fsName = CFG.namePx * k, sw = CFG.wallPx * k, off = CFG.labelOffsetPx * k;
     // режим МОНТАЖНИКА (ui.montage, 👷 в шапке): на плане остаётся нужное на объекте —
@@ -325,6 +377,8 @@
     // при разборе LOD). Квантованное ведро зума (шаг ~26%) — пересборка только на
     // ЗАМЕТНОМ изменении зума, а не на каждом тике колеса/пинча.
     const kBucket = Math.round(Math.log2(k || 1) * 3);
+    // кэш-попадание узла: подпись совпала целиком
+    const reuse = (c, sig) => !!(c && c.sig === sig);
 
     // ---------- стены/маски/проёмы/балки/пустоты/лента — кэшируемый <g> ----------
     // Самая дорогая часть рендера (профилировано headless Chromium CPU-профилем на
@@ -343,36 +397,96 @@
     // комнаты/балки/пустоты сигнатура меняется на каждый пойнтермув, кэш промахивается
     // каждый раз — ровно то же поведение, что было до этой правки (не хуже, не лучше
     // — оптимизация целится в редактирование уже готового плана, не в его рисование).
-    const structSig = JSON.stringify([
-      project.rooms, project.openings, project.beams, project.voids, project.ledStrips,
-      project.settings && project.settings.wallThickness, project.settings && project.settings.wallMaterial,
-      // общий вынос размерной цепочки (per-wall вынос приезжает внутри project.rooms) —
-      // без него смена отступа в 🗂 Слои переиспользовала бы кэшированный узел стен
-      project.settings && project.settings.dimOffset,
-      dimsOn, labelsOn, lodDims, kBucket, labelNudges, ui && ui.noWallLabels,
-      ui && ui.selectedRoomId, ui && ui.draft, ui && ui.beamDraft, ui && ui.voidDraft,
-      EP.Plan.Rooms && EP.Plan.Rooms.selectedBeamId && EP.Plan.Rooms.selectedBeamId(),
-      EP.Plan.Rooms && EP.Plan.Rooms.selectedVoidId && EP.Plan.Rooms.selectedVoidId()
-    ]);
-    const wallsCached = wallsCache.get(canvas);
-    let wallsGroup;
-    if (wallsCached && wallsCached.sig === structSig) {
-      wallsGroup = wallsCached.node;
-    } else {
-      wallsGroup = el("g", { "data-l": "walls" });
-      buildWalls(wallsGroup);
-      wallsCache.set(canvas, { sig: structSig, node: wallsGroup });
-    }
-    clear(g);
-    g.appendChild(wallsGroup);
+    // ---------- стены/маски/проёмы/балки/пустоты/лента — кэш ПО ЧАСТЯМ ----------
+    // Самая дорогая часть рендера: <mask> на каждую комнату с проёмами, до 3 наложенных
+    // <path> на стену, G.wallOpeningSpans/G.walls. Раньше это был ОДИН кэшируемый <g> со
+    // сводной сигнатурой — и ЛЮБАЯ правка любой комнаты (тяга угла, перенос комнаты,
+    // проём) пересобирала стены ВСЕЙ квартиры на каждом кадре тяги, а браузер заново
+    // считал стили и раскладку тысячи новых узлов. Замер (20 комнат, CPU ×4): кадр тяги
+    // комнаты 150-280 мс, из них JS ~70, пересчёт стилей ~70, раскладка ~30. Теперь у
+    // КАЖДОЙ комнаты свой <g> со своей подписью, у проёмов/балок/пустот/ленты — свои
+    // группы: на кадре тяги пересобирается только то, что реально изменилось.
+    // Подпись комнаты включает СОСЕДЕЙ — комнаты и балки в пределах 4 толщин стены (ровно
+    // та дальность, на которой G.wallOpeningSpans проецирует чужой проём на общую стену)
+    // вместе с их проёмами: иначе перенесённая или удалённая дверь соседа оставила бы на
+    // этой стене старый вырез. Подписи — JSON входов, а не ручной dirty-флаг: пропустить
+    // место мутации невозможно, кэш самокорректируется на любое изменение.
+    // Черновики рисования (комнаты/балки/пустоты) живут в своих мелких группах и, как и
+    // раньше, пересобираются на каждом шаге рисования.
+    const stW = project.settings || {};
+    const roomsW = project.rooms || [];
+    const wc = wallsCacheFor(canvas);
+    const selBeamId = EP.Plan.Rooms && EP.Plan.Rooms.selectedBeamId && EP.Plan.Rooms.selectedBeamId();
+    const selVoidId = EP.Plan.Rooms && EP.Plan.Rooms.selectedVoidId && EP.Plan.Rooms.selectedVoidId();
+    const globBase = JSON.stringify([stW.wallThickness, stW.wallMaterial, dimsOn, labelsOn, lodDims, !!(ui && ui.noWallLabels)]);
+    let maxTh = Math.max(4, stW.wallThickness || 10);
+    roomsW.forEach((r) => { const t = r.wallTh; if (t) Object.keys(t).forEach((i) => { const v = Number(t[i]); if (v > maxTh) maxTh = v; }); });
+    (project.beams || []).forEach((bm) => { if (bm.width > maxTh) maxTh = bm.width; });
+    const tolW = maxTh * 4 + 10;
+    const bbOf = (pts) => {
+      if (!pts || !pts.length) return null;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      pts.forEach((q) => { if (!q) return; if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; if (q.y < y0) y0 = q.y; if (q.y > y1) y1 = q.y; });
+      return { x0: x0 - tolW, y0: y0 - tolW, x1: x1 + tolW, y1: y1 + tolW };
+    };
+    const bbHit = (a, b) => !!(a && b && a.x0 <= b.x1 && b.x0 <= a.x1 && a.y0 <= b.y1 && b.y0 <= a.y1);
+    // владелец стены проёма/точки: "beam:<id>" у перегородки, иначе id комнаты
+    const ownerOf = (wallId) => { const w = String(wallId || ""); return w.slice(0, 5) === "beam:" ? w : w.split(":")[0]; };
+    const opsByOwner = new Map();
+    (project.openings || []).forEach((o) => { const key = ownerOf(o.wallId); if (!opsByOwner.has(key)) opsByOwner.set(key, []); opsByOwner.get(key).push(o); });
+    const roomBBs = roomsW.map((r) => bbOf(r.points));
+    const beamBBs = (project.beams || []).map((bm) => ({ bm, bb: bbOf([bm.a, bm.b]) }));
+    const voidBBs = (project.voids || []).map((vd) => ({ vd, bb: bbOf([vd.a, vd.b]) }));
+    const wallParts = [];
+    const liveRoomW = new Set();
+    roomsW.forEach((room, roomI) => {
+      liveRoomW.add(room.id);
+      const nb = [];
+      roomsW.forEach((r2, j) => { if (j !== roomI && bbHit(roomBBs[roomI], roomBBs[j])) nb.push([r2.id, r2.points, r2.wallTh, opsByOwner.get(r2.id) || 0]); });
+      beamBBs.forEach((x) => { if (bbHit(roomBBs[roomI], x.bb)) nb.push(["b", x.bm.id, x.bm.a, x.bm.b, x.bm.width, opsByOwner.get("beam:" + x.bm.id) || 0]); });
+      // пустоты внутри — площадь в подписи комнаты (roomNetArea)
+      voidBBs.forEach((x) => { if (bbHit(roomBBs[roomI], x.bb)) nb.push(["v", x.vd.a, x.vd.b]); });
+      const base = JSON.stringify([room, opsByOwner.get(room.id) || 0, nb, globBase, labelNudges[roomI], !!(ui && ui.selectedRoomId === room.id)]);
+      const sig = base + "|" + kBucket;
+      const cached = wc.rooms.get(room.id);
+      if (reuse(cached, sig)) { wallParts.push(cached.node); return; }
+      const rg = el("g", { "data-rw": room.id });
+      buildRoomWalls(rg, room, roomI);
+      wc.rooms.set(room.id, { sig, base, node: rg });
+      wallParts.push(rg);
+    });
+    if (wc.rooms.size > liveRoomW.size) wc.rooms.forEach((v, id) => { if (!liveRoomW.has(id)) wc.rooms.delete(id); });
+    // остальные части: своя подпись у каждой; part(name, sig, build) — переиспользует узел
+    const part = (name, sig, build) => {
+      const c = wc.parts[name];
+      if (c && c.sig === sig) { wallParts.push(c.node); return; }
+      const pg = el("g", { "data-wp": name });
+      build(pg);
+      wc.parts[name] = { sig, node: pg };
+      wallParts.push(pg);
+    };
+    const draft = ui && ui.draft;
+    part("draft", JSON.stringify([draft && draft.points, kBucket]), buildDraft);
+    // проёмы: геометрия стены-хозяина + сами проёмы (порядок/типы — номера О1, Дв2 …)
+    const opOwners = [];
+    opsByOwner.forEach((list, key) => {
+      if (key.slice(0, 5) === "beam:") { const bm = (project.beams || []).find((b) => "beam:" + b.id === key); opOwners.push([key, bm ? [bm.a, bm.b] : 0]); }
+      else { const r = roomsW.find((x) => x.id === key); opOwners.push([key, r ? [r.points, r.wallTh] : 0]); }
+    });
+    part("ops", JSON.stringify([project.openings, opOwners, kBucket, labelsOn]), buildOpenings);
+    part("beams", JSON.stringify([project.beams, opOwners.filter((x) => x[0].slice(0, 5) === "beam:"), stW.wallThickness, stW.wallMaterial, kBucket, selBeamId, ui && ui.beamDraft]), buildBeams);
+    part("voids", JSON.stringify([project.voids, kBucket, selVoidId, ui && ui.voidDraft]), buildVoids);
+    const ledOwners = (project.ledStrips || []).map((ls) => { const r = roomsW.find((x) => x.id === ownerOf(ls.wallId)); return r ? r.points : 0; });
+    part("leds", JSON.stringify([project.ledStrips, ledOwners, kBucket]), buildLeds);
+    if (!wc.root) wc.root = el("g", { "data-l": "walls" });
+    reconcile(wc.root, wallParts);
+    g.appendChild(wc.root);
     const nc = cacheFor(canvas);
     const seenEls = new Set(), seenRoutes = new Set();
 
-    // содержимое — ДОСЛОВНО тот же код, что был раньше напрямую в g (тень имени g
-    // ниже гарантирует это без переписывания каждого вызова appendChild)
-    function buildWalls(wallsTarget) {
-      const g = wallsTarget;
-      (project.rooms || []).forEach((room, roomI) => {
+    // содержимое частей — ДОСЛОВНО тот же код, что раньше был единым buildWalls (тень
+    // имени g гарантирует это без переписывания каждого вызова appendChild)
+    function buildRoomWalls(g, room, roomI) {
         const pts = room.points || [];
         if (pts.length < 2) return;
         const sel = ui && ui.selectedRoomId === room.id;
@@ -439,8 +553,9 @@
             "text-anchor": "middle", "dominant-baseline": "middle"
           }, room.name + " · " + G.fmtArea(G.roomNetArea(project, room))));
         }
-      });
+    }
 
+    function buildDraft(g) {
       // черновик рисования (прямоугольник: 1-я точка; полигон: линия точек)
       const draft = ui && ui.draft;
       if (draft && draft.points && draft.points.length) {
@@ -463,8 +578,14 @@
         })));
       }
 
-      // проёмы: дверь (дуга) / раздвижная / окно (двойная линия) / балкон (окно+дверь)
+    }
+
+    function buildOpenings(gOps) {
+      // проёмы: дверь (дуга) / раздвижная / окно (двойная линия) / балкон (окно+дверь).
+      // Каждый — в своей группе с меткой комнаты-хозяйки стены (data-opo): при переносе
+      // комнаты её проёмы «поднимаются» вместе с ней (liftForDrag)
       (project.openings || []).forEach((op) => {
+        const g = el("g", { "data-opo": ownerOf(op.wallId) }); gOps.appendChild(g);
         const w = G.wallById(project, op.wallId);
         if (!w) return;
         const a = G.pointAtOffset(w, op.offset), b = G.pointAtOffset(w, op.offset + op.width);
@@ -510,14 +631,19 @@
         }
       });
 
+    }
+
+    function buildBeams(gBeams) {
       // балки / перемычки / перегородки — рисуются КАК СТЕНА: тем же материалом и толщиной
       const matClassOf = MATCLASS;
+      let g = gBeams;
       const wallTh = Math.max(4, (project.settings && project.settings.wallThickness) || 10);
       (project.beams || []).forEach((bm) => {
+        g = el("g", { "data-bm": bm.id }); gBeams.appendChild(g); // своя группа — метка для liftForDrag
         const bw = Math.max(4, bm.width || wallTh);
         const matB = bm.material || (project.settings && project.settings.wallMaterial) || "Бетон";
         const mc = matClassOf(matB);
-        const sel = EP.Plan.Rooms && EP.Plan.Rooms.selectedBeamId && EP.Plan.Rooms.selectedBeamId() === bm.id;
+        const sel = selBeamId === bm.id;
         // тело перегородки — заливка + штриховка материала, ЗА ВЫЧЕТОМ проёмов
         const bwWall = G.beamWall(bm);
         const bOpens = G.openingsOnWall(project, bwWall.id);
@@ -536,6 +662,7 @@
         // ручки-концы, когда балка выбрана (тянуть пальцем)
         if (sel) [bm.a, bm.b].forEach((v) => g.appendChild(el("circle", { cx: v.x, cy: v.y, r: CFG.pointPx * 1.3 * k, class: "ep-plan-beamhandle" })));
       });
+      g = gBeams;
       // черновик балки
       if (ui && ui.beamDraft && ui.beamDraft.a) {
         const d2 = ui.beamDraft;
@@ -543,10 +670,13 @@
         g.appendChild(el("circle", { cx: d2.a.x, cy: d2.a.y, r: CFG.pointPx * k, class: "ep-plan-draftpt is-first" }));
       }
 
+    }
+
+    function buildVoids(g) {
       // внутренние препятствия: вентшахта (штриховка) / мини-комната (тонкий контур)
       (project.voids || []).forEach((vd) => {
         const r = G.voidRect(vd);
-        const selV = EP.Plan.Rooms && EP.Plan.Rooms.selectedVoidId && EP.Plan.Rooms.selectedVoidId() === vd.id;
+        const selV = selVoidId === vd.id;
         const cls = "ep-plan-void ep-plan-void-" + (vd.kind === "room" ? "room" : "shaft") + (selV ? " is-sel" : "");
         const grp = el("g", { "data-pl-void": vd.id });
         const rectAttrs = { x: r.x1, y: r.y1, width: r.w, height: r.h, class: cls, "stroke-width": sw * 0.6 };
@@ -562,9 +692,13 @@
         g.appendChild(el("circle", { cx: ui.voidDraft.a.x, cy: ui.voidDraft.a.y, r: CFG.pointPx * k, class: "ep-plan-draftpt is-first" }));
       }
 
+    }
+
+    function buildLeds(gLeds) {
       // светодиодная лента — сегмент ВДОЛЬ стены (offsetA..offsetB), с небольшим отступом
       // внутрь комнаты, чтобы не сливаться с самой стеной
       (project.ledStrips || []).forEach((ls) => {
+        const g = el("g", { "data-ledo": ownerOf(ls.wallId) }); gLeds.appendChild(g);
         const lw = G.wallById(project, ls.wallId); if (!lw) return;
         const fr = G.wallFrame(project, lw);
         const d3 = 4; // см, чисто визуальный отступ от грани стены
@@ -577,9 +711,31 @@
     // размерные цепочки: привязки точек и проёмов к углам стены (слой «Размеры»);
     // lodDims — на отдалении цепочки скрыты (LOD), хит-тест двойного тапа по цифре
     // в plan-rooms.js гейтится ТЕМ ЖЕ порогом CFG.lodDimK (видимая цифра = зона тапа)
+    // Цепочка — сотни узлов (засечки, цифры) на большой квартире, а зависит только от
+    // стен комнаты, её проёмов, положения точек на её стенах и масштаба: кэшируем ПО
+    // КОМНАТАМ, как стены (тяга одной комнаты не пересобирает цепочки всей квартиры).
     if (dimsOn && lodDims) {
-      (project.rooms || []).forEach((room) => {
+      const elsByRoom = new Map();
+      (project.elements || []).forEach((e) => { if (!e.wallId) return; const key = ownerOf(e.wallId); if (!elsByRoom.has(key)) elsByRoom.set(key, []); elsByRoom.get(key).push(e.wallId + ":" + e.offset + (e.type === "junction" ? "j" : "")); });
+      const chainParts = [], liveCh = new Set();
+      roomsW.forEach((room) => {
         if ((room.points || []).length < 3) return;
+        liveCh.add(room.id);
+        const baseC = JSON.stringify([room.points, room.wallTh, room.wallDimOff, opsByOwner.get(room.id) || 0, elsByRoom.get(room.id) || 0, stW.wallThickness, stW.dimOffset]);
+        const sigC = baseC + "|" + kBucket; // засечки и цифры — по ведру масштаба, как стены
+        const cc = wc.chains.get(room.id);
+        if (reuse(cc, sigC)) { chainParts.push(cc.node); return; }
+        const cg = el("g", { "data-rc": room.id });
+        buildRoomChain(cg, room);
+        wc.chains.set(room.id, { sig: sigC, base: baseC, node: cg });
+        chainParts.push(cg);
+      });
+      if (wc.chains.size > liveCh.size) wc.chains.forEach((v, id) => { if (!liveCh.has(id)) wc.chains.delete(id); });
+      if (!wc.chainsRoot) wc.chainsRoot = el("g", { "data-l": "chains" });
+      reconcile(wc.chainsRoot, chainParts);
+      g.appendChild(wc.chainsRoot);
+    } else if (wc.chains.size) wc.chains.clear();
+    function buildRoomChain(g, room) {
         const c0 = G.centroid(room.points);
         // размеры берём от ВНУТРЕННИХ углов (работаем изнутри квартиры)
         G.walls(room).forEach((w) => {
@@ -619,7 +775,6 @@
             g.appendChild(el("text", { x: m.x + nx * 6 * k, y: m.y + ny * 6 * k, class: "ep-plan-chaintext", "font-size": fs2, "text-anchor": "middle", "dominant-baseline": "middle" }, String(sg.dist)));
           });
         });
-      });
     }
 
     // магистрали трасс (p.guides): полупрозрачное приоритетное направление —
@@ -661,7 +816,7 @@
       const selAp = FN && FN.selectedId && FN.selectedId();
       (project.appliances || []).forEach((a) => {
         const isAp = a.kind === "appl";
-        const grpA = el("g", { class: "ep-plan-furn" + (isAp ? " is-appl" : "") + (a.id === selAp ? " is-sel" : "") });
+        const grpA = el("g", { class: "ep-plan-furn" + (isAp ? " is-appl" : "") + (a.id === selAp ? " is-sel" : ""), "data-ap": a.id });
         const tr = a.rot ? `rotate(${a.rot} ${a.x} ${a.y})` : null;
         grpA.appendChild(el("rect", Object.assign({
           x: a.x - a.w / 2, y: a.y - a.d / 2, width: a.w, height: a.d, rx: 2,
@@ -732,13 +887,14 @@
         const ptsStr = (rt.points || []).map((p) => p.x + "," + p.y).join(" ");
         const routeColor = rt.color || layerColor(rt.layer);
         // подпись входов рендера ЭТОЙ трассы: совпала — переиспользуем готовый <g>
-        const rSig = ptsStr + "|" + routeColor + "|" + (rt.manual ? 1 : 0) + (inChain ? 1 : 0)
+        const rBase = ptsStr + "|" + routeColor + "|" + (rt.manual ? 1 : 0) + (inChain ? 1 : 0)
           + (otherDim ? 1 : 0) + (dimR ? 1 : 0) + (rt.id === selRoute ? 1 : 0) + (flatShadow ? 1 : 0)
-          + "|" + k + "|" + JSON.stringify(rt.throughWalls || []);
+          + "|" + JSON.stringify(rt.throughWalls || []);
+        const rSig = rBase + "|" + k;
         const rCached = nc.routes.get(rt.id);
-        if (rCached && rCached.sig === rSig) { g.appendChild(rCached.node); return; }
+        if (reuse(rCached, rSig)) { g.appendChild(rCached.node); return; }
         const rg = el("g", { "data-r": rt.id });
-        nc.routes.set(rt.id, { sig: rSig, node: rg });
+        nc.routes.set(rt.id, { sig: rSig, base: rBase, node: rg });
         if (inChain && !flatShadow) {
           const baseSw = sw * 0.8;
           [[baseSw * 7, .09], [baseSw * 4.4, .17], [baseSw * 2.6, .30]].forEach(([w, op]) => {
@@ -808,13 +964,31 @@
       // считаются от k напрямую, приблизительное совпадение дало бы «плывущие» символы при
       // зуме — тот же баг, что уже ловили на кэше стен.
       const cc0 = elem.circuitId && circ(elem.circuitId);
-      const eSig = JSON.stringify([elem, cx, cy, rot, k, elem.id === selId, bad.has(elem.id),
+      const eBase = JSON.stringify([elem, cx, cy, rot, elem.id === selId, bad.has(elem.id),
         gost, design, labelsOn, lodQf, lodDims, cc0 ? [cc0.color, cc0.name] : null,
-        layerColor2(elem.layer), circDim(elem.circuitId), montage]);
+        layerColor2(elem.layer), circDim(elem.circuitId), montage, real]);
+      const eSig = eBase + "|" + k;
       const eCached = nc.els.get(elem.id);
-      if (eCached && eCached.sig === eSig) { g.appendChild(eCached.node); return; }
-      const grp = el("g", { class: "ep-plan-el" + (elem.status === "mounted" ? " is-done" : "") + (elem.status === "work" ? " is-work" : "") + (elem.status === "existing" ? " is-exist" : "") + (elem.id === selId ? " is-sel" : "") });
-      nc.els.set(elem.id, { sig: eSig, node: grp });
+      if (reuse(eCached, eSig)) { g.appendChild(eCached.node); return; }
+      // Изменился ТОЛЬКО масштаб (конец зума): значок не пересобираем, а масштабируем уже
+      // готовый узел вокруг его точки. Все размеры значка заданы как «точка + c·k» (круг,
+      // буква, подпись линии, h=NNN, рамка блока, ГОСТ-символ), так что масштаб k/kb вокруг
+      // (cx, cy) даёт ровно ту же геометрию, что и пересборка при новом k. Раньше конец
+      // каждого пинча пересобирал все значки разом (замер 20 комнат, CPU ×4: ~260 мс рывка).
+      // Не масштабируются значки с геометрией от ДРУГОЙ точки (выноска «Дизайна» к стене,
+      // распайка на стене, сдвинутая подпись высоты, реальная рамка «1:1») — те пересобираются.
+      if (eCached && eCached.base === eBase && eCached.scalable) {
+        const sc = k / eCached.kb;
+        if (Math.abs(sc - 1) < 1e-9) eCached.node.removeAttribute("transform");
+        else eCached.node.setAttribute("transform", "translate(" + cx + " " + cy + ") scale(" + sc + ") translate(" + (-cx) + " " + (-cy) + ")");
+        eCached.sig = eSig;
+        g.appendChild(eCached.node); return;
+      }
+      // data-e / data-eo — метки для «подъёма» на время тяги (liftForDrag): какая это точка
+      // и на стене какой комнаты она стоит (едет вместе с комнатой при её переносе)
+      const grp = el("g", Object.assign({ class: "ep-plan-el" + (elem.status === "mounted" ? " is-done" : "") + (elem.status === "work" ? " is-work" : "") + (elem.status === "existing" ? " is-exist" : "") + (elem.id === selId ? " is-sel" : ""), "data-e": elem.id }, elem.wallId ? { "data-eo": ownerOf(elem.wallId) } : {}));
+      const scalable = !(design && pt && pt.wall) && !(real && elem.wallId) && !elem.hOff && !(elem.type === "junction" && elem.wallId);
+      nc.els.set(elem.id, { sig: eSig, base: eBase, node: grp, kb: k, scalable });
       if (elem.type === "junction") {
         if (gost) {
           // ГОСТ: соединительная коробка — закрашенный кружок
@@ -1066,7 +1240,7 @@
       // габарит щита = реальный корпус (мм→см), иначе типовой квадрат
       const wc = pbox && pbox.wmm ? pbox.wmm / 10 : 28;
       const hc = pbox && pbox.hmm ? pbox.hmm / 10 : 20;
-      const grp = el("g", { class: "ep-plan-panel" + (pn.id === selId ? " is-sel" : "") });
+      const grp = el("g", { class: "ep-plan-panel" + (pn.id === selId ? " is-sel" : ""), "data-pn": pn.id });
       grp.appendChild(el("rect", { x: pn.x - wc / 2, y: pn.y - hc / 2, width: wc, height: hc, rx: 2, "stroke-width": sw * 0.8 }));
       if (gost) {
         // ГОСТ: щиток — прямоугольник, половина закрашена (по диагонали)
@@ -1145,7 +1319,60 @@
         }, EP.Plan.Geometry.fmtLen(EP.Plan.Geometry.dist(r.a, r.b))));
       }
     }
+    reconcile(gOut, outNodes);
   }
+
+  // ---------- «подъём» объекта на время тяги ----------
+  /* Жёсткий перенос (комната целиком со всем, что в ней; пустота; заметка; мебель) раньше
+     перерисовывал сцену на КАЖДОМ кадре тяги: пересборка самой комнаты, её соседей, точек на
+     её стенах, плюс пересчёт стилей, раскладка и перерисовка ВСЕГО svg — на большой квартире
+     120-230 мс на кадр (CPU ×4), то есть 4-8 кадров в секунду. Теперь на старте тяги узлы
+     объекта КОПИРУЮТСЯ в отдельный прозрачный svg поверх холста (свой композитный слой,
+     will-change), оригиналы прячутся, и каждый кадр меняется ТОЛЬКО CSS-transform этого
+     слоя: браузер сдвигает готовую картинку, не трогая DOM, стили и отрисовку. На
+     отпускании слой снимается, и сцена рисуется один раз — уже в новом положении.
+     Маски вырезов проёмов у копий переименовываются: иначе url(#id) нашёл бы маску
+     оригинала, а он на время тяги спрятан. */
+  const lifts = new WeakMap(); // canvas -> { px, nodes, k }
+  function liftForDrag(canvas, selectors) {
+    dropLift(canvas);
+    const svg = canvas && canvas.svg;
+    if (!svg || !svg.parentNode || !svg.querySelectorAll) return false;
+    const found = [];
+    (selectors || []).forEach((sel) => { try { svg.querySelectorAll(sel).forEach((n) => { if (found.indexOf(n) === -1) found.push(n); }); } catch (e) {} });
+    // вложенный узел, чей предок уже выбран, — копируется вместе с предком
+    const nodes = found.filter((n) => !found.some((m) => m !== n && m.contains(n)));
+    if (!nodes.length) return false;
+    nodes.sort((a, b) => (a.compareDocumentPosition(b) & 4 ? -1 : 1)); // порядок документа = порядок перекрытия
+    const px = el("svg", { class: "ep-plan-svg ep-plan-dragproxy", viewBox: svg.getAttribute("viewBox") || "", "aria-hidden": "true" });
+    nodes.forEach((n) => {
+      const c = n.cloneNode(true);
+      c.querySelectorAll("mask[id]").forEach((m) => {
+        const old = m.getAttribute("id"), nu = old + "-lift";
+        m.setAttribute("id", nu);
+        c.querySelectorAll("[mask]").forEach((x) => { if (x.getAttribute("mask") === "url(#" + old + ")") x.setAttribute("mask", "url(#" + nu + ")"); });
+      });
+      px.appendChild(c);
+      n.setAttribute("visibility", "hidden");
+    });
+    svg.parentNode.appendChild(px);
+    lifts.set(canvas, { px, nodes, k: canvas.cmPerPx() || 1 });
+    return true;
+  }
+  function moveLift(canvas, dxCm, dyCm) {
+    const L = lifts.get(canvas);
+    if (!L) return false;
+    L.px.style.transform = "translate(" + (dxCm / L.k) + "px," + (dyCm / L.k) + "px)";
+    return true;
+  }
+  function dropLift(canvas) {
+    const L = canvas && lifts.get(canvas);
+    if (!L) return;
+    lifts.delete(canvas);
+    if (L.px.parentNode) L.px.parentNode.removeChild(L.px);
+    L.nodes.forEach((n) => n.removeAttribute("visibility"));
+  }
+  const isLifted = (canvas) => !!(canvas && lifts.get(canvas));
 
   // ---------- живой предпросмотр снапа (наведение мышью/пером до тапа) ----------
   // Отдельный узел в overlay, обновляется атрибутами БЕЗ полного renderScaled —
@@ -1215,6 +1442,7 @@
   EP.Plan = EP.Plan || {};
   EP.Plan.Render = {
     draw, drawScaled, CFG, hoverPreview, clearHoverPreview,
+    liftForDrag, moveLift, dropLift, isLifted, reconcile,
     // реальные габариты и «лица» приборов — общие для плана, развёртки, PDF и DXF.
     // Сами таблицы FRAME_MM/FRAME_H_MM наружу не отдаём: снаружи их не читал никто,
     // ширина и высота рамки берутся через frameWmm/frameWcm/frameHcm (там же

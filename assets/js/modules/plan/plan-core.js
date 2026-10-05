@@ -19,7 +19,7 @@
     gridStep: 10,         // см — шаг привязки
     snapEnabled: true,
     undoLimit: 40,
-    cloudDebounceMs: 1500,
+    cloudDebounceMs: 2500,
     cloudTimeoutMs: 4000, // чтение из облака не должно подвешивать открытие проекта
     tombMax: 200,         // сколько надгробий помним (кап на размер индекса в облаке)
     persistDebounceMs: 400, // localStorage-запись коалесируется (см. persist() ниже)
@@ -501,9 +501,24 @@
     });
     return Object.keys(m).map((k) => m[k]).sort((x, y) => y.at - x.at).slice(0, DEFAULTS.tombMax);
   }
+  // Отправка в облако. Без сети НЕ отправляем вовсе: Firestore положил бы весь проект в
+  // свою очередь в памяти — это 50-100 мс работы главного потока на каждую правку (замер
+  // CPU ×4, большой проект) ради записи, которая всё равно уйдёт только при появлении сети
+  // и потеряется, если приложение закроют раньше. Досылку делает cloudPushPending — на
+  // вход в аккаунт и на событие online (по меткам syncedAt, ничего не теряется).
+  // С сетью — после паузы в правках и в простое главного потока (requestIdleCallback),
+  // чтобы кодирование документа не попадало на жест пальцем.
   function cloudPushSoon() {
     clearTimeout(S.cloudTimer);
-    S.cloudTimer = setTimeout(async () => {
+    S.cloudTimer = setTimeout(() => {
+      S.cloudTimer = 0;
+      if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+      if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(() => cloudPushNow(), { timeout: 2000 });
+      else cloudPushNow();
+    }, DEFAULTS.cloudDebounceMs);
+  }
+  async function cloudPushNow() {
+    {
       if (!cloudReady()) return;
       const p = S.project;
       if (p) {
@@ -523,7 +538,7 @@
         }
       }
       EP.Cloud.push(CLOUD_INDEX, { rows: S.index, deleted: S.tombs || [], updatedAt: now() });
-    }, DEFAULTS.cloudDebounceMs);
+    }
   }
   async function cloudPullIndex() {
     if (!cloudReady()) return;
@@ -1081,6 +1096,10 @@
   try {
     document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushPersist(); });
     window.addEventListener("pagehide", flushPersist);
+    // нативная сборка: уход приложения в фон (см. native-shell.js) — записать сразу и,
+    // если есть сеть, отправить в облако, не дожидаясь отложенного таймера
+    window.addEventListener("ep:app-pause", () => { flushPersist(); if (S.cloudTimer) { clearTimeout(S.cloudTimer); S.cloudTimer = 0; cloudPushNow(); } });
+    window.addEventListener("ep:app-resume", () => { setTimeout(() => { if (typeof cloudPushPending === "function") cloudPushPending(); }, 800); });
   } catch (e) {}
 
   // ---------- undo/redo (снимки состояния) ----------

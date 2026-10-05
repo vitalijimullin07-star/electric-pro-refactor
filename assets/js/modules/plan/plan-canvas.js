@@ -86,14 +86,38 @@
     let committed = null;   // {x,y,w,h} — под этот вид отрисована сцена (viewBox)
     let liveT = null;       // {tx,ty,s} — текущий CSS-transform svg; null — его нет
     let commitTimer = 0;    // отложенная фиксация (пауза колеса)
+    // Прямоугольник svg БЕЗ живого сдвига — замеряется ОДИН раз в начале жеста. Раньше
+    // toWorld на каждом шаге пинча/колеса читал getBoundingClientRect, а это сразу после
+    // записи transform: браузер синхронно пересчитывал раскладку, и при смене масштаба —
+    // раскладку всего SVG-текста (замер CPU ×4: ~20 мс на КАЖДЫЙ шаг зума). Пока идёт жест,
+    // раскладка страницы не меняется (меняется только transform), так что одного замера
+    // достаточно; любая фиксация вида (apply) замер сбрасывает.
+    let restRect = null;
+    function measureRest() {
+      const r = svg.getBoundingClientRect();
+      let left = r.left, top = r.top, w = r.width, h = r.height;
+      if (liveT) { left -= liveT.tx; top -= liveT.ty; w /= liveT.s; h /= liveT.s; }
+      return { left, top, w, h };
+    }
+    function liveTransform(tx, ty, s) {
+      if (!liveT && !restRect) restRect = measureRest(); // до первой записи transform — без сдвига
+      liveT = { tx: tx, ty: ty, s: s };
+      wrap.style.transform = "translate(" + tx + "px," + ty + "px) scale(" + s + ")";
+    }
+    // живой вид в пределах того, что можно показать сдвигом уже нарисованной картинки?
+    function liveFits(v) {
+      if (!committed || !cw) return false;
+      const s = committed.w / v.w, k = cw / v.w;
+      const tx = (committed.x - v.x) * k, ty = (committed.y - v.y) * k;
+      return s >= 0.5 && s <= 2 && Math.abs(tx) <= cw * 0.5 && Math.abs(ty) <= (ch || cw) * 0.5;
+    }
     function applyLive() {
       if (!committed || !cw) { apply(); return; }
       const s = committed.w / view.w;
       const k = cw / view.w; // экранных px на см в живом виде
       const tx = (committed.x - view.x) * k, ty = (committed.y - view.y) * k;
       if (!(s >= 0.5 && s <= 2) || Math.abs(tx) > cw * 0.5 || Math.abs(ty) > (ch || cw) * 0.5) { apply(); return; }
-      liveT = { tx: tx, ty: ty, s: s };
-      wrap.style.transform = "translate(" + tx + "px," + ty + "px) scale(" + s + ")";
+      liveTransform(tx, ty, s);
       commitSoon(140); // палец остановился — дорисуем открывшиеся края
     }
     function commitSoon(ms) {
@@ -102,6 +126,7 @@
     }
     function apply() {
       clearTimeout(commitTimer); commitTimer = 0;
+      restRect = null;
       committed = { x: view.x, y: view.y, w: view.w, h: view.h };
       // viewBox и сброс transform — в ОДНОМ кадре: иначе сцена на миг «прыгнула» бы
       if (liveT) { liveT = null; wrap.style.transform = ""; }
@@ -111,12 +136,70 @@
     }
     function pxToCm() { if (!cw) measureBox(); return view.w / Math.max(1, cw); } // читает КЭШ (см. measureBox), не форсит reflow
     function toWorld(clientX, clientY) {
-      const r = svg.getBoundingClientRect();
       // во время жеста svg сдвинут/масштабирован transform'ом, а живой вид (view)
-      // описывает НЕсдвинутый прямоугольник холста — восстанавливаем его
-      let left = r.left, top = r.top, w = r.width, h = r.height;
-      if (liveT) { left -= liveT.tx; top -= liveT.ty; w /= liveT.s; h /= liveT.s; }
-      return { x: view.x + (clientX - left) * (view.w / w), y: view.y + (clientY - top) * (view.h / h) };
+      // описывает НЕсдвинутый прямоугольник холста — берём его (замер начала жеста)
+      const r = (liveT && restRect) ? restRect : measureRest();
+      return { x: view.x + (clientX - r.left) * (view.w / r.w), y: view.y + (clientY - r.top) * (view.h / r.h) };
+    }
+
+    /* ---------- плавность: анимация вида и инерция пана ----------
+       Программные переходы (двойной тап, «вписать», подвод вида над шторкой) раньше
+       прыгали в новую точку за один кадр. Теперь вид плавно доезжает за ~220 мс тем же
+       живым transform'ом, что и жесты (без перерисовки сцены на кадре), и фиксируется
+       один раз в конце. Пан после быстрого броска пальцем докатывается по инерции с
+       затуханием — как карта в телефоне. Если цель дальше, чем можно показать сдвигом
+       готовой картинки (масштаб ×2 / полэкрана), — переход мгновенный, как раньше.
+       prefers-reduced-motion — всегда мгновенно. */
+    const reduceMotion = (() => { try { return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches); } catch (e) { return false; } })();
+    let anim = 0, inertia = 0;
+    function stopMotion() {
+      if (anim) { cancelAnimationFrame(anim); anim = 0; }
+      if (inertia) { cancelAnimationFrame(inertia); inertia = 0; }
+    }
+    function animateTo(target, ms) {
+      stopMotion();
+      if (reduceMotion || typeof requestAnimationFrame !== "function" || !liveFits(target)) { Object.assign(view, target); apply(); return; }
+      const from = { ...view }, t0 = performance.now(), dur = ms || 220;
+      const step = (now) => {
+        const t = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - t, 3); // ease-out
+        if (t >= 1) { anim = 0; Object.assign(view, target); apply(); return; }
+        const w = from.w * Math.pow(target.w / from.w, e); // масштаб — геометрически, без «рывка» на зуме
+        const cx = from.x + from.w / 2 + ((target.x + target.w / 2) - (from.x + from.w / 2)) * e;
+        const cy = from.y + from.h / 2 + ((target.y + target.h / 2) - (from.y + from.h / 2)) * e;
+        view.w = w; view.h = w * (from.h / from.w);
+        view.x = cx - view.w / 2; view.y = cy - view.h / 2;
+        applyLive();
+        anim = requestAnimationFrame(step);
+      };
+      anim = requestAnimationFrame(step);
+    }
+    // скорость пана по последним ~100 мс движения пальца (px/мс)
+    let panTrail = [];
+    function trackPan(x, y) {
+      const t = performance.now();
+      panTrail.push({ t, x, y });
+      while (panTrail.length > 2 && t - panTrail[0].t > 100) panTrail.shift();
+    }
+    function startInertia() {
+      const tr = panTrail; panTrail = [];
+      if (reduceMotion || typeof requestAnimationFrame !== "function" || tr.length < 2) return false;
+      const a = tr[0], b = tr[tr.length - 1], now = performance.now();
+      if (now - b.t > 60 || b.t - a.t < 8) return false; // палец остановился перед отрывом — без броска
+      let vx = (b.x - a.x) / (b.t - a.t), vy = (b.y - a.y) / (b.t - a.t);
+      if (Math.hypot(vx, vy) < 0.25) return false;
+      let last = now;
+      const step = (t) => {
+        const dt = Math.min(40, Math.max(1, t - last)); last = t;
+        const decay = Math.exp(-dt / 230); // затухание: за ~0.7 с почти до нуля
+        vx *= decay; vy *= decay;
+        const k = pxToCm();
+        view.x -= vx * dt * k; view.y -= vy * dt * k;
+        applyLive();
+        if (Math.hypot(vx, vy) < 0.02) { inertia = 0; if (liveT) apply(); return; }
+        inertia = requestAnimationFrame(step);
+      };
+      inertia = requestAnimationFrame(step);
+      return true;
     }
 
     // ---------- сетка (адаптивный шаг) ----------
@@ -186,6 +269,8 @@
     svg.addEventListener("pointerdown", (e) => {
       if (e.pointerType === "pen") armPen();
       else if (e.pointerType === "touch" && penActive) return; // ладонь при работе стилусом
+      stopMotion(); // новое касание ловит докатывающийся вид на месте
+      panTrail = [];
       svg.setPointerCapture(e.pointerId);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pts.size === 1) {
@@ -245,11 +330,11 @@
             if (downClient && Math.hypot(e.clientX - downClient.x, e.clientY - downClient.y) < CFG.dragStartPx) return;
             // хендлер может отказаться (вернуть false) — тогда жест панорамирует
             const res = dragHandler(0, 0, "start", toWorld((downClient || e).x, (downClient || e).y), { dbl: dblDown });
-            if (res === false) { dragVeto = true; userAdjusted = true; view.x -= dx; view.y -= dy; applyLive(); }
+            if (res === false) { dragVeto = true; userAdjusted = true; view.x -= dx; view.y -= dy; trackPan(e.clientX, e.clientY); applyLive(); }
             else { dragMoved = true; clearLongPress(); dragHandler(dx, dy, "move"); }
           } else dragHandler(dx, dy, "move");
         }
-        else { userAdjusted = true; view.x -= dx; view.y -= dy; applyLive(); }
+        else { userAdjusted = true; view.x -= dx; view.y -= dy; trackPan(e.clientX, e.clientY); applyLive(); }
         if (tapStart && Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y) > CFG.tapMaxPx) { tapStart = null; clearLongPress(); }
       }
     });
@@ -260,9 +345,13 @@
     function endPointer(e) {
       clearLongPress();
       pts.delete(e.pointerId);
+      // после пинча оставшийся палец не должен «бросить» вид — траекторию сбрасываем
+      if (pinch) panTrail = [];
       if (pts.size < 2) pinch = null;
-      // жест закончен — фиксируем живой вид в viewBox (одна перерисовка на весь жест)
-      if (pts.size === 0 && liveT) apply();
+      // жест закончен: быстрый бросок — докатываем по инерции, иначе фиксируем живой вид
+      // в viewBox (одна перерисовка на весь жест)
+      if (pts.size === 0 && !(dragHandler && dragMoved) && startInertia()) { /* зафиксирует сама инерция */ }
+      else if (pts.size === 0 && liveT) apply();
       if (dragHandler && dragMoved && pts.size === 0) { dragMoved = false; dragHandler(0, 0, "end"); }
       if (tapStart && tapStart.id === e.pointerId) {
         const dt = Date.now() - tapStart.t;
@@ -278,11 +367,15 @@
             // иначе зум к точке касания (первый тап уже отработал как обычно,
             // задержки на распознавание двойного тапа НЕТ — второй просто переосмыслен)
             userAdjusted = true;
+            // цель зума считаем на копии вида, а доезжаем до неё плавно (animateTo)
+            const v0 = { ...view };
             view.w *= CFG.dblTapZoomK; view.h *= CFG.dblTapZoomK;
             clampView();
             const wc2 = toWorld(e.clientX, e.clientY);
             view.x += wc.x - wc2.x; view.y += wc.y - wc2.y;
-            apply();
+            const target = { ...view };
+            Object.assign(view, v0);
+            animateTo(target, 240);
             lastTapInfo = null;
           } else {
             if (cb.tap) cb.tap(toWorld(e.clientX, e.clientY), e);
@@ -300,6 +393,7 @@
 
     svg.addEventListener("wheel", (e) => {
       e.preventDefault();
+      stopMotion();
       userAdjusted = true;
       const k = e.deltaY > 0 ? 1.12 : 1 / 1.12;
       const wc = toWorld(e.clientX, e.clientY);
@@ -316,7 +410,8 @@
     // «вписать дефолтный вид»): используется ниже, чтобы пережить «устаканивание»
     // вёрстки контейнера сразу после монтирования (см. resize()).
     let lastFit = null;
-    function fit(bbox, padRatio) {
+    function fit(bbox, padRatio, opts) {
+      stopMotion();
       lastFit = { bbox, padRatio };
       const pad = padRatio == null ? 0.15 : padRatio;
       const b = bbox && bbox.w > 0 && bbox.h > 0 ? bbox : { x: CFG.startView.x, y: CFG.startView.y, w: CFG.startView.w, h: CFG.startView.h };
@@ -324,7 +419,13 @@
       const aspect = ch > 0 ? cw / ch : 1.5;
       let w = b.w * (1 + pad * 2), h = b.h * (1 + pad * 2);
       if (w / h < aspect) w = h * aspect; else h = w / aspect;
-      view.x = b.x + b.w / 2 - w / 2; view.y = b.y + b.h / 2 - h / 2; view.w = w; view.h = h;
+      const target = { x: b.x + b.w / 2 - w / 2, y: b.y + b.h / 2 - h / 2, w: w, h: h };
+      if (opts && opts.animate && committed) {
+        const v0 = { ...view }; Object.assign(view, target); clampView();
+        const t2 = { ...view }; Object.assign(view, v0);
+        animateTo(t2, 260); return;
+      }
+      Object.assign(view, target);
       clampView(); apply();
     }
 
@@ -371,11 +472,17 @@
       getView: () => ({ ...view }),
       cmPerPx: pxToCm,
       toWorld, fit, redraw: apply,
-      panBy: (dx, dy) => { view.x += dx; view.y += dy; apply(); }, // сдвиг вида в мировых см (программный, не жестом)
+      // сдвиг вида в мировых см (программный, не жестом); {animate:true} — плавно доехать
+      panBy: (dx, dy, opts) => {
+        if (opts && opts.animate) { const t = { ...view, x: view.x + dx, y: view.y + dy }; animateTo(t, 240); return; }
+        stopMotion(); view.x += dx; view.y += dy; apply();
+      },
+      isMoving: () => !!(anim || inertia || liveT),
       // ЖЁСТКО задать масштаб (см в одном экранном пикселе), сохраняя центр вида —
       // нужно для истинного 1:1 (кнопка «1:1» в шапке плана): 1 CSS-пиксель по
       // спецификации CSS = 1/96 дюйма, значит 1см = 96/2.54 px, т.е. cmPerPx = 2.54/96.
       setCmPerPx: (v) => {
+        stopMotion();
         const t = Number(v);
         if (!isFinite(t) || t <= 0 || !cw) return;
         const cxw = view.x + view.w / 2, cyw = view.y + view.h / 2;
@@ -393,7 +500,7 @@
       onHoverEnd: (fn) => { cb.hoverEnd = fn; }, // указатель ушёл с холста — убрать предпросмотр
       onLongPress: (fn) => { cb.longPress = fn; }, // (worldPt, e) — держали палец на месте, e.clientX/Y для позиционирования UI
       setDragHandler: (fn) => { dragHandler = fn || null; dragMoved = false; },
-      destroy: () => { clearTimeout(commitTimer); if (ro) ro.disconnect(); if (wrap.parentNode) wrap.parentNode.removeChild(wrap); }
+      destroy: () => { stopMotion(); clearTimeout(commitTimer); if (ro) ro.disconnect(); if (wrap.parentNode) wrap.parentNode.removeChild(wrap); }
     };
   }
 

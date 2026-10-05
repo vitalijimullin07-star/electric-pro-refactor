@@ -205,11 +205,30 @@
   function clearSolo() { if (R.soloCircuit) { R.soloCircuit = null; renderScene(); } }
   function renderScene() {
     if (!R.canvas || !EP.Plan.Render) return;
+    // во время «подъёма» (жёсткая тяга — см. liftNodes) сцену не трогаем: объект нарисован
+    // копией поверх холста, и перерисовка оригинала дала бы двойное изображение. Сцена
+    // рисуется сразу после снятия подъёма (dropLiftNodes зовёт renderScene сам).
+    if (EP.Plan.Render.isLifted && EP.Plan.Render.isLifted(R.canvas)) return;
     EP.Plan.Render.draw(R.canvas, G().floorScoped(core().project), ui());
-    const hint = $("#ep-plan-modehint");
-    if (hint) hint.textContent = T.modeHint[R.mode] || "";
+    // текст подсказки — только если поменялся: запись даже того же текста заменяет узел
+    // и заставляет браузер заново раскладывать и перерисовывать шапку на каждом рендере
+    const hint = $("#ep-plan-modehint"), ht = T.modeHint[R.mode] || "";
+    if (hint && hint.textContent !== ht) hint.textContent = ht;
   }
-  function renderScaled() { if (R.canvas && EP.Plan.Render) EP.Plan.Render.drawScaled(R.canvas, G().floorScoped(core().project), ui()); }
+  // «Подъём» объекта на время тяги — общий для всех жёстких переносов (комната, пустота,
+  // заметка, мебель): каждый кадр двигается только CSS-transform копии, без перерисовки
+  // сцены (подробности — liftForDrag в plan-render.js). false — подъём не удался (узлов не
+  // нашлось), тогда тяга работает по-старому, перерисовкой через rAF.
+  function liftNodes(selectors) { return !!(R.canvas && EP.Plan.Render && EP.Plan.Render.liftForDrag && EP.Plan.Render.liftForDrag(R.canvas, selectors)); }
+  function moveLiftBy(dx, dy) { return !!(R.canvas && EP.Plan.Render && EP.Plan.Render.moveLift && EP.Plan.Render.moveLift(R.canvas, dx, dy)); }
+  function dropLiftNodes() {
+    if (R.canvas && EP.Plan.Render && EP.Plan.Render.isLifted && EP.Plan.Render.isLifted(R.canvas)) { EP.Plan.Render.dropLift(R.canvas); renderScene(); }
+  }
+  function renderScaled() {
+    if (!R.canvas || !EP.Plan.Render) return;
+    if (EP.Plan.Render.isLifted && EP.Plan.Render.isLifted(R.canvas)) return;
+    EP.Plan.Render.drawScaled(R.canvas, G().floorScoped(core().project), ui());
+  }
   // перерисовка не чаще кадра — тяга пальцем остаётся плавной
   let sceneRaf = 0;
   function renderSceneSoon() {
@@ -646,7 +665,18 @@
   // скроллится внутри себя — фиксированная кнопка в углу висела бы поверх её
   // содержимого на любой позиции скролла, паддинга снизу тут не хватает). Свёрнутая
   // шторка / «во весь экран» — кнопка на своём CSS-месте в правом нижнем углу.
+  // Положение кнопки читает высоту шторки (offsetHeight) — а зовётся сразу после записи
+  // её содержимого (openSheet), то есть заставляла браузер раскладывать страницу посреди
+  // обработчика тапа (замер CPU ×4: до 50 мс на открытии редактора точки). Теперь замер —
+  // в следующем кадре (requestAnimationFrame): там раскладка всё равно происходит, и
+  // несколько вызовов подряд (открытие + наблюдатель размера) сливаются в один.
+  let sheetBtnRaf = 0;
   function placeSheetBtn() {
+    if (sheetBtnRaf) return;
+    const raf = window.requestAnimationFrame || ((f) => setTimeout(f, 16));
+    sheetBtnRaf = raf(() => { sheetBtnRaf = 0; placeSheetBtnNow(); });
+  }
+  function placeSheetBtnNow() {
     const s = sheet(), b = sheetBtn(); if (!s || !b) return;
     const overlay = s.classList.contains("ep-plan-sheet-full") || s.classList.contains("is-landscape-forced");
     // на широком экране шторка — БОКОВАЯ панель (position:static, plan.css @media
@@ -776,7 +806,19 @@
   // редактируемый объект может оказаться под шторкой (она до 60% высоты холста
   // снизу) — сдвигаем вид вверх, чтобы точку/комнату было видно, пока её правишь.
   // Вызывается ПОСЛЕ openSheet(...) с мировой точкой объекта.
+  // Подвести вид так, чтобы объект не прятался под шторкой. Замер прямоугольников — в
+  // следующем кадре (как у placeSheetBtn: сразу после записи шторки он заставлял браузер
+  // раскладывать страницу посреди тапа), а сам сдвиг — плавный (panBy с анимацией живым
+  // transform'ом, без перерисовки сцены на кадре), а не прыжок вида.
+  let evRaf = 0, evPt = null;
   function ensureVisibleAboveSheet(worldPt) {
+    if (!R.canvas || !worldPt) return;
+    evPt = worldPt;
+    if (evRaf) return;
+    const raf = window.requestAnimationFrame || ((f) => setTimeout(f, 16));
+    evRaf = raf(() => { evRaf = 0; const pt = evPt; evPt = null; ensureVisibleNow(pt); });
+  }
+  function ensureVisibleNow(worldPt) {
     if (!R.canvas || !worldPt) return;
     const host = document.querySelector("#ep-plan-canvas"); if (!host) return;
     const hb = host.getBoundingClientRect();
@@ -788,7 +830,7 @@
     const margin = 40; // px запаса над шторкой
     if (sy < sheetTopScreen - margin) return; // и так видно — не дёргаем вид
     const dyPx = sy - (sheetTopScreen - margin);
-    R.canvas.panBy(0, dyPx * R.canvas.cmPerPx());
+    R.canvas.panBy(0, dyPx * R.canvas.cmPerPx(), { animate: true });
   }
 
   // ---------- живой предпросмотр снапа при наведении (мышь/S-Pen до тапа) ----------
@@ -1233,16 +1275,25 @@
         if (!G().pointInPolygon(start, room.points || [])) return false; // мимо комнаты — пан
         snap = roomMoveSnapshot(p, room); acc = { x: 0, y: 0 };
         c.commit();
+        // комната едет вместе со всем, что на ней и в ней: стены, цепочки, проёмы, лента,
+        // точки на её стенах, свободные точки/щиты/балки/пустоты внутри (как в applyRoomMove)
+        const id = room.id, sel = ["[data-room=\"" + id + "\"]", "[data-rw=\"" + id + "\"]", "[data-rc=\"" + id + "\"]", "[data-opo=\"" + id + "\"]", "[data-ledo=\"" + id + "\"]", "[data-eo=\"" + id + "\"]"];
+        snap.at.els.forEach((e) => sel.push("[data-e=\"" + e.id + "\"]"));
+        snap.at.panels.forEach((pn) => sel.push("[data-pn=\"" + pn.id + "\"]"));
+        snap.at.beams.forEach((bm) => sel.push("[data-bm=\"" + bm.id + "\"]"));
+        snap.at.voids.forEach((vd) => sel.push("[data-pl-void=\"" + vd.id + "\"]"));
+        liftNodes(sel);
         return;
       }
       if (!snap) return;
       if (phase === "move") {
         acc.x += dx; acc.y += dy;
         applyRoomMove(snap, acc.x, acc.y); // от ИСХОДНОГО положения — без накопления дрейфа
-        renderSceneSoon();
+        if (!moveLiftBy(acc.x, acc.y)) renderSceneSoon();
       } else if (phase === "end") {
         const d = snapRoomMove(p, snap, acc.x, acc.y);
         applyRoomMove(snap, d.x, d.y);
+        dropLiftNodes();
         c.persist("room-move");
         snap = null; acc = null;
         R.mvLast = d;
@@ -1552,7 +1603,7 @@
   // только он. Тот же veto-паттерн, что у балки/комнаты: жест НЕ на заметке
   // возвращает false и остаётся панорамой холста.
   function enableNoteDrag(noteId) {
-    let mode = null, base = null, accX = 0, accY = 0;
+    let mode = null, base = null, accX = 0, accY = 0, lifted = false;
     // (dx, dy, phase, start) с ПРИРАЩЕНИЕМ в dx/dy — см. комментарий у enableDimDrag.
     R.canvas.setDragHandler((dx, dy, phase, start) => {
       const c = core(), p = c.project;
@@ -1566,6 +1617,9 @@
         base = { x: nt.x, y: nt.y, ax: nt.ax, ay: nt.ay };
         accX = 0; accY = 0;
         c.commit();
+        // заметка целиком (текст со стрелкой) — жёсткий перенос, поднимаем копию;
+        // тяга кончика стрелки меняет форму — там перерисовка через rAF, как раньше
+        lifted = mode === "all" && liftNodes(["[data-nt=\"" + nt.id + "\"]"]);
         return;
       }
       if (phase === "move" && mode) {
@@ -1575,7 +1629,7 @@
           nt.x = base.x + accX; nt.y = base.y + accY;
           if (base.ax != null) { nt.ax = base.ax + accX; nt.ay = base.ay + accY; }   // стрелка едет вместе
         }
-        renderSceneSoon();
+        if (!(lifted && moveLiftBy(accX, accY))) renderSceneSoon();
       } else if (phase === "end" && mode) {
         const step = p.settings.gridStep || 10;
         if (mode === "tip") { nt.ax = G().snap(nt.ax, step); nt.ay = G().snap(nt.ay, step); }
@@ -1587,6 +1641,7 @@
           if (nt.ax != null) { nt.ax += sx - nt.x; nt.ay += sy - nt.y; }
           nt.x = sx; nt.y = sy;
         }
+        if (lifted) { lifted = false; dropLiftNodes(); }
         c.persist("note-move");
         renderScene();
         mode = null;
@@ -1786,6 +1841,7 @@
   // тянуть весь прямоугольник целиком (без ресайза — размер только числом в редакторе)
   function enableVoidDrag() {
     if (!R.canvas) return;
+    let vAcc = null;
     R.canvas.setDragHandler((dx, dy, phase, start) => {
       const c = core(), vd = (c.project.voids || []).find((v) => v.id === R.selectedVoid);
       if (!vd) return;
@@ -1793,15 +1849,19 @@
         const r = G().voidRect(vd);
         if (start.x < r.x1 || start.x > r.x2 || start.y < r.y1 || start.y > r.y2) return false; // мимо — пан
         core().commit();
+        vAcc = { x: 0, y: 0 };
+        liftNodes(["[data-pl-void=\"" + vd.id + "\"]"]);
         return;
       }
       if (phase === "move") {
         vd.a = { x: vd.a.x + dx, y: vd.a.y + dy };
         vd.b = { x: vd.b.x + dx, y: vd.b.y + dy };
-        renderSceneSoon();
+        if (vAcc) { vAcc.x += dx; vAcc.y += dy; }
+        if (!(vAcc && moveLiftBy(vAcc.x, vAcc.y))) renderSceneSoon();
       } else if (phase === "end") {
         const step = c.project.settings.gridStep || 10;
         vd.a = G().snapPoint(vd.a, step); vd.b = G().snapPoint(vd.b, step);
+        vAcc = null; dropLiftNodes();
         c.persist("void-move"); renderScene();
       }
     });
@@ -2414,7 +2474,7 @@
     // общая кнопка «во весь экран» шторки — используется ЛЮБЫМ модулем слоёв 2-6
     // (Расчёт/Трассы/Проверки/Слои и т.п.), поэтому обработчик один здесь, а не в каждом
     if (t.closest("[data-sheet-fs]")) return toggleSheetFullscreen();
-    if (t.closest("[data-plan-fit]")) { if (R.canvas) R.canvas.fit(G().projectBBox(core().project)); return; }
+    if (t.closest("[data-plan-fit]")) { if (R.canvas) R.canvas.fit(G().projectBBox(core().project), null, { animate: true }); return; }
     if (t.closest("[data-pr-cancel]")) { setMode(R.mode === "underlay" ? "view" : R.mode); return; }
     if (t.closest("[data-pr-create-rect]")) return createRect();
     if (t.closest("[data-pr-create-rect2]")) return createRectFromPoint();
@@ -2715,7 +2775,7 @@
     // вся drag-инфраструктура живёт в plan-rooms.js), поэтому тягу мебели ставим через
     // этот тонкий проброс, а сам обработчик (что двигать) остаётся в модуле мебели
     canvasSetDrag: (fn) => { if (R.canvas) R.canvas.setDragHandler(fn || null); },
-    renderSceneSoon,
+    renderSceneSoon, liftNodes, moveLiftBy, dropLiftNodes,
     mergeRooms, splitRoom, moveRoom, setWallLength, syncQuickbarVisibility, armTargetPick
   };
 })();
