@@ -4398,6 +4398,20 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(wf.indexOf("--only hosting,firestore:rules") < wf.indexOf("--only functions"),
       "и приложение уезжает ПЕРВЫМ");
   });
+  test("функции: среда Node одна в трёх местах и не снята с поддержки", () => {
+    const fs = require("fs"), path = require("path"), root = path.resolve(__dirname, "..");
+    const fj = JSON.parse(fs.readFileSync(path.join(root, "firebase.json"), "utf8"));
+    const pk = JSON.parse(fs.readFileSync(path.join(root, "functions", "package.json"), "utf8"));
+    const wf = fs.readFileSync(path.join(root, ".github", "workflows", "firebase-deploy.yml"), "utf8");
+    const ver = Number((String(fj.functions[0].runtime || "").match(/^nodejs(\d+)$/) || [])[1]);
+    // Node 20 Google снял 31.10.2026 — с ним «Deploy functions» падает до сборки,
+    // и ни одну функцию (пуш чата, политика доступа) больше не обновить
+    ok(ver >= 22, "среда функций не ниже Node 22");
+    ok(String(pk.engines && pk.engines.node) === String(ver),
+      "engines.node в functions/package.json совпадает со средой firebase.json");
+    const m = wf.match(/setup-node@v\d+\s+with:\s+node-version:\s*(\d+)/);
+    ok(m && Number(m[1]) === ver, "проверки и тесты деплоя идут на той же версии Node, что и функции");
+  });
   test("чат: вложения клиент/щит/фото и поиск по переписке", () => {
     const fs = require("fs"), path = require("path"), root = path.resolve(__dirname, "..");
     const fb = fs.readFileSync(path.join(root, "assets", "js", "modules", "ui", "feedback.js"), "utf8");

@@ -14,9 +14,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Та же версия, что у среды облачных функций (firebase.json → runtime,
+      # functions/package.json → engines) — тест сверяет все три. Node 20 Google снял
+      # 31.10.2026: с ним шаг «Deploy functions» падает ещё до сборки.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install functions dependencies
         run: npm ci --prefix functions || npm install --prefix functions
