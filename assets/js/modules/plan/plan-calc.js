@@ -591,6 +591,9 @@
     let spliceInBox = 0;
     (p.elements || []).forEach((e2) => {
       if (e2.status === "existing" || e2.type === "junction") return;
+      // свободная точка (светильник в шлейфе своей клавиши) — не подрозетник: соединение там
+      // делается в клеммнике самого светильника и входит в его монтаж
+      if (!e2.wallId) return;
       if (((outCnt[e2.id] || 0) + (inCnt[e2.id] || 0)) > 1) spliceInBox++;
     });
     if (junctBoxes) add("work", "Собрать распаянную коробку на потолке", junctBoxes, "шт");

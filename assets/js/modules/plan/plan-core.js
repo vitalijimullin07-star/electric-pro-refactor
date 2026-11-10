@@ -69,6 +69,10 @@
     // считать трассы/смету в фоне, пока рисуешь (свободные ядра CPU). Расходует батарею,
     // поэтому по умолчанию ВЫКЛ — тумблер в шторке «🧵 Трассы»
     routePrecalc: false,
+    // свет по потолку: светильник → светильник → выключатель ПРЯМЫМИ отрезками под 90°
+    // (true, как кладут гофру по потолку) или вдоль стен по контуру, как силовые (false).
+    // Тумблер «Свет по потолку» в «⚙ Настройки трасс» шторки 🧵 Трассы.
+    lampDirect: true,
     cable24: "КГ ВВГнг-LS 2×2.5",
     cable24Rgb: "КГ ВВГнг-LS 5×1.5",
     // выпуск кабеля (концы на разделку/подключение) — см НА КАЖДЫЙ конец кабеля, добавляется
@@ -94,7 +98,12 @@
       "ТЕКФОР":    { rowCap: 12, sizes: { "12": [280, 200, 100], "24": [385, 300, 115], "36": [385, 430, 115], "48": [385, 560, 115], "54": [450, 560, 115] } }
     },
     breakers: [10, 16, 20, 25, 32, 40, 63], // номиналы автоматов, А
-    circuitColors: ["#ef4444", "#f59e0b", "#22c55e", "#3b82f6", "#a855f7", "#ec4899", "#14b8a6", "#eab308"],
+    // 20 цветов, а не 8: в квартире 15-25 линий, и при восьми цветах девятая линия получала
+    // цвет первой (розетки и свет одной комнаты выходили одинаково зелёными — пучок трасс
+    // читался как одна линия). Порядок — соседние номера далеко друг от друга по тону.
+    circuitColors: ["#ef4444", "#f59e0b", "#22c55e", "#3b82f6", "#a855f7", "#ec4899", "#14b8a6", "#84cc16",
+      "#f97316", "#06b6d4", "#8b5cf6", "#e11d48", "#65a30d", "#0ea5e9", "#d946ef", "#10b981",
+      "#b45309", "#6366f1", "#be185d", "#0f766e"],
     layers: [
       { id: "light",  name: "Освещение",       color: "#facc15" },
       { id: "power",  name: "Силовые",         color: "#f87171" },
@@ -163,7 +172,7 @@
         mainBreaker: DEFAULTS.mainBreaker, phases: DEFAULTS.phases, meter: false, mainRcd: false,
         panelBrand: DEFAULTS.panelBrand, panelReserve: DEFAULTS.panelReserve, panelBox: null,
         symbolStyle: DEFAULTS.symbolStyle, realScale: DEFAULTS.realScale, cableReserve: DEFAULTS.cableReserve, cableRoundM: DEFAULTS.cableRoundM, cableBrand: DEFAULTS.cableBrand,
-        cable24: DEFAULTS.cable24, cable24Rgb: DEFAULTS.cable24Rgb, routeQuality: DEFAULTS.routeQuality, routePrecalc: DEFAULTS.routePrecalc,
+        cable24: DEFAULTS.cable24, cable24Rgb: DEFAULTS.cable24Rgb, routeQuality: DEFAULTS.routeQuality, routePrecalc: DEFAULTS.routePrecalc, lampDirect: DEFAULTS.lampDirect,
         cableStubPoint: DEFAULTS.cableStubPoint, cableStubJunction: DEFAULTS.cableStubJunction, cableStubPanel: DEFAULTS.cableStubPanel,
         routeOffset: DEFAULTS.routeOffset, sleeveD: DEFAULTS.sleeveD, connectorMode: DEFAULTS.connectorMode,
         gofraCeil: DEFAULTS.gofraCeil,
@@ -868,6 +877,7 @@
     if (p.settings.cableBrand == null) p.settings.cableBrand = DEFAULTS.cableBrand;
     if (p.settings.routeQuality == null) p.settings.routeQuality = DEFAULTS.routeQuality;
     if (p.settings.routePrecalc == null) p.settings.routePrecalc = DEFAULTS.routePrecalc;
+    if (typeof p.settings.lampDirect !== "boolean") p.settings.lampDirect = DEFAULTS.lampDirect;
     if (p.settings.cable24 == null) p.settings.cable24 = DEFAULTS.cable24;
     if (p.settings.cable24Rgb == null) p.settings.cable24Rgb = DEFAULTS.cable24Rgb;
     if (p.settings.cableStubPoint == null) p.settings.cableStubPoint = DEFAULTS.cableStubPoint;

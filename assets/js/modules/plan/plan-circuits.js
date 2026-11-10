@@ -201,13 +201,34 @@
     const c = ch.circuit;
     const step = (label, val) => `<span class="ep-plan-chainstep"><i>${label}</i>${val}</span>`;
     const len = ch.lenCm != null && ch.routes ? `${(ch.lenCm / 100).toFixed(1)} м` : "нет трассы";
+    // ПУТЬ ЭТОЙ точки до щита по трассам (а не только длина всей линии): светильник шлейфа
+    // питается через соседний светильник и выключатель, розетка — шлейфом через соседнюю.
+    // Раньше тут стояла длина ВСЕЙ линии с подписью «трасса», и для светильника она читалась
+    // как длина его собственной трассы (аудит: «трасса 46.5 м» у лампы с хопом в 1.5 м).
+    const R = EP.Plan.Routes, TY = (EP.Plan.Elements && EP.Plan.Elements.TYPES) || {};
+    const fp = R && R.feedPath ? R.feedPath(p, el.id) : null;
+    let path = "";
+    if (fp) {
+      const nm = (id) => {
+        const pn = (p.panels || []).find((x) => x.id === id);
+        if (pn) return pn.name || "Щит";
+        const e = (p.elements || []).find((x) => x.id === id);
+        return e ? ((TY[e.type] && TY[e.type].name) || e.type) : "?";
+      };
+      const seq = (fp.toPanel ? [nm(fp.toPanel)] : ["нет щита"]).concat(fp.nodes.slice().reverse().map(nm));
+      // длинный шлейф — середину сворачиваем, видно начало и конец пути
+      const shown = seq.length > 5 ? seq.slice(0, 2).concat(["…" + (seq.length - 4) + "…"], seq.slice(-2)) : seq;
+      path = shown.map(esc).join(" → ") + " → <b>эта точка</b>";
+    }
     return `<div class="ep-plan-chainrow" aria-label="Откуда питается точка">
       ${step("линия", `<b style="color:${esc(c.color)}">${esc(c.name)}</b>`)}
       ${step("автомат", `${ch.poles === 3 ? "3P " : ""}${ch.breaker}A`)}
       ${step("УЗО", esc(ch.protText || "нет"))}
       ${step("щит", ch.panel ? esc(ch.panel.name) + (ch.panelExplicit ? "" : " (авто)") : "—")}
       ${step("кабель", esc(ch.cable || "—"))}
-      ${step("трасса", len)}
+      ${step("до щита", fp ? (fp.lenCm / 100).toFixed(1) + " м" : "нет трассы")}
+      ${step("вся линия", len)}
+      ${path ? `<span class="ep-plan-chainstep ep-plan-chainpath"><i>путь</i>${path}</span>` : ""}
     </div>`;
   }
 

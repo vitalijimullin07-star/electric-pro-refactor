@@ -587,7 +587,12 @@
   // Обход ВСЕХ звеньев размерных цепочек этажа с уже посчитанной позицией цифры.
   // Вынос берётся G.wallDimOffOf (переопределение на стену), как и в рендере — один
   // источник числа на рендер, хит-тест двойного тапа и тягу.
-  function eachChainSeg(p, fn) {
+  // Позиция — ЦЕНТР ВИДИМОЙ ЦИФРЫ: вынос цепочки + её ряд «лесенки» (короткие звенья
+  // рендер уводит во второй ряд, EP.Plan.Render.chainRows) — та же раскладка, тот же
+  // масштаб ведра, что у рендера, иначе тап по цифре второго ряда попадал бы мимо.
+  function eachChainSeg(p, k, fn) {
+    const RD = EP.Plan.Render || {};
+    const kFit = RD.kBucketHi && RD.kBucketOf ? RD.kBucketHi(RD.kBucketOf(k)) : k;
     (p.rooms || []).forEach((room) => {
       if ((room.points || []).length < 3) return;
       const c0 = G().centroid(room.points);
@@ -598,15 +603,19 @@
         const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
         if ((wl.mx - c0.x) * nx + (wl.my - c0.y) * ny < 0) { nx = -nx; ny = -ny; }
         const off2 = G().wallDimOffOf(p, wl);
-        chain.segs.forEach((sg) => {
+        const rows = RD.chainRows ? RD.chainRows(chain.segs, kFit) : null;
+        chain.segs.forEach((sg, si) => {
           const pm = G().pointAtOffset(wl, sg.midOff);
-          fn(sg, { x: pm.x + nx * off2, y: pm.y + ny * off2 }, wl, { x: nx, y: ny }, room);
+          const lo = off2 + (RD.chainLabelOff ? RD.chainLabelOff(rows ? rows[si] : 0) : 6) * k;
+          fn(sg, { x: pm.x + nx * lo, y: pm.y + ny * lo }, wl, { x: nx, y: ny }, room);
         });
       });
     });
   }
   function onDoubleTap(w) {
-    const p = core().project;
+    // ТОЛЬКО активный этаж: у этажей общие координаты, и без фильтра двойной тап по цифре
+    // на первом этаже мог открыть точку второго, чья невидимая подпись оказалась ближе
+    const p = core().project && G().floorScoped(core().project);
     if (!p || R.mode !== "view" || !R.canvas || !EP.Plan.Elements) return false;
     const k = R.canvas.cmPerPx();
     const tol = 16 * k;
@@ -629,7 +638,7 @@
     // зависит от зума, просьба пользователя) — общий хелпер G.wallChainStations,
     // чтобы хит-тест совпадал с видимой цифрой.
     if (dimsOn && lodDims) {
-      eachChainSeg(p, (sg, mid) => {
+      eachChainSeg(p, k, (sg, mid) => {
         // правим «дальнюю» точку звена (bElemId), иначе ближнюю (у углов/проёмов elemId=null)
         consider(sg.bElemId || sg.aElemId, Math.hypot(w.x - mid.x, w.y - mid.y));
       });
@@ -728,12 +737,23 @@
   // opts.keepCollapsed — ПЕРЕрисовка той же шторки (счётчик палитры после установки
   // точки и т.п.): если пользователь свернул её, она НЕ должна выпрыгивать обратно.
   // opts.transient — тост (сам закроется), кнопку сворачивания не показываем.
+  // Ключ шторки — её заголовок (первый <b>: «🧵 Трассы», «Расчёт», «Розетка · стена 2»).
+  // Перерисовка ТОЙ ЖЕ шторки (правка поля, переключатель) прокрутку сохраняет, а ДРУГАЯ
+  // шторка открывается сверху: раньше прокрутка оставалась от предыдущей, и «Расчёт»,
+  // открытый после пролистанных «Трасс», начинался с середины (аудит на телефоне).
+  const sheetKeyOf = (html) => {
+    const m = /<b[^>]*>([\s\S]*?)<\/b>/.exec(String(html || ""));
+    return m ? m[1].replace(/<[^>]+>/g, "").replace(/\d+/g, "#").trim() : "";
+  };
   function openSheet(html, opts) {
     const s = sheet();
     const keep = !!(opts && opts.keepCollapsed) && !!R.sheetCollapsed;
     R.sheetTransient = !!(opts && opts.transient);
     R.sheetCollapsed = keep;
-    if (s) { s.innerHTML = html; s.hidden = false; s.classList.toggle("is-collapsed", keep); }
+    const key = sheetKeyOf(html);
+    const fresh = !s || s.hidden || key !== R.sheetKey;
+    R.sheetKey = key;
+    if (s) { s.innerHTML = html; s.hidden = false; s.classList.toggle("is-collapsed", keep); if (fresh) s.scrollTop = 0; }
     syncQuickbarForSheet(!keep);
     syncSheetBtn();
   }
@@ -768,6 +788,7 @@
 
   function closeSheet() {
     const s = sheet();
+    R.sheetKey = null;   // следующая шторка — с начала
     closeOverlaySheet();
     R.sheetCollapsed = false; R.sheetTransient = false;
     if (s) s.classList.remove("is-collapsed");
@@ -1871,8 +1892,17 @@
   // ---------- ручное редактирование трасс (Слой 4.1): тяга опорных точек / разворот угла ----------
   // Данные и хит-тест — в plan-routes.js (владелец p.routes); здесь — только выделение/тяга/UI,
   // тем же способом, что и у балки/пустоты (единственное место, где есть доступ к R.canvas).
+  // палец попадает в то, что НАРИСОВАНО: пучок на экране раздвинут (EP.Plan.Bundle), поэтому
+  // хит-тест идёт по отображаемой ломаной, а правка — по физической (routeToPhysical)
+  function routeDisplay(id) {
+    return R.canvas && EP.Plan.Render && EP.Plan.Render.routeDisplay ? EP.Plan.Render.routeDisplay(R.canvas, id) : null;
+  }
+  function routeToPhysical(rt, w, tol) {
+    const d = rt && routeDisplay(rt.id);
+    return d && EP.Plan.Bundle ? EP.Plan.Bundle.toPhysical(d, rt.points, w, tol) : w;
+  }
   function routeAt(p, w, maxD) {
-    return EP.Plan.Routes && EP.Plan.Routes.routeAt ? EP.Plan.Routes.routeAt(p, w, maxD) : null;
+    return EP.Plan.Routes && EP.Plan.Routes.routeAt ? EP.Plan.Routes.routeAt(p, w, maxD, (rt) => { const d = routeDisplay(rt.id); return d ? d.pts : null; }) : null;
   }
   function sheetRoute(rt, tapPos) {
     const p = core().project;
@@ -1948,6 +1978,7 @@
       if (phase === "start") {
         const k = R.canvas.cmPerPx();
         const rr = Math.max(18 * k, 14);
+        start = routeToPhysical(rt, start, rr);   // касание по нарисованной линии → по физической
         // ---- режим «Двигать» (R.routeDragMode==="segment"): тянем целый прямой участок ----
         if (R.routeDragMode === "segment") {
           let segI = -1, segD = rr;
@@ -1958,6 +1989,15 @@
           if (segI < 0) return false; // мимо — пан
           core().commit();
           let a = segI, b = segI + 1;
+          // Двигаем ВСЮ видимую прямую, а не кусок до ближайшей вершины: промежуточная
+          // вершина на той же прямой (старые трассы, ручные правки) иначе оставалась на
+          // месте, и сдвинутая часть уходила от неё косым хвостом (поймано живой тягой).
+          // Такие вершины форму не меняют — убираем их внутри этой прямой.
+          const P = rt.points, colin = EP.Plan.Routes.colinearMid;
+          if (colin) {
+            while (a >= 1 && colin(P[a - 1], P[a], P[b])) { P.splice(a, 1); a--; b--; }
+            while (b <= P.length - 2 && colin(P[a], P[b], P[b + 1])) P.splice(b, 1);
+          }
           // концевую точку (анкер) не двигаем — вставляем у неё коннектор-копию
           if (a === 0) { rt.points.splice(1, 0, { x: rt.points[0].x, y: rt.points[0].y }); a = 1; b = 2; }
           if (b === rt.points.length - 1) { rt.points.splice(b, 0, { x: rt.points[b].x, y: rt.points[b].y }); }
@@ -1997,9 +2037,13 @@
         renderSceneSoon();
       } else if (phase === "end" && grabbed === -2 && segDrag) {
         const step = c.project.settings.gridStep || 10;
+        // к сетке — ТОЛЬКО по оси сдвига: у горизонтального участка y, у вертикального x.
+        // Раньше округлялись обе координаты, и конец участка уезжал вдоль него на пару см
+        // от соседней вершины — соседний отрезок становился косым (82 → 80 при соседе 82).
+        const horiz = Math.abs(segDrag.ny) > 0.99, vert = Math.abs(segDrag.nx) > 0.99;
         [segDrag.a, segDrag.b].forEach((idx) => {
           const q = rt.points[idx];
-          rt.points[idx] = { x: G().snap(q.x, step), y: G().snap(q.y, step) };
+          rt.points[idx] = { x: vert ? G().snap(q.x, step) : q.x, y: horiz ? G().snap(q.y, step) : q.y };
         });
         rt.manual = true;
         if (EP.Plan.Routes.recomputeThroughWalls) EP.Plan.Routes.recomputeThroughWalls(c.project, rt);
@@ -2007,11 +2051,18 @@
         c.persist("route-dragseg"); grabbed = -1; segDrag = null; renderScene();
       } else if (phase === "end" && grabbed >= 0) {
         const step = c.project.settings.gridStep || 10;
-        const oj = G().orthoJoint(rt.points[grabbed - 1], rt.points[grabbed], rt.points[grabbed + 1]);
-        rt.points[grabbed] = {
-          x: oj.lockedX ? oj.x : G().snap(oj.x, step),
-          y: oj.lockedY ? oj.y : G().snap(oj.y, step)
-        };
+        const P0 = rt.points[grabbed - 1], P1 = rt.points[grabbed + 1], raw = rt.points[grabbed];
+        const oj = G().orthoJoint(P0, raw, P1);
+        let q = { x: oj.lockedX ? oj.x : G().snap(oj.x, step), y: oj.lockedY ? oj.y : G().snap(oj.y, step) };
+        // Магнит прямого угла вернул точку обратно на прямую соседей: зона магнита — треть
+        // длины соседнего отрезка, и на длинном прямом участке излом, оттянутый на полметра,
+        // молча вставал обратно (поймано живой тягой — «потянул, ничего не произошло»).
+        // Тогда магнит не применяем: точка остаётся там, где её отпустили (по сетке).
+        const colin = EP.Plan.Routes && EP.Plan.Routes.colinearMid;
+        if (colin && colin(P0, q, P1)) q = { x: G().snap(raw.x, step), y: G().snap(raw.y, step) };
+        // палец вернули на место — вершина на прямой лишняя, не оставляем её в трассе
+        if (colin && colin(P0, q, P1)) { rt.points.splice(grabbed, 1); grabbed = Math.max(1, grabbed - 1); }
+        else rt.points[grabbed] = q;
         rt.manual = true;
         if (EP.Plan.Routes.recomputeThroughWalls) EP.Plan.Routes.recomputeThroughWalls(c.project, rt);
         R.selectedRouteTap = rt.points[grabbed];

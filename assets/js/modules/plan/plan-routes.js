@@ -25,6 +25,9 @@
     heavyDone: (sc, ms, it, cores) => `Готово за ${(ms / 1000).toFixed(1)}с (вариантов: ${it}${cores > 1 ? ", ядер: " + cores : ""}). Пересечений линий: ${sc ? sc.crossings : "—"}, отверстий: ${sc ? sc.holes : "—"}, изломов: ${sc && sc.turns != null ? sc.turns : "—"}`,
     buildDone: (sc, ms) => `Трассы построены (${(ms / 1000).toFixed(1)}с). Пересечений линий: ${sc ? sc.crossings : "—"}, отверстий: ${sc ? sc.holes : "—"}`,
     title: "Трассы", build: "⚡ Построить", clear: "✕ Очистить",
+    setTitle: "⚙ Настройки трасс",
+    lampLbl: "Свет по потолку:", lampDirect: "напрямую", lampContour: "по контуру",
+    lampHint: "Напрямую — от светильника к светильнику и к выключателю прямыми отрезками под 90° (как кладут гофру по потолку), к стене — перпендикулярно. По контуру — вдоль стен, как силовые линии (длиннее).",
     noPanel: "Поставь щит: режим 🔌, тип «Щ», тап по плану. На этаже без щита — стояк «СТ», связанный с этажом, где щит есть.",
     noElems: "Нет точек — добавь розетки/свет в режиме 🔌.",
     hintJ: "Совет: поставь «Распайку» (◇) — трассы пойдут через неё, а не каждая к щиту.",
@@ -173,6 +176,8 @@
       if (pr && (!panPr || pr.d < panPr.d)) { pan = pn; panPr = pr; }
     });
     if (!panPr) return null;
+    const planar = planarLaneOrder(p, graph, circuits);
+    if (planar) return planar;
     const rows = [];
     circuits.forEach((c) => {
       let sx = 0, sy = 0, n = 0;
@@ -199,6 +204,80 @@
     rows.sort((u, v) => (u.side - v.side) || (v.d - u.d) || (u.id < v.id ? -1 : 1));
     const map = {};
     rows.forEach((r, i) => { map[r.id] = i; });
+    return map;
+  }
+  /* ПОРЯДОК ПОЛОС ПО ДЕРЕВУ МАГИСТРАЛИ. Все линии едут к щиту по одну руку от ствола (см.
+     orientToRoot), полоса у линии одна на весь путь. Тогда пересечений на слиянии веток нет
+     ровно при одном порядке — он читается из самого дерева:
+       · линия, входящая в ствол С ДРУГОЙ стороны (не со стороны веера), обязана пересечь
+         ось ствола — ей нужна полоса БЛИЖЕ к стволу, чем у всех, кто уже едет мимо;
+       · линия, входящая СО стороны веера, занимает полосу ДАЛЬШЕ всех проезжающих;
+       · ветка, примыкающая к стволу сбоку, ведёт себя так же, как одна такая линия, только
+         целым пучком (его внутренний порядок сохраняется: поворот у параллельных кривых
+         концентрический).
+     Прежний порядок («по стороне, затем чем дальше вход, тем ближе к стволу») выполнял это
+     правило только для линий со стороны веера, а ветки не различал вовсе: на типовой
+     квартире линия из гостиной шла по внутренней полосе и пересекала все пять линий,
+     сворачивающих к щиту из коридора. Возвращает null, если у графа нет корня (нет щита) —
+     тогда работает прежний порядок. */
+  function planarLaneOrder(p, graph, circuits) {
+    const dirs = graph.toRoot, D = graph.rootD;
+    if (!dirs || !D || graph.rootNode == null) return null;
+    const E = graph.edges, Nn = graph.nodes;
+    const from = (i) => (dirs[i] ? E[i].a : E[i].b), to = (i) => (dirs[i] ? E[i].b : E[i].a);
+    const dirOf = (i) => { const A = Nn[from(i)], B = Nn[to(i)], L = dist(A, B) || 1; return { x: (B.x - A.x) / L, y: (B.y - A.y) / L }; };
+    // ребро дерева: по нему узел from(i) реально едет к щиту (кратчайший путь)
+    const parentEdge = new Array(Nn.length).fill(-1);
+    E.forEach((e, i) => {
+      const u = from(i), v = to(i);
+      if (D[u] === Infinity || Math.abs(D[v] + e.len - D[u]) > 0.5) return;
+      if (parentEdge[u] < 0) parentEdge[u] = i;
+    });
+    const isTree = (i) => parentEdge[from(i)] === i;
+    // вход линии в ствол: самая ДАЛЬНЯЯ от щита её точка (она едет дольше всех и проходит
+    // больше всего слияний)
+    const entries = E.map(() => []);
+    const rest = [];
+    circuits.forEach((c) => {
+      let best = null;
+      (p.elements || []).forEach((el) => {
+        if (el.circuitId !== c.id) return;
+        const q = G().elemPoint(p, el);
+        const pr = q && nearestOnGraph(graph, q);
+        if (!pr) return;
+        const i = pr.edgeI, tt = dist({ x: pr.x, y: pr.y }, Nn[to(i)]), d = D[to(i)] + tt;
+        if (!isTree(i) || d === Infinity) return;
+        if (!best || d > best.d) {
+          const nn = edgeNormal(graph, i);
+          best = { id: c.id, i, t: tt, d, side: ((q.x - pr.x) * nn.x + (q.y - pr.y) * nn.y) >= 0 ? 1 : -1 };
+        }
+      });
+      if (best) entries[best.i].push(best); else rest.push(c.id);
+    });
+    const kids = Nn.map(() => []);
+    E.forEach((e, i) => { if (isTree(i)) kids[to(i)].push(i); });
+    const sideOfChild = (j, i) => {                      // с какой стороны ребра i примыкает ветка j
+      const dj = dirOf(j), nn = edgeNormal(graph, i);
+      const s2 = -(dj.x * nn.x + dj.y * nn.y);
+      return Math.abs(s2) < 0.3 ? 0 : (s2 > 0 ? 1 : -1);
+    };
+    const seen = new Set();
+    const edgeList = (i) => {
+      if (seen.has(i)) return [];
+      seen.add(i);
+      const ch = kids[from(i)].slice().sort((u, v) => sideOfChild(u, i) - sideOfChild(v, i) || u - v);
+      let list = [];
+      ch.forEach((j) => { list = list.concat(edgeList(j)); });
+      entries[i].sort((u, v) => v.t - u.t || (u.id < v.id ? -1 : 1)).forEach((en) => {
+        if (en.side < 0) list.unshift(en.id); else list.push(en.id);
+      });
+      return list;
+    };
+    let order = [];
+    kids[graph.rootNode].slice().sort((u, v) => u - v).forEach((i) => { order = order.concat(edgeList(i)); });
+    if (order.length < 2) return null;
+    const map = {};
+    order.concat(rest).forEach((id, k) => { if (map[id] == null) map[id] = k; });
     return map;
   }
   function circuitIdx(p, circuitId) {
@@ -231,7 +310,7 @@
   const routeOff = (p, circuitId) => {
     const base = Math.max(5, Math.min(40, Number(p.settings.routeOffset) || 15));
     const idx = circuitIdx(p, circuitId);
-    return (idx > 0 ? base + idx * 2 : base) + curLane * 2;
+    return (idx > 0 ? base + idx * 2 : base) + curLane * SUBLANE;
   };
 
   // Комната для точки: строгий point-in-polygon, а если мимо (щит/точка стоит
@@ -352,16 +431,30 @@
   // магистраль не стена.
   // Тот же кап "×10" убран — см. подробное объяснение у routeOff выше (систематическое
   // слияние офсетов у 11+ линий, реальный баг на проектах с большим числом линий).
+  /* Шаг ПОД-ПОЛОСЫ (вторая и третья трасса ОДНОЙ линии, сходящиеся в одном узле). Было 2 см —
+     ровно шаг между линиями, поэтому под-полоса линии N садилась точно на полосу линии N+1:
+     на типовой квартире второй выключатель линии света и розетки санузла шли по коридору
+     одной и той же координатой — две разные линии рисовались одной. Дробный шаг не
+     совпадает ни с чьей полосой (0,7 и 1,4 см — между своей и следующей линией). */
+  const SUBLANE = 0.7;
   const guideLaneOff = (p, circuitId) => {
     const idx = circuitIdx(p, circuitId);
-    return (idx > 0 ? idx * 2 : 0) + curLane * 2;
+    return (idx > 0 ? idx * 2 : 0) + curLane * SUBLANE;
   };
   // нормаль отрезка ФИКСИРОВАННОЙ ориентации относительно порядка (a->b) — трассы, идущие
   // по одному и тому же ребру графа в РАЗНЫЕ стороны, всё равно должны разъезжаться в одну
   // и ту же физическую сторону (параллельный веер), а не в разные
+  // Нормаль НЕ зависит от того, в какую сторону отрезок нарисован: берётся от «левого»
+  // конца к «правому» (при равных x — сверху вниз). Раньше её задавал порядок точек, и два
+  // отрезка одной прямой, нарисованные навстречу друг другу (ствол из двух магистралей,
+  // сходящихся в общей точке, — так строит и автопредложение), получали ПРОТИВОПОЛОЖНЫЕ
+  // стороны веера: на стыке весь пучок переворачивался, каждая линия пересекала каждую, а
+  // митра давала косой отрезок через полкоридора.
   function guideSegNormal(sA, sB) {
-    const len = Math.hypot(sB.x - sA.x, sB.y - sA.y) || 1;
-    return { x: -(sB.y - sA.y) / len, y: (sB.x - sA.x) / len };
+    let dx = sB.x - sA.x, dy = sB.y - sA.y;
+    if (dx < -0.01 || (Math.abs(dx) <= 0.01 && dy < 0)) { dx = -dx; dy = -dy; }
+    const len = Math.hypot(dx, dy) || 1;
+    return { x: -dy / len, y: dx / len };
   }
   // ---- граф магистралей (Т/Ш/Г-формы) ----
   // Раньше guideRoute искал ОДНУ «лучшую» магистраль целиком и брал кусок её точек между
@@ -459,8 +552,72 @@
     wallsCache = { sig, walls: out };
     return out;
   }
-  function edgeWallAdjust(p, A, B, walls, lanes, clear) {
-    const n0 = guideSegNormal(A, B);
+  /* СТОРОНА ВЕЕРА — ОДНА ВДОЛЬ ВСЕГО ПУТИ К ЩИТУ. Пучок линий на магистрали — это
+     параллельные кривые: чтобы на повороте никто никого не пересекал, все линии обязаны
+     лежать по ОДНУ руку от направления движения (внутренняя полоса поворачивает раньше,
+     внешняя позже). Нормаль, взятая от самого отрезка (хоть по порядку точек, хоть «слева
+     направо»), этого не даёт: на одном из двух видов углов пучок выворачивался наизнанку и
+     каждая линия пересекала каждую. Замер на типовой квартире: 7 линий, сходящихся из
+     коридора к щиту, давали 21 пересечение в одном углу — 26 из 84 по всему плану.
+     Поэтому каждое ребро графа ориентируется К ЩИТУ (по кратчайшему пути по графу до
+     ближайшей к щиту точки), а веер уходит влево от этого направления. Щита нет — прежняя
+     нормаль «от отрезка». */
+  function orientToRoot(g, root) {
+    const n = g.nodes.length;
+    if (!root || !n || !g.edges.length) return null;
+    const D = new Array(n).fill(Infinity);
+    let pe = -1, pd = Infinity, pt = null;
+    g.edges.forEach((e, i) => {
+      const c = G().closestOnSeg(root, g.nodes[e.a], g.nodes[e.b]);
+      if (c.d < pd) { pd = c.d; pe = i; pt = c; }
+    });
+    if (pe < 0) return null;
+    // ближайшая к щиту точка графа — обычно СЕРЕДИНА ребра: делим его там на два, иначе
+    // одна его половина оказалась бы ориентирована ОТ щита и пучок на ней шёл бы не той
+    // стороной (линии с двух концов ребра сходятся к щиту навстречу друг другу)
+    {
+      const e = g.edges[pe], A = g.nodes[e.a], B = g.nodes[e.b];
+      const dA = dist(A, pt), dB = dist(B, pt);
+      if (dA > 1 && dB > 1) {
+        const ni = g.nodes.length;
+        g.nodes.push({ x: pt.x, y: pt.y });
+        g.edges.splice(pe, 1, { a: e.a, b: ni, gdId: e.gdId, len: dA }, { a: ni, b: e.b, gdId: e.gdId, len: dB });
+        return orientToRoot(g, root);                      // теперь ближайшая точка — узел
+      }
+      g.rootNode = dA <= dB ? e.a : e.b;                   // узел у щита: дальше него к щиту по графу не едут
+      g.rootPos = { x: root.x, y: root.y };
+    }
+    while (D.length < g.nodes.length) D.push(Infinity);
+    D[g.edges[pe].a] = dist(g.nodes[g.edges[pe].a], pt);
+    D[g.edges[pe].b] = dist(g.nodes[g.edges[pe].b], pt);
+    const done = new Array(n).fill(false);
+    for (let it = 0; it < n; it++) {                       // граф — десятки узлов, O(n²) хватает
+      let u = -1;
+      for (let i = 0; i < n; i++) if (!done[i] && (u < 0 || D[i] < D[u])) u = i;
+      if (u < 0 || D[u] === Infinity) break;
+      done[u] = true;
+      g.edges.forEach((e) => {
+        const v = e.a === u ? e.b : (e.b === u ? e.a : -1);
+        if (v >= 0 && D[u] + e.len < D[v]) D[v] = D[u] + e.len;
+      });
+    }
+    // true — к щиту ведёт направление a→b
+    g.rootD = D;
+    return g.edges.map((e) => {
+      if (D[e.a] === D[e.b]) { const A = g.nodes[e.a], B = g.nodes[e.b]; return B.x > A.x + 0.01 || (Math.abs(B.x - A.x) <= 0.01 && B.y > A.y); }
+      return D[e.a] > D[e.b];
+    });
+  }
+  function rootPanelPos(p) {
+    const fp = G().floorScoped(p), pns = fp.panels || [];
+    if (!pns.length) return null;
+    const CX = window.EP && EP.Plan && EP.Plan.Circuits;
+    const mp = CX && CX.mainPanel ? CX.mainPanel(p) : null;
+    const pn = (mp && pns.find((x) => x.id === mp.id)) || pns.find((x) => !x.router && !x.transformer) || pns[0];
+    return { x: pn.x, y: pn.y };
+  }
+  function edgeWallAdjust(p, A, B, walls, lanes, clear, directed) {
+    const n0 = directed ? (() => { const L0 = Math.hypot(B.x - A.x, B.y - A.y) || 1; return { x: -(B.y - A.y) / L0, y: (B.x - A.x) / L0 }; })() : guideSegNormal(A, B);
     const L = G().dist(A, B);
     if (L < 1) return { n: n0, base: 0 };
     const dir = { x: (B.x - A.x) / L, y: (B.y - A.y) / L };
@@ -510,6 +667,7 @@
     });
     (fp.beams || []).forEach((b) => { sum += b.a.x + b.a.y * 3 + b.b.x * 5 + b.b.y * 7 + (b.th || 0) * 11; n++; });
     const s = p.settings || {};
+    (fp.panels || []).forEach((pn) => { sum += (pn.x || 0) * 13 + (pn.y || 0) * 29 + (pn.router ? 3 : 0) + (pn.transformer ? 5 : 0); n++; }); // от щита зависит сторона веера
     return n + "|" + Math.round(sum * 100) + "|" + (s.wallThickness || 0) + "|" + (s.routeOffset || 0) + "|" + ((p.circuits || []).length);
   }
   function buildGuideGraph(guides, p) {
@@ -521,7 +679,13 @@
       const walls = floorWallsWithTh(p);
       const lanes = 2 * Math.max(0, ((p.circuits || []).length - 1));
       const clear = Math.max(0, p.settings && p.settings.routeOffset != null ? p.settings.routeOffset : 15);
-      g.edgeAdj = g.edges.map((e) => edgeWallAdjust(p, g.nodes[e.a], g.nodes[e.b], walls, lanes, clear));
+      const toRoot = orientToRoot(g, rootPanelPos(p));
+      g.toRoot = toRoot;
+      g.edgeAdj = g.edges.map((e, i) => {
+        if (!toRoot) return edgeWallAdjust(p, g.nodes[e.a], g.nodes[e.b], walls, lanes, clear);
+        const A = toRoot[i] ? g.nodes[e.a] : g.nodes[e.b], B = toRoot[i] ? g.nodes[e.b] : g.nodes[e.a];
+        return edgeWallAdjust(p, A, B, walls, lanes, clear, true);
+      });
     }
     // несколько наборов за одну сборку (общая + по группам); кэп — чтобы правки магистралей
     // не копили старые графы
@@ -689,7 +853,14 @@
       const a1 = { x: pt.x + n1.x * o1, y: pt.y + n1.y * o1 };
       const d1 = { x: next.x - pt.x, y: next.y - pt.y };
       const den = d0.x * d1.y - d0.y * d1.x;
-      if (Math.abs(den) < 1e-6) return { x: pt.x + n1.x * o1, y: pt.y + n1.y * o1 }; // параллельны — смещённый угол
+      if (Math.abs(den) < 1e-6) {
+        // отрезки на одной прямой, а сдвиги разные (стена отвела одно ребро, а соседнее нет):
+        // ступенька под прямым углом, а не косой переход. pre — точка ДО этой (её
+        // вставляет guideRoute при сборке пути; индексы массива при этом не сдвигаются)
+        const q0 = { x: pt.x + n0.x * o0, y: pt.y + n0.y * o0 }, q1 = { x: pt.x + n1.x * o1, y: pt.y + n1.y * o1 };
+        if (Math.abs(q0.x - q1.x) + Math.abs(q0.y - q1.y) > 0.5) q1.pre = q0;
+        return q1;
+      }
       const t = ((a1.x - a0.x) * d1.y - (a1.y - a0.y) * d1.x) / den;
       return { x: a0.x + d0.x * t, y: a0.y + d0.y * t };
     });
@@ -809,7 +980,8 @@
   }
   const guidesUsable = (p) => (G().floorScoped(p).guides || []).filter((gd) => (gd.points || []).length >= 2);
   const anyGuideKinds = (gs) => gs.some((gd) => guideKindsOf(gd).length);
-  function guideRoute(p, a, b, circuitId, kind) {
+  // bPanel — цель трассы это щит (а не точка/распайка): см. обрезку у корня ниже
+  function guideRoute(p, a, b, circuitId, kind, bPanel) {
     lastGuideTrunkShare = 1;
     let gs = guidesUsable(p);
     if (anyGuideKinds(gs)) gs = gs.filter((gd) => guideServes(gd, kind));
@@ -835,6 +1007,21 @@
     if (G().dist({ x: pa.x, y: pa.y }, { x: pb.x, y: pb.y }) < 10) return null; // проекции сошлись — магистраль не нужна
     const sp = shortestOnGraph(graph, pa, pb);
     if (!sp) return null;
+    /* У ЩИТА пучки сходятся с двух сторон ствола навстречу друг другу, и сторона веера по
+       разные стороны от него разная (см. orientToRoot). Место входа кабеля в щит разнесено
+       гребёнкой, и линии, чьё место оказалось чуть «за» узлом у щита, проезжали этот узел
+       и перескакивали на другую сторону ствола — прямо сквозь встречный пучок. Такая
+       линия дальше узла по графу не идёт: остаётся на своей полосе, доходит по ней до
+       своего места в гребёнке и там поворачивает к щиту. */
+    let cutAtRoot = false;
+    if (bPanel && graph.rootNode != null && graph.rootPos && dist(b, graph.rootPos) < 60) {
+      const rn = graph.nodes[graph.rootNode];
+      for (let i = 1; i < sp.points.length - 1; i++) {
+        if (Math.abs(sp.points[i].x - rn.x) < 0.5 && Math.abs(sp.points[i].y - rn.y) < 0.5) {
+          sp.points = sp.points.slice(0, i + 1); sp.segEdges = sp.segEdges.slice(0, i); cutAtRoot = true; break;
+        }
+      }
+    }
     const off = guideLaneOff(p, circuitId);
     const trunk = offsetGraphPath(graph, sp.points, sp.segEdges, off);
     const Ao = trunk[0], Bo = trunk[trunk.length - 1];
@@ -842,8 +1029,59 @@
     const segA = sp.points[1] || sp.points[0], segB = sp.points[sp.points.length - 2] || sp.points[sp.points.length - 1];
     // заход к точке — по контуру (если магистраль в той же комнате), иначе колено;
     // сторона щита (Bo -> knee -> b) остаётся прежней.
-    const legA = guideApproach(p, a, Ao, circuitId, guideKnee(a, Ao, sp.points[0], segA), sp.points[0], segA);
-    const path = legA.concat(trunk.slice(1), [guideKnee(b, Bo, segB, sp.points[sp.points.length - 1]), { x: b.x, y: b.y }]);
+    let head = guideApproach(p, a, Ao, circuitId, guideKnee(a, Ao, sp.points[0], segA), sp.points[0], segA);
+    let mid = trunk.slice(1);
+    const lastP = sp.points[sp.points.length - 1];
+    const lastHoriz = Math.abs(lastP.x - segB.x) >= Math.abs(lastP.y - segB.y);
+    // обрезанная у корня линия идёт дальше ПО СВОЕЙ ПОЛОСЕ до места в гребёнке и только там
+    // поворачивает; обычная — как раньше, перпендикулярным коленом от проекции
+    let tail = [cutAtRoot ? (lastHoriz ? { x: b.x, y: Bo.y } : { x: Bo.x, y: b.y }) : guideKnee(b, Bo, segB, lastP), { x: b.x, y: b.y }];
+    /* ВЫХОД ИЗ КОМНАТЫ — У СТЕНЫ, А НЕ ЧЕРЕЗ СЕРЕДИНУ. Магистраль часто заходит в комнату
+       вглубь (автопредложение ведёт её до центра, мастер — «чтобы было видно»). Раньше трасса
+       шла к БЛИЖАЙШЕЙ точке магистрали: от выключателя по контуру, затем через полкомнаты
+       к её концу в центре и обратно к стене по самой магистрали — петля в три метра и линии
+       поперёк комнаты (замер на типовой квартире: выключатель гостиной 7,9 м до щита при
+       4,7 м по прямым углам). Теперь, если путь по магистрали выходит из комнаты точки
+       через стену, трасса идёт по контуру сразу к месту выхода — так же, как уже было
+       сделано для ветки из одного отрезка (guideWallEntry). Берётся, только если получилось
+       КОРОЧЕ прежнего: большая комната, где магистраль и есть кратчайший путь, не страдает. */
+    const insideOf = (room) => (q) => G().pointInPolygon(q, room.points || []);
+    const exitIndex = (room, pts) => {
+      const ins = insideOf(room);
+      if (!ins(pts[0])) return -1;
+      for (let i = 0; i < pts.length - 1; i++) if (!ins(pts[i + 1])) return i;
+      return -1;
+    };
+    // боковой сдвиг полосы на ребре графа: его собственная нормаль × (отвод от стены + полоса
+    // линии). Брать его «по смещённой вершине» нельзя: в вершине сходятся два ребра, и у
+    // соседнего сторона веера может быть другой.
+    const laneVec = (segI) => {
+      const ei2 = sp.segEdges[segI], nn = edgeNormal(graph, ei2), o = edgeBase(graph, ei2) + off;
+      return { x: nn.x * o, y: nn.y * o };
+    };
+    const N = sp.points.length;
+    const ei = ra ? exitIndex(ra, sp.points) : -1;
+    const ej = rb ? exitIndex(rb, sp.points.slice().reverse()) : -1;
+    const lenOf = (pts) => G().polylineLen(pts);
+    if (ei >= 1 && ei + 1 <= N - 1) {
+      const we = guideWallEntry(p, sp.points[ei], sp.points[ei + 1], ra, circuitId, laneVec(ei));
+      const pr = we && pathInRoom(p, ra, a, we, circuitId);
+      if (pr && pr.length >= 2 && lenOf(pr.concat(trunk.slice(ei + 1))) < lenOf(head.concat(mid)) - 1) { head = pr; mid = trunk.slice(ei + 1); }
+    }
+    // сторона ЩИТА остаётся на магистрали: туда линии сходятся пучком, и пускать часть из них
+    // по контуру комнаты щита значит перекрестить их с теми, что пришли по стволу
+    if (ej >= 1 && !bPanel) {
+      const iIn = N - 1 - ej, iOut = N - 2 - ej;       // ребро входа в комнату цели: iOut снаружи, iIn внутри
+      const cut = N - mid.length;                      // индекс в trunk первой точки mid
+      if (iOut >= cut) {
+        const we = guideWallEntry(p, sp.points[iIn], sp.points[iOut], rb, circuitId, laneVec(iOut));
+        const pr = we && pathInRoom(p, rb, we, b, circuitId);
+        const keep = mid.slice(0, iOut - cut + 1);
+        if (pr && pr.length >= 2 && lenOf(keep.concat(pr)) < lenOf(mid.concat(tail)) - 1) { mid = keep; tail = pr; }
+      }
+    }
+    const raw = head.concat(mid, tail), path = [];
+    raw.forEach((q) => { if (q.pre) path.push({ x: q.pre.x, y: q.pre.y }); path.push({ x: q.x, y: q.y }); });
     if (usedGuideIds) sp.edgeIds.forEach((id) => usedGuideIds.add(id)); // фикс №1: магистраль(и) реально применились
     const out = path.filter((q, j) => j === 0 || G().dist(q, path[j - 1]) > 0.5);
     const totalLen = G().polylineLen(out);
@@ -940,14 +1178,19 @@
   // полилиния ребра дерева: центр родителя → вдоль стены до оси перехода → поперёк стены →
   // вдоль стены к центру ребёнка. Поперёк стены — строго перпендикулярно (проходка в плане
   // прямая, гильза короткая).
-  function linkPolyline(hP, hC, lk, parentIsI) {
+  // leaf — комната на конце ветки (дальше через неё никуда не идут): магистраль заходит в неё
+  // только за стену и там кончается. До центра её вести незачем — точки такой комнаты и так
+  // идут к месту входа по контуру, а линия через середину комнаты тянула к себе трассы от
+  // приборов на стенах (петля через полкомнаты) и рисовалась поперёк светильников.
+  function linkPolyline(hP, hC, lk, parentIsI, leaf) {
     const nP = parentIsI ? lk.n : { x: -lk.n.x, y: -lk.n.y };
     const xP = { x: lk.x.x + nP.x * SUGGEST_IN, y: lk.x.y + nP.y * SUGGEST_IN };
     const xC = { x: lk.x.x - nP.x * SUGGEST_IN, y: lk.x.y - nP.y * SUGGEST_IN };
     const along = (h, q) => { const t = (q.x - h.x) * lk.d.x + (q.y - h.y) * lk.d.y; return { x: h.x + lk.d.x * t, y: h.y + lk.d.y * t }; };
     const kP = along(hP, xP), kC = along(hC, xC);
     // колено = ТА ЖЕ ось поперёк стены: kP лежит на линии xP-xC, значит kP→kC — одна прямая
-    const pts = [hP, kP, kC, hC].map((q) => ({ x: Math.round(q.x), y: Math.round(q.y) }));
+    const raw = leaf ? [hP, kP, xC] : [hP, kP, kC, hC];
+    const pts = raw.map((q) => ({ x: Math.round(q.x), y: Math.round(q.y) }));
     return pts.filter((q, k) => k === 0 || G().dist(q, pts[k - 1]) > 1);
   }
   function suggestTree(p) {
@@ -995,7 +1238,8 @@
       while (prev[v]) { const e = prev[v]; edges.set(e.u + ">" + v, { u: e.u, v, l: e.l }); v = e.u; }
     });
     const polys = [];
-    edges.forEach((e) => polys.push(linkPolyline(hubs[e.u], hubs[e.v], e.l, e.l.i === e.u)));
+    const inner = new Set([...edges.values()].map((e) => e.u));   // комнаты, через которые идут дальше
+    edges.forEach((e) => polys.push(linkPolyline(hubs[e.u], hubs[e.v], e.l, e.l.i === e.u, !inner.has(e.v))));
     return { polys, unreachable, root: rs[root].id, doors: [...edges.values()].filter((e) => e.l.door).length };
   }
   // строит и КЛАДЁТ в p.guides черновик магистрали; возвращает число добавленных линий
@@ -1163,10 +1407,74 @@
   // raw:true — только ДЛИНА пути нужна (замер кандидата шлейфа): пост-проход по стенам
   // геометрию длины почти не меняет (сдвиг на единицы см), а стоит ощутимо на O(n²)
   // замерах — build() на реальном проекте 21мс → 64мс, если гонять его и на замерах
+  /* ПРЯМОЙ ХОП ПО ПОТОЛКУ. Свободная потолочная точка (светильник, трек, вывод посреди
+     комнаты) стоит не у стены, и вести к ней кабель «по контуру с отступом» значит гнать его
+     до стены, вдоль неё и обратно: замер на типовой гостиной — 8,0 м до дальнего
+     светильника против 5,3 м напрямую, а пять светильников давали на плане три вложенных
+     прямоугольника вокруг комнаты. По перекрытию кабель и на объекте кладут кратчайшим
+     путём под прямым углом (скрытая проводка в СТЕНАХ — отдельное правило: там только
+     вертикаль и горизонталь, и контур с отступом как раз про неё). Поэтому хоп, у которого
+     хотя бы один конец — свободная точка, идёт Г-образно по потолку:
+     · оба конца свободные (светильник → светильник шлейфа) — обычный угол;
+     · второй конец на стене (выключатель, бра) — к стене подходим ПЕРПЕНДИКУЛЯРНО, то есть
+       последний отрезок это и есть место спуска по стене к прибору.
+     Не применяется: к щиту (в него линии сходятся пучком по контуру/магистрали), по полу,
+     у косых стен и там, где угол задел бы стену (Г-образная комната) — тогда прежний контур.
+     settings.lampDirect === false возвращает старое поведение целиком. */
+  function isCeilFree(el) {
+    return !!(el && !el.wallId && el.type !== "warmfloor" && el.params && el.params.x != null);
+  }
+  function directHop(p, fromEl, a, target) {
+    if ((p.settings || {}).lampDirect === false) return null;
+    const tEl = target && target.el;
+    if (!fromEl || !tEl || target.kind === "panel") return null;
+    const fa = isCeilFree(fromEl), fb = isCeilFree(tEl);
+    if (!fa && !fb) return null;
+    if (surfaceOf(p, fromEl.layer, fromEl, target) !== "ceiling") return null;
+    const b = target.pos;
+    let pts, skip = null;
+    if (fa && fb) {
+      pts = ortho(p, a, b, null);
+    } else {
+      const wEl = fa ? tEl : fromEl, wp = fa ? b : a, fp = fa ? a : b;
+      const w = G().wallById(p, wEl.wallId);
+      if (!w) return null;
+      const dx = Math.abs(w.b.x - w.a.x), dy = Math.abs(w.b.y - w.a.y);
+      if (Math.min(dx, dy) > 0.2 * Math.max(dx, dy)) return null;       // косая стена — по контуру
+      const off = curLane * SUBLANE;                                    // под-полоса: спуски к одному прибору не ложатся друг на друга
+      const seq = dx >= dy
+        ? [fp, { x: wp.x + off, y: fp.y }, { x: wp.x + off, y: wp.y }, wp]
+        : [fp, { x: fp.x, y: wp.y + off }, { x: wp.x, y: wp.y + off }, wp];
+      pts = fa ? seq : seq.reverse();
+      skip = wEl.wallId;
+    }
+    pts = pts.map((q) => ({ x: q.x, y: q.y })).filter((q, j, arr) => j === 0 || dist(q, arr[j - 1]) > 0.5);
+    if (pts.length < 2) return null;
+    if (G().polylineCrossings(p, pts, skip).length) return null;        // угол задел стену — по контуру
+    return pts;
+  }
   function buildPath(p, fromEl, a, target, circuitId, raw) {
     const pts = buildPathRaw(p, fromEl, a, target, circuitId);
     if (raw || !pts || pts.length < 2) return pts;
-    return clearOfWalls(p, pts);
+    return dropCollinear(clearOfWalls(p, pts));
+  }
+  // Промежуточные вершины на одной прямой убираем. Форму трассы они не меняют, зато мешали:
+  // «↔ Двигать» уводил только часть видимой прямой и оставлял косой хвост (поймано живой
+  // тягой), разнос пучка на экране ставил на них лишние ступеньки, а гребёнка у щита
+  // сдвигала «предпоследнюю» вершину, которая на деле стояла посреди подхода. Вершину с
+  // разворотом (шпилька туда-обратно) не трогаем: это не прямая, а отдельный вопрос.
+  function colinearMid(P, Q, R) {
+    const ux = Q.x - P.x, uy = Q.y - P.y, vx = R.x - Q.x, vy = R.y - Q.y;
+    const lu = Math.hypot(ux, uy), lv = Math.hypot(vx, vy);
+    if (lu < 0.01 || lv < 0.01) return true;            // совпавшая точка — лишняя
+    return Math.abs(ux * vy - uy * vx) < 0.005 * lu * lv && ux * vx + uy * vy > 0;
+  }
+  function dropCollinear(pts) {
+    if (!pts || pts.length < 3) return pts;
+    const out = [pts[0]];
+    for (let i = 1; i < pts.length - 1; i++) if (!colinearMid(out[out.length - 1], pts[i], pts[i + 1])) out.push(pts[i]);
+    out.push(pts[pts.length - 1]);
+    return out;
   }
   function buildPathRaw(p, fromEl, a, target, circuitId) {
     circuitId = circuitId || (fromEl && fromEl.circuitId) || null;
@@ -1175,6 +1483,8 @@
     const ra = fromEl ? roomOfEl(p, fromEl) : roomNear(p, a);
     const rb = (target.el ? roomOfEl(p, target.el) : null) || roomNear(p, b);
     if (ra && rb && ra.id === rb.id) {
+      const dh = directHop(p, fromEl, a, target);                 // свободная потолочная точка — напрямую
+      if (dh) return dh;
       const path = pathInRoom(p, ra, a, b, circuitId);
       if (path) return path;
       return ortho(p, a, b, skip); // контур не построился — крайний случай (вырожденная комната)
@@ -1193,7 +1503,7 @@
       if (path) return path;
       return ortho(p, a, b, skip);
     }
-    const gp = guideRoute(p, a, b, circuitId, routeKind(p, fromEl, circuitId)); // разные комнаты — только по магистрали, иначе null
+    const gp = guideRoute(p, a, b, circuitId, routeKind(p, fromEl, circuitId), target.kind === "panel"); // разные комнаты — только по магистрали, иначе null
     if (!gp) return null;
     // ФИКС «крюка». Узкий случай, замеренный на реальной форме плана: путь по магистрали
     // почти целиком состоит из ПОДХОДОВ к ней, а сам ствол — мелочь (замерено 50см ствола
@@ -1213,7 +1523,11 @@
     if (lastGuideTrunkShare < GUIDE_TRUNK_MIN_SHARE) {
       const dp = ortho(p, a, b, skip);
       const sf = surfaceOf(p, fromEl && fromEl.layer, fromEl, target); // гильзы считаем по поверхности ЭТОГО хопа
-      if (dp && dp.length >= 2 && G().polylineLen(dp) < G().polylineLen(gp) - 1
+      // …и выигрыш должен быть ЗАМЕТНЫМ (замеренный крюк — вдвое длиннее прямого пути). Раньше
+      // хватало одного сантиметра, и прямой угол побеждал там, где магистраль честно работает,
+      // просто её ствол короткий (комната рядом со щитом): линия шла вплотную к стене мимо
+      // общего пучка и входила в щит по его же стене.
+      if (dp && dp.length >= 2 && G().polylineLen(dp) < G().polylineLen(gp) * 0.75
           && sleeveCount(p, dp, skip, sf) <= sleeveCount(p, gp, skip, sf)) return dp;
     }
     return gp;
@@ -1512,21 +1826,55 @@
     // своей линией). Если до выключателя не добраться (нет магистрали между комнатами) —
     // фолбэк на прежнее поведение (ближайшая распайка своей линии / щит), чтобы точка не
     // осталась вообще без трассы.
-    viaSw.forEach(({ el, pos, sw, spos, chain }) => {
+    /* ШЛЕЙФ ЦЕЛЕЙ ОДНОЙ КЛАВИШИ. Раньше КАЖДАЯ цель тянула свой кабель к выключателю
+       «звездой»: четыре точечных светильника на одной клавише = четыре кабеля от выключателя
+       (замер на типовой гостиной: 26 м кабеля на пять светильников и три вложенных
+       прямоугольника трасс вокруг комнаты). Физически клавиша коммутирует ОДНУ жилу, и
+       светильники её группы соединяют шлейфом: выключатель → ближайший → следующий. Поэтому
+       цели одной клавиши собираются тем же chainFromPanel, что и розетки линии, только
+       «щитом» для них служит сам выключатель (плюс уже проведённые цели этой клавиши — для
+       «⚡ Построить», которая достраивает только новые точки). Цели РАЗНЫХ клавиш между
+       собой не соединяются: это разные коммутируемые жилы. */
+    const keyOfTarget = (sw, id) => {
+      for (let ki = 0; ki < 3; ki++) if (G().targetIdsOf(sw, ki).indexOf(id) >= 0) return ki;
+      return 0;
+    };
+    const keyGroups = new Map();
+    viaSw.forEach((it) => {
+      const { el, pos, sw, spos, chain } = it;
       // линия управляемой точки = линия ВЫКЛЮЧАТЕЛЯ (она физически питается через него).
       // Проставляем и здесь, а не только в момент назначения клавиши в редакторе
       // (EP.Plan.Elements.syncTargetCircuit): так автоматика догоняет проекты, где клавиши
       // расставлены ДО этой версии, и случай «у выключателя поменяли линию после назначения».
       if (sw.circuitId && el.circuitId !== sw.circuitId) el.circuitId = sw.circuitId;
+      if (!chain) {
+        const ki = keyOfTarget(sw, el.id), gk = sw.id + ":" + ki;
+        if (!keyGroups.has(gk)) keyGroups.set(gk, { sw, spos, ki, items: [] });
+        keyGroups.get(gk).items.push({ el, pos });
+        return;
+      }
       const cid = el.circuitId || sw.circuitId || null;
       const color = colorOf(p, el);
-      let rt = addRoute(c, p, el, pos, { kind: "el", id: sw.id, pos: spos, el: sw }, cid, color);
+      const rt = addRoute(c, p, el, pos, { kind: "el", id: sw.id, pos: spos, el: sw }, cid, color);
       // перегон МЕЖДУ звеньями цепочки помечаем — в смете у него своё число жил (см.
       // chainMark в plan-calc.js): у обычного питания 3 жилы, у перегона с перекрёстным 5
-      if (rt && chain) { rt.leg = "chain"; rt.chainCross = chainSegCross(el, sw); }
-      if (rt) return;
+      if (rt) { rt.leg = "chain"; rt.chainCross = chainSegCross(el, sw); return; }
       const J = cid ? juncts.filter((n) => n.circuitId === cid) : juncts.slice();
       connectNearest(c, p, el, pos, J.concat(pinned(cid, powerPanels)), cid, color);
+    });
+    keyGroups.forEach((g) => {
+      const sw = g.sw, cid = sw.circuitId || g.items[0].el.circuitId || null;
+      const ids = G().targetIdsOf(sw, g.ki);
+      const done = extraConnected ? extraConnected.filter((n) => n.el && ids.indexOf(n.el.id) >= 0) : [];
+      chainFromPanel(c, p, g.items, [{ kind: "el", id: sw.id, pos: g.spos, el: sw }].concat(done), cid);
+      // до выключателя не добраться (нет магистрали между комнатами) — прежний фолбэк:
+      // ближайшая распайка своей линии / щит, чтобы точка не осталась вообще без трассы
+      g.items.forEach(({ el, pos }) => {
+        if (p.routes.some((r) => r.fromId === el.id)) return;
+        const ecid = el.circuitId || cid;
+        const J = ecid ? juncts.filter((n) => n.circuitId === ecid) : juncts.slice();
+        connectNearest(c, p, el, pos, J.concat(pinned(ecid, powerPanels)), ecid, colorOf(p, el));
+      });
     });
     groups.forEach((g) => {
       const targetPanels = pinned(g.circuitId, g.kind === "24" ? trafoPanels : g.kind === "leak" ? neptunPanels : g.kind === "lv" ? routerPanels : powerPanels);
@@ -2416,10 +2764,12 @@
   }
 
   // хит-тест по уже построенным трассам (для ручного редактирования, plan-rooms.js)
-  function routeAt(p, w, maxD) {
+  // dispOf(rt) — необязательный: как трасса нарисована на экране (после разноса пучка);
+  // тогда попадание считается по нарисованной ломаной, а не по физической
+  function routeAt(p, w, maxD, dispOf) {
     let best = null;
     (G().floorScoped(p).routes || []).forEach((rt) => {
-      const pts = rt.points || [];
+      const pts = (dispOf && dispOf(rt)) || rt.points || [];
       for (let i = 0; i < pts.length - 1; i++) {
         const cl = G().closestOnSeg(w, pts[i], pts[i + 1]);
         if (cl.d <= maxD && (!best || cl.d < best.d)) best = { d: cl.d, route: rt, pt: { x: cl.x, y: cl.y } };
@@ -2578,7 +2928,7 @@
     const d2 = { x: (b2.x - b1.x) / L2, y: (b2.y - b1.y) / L2 };
     if (Math.abs(d1.x * d2.x + d1.y * d2.y) < 0.99) return 0;      // не параллельны
     const n = { x: -d1.y, y: d1.x };
-    if (Math.abs((b1.x - a1.x) * n.x + (b1.y - a1.y) * n.y) > 1) return 0; // уже разнесены
+    if (Math.abs((b1.x - a1.x) * n.x + (b1.y - a1.y) * n.y) > 0.5) return 0; // уже разнесены (под-полоса — 0,7 см)
     const t = (q) => (q.x - a1.x) * d1.x + (q.y - a1.y) * d1.y;
     const lo = Math.min(t(b1), t(b2)), hi = Math.max(t(b1), t(b2));
     return Math.max(0, Math.min(hi, L1) - Math.max(lo, 0));
@@ -2747,6 +3097,15 @@
         const mv = (q0) => ({ x: q0.x + ax.x * d, y: q0.y + ax.y * d });
         it.q[it.iEnd] = mv(it.end);
         if (it.iPre >= 0) it.q[it.iPre] = mv(it.pre);
+        // место в гребёнке могло уехать НАЗАД вдоль хода кабеля: тогда вершина перед ним
+        // осталась «за» поворотом, и линия шла до неё и возвращалась по самой себе. Такой
+        // выброс убираем (три точки на одной прямой, средняя — дальше обеих соседних).
+        for (let i = it.q.length - 2; i >= 1; i--) {
+          const A = it.q[i - 1], B = it.q[i], C = it.q[i + 1];
+          const cr = (B.x - A.x) * (C.y - B.y) - (B.y - A.y) * (C.x - B.x);
+          const dt = (B.x - A.x) * (C.x - B.x) + (B.y - A.y) * (C.y - B.y);
+          if (Math.abs(cr) < 0.01 && dt < 0) it.q.splice(i, 1);
+        }
         recomputeThroughWalls(p, it.r);   // слот уехал на несколько см — гильзы пересчитываем
       });
     });
@@ -2934,14 +3293,38 @@
     return Object.keys(groups).reduce((n, k) => n + Math.ceil(groups[k].n / (groups[k].cap || cap)), 0);
   }
 
+  // длина КАБЕЛЯ одной трассы (план + спуски к точке и в щит + стояк) — та же формула, что в
+  // сводке «Кабель по трассам»; общая для lengths() и пути питания точки (feedPath)
+  function routeLen(p, r) {
+    const el = (p.elements || []).find((e) => e.id === r.fromId);
+    const pn = (r.toPanel && !r.toRiser) ? (p.panels || []).find((x) => x.id === r.toId) : null;
+    return G().polylineLen(r.points) + pointVert(p, el, r.routeType) * hopVertMul(p, r)
+      + ((r.toPanel && !r.toRiser) ? panelVert(p, pn, r.routeType) : 0) + riserRun(p, el);
+  }
+  // Путь питания точки до щита по построенным трассам: точка → (выключатель, соседний
+  // светильник шлейфа, распайка, стояк) → … → щит. Трассы — дерево: у узла РОВНО одна
+  // трасса «к родителю» (fromId = узел), поэтому путь — цепочка по toId. Гард от кольца.
+  // → { nodes: [id родителей от ближнего к щиту], toPanel: id щита|null, lenCm } | null
+  function feedPath(p, elId) {
+    const out = { nodes: [], toPanel: null, lenCm: 0 };
+    let cur = elId;
+    const seen = new Set();
+    for (let guard = 0; guard < 64 && cur && !seen.has(cur); guard++) {
+      seen.add(cur);
+      const r = (p.routes || []).find((x) => x.fromId === cur);
+      if (!r) break;
+      out.lenCm += routeLen(p, r);
+      if (r.toPanel) { out.toPanel = r.toId; break; }
+      out.nodes.push(r.toId);
+      cur = r.toId;
+    }
+    return out.lenCm > 0 ? out : null;
+  }
   function lengths(p) {
     const byLayer = {}, byCircuit = {};
     let crossings = 0, total = 0;
     (p.routes || []).forEach((r) => {
-      const el = (p.elements || []).find((e) => e.id === r.fromId);
-      const pn = (r.toPanel && !r.toRiser) ? (p.panels || []).find((x) => x.id === r.toId) : null;
-      const L = G().polylineLen(r.points) + pointVert(p, el, r.routeType) * hopVertMul(p, r)
-        + ((r.toPanel && !r.toRiser) ? panelVert(p, pn, r.routeType) : 0) + riserRun(p, el);
+      const L = routeLen(p, r);
       byLayer[r.layer] = (byLayer[r.layer] || 0) + L;
       const cid = r.circuitId || "_none";
       byCircuit[cid] = (byCircuit[cid] || 0) + L;
@@ -3006,26 +3389,49 @@
     const circuits = p.circuits || [];
     const breakers = EP.Plan.Core.DEFAULTS.breakers;
 
+    const unroutedHtml = unrouted.length ? `<div class="ep-plan-modehint ep-plan-warnhint">${T.unroutedBanner(unrouted.length)}
+        ${!((G().floorScoped(p).guides || []).filter((gd) => (gd.points || []).length >= 2)).length ? `<div class="ep-plan-srow"><button type="button" class="ep-plan-tbtn ep-clickable" data-prt-suggest>${T.suggestGuide}</button></div>` : ""}
+        <div class="ep-plan-unrlist">${unrouted.slice(0, 12).map((u) => `<div class="ep-plan-unrrow"><button type="button" class="ep-plan-mini ep-clickable" data-prt-show="${esc(u.id)}" aria-label="Показать на плане">👁</button><b>${esc(u.name)}</b> — ${esc(u.reason)}</div>`).join("")}${unrouted.length > 12 ? `<div class="ep-plan-unrrow">…и ещё ${unrouted.length - 12}</div>` : ""}</div></div>` : "";
     const solo = rooms().soloCircuitId ? rooms().soloCircuitId() : null;
     const linesHtml = (circuits.length || st.byCircuit._none)
       ? `<div class="ep-plan-srow"><b>${T.lines}</b>${solo ? `<span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-prt-soloall>${T.soloAll}</button>` : ""}</div>` +
         `<div class="ep-plan-srow ep-plan-hintrow">${T.soloHint}</div>` +
+        // Два ряда: имя/длина/👁/✕ и под ними автомат·УЗО·щит. Раньше выбор автомата растягивался
+        // общим правилом select{width:100%} на всю ширину, и строка линии на телефоне занимала
+        // три ряда (138 px) — список из 12 линий уходил на несколько экранов.
         circuits.map((c) => `<div class="ep-plan-lineRow${solo === c.id ? " is-solo" : ""}${c.hidden ? " is-hidden" : ""}">
             <button type="button" class="ep-plan-lineName ep-clickable" data-prt-solo="${esc(c.id)}">
-              <span class="ep-plan-cdot" style="background:${esc(c.color)}"></span><b>${esc(c.name)}</b></button>
+              <span class="ep-plan-cdot" style="background:${esc(c.color)}"></span><b>${esc(c.name)}</b>${c.title ? `<span class="ep-plan-linettl">${esc(c.title)}</span>` : ""}</button>
             <span class="ep-plan-flex"></span>
-            <span>${st.byCircuit[c.id] ? G().fmtLen(st.byCircuit[c.id]) : "—"}</span>
+            <span class="ep-plan-linelen">${st.byCircuit[c.id] ? G().fmtLen(st.byCircuit[c.id]) : "—"}</span>
             <button type="button" class="ep-plan-mini ep-clickable" data-prt-hide="${esc(c.id)}" aria-label="Скрыть/показать линию">${c.hidden ? "🚫" : "👁"}</button>
-            <select data-prt-brk="${esc(c.id)}" class="ep-plan-sel">${breakers.map((b) => `<option value="${b}" ${c.breaker === b ? "selected" : ""}>${b}A</option>`).join("")}</select>
-            ${EP.Plan.Circuits ? EP.Plan.Circuits.protSelectHtml(p, c, "data-pcx-prot") + EP.Plan.Circuits.panelSelectHtml(p, c, "data-pcx-panel")
-              : `<label class="ep-plan-chk"><input type="checkbox" data-prt-rcd="${esc(c.id)}" ${c.rcd ? "checked" : ""}>${T.rcd}</label>`}
-            <button type="button" class="ep-plan-mini ep-plan-danger ep-clickable" data-prt-cdel="${esc(c.id)}">✕</button>
+            <button type="button" class="ep-plan-mini ep-plan-danger ep-clickable" data-prt-cdel="${esc(c.id)}" aria-label="Удалить линию">✕</button>
+            <div class="ep-plan-lineCtl">
+              <select data-prt-brk="${esc(c.id)}" class="ep-plan-sel" aria-label="Автомат линии ${esc(c.name)}">${breakers.map((b) => `<option value="${b}" ${c.breaker === b ? "selected" : ""}>${b}A</option>`).join("")}</select>
+              ${EP.Plan.Circuits ? EP.Plan.Circuits.protSelectHtml(p, c, "data-pcx-prot") + EP.Plan.Circuits.panelSelectHtml(p, c, "data-pcx-panel")
+                : `<label class="ep-plan-chk"><input type="checkbox" data-prt-rcd="${esc(c.id)}" ${c.rcd ? "checked" : ""}>${T.rcd}</label>`}
+            </div>
           </div>`).join("") +
         (st.byCircuit._none ? `<div class="ep-plan-lineRow"><span class="ep-plan-cdot" style="background:#94a3b8"></span>${T.noLine}<span class="ep-plan-flex"></span><span>${G().fmtLen(st.byCircuit._none)}</span></div>` : "")
       : "";
 
+    // Порядок шторки — по частоте использования (аудит на телефоне 412 px): раньше «⚡ Построить»
+    // и «✨ Оптимизировать» стояли в самом низу, под ~2500 px настроек и пояснений, и до них
+    // приходилось долго листать. Теперь: действия → «Без трассы» → итог и линии → настройки,
+    // свёрнутые в один блок (меняют их редко; раскрытость запоминается до конца сеанса).
+    const curSurf = useFloor && useCeil ? T.ceiling + "/" + T.floor : (useFloor ? T.floor : T.ceiling);
+    const setSummary = `по ${curSurf} · штроба ${Math.round(p.settings.chaseW || 25)}×${Math.round(p.settings.chaseH || 30)} · отступ ${Math.round(p.settings.routeOffset || 15)} см · ${qualityOf(p) === "fast" ? T.qFast : qualityOf(p) === "precise" ? T.qPrecise : T.qMax}`;
     rooms().openSheet(`<div class="ep-plan-srow"><b>🧵 ${T.title}</b><span>· ${T.built(p.routes.length)}</span>
         <span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-sheet-fs aria-label="Во весь экран">⛶</button><button type="button" class="ep-plan-mini ep-clickable" data-prt-close>✕</button></div>
+      <div class="ep-plan-srow ep-plan-sbtns">
+        <button type="button" class="btn btn-primary ep-clickable" data-prt-build>${T.build}</button>
+        ${p.routes.length ? `<button type="button" class="ep-plan-tbtn ep-clickable" data-prt-optimize>${T.optimizeBtn}</button>` : ""}
+        ${p.routes.length ? `<button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-prt-clear>${T.clear}</button>` : ""}
+      </div>
+      ${unroutedHtml}
+      ${p.routes.length ? `<div class="ep-plan-srow ep-plan-rlens"><span>${T.total}: <b>${G().fmtLen(st.total)}</b></span><span title="физических отверстий сверлить">${holes} ${T.crossings}</span>${st.crossings !== holes ? `<span class="ep-plan-dim">(кабеле-пересечений ${st.crossings})</span>` : ""}</div>${qualityRowHtml(p)}` : ""}
+      ${linesHtml}
+      <details class="ep-plan-rset" data-prt-set${setOpen ? " open" : ""}><summary><b>${T.setTitle}</b><span class="ep-plan-rsetsum">${esc(setSummary)}</span></summary>
       <div class="ep-plan-srow">${T.routeType}:
         <button type="button" class="ep-plan-chip ep-clickable ${rt === "ceiling" ? "on" : ""}" data-prt-rt="ceiling">${T.ceiling}</button>
         <button type="button" class="ep-plan-chip ep-clickable ${rt === "floor" ? "on" : ""}" data-prt-rt="floor">${T.floor}</button>
@@ -3050,11 +3456,11 @@
       <div class="ep-plan-modehint">Линии идут по контуру комнаты с отступом, стены не пересекают — только перпендикулярной проходкой Ø${p.settings.sleeveD || 20} (${useFloor ? "по полу — 1 кабель на гильзу" : ""}${useFloor && useCeil ? ", " : ""}${useCeil ? (p.settings.gofraCeil !== false ? "по потолку в гофре — 1 кабель на гильзу" : "по потолку без гофры — макс. 2 кабеля на гильзу") : ""}).</div>
       <div class="ep-plan-modehint">Тёплый пол — штроба в пол ${p.settings.tpChaseW || 50}×${p.settings.tpChaseH || 50} мм. Штроба к посту блока — в редакторе точки.</div>
       ${!juncN ? `<div class="ep-plan-modehint">${T.hintJ}</div>` : ""}
-      ${unrouted.length ? `<div class="ep-plan-modehint ep-plan-warnhint">${T.unroutedBanner(unrouted.length)}
-        ${!((G().floorScoped(p).guides || []).filter((gd) => (gd.points || []).length >= 2)).length ? `<div class="ep-plan-srow"><button type="button" class="ep-plan-tbtn ep-clickable" data-prt-suggest>${T.suggestGuide}</button></div>` : ""}
-        <div class="ep-plan-unrlist">${unrouted.slice(0, 12).map((u) => `<div class="ep-plan-unrrow"><button type="button" class="ep-plan-mini ep-clickable" data-prt-show="${esc(u.id)}" aria-label="Показать на плане">👁</button><b>${esc(u.name)}</b> — ${esc(u.reason)}</div>`).join("")}${unrouted.length > 12 ? `<div class="ep-plan-unrrow">…и ещё ${unrouted.length - 12}</div>` : ""}</div></div>` : ""}
-      ${p.routes.length ? `<div class="ep-plan-srow ep-plan-rlens"><span>${T.total}: <b>${G().fmtLen(st.total)}</b></span><span title="физических отверстий сверлить">${holes} ${T.crossings}</span>${st.crossings !== holes ? `<span class="ep-plan-dim">(кабеле-пересечений ${st.crossings})</span>` : ""}</div>${qualityRowHtml(p)}` : ""}
-      ${linesHtml}
+      <div class="ep-plan-srow">${T.lampLbl}
+        <button type="button" class="ep-plan-chip ep-clickable ${p.settings.lampDirect !== false ? "on" : ""}" data-prt-lamp="1">${T.lampDirect}</button>
+        <button type="button" class="ep-plan-chip ep-clickable ${p.settings.lampDirect === false ? "on" : ""}" data-prt-lamp="0">${T.lampContour}</button>
+      </div>
+      <div class="ep-plan-srow ep-plan-hintrow">${T.lampHint}</div>
       <div class="ep-plan-srow">${T.qualityLbl}
         ${["fast", "precise", "max"].map((q) => `<button type="button" class="ep-plan-chip ep-clickable ${qualityOf(p) === q ? "on" : ""}" data-prt-quality="${q}">${q === "fast" ? T.qFast : q === "precise" ? T.qPrecise : T.qMax}</button>`).join("")}
       </div>
@@ -3063,12 +3469,15 @@
         ${[true, false].map((on) => `<button type="button" class="ep-plan-chip ep-clickable ${precalcOn(p) === on ? "on" : ""}" data-prt-precalc="${on ? 1 : 0}">${on ? T.precalcOn : T.precalcOff}</button>`).join("")}
       </div>
       <div class="ep-plan-srow ep-plan-hintrow">${precalcOn(p) && precalcReady() ? T.precalcHintReady : T.precalcHint}</div>
-      <div class="ep-plan-srow ep-plan-sbtns">
-        <button type="button" class="btn btn-primary ep-clickable" data-prt-build>${T.build}</button>
-        ${p.routes.length ? `<button type="button" class="ep-plan-tbtn ep-clickable" data-prt-optimize>${T.optimizeBtn}</button>` : ""}
-        <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-prt-clear>${T.clear}</button>
-      </div>`);
+      </details>`);
   }
+  // раскрыт ли блок «⚙ Настройки трасс» — до конца сеанса (шторка перерисовывается на
+  // каждую правку настройки, и без этого блок схлопывался бы под пальцем)
+  let setOpen = false;
+  document.addEventListener("toggle", (e) => {
+    const d = e.target;
+    if (d && d.matches && d.matches("details[data-prt-set]")) setOpen = d.open;
+  }, true);
 
   // Напоминание ПЕРЕД трассировкой (просьба пользователя): между комнатами трасса теперь
   // строится ТОЛЬКО по нарисованной магистрали (⇉) — если её не хватает до какой-то
@@ -3144,7 +3553,7 @@
       // поверхность теперь записана В КАЖДОЙ трассе (rt.routeType) — без перестройки уже
       // построенные остались бы на прежней поверхности молча (тот же принцип, что и у
       // смены отступа от стены ниже: геометрия/физика изменилась, старые трассы неточны)
-      if ((c.project.routes || []).length) build(); else sheet();
+      if ((c.project.routes || []).length) build({ noUndo: true }); else sheet();
       return;
     }
     if ((b = t.closest("[data-prt-surf]"))) { // поверхность ГРУППЫ слоёв (общее/потолок/пол)
@@ -3153,8 +3562,16 @@
       c.project.settings.surfaces = c.project.settings.surfaces || {};
       c.project.settings.surfaces[key] = (val === "floor" || val === "ceiling") ? val : null;
       c.persist("routes-surface");
-      if ((c.project.routes || []).length) build(); else sheet();
+      if ((c.project.routes || []).length) build({ noUndo: true }); else sheet();
       return;
+    }
+    if ((b = t.closest("[data-prt-lamp]"))) { // свет по потолку: напрямую / по контуру
+      const c = core(), on = b.getAttribute("data-prt-lamp") === "1";
+      if ((c.project.settings.lampDirect !== false) !== on) {
+        c.commit(); c.project.settings.lampDirect = on; c.persist("routes-lamp");
+        if ((c.project.routes || []).length) { build({ noUndo: true }); return; }
+      }
+      sheet(); return;
     }
     if ((b = t.closest("[data-prt-gofra]"))) {
       const c = core(); c.commit(); c.project.settings.gofraCeil = b.getAttribute("data-prt-gofra") === "1"; c.persist("routes-gofra"); sheet(); return;
@@ -3187,7 +3604,7 @@
       c.commit();
       c.project.settings.routeOffset = Math.max(5, Math.min(40, Number(t.value) || 15));
       c.persist("route-offset");
-      if ((c.project.routes || []).length) build(); // перестраиваем с новым отступом
+      if ((c.project.routes || []).length) build({ noUndo: true }); // перестраиваем с новым отступом
       return;
     }
     if (t.getAttribute && (t.hasAttribute("data-prt-chw") || t.hasAttribute("data-prt-chh"))) {
@@ -3201,5 +3618,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { routeTurns, build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, keys24Of, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
+  EP.Plan.Routes = { routeTurns, build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, keys24Of, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, dropCollinear, colinearMid, routeLen, feedPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
 })();
