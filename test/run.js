@@ -756,20 +756,24 @@ test("порядок полос считается по геометрии, а �
     const rt = P.routes.find((r) => r.circuitId === cid && r.points.length > 2);
     if (!rt) return null;
     const run = [];
-    for (let i = 1; i < rt.points.length; i++) {
+    for (let i = 1; i < rt.points.length - 1; i++) {          // последний отрезок — вход в щит, не ствол
       const a = rt.points[i - 1], b = rt.points[i];
-      if (Math.abs(a.y - b.y) < 0.5 && a.y >= 369 && a.y < 400) run.push(a.y);
+      // веер уходит по одну руку от хода К ЩИТУ — с какой стороны от ствола это окажется,
+      // решает положение щита, поэтому полоса = расстояние до ствола, а не «ниже него»
+      if (Math.abs(a.y - b.y) < 0.5 && Math.abs(a.y - 370) < 30) run.push(Math.abs(a.y - 370));
     }
-    return run.length ? Math.round(Math.min(...run) - 370) : null;
+    return run.length ? Math.round(Math.min(...run)) : null;
   };
   const lanes = P.circuits.map((c) => laneOf(c.id)).filter((v) => v != null);
   ok(lanes.length >= 3, "минимум три линии идут по стволу");
   eq(new Set(lanes).size, lanes.length, "полосы не совпадают — линии не ложатся друг на друга");
-  // «Спальня» (вход у x≈80) и «Санузел» (вход у x≈540) — с ОДНОЙ стороны ствола; дальняя
-  // от щита обязана идти БЛИЖЕ к стволу, иначе вход ближней режет её ход
+  // «Спальня» (вход у x≈80) и «Санузел» (вход у x≈540) — с ОДНОЙ стороны ствола. Какая из
+  // них ближе к стволу, зависит от того, с какой стороны от него веер (planarLaneOrder):
+  // проверяем то, ради чего порядок вообще считается, — линии не пересекают друг друга
   const spal = laneOf(P.circuits[2].id), san = laneOf(P.circuits[3].id);
   ok(spal != null && san != null, "обе нижние линии идут по стволу");
-  ok(san < spal, "линия, входящая ДАЛЬШЕ от щита, идёт ближе к стволу");
+  ok(spal !== san, "у них разные полосы");
+  eq(EP.Plan.Routes.scoreRoutes(P).crossings, 0, "линии разных QF на входах в ствол не пересекаются");
   // порядок детерминирован: повторная сборка даёт те же полосы
   const before = P.circuits.map((c) => laneOf(c.id)).join(",");
   EP.Plan.Routes.build({ silent: true });
@@ -1664,7 +1668,9 @@ test("routeOff: у разных линий (QF) отступ от стены р�
   const { P, w } = install();
   const cc1 = M.newCircuit("QF1", "#ef4444", 16); P.circuits.push(cc1);
   const cc2 = M.newCircuit("QF2", "#f59e0b", 16); P.circuits.push(cc2);
-  const pn = M.newPanel(200, 150, "Щ"); P.panels.push(pn);
+  // щит НЕ на одной вертикали с розеткой: иначе путь — прямая вниз, вершина контура на ней
+  // лишняя (dropCollinear её убирает) и проверять отступ было бы не по чему
+  const pn = M.newPanel(260, 150, "Щ"); P.panels.push(pn);
   const s1 = M.newElement("socket", w(0), 100, 30, "power"); s1.circuitId = cc1.id; P.elements.push(s1);
   const s2 = M.newElement("socket", w(0), 200, 30, "power"); s2.circuitId = cc2.id; P.elements.push(s2);
   const target = { kind: "panel", pos: { x: pn.x, y: pn.y } };
@@ -2567,9 +2573,11 @@ test("фото: deleteProject чистит кэш фото своего прое
     // входа от щита), а не порядок заведения линий, — поэтому проверяем свойство, а не
     // конкретную линию.
     const on400 = [rt1, rt2].filter((r) => r.points.some((pt) => Math.abs(pt.y - 400) < 1));
-    const on402 = [rt1, rt2].filter((r) => r.points.some((pt) => Math.abs(pt.y - 402) < 1));
+    // сторона веера — по одну руку от хода К ЩИТУ, поэтому вторая линия стоит в 2 см от
+    // магистрали с той стороны, куда её ориентировал щит (y=402 или y=398)
+    const on402 = [rt1, rt2].filter((r) => r.points.some((pt) => Math.abs(Math.abs(pt.y - 400) - 2) < 1));
     eq(on400.length, 1, "ровно одна линия идёт по самой магистрали (y=400)");
-    eq(on402.length, 1, "вторая — магистраль +2см (y=402)");
+    eq(on402.length, 1, "вторая — в 2 см от магистрали");
     ok(on400[0] !== on402[0], "это разные линии — они не ложатся друг на друга");
   });
   test("guides: точка БЕЗ линии (circuitId=null) идёт РОВНО по магистрали (offset=0, не отрицательный)", () => {
@@ -3081,7 +3089,7 @@ test("фото: deleteProject чистит кэш фото своего прое
     eq(/укажи тип 24В/.test(iss2), false, "после выбора «Монохром» подсказка уходит");
   });
 
-  test("трассы ОДНОЙ линии, сходящиеся в выключателе, разносятся на 2см (не ложатся друг на друга)", () => {
+  test("трассы ОДНОЙ линии, сходящиеся в выключателе, разносятся под-полосой (не ложатся друг на друга)", () => {
     // репорт пользователя со скриншотом: «линии друг на друга наложились, я думал до клавиши
     // и от клавиши до освещения будут друг от друга 2 см». Комната 3×3, щит внизу слева,
     // выключатель на левой стене, две лампы — всё на одной линии QF1.
@@ -3093,7 +3101,8 @@ test("фото: deleteProject чистит кэш фото своего прое
     const l2 = M.newElement("light", null, 0, 0, "light"); l2.wallId = null; l2.params = { x: 220, y: 220 }; l2.circuitId = qf.id; P.elements.push(l2);
     sw.targetIds = [l1.id, l2.id];
     EP.Plan.Routes.build();
-    // длина коллинеарного наложения (перпендикулярно ближе 1см) между всеми парами трасс
+    // длина коллинеарного наложения (перпендикулярно ближе полусантиметра: шаг под-полосы
+    // 0,7 см — см. SUBLANE) между всеми парами трасс
     const ovl = (a1, a2, b1, b2) => {
       const L1 = G.dist(a1, a2), L2 = G.dist(b1, b2);
       if (L1 < 1 || L2 < 1) return 0;
@@ -3101,7 +3110,7 @@ test("фото: deleteProject чистит кэш фото своего прое
       const d2 = { x: (b2.x - b1.x) / L2, y: (b2.y - b1.y) / L2 };
       if (Math.abs(d1.x * d2.x + d1.y * d2.y) < 0.99) return 0;
       const n = { x: -d1.y, y: d1.x };
-      if (Math.abs((b1.x - a1.x) * n.x + (b1.y - a1.y) * n.y) > 1) return 0;
+      if (Math.abs((b1.x - a1.x) * n.x + (b1.y - a1.y) * n.y) > 0.5) return 0;
       const t = (q) => (q.x - a1.x) * d1.x + (q.y - a1.y) * d1.y;
       const lo = Math.min(t(b1), t(b2)), hi = Math.max(t(b1), t(b2));
       return Math.max(0, Math.min(hi, L1) - Math.max(lo, 0));
@@ -3114,7 +3123,7 @@ test("фото: deleteProject чистит кэш фото своего прое
     eq(P.routes.length, 3, "три трассы: щит→выключатель и две лампы→выключатель");
     // до фикса на этой геометрии наложение было 161см (замерено), стык у общего анкера даёт ~20см
     ok(total < 40, "трассы не идут одна поверх другой (наложение " + Math.round(total) + "см, было 161см)");
-    ok(P.routes.some((r) => (r.lane || 0) > 0), "одна из трасс встала на следующую полосу (+2см)");
+    ok(P.routes.some((r) => (r.lane || 0) > 0), "одна из трасс встала на под-полосу");
   });
 
   // ===== 25. Тяжёлый просчёт: метрика, порядок полос, оптимизатор =====
@@ -8408,6 +8417,253 @@ test("фото: deleteProject чистит кэш фото своего прое
       ok(/addEventListener\("ep:app-pause", \(\) => \{ flushPersist\(\);/.test(pc), "план записывается сразу");
       ok(/navigator\.onLine === false\) return;/.test(pc), "без сети проект в очередь Firestore не кладём");
       ok(/requestIdleCallback/.test(pc), "отправка — в простое потока");
+    });
+  }
+
+  // ===== 68. Шлейф светильников одной клавиши и прямые хопы по потолку =====
+  {
+    const lampRoom = (extraSettings) => {
+      const room = M.newRoom(G.rectPoints(0, 0, 500, 400), "Гостиная");
+      const proj = Object.assign(M.newProject("L"), { rooms: [room] });
+      Object.assign(proj.settings, extraSettings || {});
+      EP.Plan.Core.importJSON(JSON.stringify({ project: proj }));
+      const P = EP.Plan.Core.project, rid = P.rooms[0].id;
+      const cc = M.newCircuit("QF1", "#22c55e", 10); P.circuits.push(cc);
+      P.panels.push(M.newPanel(10, 200, "ЩК"));
+      const L = (x, y) => { const e = M.newElement("light", null, 0, 270, "light"); e.params = { x, y }; e.circuitId = cc.id; P.elements.push(e); return e; };
+      // выключатель на нижней стене (стена 2 идёт справа налево): x = 500 - 150 = 350
+      const sw = M.newElement("switch", rid + ":2", 150, 90, "light"); sw.keys = 2; sw.circuitId = cc.id; P.elements.push(sw);
+      const a = L(250, 200), b1 = L(120, 100), b2 = L(380, 100), b3 = L(120, 300), b4 = L(380, 300);
+      sw.targetIds = [[a.id], [b1.id, b2.id, b3.id, b4.id]];
+      return { P, sw, a, group: [b1, b2, b3, b4], cc };
+    };
+    const lenOf = (r) => G.polylineLen(r.points);
+    const orthoOnly = (r) => r.points.every((q, i) => i === 0 || Math.abs(q.x - r.points[i - 1].x) < 0.01 || Math.abs(q.y - r.points[i - 1].y) < 0.01);
+    test("шлейф клавиши: цели одной клавиши соединены между собой, а не «звездой» к выключателю", () => {
+      const { P, sw, a, group } = lampRoom();
+      EP.Plan.Routes.build({ silent: true });
+      const by = (id) => P.routes.filter((r) => r.fromId === id);
+      [a].concat(group).forEach((e) => eq(by(e.id).length, 1, "у каждого светильника ровно одна трасса"));
+      const gIds = group.map((e) => e.id);
+      const toSw = P.routes.filter((r) => r.toId === sw.id && gIds.indexOf(r.fromId) >= 0);
+      ok(toSw.length < group.length, "к выключателю идёт не каждый светильник группы: " + toSw.length);
+      ok(toSw.length >= 1, "хотя бы один светильник группы питается от самого выключателя");
+      const hops = P.routes.filter((r) => gIds.indexOf(r.fromId) >= 0 && gIds.indexOf(r.toId) >= 0);
+      eq(hops.length + toSw.length, group.length, "остальные — светильник к светильнику своей клавиши");
+      // клавиши между собой НЕ смешиваются: светильник клавиши 1 не цепляется к группе клавиши 2
+      ok(!P.routes.some((r) => (r.fromId === a.id && gIds.indexOf(r.toId) >= 0) || (gIds.indexOf(r.fromId) >= 0 && r.toId === a.id)), "разные клавиши — разные жилы");
+      eq(by(a.id)[0].toId, sw.id, "одиночная цель клавиши идёт к выключателю");
+      // линия у всех — линия выключателя
+      [a].concat(group).forEach((e) => eq(e.circuitId, sw.circuitId, "линия цели = линия выключателя"));
+    });
+    test("прямой хоп по потолку: под прямым углом, к стене — перпендикулярно, короче контура", () => {
+      const d = lampRoom();
+      EP.Plan.Routes.build({ silent: true });
+      const lamps = [d.a].concat(d.group).map((e) => e.id);
+      const rs = d.P.routes.filter((r) => lamps.indexOf(r.fromId) >= 0);
+      ok(rs.every(orthoOnly), "все отрезки строго по осям");
+      const direct = rs.reduce((s2, r) => s2 + lenOf(r), 0);
+      // к выключателю на горизонтальной стене последний отрезок вертикальный
+      rs.filter((r) => r.toId === d.sw.id).forEach((r) => {
+        const n = r.points.length, q = r.points[n - 1];
+        let i = n - 2; while (i > 0 && G.dist(r.points[i], q) < 5) i--;      // пропускаем ступеньку под-полосы
+        ok(Math.abs(r.points[i].x - q.x) < 3, "к стене подходим перпендикулярно");
+        ok(Math.abs(q.x - 350) < 1, "приходим в сам выключатель");
+      });
+      // светильник → светильник: соседние по сетке соединены одним прямым отрезком
+      const hop = d.P.routes.find((r) => lamps.indexOf(r.toId) >= 0);
+      ok(hop && hop.points.length === 2, "между светильниками на одной оси — прямая");
+      // старое поведение (по контуру) возвращается настройкой и заметно длиннее
+      const o = lampRoom({ lampDirect: false });
+      EP.Plan.Routes.build({ silent: true });
+      const lamps2 = [o.a].concat(o.group).map((e) => e.id);
+      const contour = o.P.routes.filter((r) => lamps2.indexOf(r.fromId) >= 0).reduce((s2, r) => s2 + lenOf(r), 0);
+      ok(direct < contour * 0.8, "напрямую короче контура: " + Math.round(direct) + " против " + Math.round(contour));
+    });
+    test("прямой хоп не применяется к щиту, по полу и там, где угол задел бы стену", () => {
+      const d = lampRoom();
+      // светильник без клавиши — обычная точка линии: к щиту идёт по контуру
+      const solo = M.newElement("light", null, 0, 270, "light"); solo.params = { x: 60, y: 60 }; solo.circuitId = d.cc.id;
+      d.P.elements.push(solo);
+      EP.Plan.Routes.build({ silent: true });
+      const toPanel = d.P.routes.filter((r) => r.toPanel);
+      ok(toPanel.length >= 1 && toPanel.every((r) => r.points.length >= 3), "в щит — по контуру, не одной прямой");
+      // Г-образная комната: прямой угол между двумя светильниками задел бы стену выреза
+      const room = M.newRoom([{ x: 0, y: 0 }, { x: 600, y: 0 }, { x: 600, y: 200 }, { x: 250, y: 200 }, { x: 250, y: 500 }, { x: 0, y: 500 }], "Г");
+      const proj = Object.assign(M.newProject("G"), { rooms: [room] });
+      EP.Plan.Core.importJSON(JSON.stringify({ project: proj }));
+      const P = EP.Plan.Core.project;
+      const cc = M.newCircuit("QF1", "#22c55e", 10); P.circuits.push(cc);
+      P.panels.push(M.newPanel(10, 250, "ЩК"));
+      const mk = (x, y) => { const e = M.newElement("light", null, 0, 270, "light"); e.params = { x, y }; e.circuitId = cc.id; P.elements.push(e); return e; };
+      const l1 = mk(520, 190), l2 = mk(240, 450);
+      const pts = EP.Plan.Routes.buildPath(P, l1, { x: 520, y: 190 }, { kind: "point", id: l2.id, pos: { x: 240, y: 450 }, el: l2 }, cc.id);
+      ok(pts && pts.length >= 2, "путь есть");
+      eq(G.polylineCrossings(P, pts, null).length, 0, "путь не пересекает стену выреза");
+    });
+    test("смета: транзитный светильник шлейфа — не «распайка в подрозетнике»", () => {
+      const d = lampRoom();
+      EP.Plan.Routes.build({ silent: true });
+      const res = EP.Plan.Calc.calcByRoutes(d.P);
+      const sp = res.items.find((i) => i.name === "Собрать распайку в подрозетнике");
+      // транзит есть только у выключателя (в него приходит питание и уходит свет)
+      ok(!sp || sp.qty <= 1, "светильники шлейфа в распайки подрозетников не попали: " + (sp ? sp.qty : 0));
+    });
+  }
+
+  // ===== 69. Визуал трасс и подписей: разнос пучков, касание по нарисованному, лесенка цифр =====
+  {
+    const fs = require("fs"), path = require("path"), root = path.resolve(__dirname, "..");
+    const read = (f) => fs.readFileSync(path.join(root, f), "utf8");
+    const BN = EP.Plan.Bundle;
+    const axisOnly = (pts) => pts.every((q, i) => i === 0 || Math.abs(q.x - pts[i - 1].x) < 0.01 || Math.abs(q.y - pts[i - 1].y) < 0.01);
+    const same = (a, b) => Math.abs(a.x - b.x) < 0.01 && Math.abs(a.y - b.y) < 0.01;
+    // две линии по коридору в 2 см друг от друга, дальше каждая уходит вниз к своему прибору
+    const pair = () => [
+      { id: "a", key: "QF1", points: [{ x: 0, y: 100 }, { x: 300, y: 100 }, { x: 300, y: 200 }] },
+      { id: "b", key: "QF2", points: [{ x: 0, y: 102 }, { x: 280, y: 102 }, { x: 280, y: 200 }] }
+    ];
+    test("разнос пучка: линии в 2 см рисуются на читаемом шаге, концы и прямые углы на месте, модель не тронута", () => {
+      const rs = pair(), src = JSON.stringify(rs);
+      const m = BN.spread(rs, { gap: 10, walls: [] });
+      const d1 = m.get("a"), d2 = m.get("b");
+      const y1 = 100 + d1.shift[0].y, y2 = 102 + d2.shift[0].y;
+      ok(y2 - y1 >= 10 - 0.01, "горизонтали разошлись на шаг: " + y1 + " / " + y2);
+      ok(y1 < y2, "порядок линий в пучке сохранён");
+      [d1, d2].forEach((d, i) => {
+        ok(axisOnly(d.pts), "все отрезки по осям (прямые углы целы), линия " + i);
+        ok(same(d.pts[0], rs[i].points[0]) && same(d.pts[d.pts.length - 1], rs[i].points[2]), "концы трассы (прибор, щит) не сдвинуты");
+      });
+      eq(JSON.stringify(rs), src, "route.points не изменились — разнос только на экране");
+    });
+    test("разнос пучка: у стены лента растёт ОТ стены, стена внутри пучка — не раздвигаем, одна линия — вместе", () => {
+      // стена y=90 (грань 95): крайняя к стене линия стоит на месте, вторая уходит от стены
+      let m = BN.spread(pair(), { gap: 10, walls: [{ a: { x: 0, y: 90 }, b: { x: 300, y: 90 }, th: 10 }] });
+      eq(m.get("a").shift[0].y, 0, "линия у стены не двигается");
+      ok(Math.abs(102 + m.get("b").shift[0].y - 110) < 0.01, "вторая — на шаг дальше от стены");
+      // стена МЕЖДУ линиями — они по разные её стороны, сдвиг увёл бы сквозь стену
+      m = BN.spread(pair(), { gap: 10, walls: [{ a: { x: 0, y: 101 }, b: { x: 300, y: 101 }, th: 1 }] });
+      ok(!m.get("a").shift[0].y && !m.get("b").shift[0].y, "стена внутри пучка — без сдвига");
+      // отрезки ОДНОЙ линии друг на друге — один кабельный ход, не два места
+      const one = pair(); one[1].key = "QF1"; one[1].points[0].y = 100.1; one[1].points[1].y = 100.1;
+      m = BN.spread(one, { gap: 10, walls: [] });
+      ok(!m.get("a").shift[0].y && !m.get("b").shift[0].y, "одна линия — вместе");
+      // шаг 0 (крупный масштаб, 2 см и так видно) — без изменений
+      m = BN.spread(pair(), { gap: 0 });
+      ok(same(m.get("b").pts[1], { x: 280, y: 102 }), "gap 0 — линии на физических местах");
+    });
+    test("касание по нарисованной линии переводится в точку физической трассы (тяга правит модель)", () => {
+      const rs = pair();
+      const d2 = BN.spread(rs, { gap: 10, walls: [] }).get("b");
+      const dy = d2.shift[0].y;
+      const ph = BN.toPhysical(d2, rs[1].points, { x: 150, y: 102 + dy }, 3);
+      ok(Math.abs(ph.x - 150) < 0.01 && Math.abs(ph.y - 102) < 0.01, "середина участка → физическая линия: " + JSON.stringify(ph));
+      const pv = BN.toPhysical(d2, rs[1].points, { x: d2.vpos[1].x + 1, y: d2.vpos[1].y }, 3);
+      ok(Math.abs(pv.x - 281) < 0.01 && Math.abs(pv.y - 102) < 0.01, "у сдвинутого излома → физический излом: " + JSON.stringify(pv));
+    });
+    test("dropCollinear: промежуточные вершины на прямой убраны, повороты и шпилька — нет", () => {
+      const RT = EP.Plan.Routes;
+      eq(JSON.stringify(RT.dropCollinear([{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }, { x: 100, y: 100 }, { x: 200, y: 100 }])),
+        JSON.stringify([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 200, y: 100 }]), "прямые слиты, углы целы");
+      eq(RT.dropCollinear([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 50, y: 0 }]).length, 3, "разворот туда-обратно — не прямая, не трогаем");
+      eq(RT.dropCollinear([{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 10, y: 0 }]).length, 2, "совпавшая точка убрана");
+      // построенные трассы: ни одной вершины посреди прямой (кроме ручных правок)
+      const { P, w } = install();
+      const cc = M.newCircuit("QF1", "#ef4444", 16); P.circuits.push(cc);
+      P.panels.push(M.newPanel(200, 150, "Щ"));
+      [[0, 100], [0, 300], [1, 150], [2, 200], [3, 120]].forEach(([wi, off]) => { const e = M.newElement("socket", w(wi), off, 30, "power"); e.circuitId = cc.id; P.elements.push(e); });
+      EP.Plan.Routes.build({ silent: true });
+      ok(P.routes.length >= 5, "трассы построены");
+      P.routes.forEach((r) => { for (let i = 1; i < r.points.length - 1; i++) ok(!RT.colinearMid(r.points[i - 1], r.points[i], r.points[i + 1]), "вершина " + i + " трассы — настоящий поворот"); });
+    });
+    test("лесенка цифр цепочки: цифра короткого звена уходит во второй ряд, длинные — в первом", () => {
+      const RD = EP.Plan.Render;
+      const segs = [{ midOff: 50, dist: 100 }, { midOff: 105, dist: 10 }, { midOff: 115, dist: 10 }, { midOff: 300, dist: 370 }];
+      eq(JSON.stringify(RD.chainRows(segs, 2)), "[0,0,1,0]", "на обзоре две «10» рядом — вторая во втором ряду");
+      eq(JSON.stringify(RD.chainRows(segs, 0.5)), "[0,0,0,0]", "вблизи всё помещается в один ряд");
+      ok(RD.chainLabelOff(1) > RD.chainLabelOff(0), "второй ряд дальше от стены");
+      ok(RD.kBucketHi(RD.kBucketOf(2.5)) >= 2.5, "проверка вмещаемости — по самому мелкому зуму ведра");
+      // хит-тест двойного тапа стоит там же, где видна цифра (та же раскладка и масштаб ведра)
+      const rooms = read("assets/js/modules/plan/plan-rooms.js");
+      ok(/RD\.chainRows\(chain\.segs, kFit\)/.test(rooms) && /chainLabelOff/.test(rooms), "двойной тап считает ряд цифры");
+      ok(/const p = core\(\)\.project && G\(\)\.floorScoped\(core\(\)\.project\)/.test(rooms), "двойной тап — только по активному этажу");
+    });
+    test("подписи на общем виде: пороги телефона, одно имя линии на группу, печать — как раньше", () => {
+      const CFG = EP.Plan.Render.CFG;
+      ok(CFG.lodQfAllK < CFG.lodDimK && CFG.lodDimK < CFG.lodQfK, "вблизи — всё, дальше — по группам, на обзоре — без цифр");
+      ok(CFG.lodDimKPrint > CFG.lodDimK && CFG.lodQfKPrint > CFG.lodQfK, "у печатного листа пороги свои, мягче");
+      const rd = read("assets/js/modules/plan/plan-render.js"), ex = read("assets/js/modules/plan/plan-export.js");
+      ok(/const qfEach = noLod \|\| printMode \|\| k <= CFG\.lodQfAllK/.test(rd) && /qfOne\.add\(best\.id\)/.test(rd), "имя линии — одно на группу в помещении, на печати — у каждой точки");
+      ok(/qfOn, lodDims/.test(rd), "видимость имени линии входит в подпись кэша значка");
+      ok(/draw\(cv, p, Object\.assign\(\{ print: true \}/.test(ex), "печатный лист рисуется в режиме печати");
+      ok(/\[\[room\.name \+ " · " \+ area\], \[room\.name, area\]\] : \[\[room\.name\]\]/.test(rd), "имя комнаты: одной строкой → в две → на дальнем обзоре только имя");
+      ok(/rotate\(-90 \$\{c\.x\} \$\{y0\}\)/.test(rd), "узкую высокую комнату подписываем вдоль неё");
+      ok(/26 \* kSymFit/.test(rd), "сдвиг имени от светильника в центре — в размере значка, не экрана");
+      ok(/labelsOn && nearView && EP\.Plan\.Elements/.test(rd), "номера проёмов на дальнем обзоре скрыты");
+      ok(/!noLod && textW\(txt, CFG\.labelPx \* kFit\) > w\.len/.test(rd), "подпись длиннее короткой стены не рисуется (кроме печати)");
+    });
+    test("магистраль-предложение: в конечную комнату ветка заходит только за стену, в проходную — до центра", () => {
+      const rs = [0, 1, 2].map((i) => M.newRoom(G.rectPoints(i * 300, 0, 300, 300), "R" + (i + 1)));
+      EP.Plan.Core.importJSON(JSON.stringify({ project: Object.assign(M.newProject("A"), { rooms: rs }) }));
+      const P = EP.Plan.Core.project;
+      P.panels.push(M.newPanel(150, 20, "ЩК"));
+      [1, 2].forEach((i) => { const e = M.newElement("socket", P.rooms[i].id + ":0", 150, 30, "power"); P.elements.push(e); });
+      const tr = EP.Plan.Routes.suggestTree(P);
+      ok(tr && tr.polys.length === 2, "две ветки: R1→R2 и R2→R3");
+      const last = (pl) => pl[pl.length - 1];
+      const leaf = tr.polys.find((pl) => last(pl).x > 600), mid = tr.polys.find((pl) => last(pl).x < 600);
+      ok(leaf && Math.abs(last(leaf).x - 640) <= 2, "в конечную R3 — на 40 см за стену, не до центра: " + JSON.stringify(leaf && last(leaf)));
+      ok(mid && Math.abs(last(mid).x - 450) <= 30, "в проходную R2 — до её середины (дальше идёт ветка в R3)");
+    });
+    test("палитра линий — 20 различимых цветов; пучок подключён до рендера; пунктир клавиши у разведённой точки скрыт", () => {
+      const cols = EP.Plan.Core.DEFAULTS.circuitColors;
+      ok(cols.length >= 20 && new Set(cols.map((c) => c.toLowerCase())).size === cols.length, "20 разных цветов");
+      const idx = read("index.html");
+      const pos = (f) => idx.indexOf("assets/js/modules/plan/" + f);
+      ok(pos("plan-bundle.js") > pos("plan-circuits.js") && pos("plan-bundle.js") < pos("plan-render.js"), "plan-bundle.js — после цепей, до рендера");
+      ok(require("./harness.js").PLAN_ORDER.indexOf("plan-bundle") >= 0, "в тестовой песочнице модуль тоже есть");
+      const rd = read("assets/js/modules/plan/plan-render.js");
+      ok(/linkRouted\.has\(elem\.id\) && selId !== elem\.id/.test(rd), "у точки с трассой пунктир «чем управляет» — только при выборе");
+      const rooms = read("assets/js/modules/plan/plan-rooms.js");
+      ok(/start = routeToPhysical\(rt, start, rr\)/.test(rooms), "тяга трассы — по физической линии под пальцем");
+      ok(/while \(a >= 1 && colin\(P\[a - 1\], P\[a\], P\[b\]\)\)/.test(rooms), "«↔ Двигать» берёт всю видимую прямую");
+      ok(/y: horiz \? G\(\)\.snap\(q\.y, step\) : q\.y/.test(rooms), "к сетке — только по оси сдвига");
+      ok(/if \(colin && colin\(P0, q, P1\)\) q = \{ x: G\(\)\.snap\(raw\.x/.test(rooms), "магнит, вернувший излом на прямую, не применяется");
+    });
+    test("цепочка точки: путь питания до щита по трассам и длина до щита — у светильника через выключатель", () => {
+      const room = M.newRoom(G.rectPoints(0, 0, 500, 400), "Гостиная");
+      EP.Plan.Core.importJSON(JSON.stringify({ project: Object.assign(M.newProject("F"), { rooms: [room] }) }));
+      const P = EP.Plan.Core.project, rid = P.rooms[0].id;
+      const cc = M.newCircuit("QF1", "#22c55e", 10); P.circuits.push(cc);
+      const pn = M.newPanel(10, 200, "ЩК"); P.panels.push(pn);
+      const sw = M.newElement("switch", rid + ":2", 150, 90, "light"); sw.circuitId = cc.id; P.elements.push(sw);
+      const lamp = M.newElement("light", null, 0, 270, "light"); lamp.params = { x: 250, y: 200 }; lamp.circuitId = cc.id; P.elements.push(lamp);
+      sw.targetIds = [[lamp.id]];
+      EP.Plan.Routes.build({ silent: true });
+      const RT = EP.Plan.Routes;
+      const fp = RT.feedPath(P, lamp.id);
+      ok(fp && fp.toPanel === pn.id, "путь доходит до щита");
+      eq(JSON.stringify(fp.nodes), JSON.stringify([sw.id]), "свет питается через выключатель");
+      const r1 = P.routes.find((r) => r.fromId === lamp.id), r2 = P.routes.find((r) => r.fromId === sw.id);
+      ok(Math.abs(fp.lenCm - (RT.routeLen(P, r1) + RT.routeLen(P, r2))) < 0.01, "до щита = свой хоп + хоп выключателя");
+      const tot = P.routes.reduce((s2, r) => s2 + RT.routeLen(P, r), 0);
+      ok(Math.abs(tot - RT.lengths(P).total) < 0.01, "сводка «Кабель по трассам» считается той же формулой");
+      const html = EP.Plan.Circuits.chainHtml(P, lamp);
+      ok(/до щита/.test(html) && /вся линия/.test(html) && /ЩК → Выключатель → <b>эта точка<\/b>/.test(html), "в редакторе: путь и обе длины");
+      eq(RT.feedPath(P, "нет-такой"), null, "у точки без трассы пути нет");
+    });
+    test("шторка «Трассы»: действия наверху, настройки свёрнуты, «свет по потолку» — тумблер; правка настройки — один шаг ↶", () => {
+      const rt = read("assets/js/modules/plan/plan-routes.js");
+      const iBuild = rt.indexOf('data-prt-build>${T.build}'), iSet = rt.indexOf("details class=\"ep-plan-rset\"");
+      ok(iBuild > 0 && iSet > iBuild, "«⚡ Построить» — до блока настроек");
+      ok(/data-prt-lamp="1"/.test(rt) && /data-prt-lamp="0"/.test(rt), "тумблер «Свет по потолку: напрямую / по контуру»");
+      ok(!/build\(\); else sheet\(\)/.test(rt) && /build\(\{ noUndo: true \}\); else sheet\(\)/.test(rt), "перестройка после правки настройки — без своего снимка истории");
+      eq(EP.Plan.Core.DEFAULTS.lampDirect, true, "по умолчанию — напрямую");
+      const { P } = install();
+      ok(P.settings.lampDirect === true, "бэкофилл: у старого проекта — напрямую, как и раньше");
+      P.settings.lampDirect = "мусор";
+      EP.Plan.Core.importJSON(JSON.stringify({ project: P }));
+      eq(EP.Plan.Core.project.settings.lampDirect, true, "мусор в настройке → по умолчанию");
     });
   }
 

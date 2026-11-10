@@ -18,9 +18,63 @@
     // проекте из многих комнат вид «вся квартира» превращался в сплошную кашу
     // из наслаивающихся цифр (пойман полным визуальным тестом на 30 комнатах).
     // Имена комнат НЕ скрываются никогда — это ориентир на обзорном виде.
-    lodDimK: 3.0,       // выше — скрыть размерные цепочки, «N · длина» стен, h=NN
-    lodQfK: 4.5         // выше — скрыть ещё и QF-имена над точками, «N мод» щита
+    routePitchPx: 2.6,  // читаемый шаг между соседними линиями пучка на экране, px
+    // Пороги проверены на телефоне 412 px: обзор типовой квартиры — k≈2.4-3, и при прежних
+    // 3.0/4.5 цифры размеров, h=NN и имена линий по 8-9 px ложились друг на друга и на
+    // значки сплошной кашей (скриншот аудита). Цвет точки и так говорит, чья она линия,
+    // а цифры появляются при первом же приближении. На планшете/ПК (k≈1) видно всё.
+    lodDimK: 2.2,       // выше — скрыть размерные цепочки, «N · длина» стен, h=NN
+    lodQfK: 2.6,        // выше — скрыть ещё и QF-имена над точками, «N мод» щита
+    lodQfAllK: 1.3,     // ниже — имя линии над КАЖДОЙ точкой; выше — одно на группу в помещении
+    // Печатный лист (ui.print, plan-export.js) — прежние пороги и имя линии у КАЖДОЙ точки:
+    // бумагу не приблизишь, а при чёрно-белой печати цвет линии теряется, и подпись — то
+    // единственное, по чему видно, чья розетка. Телефонные пороги выше на бумаге убрали бы
+    // размеры уже у квартиры шире ~15 м.
+    lodDimKPrint: 3.0,
+    lodQfKPrint: 4.5,
+    charW: 0.56,        // средняя ширина символа подписи в долях кегля (оценка без раскладки)
+    // Значки точек на ДАЛЬНЕМ обзоре: до k = symFullK размер постоянный на экране (кружок
+    // 22 px — палец попадает так же, как раньше), дальше значок живёт в размере плана, как
+    // объект карты, но не мельче symMin от экранного. Иначе на плане из нескольких квартир
+    // (k≈5) кружок в 22 px — это больше метра, и соседние точки сливались в сплошную кашу.
+    symFullK: 2.6,
+    symMin: 0.5,
+    // ещё дальше (план из нескольких квартир) — площадь под именем комнаты и номера
+    // проёмов «Д1/О1» прячутся: постоянные по размеру на экране, они закрывали сами
+    // комнаты. Имя комнаты остаётся всегда — это ориентир на обзоре.
+    lodFarK: 3.6
   };
+  // Ширина строки подписи в тех же единицах, что кегль. Точной метрики без раскладки нет
+  // (а мерить каждую подпись через getBBox — тысячи раскладок на кадр), поэтому оценка по
+  // средней ширине символа: кириллица и цифры системного sans в среднем ≈0.56 кегля.
+  const textW = (s, fsz) => String(s).length * CFG.charW * fsz;
+  // Ряды цифр размерной цепочки «лесенкой»: цифра короткого звена не ложится на соседнюю,
+  // а уходит во второй ряд, дальше от стены — как у проектировщика на чертеже. Звенья идут
+  // по стене слева направо; цифра встаёт в первый ряд, где не задевает предыдущую в нём.
+  // kFit — масштаб, при котором проверяем вмещаемость (верхняя граница ведра зума: узел
+  // цепочки переиспользуется внутри ведра, на самом мелком его зуме цифры не должны слипнуться).
+  // Возвращает номер ряда на каждое звено; общая с хит-тестом двойного тапа (plan-rooms.js),
+  // чтобы зона тапа стояла там же, где видна цифра.
+  const CHAIN_FS = 8.5, CHAIN_ROW0 = 6, CHAIN_ROW = 9.5;
+  function chainRows(segs, kFit) {
+    const fs2 = CHAIN_FS * kFit, gap = 2 * kFit;
+    const last = [-Infinity, -Infinity];
+    return (segs || []).map((sg) => {
+      const half = textW(sg.dist, fs2) / 2;
+      const a = sg.midOff - half;
+      // первый свободный ряд; если заняты оба — тот, где хвост соседа короче
+      const row = a >= last[0] + gap ? 0 : a >= last[1] + gap ? 1 : (last[0] <= last[1] ? 0 : 1);
+      last[row] = sg.midOff + half;
+      return row;
+    });
+  }
+  // расстояние центра цифры звена от линии цепочки, px экрана (умножить на k)
+  const chainLabelOff = (row) => CHAIN_ROW0 + row * CHAIN_ROW;
+  // множитель размера значка на дальнем обзоре (см. CFG.symFullK): 1 до обычного обзора
+  const symScaleOf = (kk) => kk > CFG.symFullK ? Math.max(CFG.symMin, CFG.symFullK / kk) : 1;
+  // ведро зума (шаг ~26%) и самый МЕЛКИЙ масштаб внутри ведра (наибольший k)
+  const kBucketOf = (k) => Math.round(Math.log2(k || 1) * 3);
+  const kBucketHi = (b) => Math.pow(2, (b + 0.5) / 3);
   // РЕАЛЬНЫЕ ГАБАРИТЫ РАМОК, мм (datasheet Systeme Electric / Schneider AtlasDesign,
   // скриншоты пользователя): 1 пост 84×84, 2 — 155×84, 3 — 226×84, 4 — 300×84,
   // 5 — 368×84; «окно» одного поста 58×58, толщина рамки 11.5. Работает, когда включён
@@ -356,7 +410,9 @@
     // ровно то, ради чего лист печатают). lodDims входит в сигнатуру кэша стен ниже,
     // поэтому переключение noLod корректно инвалидирует кэш само.
     const noLod = !!(ui && ui.noLod);
-    const lodDims = noLod || k <= CFG.lodDimK, lodQf = noLod || k <= CFG.lodQfK;
+    const printMode = !!(ui && ui.print);
+    const lodDims = noLod || k <= (printMode ? CFG.lodDimKPrint : CFG.lodDimK);
+    const lodQf = noLod || k <= (printMode ? CFG.lodQfKPrint : CFG.lodQfK);
     // сдвиг подписи комнаты ВНИЗ, если свободная точка (свет/ТП/распайка) стоит
     // практически в центроиде — оба рисуются в центре комнаты и налезали друг на
     // друга (пойман визуальным тестом). Порог 35см — мировой, не зависит от зума,
@@ -376,7 +432,13 @@
     // «плыли» по размеру до первого структурного изменения (скрытый баг, найден
     // при разборе LOD). Квантованное ведро зума (шаг ~26%) — пересборка только на
     // ЗАМЕТНОМ изменении зума, а не на каждом тике колеса/пинча.
-    const kBucket = Math.round(Math.log2(k || 1) * 3);
+    const kBucket = kBucketOf(k);
+    // самый мелкий масштаб внутри ведра: вмещаемость подписей (имя комнаты, «N · длина»,
+    // лесенка цифр цепочки) проверяется по нему — узел живёт до смены ведра, и на любом
+    // зуме внутри него подпись не должна вылезти за комнату или слипнуться с соседней
+    const kFit = kBucketHi(kBucket);
+    // не дальний обзор (CFG.lodFarK); по kFit — постоянен внутри ведра, как и кэш частей
+    const nearView = noLod || printMode || kFit <= CFG.lodFarK;
     // кэш-попадание узла: подпись совпала целиком
     const reuse = (c, sig) => !!(c && c.sig === sig);
 
@@ -418,7 +480,7 @@
     const wc = wallsCacheFor(canvas);
     const selBeamId = EP.Plan.Rooms && EP.Plan.Rooms.selectedBeamId && EP.Plan.Rooms.selectedBeamId();
     const selVoidId = EP.Plan.Rooms && EP.Plan.Rooms.selectedVoidId && EP.Plan.Rooms.selectedVoidId();
-    const globBase = JSON.stringify([stW.wallThickness, stW.wallMaterial, dimsOn, labelsOn, lodDims, !!(ui && ui.noWallLabels)]);
+    const globBase = JSON.stringify([stW.wallThickness, stW.wallMaterial, dimsOn, labelsOn, lodDims, !!(ui && ui.noWallLabels), noLod, printMode]);
     let maxTh = Math.max(4, stW.wallThickness || 10);
     roomsW.forEach((r) => { const t = r.wallTh; if (t) Object.keys(t).forEach((i) => { const v = Number(t[i]); if (v > maxTh) maxTh = v; }); });
     (project.beams || []).forEach((bm) => { if (bm.width > maxTh) maxTh = bm.width; });
@@ -533,6 +595,12 @@
         if (closed && dimsOn && lodDims && !(ui && ui.noWallLabels)) {
           const c = G.centroid(pts);
           G.walls(room).forEach((w) => {
+            const txt = w.n + " · " + G.fmtLen(w.len);
+            // Подпись длиннее самой стены на экране не рисуем: у короткой стены (откос ниши,
+            // торец перегородки) она ложилась на соседние стены и цифры. Цифры цепочки и
+            // номер в развёртке у такой стены всё равно есть, а при приближении подпись
+            // появится сама. На печатном листе (noLod) — всегда, лист статичный.
+            if (!noLod && textW(txt, CFG.labelPx * kFit) > w.len * 0.95) return;
             // подпись снаружи: нормаль от центроида
             let nx = -(w.b.y - w.a.y), ny = w.b.x - w.a.x;
             const nl = Math.hypot(nx, ny) || 1;
@@ -542,16 +610,44 @@
               x: w.mx + nx * off, y: w.my + ny * off,
               class: "ep-plan-dim", "font-size": fs,
               "text-anchor": "middle", "dominant-baseline": "middle"
-            }, w.n + " · " + G.fmtLen(w.len)));
+            }, txt));
           });
         }
         if (closed && labelsOn) {
           const c = G.centroid(pts);
-          // labelNudges: свободная точка у центроида — подпись уезжает ниже маркера
-          g.appendChild(el("text", {
-            x: c.x, y: c.y + (labelNudges[roomI] ? 26 * k : 0), class: "ep-plan-name", "font-size": fsName,
-            "text-anchor": "middle", "dominant-baseline": "middle"
-          }, room.name + " · " + G.fmtArea(G.roomNetArea(project, room))));
+          const bb = G.bbox(pts);
+          const area = G.fmtArea(G.roomNetArea(project, room));
+          // labelNudges: свободная точка у центроида — подпись уезжает ниже маркера. Сдвиг —
+          // в размере ЗНАЧКА (на дальнем обзоре он мельче), иначе 26 px при k≈5 — это 1.3 м,
+          // и имя коридора уезжало в соседнюю кухню (стресс-проверка на 4 квартирах)
+          const kSymFit = kFit * (noLod ? 1 : symScaleOf(kFit));
+          const y0 = c.y + (labelNudges[roomI] ? 26 * kSymFit : 0);
+          // Имя не шире комнаты. В маленькой комнате строка «Имя · N м²» вылезала на соседнюю,
+          // и имена двух комнат сливались в одно («СанузелГардероб» — скриншот аудита).
+          // Раскладки по очереди: одной строкой → имя / площадь → (дальний обзор) только имя;
+          // берём первую, что влезает целиком, иначе самую крупную. Узкую высокую комнату
+          // (гардероб, коридор поперёк) подписываем ВДОЛЬ неё, если так крупнее. Мельче 62%
+          // не уменьшаем — дальше уже не прочитать, при приближении станет крупнее.
+          const fN = CFG.namePx * kFit;
+          const variants = nearView ? [[room.name + " · " + area], [room.name, area]] : [[room.name]];
+          let pick = null;
+          for (const lines of variants) {
+            const wMax = Math.max.apply(null, lines.map((ln, i) => textW(ln, fN * (i ? 0.85 : 1))));
+            const hNeed = fN * lines.length * 1.25;
+            const sH = Math.min(1, bb.w * 0.9 / wMax, bb.h * 0.9 / hNeed);
+            const sV = bb.h > bb.w * 1.2 ? Math.min(1, bb.h * 0.9 / wMax, bb.w * 0.9 / hNeed) : 0;
+            const cand = sV > sH ? { lines, s: sV, rot: true } : { lines, s: sH, rot: false };
+            if (!pick || cand.s > pick.s + 1e-6) pick = cand;
+            if (cand.s >= 1) break;
+          }
+          const sc = Math.max(0.62, pick.s), f1 = fsName * sc, f2 = f1 * 0.85;
+          const rotA = pick.rot ? { transform: `rotate(-90 ${c.x} ${y0})` } : {};
+          const nameAttrs = (y, f) => Object.assign({ x: c.x, y, class: "ep-plan-name", "font-size": f, "text-anchor": "middle", "dominant-baseline": "middle" }, rotA);
+          if (pick.lines.length === 1) g.appendChild(el("text", nameAttrs(y0, f1), pick.lines[0]));
+          else {
+            g.appendChild(el("text", nameAttrs(y0 - f1 * 0.55, f1), pick.lines[0]));
+            g.appendChild(el("text", nameAttrs(y0 + f2 * 0.7, f2), pick.lines[1]));
+          }
         }
     }
 
@@ -625,7 +721,7 @@
           drawWindow(a, b);
         }
         // номер проёма (О1, Дв2 …) — на слое «Подписи»
-        if (labelsOn && EP.Plan.Elements && EP.Plan.Elements.openingNum) {
+        if (labelsOn && nearView && EP.Plan.Elements && EP.Plan.Elements.openingNum) {
           const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
           g.appendChild(el("text", { x: mid.x - nx * 16 * k, y: mid.y - ny * 16 * k, class: "ep-plan-opnum", "font-size": 10 * k, "text-anchor": "middle", "dominant-baseline": "middle" }, EP.Plan.Elements.openingNum(project, op)));
         }
@@ -761,7 +857,7 @@
           // тягой цифры в режиме ⟷), иначе общий settings.dimOffset. Отрицательный вынос
           // честно переносит цепочку на другую сторону стены.
           const off2 = G.wallDimOffOf(project, w);
-          const tick = 4 * k, fs2 = 8.5 * k;
+          const tick = 4 * k, fs2 = CHAIN_FS * k;
           const base = (d) => { const p = G.pointAtOffset(w, d); return { x: p.x + nx * off2, y: p.y + ny * off2 }; };
           const st2 = chain.stations;
           const b0 = base(st2[0].off), b1 = base(st2[st2.length - 1].off);
@@ -770,9 +866,11 @@
             const p = base(s.off);
             g.appendChild(el("line", { x1: p.x - nx * tick, y1: p.y - ny * tick, x2: p.x + nx * tick, y2: p.y + ny * tick, class: "ep-plan-chain", "stroke-width": sw * 0.35 }));
           });
-          chain.segs.forEach((sg) => {
-            const m = base(sg.midOff);
-            g.appendChild(el("text", { x: m.x + nx * 6 * k, y: m.y + ny * 6 * k, class: "ep-plan-chaintext", "font-size": fs2, "text-anchor": "middle", "dominant-baseline": "middle" }, String(sg.dist)));
+          // цифры «лесенкой»: короткое звено уходит во второй ряд (chainRows, по kFit)
+          const rows = chainRows(chain.segs, kFit);
+          chain.segs.forEach((sg, si) => {
+            const m = base(sg.midOff), lo = chainLabelOff(rows[si]) * k;
+            g.appendChild(el("text", { x: m.x + nx * lo, y: m.y + ny * lo, class: "ep-plan-chaintext", "font-size": fs2, "text-anchor": "middle", "dominant-baseline": "middle" }, String(sg.dist)));
           });
         });
     }
@@ -873,9 +971,25 @@
       // полилинии на КАЖДУЮ трассу цепи — пропускается целиком (перф важнее декора там,
       // где сам движок уже решил экономить на тенях/блюре/штриховке).
       const flatShadow = typeof document !== "undefined" && document.body && document.body.dataset && document.body.dataset.flatshadow === "1";
-      (project.routes || []).forEach((rt) => {
-        if (!layerOn(project, rt.layer)) return;
-        if (circHidden(rt.circuitId)) return; // скрытая линия — не рисуем её трассы
+      /* ОТОБРАЖЕНИЕ ПУЧКОВ (EP.Plan.Bundle). Физический шаг полос — 2 см, на телефоне это
+         меньше пикселя, и пучок из нескольких линий сливался в одну толстую полосу. Линии,
+         идущие ближе читаемого шага (CFG.routePitchPx экранных px), раздвигаются до него —
+         только на экране; модель трассы не трогается. Толщина линии привязана к шагу, чтобы
+         между соседними линиями всегда оставался просвет. */
+      const visRoutes = (project.routes || []).filter((rt) => layerOn(project, rt.layer) && !circHidden(rt.circuitId) && (rt.points || []).length > 1);
+      const pitch = Math.max(2, CFG.routePitchPx * k);                 // читаемый шаг, см
+      const BN = EP.Plan.Bundle;
+      let disp = null;
+      if (BN && visRoutes.length) {
+        const bw = [];
+        (project.rooms || []).forEach((r) => G.walls(r).forEach((w) => bw.push({ a: w.a, b: w.b, th: G.wallThOf(project, w) })));
+        (project.beams || []).forEach((b) => { if (b && b.a && b.b) bw.push({ a: b.a, b: b.b, th: b.width || 10 }); });
+        disp = BN.spread(visRoutes.map((rt) => ({ id: rt.id, points: rt.points, key: rt.circuitId || ("~" + rt.id) })), { gap: pitch, walls: bw });
+      }
+      nc.disp = disp;
+      const rsw = Math.min(2.4, Math.max(1.3, 0.6 * pitch / k)) * k;   // толщина трассы, см (1.3…2.4 px)
+      const strOf = (pts) => pts.map((q) => (Math.round(q.x * 100) / 100) + "," + (Math.round(q.y * 100) / 100)).join(" ");
+      visRoutes.forEach((rt) => {
         const dimR = circDim(rt.circuitId);
         const inChain = chainIds ? chainIds.has(rt.id) : false;
         seenRoutes.add(rt.id);
@@ -884,19 +998,20 @@
         // читалась однозначно на фоне остальных линий. dimR (приглушение по solo другой
         // линии) — отдельный, более сильный механизм, ему уступаем (не спорим за opacity).
         const otherDim = !!(chainIds && !inChain && !dimR);
-        const ptsStr = (rt.points || []).map((p) => p.x + "," + p.y).join(" ");
+        const dp = disp && disp.get(rt.id);
+        const ptsStr = strOf(dp ? dp.pts : rt.points);
         const routeColor = rt.color || layerColor(rt.layer);
         // подпись входов рендера ЭТОЙ трассы: совпала — переиспользуем готовый <g>
         const rBase = ptsStr + "|" + routeColor + "|" + (rt.manual ? 1 : 0) + (inChain ? 1 : 0)
           + (otherDim ? 1 : 0) + (dimR ? 1 : 0) + (rt.id === selRoute ? 1 : 0) + (flatShadow ? 1 : 0)
           + "|" + JSON.stringify(rt.throughWalls || []);
-        const rSig = rBase + "|" + k;
+        const rSig = rBase + "|" + k + "|" + rsw;
         const rCached = nc.routes.get(rt.id);
         if (reuse(rCached, rSig)) { g.appendChild(rCached.node); return; }
         const rg = el("g", { "data-r": rt.id });
         nc.routes.set(rt.id, { sig: rSig, base: rBase, node: rg });
         if (inChain && !flatShadow) {
-          const baseSw = sw * 0.8;
+          const baseSw = Math.max(rsw, sw * 0.6);
           [[baseSw * 7, .09], [baseSw * 4.4, .17], [baseSw * 2.6, .30]].forEach(([w, op]) => {
             rg.appendChild(el("polyline", {
               points: ptsStr, class: "ep-plan-routeglow", stroke: routeColor,
@@ -913,15 +1028,33 @@
         rg.appendChild(el("polyline", Object.assign({
           points: ptsStr,
           class: "ep-plan-route" + (rt.manual ? " is-manual" : "") + (inChain ? " is-sel" : "") + (otherDim ? " is-otherdim" : ""),
-          stroke: routeColor, "stroke-width": sw * 0.8
+          stroke: routeColor, "stroke-width": inChain ? Math.max(rsw, sw * 0.6) : rsw
         }, dimR ? { opacity: DIM_OP } : {})));
-        (rt.throughWalls || []).forEach((c) => rg.appendChild(el("circle", Object.assign({
-          cx: c.x, cy: c.y, r: 5 * k, class: "ep-plan-cross" + (otherDim ? " is-otherdim" : ""), "stroke-width": sw * 0.6
-        }, dimR ? { opacity: DIM_OP } : {}))));
+        // проходка стоит на СВОЕЙ линии: сдвигается вместе с отрезком, на котором лежит
+        // общая стена двух комнат записана за обе, поэтому пересечение приходит дважды в одной
+        // и той же точке — рисуем одно кольцо на физическое отверстие этой трассы
+        const drawnTw = [];
+        (rt.throughWalls || []).forEach((c) => {
+          if (drawnTw.some((q) => Math.abs(q.x - c.x) + Math.abs(q.y - c.y) < 15)) return;
+          drawnTw.push(c);
+          let cx = c.x, cy = c.y;
+          if (dp) {
+            let bi = -1, bd = Infinity;
+            for (let i = 0; i < rt.points.length - 1; i++) {
+              const d = G.closestOnSeg(c, rt.points[i], rt.points[i + 1]).d;
+              if (d < bd) { bd = d; bi = i; }
+            }
+            if (bi >= 0) { cx += dp.shift[bi].x; cy += dp.shift[bi].y; }
+          }
+          rg.appendChild(el("circle", Object.assign({
+            cx, cy, r: Math.max(2.6 * k, rsw * 1.5), class: "ep-plan-cross" + (otherDim ? " is-otherdim" : ""), "stroke-width": Math.max(rsw * 0.7, 1 * k),
+            style: "stroke:" + routeColor
+          }, dimR ? { opacity: DIM_OP } : {})));
+        });
         // ручки тяги — только у РЕАЛЬНО выбранного хопа (тот, на который тапнули), только
         // на промежуточных изломах (концы 0/last завязаны на элемент/щит/распайку)
         if (rt.id === selRoute) {
-          const pts = rt.points || [];
+          const pts = dp ? dp.vpos : (rt.points || []);
           for (let i = 1; i < pts.length - 1; i++) {
             rg.appendChild(el("circle", { cx: pts[i].x, cy: pts[i].y, r: CFG.pointPx * 1.1 * k, class: "ep-plan-routehandle" }));
           }
@@ -946,7 +1079,42 @@
     // и одиночные точки красятся по линии, как на профессиональном чертеже (просил
     // пользователь: «цвет естественно должен зависеть от линии QF»).
     const elemColor = (elem) => (elem.circuitId && circ(elem.circuitId) ? circ(elem.circuitId).color : layerColor2(elem.layer));
+    // Имена линий над точками. Вблизи (k ≤ lodQfAllK) — у каждой точки, как раньше. На
+    // среднем зуме — ОДНО на группу точек одной линии в одном помещении, как «гр.1» на
+    // проектном листе: четыре светильника QF11 в гостиной подписаны один раз (у точки
+    // ближе к середине группы), а не четыре раза поверх соседних цифр и высот (на
+    // типовой квартире 55 подписей → 22). Цвет точки и так говорит, чья она; выбранная
+    // точка подписана всегда. На печатном листе (noLod) — у всех.
+    const qfEach = noLod || printMode || k <= CFG.lodQfAllK;
+    const qfOne = new Set();
+    if (labelsOn && lodQf && !qfEach) {
+      const groups = new Map();
+      (project.elements || []).forEach((e) => {
+        if (!e.circuitId || !layerOn(project, e.layer) || circHidden(e.circuitId)) return;
+        const q = e.wallId ? G.elemDrawPoint(project, e) : G.elemPoint(project, e);
+        if (!q) return;
+        const rm = e.wallId ? ownerOf(e.wallId) : ((G.roomAt(project, q) || {}).id || "-");
+        const key = e.circuitId + "|" + rm;
+        let gr = groups.get(key);
+        if (!gr) groups.set(key, gr = []);
+        gr.push({ id: e.id, x: q.x, y: q.y });
+      });
+      groups.forEach((gr) => {
+        let mx = 0, my = 0;
+        gr.forEach((a) => { mx += a.x; my += a.y; });
+        mx /= gr.length; my /= gr.length;
+        let best = gr[0], bd = Infinity;
+        gr.forEach((a) => { const d = (a.x - mx) * (a.x - mx) + (a.y - my) * (a.y - my); if (d < bd) { bd = d; best = a; } });
+        qfOne.add(best.id);
+      });
+    }
+    // значки на дальнем обзоре — в размере плана (CFG.symFullK); все размеры значка ниже
+    // считаются от k и sw, поэтому внутри цикла это «масштаб значка», а не холста (кэш и
+    // масштаб-без-пересборки работают с ним же — геометрия значка от него зависит линейно)
+    const symF = noLod ? 1 : symScaleOf(k);
+    const kSym = k * symF, swSym = sw * symF;
     (project.elements || []).forEach((elem) => {
+      const k = kSym, sw = swSym;
       if (!layerOn(project, elem.layer)) return;
       if (circHidden(elem.circuitId)) return; // скрытая линия — не рисуем её точки
       const pt = EP.Plan.Geometry.elemPoint(project, elem);
@@ -964,8 +1132,9 @@
       // считаются от k напрямую, приблизительное совпадение дало бы «плывущие» символы при
       // зуме — тот же баг, что уже ловили на кэше стен.
       const cc0 = elem.circuitId && circ(elem.circuitId);
+      const qfOn = labelsOn && lodQf && !!elem.circuitId && (qfEach || qfOne.has(elem.id) || elem.id === selId);
       const eBase = JSON.stringify([elem, cx, cy, rot, elem.id === selId, bad.has(elem.id),
-        gost, design, labelsOn, lodQf, lodDims, cc0 ? [cc0.color, cc0.name] : null,
+        gost, design, qfOn, lodDims, cc0 ? [cc0.color, cc0.name] : null,
         layerColor2(elem.layer), circDim(elem.circuitId), montage, real]);
       const eSig = eBase + "|" + k;
       const eCached = nc.els.get(elem.id);
@@ -1142,7 +1311,7 @@
       else if (elem.status === "work") grp.appendChild(el("text", { x: cx + r0, y: cy - r0, "font-size": 10 * k, class: "ep-plan-elwork" }, "◐"));
       else if (montage && elem.status !== "existing") grp.appendChild(el("circle", { cx: cx + r0, cy: cy - r0 - 3 * k, r: 3 * k, class: "ep-plan-elplan", "stroke-width": 1.2 * k }));
       // QF-подпись линии (обозначение автомата) над точкой; lodQf — скрыта на сильном отдалении
-      if (labelsOn && lodQf && elem.circuitId) {
+      if (qfOn) {
         const cc = circ(elem.circuitId);
         if (cc) grp.appendChild(el("text", { x: cx, y: cy - r0 - 5 * k, "font-size": 9 * k, "text-anchor": "middle", class: "ep-plan-qf", fill: cc.color }, cc.name));
       }
@@ -1168,12 +1337,22 @@
     // к лампе идёт только ОТ ПОСЛЕДНЕГО звена (без chainNext), не от каждого.
     // Многоклавишный обычный выключатель — своя связь на каждую клавишу.
     if (layerOn(project, "light")) {
+      /* Пунктир «что чем управляется» нужен, ПОКА НЕТ ТРАСС: по нему видно, что клавиша уже
+         назначена. Когда трассы построены, тот же путь показывает настоящий кабель, а веер
+         пунктиров от каждого выключателя ко всем его светильникам только забивал план
+         (на типовой квартире — три десятка лишних линий поверх трасс). Поэтому у точки,
+         к которой уже пришла трасса, пунктир показывается только пока она сама или её цель
+         открыты в редакторе — «покажи, чем управляет эта клавиша». */
+      const linkRouted = new Set();
+      if (layerOn(project, "routes")) (project.routes || []).forEach((r) => { if (r.fromId) linkRouted.add(r.fromId); });
       (project.elements || []).forEach((elem) => {
         // связь «управляет светом» рисуем и у ДАТЧИКОВ движения/освещённости — они
         // назначаются на лампу/подсветку тем же targetIds, что клавиши выключателя
         // (просьба пользователя), поэтому и пунктир к цели тот же
         const TYr = (EP.Plan.Elements && EP.Plan.Elements.TYPES) || {};
         if (elem.type !== "switch" && !(TYr[elem.type] && TYr[elem.type].targets)) return;
+        if (linkRouted.has(elem.id) && selId !== elem.id
+            && !(selId && (G.allTargetIds(elem).indexOf(selId) >= 0 || elem.chainNext === selId))) return;
         if (circHidden(elem.circuitId)) return; // связь скрытой линии не рисуем
         const a = G.elemDrawPoint(project, elem);
         if (!a) return;
@@ -1443,11 +1622,16 @@
   EP.Plan.Render = {
     draw, drawScaled, CFG, hoverPreview, clearHoverPreview,
     liftForDrag, moveLift, dropLift, isLifted, reconcile,
+    // как трасса НАРИСОВАНА на этом холсте (после разноса пучка) — для попадания пальцем
+    routeDisplay: (canvas, id) => { const c = canvas && nodeCache.get(canvas); return c && c.disp ? (c.disp.get(id) || null) : null; },
     // реальные габариты и «лица» приборов — общие для плана, развёртки, PDF и DXF.
     // Сами таблицы FRAME_MM/FRAME_H_MM наружу не отдаём: снаружи их не читал никто,
     // ширина и высота рамки берутся через frameWmm/frameWcm/frameHcm (там же
     // экстраполяция на 6+ постов, мимо которой сырая таблица прошла бы молча).
     POST_MM, frameWmm, frameWcm, frameHcm, deviceFace, FACE_STYLE, CM_PER_PX_1TO1,
-    symbolPreviewSvg
+    symbolPreviewSvg,
+    // лесенка цифр размерной цепочки — та же раскладка нужна хит-тесту двойного тапа
+    // (plan-rooms.js): зона тапа стоит там, где видна цифра, а не на линии цепочки
+    chainRows, chainLabelOff, kBucketOf, kBucketHi, textW
   };
 })();

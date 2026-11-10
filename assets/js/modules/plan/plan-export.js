@@ -102,7 +102,8 @@
     cv.svg.style.width = "1050px"; cv.svg.style.height = "700px";
     const bb = G().projectBBox(p);
     if (bb) cv.fit(bb, 0.07);
-    EP.Plan.Render.draw(cv, p, uiExtra || {});
+    // print: печатные пороги детализации и имя линии у каждой точки (см. CFG.lodDimKPrint)
+    EP.Plan.Render.draw(cv, p, Object.assign({ print: true }, uiExtra || {}));
     if (uiExtra && uiExtra.freeDims) freeDimsOverlay(cv, p);
     ["grid", "underlay"].forEach((n) => { const gl = cv.layers[n]; while (gl.firstChild) gl.removeChild(gl.firstChild); });
     // ИСТИННЫЙ МАСШТАБ ЧЕРТЕЖА (признак проф. документа, а не картинки «во всю ширину»):
