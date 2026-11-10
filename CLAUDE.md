@@ -37,6 +37,16 @@ APK-путь: PWA + TWA/Capacitor (см. docs/APK.md).
   (`grep -c` даёт 80 — считает СТРОКИ, не вхождения; одна строка содержит 6 тегов
   `<script>` подряд), 1 в router.js, 1 в sw.js — синтаксис router.js/sw.js после замены
   валиден (`node --check`).
+- **Среда облачных функций — Node 22** (`firebase.json` → `runtime: "nodejs22"`,
+  `functions/package.json` → `engines.node`, `setup-node` в firebase-deploy.yml; тест
+  «функции: среда Node одна в трёх местах» сверяет все три). Node 20 Google снял
+  31.10.2026: шаг «Deploy functions» падал за 4 секунды с «Runtime Node.js 20 was
+  decommissioned», хотя приложение при этом выкатывалось (деплой разделён). Уже
+  развёрнутые функции на снятой среде продолжают отвечать, но обновить их нельзя.
+  Проверено перед переходом: все 6 функций (`chatPush`, `getAccessPolicy`, админские) с
+  текущими firebase-functions ^6 / firebase-admin ^12 грузятся на Node 22. Node 22 снимут
+  31.10.2027 — к следующему переходу поднимать и САМ action: firebase-tools 13.35.1 внутри
+  `w9jds/firebase-action@v13.35.1` про `nodejs24` не знает (список сред сверен по пакету).
 - После squash-merge ветка расходится с main. Паттерн:
   `git fetch origin main && git reset --hard origin/main && git cherry-pick <commit> && git push --force-with-lease`.
   ВСЕГДА коммитить до reset --hard. Ветка: `claude/full-audit-security-visualization-1fbjfm`.
