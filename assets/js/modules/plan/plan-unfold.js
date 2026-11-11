@@ -357,32 +357,26 @@
     const fH = () => UG.frameH();
     const gopt = { k: ks, real, H, inA, inB };
     const blockGeom = (el) => UG.blockGeom(el, gopt);
+    // значки постов и имена линий — ДО штроб: подписи штроб их обходят (placeChaseLabels)
+    const lb0 = UG.labelBoxes(els, gopt, (e) => circ(p, e));
+    let chaseBoxes = [];
     if (S.showChases) {
       // ШТРОБЫ — общий список UnfoldGeo.chases (тот же, что у печатной развёртки и по тем же
       // правилам, что смета): к щиту, «×n» у параллельных, без штроб к «было» и к точкам без
       // трассы, силовая штроба блока — в пост входа трассы (аудит цепей, пакет 5)
       const CHASE_COL = UG.CHASE_COL;
-      // одинаковые подписи сечения у соседних штроб блока сливались в «25×3025×30» —
-      // рисуем такую подпись рядом (ближе 22см на той же высоте) ОДИН раз
-      const lbls = [];
-      const drawChase = (cx, cy0, cy1, kind, n) => {
-        if (Math.abs(cy1 - cy0) < 1) return;
-        const col = CHASE_COL[kind] || CHASE_COL.power;
-        svg.appendChild(svgEl("line", { x1: cx, y1: cy0, x2: cx, y2: cy1, class: "ep-plan-unfchasebg", stroke: col, "stroke-width": kk * (n > 1 ? 7 : 5) }));
-        svg.appendChild(svgEl("line", { x1: cx, y1: cy0, x2: cx, y2: cy1, class: "ep-plan-unfchase", stroke: col, "stroke-width": kk * 1.6 }));
-        const txt = UG.chaseText(p, kind, n);
-        if (!txt) return;
-        let labelY = cy0 + (cy1 > cy0 ? 12 * ks : -6 * ks);
-        // порог по X — от РЕАЛЬНОЙ ширины подписи (шрифт 8*ks), а не магических 22см:
-        // на «1:1» подписи крупные и рядом стоящие штробы блока сливались в «25×3025×30»
-        const lw2 = Math.max(22, txt.length * 4.6 * ks);
-        const near = (ly, t) => lbls.some((l) => (t === undefined || l.txt === t) && Math.abs(l.x - cx) < lw2 && Math.abs(l.y - ly) < 9 * ks);
-        if (near(labelY, txt)) return;              // такое же сечение рядом уже подписано
-        for (let i = 0; i < 3 && near(labelY); i++) labelY += 10 * ks; // разное — разносим по высоте
-        lbls.push({ txt, x: cx, y: labelY });
-        svg.appendChild(svgEl("text", { x: cx + 3 * ks, y: labelY, "font-size": 8 * ks, class: "ep-plan-unfchaselbl", fill: col }, txt));
-      };
-      UG.chases(p, w, els, { H, blockGeom }).forEach((c) => drawChase(c.x, c.y0, c.y1, c.kind, c.n));
+      const list = UG.chases(p, w, els, { H, blockGeom });
+      list.forEach((c) => {
+        const col = CHASE_COL[c.kind] || CHASE_COL.power;
+        svg.appendChild(svgEl("line", { x1: c.x, y1: c.y0, x2: c.x, y2: c.y1, class: "ep-plan-unfchasebg", stroke: col, "stroke-width": kk * (c.n > 1 ? 7 : 5) }));
+        svg.appendChild(svgEl("line", { x1: c.x, y1: c.y0, x2: c.x, y2: c.y1, class: "ep-plan-unfchase", stroke: col, "stroke-width": kk * 1.6 }));
+      });
+      // подписи сечения — общим размещением (тем же, что в печатной развёртке): мимо значков и
+      // имён линий, одинаковое сечение рядом — один раз; их прямоугольники обходят цифры
+      // размеров и высот (аудит цепей, пакет 6)
+      const labs = UG.placeChaseLabels(p, list, ks, lb0.elBoxes.concat(lb0.qfBoxes), H);
+      labs.forEach((l) => svg.appendChild(svgEl("text", { x: l.x, y: l.y, "font-size": 8 * ks, class: "ep-plan-unfchaselbl", fill: CHASE_COL[l.kind] || CHASE_COL.power }, l.txt)));
+      chaseBoxes = labs.map((l) => l.box);
     }
 
     const TY = EL().TYPES;
@@ -406,7 +400,7 @@
     // AABB символов постов, имён QF и подписей «от угла» — подпись высоты не должна
     // ложиться ни на одно из них. Всё считает общий UnfoldGeo, тем же кодом, что и
     // печатная развёртка (раньше рамки обхода у них уже разъехались: 15×9 против 14×8).
-    const { elBoxes, offPos, obstacles } = UG.labelBoxes(els, gopt, (e) => circ(p, e));
+    const { elBoxes, offPos, obstacles } = UG.labelBoxes(els, gopt, (e) => circ(p, e), chaseBoxes);
     const cornerOf = (x) => UG.cornerOf(x, inA, inB);
     const placeHLabel = (idx) => UG.placeHLabel(idx, elBoxes, obstacles, ks);
     // ДВА прохода: сначала все символы постов, потом ВСЕ размеры/подписи высоты —

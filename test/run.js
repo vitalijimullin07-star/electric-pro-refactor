@@ -1368,9 +1368,16 @@ test("calcByRoutes: сборка щита — автоматы/УЗО по чи�
   ok(breakers && breakers.qty === 2, "вводной + автомат линии cc2"); // 1 вводной + cc2
   const rcds = res.items.find((i) => i.name === "Установка УЗО/дифавтомата");
   ok(rcds && rcds.qty === 2, "вводное УЗО + дифавтомат линии cc1"); // mainRcd + cc1
-  // работы по распайкам разделены по МЕСТУ: коробка на потолке vs распайка в подрозетнике
-  const junctWork = res.items.find((i) => i.name === "Собрать распаянную коробку на потолке");
-  ok(junctWork && junctWork.qty === 1, "сборка потолочной коробки по числу распаек");
+  // работы по распайкам разделены по МЕСТУ: коробка на потолке / в стене / распайка в подрозетнике.
+  // j1 стоит НА СТЕНЕ (wallId) — с пакета 6 аудита цепей у неё своя работа «в стене»
+  const junctWork = res.items.find((i) => i.name === "Собрать распаянную коробку в стене");
+  ok(junctWork && junctWork.qty === 1, "сборка коробки в стене по числу распаек на стене");
+  ok(!res.items.some((i) => i.name === "Собрать распаянную коробку на потолке"), "на потолке коробок нет");
+  // та же коробка свободной точкой — потолочная
+  j1.wallId = null; j1.params = { x: 380, y: 100 };
+  const res2 = EP.Plan.Calc.calcByRoutes(P);
+  const jc = res2.items.find((i) => i.name === "Собрать распаянную коробку на потолке");
+  ok(jc && jc.qty === 1, "свободная коробка — на потолке");
 });
 test("calcByRoutes: временные сети — вручную заданное число точек добавляет работу", () => {
   const { P, w } = install();
@@ -9619,6 +9626,139 @@ test("фото: deleteProject чистит кэш фото своего прое
       ok(/UG\.chases\(p, w, sorted/.test(ex) && /UG\.chases\(p, w, els/.test(un), "обе развёртки берут штробы из одного списка");
       ok(!/blockChaseEntries/.test(ex) && !/blockChaseEntries/.test(un), "своих копий правил штроб у развёрток не осталось");
       ok(/class="unfpanel"/.test(ex), "печатная развёртка рисует щит");
+    });
+  }
+
+  // ===== 78. Аудит цепей, пакет 6: клеммы в подрозетниках и блоках, коробка в стене, цвет коробки =====
+  {
+    const RT = EP.Plan.Routes, UG = EP.Plan.UnfoldGeo;
+    const qtyOf = (res, name) => { const it = res.items.find((i) => i.name === name); return it ? it.qty : 0; };
+    const wagoProj = () => {
+      const { P, w } = install();
+      P.settings.connectorMode = "wago";
+      const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
+      const c1 = M.newCircuit("QF1", "#f00", 16); P.circuits.push(c1);
+      const put = (type, wi, off, layer) => { const e = M.newElement(type, w(wi), off, 30, layer || "power"); e.circuitId = c1.id; P.elements.push(e); return e; };
+      const link = (from, to, toPanel) => { const r = M.newRoute("power", "ceiling", [{ x: 0, y: 18 }, { x: 50, y: 50 }], from.id, to.id); r.toPanel = !!toPanel; P.routes.push(r); return r; };
+      return { P, w, pn, c1, put, link };
+    };
+    test("транзит шлейфа в подрозетнике — клемма на (кабели + прибор) на каждую жилу; на конце линии — без клемм", () => {
+      const { P, pn, put, link } = wagoProj();
+      const s1 = put("socket", 0, 100), s2 = put("socket", 0, 200);
+      link(s1, pn, true); link(s2, s1);
+      const res = EP.Plan.Calc.calcByRoutes(P);
+      eq(qtyOf(res, "ВАГО 3-пин"), 3, "у транзитной розетки: вход + выход + розетка = 3 места × L/N/PE");
+      eq(qtyOf(res, "Собрать распайку в подрозетнике"), 1, "работа — там же, где клеммы");
+      ok(!res.items.some((i) => /^ВАГО [2-9]/.test(i.name) && i.name !== "ВАГО 3-пин"), "у последней розетки линии клемм нет");
+    });
+    test("блок: один кабель на две розетки — клемма на 3 места; выключатель-пост — по своему шаблону", () => {
+      const { P, pn, put, link } = wagoProj();
+      const b = put("block", 1, 150); b.params = { items: ["socket", "socket", "switch"] };
+      link(b, pn, true);
+      const res = EP.Plan.Calc.calcByRoutes(P);
+      eq(qtyOf(res, "ВАГО 3-пин"), 3, "1 кабель + 2 розетки = 3 места × 3 жилы");
+      eq(qtyOf(res, "ВАГО 2-пин"), 4, "пост-выключатель: шаблон switch_1 (4 × 2-пин)");
+      eq(qtyOf(res, "Собрать распайку в подрозетнике"), 1, "блок с разводкой на розетки — распайка в подрозетнике");
+      // транзитный блок из трёх розеток: вход + выход + 3 розетки = 5 мест
+      const s = put("socket", 1, 300); link(s, b);
+      eq(qtyOf(EP.Plan.Calc.calcByRoutes(P), "ВАГО 3-пин"), 0, "стал транзитом — клемма уже не на 3 места");
+      b.params.items = ["socket", "socket", "socket"];
+      const r3 = EP.Plan.Calc.calcByRoutes(P);
+      eq(qtyOf(r3, "ВАГО 5-пин"), 3, "2 кабеля + 3 розетки = 5 мест × 3 жилы");
+    });
+    test("вывод 3ф в шлейфе — пять жил; слаботочка в шлейфе — распайка без клемм", () => {
+      const { P, pn, put, link } = wagoProj();
+      const o1 = put("output3", 0, 100), o2 = put("output3", 0, 250);
+      link(o1, pn, true); link(o2, o1);
+      eq(qtyOf(EP.Plan.Calc.calcByRoutes(P), "ВАГО 3-пин"), 5, "L1/L2/L3/N/PE — 5 клемм на 3 места");
+      const { P: P2, pn: pn2, put: put2, link: link2 } = wagoProj();
+      const a = put2("leak", 0, 100, "lv"), bb = put2("leak", 0, 250, "lv");
+      link2(a, pn2, true); link2(bb, a);
+      const r2 = EP.Plan.Calc.calcByRoutes(P2);
+      ok(!r2.items.some((i) => /^ВАГО/.test(i.name)), "датчики протечки шлейфом — на клеммах самих датчиков");
+    });
+    test("клемм на 7 и на 12 жил не бывает: ближайшая большая, сверх 10 — две с перемычкой", () => {
+      const { P, w, pn, c1, link } = wagoProj();
+      const j = M.newElement("junction", null, 0, 270, "routes"); j.params = { x: 200, y: 150 }; j.circuitId = c1.id; P.elements.push(j);
+      link(j, pn, true);
+      const ss = [];
+      for (let i = 0; i < 6; i++) { const e = M.newElement("socket", w(i % 4), 40 + i * 40, 30, "power"); e.circuitId = c1.id; P.elements.push(e); ss.push(e); link(e, j); }
+      let res = EP.Plan.Calc.calcByRoutes(P);
+      eq(qtyOf(res, "ВАГО 8-пин"), 3, "7 кабелей в коробке — клемма на 8 мест");
+      ok(!res.items.some((i) => /^pin\d/.test(i.name)), "позиций без названия («pin7») нет");
+      for (let i = 0; i < 5; i++) { const e = M.newElement("socket", w(i % 4), 60 + i * 40, 30, "power"); e.circuitId = c1.id; P.elements.push(e); link(e, j); }
+      res = EP.Plan.Calc.calcByRoutes(P);
+      eq(qtyOf(res, "ВАГО 10-пин"), 6, "12 кабелей — две клеммы на 10 с перемычкой × 3 жилы");
+    });
+    test("коробка в стене: своя позиция, работа и штроба по кабелям; развёртка = смета", () => {
+      const q = M.newCircuit("QF1", "#e11", 16);
+      const pk = M.newPanel(200, 8, "ЩК");
+      const { P } = install({ panels: [pk], circuits: [q] });
+      const W = (i) => P.rooms[0].id + ":" + i, cid = P.circuits[0].id;
+      const j = M.newElement("junction", W(1), 150, 240, "routes"); j.circuitId = cid; P.elements.push(j);
+      [[1, 60], [1, 260], [2, 100]].forEach(([wi, off]) => { const e = M.newElement("socket", W(wi), off, 30, "power"); e.circuitId = cid; P.elements.push(e); });
+      RT.build({ silent: true });
+      const jc = P.routes.filter((r) => r.fromId === j.id || r.toId === j.id).length;
+      ok(jc >= 2, "к коробке пришли кабели: " + jc);
+      const res = EP.Plan.Calc.calcByRoutes(P);
+      eq(res.junctWall, 1, "коробка в стене");
+      eq(qtyOf(res, "Распаечная коробка (стена)"), 1, "материал — «(стена)»");
+      eq(qtyOf(res, "Распаечная коробка (потолок)"), 0, "не «потолок»");
+      eq(qtyOf(res, "Собрать распаянную коробку в стене"), 1, "работа «в стене»");
+      eq(RT.pointVert(P, j, "ceiling"), 30, "штроба к коробке: потолок 270 − 240");
+      // развёртка рисует то же: сумма штроб всех стен = смета (с коробкой)
+      const est = Object.keys(res.strobe).reduce((s2, k) => s2 + res.strobe[k], 0) * 100;
+      let unf = 0;
+      G.walls(P.rooms[0]).forEach((w2) => {
+        const els = P.elements.filter((e) => e.wallId === w2.id);
+        UG.chases(P, w2, els, { H: 270, blockGeom: (el) => UG.blockGeom(el, { k: 1, real: false, H: 270, inA: 0, inB: w2.len }) })
+          .forEach((c) => { unf += Math.abs(c.y1 - c.y0) * c.n; });
+      });
+      near(unf, est, 1, "развёртки " + unf.toFixed(1) + " см против сметы " + est.toFixed(1));
+      const atJ = UG.chases(P, G.walls(P.rooms[0])[1], P.elements.filter((e) => e.wallId === W(1)), { H: 270, blockGeom: (el) => UG.blockGeom(el, { k: 1, real: false, H: 270, inA: 0, inB: 300 }) })
+        .find((c) => Math.abs(c.x - 150) < 0.5);
+      ok(atJ && atJ.n === Math.ceil(jc / UG.chaseCap(P)) && Math.abs(Math.abs(atJ.y1 - atJ.y0) - 30) < 0.5, "к коробке штроба 30 см ×" + Math.ceil(jc / UG.chaseCap(P)));
+      // потолочная коробка (свободная точка) — без штробы
+      j.wallId = null; j.params = { x: 300, y: 150 };
+      eq(RT.pointVert(P, j, "ceiling"), 0, "потолочная коробка — штробы нет");
+    });
+    test("подписи штроб: мимо значка и имени линии, одно сечение рядом — один раз, цифры размеров их обходят", () => {
+      const P = install().P;
+      const o = { k: 1, real: false, H: 270, inA: 5, inB: 365 };
+      // коробка под потолком (250): штроба 20 см — подпись у начала легла бы под значок и имя линии
+      const els = [{ id: "j", type: "junction", offset: 200, height: 250, circuitId: "c" }];
+      const lb0 = UG.labelBoxes(els, o, () => ({ name: "QF3" }));
+      const list = [{ x: 200, y0: 0, y1: 20, kind: "power", n: 3 }];
+      const labs = UG.placeChaseLabels(P, list, 1, lb0.elBoxes.concat(lb0.qfBoxes), 270);
+      eq(labs.length, 1, "подпись есть"); eq(labs[0].txt, "25×30 ×3", "с «×3»");
+      const hit = (a, b) => Math.abs(a.x - b.x) < a.hw + b.hw && Math.abs(a.y - b.y) < a.hh + b.hh;
+      ok(!lb0.elBoxes.concat(lb0.qfBoxes).some((b) => hit(labs[0].box, b)), "не на значке и не на имени линии: " + JSON.stringify(labs[0]));
+      // свободно — как было: у начала штробы, правее линии
+      const free = UG.placeChaseLabels(P, [{ x: 100, y0: 0, y1: 240, kind: "power", n: 1 }], 1, [], 270);
+      eq(free[0].x, 103, "x как было"); eq(free[0].y, 12, "y как было");
+      // две соседние штробы блока с одним сечением — одна подпись
+      const two = UG.placeChaseLabels(P, [{ x: 100, y0: 0, y1: 240, kind: "lv", n: 1 }, { x: 118, y0: 0, y1: 240, kind: "lv", n: 1 }], 1, [], 270);
+      eq(two.length, 1, "одинаковое сечение рядом — один раз");
+      // подпись высоты обходит подпись штробы (labelBoxes(..., extra))
+      const lb = UG.labelBoxes(els, o, () => ({ name: "QF3" }), labs.map((l) => l.box));
+      ok(lb.obstacles.indexOf(labs[0].box) >= 0, "подпись штробы — препятствие для подписи высоты");
+      const hl = UG.placeHLabel(0, lb.elBoxes, lb.obstacles, 1);
+      ok(!hit({ x: hl.x, y: hl.y, hw: 15, hh: 9 }, labs[0].box), "подпись высоты не на подписи штробы");
+      const fs = require("fs");
+      const ex = fs.readFileSync(__dirname + "/../assets/js/modules/plan/plan-export.js", "utf8");
+      const un = fs.readFileSync(__dirname + "/../assets/js/modules/plan/plan-unfold.js", "utf8");
+      ok(/UG\.placeChaseLabels\(/.test(ex) && /UG\.placeChaseLabels\(/.test(un), "обе развёртки ставят подписи штроб общим кодом");
+      ok(/chaseBoxes\);/.test(ex) && /chaseBoxes\);/.test(un), "и передают их в обход подписей");
+      ok(!/near\(labelY/.test(ex) && !/near\(labelY/.test(un), "своих копий размещения не осталось");
+    });
+    test("цвет коробки на плане — цвет её линии; работа «в стене» есть в прайсе", () => {
+      const fs = require("fs");
+      const rd = fs.readFileSync(__dirname + "/../assets/js/modules/plan/plan-render.js", "utf8");
+      ok(/const jst = cc0 \? \{ style: "fill:" \+ cc0\.color \} : \{\}/.test(rd), "коробка красится по линии инлайн-стилем");
+      ok(/class: "ep-plan-junction is-gost"[^)]*\}, jst\)/.test(rd) && /class: "ep-plan-junction", "stroke-width"[^)]*\}, jst\)/.test(rd), "оба вида значка (ГОСТ и ромб)");
+      const ps = fs.readFileSync(__dirname + "/../assets/js/modules/database/price-setup.js", "utf8");
+      ok(/Собрать распаянную коробку в стене/.test(ps), "работа «в стене» — в «Ценах на работы»");
+      ok(EP.EstimateWorks ? EP.EstimateWorks.stageOf("Собрать распаянную коробку в стене") === "rough" : true, "этап — черновые");
     });
   }
 
