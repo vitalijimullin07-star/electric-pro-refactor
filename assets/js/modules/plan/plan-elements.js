@@ -1364,7 +1364,10 @@
     const c = core();
     c.commit();
     c.project.elements = c.project.elements.filter((x) => x.id !== el.id);
-    c.project.routes = c.project.routes.filter((r) => r.fromId !== el.id);
+    // трассы ОТ точки и К ней: раньше оставались трассы соседей, питавшихся через удалённую
+    // точку (шлейф), — вели к несуществующему объекту и попадали в метраж (аудит п.16).
+    // Сами соседи перетрассируются автоперестройкой (их входы изменились — routeInputSig)
+    c.project.routes = c.project.routes.filter((r) => r.fromId !== el.id && r.toId !== el.id);
     // стояк удалён — снимаем ссылку у его пары (иначе на другом этаже остался бы
     // «висячий» стояк, который по односторонней ссылке ничего не питает)
     (c.project.elements || []).forEach((x) => { if (x.riserLink === el.id) x.riserLink = null; });
