@@ -255,7 +255,32 @@
     const ring = offsetRing(project, room, 1, Math.max(0, extra || 0));
     if (!ring) return null;
     // выродившийся контур (отступ больше комнаты) — не годится
-    return G.area(ring) > 100 ? ring : null;
+    if (!(G.area(ring) > 100)) return null;
+    // ВЫВЕРНУТЫЙ контур (аудит 11.11, п.12): при отступе больше полуширины комнаты митра даёт
+    // кольцо с НЕнулевой площадью, но вывернутое наизнанку — узкий коридор 80 см и 35 линий
+    // уводили трассу за противоположную стену. Признак: длинная грань (≥ 30 см) сменила
+    // направление на обратное или точка кольца вышла из комнаты. Короткие грани (уступ,
+    // колонна) могут схлопнуться законно — это прежнее поведение, его не трогаем.
+    const pts = room.points || [], n = pts.length;
+    for (let i = 0; i < n; i++) {
+      const a = pts[i], b = pts[(i + 1) % n], ra = ring[i], rb = ring[(i + 1) % n];
+      const ox = b.x - a.x, oy = b.y - a.y;
+      if (ox * ox + oy * oy < 900) continue;
+      if (ox * (rb.x - ra.x) + oy * (rb.y - ra.y) <= 0) return null;
+    }
+    for (let i = 0; i < ring.length; i++) if (!G.pointInPolygon(ring[i], pts)) return null;
+    return ring;
+  };
+  // наибольший отступ трассы от грани стены, при котором контур ещё не выворачивается
+  // (двоичный поиск по G.insetContour; комнаты маленькие — дёшево)
+  G.maxInset = (project, room) => {
+    const pts = (room && room.points) || [];
+    if (pts.length < 3 || !G.insetContour(project, room, 0)) return 0;
+    let lo = 0, hi = 0;
+    pts.forEach((q) => { pts.forEach((r) => { const d = Math.abs(q.x - r.x) + Math.abs(q.y - r.y); if (d > hi) hi = d; }); });
+    if (G.insetContour(project, room, hi)) return hi;
+    for (let k = 0; k < 16; k++) { const m = (lo + hi) / 2; if (G.insetContour(project, room, m)) lo = m; else hi = m; }
+    return lo;
   };
   // ближайшая точка на замкнутом контуре: {x,y,seg,t,d}
   // угол ломаной (для ручного редактирования трасс): если prev->corner->next — прямой
@@ -813,12 +838,23 @@
   };
   G.polylineCrossings = (project, pts, skipWallId) => {
     const out = [];
+    if (!pts || pts.length < 2) return out;
+    // стены собираются ОДИН раз на вызов, а не на каждый отрезок пути (профиль сборки трасс:
+    // пересборка стен всех комнат на каждый отрезок давала треть времени построения);
+    // порядок результата прежний — комнаты, затем перегородки, по отрезкам
+    const ws = [];
+    (project.rooms || []).forEach((room) => G.walls(room).forEach((w) => {
+      if (w.id !== skipWallId) ws.push({ w, x0: Math.min(w.a.x, w.b.x), x1: Math.max(w.a.x, w.b.x), y0: Math.min(w.a.y, w.b.y), y1: Math.max(w.a.y, w.b.y) });
+    }));
     for (let i = 0; i < pts.length - 1; i++) {
-      (project.rooms || []).forEach((room) => G.walls(room).forEach((w) => {
-        if (w.id === skipWallId) return;
-        const hit = G.segIntersect(pts[i], pts[i + 1], w.a, w.b);
-        if (hit) out.push({ x: hit.x, y: hit.y, wallId: w.id });
-      }));
+      const a = pts[i], b = pts[i + 1];
+      const sx0 = Math.min(a.x, b.x), sx1 = Math.max(a.x, b.x), sy0 = Math.min(a.y, b.y), sy1 = Math.max(a.y, b.y);
+      for (let k = 0; k < ws.length; k++) {
+        const W = ws[k];
+        if (W.x1 < sx0 || W.x0 > sx1 || W.y1 < sy0 || W.y0 > sy1) continue;
+        const hit = G.segIntersect(a, b, W.w.a, W.w.b);
+        if (hit) out.push({ x: hit.x, y: hit.y, wallId: W.w.id });
+      }
       // Перегородки/перемычки (project.beams) — тоже препятствие для трассы. Сплошная
       // перегородка (kind:"beam", напр. остаток общей стены ПОСЛЕ СЛИЯНИЯ двух комнат)
       // физически стоит от пола до потолка — кабель сквозь неё требует такой же

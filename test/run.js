@@ -8979,6 +8979,125 @@ test("фото: deleteProject чистит кэш фото своего прое
     sandbox.Worker = oldW; EP.Plan.Rooms.toast = oldToast;
   }
 
+  // ===== 72. Аудит 11.11, пакет 4: геометрия трассировки =====
+  {
+    const RT = EP.Plan.Routes;
+    const segHitsRect = (a, b, r) => { // отрезок заходит ВНУТРЬ прямоугольника (не по кромке)
+      const x0 = r.x0 + 0.5, x1 = r.x1 - 0.5, y0 = r.y0 + 0.5, y1 = r.y1 - 0.5;
+      for (let k = 0; k <= 40; k++) { const t = k / 40, x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t; if (x > x0 && x < x1 && y > y0 && y < y1) return true; }
+      return false;
+    };
+    const routeHitsRect = (rt, r) => { for (let i = 0; i < rt.points.length - 1; i++) if (segHitsRect(rt.points[i], rt.points[i + 1], r)) return true; return false; };
+    test("вентшахта — препятствие: трасса по контуру обходит шахту в углу комнаты (аудит п.9)", () => {
+      const room = M.newRoom(G.rectPoints(0, 0, 600, 400), "Кухня");
+      const pn = M.newPanel(30, 200, "ЩК");
+      const qf = M.newCircuit("QF1", "#e11", 16);
+      const sh = M.newVoid({ x: 470, y: 0 }, { x: 600, y: 130 }, "shaft");
+      const { P } = install({ rooms: [room], panels: [pn], circuits: [qf], voids: [sh] });
+      const mk = (wi, off) => { const e = M.newElement("socket", P.rooms[0].id + ":" + wi, off, 30, "power"); e.circuitId = P.circuits[0].id; P.elements.push(e); return e; };
+      mk(0, 420); mk(1, 250); // у верхней стены левее шахты и у правой стены ниже неё
+      RT.build({ silent: true });
+      const rect = { x0: 470, y0: 0, x1: 600, y1: 130 };
+      const bad = P.routes.filter((rt) => routeHitsRect(rt, rect));
+      eq(bad.length, 0, "ни одна трасса не проходит сквозь шахту");
+      ok(P.routes.length >= 2, "трассы построены");
+    });
+    test("шахта перекрывает коридор целиком — конфликт виден в «Проверках»", () => {
+      const room = M.newRoom(G.rectPoints(0, 0, 600, 100), "Коридор");
+      const pn = M.newPanel(30, 50, "ЩК");
+      const qf = M.newCircuit("QF1", "#e11", 16);
+      const sh = M.newVoid({ x: 280, y: 0 }, { x: 330, y: 100 }, "shaft");
+      const { P } = install({ rooms: [room], panels: [pn], circuits: [qf], voids: [sh] });
+      const e = M.newElement("socket", P.rooms[0].id + ":0", 520, 30, "power"); e.circuitId = P.circuits[0].id; P.elements.push(e);
+      RT.build({ silent: true });
+      const rr = EP.Plan.Rules.run(P), list = Array.isArray(rr) ? rr : (rr.issues || []);
+      ok(list.some((x) => /шахт/i.test(x.msg || String(x))), "«Проверки» говорят про шахту: " + list.map((x) => x.msg).join(" | ").slice(0, 300));
+    });
+    test("ближняя, но тупиковая магистраль не ломает рабочую трассу (аудит п.10)", () => {
+      const rA = M.newRoom(G.rectPoints(0, 0, 400, 300), "A"), rB = M.newRoom(G.rectPoints(400, 0, 400, 300), "B");
+      const pn = M.newPanel(30, 150, "ЩК");
+      const qf = M.newCircuit("QF1", "#e11", 16);
+      const main = M.newGuide([{ x: 100, y: 150 }, { x: 700, y: 150 }]);
+      const stub = M.newGuide([{ x: 640, y: 240 }, { x: 760, y: 240 }]); // обрывок рядом с розеткой, ни с чем не связан
+      const { P } = install({ rooms: [rA, rB], panels: [pn], circuits: [qf], guides: [main, stub] });
+      const e = M.newElement("socket", P.rooms[1].id + ":2", 100, 30, "power"); e.circuitId = P.circuits[0].id; P.elements.push(e);
+      RT.build({ silent: true });
+      const fp = RT.feedPath(P, e.id);
+      ok(fp && fp.toPanel, "розетка проложена до щита по рабочей магистрали");
+    });
+    test("пересекающиеся магистрали соединены в месте пересечения (аудит п.11)", () => {
+      // щит далеко от вертикальной магистрали, розетка далеко от горизонтальной (> 8 м):
+      // путь есть ТОЛЬКО через перекрёсток
+      const rA = M.newRoom(G.rectPoints(0, 0, 800, 300), "A"), rB = M.newRoom(G.rectPoints(800, 0, 800, 300), "B"), rC = M.newRoom(G.rectPoints(800, 300, 800, 900), "C");
+      const pn = M.newPanel(30, 150, "ЩК");
+      const qf = M.newCircuit("QF1", "#e11", 16);
+      const h = M.newGuide([{ x: 100, y: 150 }, { x: 1500, y: 150 }]);
+      const v = M.newGuide([{ x: 1400, y: 60 }, { x: 1400, y: 1150 }]); // крест посередине обоих отрезков
+      const { P } = install({ rooms: [rA, rB, rC], panels: [pn], circuits: [qf], guides: [h, v] });
+      const e = M.newElement("socket", P.rooms[2].id + ":2", 200, 30, "power"); e.circuitId = P.circuits[0].id; P.elements.push(e);
+      RT.build({ silent: true });
+      const fp = RT.feedPath(P, e.id);
+      ok(fp && fp.toPanel, "розетка комнаты C проложена через перекрёсток магистралей");
+      const r = (P.routes || []).find((x) => x.fromId === e.id);
+      ok(r && r.points.some((q) => Math.abs(q.x - 1400) < 12 && Math.abs(q.y - 150) < 12), "проходит через перекрёсток");
+      ok(r && r.points.some((q) => Math.abs(q.x - 1400) < 12 && q.y > 290 && q.y < 340), "и заходит в комнату C по вертикальной магистрали");
+    });
+    test("вывернутый контур отбраковывается, допустимый отступ ограничен шириной комнаты", () => {
+      const room = M.newRoom(G.rectPoints(0, 0, 80, 600), "Коридор");
+      const { P } = install({ rooms: [room] });
+      ok(G.insetContour(P, P.rooms[0], 20), "20 см в коридоре 80 см — нормальный контур");
+      eq(G.insetContour(P, P.rooms[0], 45), null, "45 см (больше полуширины) — вывернутый, отбракован");
+      const mx = G.maxInset(P, P.rooms[0]);
+      ok(mx > 30 && mx < 35, "наибольший отступ ≈ полуширина минус полстены: " + mx.toFixed(1));
+      const big = M.newRoom(G.rectPoints(0, 0, 400, 300).concat([]), "R2");
+      const { P: P2 } = install({ rooms: [big] });
+      ok(G.insetContour(P2, P2.rooms[0], 15), "обычная комната — контур есть");
+    });
+    test("полоса линии считается по линиям, которые есть в этой комнате", () => {
+      const rA = M.newRoom(G.rectPoints(0, 0, 400, 300), "A"), rB = M.newRoom(G.rectPoints(400, 0, 400, 300), "B");
+      const pn = M.newPanel(30, 150, "ЩК"), pn2 = M.newPanel(430, 150, "ЩК2");
+      const cs = []; for (let i = 0; i < 6; i++) cs.push(M.newCircuit("QF" + (i + 1), "#e11", 16));
+      const { P } = install({ rooms: [rA, rB], panels: [pn, pn2], circuits: cs });
+      // пять линий в комнате A, шестая — одна в комнате B
+      for (let i = 0; i < 5; i++) { const e = M.newElement("socket", P.rooms[0].id + ":0", 60 + i * 60, 30, "power"); e.circuitId = P.circuits[i].id; P.elements.push(e); }
+      const eB = M.newElement("socket", P.rooms[1].id + ":0", 200, 30, "power"); eB.circuitId = P.circuits[5].id; P.elements.push(eB);
+      RT.build({ silent: true });
+      const r = P.routes.find((x) => x.fromId === eB.id);
+      ok(r, "у розетки комнаты B есть трасса");
+      // контур комнаты B для единственной её линии — базовый отступ 15 см от грани (5 + 15 = 20 от оси)
+      const ys = r.points.map((q) => q.y).filter((y) => y > 1 && y < 299);
+      ok(ys.some((y) => Math.abs(y - 20) < 1.5), "идёт на первой полосе (20 см от оси стены), а не на шестой: " + ys.map(Math.round).join(","));
+    });
+    test("узкий коридор и много линий: контур не выворачивается, трассы внутри (аудит п.12)", () => {
+      const room = M.newRoom(G.rectPoints(0, 0, 80, 600), "Коридор");
+      const pn = M.newPanel(40, 20, "ЩК");
+      const cs = []; for (let i = 0; i < 35; i++) cs.push(M.newCircuit("QF" + (i + 1), "#e11", 16));
+      const { P } = install({ rooms: [room], panels: [pn], circuits: cs });
+      for (let i = 0; i < 35; i++) {
+        const e = M.newElement("socket", P.rooms[0].id + ":" + (i % 2 ? 1 : 3), 120 + (i % 17) * 25, 30, "power"); e.circuitId = P.circuits[i].id; P.elements.push(e);
+      }
+      RT.build({ silent: true });
+      const out = [];
+      P.routes.forEach((rt) => rt.points.forEach((q) => { if (q.x < 4.5 || q.x > 75.5 || q.y < 4.5 || q.y > 595.5) out.push(rt.circuitId + "@" + Math.round(q.x) + "," + Math.round(q.y)); }));
+      eq(out.length, 0, "все точки трасс внутри коридора: " + out.slice(0, 6).join(" "));
+    });
+    test("разнос пучка на экране не уводит линию сквозь перегородку (аудит п.13)", () => {
+      const BN = EP.Plan.Bundle;
+      // перегородка сверху обрывается на y=100; три линии рядом, стена снизу — лента растёт
+      // вверх, и линия, идущая ПОД торцом перегородки, на экране уезжала выше торца
+      const walls = [{ a: { x: 150, y: 0 }, b: { x: 150, y: 100 }, th: 6 }, { a: { x: 0, y: 106 }, b: { x: 300, y: 106 }, th: 6 }];
+      const routes = [
+        { id: "r1", key: "A", points: [{ x: 0, y: 96 }, { x: 300, y: 96 }] },
+        { id: "r2", key: "B", points: [{ x: 0, y: 101 }, { x: 300, y: 101 }] },
+        { id: "r3", key: "C", points: [{ x: 0, y: 102 }, { x: 300, y: 102 }] }
+      ];
+      const out = BN.spread(routes, { gap: 6, walls });
+      const crosses = (pts) => { for (let i = 0; i < pts.length - 1; i++) if (G.segIntersect(pts[i], pts[i + 1], walls[0].a, walls[0].b)) return true; return false; };
+      ok(!crosses(routes[1].points), "физически вторая линия перегородку не пересекает");
+      ok(!crosses(out.get("r2").pts), "и на экране тоже не пересекает");
+    });
+  }
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);
