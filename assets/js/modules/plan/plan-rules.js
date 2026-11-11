@@ -310,8 +310,10 @@
     const noH = pts.filter((e) => !Number.isFinite(e.height));
     if (!noH.length && pts.length) passed.push("У всех точек задана высота");
     noH.forEach((e) => issues.push({ level: "err", msg: `${tname(e.type)}: не задана высота установки.`, ref: { kind: "el", id: e.id } }));
+    // блок только из ТВ/интернета: линия ему не нужна — у каждого поста свой кабель к роутеру
+    const lvOnlyBlock = (e) => e.type === "block" && !((e.params && e.params.items) || []).some((t) => t === "socket" || t === "switch");
     // 3. линии
-    const noLine = pts.filter((e) => !e.circuitId || !cIds.has(e.circuitId));
+    const noLine = pts.filter((e) => (!e.circuitId || !cIds.has(e.circuitId)) && !lvOnlyBlock(e));
     if (pts.length && !noLine.length) passed.push(`Все точки на линиях (${pts.length})`);
     noLine.slice(0, 30).forEach((e) => issues.push({ level: "err", msg: `${tname(e.type)}: линия не назначена.`, ref: { kind: "el", id: e.id } }));
     if (noLine.length > 30) issues.push({ level: "err", msg: `…и ещё ${noLine.length - 30} точек без линии — «⚡ Сформировать проект» разложит их разом.` });
@@ -326,9 +328,12 @@
     if (pts.length && !routes.length) issues.push({ level: "warn", msg: "Трассы не построены — «🧵 Трассы» → «⚡ Построить»." });
     else if (routes.length) {
       const from = new Set(routes.map((r) => r.fromId));
-      const noRoute = pts.filter((e) => !from.has(e.id) && e.circuitId);
-      if (!noRoute.length) passed.push(`Все точки соединены трассами (${routes.length})`);
+      const noRoute = pts.filter((e) => !from.has(e.id) && e.circuitId && !lvOnlyBlock(e));
+      // посты ТВ/интернета в блоке без своего кабеля к роутеру
+      const noLvPost = pts.filter((e) => e.type === "block" && ((e.params && e.params.items) || []).some((t, i) => (t === "tv" || t === "internet") && !from.has("blk:" + e.id + "#" + i)));
+      if (!noRoute.length && !noLvPost.length) passed.push(`Все точки соединены трассами (${routes.length})`);
       noRoute.slice(0, 20).forEach((e) => issues.push({ level: "warn", msg: `${tname(e.type)}: нет трассы до щита.`, ref: { kind: "el", id: e.id } }));
+      noLvPost.slice(0, 20).forEach((e) => issues.push({ level: "warn", msg: "Блок: у поста ТВ/интернета нет кабеля до роутера — «⚡ Построить».", ref: { kind: "el", id: e.id } }));
       const RT = EP.Plan.Routes;
       if (RT && RT.sleeveHoles) { try { passed.push(`Проходки рассчитаны: ${RT.sleeveHoles(p)} отв.`); } catch (e) {} }
     }

@@ -1028,12 +1028,14 @@
     return idx;
   };
   // Мировая точка входа штробы в блок (позиция нужного подрозетника, с отступом от стены).
-  G.blockEntryPoint = (project, el) => {
+  G.blockEntryPoint = (project, el) => G.blockPostPoint(project, el, G.blockEntryIndex(el));
+  // Мировая точка поста idx блока (с отступом от стены) — вход штробы силовой трассы и
+  // начало отдельного кабеля слаботочного поста (ТВ/интернет) к роутеру
+  G.blockPostPoint = (project, el, idx) => {
     const dp = G.elemDrawPoint(project, el);
     if (!dp || !dp.wall) return dp;
     const items = (el.params && el.params.items) || [];
     const n = Math.max(1, items.length);
-    const idx = G.blockEntryIndex(el);
     const fr = G.wallFrame(project, dp.wall, el.beamSide);
     const off = (idx - (n - 1) / 2) * G.POST_SPACING;
     return { x: dp.x + fr.dir.x * off, y: dp.y + fr.dir.y * off, wall: dp.wall };

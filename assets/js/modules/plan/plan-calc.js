@@ -412,6 +412,14 @@
     const elById = (id) => (p.elements || []).find((e) => e.id === id);
     const inCnt = {}, outCnt = {};
     routes.forEach((r) => { outCnt[r.fromId] = (outCnt[r.fromId] || 0) + 1; if (r.toId) inCnt[r.toId] = (inCnt[r.toId] || 0) + 1; });
+    // свои кабели слаботочных постов блока ("blk:<блок>#<пост>", аудит цепей, пакет 3)
+    const blkBy = {};
+    routes.forEach((r) => {
+      const id = String(r.fromId || "");
+      if (id.indexOf("blk:") !== 0) return;
+      const bid = id.slice(4).split("#")[0];
+      (blkBy[bid] = blkBy[bid] || []).push(r);
+    });
 
     const strobe = {}; // "размер|материал|вид" -> метры (вид: power/lv/warm — не смешиваем в одну строку)
     // штроба и кабель ПО ПОВЕРХНОСТЯМ (пол/потолок) — нужны расходникам: крепёж по полу
@@ -461,6 +469,12 @@
       };
       if (e2.type === "block") ((e2.params && e2.params.items) || []).forEach(addPost);
       else addPost(e2.type);
+      // ТВ/интернет в блоке: у каждого поста свой кабель к роутеру — и своя слаботочная
+      // штроба к этому посту (раньше ни кабеля, ни штробы — пакет 3 аудита цепей)
+      (blkBy[e2.id] || []).forEach((r) => {
+        const sf = sfOf(r.routeType), v = RT.pointVert(p, e2, sf);
+        if (v >= 1) addStrobe(keyStd, mat, v, "lv", sf, rn);
+      });
       // штроба-спуск: только у точек, к которым построена трасса
       if (!(outCnt[e2.id] || inCnt[e2.id])) return;
       // поверхность спуска — по УЖЕ ПОСТРОЕННОЙ трассе этой точки (её группа слоёв могла
@@ -476,7 +490,8 @@
         if (toFloor > 1) addStrobe(sizeKey(s.tpChaseW || 50, s.tpChaseH || 50), mat, toFloor, "warm", "floor", rn);
         return;
       }
-      if (LV_LAYERS[e2.layer]) { addStrobe(keyStd, mat, vert, "lv", esurf, rn); return; } // слаботочка — своя штроба и своя строка
+      // слаботочка — своя штроба и своя строка; датчик, коммутирующий свет, — в цепи света (силовая)
+      if (LV_LAYERS[e2.layer] && !(RT.isFeeder && RT.isFeeder(p, e2))) { addStrobe(keyStd, mat, vert, "lv", esurf, rn); return; }
       const cables = (outCnt[e2.id] || 0) + (inCnt[e2.id] || 0); // вход+выход шлейфа в одном спуске
       addStrobe(keyStd, mat, Math.max(1, Math.ceil(cables / capOf(keyStd))) * vert, "power", esurf, rn);
     });

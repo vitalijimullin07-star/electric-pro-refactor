@@ -446,7 +446,7 @@ test("routing: router-щит не мешает силовым точкам — �
   ok(rt, "трасса построена");
   eq(rt.toId, near.id, "силовая точка НЕ уходит к роутеру");
 });
-test("routing: ТВ и видеонаблюдение (isLvLayer: tv/cctv) уходят LV-шлейфом к router-щиту, не к обычному", () => {
+test("routing: ТВ и видеонаблюдение (isLvLayer: tv/cctv) уходят к router-щиту, не к обычному — каждая своим кабелем", () => {
   const near = M.newPanel(10, 10, "Щит");
   const router = M.newPanel(390, 290, "Роутер"); router.router = true;
   const { P, w } = install({ panels: [near, router] });
@@ -458,8 +458,10 @@ test("routing: ТВ и видеонаблюдение (isLvLayer: tv/cctv) ух�
   const rtCam = P.routes.find((r) => r.fromId === cam.id);
   ok(rtTv && rtCam, "трассы построены для обеих LV-точек");
   ok(!P.routes.some((r) => r.toId === near.id), "ни одна LV-трасса не подключена к обычному щиту");
-  eq(P.routes.filter((r) => r.toPanel).length, 1, "спуск к щиту — один раз (шлейф)");
-  eq(P.routes.find((r) => r.toPanel).toId, router.id, "спуск к щиту идёт именно к роутеру");
+  // коаксиал и витая пара — «звездой»: у каждой розетки свой кабель до роутера (шлейф
+  // розетка → розетка для них физически не годится — аудит цепей, пакет 3)
+  eq(P.routes.filter((r) => r.toPanel).length, 2, "каждая LV-точка — своим кабелем до щита");
+  ok(P.routes.filter((r) => r.toPanel).every((r) => r.toId === router.id), "оба кабеля идут именно к роутеру");
 });
 test("routing: трансформаторный щит — Вывод 24В идёт ТОЛЬКО к нему (при наличии router-щита и более близкого обычного)", () => {
   const near = M.newPanel(10, 10, "Щит");
@@ -9334,6 +9336,112 @@ test("фото: deleteProject чистит кэш фото своего прое
       ok(!res.items.some((it) => /Распаечная коробка/.test(it.name)), "неиспользуемая коробка в смету не идёт");
       const rep = EP.Plan.Rules.report(P);
       ok(rep.issues.some((i) => /Распайка/.test(i.msg) && /линия не назначена/.test(i.msg)), "замечание в «Проверках»");
+    });
+  }
+
+  // ===== 75. Аудит цепей, пакет 3: слаботочка в блоках, звезда RJ45, датчики в цепи света =====
+  {
+    const RT = EP.Plan.Routes;
+    const lvRoom = () => {
+      const q = M.newCircuit("QF1", "#e11", 16);
+      const pk = M.newPanel(10, 150, "ЩК");
+      const pr = M.newPanel(390, 150, "ЩС"); pr.router = true;
+      const { P } = install({ panels: [pk, pr], circuits: [q] });
+      const W = (i) => P.rooms[0].id + ":" + i;
+      return { P, W, cid: P.circuits[0].id, pk: P.panels[0], pr: P.panels[1] };
+    };
+    test("блок «розетка + интернет + ТВ»: у слаботочных постов свой кабель к роутеру и своя штроба", () => {
+      const { P, W, cid, pk, pr } = lvRoom();
+      const b = M.newElement("block", W(0), 200, 30, "power"); b.params = { items: ["socket", "internet", "tv"] }; b.circuitId = cid;
+      P.elements.push(b);
+      RT.build({ silent: true });
+      const own = P.routes.find((r) => r.fromId === b.id);
+      ok(own && own.toId === pk.id, "силовой пост — по линии в квартирный щит");
+      const lv = P.routes.filter((r) => String(r.fromId).indexOf("blk:" + b.id + "#") === 0);
+      eq(lv.length, 2, "два слаботочных поста — два своих кабеля");
+      ok(lv.every((r) => r.toId === pr.id), "оба — к роутеру");
+      eq(lv.map((r) => r.layer).sort().join(","), "lv,tv", "слой по виду поста");
+      eq(RT.feedIssues(P).length, 0, "кабели постов не «висячие»");
+      eq(RT.unroutedList().length, 0, "без трассы — никого");
+      const res = EP.Plan.Calc.calcByRoutes(P);
+      ok((res.cableBy["Витая пара (UTP)"] || 0) > 0, "витая пара в смете");
+      const lvStrobe = Object.keys(res.strobe || {}).filter((k) => /\|lv$/.test(k)).reduce((s2, k) => s2 + res.strobe[k], 0);
+      const v = RT.pointVert(P, b) / 100;
+      ok(lvStrobe >= 2 * v - 0.01, "слаботочная штроба к каждому посту: " + lvStrobe.toFixed(2) + " ≥ " + (2 * v).toFixed(2));
+    });
+    test("блок только из интернета и ТВ: линии не нужно, кабели есть, «Проверки» не требуют линию", () => {
+      const { P, W, pr } = lvRoom();
+      const b = M.newElement("block", W(2), 150, 30, "power"); b.params = { items: ["internet", "tv"] };
+      P.elements.push(b);
+      RT.build({ silent: true });
+      ok(!P.routes.some((r) => r.fromId === b.id), "силовой трассы у такого блока нет");
+      eq(P.routes.filter((r) => String(r.fromId).indexOf("blk:" + b.id) === 0 && r.toId === pr.id).length, 2, "два кабеля к роутеру");
+      const rep = EP.Plan.Rules.report(P);
+      ok(!rep.issues.some((i) => i.ref && i.ref.id === b.id), "замечаний к блоку нет: " + rep.issues.filter((i) => i.ref && i.ref.id === b.id).map((i) => i.msg).join("; "));
+      const sig0 = RT.routeInputSig(P);
+      P.elements.find((e) => e.id === b.id).offset += 40;
+      ok(RT.routeInputSig(P) !== sig0, "перенос такого блока — повод перестроить трассы");
+    });
+    test("«⚡ Построить» не задваивает кабели постов, смена поста убирает лишний, удаление блока — все", () => {
+      const { P, W, cid } = lvRoom();
+      const b = M.newElement("block", W(0), 200, 30, "power"); b.params = { items: ["socket", "internet", "tv"] }; b.circuitId = cid;
+      P.elements.push(b);
+      RT.build({ silent: true });
+      RT.buildIncremental({ silent: true });
+      const blk = () => P.routes.filter((r) => String(r.fromId).indexOf("blk:" + b.id) === 0);
+      eq(blk().length, 2, "повторная достройка не задвоила");
+      P.elements.find((e) => e.id === b.id).params.items[2] = "socket";
+      RT.buildIncremental({ silent: true });
+      eq(blk().length, 1, "ТВ стал розеткой — его кабель к роутеру ушёл");
+      const old = sandbox.confirm; sandbox.confirm = () => true;
+      try { EP.Plan.Elements.deleteElement(P.elements.find((e) => e.id === b.id)); } finally { sandbox.confirm = old; }
+      eq(blk().length, 0, "блок удалён — кабелей его постов не осталось");
+    });
+    test("интернет-розетки одной линии — «звездой» к роутеру, не шлейфом", () => {
+      const { P, W, pr } = lvRoom();
+      const q = M.newCircuit("Int1", "#0af", 6); P.circuits.push(q);
+      const i1 = M.newElement("internet", W(0), 100, 30, "lv"), i2 = M.newElement("internet", W(0), 250, 30, "lv"), i3 = M.newElement("internet", W(2), 200, 30, "lv");
+      [i1, i2, i3].forEach((e) => { e.circuitId = q.id; P.elements.push(e); });
+      RT.build({ silent: true });
+      [i1, i2, i3].forEach((e) => {
+        const r = P.routes.find((x) => x.fromId === e.id);
+        ok(r && r.toPanel && r.toId === pr.id, "каждая розетка — своим кабелем до роутера");
+      });
+    });
+    test("датчик движения с назначенным светом — в цепи света: свет через датчик, датчик — в силовой щит", () => {
+      const { P, cid, pk, pr } = lvRoom();
+      const L = (x, y) => { const e = M.newElement("light", null, 0, 270, "light"); e.params = { x, y }; e.circuitId = cid; P.elements.push(e); return e; };
+      const l1 = L(150, 100), l2 = L(250, 200);
+      const pir = M.newElement("pir", null, 0, 270, "lv"); pir.params = { x: 200, y: 150 }; pir.targetIds = [[l1.id, l2.id]];
+      P.elements.push(pir);
+      RT.build({ silent: true });
+      const to = (e) => (P.routes.find((r) => r.fromId === e.id) || {});
+      eq(pir.circuitId, cid, "датчик встал на линию своего света");
+      ok(!to(l1).toPanel && !to(l2).toPanel, "светильники не тянутся к щиту мимо датчика");
+      ok(to(l1).toId === pir.id || to(l2).toId === pir.id, "шлейф света начинается у датчика");
+      const rp = to(pir);
+      ok(rp.toId === pk.id, "датчик — в квартирный щит, а не в слаботочный: " + rp.toId);
+      eq(rp.layer, "light", "его кабель идёт с линией света");
+      ok(pr, "слаботочный щит есть, но датчик туда не ушёл");
+    });
+    test("датчик без назначенного света — по-прежнему слаботочка к роутеру", () => {
+      const { P, pr } = lvRoom();
+      const pir = M.newElement("pir", null, 0, 270, "lv"); pir.params = { x: 200, y: 150 };
+      P.elements.push(pir);
+      RT.build({ silent: true });
+      eq((P.routes.find((r) => r.fromId === pir.id) || {}).toId, pr.id, "к роутеру");
+    });
+    test("«до щита» 24В больше не «висячая» трасса (статус «Разрыв» не ложный)", () => {
+      const trafo = M.newPanel(200, 280, "ЩС"); trafo.transformer = true;
+      const q24 = M.newCircuit("24В1", "#0af", 6), ql = M.newCircuit("QF1", "#e11", 10);
+      const { P, w } = install({ panels: [M.newPanel(10, 10, "ЩК"), trafo], circuits: [ql, q24] });
+      const sw = M.newElement("switch", w(0), 100, 90, "light"); sw.circuitId = P.circuits[0].id;
+      const o24 = M.newElement("output24", null, 0, 270, "lv"); o24.params = { x: 200, y: 150 }; o24.circuitId = P.circuits[1].id;
+      sw.targetIds = [o24.id];
+      P.elements.push(sw, o24);
+      RT.build({ silent: true });
+      ok(P.routes.some((r) => String(r.fromId).indexOf("sw24:") === 0), "трасса «до щита» есть");
+      eq(RT.feedIssues(P).filter((x) => String(x.id).indexOf("sw24:") === 0).length, 0, "и она не считается висячей");
     });
   }
 
