@@ -33,47 +33,10 @@
   // норм (plan-rules.js CABLE_AMP: макс. автомат под сечение меди), сформулирована
   // тут в обратную сторону (по автомату ищем сечение), чтобы «авто»-кабель никогда
   // не оказывался тоньше, чем допускает уже выставленный номинал линии.
-  const SECTION_BY_AMP = [{ amp: 10, sec: 1.5 }, { amp: 16, sec: 2.5 }, { amp: 25, sec: 4 }, { amp: 32, sec: 6 }, { amp: 50, sec: 10 }, { amp: 63, sec: 16 }];
-  // подсказка кабеля, если не задан вручную — ПОДБОР ПО АВТОМАТУ (просьба
-  // пользователя: «кабель можно подбирать исходя из аппарата защиты»), число жил —
-  // по полюсам линии (1п — 3 жилы, 3п — 5 жил), сечение — ближайшее большее в
-  // каталоге проекта (DEFAULTS.cables) под номинал автомата этой линии.
-  function autoCable(p, c) {
-    // слаботочная линия (вся нагрузка — интернет/ТВ/видеонаблюдение) — витая пара,
-    // а не силовой кабель по номиналу автомата (просьба пользователя: «все интернет
-    // розетки и тв, это у нас Витая пара, она и должна отображаться»)
-    const els = loadEls(p, c);
-    // 24В-линия (вся нагрузка — «Вывод 24В») — это ПИТАНИЕ 24В, а не слаботочная сеть:
-    // витая пара тут не при чём (у output24 слой lv, поэтому без этой ветки он попадал бы
-    // в проверку ниже и линия 24В показывала бы UTP). По умолчанию 2 жилы — у 24В нет земли.
-    if (els.length && els.every((e) => e.type === "output24")) {
-      // марка «от щита до точки 24В» — ОДНА на всё приложение (та же, что в смете):
-      // монохром = settings.cable24, RGB = settings.cable24Rgb (см. defaultCableMark)
-      const CA = EP.Plan.Calc;
-      if (CA && CA.defaultCableMark) return CA.defaultCableMark(p, "lv", true, !!c.rgb);
-      return c.rgb ? (p.settings.cable24Rgb || "КГ ВВГнг-LS 5×1.5") : (p.settings.cable24 || "КГ ВВГнг-LS 2×2.5");
-    }
-    if (els.length && els.every((e) => e.layer === "lv" || e.layer === "tv" || e.layer === "cctv")) return "Витая пара (UTP)";
-    // ОСВЕЩЕНИЕ — 3×1.5 (прямая просьба пользователя: «плюс освещение питание должно
-    // быть 3×1.5»). Раньше сечение подбиралось ТОЛЬКО по номиналу автомата, и линия
-    // света с автоматом 16А получала 3×2.5. Кап по безопасности: если на линии стоит
-    // автомат ВЫШЕ 16А, 1.5мм² под него нельзя (plan-rules.js это и пометит) — тогда
-    // работает обычный подбор по номиналу ниже.
-    if (els.length && els.every((e) => e.layer === "light") && (c.breaker || 16) <= 16) {
-      return core().cableMark(p, c.poles === 3 ? "5×1.5" : "3×1.5");
-    }
-    const found = SECTION_BY_AMP.find((x) => (c.breaker || 16) <= x.amp);
-    const needSec = (found || SECTION_BY_AMP[SECTION_BY_AMP.length - 1]).sec;
-    const prefix = c.poles === 3 ? "5×" : "3×";
-    const cat = (core().DEFAULTS.cables || [])
-      .filter((cb) => cb.indexOf(prefix) === 0)
-      .map((cb) => ({ cb, sec: parseFloat(cb.split("×")[1]) }))
-      .sort((a, b) => a.sec - b.sec);
-    if (cat.length) return core().cableMark(p, (cat.find((o) => o.sec >= needSec) || cat[cat.length - 1]).cb);
-    // в каталоге нет кабелей нужного числа жил — старое поведение по типу нагрузки
-    const layers = loadEls(p, c).map((e) => e.layer);
-    return core().cableMark(p, (layers.length && layers.every((l) => l === "light")) ? "3×1.5" : "3×2.5");
-  }
+  // подбор кабеля линии живёт в движке цепей (EP.Plan.Circuits.autoCable) — он грузится везде,
+  // в том числе в фоновом вычислителе сметы, где однолинейки нет. Здесь — тот же вызов, чтобы
+  // схема, смета, «По линиям», PDF и «Проверки» показывали ОДИН кабель (аудит 11.11, п.16)
+  function autoCable(p, c) { return EP.Plan.Circuits.autoCable(p, c); }
   // короткая метка нагрузки для символа группы (по первому типу)
   function loadKindLabel(p, c) {
     const els = loadEls(p, c);
