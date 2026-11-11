@@ -209,6 +209,9 @@
     // копией поверх холста, и перерисовка оригинала дала бы двойное изображение. Сцена
     // рисуется сразу после снятия подъёма (dropLiftNodes зовёт renderScene сам).
     if (EP.Plan.Render.isLifted && EP.Plan.Render.isLifted(R.canvas)) return;
+    // живой слой нежёсткой тяги (liveBegin): рисуем только область тяги в слой поверх
+    // холста, основную сцену не трогаем до отпускания
+    if (EP.Plan.Render.isLive && EP.Plan.Render.isLive(R.canvas)) { EP.Plan.Render.liveDraw(R.canvas, G().floorScoped(core().project), ui()); return; }
     EP.Plan.Render.draw(R.canvas, G().floorScoped(core().project), ui());
     // текст подсказки — только если поменялся: запись даже того же текста заменяет узел
     // и заставляет браузер заново раскладывать и перерисовывать шапку на каждом рендере
@@ -224,9 +227,36 @@
   function dropLiftNodes() {
     if (R.canvas && EP.Plan.Render && EP.Plan.Render.isLifted && EP.Plan.Render.isLifted(R.canvas)) { EP.Plan.Render.dropLift(R.canvas); renderScene(); }
   }
+  /* «Живой слой» на время НЕжёсткой тяги (стена/угол комнаты, проём, конец перегородки,
+     излом трассы, вынос размера): на старте — liveBegin(область), дальше обычный
+     renderSceneSoon() рисует только эту область в отдельный слой (см. liveBegin в
+     plan-render.js). Снимается сам перед "end" обработчика (canvas.onDragDone в attach) —
+     обработчик отпускания пишет проект и рисует уже основную сцену. */
+  function liveBegin(scope) { return !!(R.canvas && EP.Plan.Render && EP.Plan.Render.liveBegin && EP.Plan.Render.liveBegin(R.canvas, scope)); }
+  function liveAdd(scope) { return !!(R.canvas && EP.Plan.Render && EP.Plan.Render.liveAdd && EP.Plan.Render.liveAdd(R.canvas, scope)); }
+  function liveEnd() { return !!(R.canvas && EP.Plan.Render && EP.Plan.Render.liveEnd && EP.Plan.Render.liveEnd(R.canvas)); }
+  // область «всё, что нарисовано от стены»: комната-хозяйка (стены, цепочка, проёмы) и
+  // соседи, на чьи стены проецируются её проёмы (общая стена двух комнат записана за обе)
+  function wallScope(wallId) {
+    const p = core().project, w = wallId && G().wallById(p, wallId);
+    const sc = { walls: [], chains: [], ops: [] };
+    if (!w) return sc;
+    const own = String(wallId).slice(0, 5) === "beam:" ? String(wallId) : String(wallId).split(":")[0];
+    sc.ops.push(own);
+    if (own.slice(0, 5) === "beam:") sc.beams = true; else { sc.walls.push(own); sc.chains.push(own); }
+    const tol = Math.max(10, (p.settings.wallThickness || 10)) * 4 + 10;
+    const x0 = Math.min(w.a.x, w.b.x) - tol, x1 = Math.max(w.a.x, w.b.x) + tol, y0 = Math.min(w.a.y, w.b.y) - tol, y1 = Math.max(w.a.y, w.b.y) + tol;
+    (G().floorScoped(p).rooms || []).forEach((r) => {
+      if (r.id === own || !(r.points || []).length) return;
+      const bb = G().bbox(r.points);
+      if (bb.x <= x1 && bb.x + bb.w >= x0 && bb.y <= y1 && bb.y + bb.h >= y0) { sc.walls.push(r.id); sc.chains.push(r.id); }
+    });
+    return sc;
+  }
   function renderScaled() {
     if (!R.canvas || !EP.Plan.Render) return;
     if (EP.Plan.Render.isLifted && EP.Plan.Render.isLifted(R.canvas)) return;
+    if (EP.Plan.Render.isLive && EP.Plan.Render.isLive(R.canvas)) { EP.Plan.Render.liveDraw(R.canvas, G().floorScoped(core().project), ui()); return; }
     EP.Plan.Render.drawScaled(R.canvas, G().floorScoped(core().project), ui());
   }
   // перерисовка не чаще кадра — тяга пальцем остаётся плавной
@@ -307,8 +337,9 @@
     if (on) {
       R.canvas.setDragHandler((dx, dy, phase) => {
         const p = core().project; if (!p || !p.underlay) return;
+        if (phase === "start") { liveBegin({ underlay: true }); return; }
         if (phase === "move") { p.underlay.x = (p.underlay.x || 0) + dx; p.underlay.y = (p.underlay.y || 0) + dy; renderSceneSoon(); }
-        else if (phase === "end") core().persist("underlay-move");
+        else if (phase === "end") { core().persist("underlay-move"); renderScene(); }
       });
     } else R.canvas.setDragHandler(null);
   }
@@ -1350,6 +1381,7 @@
         if (!hit || !hit.opening || hit.opening.id !== op.id) return false;
         cur = { x: start.x, y: start.y };
         c.commit();
+        liveBegin(wallScope(op.wallId));
         return;
       }
       if (!cur) return;
@@ -1360,6 +1392,7 @@
         const wl = hitW.wall;
         if (wl.id !== op.wallId) {
           op.wallId = wl.id;
+          liveAdd(wallScope(wl.id)); // новая стена — её комната и соседи тоже в живом слое
           // створка/откосы считаются от центроида комнаты-владельца — на новой стене
           // сторона другая, пересчитываем (иначе дверь открывалась бы наружу)
           const fl = EL.openingFlipFor && EL.openingFlipFor(p, wl);
@@ -1543,6 +1576,7 @@
         }
         accX = 0; accY = 0;
         c.commit();
+        liveBegin(mode === "h" ? { els: [hEl.id] } : mode === "chain" ? { chains: [ch.roomId] } : { dims: [dm.id] });
         return;
       }
       if (phase === "move" && mode) {
@@ -1641,6 +1675,7 @@
         // заметка целиком (текст со стрелкой) — жёсткий перенос, поднимаем копию;
         // тяга кончика стрелки меняет форму — там перерисовка через rAF, как раньше
         lifted = mode === "all" && liftNodes(["[data-nt=\"" + nt.id + "\"]"]);
+        if (!lifted) liveBegin({ notes: [nt.id] });
         return;
       }
       if (phase === "move" && mode) {
@@ -1802,6 +1837,7 @@
         if (Math.min(da, db) > rr * 2) grabbed = null; // не по концу — не тянем
         if (!grabbed) return false; // жест остаётся панорамой
         core().commit();
+        liveBegin({ beams: true, ops: ["beam:" + bm.id] });
         return;
       }
       if (phase === "move" && grabbed) {
@@ -2005,6 +2041,7 @@
           let sx = B.x - A.x, sy = B.y - A.y; const L = Math.hypot(sx, sy) || 1;
           segDrag = { a, b, nx: -sy / L, ny: sx / L }; // нормаль к участку
           grabbed = -2;
+          liveBegin({ routes: [rt.id] });
           return;
         }
         // ---- режим «Ломать» (дефолт): излом или вставка излома ----
@@ -2013,7 +2050,7 @@
           const d = G().dist(start, rt.points[i]);
           if (d <= bestD) { bestD = d; best = i; }
         }
-        if (best >= 0) { grabbed = best; core().commit(); return; }
+        if (best >= 0) { grabbed = best; core().commit(); liveBegin({ routes: [rt.id] }); return; }
         let segI = -1, segD = rr, segPt = null;
         for (let i = 0; i < rt.points.length - 1; i++) {
           const cl = G().closestOnSeg(start, rt.points[i], rt.points[i + 1]);
@@ -2023,6 +2060,7 @@
         core().commit();
         rt.points.splice(segI + 1, 0, { x: segPt.x, y: segPt.y });
         grabbed = segI + 1;
+        liveBegin({ routes: [rt.id] });
         return;
       }
       if (phase === "move" && grabbed === -2 && segDrag) {
@@ -2099,6 +2137,7 @@
         }
         if (!grab) return false;
         c.commit();
+        liveBegin({ walls: [roomId], fills: [roomId], chains: [roomId], ops: [roomId], leds: [roomId], elOwners: [roomId] });
         return;
       }
       if (phase === "move" && grab) {
@@ -2801,6 +2840,13 @@
     canvas.onHover(onCanvasHover);
     canvas.onHoverEnd(clearHoverPreview);
     canvas.onLongPress(onCanvasLongPress);
+    // тяга закончилась (или оборвана сменой обработчика) — снять живой слой; оборванной
+    // тяге заодно снять «подъём», иначе копия объекта осталась бы висеть поверх холста
+    if (canvas.onDragDone) canvas.onDragDone((aborted) => {
+      const hadLive = liveEnd();
+      if (aborted) { const RN = EP.Plan.Render; if (RN && RN.isLifted && RN.isLifted(canvas)) RN.dropLift(canvas); renderSceneSoon(); }
+      return hadLive;
+    });
     setMode("view");
     R.selectedRoomId = null;
     renderScene();
@@ -2826,7 +2872,7 @@
     // вся drag-инфраструктура живёт в plan-rooms.js), поэтому тягу мебели ставим через
     // этот тонкий проброс, а сам обработчик (что двигать) остаётся в модуле мебели
     canvasSetDrag: (fn) => { if (R.canvas) R.canvas.setDragHandler(fn || null); },
-    renderSceneSoon, liftNodes, moveLiftBy, dropLiftNodes,
+    renderSceneSoon, liftNodes, moveLiftBy, dropLiftNodes, liveBegin, liveAdd, liveEnd,
     mergeRooms, splitRoom, moveRoom, setWallLength, syncQuickbarVisibility, armTargetPick
   };
 })();

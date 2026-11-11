@@ -193,6 +193,7 @@
     if (!c) { c = { underlay: null, underlaySrc: null, rooms: new Map() }; staticCaches.set(canvas, c); }
     return c;
   }
+  const inSet = (set, id) => !!(set && set.has(id));
   // выкинуть из кэша узлы удалённых объектов (иначе Map росла бы весь сеанс)
   function pruneCache(map, seen) {
     if (map.size <= seen.size) return;
@@ -224,6 +225,14 @@
     let cur = parent.firstChild;
     for (let i = 0; i < list.length; i++) {
       const n = list[i];
+      // Свежесобранный узел, РАВНЫЙ по содержимому тому, что уже стоит на этом месте
+      // (isEqualNode — теги, атрибуты, дети), в документ не вставляем: оставляем старый.
+      // Так части без своего кэша (щит, мебель, заметки, свои размеры, магистрали,
+      // пунктиры «клавиша → свет») перестают пересоздаваться на каждом рендере: раньше
+      // даже перерисовка «ничего не изменилось» заменяла их узлы, и браузер заново считал
+      // стили, раскладку и красил слой. Узел из кэша с прежней подписью сюда не доходит —
+      // он уже стоит в документе (ветка cur === n ниже).
+      if (cur && cur !== n && !want.has(cur) && !n.parentNode && cur.isEqualNode && cur.isEqualNode(n)) { cur = cur.nextSibling; continue; }
       while (cur && !want.has(cur)) { const nx = cur.nextSibling; parent.removeChild(cur); cur = nx; }
       if (cur === n) { cur = cur.nextSibling; continue; }
       parent.insertBefore(n, cur);
@@ -338,14 +347,16 @@
   // ---------- статичная часть: подложка + заливки комнат ----------
   function draw(canvas, project, ui) {
     const G = EP.Plan.Geometry;
-    ensureDefs(canvas);
+    if (!canvas.live) ensureDefs(canvas); // у живого слоя своих defs нет: url(#…) находит штриховки основного svg
     if (!project) { clear(canvas.layers.underlay); clear(canvas.layers.rooms); drawScaled(canvas, project, ui); return; }
     const sc = staticCache(canvas);
+    const only = (ui && ui.only) || null; // живой слой тяги — рисуем только затронутое (см. liveBegin)
 
     // подложка: тот же <image> переиспользуется, пока она не изменилась — иначе браузер
     // заново декодировал бы картинку (data URI на сотни КБ) на КАЖДЫЙ рендер
     const u = project.underlay;
-    if (u && u.imageDataUri && u.nw && u.nh) {
+    if (only && !only.underlay) { /* подложка не в области живого слоя */ }
+    else if (u && u.imageDataUri && u.nw && u.nh) {
       const ua = { x: u.x || 0, y: u.y || 0, width: u.nw * u.scale, height: u.nh * u.scale, opacity: u.opacity == null ? 0.5 : u.opacity };
       let img = sc.underlay;
       if (!img || sc.underlaySrc !== u.imageDataUri) {
@@ -360,6 +371,7 @@
     const roomNodes = [];
     (project.rooms || []).forEach((room) => {
       if ((room.points || []).length < 3) return;
+      if (only && !inSet(only.fills, room.id)) return;
       const d = "M" + room.points.map((p) => p.x + " " + p.y).join(" L") + " Z";
       const cls = "ep-plan-room" + (ui && ui.selectedRoomId === room.id ? " is-sel" : "");
       let n = sc.rooms.get(room.id);
@@ -388,6 +400,12 @@
     // в overlay (reconcile) — неизменившиеся узлы DOM вообще не трогаются
     const outNodes = [];
     const g = { appendChild: (n) => { outNodes.push(n); return n; } };
+    // ЖИВОЙ СЛОЙ ТЯГИ (ui.only, см. liveBegin): в отдельный svg поверх холста рисуется
+    // только то, что реально меняется под пальцем (стены одной комнаты, её цепочка, проёмы,
+    // точки на её стенах, одна трасса…). Всё остальное пропускается ещё до расчёта подписей —
+    // цена кадра тяги не зависит от размера квартиры.
+    const only = (ui && ui.only) || null;
+    const idSfx = (ui && ui.idSuffix) || ""; // маски живого слоя не должны совпасть по id с основными
     const k = canvas.cmPerPx(); // см в одном экранном пикселе
     const fs = CFG.labelPx * k, fsName = CFG.namePx * k, sw = CFG.wallPx * k, off = CFG.labelOffsetPx * k;
     // режим МОНТАЖНИКА (ui.montage, 👷 в шапке): на плане остаётся нужное на объекте —
@@ -417,15 +435,20 @@
     // практически в центроиде — оба рисуются в центре комнаты и налезали друг на
     // друга (пойман визуальным тестом). Порог 35см — мировой, не зависит от зума,
     // сигнатура кэша стен стабильна, пока точка реально не подвинулась к/от центра.
-    const labelNudges = (project.rooms || []).map((room) => {
-      if ((room.points || []).length < 3) return 0;
-      const c0 = G.centroid(room.points);
-      return (project.elements || []).some((e2) => {
-        if (e2.wallId) return false;
-        const q = e2.params || {};
-        return q.x != null && Math.hypot(q.x - c0.x, q.y - c0.y) < 35;
-      }) ? 1 : 0;
-    });
+    // Считается лениво и один раз на комнату за кадр: в живом слое нужна одна комната, а не все.
+    const nudgeMemo = new Map();
+    const freeEls = (project.elements || []).filter((e2) => !e2.wallId && e2.params && e2.params.x != null);
+    const labelNudge = (room) => {
+      let v = nudgeMemo.get(room.id);
+      if (v !== undefined) return v;
+      v = 0;
+      if ((room.points || []).length >= 3) {
+        const c0 = G.centroid(room.points);
+        for (let i = 0; i < freeEls.length; i++) { const q = freeEls[i].params; const dx = q.x - c0.x, dy = q.y - c0.y; if (dx * dx + dy * dy < 1225) { v = 1; break; } }
+      }
+      nudgeMemo.set(room.id, v);
+      return v;
+    };
     // Шрифты/толщины ВНУТРИ кэшируемого блока стен зависят от k (постоянный размер
     // НА ЭКРАНЕ) — но сигнатура кэша не содержала зум вообще: после зума кэш
     // переиспользовал узел со старыми размерами шрифта, и подписи стен/цепочек
@@ -502,13 +525,19 @@
     const wallParts = [];
     const liveRoomW = new Set();
     roomsW.forEach((room, roomI) => {
+      if (only && !inSet(only.walls, room.id)) return;
       liveRoomW.add(room.id);
       const nb = [];
       roomsW.forEach((r2, j) => { if (j !== roomI && bbHit(roomBBs[roomI], roomBBs[j])) nb.push([r2.id, r2.points, r2.wallTh, opsByOwner.get(r2.id) || 0]); });
-      beamBBs.forEach((x) => { if (bbHit(roomBBs[roomI], x.bb)) nb.push(["b", x.bm.id, x.bm.a, x.bm.b, x.bm.width, opsByOwner.get("beam:" + x.bm.id) || 0]); });
+      // перегородка влияет на стены комнаты только своими ПРОЁМАМИ (G.wallOpeningSpans
+      // проецирует их на стену комнаты); без проёмов её перенос эти стены не меняет
+      beamBBs.forEach((x) => { const bo = opsByOwner.get("beam:" + x.bm.id); if (bo && bbHit(roomBBs[roomI], x.bb)) nb.push(["b", x.bm.id, x.bm.a, x.bm.b, x.bm.width, bo]); });
       // пустоты внутри — площадь в подписи комнаты (roomNetArea)
       voidBBs.forEach((x) => { if (bbHit(roomBBs[roomI], x.bb)) nb.push(["v", x.vd.a, x.vd.b]); });
-      const base = JSON.stringify([room, opsByOwner.get(room.id) || 0, nb, globBase, labelNudges[roomI], !!(ui && ui.selectedRoomId === room.id)]);
+      // вынос размерной цепочки (wallDimOff) на стены не влияет — у цепочки свой узел и своя
+      // подпись; без этого тяга цифры размера пересобирала стены комнаты на каждом кадре
+      const roomKey = room.wallDimOff ? Object.assign({}, room, { wallDimOff: 0 }) : room;
+      const base = JSON.stringify([roomKey, opsByOwner.get(room.id) || 0, nb, globBase, labelNudge(room), !!(ui && ui.selectedRoomId === room.id), idSfx]);
       const sig = base + "|" + kBucket;
       const cached = wc.rooms.get(room.id);
       if (reuse(cached, sig)) { wallParts.push(cached.node); return; }
@@ -528,18 +557,30 @@
       wallParts.push(pg);
     };
     const draft = ui && ui.draft;
-    part("draft", JSON.stringify([draft && draft.points, kBucket]), buildDraft);
-    // проёмы: геометрия стены-хозяина + сами проёмы (порядок/типы — номера О1, Дв2 …)
-    const opOwners = [];
+    if (!only) part("draft", JSON.stringify([draft && draft.points, kBucket]), buildDraft);
+    // Проёмы — своя часть НА ВЛАДЕЛЬЦА стены (комната или перегородка): геометрия хозяина +
+    // его проёмы + их номера (О1, Дв2 … — номер зависит от порядка всех проёмов проекта).
+    // Раньше все проёмы квартиры были одним узлом, и тяга одной двери или одной стены
+    // пересобирала символы всех дверей и окон на каждом кадре.
+    const opNum = (labelsOn && nearView && EP.Plan.Elements && EP.Plan.Elements.openingNum) ? EP.Plan.Elements.openingNum : null;
+    const opOwners = [], liveOps = new Set();
     opsByOwner.forEach((list, key) => {
-      if (key.slice(0, 5) === "beam:") { const bm = (project.beams || []).find((b) => "beam:" + b.id === key); opOwners.push([key, bm ? [bm.a, bm.b] : 0]); }
-      else { const r = roomsW.find((x) => x.id === key); opOwners.push([key, r ? [r.points, r.wallTh] : 0]); }
+      let geom = 0;
+      if (key.slice(0, 5) === "beam:") { const bm = (project.beams || []).find((b) => "beam:" + b.id === key); geom = bm ? [bm.a, bm.b] : 0; }
+      else { const r = roomsW.find((x) => x.id === key); geom = r ? [r.points, r.wallTh] : 0; }
+      opOwners.push([key, geom]);
+      if (only && !inSet(only.ops, key)) return;
+      liveOps.add("ops:" + key);
+      part("ops:" + key, JSON.stringify([list, geom, kBucket, labelsOn, nearView, opNum ? list.map((o) => opNum(project, o)) : 0]), (pg) => buildOpenings(pg, list));
     });
-    part("ops", JSON.stringify([project.openings, opOwners, kBucket, labelsOn]), buildOpenings);
-    part("beams", JSON.stringify([project.beams, opOwners.filter((x) => x[0].slice(0, 5) === "beam:"), stW.wallThickness, stW.wallMaterial, kBucket, selBeamId, ui && ui.beamDraft]), buildBeams);
-    part("voids", JSON.stringify([project.voids, kBucket, selVoidId, ui && ui.voidDraft]), buildVoids);
-    const ledOwners = (project.ledStrips || []).map((ls) => { const r = roomsW.find((x) => x.id === ownerOf(ls.wallId)); return r ? r.points : 0; });
-    part("leds", JSON.stringify([project.ledStrips, ledOwners, kBucket]), buildLeds);
+    Object.keys(wc.parts).forEach((nm) => { if (nm.slice(0, 4) === "ops:" && !liveOps.has(nm)) delete wc.parts[nm]; });
+    if (!only || only.beams) part("beams", JSON.stringify([project.beams, opOwners.filter((x) => x[0].slice(0, 5) === "beam:"), stW.wallThickness, stW.wallMaterial, kBucket, selBeamId, ui && ui.beamDraft]), buildBeams);
+    if (!only) part("voids", JSON.stringify([project.voids, kBucket, selVoidId, ui && ui.voidDraft]), buildVoids);
+    const ledList = (project.ledStrips || []).filter((ls) => !only || inSet(only.leds, ownerOf(ls.wallId)));
+    if (!only || ledList.length) {
+      const ledOwners = ledList.map((ls) => { const r = roomsW.find((x) => x.id === ownerOf(ls.wallId)); return r ? r.points : 0; });
+      part("leds", JSON.stringify([ledList, ledOwners, kBucket]), (pg) => buildLeds(pg, ledList));
+    }
     if (!wc.root) wc.root = el("g", { "data-l": "walls" });
     reconcile(wc.root, wallParts);
     g.appendChild(wc.root);
@@ -574,11 +615,11 @@
           let maskAttr = {};
           if (quads.length) {
             const bb = G.bbox(band.outer);
-            const m = el("mask", { id: "ep-cut-" + room.id, maskUnits: "userSpaceOnUse", x: bb.x - 60, y: bb.y - 60, width: bb.w + 120, height: bb.h + 120 });
+            const m = el("mask", { id: "ep-cut-" + room.id + idSfx, maskUnits: "userSpaceOnUse", x: bb.x - 60, y: bb.y - 60, width: bb.w + 120, height: bb.h + 120 });
             m.appendChild(el("rect", { x: bb.x - 60, y: bb.y - 60, width: bb.w + 120, height: bb.h + 120, fill: "#fff" }));
             m.appendChild(el("path", { d: quads.join(" "), fill: "#000" }));
             g.appendChild(m);
-            maskAttr = { mask: "url(#ep-cut-" + room.id + ")" };
+            maskAttr = { mask: "url(#ep-cut-" + room.id + idSfx + ")" };
           }
           const ringD = (r2) => "M" + r2.map((p) => p.x + " " + p.y).join(" L") + " Z";
           const dBand = ringD(band.outer) + " " + ringD(band.inner);
@@ -617,11 +658,11 @@
           const c = G.centroid(pts);
           const bb = G.bbox(pts);
           const area = G.fmtArea(G.roomNetArea(project, room));
-          // labelNudges: свободная точка у центроида — подпись уезжает ниже маркера. Сдвиг —
+          // labelNudge: свободная точка у центроида — подпись уезжает ниже маркера. Сдвиг —
           // в размере ЗНАЧКА (на дальнем обзоре он мельче), иначе 26 px при k≈5 — это 1.3 м,
           // и имя коридора уезжало в соседнюю кухню (стресс-проверка на 4 квартирах)
           const kSymFit = kFit * (noLod ? 1 : symScaleOf(kFit));
-          const y0 = c.y + (labelNudges[roomI] ? 26 * kSymFit : 0);
+          const y0 = c.y + (labelNudge(room) ? 26 * kSymFit : 0);
           // Имя не шире комнаты. В маленькой комнате строка «Имя · N м²» вылезала на соседнюю,
           // и имена двух комнат сливались в одно («СанузелГардероб» — скриншот аудита).
           // Раскладки по очереди: одной строкой → имя / площадь → (дальний обзор) только имя;
@@ -676,11 +717,11 @@
 
     }
 
-    function buildOpenings(gOps) {
+    function buildOpenings(gOps, opList) {
       // проёмы: дверь (дуга) / раздвижная / окно (двойная линия) / балкон (окно+дверь).
       // Каждый — в своей группе с меткой комнаты-хозяйки стены (data-opo): при переносе
       // комнаты её проёмы «поднимаются» вместе с ней (liftForDrag)
-      (project.openings || []).forEach((op) => {
+      (opList || project.openings || []).forEach((op) => {
         const g = el("g", { "data-opo": ownerOf(op.wallId) }); gOps.appendChild(g);
         const w = G.wallById(project, op.wallId);
         if (!w) return;
@@ -790,10 +831,10 @@
 
     }
 
-    function buildLeds(gLeds) {
+    function buildLeds(gLeds, ledItems) {
       // светодиодная лента — сегмент ВДОЛЬ стены (offsetA..offsetB), с небольшим отступом
       // внутрь комнаты, чтобы не сливаться с самой стеной
-      (project.ledStrips || []).forEach((ls) => {
+      (ledItems || project.ledStrips || []).forEach((ls) => {
         const g = el("g", { "data-ledo": ownerOf(ls.wallId) }); gLeds.appendChild(g);
         const lw = G.wallById(project, ls.wallId); if (!lw) return;
         const fr = G.wallFrame(project, lw);
@@ -816,6 +857,7 @@
       const chainParts = [], liveCh = new Set();
       roomsW.forEach((room) => {
         if ((room.points || []).length < 3) return;
+        if (only && !inSet(only.chains, room.id)) return;
         liveCh.add(room.id);
         const baseC = JSON.stringify([room.points, room.wallTh, room.wallDimOff, opsByOwner.get(room.id) || 0, elsByRoom.get(room.id) || 0, stW.wallThickness, stW.dimOffset]);
         const sigC = baseC + "|" + kBucket; // засечки и цифры — по ведру масштаба, как стены
@@ -882,7 +924,7 @@
     // по плану сразу видно, где коридор слаботочки, а где силовой; общая — прежним синим.
     // В режиме ⇉ у начала каждой линии её номер — тот же, что в списке шторки.
     const GUIDE_COL = { light: "#f59e0b", power: "#ef4444", lv: "#3b82f6", v24: "#a855f7" };
-    (project.guides || []).forEach((gd, gi) => {
+    (only ? [] : (project.guides || [])).forEach((gd, gi) => {
       if ((gd.hidden || montage) && !(ui && ui.guideMode)) return;
       if ((gd.points || []).length < 2) return;
       const ks = Array.isArray(gd.kinds) ? gd.kinds : [];
@@ -897,7 +939,7 @@
       }
     });
     // черновик рисуемой магистрали (режим ⇉): ярче и пунктиром + точки
-    const gDraft = ui && ui.guideDraft;
+    const gDraft = !only && ui && ui.guideDraft;
     if (gDraft && gDraft.points && gDraft.points.length) {
       if (gDraft.points.length > 1) g.appendChild(el("polyline", {
         points: gDraft.points.map((q) => q.x + "," + q.y).join(" "),
@@ -909,7 +951,7 @@
     // мебель и бытовая техника (p.appliances) — прямоугольник на полу с поворотом,
     // свой слой "furn" (можно выключить). Рисуется ДО точек и трасс, чтобы электрика
     // всегда была ПОВЕРХ мебели (она главная на этом чертеже).
-    if (layerOn(project, "furn") && !montage) {
+    if (!only && layerOn(project, "furn") && !montage) {
       const FN = EP.Plan.Furniture;
       const selAp = FN && FN.selectedId && FN.selectedId();
       (project.appliances || []).forEach((a) => {
@@ -949,7 +991,7 @@
       });
     }
     // трассы (Слой 4): полилинии цветом слоя + проходки
-    if (layerOn(project, "routes")) {
+    if (layerOn(project, "routes") && (!only || (only.routes && only.routes.size))) {
       const layerColor = (id) => (((project.layers || []).find((l) => l.id === id) || {}).color) || "#94a3b8";
       const selRoute = EP.Plan.Rooms && EP.Plan.Rooms.selectedRouteId && EP.Plan.Rooms.selectedRouteId();
       // Неоном светится ВСЯ физическая трасса (щит → … → конечный механизм), а не
@@ -990,6 +1032,7 @@
       const rsw = Math.min(2.4, Math.max(1.3, 0.6 * pitch / k)) * k;   // толщина трассы, см (1.3…2.4 px)
       const strOf = (pts) => pts.map((q) => (Math.round(q.x * 100) / 100) + "," + (Math.round(q.y * 100) / 100)).join(" ");
       visRoutes.forEach((rt) => {
+        if (only && !only.routes.has(rt.id)) return;
         const dimR = circDim(rt.circuitId);
         const inChain = chainIds ? chainIds.has(rt.id) : false;
         seenRoutes.add(rt.id);
@@ -1087,7 +1130,9 @@
     // точка подписана всегда. На печатном листе (noLod) — у всех.
     const qfEach = noLod || printMode || k <= CFG.lodQfAllK;
     const qfOne = new Set();
-    if (labelsOn && lodQf && !qfEach) {
+    const elIn = (elem) => !only || inSet(only.els, elem.id) || !!(elem.wallId && inSet(only.elOwners, ownerOf(elem.wallId)));
+    const anyEls = !only || !!((only.els && only.els.size) || (only.elOwners && only.elOwners.size));
+    if (labelsOn && lodQf && !qfEach && anyEls) {
       const groups = new Map();
       (project.elements || []).forEach((e) => {
         if (!e.circuitId || !layerOn(project, e.layer) || circHidden(e.circuitId)) return;
@@ -1113,8 +1158,9 @@
     // масштаб-без-пересборки работают с ним же — геометрия значка от него зависит линейно)
     const symF = noLod ? 1 : symScaleOf(k);
     const kSym = k * symF, swSym = sw * symF;
-    (project.elements || []).forEach((elem) => {
+    (anyEls ? (project.elements || []) : []).forEach((elem) => {
       const k = kSym, sw = swSym;
+      if (!elIn(elem)) return;
       if (!layerOn(project, elem.layer)) return;
       if (circHidden(elem.circuitId)) return; // скрытая линия — не рисуем её точки
       const pt = EP.Plan.Geometry.elemPoint(project, elem);
@@ -1336,7 +1382,7 @@
     // Цепочка проходных/перекрёстных: провод к СЛЕДУЮЩЕМУ звену (chainNext) —
     // к лампе идёт только ОТ ПОСЛЕДНЕГО звена (без chainNext), не от каждого.
     // Многоклавишный обычный выключатель — своя связь на каждую клавишу.
-    if (layerOn(project, "light")) {
+    if (!only && layerOn(project, "light")) {
       /* Пунктир «что чем управляется» нужен, ПОКА НЕТ ТРАСС: по нему видно, что клавиша уже
          назначена. Когда трассы построены, тот же путь показывает настоящий кабель, а веер
          пунктиров от каждого выключателя ко всем его светильникам только забивал план
@@ -1415,7 +1461,7 @@
       });
     }
     const pbox = project.settings && project.settings.panelBox;
-    (project.panels || []).forEach((pn) => {
+    (only ? [] : (project.panels || [])).forEach((pn) => {
       // габарит щита = реальный корпус (мм→см), иначе типовой квадрат
       const wc = pbox && pbox.wmm ? pbox.wmm / 10 : 28;
       const hc = pbox && pbox.hmm ? pbox.hmm / 10 : 20;
@@ -1441,6 +1487,7 @@
     // поставленные руками.
     if (dimsOn) {
       (project.dims || []).forEach((d) => {
+        if (only && !inSet(only.dims, d.id)) return;
         const gm = EP.Plan.Geometry.dimGeom(d);
         if (!gm) return;
         const grp = el("g", { class: "ep-plan-udim", "data-dm": d.id });
@@ -1471,6 +1518,7 @@
     // за слоем «Подписи» намеренно НЕ гейтится: заметку пишут именно чтобы её увидели.
     // Многострочный текст — <tspan> по строкам (перенос по \n, как ввёл пользователь).
     (project.notes || []).forEach((nt) => {
+      if (only && !inSet(only.notes, nt.id)) return;
       const txt = String(nt.text || "").trim();
       if (!txt) return;
       const grp = el("g", { class: "ep-plan-note", "data-nt": nt.id });
@@ -1486,7 +1534,7 @@
     });
 
     // рулетка
-    const r = ui && ui.ruler;
+    const r = !only && ui && ui.ruler;
     if (r && r.a) {
       g.appendChild(el("circle", { cx: r.a.x, cy: r.a.y, r: CFG.pointPx * k, class: "ep-plan-rulerpt" }));
       if (r.b) {
@@ -1552,6 +1600,80 @@
     L.nodes.forEach((n) => n.removeAttribute("visibility"));
   }
   const isLifted = (canvas) => !!(canvas && lifts.get(canvas));
+
+  // ---------- «живой слой» на время НЕжёсткой тяги ----------
+  /* Подъём (выше) годится, когда объект едет целиком. Стена или угол комнаты, проём вдоль
+     стены, конец перегородки, излом трассы, вынос размера — меняют ФОРМУ, готовую картинку
+     тут не сдвинешь. Раньше такие тяги перерисовывали сцену на каждом кадре: проход по всем
+     комнатам, точкам и трассам (подписи кэша), замена изменившихся узлов в общем svg — и
+     браузер заново красил слой со всей квартирой. Замер (7 комнат, CPU ×4): тяга стены —
+     22-33 рывка на 140 кадров; на большой квартире хуже, цена росла с её размером.
+     Теперь на старте тяги затронутые узлы в основном svg прячутся, а поверх холста
+     появляется отдельный svg (свой композитный слой), в который ТЕМ ЖЕ рендером рисуется
+     только область тяги (ui.only). Основная сцена до отпускания не трогается вовсе, цена
+     кадра от размера квартиры не зависит. На отпускании слой снимается, сцена рисуется
+     один раз.
+     scope — что перерисовывать: { walls, fills, chains, leds, elOwners — id комнат; ops —
+     владельцы стен ("<id комнаты>" | "beam:<id>"); els, routes, dims, notes — id объектов;
+     beams, underlay — флаги }. Значения — массивы или Set. */
+  const lives = new WeakMap(); // canvas -> { px, lc, hidden, scope }
+  const LIVE_SETS = ["walls", "fills", "chains", "leds", "elOwners", "ops", "els", "routes", "dims", "notes"];
+  const LIVE_SEL = { walls: "data-rw", fills: "data-room", chains: "data-rc", leds: "data-ledo", elOwners: "data-eo", ops: "data-opo", els: "data-e", routes: "data-r", dims: "data-dm", notes: "data-nt" };
+  function liveHide(canvas, L, scope) {
+    const svg = canvas.svg;
+    const hide = (n) => { if (n && L.hidden.indexOf(n) === -1) { n.setAttribute("visibility", "hidden"); L.hidden.push(n); } };
+    LIVE_SETS.forEach((key) => {
+      (scope[key] || []).forEach((id) => {
+        try { svg.querySelectorAll("[" + LIVE_SEL[key] + '="' + String(id).replace(/["\\]/g, "") + '"]').forEach(hide); } catch (e) {}
+      });
+    });
+    if (scope.beams) svg.querySelectorAll('[data-wp="beams"]').forEach(hide);
+    if (scope.underlay && canvas.layers.underlay) hide(canvas.layers.underlay);
+  }
+  function liveMerge(L, scope) {
+    LIVE_SETS.forEach((key) => { (scope[key] || []).forEach((id) => { (L.scope[key] || (L.scope[key] = new Set())).add(id); }); });
+    if (scope.beams) L.scope.beams = true;
+    if (scope.underlay) L.scope.underlay = true;
+  }
+  function liveBegin(canvas, scope) {
+    liveEnd(canvas); dropLift(canvas);
+    const svg = canvas && canvas.svg;
+    if (!svg || !svg.parentNode || !svg.querySelectorAll || !scope) return false;
+    const px = el("svg", { class: "ep-plan-svg ep-plan-dragproxy", viewBox: svg.getAttribute("viewBox") || "", "aria-hidden": "true" });
+    const layers = { underlay: el("g", { "data-l": "underlay" }), rooms: el("g", { "data-l": "rooms" }), overlay: el("g", { "data-l": "overlay" }) };
+    px.appendChild(layers.underlay); px.appendChild(layers.rooms); px.appendChild(layers.overlay);
+    const lc = { svg: px, layers, cmPerPx: () => canvas.cmPerPx(), live: true };
+    const L = { px, lc, hidden: [], scope: {} };
+    liveMerge(L, scope);
+    lives.set(canvas, L);
+    liveHide(canvas, L, scope);
+    svg.parentNode.appendChild(px);
+    return true;
+  }
+  // расширить область на ходу (проём перевесили на другую стену — нужны и её стены)
+  function liveAdd(canvas, scope) {
+    const L = canvas && lives.get(canvas);
+    if (!L || !scope) return false;
+    liveMerge(L, scope); liveHide(canvas, L, scope);
+    return true;
+  }
+  function liveDraw(canvas, project, ui) {
+    const L = canvas && lives.get(canvas);
+    if (!L) return false;
+    const vb = canvas.svg.getAttribute("viewBox") || "";
+    if (L.px.getAttribute("viewBox") !== vb) L.px.setAttribute("viewBox", vb);
+    draw(L.lc, project, Object.assign({}, ui || {}, { only: L.scope, idSuffix: "-live" }));
+    return true;
+  }
+  function liveEnd(canvas) {
+    const L = canvas && lives.get(canvas);
+    if (!L) return false;
+    lives.delete(canvas);
+    if (L.px.parentNode) L.px.parentNode.removeChild(L.px);
+    L.hidden.forEach((n) => n.removeAttribute("visibility"));
+    return true;
+  }
+  const isLive = (canvas) => !!(canvas && lives.get(canvas));
 
   // ---------- живой предпросмотр снапа (наведение мышью/пером до тапа) ----------
   // Отдельный узел в overlay, обновляется атрибутами БЕЗ полного renderScaled —
@@ -1622,6 +1744,7 @@
   EP.Plan.Render = {
     draw, drawScaled, CFG, hoverPreview, clearHoverPreview,
     liftForDrag, moveLift, dropLift, isLifted, reconcile,
+    liveBegin, liveAdd, liveDraw, liveEnd, isLive,
     // как трасса НАРИСОВАНА на этом холсте (после разноса пучка) — для попадания пальцем
     routeDisplay: (canvas, id) => { const c = canvas && nodeCache.get(canvas); return c && c.disp ? (c.disp.get(id) || null) : null; },
     // реальные габариты и «лица» приборов — общие для плана, развёртки, PDF и DXF.

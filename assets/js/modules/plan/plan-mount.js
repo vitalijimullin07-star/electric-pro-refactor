@@ -41,7 +41,11 @@
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const DEFAULTS_CEIL = 270; // дефолт высоты потолка в форме создания (зеркалит plan-core DEFAULTS.ceilingHeight)
   const $ = (sel, r) => (r || document).querySelector(sel);
-  const fmtDate = (ms) => { try { return new Date(ms).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); } catch (e) { return "—"; } };
+  // «10.11, 14:05» — собираем сами. toLocaleString поднимает системный форматтер дат (Intl):
+  // первый вызов — десятки мс, а зовётся это на КАЖДОЕ сохранение, то есть в момент
+  // отпускания пальца после любой тяги (замер: 61 мс при CPU ×4 — заметный рывок фиксации)
+  const p2 = (n) => (n < 10 ? "0" : "") + n;
+  const fmtDate = (ms) => { const d = new Date(ms); if (isNaN(d.getTime())) return "—"; return p2(d.getDate()) + "." + p2(d.getMonth() + 1) + ", " + p2(d.getHours()) + ":" + p2(d.getMinutes()); };
 
   // Вкладки инструментов (просьба пользователя: «одна вкладка чисто стены, двери,
   // окна, вторая кнопка чисто для работы с электрикой») — 17 иконок в одну строку

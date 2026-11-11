@@ -8350,7 +8350,8 @@ test("фото: deleteProject чистит кэш фото своего прое
         ok(/wrap\.style\.transform = "translate\(/.test(cv) && !/svg\.style\.transform/.test(cv),
           "transform у самого svg заставляет заново раскладывать SVG-текст — только обёртка");
         ok(/else \{ userAdjusted = true; view\.x -= dx; view\.y -= dy; trackPan\(e\.clientX, e\.clientY\); applyLive\(\); \}/.test(cv), "пан — живым сдвигом");
-        ok(/if \(pts\.size === 0 && liveT\) apply\(\);/.test(cv), "по окончании жеста вид фиксируется в viewBox");
+        ok(/if \(pts\.size === 0 && \(liveT \|\| rescalePending\)\) apply\(\);/.test(cv), "по окончании жеста вид фиксируется в viewBox (и после лёгкой фиксации — полная пересборка)");
+        ok(/function apply\(light\)/.test(cv) && /if \(light\) \{ rescalePending = true; return; \}/.test(cv), "во время жеста фиксация лёгкая: только viewBox, без пересборки сцены");
         ok(/if \(liveT\) \{ left -= liveT\.tx;/.test(cv), "попадание тапом учитывает сдвиг во время жеста");
         const css = rd66("assets", "css", "plan.css");
         ok(/\.ep-plan-svgwrap \{[^}]*will-change: transform/.test(css), "обёртка — свой композитный слой");
