@@ -8802,6 +8802,183 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 71. Аудит 11.11, пакет 3: фоновые вычисления =====
+  // Поддельный воркер: ответы задаём руками, поэтому видно КАКОЙ ответ принят. Раньше каждый
+  // запуск вешал свой слушатель и принимал первый попавшийся "done", версия сверялась по
+  // количествам, список «Без трассы» оставался в воркере, а сбой оставлял «Просчёт идёт».
+  {
+    const RT = EP.Plan.Routes, C = EP.Plan.Core;
+    const FW = [];
+    class FakeWorker {
+      constructor(url) { this.url = url; this.ls = {}; this.sent = []; this.dead = false; FW.push(this); }
+      addEventListener(t, f) { (this.ls[t] = this.ls[t] || []).push(f); }
+      removeEventListener(t, f) { this.ls[t] = (this.ls[t] || []).filter((x) => x !== f); }
+      postMessage(m) { this.sent.push(JSON.parse(JSON.stringify(m))); FakeWorker.last = this; }
+      terminate() { this.dead = true; }
+      job() { return this.sent[this.sent.length - 1]; }
+      reply(d) { (this.ls.message || []).slice().forEach((f) => f({ data: Object.assign({ type: "done" }, d) })); }
+      fail() { (this.ls.error || []).slice().forEach((f) => f({ message: "boom", preventDefault() {} })); }
+    }
+    const oldW = sandbox.Worker, oldST = sandbox.setTimeout, oldToast = EP.Plan.Rooms.toast;
+    sandbox.Worker = FakeWorker;
+    let toasts = [];
+    EP.Plan.Rooms.toast = (m) => { toasts.push(String(m)); };
+    function proj(n) {
+      const room = M.newRoom(G.rectPoints(0, 0, 900, 500), "К");
+      const pn = M.newPanel(30, 250, "ЩК");
+      const qf = M.newCircuit("QF1", "#e11", 16);
+      const { P } = install({ rooms: [room], panels: [pn], circuits: [qf] });
+      for (let i = 0; i < n; i++) {
+        const e = M.newElement("socket", P.rooms[0].id + ":" + (i % 2 ? 2 : 0), 60 + (i % 13) * 60, 30, "power");
+        e.circuitId = P.circuits[0].id; P.elements.push(e);
+      }
+      RT.build({ silent: true });
+      return P;
+    }
+    const copyRoutes = (P) => JSON.parse(JSON.stringify(P.routes));
+    test("ответ другого задания не принимается — только ответ с номером своего (аудит п.6)", () => {
+      const P = proj(3);
+      const before = JSON.stringify(P.routes);
+      ok(RT.buildHeavy("fast"), "запуск в фоне");
+      const w = FakeWorker.last, j = w.job();
+      ok(j && j.jobId > 0, "у задания есть номер");
+      w.reply({ ok: true, jobId: j.jobId + 1000, routes: [], unrouted: [] });
+      eq(JSON.stringify(P.routes), before, "чужой ответ не применён");
+      ok(RT.jobs.state().busy, "своё задание всё ещё ждёт");
+      w.reply({ ok: true, jobId: j.jobId, routes: copyRoutes(P), unrouted: [] });
+      ok(!RT.jobs.state().busy, "свой ответ принят, «занято» снято");
+    });
+    test("задания одного воркера идут по очереди, интерактивное — вперёд фонового", () => {
+      proj(3);
+      ok(RT.buildHeavy("fast"), "интерактивное в работе");
+      const w = FakeWorker.last, n0 = w.sent.length, j1 = w.job();
+      const got = [];
+      RT.jobs.run(w, { type: "solve", mode: "bgjob" }, (d) => got.push("bg:" + !!d.ok), { bg: true });
+      RT.jobs.run(w, { type: "solve", mode: "fgjob" }, (d) => got.push("fg:" + !!d.ok));
+      eq(w.sent.length, n0, "пока первое в работе, следующие не отправлены");
+      w.reply({ ok: true, jobId: j1.jobId, routes: copyRoutes(C.project), unrouted: [] });
+      eq(w.job().mode, "fgjob", "после ответа первым ушло интерактивное");
+      w.reply({ ok: true, jobId: w.job().jobId });
+      eq(w.job().mode, "bgjob", "потом фоновое");
+      w.reply({ ok: true, jobId: w.job().jobId });
+      eq(got.join(","), "fg:true,bg:true", "каждый получил свой ответ");
+    });
+    test("результат, посчитанный ДО ручной правки трассы, не затирает её (аудит п.5)", () => {
+      const P = proj(3);
+      ok(RT.buildHeavy("fast"), "запуск");
+      const w = FakeWorker.last, j = w.job();
+      // во время расчёта мастер поправил трассу вручную — количества ничего не поменяли
+      C.commit();
+      P.routes[0].manual = true; P.routes[0].points = P.routes[0].points.map((q) => ({ x: q.x, y: q.y + 7 }));
+      C.persist("route-edit");
+      const edited = JSON.stringify(P.routes);
+      w.reply({ ok: true, jobId: j.jobId, routes: [], unrouted: [] });
+      eq(JSON.stringify(P.routes), edited, "ручная правка цела, устаревший результат отброшен");
+      ok(!RT.jobs.state().busy, "«занято» снято");
+    });
+    test("список «Без трассы» приходит вместе с трассами и попадает в шторку (аудит п.7)", () => {
+      const P = proj(3);
+      toasts = [];
+      ok(RT.buildHeavy("incremental"), "запуск");
+      const w = FakeWorker.last;
+      const lost = P.elements[1];
+      w.reply({ ok: true, jobId: w.job().jobId, routes: copyRoutes(P), unrouted: [{ id: lost.id, name: "Розетка · К", reason: "нет магистрали" }] });
+      const un = RT.unroutedList();
+      eq(un.length, 1, "список из воркера принят");
+      eq(un[0].id, lost.id, "та самая точка");
+      ok(toasts.some((t) => /без трассы/i.test(t)), "сообщение говорит про непроложенные, а не «Трассы построены»: " + toasts.join(" | "));
+    });
+    test("сбой воркера: «занято» снимается, «Построить» достраивает напрямую и не трогает готовые трассы (аудит п.8)", () => {
+      const P = proj(3);
+      const old = JSON.stringify(P.routes);
+      const e = M.newElement("socket", P.rooms[0].id + ":2", 450, 30, "power"); e.circuitId = P.circuits[0].id;
+      C.commit(); P.elements.push(e); C.persist("elem-add");
+      ok(RT.buildHeavy("incremental"), "запуск");
+      const w = FakeWorker.last, nW = FW.length;
+      w.fail();
+      ok(w.dead, "сломанный воркер выброшен");
+      ok(!RT.jobs.state().busy, "«Просчёт уже идёт» не висит");
+      ok(P.routes.some((r) => r.fromId === e.id), "новая точка проложена напрямую");
+      const kept = P.routes.filter((r) => r.fromId !== e.id);
+      eq(JSON.stringify(kept), old, "готовые трассы не перекладывались (раньше сбой звал полную сборку)");
+      ok(RT.buildHeavy("fast"), "следующий запуск снова идёт в фон");
+      ok(FW.length > nW && FakeWorker.last !== w, "на новом воркере");
+      FakeWorker.last.reply({ ok: true, jobId: FakeWorker.last.job().jobId, routes: copyRoutes(P), unrouted: [] });
+    });
+    test("воркер не ответил вовремя: таймаут, сброс, расчёт напрямую, предложение повторить", () => {
+      const timers = [];
+      sandbox.setTimeout = (fn, ms) => { timers.push({ fn, ms }); return timers.length; };
+      try {
+        const P = proj(3);
+        toasts = [];
+        ok(RT.buildHeavy("precise"), "запуск");
+        const w = FakeWorker.last;
+        const t = timers.filter((x) => x.ms >= 30000).pop();
+        ok(t, "у задания есть таймаут");
+        t.fn();
+        ok(w.dead && !RT.jobs.state().busy, "воркер выброшен, «занято» снято");
+        ok(RT.jobs.state().lastError && RT.jobs.state().lastError.mode === "precise", "запомнено, что повторить");
+        ok(toasts.some((x) => /не ответил/.test(x)), "сказано, что случилось: " + toasts.join(" | "));
+        ok(P.routes.length >= 3, "трассы на месте");
+      } finally { sandbox.setTimeout = oldST; }
+    });
+    test("интерактивное задание вытесняет фоновый предрасчёт, а не ждёт его", () => {
+      proj(3);
+      ok(RT.buildHeavy("fast"), "занять воркер, чтобы получить его");
+      const w0 = FakeWorker.last;
+      w0.reply({ ok: true, jobId: w0.job().jobId, routes: copyRoutes(C.project), unrouted: [] });
+      let bg = null;
+      RT.jobs.run(w0, { type: "solve", mode: "precise", budgetMs: 4000 }, (d) => { bg = d; }, { bg: true, tag: "precalc" });
+      ok(RT.buildHeavy("fast"), "интерактивный запуск");
+      ok(bg && bg.cancelled, "фоновое снято как отменённое (не как сбой)");
+      ok(w0.dead && FakeWorker.last !== w0, "интерактивное ушло в новый воркер");
+      ok(!RT.jobs.state().lastError, "вытеснение — не ошибка");
+      FakeWorker.last.reply({ ok: true, jobId: FakeWorker.last.job().jobId, routes: copyRoutes(C.project), unrouted: [] });
+    });
+    test("вытеснение снимает предрасчёт со ВСЕГО пула, а не только с первого воркера", () => {
+      const oldNav = sandbox.navigator;
+      sandbox.navigator = { hardwareConcurrency: 4 }; // три воркера под «Точно»
+      try {
+        proj(3);
+        ok(RT.buildHeavy("precise"), "пул из нескольких воркеров");
+        const pool = FW.filter((w) => !w.dead && w.sent.length && w.job().mode === "precise" && !w.job().__done);
+        ok(pool.length >= 2, "воркеров несколько: " + pool.length);
+        pool.forEach((w) => w.reply({ ok: true, jobId: w.job().jobId, routes: copyRoutes(C.project), unrouted: [], score: { cost: 1 } }));
+        const bgs = pool.map((w) => { const box = {}; RT.jobs.run(w, { type: "solve", mode: "precise", budgetMs: 4000 }, (d) => { box.d = d; }, { bg: true, tag: "precalc" }); return box; });
+        ok(RT.buildHeavy("fast"), "интерактивный запуск");
+        ok(bgs.every((b) => b.d && b.d.cancelled), "фоновые сняты на всех воркерах");
+        const w = FakeWorker.last;
+        ok(pool.indexOf(w) < 0, "интерактивное — на свободном воркере, без очереди");
+        eq(w.job().mode, "fast", "и отправлено сразу");
+        w.reply({ ok: true, jobId: w.job().jobId, routes: copyRoutes(C.project), unrouted: [] });
+      } finally { sandbox.navigator = oldNav; }
+    });
+    test("автоперестройка: правка во время расчёта — результат отброшен и посчитан заново", () => {
+      const P = proj(26);
+      const el = P.elements[0];
+      C.commit(); el.offset += 40; C.persist("elem-move");
+      const w = FakeWorker.last, j1 = w.job();
+      ok(j1 && j1.mode === "fast", "автоперестройка ушла в фон");
+      C.commit(); P.routes[1].manual = true; C.persist("route-edit");
+      const routesNow = JSON.stringify(P.routes);
+      w.reply({ ok: true, jobId: j1.jobId, routes: [], unrouted: [] });
+      eq(JSON.stringify(P.routes), routesNow, "устаревший результат не применён");
+      const w2 = FakeWorker.last, j2 = w2.job();
+      ok(j2 && j2.jobId !== j1.jobId, "посчитано заново по текущему состоянию");
+      ok(j2.project.routes.some((r) => r.manual), "новый снимок уже с ручной правкой");
+      w2.reply({ ok: true, jobId: j2.jobId, routes: j2.project.routes, unrouted: [] });
+      ok(!RT.jobs.state().auto, "автоперестройка завершена");
+    });
+    test("воркер возвращает номер задания и список без трассы во всех ответах", () => {
+      const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "solver-worker.js"), "utf8");
+      const posts = src.match(/self\.postMessage\(\{[^]*?\}\);/g) || [];
+      ok(posts.length >= 3, "три ответа");
+      posts.forEach((x) => ok(/jobId/.test(x), "в ответе есть jobId: " + x.slice(0, 60)));
+      ok(/unrouted/.test(src) && /resetUnrouted/.test(src), "список без трассы — свой у каждого задания");
+    });
+    sandbox.Worker = oldW; EP.Plan.Rooms.toast = oldToast;
+  }
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

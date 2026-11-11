@@ -21,6 +21,12 @@
     precalcDone: (sc) => `Готово мгновенно (посчитано заранее). Пересечений линий: ${sc ? sc.crossings : "—"}, отверстий: ${sc ? sc.holes : "—"}`,
     heavyBusy: "Просчёт уже идёт — подожди результат.",
     heavyFail: "Фоновый просчёт недоступен — построил обычным способом.",
+    heavyFailWhy: (why) => `Фоновый просчёт ${why} — посчитал на телефоне напрямую.`,
+    heavyFailHard: (why) => `Фоновый просчёт ${why}, и напрямую построить тоже не вышло. Нажми «↻ Повторить» в шторке «Трассы».`,
+    jobWhy: { timeout: "не ответил вовремя", error: "остановился с ошибкой", post: "не принял данные проекта", fail: "не удался" },
+    jobBanner: (why, heavy) => `⚠ Фоновый просчёт ${why}.${heavy ? " Вариант посчитан коротким прогоном на телефоне — повтори, чтобы перебрать больше." : ""}`,
+    jobRetry: "↻ Повторить",
+    builtUnrouted: (n) => `Трассы построены, но без трассы осталось точек: ${n} — список в шторке «Трассы».`,
     heavyStale: "Проект изменился во время просчёта — результат отброшен, нажми ещё раз.",
     heavyDone: (sc, ms, it, cores) => `Готово за ${(ms / 1000).toFixed(1)}с (вариантов: ${it}${cores > 1 ? ", ядер: " + cores : ""}). Пересечений линий: ${sc ? sc.crossings : "—"}, отверстий: ${sc ? sc.holes : "—"}, изломов: ${sc && sc.turns != null ? sc.turns : "—"}`,
     buildDone: (sc, ms) => `Трассы построены (${(ms / 1000).toFixed(1)}с). Пересечений линий: ${sc ? sc.crossings : "—"}, отверстий: ${sc ? sc.holes : "—"}`,
@@ -2387,6 +2393,9 @@
     const rnd = lcg(opts.seed || 12345);
     const ids = (p.circuits || []).map((x) => x.id);
     const snap = () => JSON.parse(JSON.stringify(p.routes || []));
+    // список «Без трассы» — от ЛУЧШЕГО варианта, а не от последнего перебранного (иначе после
+    // перебора проект получал трассы лучшего, а баннер — точки неудачного варианта)
+    const unSnap = () => lastUnrouted.slice();
     const evalOrder = (order) => {
       setLaneOrder(order);
       build({ silent: true, noCommit: true });
@@ -2406,10 +2415,10 @@
     };
     const startMode = opts.start || "auto";
     let iterations = 1;
-    let best = { order: identity, score: evalOrder(identity), routes: snap() };
+    let best = { order: identity, score: evalOrder(identity), routes: snap(), un: unSnap() };
     // меньше двух линий — перестраивать полосы нечего (иначе крутили бы пустой цикл
     // весь бюджет: на проекте с одной линией живой прогон дал 6513 бессмысленных итераций)
-    if (ids.length < 2) { setLaneOrder(best.order); p.routes = best.routes; return { score: best.score, iterations, ms: Date.now() - t0, laneOrder: best.order }; }
+    if (ids.length < 2) { setLaneOrder(best.order); p.routes = best.routes; lastUnrouted = best.un; return { score: best.score, iterations, ms: Date.now() - t0, laneOrder: best.order }; }
     // (1) СТАРТ ПО ГЕОМЕТРИИ: порядок полос по средней координате точек линии вдоль
     // главной оси плана — «естественный» порядок, при котором линии не переплетаются
     if (ids.length > 1) {
@@ -2429,7 +2438,7 @@
       sorted.forEach((id, i) => { geom[id] = i; });
       const startOrder = startMode === "shuffle" ? shuffled() : geom;
       const sc = evalOrder(startOrder); iterations++;
-      if (sc.cost < best.score.cost) best = { order: startOrder, score: sc, routes: snap() };
+      if (sc.cost < best.score.cost) best = { order: startOrder, score: sc, routes: snap(), un: unSnap() };
     }
     // (2) ЛОКАЛЬНЫЙ ПОИСК с РЕСТАРТАМИ: меняем местами полосы двух линий; стало лучше — идём
     // дальше от нового варианта, долго нет улучшений (STALL_LIMIT подряд) — прыгаем в
@@ -2450,18 +2459,19 @@
       const t = order[a]; order[a] = order[b]; order[b] = t;
       const sc = evalOrder(order); iterations++;
       if (sc.cost < cur.score.cost) {
-        cur = { order, score: sc, routes: snap() }; stall = 0;
+        cur = { order, score: sc, routes: snap(), un: unSnap() }; stall = 0;
         if (sc.cost < best.score.cost) best = cur;
       } else if (allowRestart && ++stall >= STALL_LIMIT) {
         const sh = shuffled();
         const sc2 = evalOrder(sh); iterations++;
-        cur = { order: sh, score: sc2, routes: snap() }; stall = 0;
+        cur = { order: sh, score: sc2, routes: snap(), un: unSnap() }; stall = 0;
         if (sc2.cost < best.score.cost) best = cur;
       }
     }
     // возвращаем ЛУЧШИЙ найденный вариант в проект
     setLaneOrder(best.order);
     p.routes = best.routes;
+    lastUnrouted = best.un;
     return { score: best.score, iterations, ms: Date.now() - t0, laneOrder: best.order };
   }
   // ---- РЕЖИМ «МАКСИМУМ»: rip-up & reroute (приём из разводки печатных плат) ----
@@ -2561,6 +2571,110 @@
   // (commit → подмена p.routes → persist), поэтому Undo отменяет весь тяжёлый прогон целиком.
   let solverPool = [], solverBusy = false, autoBusy = false;
   const QUALITY_BUDGET = { precise: 1200, max: 4000 };
+  // ---- ДИСПЕТЧЕР ЗАДАНИЙ (аудит 11.11, п.6 и п.8) ----
+  // Раньше каждый запуск вешал на воркер СВОЙ слушатель "message", и любой из них принимал
+  // ПЕРВЫЙ попавшийся ответ "done": автоперестройка могла применить трассы предрасчёта (снимок
+  // другого состояния, другой режим), а свой ответ потом уходил в никуда. Плюс ответа могло не
+  // быть вовсе (воркер упал на загрузке / завис) — и «Просчёт уже идёт» висел до перезагрузки.
+  // Теперь: у КАЖДОГО воркера одна очередь и один слушатель; в воркер в каждый момент
+  // отправлено РОВНО одно задание с уникальным jobId, ответ принимается только с этим jobId;
+  // у задания таймаут (бюджет + JOB_EXTRA_MS); ошибка воркера или таймаут — воркер выбрасывается
+  // (следующий запуск создаст новый), ВСЕ его задания завершаются с ok:false — их владельцы
+  // сбрасывают свои флаги «занято» и решают, что делать (построить напрямую / предложить повтор).
+  const JOB_EXTRA_MS = 30000;
+  let jobSeq = 0, lastJobError = null; // {mode, why, heavy, at} — для баннера «↻ Повторить»
+  const wstate = new Map();            // воркер → { q: [задания], cur: задание в работе }
+  function wireWorker(w) {
+    const st = { q: [], cur: null };
+    wstate.set(w, st);
+    w.addEventListener("message", (e) => {
+      const d = (e && e.data) || {};
+      if (d.type !== "done" || !st.cur || d.jobId !== st.cur.id) return; // чужой/запоздалый ответ — мимо
+      endJob(w, d);
+    });
+    w.addEventListener("error", (e) => { try { e.preventDefault(); } catch (_) {} failWorker(w, "error"); });
+    w.addEventListener("messageerror", () => failWorker(w, "error"));
+  }
+  function pump(w) {
+    const st = wstate.get(w);
+    if (!st || st.cur || !st.q.length) return;
+    let k = st.q.findIndex((j) => !j.bg); // интерактивное задание вперёд фонового
+    if (k < 0) k = 0;
+    const j = st.q.splice(k, 1)[0];
+    st.cur = j;
+    j.timer = setTimeout(() => failWorker(w, "timeout"), j.timeout);
+    try { w.postMessage(Object.assign({}, j.msg, { jobId: j.id })); }
+    catch (err) { endJob(w, { type: "done", ok: false, jobId: j.id, failed: "post" }); } // снимок не клонируется — дело в задании, не в воркере
+  }
+  function endJob(w, d) {
+    const st = wstate.get(w), j = st && st.cur;
+    if (!j) return;
+    clearTimeout(j.timer); st.cur = null;
+    try { j.cb(d); } catch (e) { try { console.error(e); } catch (_) {} }
+    pump(w);
+  }
+  function failWorker(w, why) {
+    const st = wstate.get(w);
+    wstate.delete(w);
+    solverPool = solverPool.filter((x) => x !== w);
+    try { w.terminate(); } catch (e) {}
+    if (!st) return;
+    const all = (st.cur ? [st.cur] : []).concat(st.q);
+    st.cur = null; st.q = [];
+    // "preempt" — не сбой, а снятие фонового задания ради интерактивного (см. freshPool)
+    const res = (j) => (why === "preempt" ? { type: "done", ok: false, jobId: j.id, cancelled: true } : { type: "done", ok: false, jobId: j.id, failed: why });
+    all.forEach((j) => {
+      clearTimeout(j.timer);
+      try { j.cb(res(j)); } catch (e) { try { console.error(e); } catch (_) {} }
+    });
+  }
+  // интерактивное задание (автоперестройка после тяги, «Построить», «Оптимизировать») не ждёт
+  // фоновое: воркер, который сейчас считает предрасчёт (до 4 с), выбрасываем и создаём новый —
+  // это десятки мс против секунд, когда трассы после переноса комнаты «догоняли» бы с опозданием
+  // Снимаем ВСЕ воркеры с фоновым заданием, а не только первые n: предрасчёт идёт на всём
+  // пуле сразу, и после замены воркера №0 «первым» становился №1 — тоже занятый предрасчётом,
+  // и интерактивное задание вставало в очередь за ним (поймано живым прогоном).
+  function freshPool(n) {
+    solverPool.slice().forEach((w) => { const st = wstate.get(w); if (st && st.cur && st.cur.bg) failWorker(w, "preempt"); });
+    return getPool(n);
+  }
+  function runJob(w, msg, cb, opts) {
+    const st = w && wstate.get(w);
+    if (!st) { cb({ type: "done", ok: false, failed: "error" }); return 0; }
+    const id = ++jobSeq;
+    st.q.push({ id, msg, cb, bg: !!(opts && opts.bg), tag: (opts && opts.tag) || null, timeout: (msg.budgetMs || 0) + JOB_EXTRA_MS });
+    pump(w);
+    return id;
+  }
+  // снять ещё НЕ отправленные фоновые задания (предрасчёт/смета) — после правки проекта они
+  // посчитали бы прошлое состояние; то, что уже в работе, доработает и отбракуется по версии
+  function cancelQueued(tag) {
+    wstate.forEach((st) => {
+      const keep = [];
+      st.q.forEach((j) => { if (j.tag === tag) { try { j.cb({ type: "done", ok: false, jobId: j.id, cancelled: true }); } catch (e) {} } else keep.push(j); });
+      st.q = keep;
+    });
+  }
+  // ВЕРСИЯ ДАННЫХ (аудит п.5): прежняя подпись сравнивала только КОЛИЧЕСТВА (комнат, точек,
+  // щитов…) — ручная правка трассы, перенос точки или смена линии во время расчёта её не
+  // меняли, и фоновый результат затирал свежую работу. Теперь любое сохранение проекта, кроме
+  // применения нашего же результата, поднимает editVer; результат принимается, только если
+  // версия не изменилась с момента снимка. "index"/"storage-full" — не правки модели (облако
+  // отметило синхронизацию, кончилось место), версию не трогают.
+  let editVer = 0;
+  const NOT_EDITS = { index: 1, "storage-full": 1 };
+  // идёт жест, который правит модель «на месте» (тяга точки/стены/трассы): пока палец на
+  // экране, изменения ещё не сохранены и версию не подняли — подменить трассы под пальцем
+  // значило бы потерять правку; ждём отпускания, а там сохранение поднимет версию
+  function gestureBusy() {
+    try { return !!(rooms().gestureBusy && rooms().gestureBusy()); } catch (e) { return false; }
+  }
+  function whenIdle(fn) { if (!gestureBusy()) fn(); else setTimeout(() => whenIdle(fn), 200); }
+  function jobsState() {
+    let queued = 0, running = 0;
+    wstate.forEach((st) => { queued += st.q.length; if (st.cur) running++; });
+    return { busy: solverBusy, auto: autoBusy, precalc: precalcBusy, workers: solverPool.length, queued, running, editVer, lastError: lastJobError };
+  }
   // MULTISTART: тяжёлые режимы («Точно»/«Максимум») запускаются в НЕСКОЛЬКИХ воркерах
   // одновременно — берём вариант с лучшей метрикой (scoreRoutes.cost). Просьба
   // пользователя «задействовать CPU телефона на максимум»: время ожидания то же (считают
@@ -2605,88 +2719,127 @@
       let w = null;
       try { w = new Worker(workerUrl()); } catch (e) { break; }
       if (!w) break;
+      wireWorker(w);
       solverPool.push(w);
     }
     return solverPool.slice(0, n);
   }
   function getWorker() { return getPool(1)[0] || null; }
-  // подпись состава проекта — чтобы не применить устаревший результат, если пользователь
-  // успел что-то дорисовать/удалить, пока воркер считал
-  function projectSig(p) {
-    return [p.id, (p.rooms || []).length, (p.elements || []).length, (p.panels || []).length,
-      (p.circuits || []).length, (p.guides || []).length, (p.beams || []).length, p.activeFloorId].join("|");
-  }
   // применить пришедшие из воркера трассы ОДНОЙ транзакцией (commit → подмена → persist):
   // Undo отменяет весь тяжёлый прогон целиком. floorId доштамповываем — в воркере состояние
   // ядра пусто, curFloorId() там вернул бы null (см. solver-worker.js).
-  function applyWorkerRoutes(routes) {
+  // unrouted — список «Без трассы» ИЗ ВОРКЕРА (аудит п.7): раньше он оставался в воркере, а
+  // главный поток показывал «Трассы построены» и пустой баннер, хотя 30 точек были без трассы.
+  function applyWorkerRoutes(routes, unrouted) {
     const c = core(), cur = c.project;
     if (!cur || !Array.isArray(routes)) return false;
     c.commit();
     const fid0 = cur.floors && cur.floors[0] && cur.floors[0].id;
     const activeFid = cur.activeFloorId || fid0;
     cur.routes = routes.map((r) => (r.floorId ? r : Object.assign({}, r, { floorId: activeFid })));
+    setUnroutedFrom(cur, unrouted);
+    // подпись входов — ДО сохранения: persist тут же зовёт подписчиков, и с устаревшей подписью
+    // (у новых точек появились трассы) наша же запись запустила бы автоперестройку, которая
+    // быстрой сборкой затёрла бы только что принятый вариант
+    markInputs(cur);
     c.persist("routes-build");
     if (rooms().renderScene) rooms().renderScene();
     return true;
+  }
+  function setUnroutedFrom(p, list) {
+    if (!Array.isArray(list)) return;
+    lastUnrouted = list.filter((u) => u && u.id).map((u) => ({ id: String(u.id), name: String(u.name || ""), reason: String(u.reason || "") }));
+    lastUnroutedPid = p.id || null;
   }
   // ЕДИНАЯ точка запуска пула: раскидываем ОДИН И ТОТ ЖЕ снимок по всем воркерам (свой сид
   // и свой стартовый порядок каждому) и отдаём в cb ЛУЧШИЙ вариант по метрике. Используют и
   // кнопка «✨ Оптимизировать» (buildHeavy), и фоновый предрасчёт (runPrecalc) — поэтому
   // посчитанный заранее вариант ИДЕНТИЧЕН тому, что дала бы кнопка на том же состоянии
   // (иначе «мгновенно» тихо означало бы «хуже», что хуже ожидания).
-  function postSolve(pool, snapshot, mode, cb) {
-    let pending = pool.length, best = null, totalIter = 0;
+  // cb(best, info): best — null, если ни один воркер не дал результата; info.failed — причина
+  // (timeout/error/post), если хоть один воркер сломался.
+  function postSolve(pool, snapshot, mode, cb, jobOpts) {
+    let pending = pool.length, best = null, totalIter = 0, failed = null, cancelled = false;
     const t0 = Date.now();
     pool.forEach((w, i) => {
-      const onMsg = (e) => {
-        const d = (e && e.data) || {};
-        if (d.type !== "done") return;
-        w.removeEventListener("message", onMsg);
+      runJob(w, { type: "solve", project: snapshot, mode, budgetMs: QUALITY_BUDGET[mode] || 1200,
+        seed: HEAVY_SEEDS[i] || HEAVY_SEEDS[0], start: HEAVY_STARTS[i] || "shuffle", restart: i > 0 }, (d) => {
         totalIter += (d.iterations || 0);
+        if (d.failed) failed = failed || d.failed;
+        if (d.cancelled) cancelled = true;
         // строгое «<» = при равной цене выигрывает воркер с МЕНЬШИМ индексом (детерминизм:
         // порядок сидов/стартов фиксирован)
         if (d.ok && Array.isArray(d.routes) && (!best || (d.score && best.score && d.score.cost < best.score.cost))) {
-          best = { routes: d.routes, score: d.score, ms: d.ms || 0 };
+          best = { routes: d.routes, score: d.score, ms: d.ms || 0, unrouted: d.unrouted };
         }
-        if (--pending === 0) cb(best, { ms: Date.now() - t0, iterations: totalIter, cores: pool.length });
-      };
-      w.addEventListener("message", onMsg);
-      w.postMessage({ type: "solve", project: snapshot, mode, budgetMs: QUALITY_BUDGET[mode] || 1200,
-        seed: HEAVY_SEEDS[i] || HEAVY_SEEDS[0], start: HEAVY_STARTS[i] || "shuffle", restart: i > 0 });
+        if (--pending === 0) cb(best, { ms: Date.now() - t0, iterations: totalIter, cores: pool.length, failed, cancelled });
+      }, jobOpts);
     });
   }
-  function heavyPool(mode) {
-    const heavy = mode === "precise" || mode === "max";
-    return getPool(heavy ? heavyWorkerCount() : 1);
+  function heavyPool(mode, bg) {
+    const n = (mode === "precise" || mode === "max") ? heavyWorkerCount() : 1;
+    return bg ? getPool(n) : freshPool(n);
+  }
+  const isHeavyMode = (mode) => mode === "precise" || mode === "max";
+  // воркер не дал результата — считаем НА ТЕЛЕФОНЕ тем же режимом (а не «полной сборкой на
+  // всякий случай»: раньше сбой «⚡ Построить» звал build() и перекладывал ВСЕ готовые трассы,
+  // хотя кнопка по инварианту только достраивает новые). Тяжёлый режим — коротким бюджетом,
+  // как на устройстве без воркеров.
+  function fallbackSolve(mode, opts) {
+    if (mode === "incremental") { buildIncremental(opts); return null; }
+    if (!isHeavyMode(mode)) { build(opts); return null; }
+    const c = core();
+    c.commit();
+    const r = mode === "max" ? optimizeRoutingMax({ budgetMs: 700 }) : optimizeRouting({ budgetMs: 500 });
+    markInputs(c.project);
+    c.persist("routes-build");
+    if (rooms().renderScene) rooms().renderScene();
+    return r;
   }
   function buildHeavy(mode, opts) {
     const c = core(), p = c.project;
     if (!p) return false;
+    const silent = !!(opts && opts.silent);
+    if (solverBusy) { if (!silent) rooms().toast(T.heavyBusy); return true; }
     const pool = heavyPool(mode);
     if (!pool.length) return false;
-    if (solverBusy) { if (!(opts && opts.silent)) rooms().toast(T.heavyBusy); return true; }
     let snapshot;
     try { snapshot = JSON.parse(JSON.stringify(p)); } catch (e) { return false; }
-    const sig = projectSig(p);
+    const ver = editVer, pid = p.id;
     solverBusy = true;
-    if (!(opts && opts.silent)) rooms().toast(pool.length > 1 ? T.heavyStartN(pool.length) : T.heavyStart);
-    postSolve(pool, snapshot, mode, (best, info) => {
+    lastJobError = null;
+    if (!silent) rooms().toast(pool.length > 1 ? T.heavyStartN(pool.length) : T.heavyStart);
+    postSolve(pool, snapshot, mode, (best, info) => whenIdle(() => {
       solverBusy = false;
       const cur = core().project;
-      if (!cur) return;
-      if (!best) { if (!(opts && opts.silent)) rooms().toast(T.heavyFail); build(opts); return; }
-      if (projectSig(cur) !== sig) { if (!(opts && opts.silent)) rooms().toast(T.heavyStale); return; }
-      applyWorkerRoutes(best.routes);
-      if (!(opts && opts.silent)) {
-        // у обычной сборки в фоне нет «вариантов» — свой короткий текст
-        rooms().toast((mode === "precise" || mode === "max")
-          ? T.heavyDone(best.score, info.ms, info.iterations || 1, info.cores)
-          : T.buildDone(best.score, best.ms || 0));
-        sheet();
+      if (!cur || cur.id !== pid) return;
+      if (!best) {
+        const why = T.jobWhy[info.failed] || T.jobWhy.fail;
+        let r = null, hard = false;
+        try { r = fallbackSolve(mode, opts); } catch (e) { hard = true; try { console.error(e); } catch (_) {} }
+        // повтор предлагаем, если напрямую не вышло ИЛИ тяжёлый вариант посчитан урезанно
+        if (hard || isHeavyMode(mode)) lastJobError = { mode, why, heavy: !hard && isHeavyMode(mode), at: Date.now() };
+        if (!silent) {
+          rooms().toast(hard ? T.heavyFailHard(why) : (isHeavyMode(mode) && r ? T.heavyFailWhy(why) + " " + T.heavyDone(r.score, r.ms || 0, r.iterations || 1) : T.heavyFailWhy(why)));
+          sheet();
+        }
+      } else if (editVer !== ver) {
+        // проект изменился, пока считали (ручная правка трассы, перенос, ↶) — результат
+        // относится к прошлому состоянию и затёр бы свежую работу
+        if (!silent) rooms().toast(T.heavyStale);
+      } else {
+        applyWorkerRoutes(best.routes, best.unrouted);
+        if (!silent) {
+          const un = unroutedForSheet(cur).length;
+          // у обычной сборки в фоне нет «вариантов» — свой короткий текст
+          rooms().toast(un ? T.builtUnrouted(un) : (isHeavyMode(mode)
+            ? T.heavyDone(best.score, info.ms, info.iterations || 1, info.cores)
+            : T.buildDone(best.score, best.ms || 0)));
+          sheet();
+        }
       }
       if (autoPending) { autoPending = false; autoRebuild(); } // геометрия менялась, пока считали
-    });
+    }));
     return true;
   }
   // ---- СПЕКУЛЯТИВНЫЙ ПРЕДРАСЧЁТ (settings.routePrecalc) ----
@@ -2698,7 +2851,7 @@
   // К «⚡ Построить» кэш НЕ применяется: у неё другая семантика (достроить только новые
   // точки, не перекладывать готовые трассы), а предрасчёт — полная перекладка.
   const PRECALC_IDLE_MS = 1500;
-  let precalcTimer = 0, precalcBusy = false, precalc = null; // {sig, routes, score, mode}
+  let precalcTimer = 0, precalcBusy = false, precalc = null; // {ver, pid, routes, score, mode, unrouted}
   const precalcOn = (p) => !!(p && p.settings && p.settings.routePrecalc);
   function schedulePrecalc() {
     if (precalcTimer) { clearTimeout(precalcTimer); precalcTimer = 0; }
@@ -2712,19 +2865,24 @@
     if (!p || !precalcOn(p)) return;
     if (solverBusy || autoBusy || precalcBusy) { schedulePrecalc(); return; } // занят — позже
     if (!(p.elements || []).length) return;
-    const sig = projectSig(p);
-    if (precalc && precalc.sig === sig) return; // на это состояние уже посчитано
+    const ver = editVer, pid = p.id;
+    if (precalc && precalc.ver === ver && precalc.pid === pid) return; // на это состояние уже посчитано
     const mode = qualityOf(p) === "fast" ? "precise" : qualityOf(p);
-    const pool = heavyPool(mode);
+    const pool = heavyPool(mode, true);
     if (!pool.length) return;
     let snapshot;
     try { snapshot = JSON.parse(JSON.stringify(p)); } catch (e) { return; }
     precalcBusy = true;
-    postSolve(pool, snapshot, mode, (best) => {
+    // фоновое (bg) — интерактивные задания (автоперестройка, «Построить») идут вперёд;
+    // tag — после правки ещё не начатые задания предрасчёта снимаются (cancelQueued)
+    postSolve(pool, snapshot, mode, (best, info) => {
       precalcBusy = false;
-      if (best) precalc = { sig, routes: best.routes, score: best.score, mode };
-      prefetchEstimate(); // тем же простоем греем смету и проверки (см. ниже)
-    });
+      // версия запоминается ТА, по которой считали: если проект с тех пор правили, кэш просто
+      // не совпадёт (precalcFresh) — раньше сверялись количества, и правка трассы/переноса точки
+      // во время предрасчёта давала «готовый» вариант от прошлого состояния
+      if (best) precalc = { ver, pid, routes: best.routes, score: best.score, mode, unrouted: best.unrouted };
+      if (!info.cancelled) prefetchEstimate(); // тем же простоем греем смету и проверки (см. ниже)
+    }, { bg: true, tag: "precalc" });
   }
   // ---- ФОНОВЫЙ ПРЕДРАСЧЁТ СМЕТЫ И ПУЭ-ПРОВЕРОК ----
   // Замер (стресс-проект 30 комнат/150 точек, CPU ×8): calcByRoutes 12мс + perCircuit 4мс +
@@ -2751,23 +2909,16 @@
     let fine = null;
     try { fine = (EP.FinishWorks && EP.FinishWorks.snapshot) ? EP.FinishWorks.snapshot() : null; } catch (e) {}
     const tokC = CALC.memoToken(), tokR = RULES.memoToken();
-    const onMsg = (e) => {
-      const d = (e && e.data) || {};
-      if (d.type !== "done" || d.mode !== "estimate") return;
-      w.removeEventListener("message", onMsg);
-      if (!d.ok) return;
+    runJob(w, { type: "solve", project: snapshot, mode: "estimate", consum, fine }, (d) => {
+      if (!d.ok || d.mode !== "estimate") return;
       CALC.setPrefetched(tokC, d.items, d.per);   // токен не совпал (проект изменился) — мимо
       RULES.setPrefetched(tokR, d.checks);
-    };
-    w.addEventListener("message", onMsg);
-    w.postMessage({ type: "solve", project: snapshot, mode: "estimate", consum, fine });
+    }, { bg: true, tag: "estimate" });
   }
   // есть ли готовый фоновый результат РОВНО на текущее состояние (подсказка в шторке и
   // живые проверки)
-  function precalcReady() {
-    const p = core().project;
-    return !!(p && precalc && precalc.sig === projectSig(p) && Array.isArray(precalc.routes));
-  }
+  const precalcFresh = (p) => !!(p && precalc && precalc.ver === editVer && precalc.pid === p.id && Array.isArray(precalc.routes));
+  function precalcReady() { return precalcFresh(core().project); }
   // «⚡ Построить» на большом проекте — тоже в воркер: замерено на стресс-проекте (30 комнат /
   // 150 точек) при CPU ×8 синхронная сборка блокирует главный поток на ~300мс. Семантика та же
   // (инкрементальная достройка только новых точек), просто считается в фоне.
@@ -2785,18 +2936,18 @@
     if (!p) return;
     const mode = qualityOf(p) === "fast" ? "precise" : qualityOf(p);
     // готовый результат фонового предрасчёта на РОВНО это состояние — применяем сразу
-    if (precalc && precalc.sig === projectSig(p) && precalc.mode === mode && Array.isArray(precalc.routes)) {
+    if (precalcFresh(p) && precalc.mode === mode) {
       const sc = precalc.score;
-      if (applyWorkerRoutes(precalc.routes)) { rooms().toast(T.precalcDone(sc)); sheet(); return; }
+      if (applyWorkerRoutes(precalc.routes, precalc.unrouted)) {
+        const un = unroutedForSheet(p).length;
+        rooms().toast(un ? T.builtUnrouted(un) : T.precalcDone(sc)); sheet(); return;
+      }
     }
+    lastJobError = null;
     if (buildHeavy(mode)) return;
     // воркеров нет (старый WebView) — считаем в главном потоке коротким бюджетом,
     // чтобы не заморозить UI надолго
-    const c = core();
-    c.commit();
-    const r = mode === "max" ? optimizeRoutingMax({ budgetMs: 700 }) : optimizeRouting({ budgetMs: 500 });
-    c.persist("routes-build");
-    if (rooms().renderScene) rooms().renderScene();
+    const r = fallbackSolve(mode);
     rooms().toast(T.heavyDone(r && r.score, (r && r.ms) || 0, (r && r.iterations) || 1));
     sheet();
   }
@@ -2883,7 +3034,8 @@
     const p = core().project;
     if (!p || !(p.routes || []).length) return;
     const many = (p.elements || []).length >= AUTO_ASYNC_MIN;
-    const w = many ? getWorker() : null;
+    if (many && (autoBusy || solverBusy)) { autoPending = true; return; }
+    const w = many ? (freshPool(1)[0] || null) : null;
     if (!w) { // мало точек или воркеров нет — как раньше, синхронно
       rebuilding = true;
       try { build({ silent: true, noUndo: true }); } finally { rebuilding = false; }
@@ -2891,31 +3043,39 @@
     }
     // коалесинг: важен только последний результат. solverBusy — воркеры заняты тяжёлым
     // просчётом («✨ Оптимизировать»); дождёмся его — он всё равно перестроит трассы, а если
-    // геометрия к тому моменту уедет, projectSig отбракует результат и autoPending поднимет
-    // автоперестройку заново (см. finish() в buildHeavy)
+    // геометрия к тому моменту уедет, версия отбракует результат и autoPending поднимет
+    // автоперестройку заново (см. buildHeavy)
     if (autoBusy || solverBusy) { autoPending = true; return; }
     let snapshot;
     try { snapshot = JSON.parse(JSON.stringify(p)); } catch (e) {
       rebuilding = true; try { build({ silent: true, noUndo: true }); } finally { rebuilding = false; } return;
     }
-    const seq = ++autoSeq, pid = p.id;
+    const seq = ++autoSeq, pid = p.id, ver = editVer;
     const inSig = routeInputSig(p); // по ЭТОМУ состоянию считает воркер
     autoBusy = true;
-    const onMsg = (e) => {
-      const d = (e && e.data) || {};
-      if (d.type !== "done") return;
-      w.removeEventListener("message", onMsg);
+    runJob(w, { type: "solve", project: snapshot, mode: "fast" }, (d) => whenIdle(() => {
       autoBusy = false;
       const cur = core().project;
-      // результат устарел (пользователь успел ещё раз подвигать / ушёл в другой проект)
-      const stale = !cur || cur.id !== pid || seq !== autoSeq;
-      if (!stale && d.ok && Array.isArray(d.routes)) {
+      if (!cur || cur.id !== pid) { autoPending = false; return; } // ушли в другой проект
+      if (seq !== autoSeq) { if (autoPending) { autoPending = false; autoRebuild(); } return; } // ↶/↷ — снимок устарел
+      if (!d.ok) {
+        // воркер упал/не ответил — перестраиваем напрямую: трассы обязаны следовать за моделью
+        rebuilding = true;
+        try { build({ silent: true, noUndo: true }); } catch (e) { try { console.error(e); } catch (_) {} } finally { rebuilding = false; }
+        autoPending = false;
+        return;
+      }
+      // проект правили, пока считали (ручная правка трассы, ещё одна тяга): результат прошлого
+      // состояния затёр бы правку — считаем заново по текущему (аудит п.5)
+      if (editVer !== ver) { autoPending = false; autoRebuild(); return; }
+      if (Array.isArray(d.routes)) {
         const c = core();
         rebuilding = true; // не зацикливаться на своём же persist
         try {
           // БЕЗ c.commit(): снимок «до правки» уже в истории (см. noUndo в build)
           const fid0 = cur.floors && cur.floors[0] && cur.floors[0].id;
           cur.routes = d.routes.map((r) => (r.floorId ? r : Object.assign({}, r, { floorId: cur.activeFloorId || fid0 })));
+          setUnroutedFrom(cur, d.unrouted);
           // подпись — того состояния, что считал воркер: если модель с тех пор поменялась,
           // следующая проверка подписи это увидит и досчитает
           lastInSig = inSig;
@@ -2924,14 +3084,15 @@
         } finally { rebuilding = false; }
       }
       if (autoPending) { autoPending = false; autoRebuild(); }
-    };
-    w.addEventListener("message", onMsg);
-    w.postMessage({ type: "solve", project: snapshot, mode: "fast" });
+    }));
   }
   if (core().onChange) {
     core().onChange((what) => {
       // другой проект открыт — список «Без трассы» от прошлого проекта больше не про него
-      if (what === "open" || what === "import") { lastUnrouted = []; lastUnroutedPid = null; graphCache.clear(); wallsCache = null; autoSeq++; autoPending = false; precalc = null; schedulePrecalc(); markInputs(core().project); return; }
+      // версия данных для фоновых результатов (см. editVer): любое сохранение, кроме применения
+      // нашего же результата автоперестройки; ещё не начатые фоновые задания — снять
+      if (!rebuilding && !NOT_EDITS[what]) { editVer++; cancelQueued("precalc"); cancelQueued("estimate"); }
+      if (what === "open" || what === "import") { lastUnrouted = []; lastUnroutedPid = null; lastJobError = null; graphCache.clear(); wallsCache = null; autoSeq++; autoPending = false; precalc = null; schedulePrecalc(); markInputs(core().project); return; }
       // ↶/↷ восстанавливают трассы из снимка вместе с геометрией — результат фоновой
       // автоперестройки, начатой ДО отмены, считался по уже отменённой геометрии: не применять
       if (what === "undo" || what === "redo") { autoSeq++; autoPending = false; }
@@ -3489,6 +3650,10 @@
     const unroutedHtml = unrouted.length ? `<div class="ep-plan-modehint ep-plan-warnhint">${T.unroutedBanner(unrouted.length)}
         ${!((G().floorScoped(p).guides || []).filter((gd) => (gd.points || []).length >= 2)).length ? `<div class="ep-plan-srow"><button type="button" class="ep-plan-tbtn ep-clickable" data-prt-suggest>${T.suggestGuide}</button></div>` : ""}
         <div class="ep-plan-unrlist">${unrouted.slice(0, 12).map((u) => `<div class="ep-plan-unrrow"><button type="button" class="ep-plan-mini ep-clickable" data-prt-show="${esc(u.id)}" aria-label="Показать на плане">👁</button><b>${esc(u.name)}</b> — ${esc(u.reason)}</div>`).join("")}${unrouted.length > 12 ? `<div class="ep-plan-unrrow">…и ещё ${unrouted.length - 12}</div>` : ""}</div></div>` : "";
+    // фоновый просчёт сломался/не ответил (аудит п.8): честно говорим, что случилось, и даём
+    // повторить тем же режимом — раньше «Просчёт уже идёт» мог висеть до перезагрузки
+    const jobErrHtml = lastJobError ? `<div class="ep-plan-modehint ep-plan-warnhint">${esc(T.jobBanner(lastJobError.why, lastJobError.heavy))}
+        <div class="ep-plan-srow"><button type="button" class="ep-plan-tbtn ep-clickable" data-prt-retry>${T.jobRetry}</button></div></div>` : "";
     const solo = rooms().soloCircuitId ? rooms().soloCircuitId() : null;
     const linesHtml = (circuits.length || st.byCircuit._none)
       ? `<div class="ep-plan-srow"><b>${T.lines}</b>${solo ? `<span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-prt-soloall>${T.soloAll}</button>` : ""}</div>` +
@@ -3525,6 +3690,7 @@
         ${p.routes.length ? `<button type="button" class="ep-plan-tbtn ep-clickable" data-prt-optimize>${T.optimizeBtn}</button>` : ""}
         ${p.routes.length ? `<button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-prt-clear>${T.clear}</button>` : ""}
       </div>
+      ${jobErrHtml}
       ${unroutedHtml}
       ${p.routes.length ? `<div class="ep-plan-srow ep-plan-rlens"><span>${T.total}: <b>${G().fmtLen(st.total)}</b></span><span title="физических отверстий сверлить">${holes} ${T.crossings}</span>${st.crossings !== holes ? `<span class="ep-plan-dim">(кабеле-пересечений ${st.crossings})</span>` : ""}</div>${qualityRowHtml(p)}` : ""}
       ${linesHtml}
@@ -3611,6 +3777,13 @@
       c.commit(); c.project.settings.routeQuality = q; c.persist("route-quality"); sheet(); return;
     }
     if (t.closest("[data-prt-optimize]")) return optimizeAndApply();
+    if (t.closest("[data-prt-retry]")) {
+      const m = lastJobError && lastJobError.mode;
+      lastJobError = null;
+      if (m === "precise" || m === "max") return optimizeAndApply();
+      if (m === "incremental") return buildIncrementalMaybeAsync();
+      return build();
+    }
     if (t.closest("[data-prt-suggest]")) { // черновик магистрали за пользователя
       const n = suggestGuides();
       if (!n) { rooms().toast(T.suggestNone); return; }
@@ -3715,5 +3888,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { feedIssues, routeInputSig, routeTurns, build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, keys24Of, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, dropCollinear, colinearMid, routeLen, feedPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
+  EP.Plan.Routes = { feedIssues, routeInputSig, routeTurns, build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, unroutedComputed: () => lastUnroutedPid != null, jobs: { run: runJob, state: jobsState, cancel: cancelQueued }, editVersion: () => editVer, pointVert, panelVert, hopVertMul, cableStub, keys24Of, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, dropCollinear, colinearMid, routeLen, feedPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
 })();

@@ -91,10 +91,15 @@ self.onmessage = (e) => {
   const msg = (e && e.data) || {};
   if (msg.type !== "solve") return;
   const t0 = Date.now();
+  // номер задания возвращается в КАЖДОМ ответе: главный поток принимает ответ только того
+  // задания, которое сейчас ждёт (иначе ответы автоперестройки и предрасчёта путались)
+  const jobId = msg.jobId;
   try {
     prepare(msg.project);
     const RT = self.EP.Plan.Routes;
     RT.setLaneOrder(null);
+    // список «Без трассы» от прошлого задания этого воркера сюда не относится
+    if (RT.resetUnrouted) RT.resetUnrouted();
     // ---- смета + ПУЭ-проверки (фоновый предрасчёт; трассы здесь НЕ строим) ----
     if (msg.mode === "estimate") {
       if (msg.consum && self.EP.CableConsum && self.EP.CableConsum.set) self.EP.CableConsum.set(msg.consum);
@@ -103,7 +108,7 @@ self.onmessage = (e) => {
       const items = C && C.estimateItems ? C.estimateItems(msg.project) : null;
       const per = C && C.perCircuit ? C.perCircuit(msg.project) : null;
       const checks = R && R.run ? R.run(msg.project) : null;
-      self.postMessage({ type: "done", ok: true, mode: "estimate", items, per, checks, ms: Date.now() - t0 });
+      self.postMessage({ type: "done", ok: true, jobId, mode: "estimate", items, per, checks, ms: Date.now() - t0 });
       return;
     }
     let out = null;
@@ -118,13 +123,18 @@ self.onmessage = (e) => {
       RT.build({ silent: true, noCommit: true });
       out = { score: RT.scoreRoutes(msg.project), iterations: 1 };
     }
+    // список «Без трассы» (с причинами) — вместе с трассами: иначе главный поток не узнал бы,
+    // какие точки остались без кабеля, и показал бы «Трассы построены» при 30 непроложенных
+    let unrouted = null;
+    // null — сборка список не считала (нечего было строить): главный поток оставит свой
+    try { unrouted = (RT.unroutedComputed && RT.unroutedComputed()) ? RT.unroutedList() : null; } catch (e2) {}
     self.postMessage({
-      type: "done", ok: true, mode: msg.mode,
-      routes: msg.project.routes || [],
+      type: "done", ok: true, jobId, mode: msg.mode,
+      routes: msg.project.routes || [], unrouted,
       score: out && out.score, iterations: (out && out.iterations) || 1,
       ms: Date.now() - t0
     });
   } catch (err) {
-    self.postMessage({ type: "done", ok: false, error: String((err && err.message) || err) });
+    self.postMessage({ type: "done", ok: false, jobId, mode: msg.mode, error: String((err && err.message) || err) });
   }
 };

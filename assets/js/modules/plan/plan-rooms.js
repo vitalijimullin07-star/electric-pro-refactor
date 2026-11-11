@@ -2879,8 +2879,14 @@
   function setActive(on) { R.active = on; }
 
   EP.Plan = EP.Plan || {};
+  // идёт жест, который правит модель «на месте» (тяга под живым слоем или «подъёмом»): фоновый
+  // результат трассировки (plan-routes.js whenIdle) не подменяет трассы под пальцем
+  function gestureBusy() {
+    const Rn = EP.Plan.Render;
+    return !!(R.canvas && Rn && ((Rn.isLive && Rn.isLive(R.canvas)) || (Rn.isLifted && Rn.isLifted(R.canvas))));
+  }
   EP.Plan.Rooms = {
-    attach, detach, setActive, setMode, renderScene, T, CFG,
+    attach, detach, setActive, setMode, renderScene, T, CFG, gestureBusy,
     // общий доступ для модулей слоёв 2-6
     openSheet, closeSheet, overlaySheet, closeOverlaySheet, overlayOpen, toast, ensureVisibleAboveSheet, toggleSheetFullscreen, sheetRoom,
     collapseSheet, expandSheet, toggleSheetCollapsed, placeSheetBtn, enableOpeningDrag,
