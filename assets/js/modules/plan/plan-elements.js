@@ -1370,7 +1370,9 @@
     // трассы ОТ точки и К ней: раньше оставались трассы соседей, питавшихся через удалённую
     // точку (шлейф), — вели к несуществующему объекту и попадали в метраж (аудит п.16).
     // Сами соседи перетрассируются автоперестройкой (их входы изменились — routeInputSig)
-    c.project.routes = c.project.routes.filter((r) => r.fromId !== el.id && r.toId !== el.id);
+    // и синтетические: «до щита» 24В ("sw24:<id>@…") и кабели постов блока ("blk:<id>#…")
+    const syn = (id) => { const s = String(id || ""); return s.indexOf("sw24:" + el.id + "@") === 0 || s === "sw24:" + el.id || s.indexOf("blk:" + el.id + "#") === 0; };
+    c.project.routes = c.project.routes.filter((r) => r.fromId !== el.id && r.toId !== el.id && !syn(r.fromId));
     // стояк удалён — снимаем ссылку у его пары (иначе на другом этаже остался бы
     // «висячий» стояк, который по односторонней ссылке ничего не питает)
     (c.project.elements || []).forEach((x) => { if (x.riserLink === el.id) x.riserLink = null; });

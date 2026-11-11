@@ -93,6 +93,8 @@
     let skipped = 0;
     (p.elements || []).forEach((el) => {
       if (SKIP[el.type] || el.status === "existing") return;
+      // блок только из ТВ/интернета: у его постов свои кабели к роутеру без линии (пакет 3)
+      if (el.type === "block" && !((el.params && el.params.items) || []).some((t) => t === "socket" || t === "switch")) return;
       if (!free(el)) { skipped++; return; }
       const r = roomOf(p, el);
       const rn = r ? r.name : "";

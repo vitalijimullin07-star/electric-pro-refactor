@@ -78,6 +78,39 @@
   // LV_LAYERS (для штроб/маркировки кабеля); здесь своя копия — модуль грузится
   // раньше plan-calc.js в index.html, общий экспорт не переиспользуем.
   const isLvLayer = (layer) => layer === "lv" || layer === "tv" || layer === "cctv";
+  // Витая пара / коаксиал / камера — кабель только «звездой» от роутера (щита): у каждой
+  // розетки свой кабель. Раньше несколько интернет-розеток на одной линии собирались шлейфом
+  // розетка → розетка (для Ethernet так нельзя) — аудит цепей, пакет 3.
+  const STAR_LV = { internet: 1, tv: 1, camera: 1 };
+  // Посты блока со своим кабелем к роутеру (слой трассы) — см. buildBlockLvLegs
+  const BLOCK_LV = { internet: "lv", tv: "tv" };
+  // есть ли в блоке силовые посты (у блока только из ТВ/интернета своей силовой трассы нет)
+  const blockHasPower = (el) => ((el.params && el.params.items) || []).some((it) => it === "socket" || it === "switch");
+  // точка, которую трассируем как обычную (блок без силовых постов — только его слаботочные кабели)
+  const isRoutable = (el) => isPoint(el) && !(el.type === "block" && !blockHasPower(el));
+  // Линия слаботочная (Int/TV/CCTV/24В по имени или вся её нагрузка — слаботочка)
+  function lvLine(p, cid, except) {
+    if (!cid) return false;
+    const cc = (p.circuits || []).find((c) => c.id === cid);
+    if (cc && /^(Int|TV|CCTV|24В)/i.test(String(cc.name || ""))) return true;
+    const els = (p.elements || []).filter((e) => e.circuitId === cid && e !== except && e.type !== "junction");
+    return els.length > 0 && els.every((e) => isLvLayer(e.layer));
+  }
+  // Датчик движения/освещённости с целями на сетевой (220 В) линии КОММУТИРУЕТ свет — как
+  // выключатель: светильники питаются ЧЕРЕЗ него, а сам он — точка линии света. Раньше
+  // светильники шли мимо датчика прямо от щита, а датчик уходил кабелем линии света в
+  // слаботочный щит (аудит цепей, пакет 3). Датчик на слаботочной линии (умный дом) — как раньше.
+  function isFeeder(p, el) {
+    if (!el) return false;
+    if (el.type === "switch") return true;
+    if (el.type !== "pir" && el.type !== "lux") return false;
+    return G().allTargetIds(el).length > 0 && !lvLine(p, el.circuitId, el);
+  }
+  // Слой трассы от точки: датчик, коммутирующий свет, в цепи света — его кабель идёт с
+  // линией света (поверхность «Освещение», силовая штроба, не «слаботочка»)
+  function routeLayerOf(p, el) {
+    return (el && (el.type === "pir" || el.type === "lux") && isFeeder(p, el)) ? "light" : el.layer;
+  }
 
   // ---- ПОВЕРХНОСТЬ КОНКРЕТНОГО ХОПА (пол/потолок) ----
   // Поверхность больше НЕ одна на проект: у каждой группы слоёв своя (settings.surfaces,
@@ -454,7 +487,7 @@
     const room = roomOfEl(p, el);
     return (t.label || t.name || el.type) + (room ? " · " + room.name : "");
   }
-  function collectUnrouted(p, points, juncts, panels) {
+  function collectUnrouted(p, points, juncts, panels, extra) {
     const routed = new Set((p.routes || []).map((r) => r.fromId));
     // коробка без подключённых точек кабеля не получает намеренно — это не «без трассы»,
     // а отдельное замечание «Проверок» (распайка, к которой ничего не подключено)
@@ -464,6 +497,7 @@
       if (!el || routed.has(el.id)) return;
       out.push({ id: el.id, name: unroutedName(p, el), reason: unroutedReason(p, el, panels) });
     });
+    (extra || []).forEach((x) => out.push(x)); // слаботочные посты блоков без трассы
     lastUnrouted = out;
     lastUnroutedPid = p.id || null;
     return out;
@@ -1855,7 +1889,9 @@
     const ids = new Set((p.elements || []).map((e) => e.id).concat((p.panels || []).map((x) => x.id)));
     const out = [], memo = new Map();
     next.forEach((r0, id0) => {
-      if (!ids.has(id0)) { out.push({ id: id0, reason: "dangling" }); return; }
+      // синтетический источник («до щита» 24В "sw24:…", пост блока "blk:…") — существует, если
+      // существует его элемент; раньше такие трассы попадали в «висячие» (статус «Разрыв»)
+      if (!ids.has(id0) && !srcElOf(p, r0)) { out.push({ id: id0, reason: "dangling" }); return; }
       let cur = id0, reason = null;
       const seen = new Set();
       for (let g = 0; g < 512; g++) {
@@ -1944,8 +1980,13 @@
     const byId = new Map((fp.elements || []).map((e) => [e.id, e]));
     const out = new Map();
     (fp.elements || []).forEach((sw) => {
-      if (sw.type !== "switch") return;
+      if (!isFeeder(p, sw)) return; // выключатель или датчик, коммутирующий свет (пакет 3)
       const tids = G().allTargetIds(sw); // одна клавиша может нести НЕСКОЛЬКО целей
+      // датчик без линии встаёт на линию своего первого светильника — он в её цепи
+      if (sw.type !== "switch" && !sw.circuitId) {
+        const t0 = tids.map((id) => byId.get(id)).find((t) => t && t.circuitId);
+        if (t0) sw.circuitId = t0.circuitId;
+      }
       tids.forEach((id) => {
         const t = id ? byId.get(id) : null;
         if (!t || t.id === sw.id || t.type === "output24") return;
@@ -2110,7 +2151,7 @@
     // Нет щита с флагом neptun — прежнее поведение (как обычная слаботочка).
     const kindOf = (el) => (trafoPanels.length && el.type === "output24") ? "24"
       : (neptunPanels.length && el.type === "leak") ? "leak"
-      : (routerPanels.length && isLvLayer(el.layer)) ? "lv" : "pw";
+      : (routerPanels.length && isLvLayer(el.layer) && !isFeeder(p, el)) ? "lv" : "pw"; // датчик, коммутирующий свет, — силовой узел
     // Щиты, принимающие СИЛОВЫЕ линии. Раньше сюда шёл весь список panels, и силовая линия
     // могла уйти в слаботочный щит просто потому, что он оказался геометрически ближе
     // (поймано на реальном проекте: «QF2 Розетки К1» и «QF1 Свет» трассировались в «Щит
@@ -2274,9 +2315,15 @@
         });
         return;
       }
+      // витая пара / коаксиал / камера — каждая своим кабелем к роутеру (щиту), не шлейфом
+      const starIt = g.items.filter((it) => STAR_LV[it.el.type]);
+      starIt.forEach(({ el, pos }) => connectNearest(c, p, el, pos, targetPanels, el.circuitId, colorOf(p, el)));
+      if (starIt.length) g.items = g.items.filter((it) => !STAR_LV[it.el.type]);
+      if (!g.items.length) return;
       // уже подключённые точки того же рода («⚡ Построить» достраивает только новое)
+      // розетка витой пары/ТВ/камера — конец своего кабеля к роутеру, а не звено шлейфа
       const extra = extraConnected ? extraConnected.filter((n) =>
-        (g.circuitId ? n.circuitId === g.circuitId : true) && kindOf(n.el) === g.kind
+        (g.circuitId ? n.circuitId === g.circuitId : true) && kindOf(n.el) === g.kind && !(n.el && STAR_LV[n.el.type])
       ) : [];
       if (J.length) {
         /* РАСПАЙКИ ЛИНИИ (аудит цепей, пакет 2): точка идёт в коробку СВОЕЙ комнаты (по длине
@@ -2406,6 +2453,45 @@
     });
   }
 
+  /* СЛАБОТОЧНЫЕ ПОСТЫ БЛОКА (аудит цепей, пакет 3). Блок (рамка) трассируется ОДНОЙ трассой —
+     по своей силовой линии. Посты ТВ/интернет в нём раньше не получали ни кабеля, ни линии к
+     роутеру, ни штробы в смете, хотя на развёртке штробы к ним рисовались. Теперь у каждого
+     такого поста своя трасса к роутеру (нет роутера — к щиту) с синтетическим fromId
+     "blk:<блок>#<пост>" — как у «до щита» 24В: у блока уже есть СВОЯ трасса (fromId = id
+     блока), и множества по fromId их не путают. Линии у такой трассы нет: кабель берётся по
+     слою (витая пара), как у слаботочки без линии. Идемпотентна (для «⚡ Построить»), трассы
+     исчезнувших постов (пост удалили/поменяли тип, блок удалили) убираются.
+     Возвращает посты, до которых трассу построить не вышло, — для списка «Без трассы». */
+  function buildBlockLvLegs(c, p, panels) {
+    const fp = G().floorScoped(p);
+    const want = new Map(); // fromId -> { el, idx, type }
+    (fp.elements || []).forEach((el) => {
+      if (el.type !== "block" || el.status === "existing") return;
+      ((el.params && el.params.items) || []).forEach((it, i) => { if (BLOCK_LV[it]) want.set("blk:" + el.id + "#" + i, { el, idx: i, type: it }); });
+    });
+    const fid0 = (p.floors && p.floors[0] && p.floors[0].id) || null, afid = p.activeFloorId || fid0;
+    p.routes = (p.routes || []).filter((r) => {
+      const id = String(r.fromId || "");
+      if (id.indexOf("blk:") !== 0 || (r.floorId || fid0) !== afid) return true;
+      return want.has(id);
+    });
+    const have = new Set(p.routes.map((r) => r.fromId));
+    const routers = panels.filter((pn) => pn.router && !pn.riser);
+    const targets = routers.length ? routers : panels;
+    const failed = [];
+    want.forEach((w, fid) => {
+      if (have.has(fid)) return;
+      const pos = G().blockPostPoint(p, w.el, w.idx);
+      if (!pos || !targets.length) { failed.push(w); return; }
+      // «точка» поста для трассировки: тот же блок на стене, но со своим id и слоем
+      const pseudo = Object.assign({}, w.el, { id: fid, type: w.type, layer: BLOCK_LV[w.type], circuitId: null });
+      const rt = connectNearest(c, p, pseudo, pos, targets, null, colorOf(p, pseudo));
+      if (!rt) failed.push(w);
+    });
+    return failed.map((w) => ({ id: "blk:" + w.el.id + "#" + w.idx, name: ((EP.Plan.Elements && EP.Plan.Elements.TYPES && EP.Plan.Elements.TYPES[w.type] && EP.Plan.Elements.TYPES[w.type].name) || w.type) + " в блоке" + (roomOfEl(p, w.el) ? " · " + roomOfEl(p, w.el).name : ""),
+      reason: unroutedReason(p, w.el, targets) }));
+  }
+
   function build(opts) {
     const silent = !!(opts && opts.silent); // тихая автоперестройка: без тостов/шторки
     // noCommit — ПРОБНЫЙ прогон (оптимизатор гоняет build() десятки раз, перебирая порядок
@@ -2428,8 +2514,9 @@
     const risersHere = riserNodes(p, fidNow);
     if (!(fp.panels || []).length && !risersHere.length) { if (!silent) rooms().toast(T.noPanel); return; }
     const sinkIds = new Set(risersHere.map((n) => n.id)); // стояк-приёмник — ЦЕЛЬ, а не точка
-    const points = (fp.elements || []).filter((el) => isPoint(el) && !sinkIds.has(el.id));
-    if (!points.length) { if (!silent) rooms().toast(T.noElems); return; }
+    const points = (fp.elements || []).filter((el) => isRoutable(el) && !sinkIds.has(el.id));
+    const lvBlocks = (fp.elements || []).some((el) => el.type === "block" && el.status !== "existing" && ((el.params && el.params.items) || []).some((it) => BLOCK_LV[it]));
+    if (!points.length && !lvBlocks) { if (!silent) rooms().toast(T.noElems); return; }
     setAutoLane(fp);                 // порядок полос по геометрии (см. computeAutoLane)
     if (!noUndo) c.commit();
     // Чистим/перестраиваем ТОЛЬКО трассы АКТИВНОГО этажа — трассы других этажей
@@ -2453,12 +2540,13 @@
     routeGroups(c, p, points, juncts, panels, null);
     routeJunctionsToPanel(c, p, juncts, juncts, panels);
     build24Legs(c, p, panels); // трасса «до щита» (выкл→трансформатор) + тег «от щита»
+    const lvFail = buildBlockLvLegs(c, p, panels); // ТВ/интернет в блоках — свой кабель к роутеру
 
     if (savedManual.length) restoreManualRoutes(p, savedManual);
     relayPanelCombs(p);  // порядок входа кабелей в щит — только когда известны ВСЕ подходы
     hideGuides(p); // прячем ТОЛЬКО применённые магистрали (см. usedGuideIds/hideGuides)
     usedGuideIds = null;
-    const un = collectUnrouted(p, points, juncts, panels);
+    const un = collectUnrouted(p, points, juncts, panels, lvFail);
     if (!quiet) markInputs(p);
     if (!quiet) c.persist("routes-build");
     if (!silent) { if (un.length) rooms().toast(T.unroutedToast(un.length)); sheet(); }
@@ -2493,8 +2581,9 @@
     const risersHere = riserNodes(p, fidNow); // этаж без щита питается через стояк
     if (!(fp.panels || []).length && !risersHere.length) { if (!silent) rooms().toast(T.noPanel); return; }
     const sinkIds = new Set(risersHere.map((n) => n.id));
-    const points = (fp.elements || []).filter((el) => isPoint(el) && !sinkIds.has(el.id));
-    if (!points.length) { if (!silent) rooms().toast(T.noElems); return; }
+    const points = (fp.elements || []).filter((el) => isRoutable(el) && !sinkIds.has(el.id));
+    const lvBlocks = (fp.elements || []).some((el) => el.type === "block" && el.status !== "existing" && ((el.params && el.params.items) || []).some((it) => BLOCK_LV[it]));
+    if (!points.length && !lvBlocks) { if (!silent) rooms().toast(T.noElems); return; }
     setAutoLane(fp);                 // порядок полос по геометрии (см. computeAutoLane)
     if (!quiet) c.commit();
 
@@ -2521,6 +2610,8 @@
     // «до щита» 24В (выкл→трансформатор) — достраиваем недостающие даже если новых точек
     // нет (напр. только-только назначили клавише 24В-цель): идемпотентна, не дублирует
     build24Legs(c, p, (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, transformer: !!pn.transformer })));
+    // ТВ/интернет в блоках — свой кабель к роутеру (только недостающие)
+    const lvFailInc = buildBlockLvLegs(c, p, (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, router: !!pn.router, transformer: !!pn.transformer })).concat(risersHere));
 
     // relayPanelCombs здесь НАМЕРЕННО НЕ зовём: пере-упорядочивание гребёнки двигает
     // хвосты УЖЕ построенных трасс, а инкрементальная сборка по инварианту существующие
@@ -2530,7 +2621,7 @@
     hideGuides(p); // прячем ТОЛЬКО применённые к новым точкам (уже применённые ранее — уже скрыты)
     usedGuideIds = null;
     const unInc = collectUnrouted(p, newPoints, newJuncts,
-      (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y } })).concat(risersHere));
+      (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y } })).concat(risersHere), lvFailInc);
     if (!quiet) markInputs(p);
     c.persist("routes-build-inc");
     if (!silent) { if (unInc.length) rooms().toast(T.unroutedToast(unInc.length)); sheet(); }
@@ -3371,7 +3462,10 @@
   function routeInputSig(p) {
     if (!p) return "";
     const used = new Set();
-    (p.routes || []).forEach((r) => { if (r.fromId) used.add(r.fromId); if (r.toId) used.add(r.toId); });
+    (p.routes || []).forEach((r) => {
+      if (r.fromId) { used.add(r.fromId); if (/^(sw24|blk):/.test(r.fromId)) { const e = srcElOf(p, r); if (e) used.add(e.id); } }
+      if (r.toId) used.add(r.toId);
+    });
     const els = (p.elements || []).filter((e) => used.has(e.id) || isJunction(e)).map((e) => [e.id, e.type, e.wallId, e.offset, e.height,
       e.params && e.params.x, e.params && e.params.y, e.params && e.params.items, e.params && e.params.itemMeta, e.circuitId, e.layer,
       e.targetIds, e.targetId, e.chainNext, e.keys, e.swKind, e.riserLink, e.floorId, e.beamSide, e.blockVert, e.entryPost, e.reveal]);
@@ -3772,8 +3866,9 @@
     curLane = 0;
     if (!pts || pts.length < 2) return null;
     // поверхность ЭТОГО хопа (по группе слоёв, а не одна на проект — см. surfaceOf выше)
-    const surf = surfaceOf(p, fromEl.layer, fromEl, target);
-    const rt = c.model.newRoute(fromEl.layer, surf, pts, fromEl.id, target.id || null);
+    const lay = routeLayerOf(p, fromEl);
+    const surf = surfaceOf(p, lay, fromEl, target);
+    const rt = c.model.newRoute(lay, surf, pts, fromEl.id, target.id || null);
     rt.circuitId = circuitId || null;
     rt.color = color;
     rt.lane = lane;                       // под-полоса внутри линии (см. curLane выше)
@@ -4306,5 +4401,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { feedIssues, shaftConflicts, costOf, routeStatus, routeInputSig, routeTurns, build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, unroutedComputed: () => lastUnroutedPid != null, jobs: { run: runJob, state: jobsState, cancel: cancelQueued }, editVersion: () => editVer, pointVert, panelVert, endVert, hopParts, srcElOf, cableStub, keys24Of, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, dropCollinear, colinearMid, routeLen, feedPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
+  EP.Plan.Routes = { feedIssues, shaftConflicts, costOf, routeStatus, routeInputSig, routeTurns, build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, unroutedComputed: () => lastUnroutedPid != null, jobs: { run: runJob, state: jobsState, cancel: cancelQueued }, editVersion: () => editVer, pointVert, panelVert, endVert, hopParts, srcElOf, cableStub, keys24Of, isFeeder, routeLayerOf, STAR_LV, BLOCK_LV, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, dropCollinear, colinearMid, routeLen, feedPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
 })();
