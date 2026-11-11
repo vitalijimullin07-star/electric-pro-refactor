@@ -456,8 +456,11 @@
   }
   function collectUnrouted(p, points, juncts, panels) {
     const routed = new Set((p.routes || []).map((r) => r.fromId));
+    // коробка без подключённых точек кабеля не получает намеренно — это не «без трассы»,
+    // а отдельное замечание «Проверок» (распайка, к которой ничего не подключено)
+    const fed = new Set((p.routes || []).map((r) => r.toId));
     const out = [];
-    points.concat(juncts.map((n) => n.el)).forEach((el) => {
+    points.concat(juncts.filter((n) => fed.has(n.id)).map((n) => n.el)).forEach((el) => {
       if (!el || routed.has(el.id)) return;
       out.push({ id: el.id, name: unroutedName(p, el), reason: unroutedReason(p, el, panels) });
     });
@@ -1897,14 +1900,37 @@
   // вернул null — нет магистрали между его комнатой и комнатой el), пробует следующий
   // по дальности, и так далее — иначе точка осталась бы без трассы вслепую, хотя более
   // дальний, но реально соединённый магистралью узел был доступен.
+  // Длина РЕАЛЬНОГО пути (без пост-проходов) от точки до узла — замер, не построение: не
+  // помечает магистрали использованными и всегда идёт по базовой полосе линии.
+  function measureTo(p, fromEl, a, cn, circuitId) {
+    const target = { kind: cn.kind, id: cn.id, pos: cn.pos, el: cn.el };
+    const saveG = usedGuideIds, saveL = curLane;
+    usedGuideIds = null; curLane = 0;
+    const pts = buildPath(p, fromEl, a, target, circuitId, true);
+    usedGuideIds = saveG; curLane = saveL;
+    if (!pts) return Infinity;
+    let s = 0;
+    for (let i = 1; i < pts.length; i++) s += dist(pts[i - 1], pts[i]);
+    return s;
+  }
+  // Подключить точку к лучшему из узлов (коробка/щит). Узлы ранжируются по ДЛИНЕ ПУТИ, как у
+  // шлейфа, а не по прямой: раньше коробка соседней комнаты за общей стеной выигрывала у своей
+  // (блок гостиной уходил в коробку спальни — 15 м и 6 проходок вместо ~3 м). Узел, до которого
+  // пути нет, пробуется последним (порядок по прямой — тай-брейк).
   function connectNearest(c, p, el, pos, nodes, circuitId, color) {
-    const sorted = nodes.slice().sort((x, y) => dist(pos, x.pos) - dist(pos, y.pos));
-    for (let i = 0; i < sorted.length; i++) {
-      const rt = addRoute(c, p, el, pos, sorted[i], circuitId, color);
+    const ranked = nodes.map((n) => ({ n, d: dist(pos, n.pos), L: 0 }));
+    if (ranked.length > 1) ranked.forEach((x) => { x.L = measureTo(p, el, pos, x.n, circuitId); });
+    ranked.sort((x, y) => (x.L === y.L ? 0 : (x.L < y.L ? -1 : 1)) || (x.d - y.d));
+    for (let i = 0; i < ranked.length; i++) {
+      const rt = addRoute(c, p, el, pos, ranked[i].n, circuitId, color);
       if (rt) return rt;
     }
     return null;
   }
+  // комната узла/точки для правила «коробка своей комнаты»: по точке, смещённой внутрь
+  // комнаты (routeAnchor), — у стенной коробки сама точка стены неоднозначна
+  function roomIdAt(p, pos) { const r = pos ? roomNear(p, pos) : null; return r ? r.id : null; }
+  function jRoomId(p, n) { return roomIdAt(p, (n.el && G().routeAnchor(p, n.el)) || n.pos); }
   // Точка, которой назначена КЛАВИША выключателя, питается ЧЕРЕЗ этот выключатель: кабель
   // идёт щит→выключатель→точка, а НЕ щит→точка (просьба пользователя: «от щита до
   // выключателя ВВГнг-LS 3×1.5, от выключателя до точки света 220В ВВГнг-LS 3×1.5»).
@@ -2112,7 +2138,50 @@
     const feed = switchFeedMap(p);
     const chainPrev = chainPrevMap(p);
     const viaSw = [];
+    /* СХЕМА «ВСЁ СХОДИТСЯ В КОРОБКЕ» (аудит цепей, пакет 2). Если у линии выключателя есть
+       распайка в комнате его светильников (или в комнате самого выключателя) — светильники
+       клавиш идут шлейфом ИЗ КОРОБКИ, а выключатель спускается в неё одним кабелем (фаза
+       вниз, ветки клавиш вверх: leg "swdrop", жил по числу клавиш — swDropMark в plan-calc.js).
+       Раньше светильники всё равно висели на выключателе, а коробка получала только его спуск.
+       Проходные/перекрёстные (звенья цепочки) — как раньше: у звена одна исходящая трасса, а
+       кабель «звено → коробка» стал бы вторым «родителем» узла. */
+    const elIdx = new Map((G().floorScoped(p).elements || []).map((e) => [e.id, e]));
+    const swJB = new Map();   // id выключателя → узел коробки, из которой питаются его светильники
+    const swDone = new Set(); // выключатели, уже подключённые спуском (из общей раскладки исключены)
+    const routingIds = new Set(pointsToRoute.map((e) => e.id));
+    const lampsOfSw = new Map();
+    feed.forEach((sw, lampId) => {
+      const l = elIdx.get(lampId);
+      if (!l) return;
+      if (!lampsOfSw.has(sw.id)) lampsOfSw.set(sw.id, { sw, lamps: [] });
+      lampsOfSw.get(sw.id).lamps.push(l);
+    });
+    lampsOfSw.forEach(({ sw, lamps }) => {
+      if (sw.type !== "switch" || (sw.swKind && sw.swKind !== "normal") || sw.chainNext || chainPrev.has(sw.id)) return;
+      const JL = sw.circuitId ? juncts.filter((n) => n.circuitId === sw.circuitId) : [];
+      if (!JL.length) return;
+      const spos = G().routeAnchor(p, sw);
+      if (!spos) return;
+      const lampRooms = new Set(lamps.map((l) => roomIdAt(p, G().routeAnchor(p, l))).filter(Boolean));
+      let cand = JL.filter((n) => lampRooms.has(jRoomId(p, n)));
+      if (!cand.length) { const sr = roomIdAt(p, spos); cand = JL.filter((n) => jRoomId(p, n) === sr); }
+      if (!cand.length) return;
+      if (routingIds.has(sw.id)) {
+        const rt = connectNearest(c, p, sw, spos, cand, sw.circuitId, colorOf(p, sw));
+        if (!rt) return;            // до коробки не добраться — прежняя схема (свет от выключателя)
+        rt.leg = "swdrop";
+        swDone.add(sw.id);
+        swJB.set(sw.id, cand.find((n) => n.id === rt.toId));
+      } else {
+        // «⚡ Построить» достраивает только новое: выключатель уже проведён — схема коробки,
+        // только если его спуск и так идёт в одну из этих коробок
+        const own = (p.routes || []).find((r) => r.fromId === sw.id);
+        const jn = own && cand.find((n) => n.id === own.toId);
+        if (jn) swJB.set(sw.id, jn);
+      }
+    });
     pointsToRoute.forEach((el) => {
+      if (swDone.has(el.id)) return;      // спуск выключателя в коробку уже проложен выше
       const pos = G().routeAnchor(p, el); // блок -> вход штробы (нужный подрозетник)
       if (!pos) return;
       // звено цепочки проходных/перекрёстных питается от ПРЕДЫДУЩЕГО звена, а не от щита:
@@ -2177,7 +2246,10 @@
       const sw = g.sw, cid = sw.circuitId || g.items[0].el.circuitId || null;
       const ids = G().targetIdsOf(sw, g.ki);
       const done = extraConnected ? extraConnected.filter((n) => n.el && ids.indexOf(n.el.id) >= 0) : [];
-      chainFromPanel(c, p, g.items, [{ kind: "el", id: sw.id, pos: g.spos, el: sw }].concat(done), cid);
+      // «всё сходится в коробке»: голова шлейфа клавиши — распайка, куда спускается выключатель
+      const jb = swJB.get(sw.id);
+      const head = jb ? { kind: "junction", id: jb.id, pos: jb.pos, el: jb.el } : { kind: "el", id: sw.id, pos: g.spos, el: sw };
+      chainFromPanel(c, p, g.items, [head].concat(done), cid);
       // до выключателя не добраться (нет магистрали между комнатами) — прежний фолбэк:
       // ближайшая распайка своей линии / щит, чтобы точка не осталась вообще без трассы
       g.items.forEach(({ el, pos }) => {
@@ -2195,17 +2267,36 @@
       // щита (просьба пользователя: «на каждый вывод 24В, которую назначили клавишой, от
       // щита идёт провод до точки»); клавиши коммутируют их независимо, шлейф физически
       // не даёт этого сделать.
-      if (J.length || g.kind === "24") {
-        // есть распайка -> каждая точка к ближайшей распайке своей линии (или щиту/роутеру/трансформатору)
+      if (g.kind === "24") {
+        // каждая точка — своим кабелем к ближайшему (по пути) трансформатору / распайке 24В
         g.items.forEach(({ el, pos }) => {
           connectNearest(c, p, el, pos, J.concat(targetPanels), el.circuitId, colorOf(p, el));
         });
+        return;
+      }
+      // уже подключённые точки того же рода («⚡ Построить» достраивает только новое)
+      const extra = extraConnected ? extraConnected.filter((n) =>
+        (g.circuitId ? n.circuitId === g.circuitId : true) && kindOf(n.el) === g.kind
+      ) : [];
+      if (J.length) {
+        /* РАСПАЙКИ ЛИНИИ (аудит цепей, пакет 2): точка идёт в коробку СВОЕЙ комнаты (по длине
+           пути); точки комнат, где коробки этой линии нет, — шлейфом, как без распаек (от щита,
+           коробок линии и уже подключённых точек). Раньше ОДНА коробка переводила на звезду ВСЮ
+           линию: точки соседней комнаты тянули каждая свой кабель через стену (6 розеток в двух
+           комнатах, коробка в одной — 4 проходки вместо 1 и 64 м кабеля вместо 56). */
+        const byRoom = new Map();
+        J.forEach((n) => { const rid = jRoomId(p, n); if (!rid) return; if (!byRoom.has(rid)) byRoom.set(rid, []); byRoom.get(rid).push(n); });
+        const rest = [], linked = [];
+        g.items.forEach((it) => {
+          const own = byRoom.get(roomIdAt(p, it.pos));
+          const rt = own ? connectNearest(c, p, it.el, it.pos, own, it.el.circuitId, colorOf(p, it.el)) : null;
+          if (rt) linked.push({ kind: "point", id: it.el.id, el: it.el, circuitId: it.el.circuitId, pos: it.pos });
+          else rest.push(it);
+        });
+        if (rest.length) chainFromPanel(c, p, rest, targetPanels.concat(J, linked, extra), g.circuitId);
       } else {
         // НЕТ распайки -> шлейф: щит/роутер [+ уже подключённые точки того же рода] -> точка -> точка
-        const extra = extraConnected ? extraConnected.filter((n) =>
-          (g.circuitId ? n.circuitId === g.circuitId : true) && kindOf(n.el) === g.kind
-        ) : null;
-        chainFromPanel(c, p, g.items, extra ? targetPanels.concat(extra) : targetPanels, g.circuitId);
+        chainFromPanel(c, p, g.items, targetPanels.concat(extra), g.circuitId);
       }
     });
   }
@@ -2226,8 +2317,15 @@
     };
     const panels = panelsDef;
     const panelDist = (pos) => { const n = nearest(pos, panels); return n ? dist(pos, n.pos) : Infinity; };
-    const js = allJuncts.map((n) => ({ n, d: panelDist(n.pos) }));
+    // Коробка, к которой не подключено ни одной точки, кабеля к щиту НЕ получает: раньше
+    // коробка без линии (точки её не видят) тянула свой кабель «в никуда» (7 м на проверке),
+    // а в смете стояли и коробка, и работа. Такая коробка уходит в «Проверки». Узлом дерева
+    // коробок может быть только коробка, которая сама будет проложена (или уже проложена).
+    const fedIds = new Set((p.routes || []).map((r) => r.toId));
+    const ownIds = new Set((p.routes || []).map((r) => r.fromId));
+    const js = allJuncts.filter((n) => fedIds.has(n.id) || ownIds.has(n.id)).map((n) => ({ n, d: panelDist(n.pos) }));
     juncstToRoute.forEach((n) => {
+      if (!fedIds.has(n.id)) return;
       const d = panelDist(n.pos);
       const closerJ = js.filter((x) => x.d < d - 1 && (!n.circuitId || x.n.circuitId === n.circuitId)).map((x) => x.n);
       connectNearest(c, p, n.el, n.pos, panelsFor(n.circuitId).concat(closerJ), n.circuitId, colorOf(p, n.el));
@@ -3420,15 +3518,9 @@
       if (!useLen) return dist(a, cn.pos);
       const key = fromEl.id + "|" + (cn.id || ("@" + Math.round(cn.pos.x) + "_" + Math.round(cn.pos.y)));
       if (memo.has(key)) return memo.get(key);
-      const target = { kind: cn.kind, id: cn.id, pos: cn.pos, el: cn.el };
-      const save = usedGuideIds; usedGuideIds = null; // ЗАМЕР не должен помечать магистраль как использованную (фикс №1)
-      curLane = 0;                                     // замер — всегда по базовой полосе линии
-      const pts = buildPath(p, fromEl, a, target, circuitId, true);
-      usedGuideIds = save;
-      // buildPath может вернуть null (нет магистрали между комнатами source/target —
-      // см. инвариант buildPath выше) — недостижимая пара, не участвует в выборе
-      // ближайшего звена шлейфа.
-      const L = pts ? (() => { let s = 0; for (let i = 1; i < pts.length; i++) s += dist(pts[i - 1], pts[i]); return s; })() : Infinity;
+      // замер не помечает магистраль использованной (фикс №1) и идёт по базовой полосе;
+      // недостижимая пара (нет магистрали между комнатами) — Infinity, в выборе не участвует
+      const L = measureTo(p, fromEl, a, cn, circuitId);
       memo.set(key, L);
       return L;
     };

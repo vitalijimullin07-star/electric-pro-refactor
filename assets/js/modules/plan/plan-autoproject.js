@@ -228,6 +228,18 @@
     const c = core(), p = c.project;
     if (!p || !prop) return null;
     c.commit();
+    // РАСПАЙКИ в раскладку не входят (SKIP), а «пересобрать всё» стирало им линию — коробка
+    // становилась «без линии», точки её больше не видели, а к ней тянулся кабель «в никуда»
+    // (аудит цепей, пакет 2). Запоминаем, с какими точками коробка делила линию, и после
+    // раскладки отдаём ей ту новую линию, на которую ушло большинство этих точек её комнаты.
+    const jMates = new Map();
+    if (prop.mode === "all") {
+      (p.elements || []).forEach((j) => {
+        if (j.type !== "junction" || !j.circuitId) return;
+        const mates = (p.elements || []).filter((e) => e !== j && e.type !== "junction" && e.circuitId === j.circuitId);
+        if (mates.length) jMates.set(j.id, mates);
+      });
+    }
     if (prop.mode === "all") {
       p.circuits = []; p.rcdGroups = [];
       (p.elements || []).forEach((el) => { el.circuitId = null; });
@@ -252,6 +264,14 @@
       made.push(circ);
     });
     prop.attach.forEach((a) => a.elIds.forEach((id) => { const el = byId.get(id); if (el) el.circuitId = a.attach; }));
+    jMates.forEach((mates, jid) => {
+      const j = byId.get(jid);
+      if (!j) return;
+      const jr = roomOf(p, j);
+      const vote = (list) => { const n = {}; list.forEach((e) => { if (e.circuitId) n[e.circuitId] = (n[e.circuitId] || 0) + 1; }); return Object.keys(n).sort((a, b) => n[b] - n[a])[0] || null; };
+      const inRoom = jr ? mates.filter((e) => { const r = roomOf(p, e); return r && r.id === jr.id; }) : [];
+      j.circuitId = vote(inRoom) || vote(mates);
+    });
     // техника — на линию своей точки питания; лента — на свет своей комнаты
     (p.appliances || []).forEach((a) => { const el = a.elementId && byId.get(a.elementId); if (el && el.circuitId && (!a.circuitId || prop.mode === "all")) a.circuitId = el.circuitId; });
     (p.ledStrips || []).forEach((ls) => {
