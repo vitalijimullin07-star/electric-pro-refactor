@@ -160,6 +160,12 @@ body[data-visual-mode="day"] .ep-plan-moremenu { background: rgba(255, 255, 255,
 /* «подъём» объекта на время жёсткой тяги (liftForDrag в plan-render.js): копия узлов в своём
    композитном слое поверх холста — каждый кадр меняется только её transform. overflow:visible —
    чтобы часть комнаты, въезжающая в кадр из-за края, не обрезалась рамкой копии. */
+/* длинный жест (вид пришлось перефиксировать посреди движения, см. apply(light) в plan-canvas.js):
+   второстепенные подписи скрыты до остановки — иначе каждая фиксация раскладывала бы их все */
+.ep-plan-svg.is-moving .ep-plan-chaintext, .ep-plan-svg.is-moving .ep-plan-dim, .ep-plan-svg.is-moving .ep-plan-hlabel,
+.ep-plan-svg.is-moving .ep-plan-qf, .ep-plan-svg.is-moving .ep-plan-opnum, .ep-plan-svg.is-moving .ep-plan-udimtext,
+.ep-plan-svg.is-moving .ep-plan-furntext, .ep-plan-svg.is-moving .ep-plan-furnload, .ep-plan-svg.is-moving .ep-plan-gosttxt,
+.ep-plan-svg.is-moving .ep-plan-tailtxt { display: none; }
 .ep-plan-svgwrap > .ep-plan-dragproxy { pointer-events: none; will-change: transform; overflow: visible; cursor: grabbing; }
 .ep-plan-grid-line { stroke: rgba(148, 163, 184, .14); }
 .ep-plan-grid-major { stroke: rgba(148, 163, 184, .30); }

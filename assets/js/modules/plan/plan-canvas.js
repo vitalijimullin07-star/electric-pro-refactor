@@ -15,7 +15,10 @@
     gridMajorEvery: 100, // жирная линия каждый метр
     tapMaxPx: 9, tapMaxMs: 450, dragStartPx: 6,
     dblTapMs: 300, dblTapPx: 34, dblTapZoomK: 1 / 1.6, // двойной тап — зум ×1.6 к точке касания
-    longPressMs: 550 // держим палец на месте дольше — быстрое меню объекта
+    longPressMs: 550, // держим палец на месте дольше — быстрое меню объекта
+    // запас картинки вокруг видимой области (доля размера экрана с каждой стороны), см.
+    // placeSvg: при сдвиге/отдалении пальцем края уже нарисованы, а не «появляются из пустоты»
+    overscan: 0.5
   };
 
   function el(tag, attrs) {
@@ -24,7 +27,10 @@
     return n;
   }
 
-  function createCanvas(host) {
+  // opts.overscan — запас картинки вокруг экрана (доля); 0 — без запаса (офскрин-холст печати:
+  // там viewBox обязан описывать ровно кадр листа, иначе масштаб чертежа считался бы с полями)
+  function createCanvas(host, opts) {
+    const OVS = opts && opts.overscan != null ? Math.max(0, +opts.overscan || 0) : CFG.overscan;
     const svg = el("svg", { class: "ep-plan-svg" });
     svg.style.touchAction = "none";
     const layers = {
@@ -55,7 +61,25 @@
     // а ResizeObserver (resize()) их все ловит — поэтому меряем ОДИН раз и держим в
     // кэше, обновляя в resize()/fit(). pxToCm из горячего пути больше не трогает layout.
     let cw = 0, ch = 0;
-    function measureBox() { const w = svg.clientWidth, h = svg.clientHeight; if (w > 0) cw = w; if (h > 0) ch = h; }
+    // меряем ВИДИМУЮ область — обёртку: сам svg шире её на запас (см. placeSvg)
+    function measureBox() { const w = wrap.clientWidth, h = wrap.clientHeight; if (w > 0) cw = w; if (h > 0) ch = h; }
+    /* ЗАПАС КАРТИНКИ ВОКРУГ ЭКРАНА (аудит: «при перемещении картинка появляется из пустоты»).
+       Во время жеста двигается готовая картинка (transform обёртки), а svg раньше был ровно
+       размером с экран и обрезал всё за своими краями: сдвинул план на 300 px — 300 px пустой
+       полосы, пока вид не зафиксируется (пауза ~140 мс или конец жеста). Теперь svg больше
+       видимой области на ov с каждой стороны (overflow контейнера холста — hidden, лишнее не
+       видно), а viewBox описывает ту же расширенную область: при сдвиге и отдалении открываются
+       уже нарисованные места. Видимый вид (view), масштаб (cmPerPx) и попадание тапом (toWorld)
+       считаются от ВИДИМОЙ области, как раньше. Сцена и так рисуется вся (отсечения нет), так что
+       запас не добавляет узлов — только площадь слоя. */
+    let ovX = 0, ovY = 0;
+    function placeSvg() {
+      const mx = Math.round(cw * OVS), my = Math.round((ch || cw) * OVS);
+      if (mx === ovX && my === ovY && svg.style.width) return;
+      ovX = mx; ovY = my;
+      svg.style.left = -mx + "px"; svg.style.top = -my + "px";
+      svg.style.width = (cw + 2 * mx) + "px"; svg.style.height = ((ch || cw) + 2 * my) + "px";
+    }
 
     function clampView() {
       if (view.w < CFG.minSpanCm) scaleTo(CFG.minSpanCm);
@@ -94,7 +118,7 @@
     // достаточно; любая фиксация вида (apply) замер сбрасывает.
     let restRect = null;
     function measureRest() {
-      const r = svg.getBoundingClientRect();
+      const r = wrap.getBoundingClientRect(); // видимая область (svg шире её на запас)
       let left = r.left, top = r.top, w = r.width, h = r.height;
       if (liveT) { left -= liveT.tx; top -= liveT.ty; w /= liveT.s; h /= liveT.s; }
       return { left, top, w, h };
@@ -109,7 +133,7 @@
       if (!committed || !cw) return false;
       const s = committed.w / v.w, k = cw / v.w;
       const tx = (committed.x - v.x) * k, ty = (committed.y - v.y) * k;
-      return s >= 0.5 && s <= 2 && Math.abs(tx) <= cw * 0.5 && Math.abs(ty) <= (ch || cw) * 0.5;
+      return s >= 0.5 && s <= 2 && covers(tx, ty, s);
     }
     /* Пока жест ИДЁТ (пальцы на экране или серия колеса), живой вид держим дольше: масштаб
        до ×4 вместо ×2 — на время движения лёгкое размытие незаметно, зато обычный пинч
@@ -128,13 +152,26 @@
       const s = committed.w / view.w;
       const k = cw / view.w; // экранных px на см в живом виде
       const tx = (committed.x - view.x) * k, ty = (committed.y - view.y) * k;
-      if (!(s >= (act ? 0.4 : 0.5) && s <= (act ? 4 : 2)) || Math.abs(tx) > cw * 0.5 || Math.abs(ty) > (ch || cw) * 0.5) {
+      if (!(s >= (act ? 0.4 : 0.5) && s <= (act ? 4 : 2)) || !covers(tx, ty, s)) {
+        // запас кончается — фиксируем ДО появления пустого края (во время жеста — лёгкая
+        // фиксация: только viewBox, сцена не пересобирается)
         apply(act);
         if (act && pts.size === 0) commitSoon(140); // серия колеса: полная фиксация после паузы
         return;
       }
       liveTransform(tx, ty, s);
-      commitSoon(140); // палец остановился — дорисуем открывшиеся края
+      // Пока пальцы на экране, по таймеру НЕ фиксируем: края и так нарисованы (запас), а на
+      // тяжёлой сцене кадр бывает дольше 140 мс — таймер срабатывал между событиями
+      // продолжающегося жеста, и дорогая фиксация шла прямо посреди движения (аудит, п. 2).
+      // Фиксация — по отпусканию (endPointer); для колеса, инерции и анимации — после паузы.
+      if (pts.size === 0) commitSoon(140);
+    }
+    // уже нарисованная картинка (svg с запасом) после transform(tx, ty, s) закрывает экран
+    // с запасом хотя бы 15% от ov? Иначе пора фиксировать — пока край не показался
+    function covers(tx, ty, s) {
+      const sx = s * ovX * 0.15, sy = s * ovY * 0.15, H = ch || cw;
+      return tx - s * ovX <= -sx && tx + s * (cw + ovX) >= cw + sx
+        && ty - s * ovY <= -sy && ty + s * (H + ovY) >= H + sy;
     }
     function commitSoon(ms) {
       clearTimeout(commitTimer);
@@ -146,9 +183,22 @@
       committed = { x: view.x, y: view.y, w: view.w, h: view.h };
       // viewBox и сброс transform — в ОДНОМ кадре: иначе сцена на миг «прыгнула» бы
       if (liveT) { liveT = null; wrap.style.transform = ""; }
-      svg.setAttribute("viewBox", view.x + " " + view.y + " " + view.w + " " + view.h);
+      if (!cw) measureBox();
+      placeSvg();
+      const kx = view.w / Math.max(1, cw), ky = view.h / Math.max(1, ch || cw);
+      svg.setAttribute("viewBox", (view.x - ovX * kx) + " " + (view.y - ovY * ky) + " " + (view.w + 2 * ovX * kx) + " " + (view.h + 2 * ovY * ky));
       drawGrid();
-      if (light) { rescalePending = true; return; }
+      // лёгкая фиксация посреди жеста: сцену под масштаб не пересобираем, но сообщаем, что
+      // нарисованная область сдвинулась (отсечение невидимого должно её покрыть)
+      /* Лёгкая фиксация посреди жеста — это сдвиг/масштаб viewBox, и браузер заново раскладывает
+         и красит ВСЕ подписи сцены (замер, сильное приближение, ~870 подписей, CPU ×4: раскладка
+         30-50 мс + покраска 20-60 мс — рывок прямо во время движения пальца; аудит, п. 2).
+         Поэтому с первой такой фиксации и до конца жеста второстепенные подписи (цифры размеров,
+         высоты, имена линий, номера проёмов) скрыты классом is-moving: фиксация становится
+         дешёвой, а после остановки подписи возвращаются вместе с полной фиксацией. Короткие
+         жесты, которым хватает запаса картинки, этого не касаются — подписи не мигают. */
+      if (light) { rescalePending = true; svg.classList.add("is-moving"); if (cb.viewMoved) cb.viewMoved({ ...view }); return; }
+      svg.classList.remove("is-moving");
       rescalePending = false;
       if (cb.viewChanged) cb.viewChanged({ ...view });
     }
@@ -498,12 +548,13 @@
       apply();
     }
     const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(resize) : null;
-    if (ro) ro.observe(svg);
+    // следим за ВИДИМОЙ областью (обёрткой): размер самого svg задаём мы (запас, placeSvg)
+    if (ro) ro.observe(wrap);
 
     setTimeout(() => { resize(); }, 0);
 
     return {
-      svg, layers,
+      svg, layers, wrap,
       getView: () => ({ ...view }),
       cmPerPx: pxToCm,
       toWorld, fit, redraw: apply,
@@ -531,6 +582,8 @@
       onTap: (fn) => { cb.tap = fn; },
       onDblTap: (fn) => { cb.dbl = fn; }, // (worldPt, e) → true, если двойной тап обработан (зум не делать)
       onViewChanged: (fn) => { cb.viewChanged = fn; },
+      onViewMoved: (fn) => { cb.viewMoved = fn; }, // лёгкая фиксация во время жеста (масштаб сцены прежний)
+      overscan: () => ({ x: ovX, y: ovY }),        // запас картинки вокруг экрана, px
       onHover: (fn) => { cb.hover = fn; },     // (worldPt, e) — живой предпросмотр снапа/прицела пера
       onHoverEnd: (fn) => { cb.hoverEnd = fn; }, // указатель ушёл с холста — убрать предпросмотр
       onLongPress: (fn) => { cb.longPress = fn; }, // (worldPt, e) — держали палец на месте, e.clientX/Y для позиционирования UI

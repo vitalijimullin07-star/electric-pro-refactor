@@ -372,6 +372,8 @@
     (project.rooms || []).forEach((room) => {
       if ((room.points || []).length < 3) return;
       if (only && !inSet(only.fills, room.id)) return;
+      const cw0 = !only && ui && ui.cull;
+      if (cw0) { const bb = G.bbox(room.points); if (bb.x > cw0.x1 || bb.x + bb.w < cw0.x0 || bb.y > cw0.y1 || bb.y + bb.h < cw0.y0) return; }
       const d = "M" + room.points.map((p) => p.x + " " + p.y).join(" L") + " Z";
       const cls = "ep-plan-room" + (ui && ui.selectedRoomId === room.id ? " is-sel" : "");
       let n = sc.rooms.get(room.id);
@@ -406,6 +408,18 @@
     // цена кадра тяги не зависит от размера квартиры.
     const only = (ui && ui.only) || null;
     const idSfx = (ui && ui.idSuffix) || ""; // маски живого слоя не должны совпасть по id с основными
+    /* ОТСЕЧЕНИЕ НЕВИДИМОГО (ui.cull — окно в мировых см, его даёт plan-rooms.js: видимая
+       область с запасом в полтора экрана с каждой стороны). При сильном приближении на
+       большой квартире в svg стояли тысячи узлов, из них почти тысяча подписей, хотя на
+       экране — одна комната; каждая фиксация вида (сдвиг дальше запаса, смена масштаба)
+       заново раскладывала и красила их все — рывки 80-120 мс посреди жеста (аудит, п. 2).
+       Комнаты (стены, заливки, цепочки, проёмы), точки и трассы вне окна не рисуются. Их
+       кэш при этом НЕ выбрасывается: вернулись в окно — узел тот же, без пересборки.
+       На общем виде окно больше всей квартиры — не отсекается ничего. Печать и живой слой
+       тяги окна не получают. */
+    const cull = (!only && ui && ui.cull) || null;
+    const bbVis = (bb) => !cull || !!(bb && bb.x0 <= cull.x1 && bb.x1 >= cull.x0 && bb.y0 <= cull.y1 && bb.y1 >= cull.y0);
+    const ptVis = (x, y) => !cull || (x >= cull.x0 && x <= cull.x1 && y >= cull.y0 && y <= cull.y1);
     const k = canvas.cmPerPx(); // см в одном экранном пикселе
     const fs = CFG.labelPx * k, fsName = CFG.namePx * k, sw = CFG.wallPx * k, off = CFG.labelOffsetPx * k;
     // режим МОНТАЖНИКА (ui.montage, 👷 в шапке): на плане остаётся нужное на объекте —
@@ -527,6 +541,7 @@
     roomsW.forEach((room, roomI) => {
       if (only && !inSet(only.walls, room.id)) return;
       liveRoomW.add(room.id);
+      if (!bbVis(roomBBs[roomI])) return; // вне окна: не рисуем, кэш оставляем
       const nb = [];
       roomsW.forEach((r2, j) => { if (j !== roomI && bbHit(roomBBs[roomI], roomBBs[j])) nb.push([r2.id, r2.points, r2.wallTh, opsByOwner.get(r2.id) || 0]); });
       // перегородка влияет на стены комнаты только своими ПРОЁМАМИ (G.wallOpeningSpans
@@ -571,6 +586,11 @@
       opOwners.push([key, geom]);
       if (only && !inSet(only.ops, key)) return;
       liveOps.add("ops:" + key);
+      if (cull) {
+        const ri = roomsW.findIndex((x) => x.id === key);
+        const obb = ri >= 0 ? roomBBs[ri] : (geom ? bbOf(geom) : null);
+        if (obb && !bbVis(obb)) return;
+      }
       part("ops:" + key, JSON.stringify([list, geom, kBucket, labelsOn, nearView, opNum ? list.map((o) => opNum(project, o)) : 0]), (pg) => buildOpenings(pg, list));
     });
     Object.keys(wc.parts).forEach((nm) => { if (nm.slice(0, 4) === "ops:" && !liveOps.has(nm)) delete wc.parts[nm]; });
@@ -859,6 +879,7 @@
         if ((room.points || []).length < 3) return;
         if (only && !inSet(only.chains, room.id)) return;
         liveCh.add(room.id);
+        if (cull && !bbVis(bbOf(room.points))) return;
         const baseC = JSON.stringify([room.points, room.wallTh, room.wallDimOff, opsByOwner.get(room.id) || 0, elsByRoom.get(room.id) || 0, stW.wallThickness, stW.dimOffset]);
         const sigC = baseC + "|" + kBucket; // засечки и цифры — по ведру масштаба, как стены
         const cc = wc.chains.get(room.id);
@@ -1036,6 +1057,7 @@
         const dimR = circDim(rt.circuitId);
         const inChain = chainIds ? chainIds.has(rt.id) : false;
         seenRoutes.add(rt.id);
+        if (cull && !bbVis(bbOf(rt.points))) return; // вне окна (кэш узла сохраняется)
         // «Другие» трассы во время выбора — обесцвечены (просьба пользователя: «а во
         // время выбора другие должны становится черно белые»), чтобы выбранная цепь
         // читалась однозначно на фоне остальных линий. dimR (приглушение по solo другой
@@ -1171,6 +1193,7 @@
       const cx = dp.x, cy = dp.y;
       const rot = dp.angle || 0;
       seenEls.add(elem.id);
+      if (!ptVis(cx, cy)) return; // вне окна (кэш узла сохраняется)
       // подпись входов рендера ЭТОЙ точки: сам элемент + посчитанная позиция/поворот +
       // масштаб + всё, что влияет на вид извне (выделение, предупреждение ПУЭ, стиль значков,
       // LOD-подписи, цвет линии/слоя, приглушение solo). Совпала — переиспользуем готовый <g>.
@@ -1561,6 +1584,11 @@
      Маски вырезов проёмов у копий переименовываются: иначе url(#id) нашёл бы маску
      оригинала, а он на время тяги спрятан. */
   const lifts = new WeakMap(); // canvas -> { px, nodes, k }
+  // копия холста для тяги — тот же бокс, что у основного svg: он шире экрана на запас
+  // (overscan, plan-canvas.js placeSvg), и viewBox описывает именно этот бокс
+  function copyBox(src, dst) {
+    ["left", "top", "width", "height"].forEach((k) => { if (dst.style[k] !== src.style[k]) dst.style[k] = src.style[k]; });
+  }
   function liftForDrag(canvas, selectors) {
     dropLift(canvas);
     const svg = canvas && canvas.svg;
@@ -1572,6 +1600,7 @@
     if (!nodes.length) return false;
     nodes.sort((a, b) => (a.compareDocumentPosition(b) & 4 ? -1 : 1)); // порядок документа = порядок перекрытия
     const px = el("svg", { class: "ep-plan-svg ep-plan-dragproxy", viewBox: svg.getAttribute("viewBox") || "", "aria-hidden": "true" });
+    copyBox(svg, px);
     nodes.forEach((n) => {
       const c = n.cloneNode(true);
       c.querySelectorAll("mask[id]").forEach((m) => {
@@ -1640,6 +1669,7 @@
     const svg = canvas && canvas.svg;
     if (!svg || !svg.parentNode || !svg.querySelectorAll || !scope) return false;
     const px = el("svg", { class: "ep-plan-svg ep-plan-dragproxy", viewBox: svg.getAttribute("viewBox") || "", "aria-hidden": "true" });
+    copyBox(svg, px);
     const layers = { underlay: el("g", { "data-l": "underlay" }), rooms: el("g", { "data-l": "rooms" }), overlay: el("g", { "data-l": "overlay" }) };
     px.appendChild(layers.underlay); px.appendChild(layers.rooms); px.appendChild(layers.overlay);
     const lc = { svg: px, layers, cmPerPx: () => canvas.cmPerPx(), live: true };
@@ -1661,7 +1691,7 @@
     const L = canvas && lives.get(canvas);
     if (!L) return false;
     const vb = canvas.svg.getAttribute("viewBox") || "";
-    if (L.px.getAttribute("viewBox") !== vb) L.px.setAttribute("viewBox", vb);
+    if (L.px.getAttribute("viewBox") !== vb) { L.px.setAttribute("viewBox", vb); copyBox(canvas.svg, L.px); }
     draw(L.lc, project, Object.assign({}, ui || {}, { only: L.scope, idSuffix: "-live" }));
     return true;
   }
