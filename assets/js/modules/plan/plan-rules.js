@@ -120,7 +120,11 @@
       if (R.rcdRequired && (hasSocket || wet) && !c.rcd) issues.push({ circuitId: c.id, msg: T.needRcd(c.name) });
       if (R.separateHeavy && hasHeavy && others > 0) issues.push({ circuitId: c.id, msg: T.heavySep(c.name) });
       if (R.maxSocketsPerCircuit && (c.breaker || 16) >= 16 && socketN > R.maxSocketsPerCircuit) issues.push({ circuitId: c.id, msg: T.tooMany(c.name, socketN, R.maxSocketsPerCircuit) });
-      if (R.cableCheck && c.cable) { const s = sectionOf(c.cable), max = CABLE_AMP[String(s)]; if (s && max && (c.breaker || 16) > max) issues.push({ circuitId: c.id, msg: T.thinCable(c.name, s, c.breaker) }); }
+      // сверяем с автоматом и АВТОПОДОБРАННЫЙ кабель (аудит п.16): раньше проверка смотрела
+      // только кабель, заданный вручную. Слаботочка и линии 24В — не сетевые, их не сверяем.
+      const mains = !(els.length && els.every((e) => e.type === "output24" || e.layer === "lv" || e.layer === "tv" || e.layer === "cctv"));
+      const cab = c.cable || (mains && EP.Plan.Circuits && EP.Plan.Circuits.autoCable ? EP.Plan.Circuits.autoCable(p, c) : null);
+      if (R.cableCheck && cab && mains) { const s = sectionOf(cab), max = CABLE_AMP[String(s)]; if (s && max && (c.breaker || 16) > max) issues.push({ circuitId: c.id, msg: T.thinCable(c.name, s, c.breaker) }); }
       // линия 24В: тип (монохром/RGB) ОБЯЗАТЕЛЕН — просьба пользователя («что нужно указать
       // обязательно на линии 24в»), от него зависит кабель «от щита до точки» (2 или 5 жил).
       // Пока не указано, смета считает как монохром — поэтому это подсказка, а не блокировка.

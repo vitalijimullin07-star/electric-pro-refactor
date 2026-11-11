@@ -183,14 +183,14 @@
     const c = (p.circuits || []).find((x) => x.id === el.circuitId) || null;
     if (!c) return { circuit: null };
     const pr = protOf(p, c), pn = panelOf(p, c);
-    const SC = EP.Plan.Scheme, R = EP.Plan.Routes;
+    const R = EP.Plan.Routes;
     let lenCm = null;
     try { const L = R && R.lengths ? R.lengths(p) : null; lenCm = L && L.byCircuit ? (L.byCircuit[c.id] || 0) : null; } catch (e) {}
     const routes = (p.routes || []).filter((r) => r.circuitId === c.id);
     return {
       circuit: c, breaker: Number(c.breaker) || 16, poles: c.poles === 3 ? 3 : 1,
       prot: pr, protText: protLabel(p, c), panel: pn.panel, panelExplicit: pn.explicit,
-      cable: c.cable || (SC && SC.autoCable ? SC.autoCable(p, c) : ""),
+      cable: cableOf(p, c),
       routes: routes.length, lenCm,
       points: (p.elements || []).filter((e) => e.circuitId === c.id).length
     };
@@ -301,12 +301,12 @@
   function toManualModel(p, panelId) {
     const s = p.settings || {};
     const lines = linesOf(p, panelId || null);
-    const SC = EP.Plan.Scheme, R = EP.Plan.Routes;
+    const R = EP.Plan.Routes;
     let L = null; try { L = R && R.lengths ? R.lengths(p) : null; } catch (e) {}
     const res = 1 + (Number(s.cableReserve) || 0) / 100;
     const ln = (c, extra) => {
       const amp = Number(c.breaker) || 16;
-      const cab = String(c.cable || (SC && SC.autoCable ? SC.autoCable(p, c) : "") || "").replace(/×/g, "х");
+      const cab = String(cableOf(p, c) || "").replace(/×/g, "х");
       const cm = L && L.byCircuit ? (L.byCircuit[c.id] || 0) : 0;
       return Object.assign({
         id: "pl" + c.id, circuitId: c.id, name: (c.name || "") + (c.title ? " " + c.title : ""),
@@ -342,7 +342,47 @@
     };
   }
 
+  /* ЕДИНЫЙ АВТОПОДБОР КАБЕЛЯ ЛИНИИ (аудит 11.11, п.16). Раньше подборов было два: однолинейка
+     брала сечение по номиналу автомата, а смета и «По линиям» — по слою трассы (силовая всегда
+     3×2.5), и линия варочной на 32A в схеме была 3×6, а в смете 3×2.5. Плюс подбор опускался НИЖЕ
+     таблицы: нужного сечения нет в каталоге проекта — брался самый толстый из каталога (63A под
+     6 мм² вместо 16), а «Проверки» сверяли с автоматом только кабель, заданный вручную.
+     Теперь подбор один, живёт здесь (модуль грузится везде, включая фоновый вычислитель сметы) и
+     никогда не даёт сечение меньше таблицы: нет в каталоге — пишется нужное по таблице.
+     Таблица «автомат ↔ сечение» сверяется тестом с plan-furniture.js и plan-rules.js. */
+  const SECTION_BY_AMP = [{ amp: 10, sec: 1.5 }, { amp: 16, sec: 2.5 }, { amp: 25, sec: 4 }, { amp: 32, sec: 6 }, { amp: 50, sec: 10 }, { amp: 63, sec: 16 }];
+  const loadElsOf = (p, c) => (p.elements || []).filter((e) => e.circuitId === c.id && e.type !== "junction");
+  function needSection(breaker) {
+    const found = SECTION_BY_AMP.find((x) => (breaker || 16) <= x.amp);
+    return (found || SECTION_BY_AMP[SECTION_BY_AMP.length - 1]).sec;
+  }
+  function autoCable(p, c) {
+    if (!c) return "";
+    const C = core(), els = loadElsOf(p, c);
+    // 24В-линия (вся нагрузка — «Вывод 24В») — питание 24В, марка из настроек (2 жилы, у RGB — 5)
+    if (els.length && els.every((e) => e.type === "output24")) {
+      const CA = EP.Plan.Calc;
+      if (CA && CA.defaultCableMark) return CA.defaultCableMark(p, "lv", true, !!c.rgb);
+      return c.rgb ? (p.settings.cable24Rgb || "КГ ВВГнг-LS 5×1.5") : (p.settings.cable24 || "КГ ВВГнг-LS 2×2.5");
+    }
+    // слаботочка (интернет/ТВ/видеонаблюдение) — витая пара, а не силовой по автомату
+    if (els.length && els.every((e) => e.layer === "lv" || e.layer === "tv" || e.layer === "cctv")) return "Витая пара (UTP)";
+    const prefix = c.poles === 3 ? "5×" : "3×";
+    const need = needSection(c.breaker);
+    // освещение — 3×1.5 (просьба пользователя), но только там, где это позволяет автомат:
+    // таблица держит 1.5 мм² до 10A (новой линии света ставится 10A, см. assignNewCircuit)
+    if (els.length && els.every((e) => e.layer === "light") && need <= 1.5) return C.cableMark(p, prefix + "1.5");
+    const cat = (C.DEFAULTS.cables || [])
+      .filter((cb) => cb.indexOf(prefix) === 0)
+      .map((cb) => ({ cb, sec: parseFloat(cb.split("×")[1]) }))
+      .sort((a, b) => a.sec - b.sec);
+    const hit = cat.find((o) => o.sec >= need);
+    return C.cableMark(p, hit ? hit.cb : prefix + need);
+  }
+  // кабель линии для любого расчёта: заданный вручную, иначе автоподбор
+  function cableOf(p, c) { return (c && c.cable) || autoCable(p, c); }
   EP.Plan.Circuits = {
+    autoCable, cableOf, needSection, SECTION_BY_AMP,
     toManualModel,
     RCD_RATINGS, RCD_LEAKS,
     groups, groupById, newGroup, removeGroup,

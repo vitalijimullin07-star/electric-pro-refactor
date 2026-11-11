@@ -28,6 +28,9 @@
     jobRetry: "↻ Повторить",
     builtUnrouted: (n) => `Трассы построены, но без трассы осталось точек: ${n} — список в шторке «Трассы».`,
     heavyStale: "Проект изменился во время просчёта — результат отброшен, нажми ещё раз.",
+    stOk: "✓ Трассы актуальны", stBusy: "⏳ Трассы пересчитываются…", stStale: "↻ Нужен пересчёт трасс",
+    stNone: "↻ Трассы не построены", stConflict: (n) => `⛔ Есть конфликт: ${n} — трасса через шахту`,
+    stGap: (n) => `⚠ Есть разрыв: ${n} — точки без трассы или без пути до щита`,
     heavyDone: (sc, ms, it, cores) => `Готово за ${(ms / 1000).toFixed(1)}с (вариантов: ${it}${cores > 1 ? ", ядер: " + cores : ""}). Пересечений линий: ${sc ? sc.crossings : "—"}, отверстий: ${sc ? sc.holes : "—"}, изломов: ${sc && sc.turns != null ? sc.turns : "—"}`,
     buildDone: (sc, ms) => `Трассы построены (${(ms / 1000).toFixed(1)}с). Пересечений линий: ${sc ? sc.crossings : "—"}, отверстий: ${sc ? sc.holes : "—"}`,
     title: "Трассы", build: "⚡ Построить", clear: "✕ Очистить",
@@ -442,18 +445,21 @@
       return "магистрали назначены другим группам — нужна общая или для «" + (KIND_NAME[kind] || kind) + "»";
     return "магистраль не доходит до её комнаты";
   }
+  // имя точки для списка «Без трассы»: тип по справочнику + помещение. В фоновом вычислителе
+  // справочника типов нет (plan-elements.js не грузится), поэтому имена пришедшего оттуда
+  // списка пересобираются здесь же, в главном потоке (setUnroutedFrom)
+  function unroutedName(p, el) {
+    const TY = (EP.Plan.Elements && EP.Plan.Elements.TYPES) || {};
+    const t = TY[el.type] || {};
+    const room = roomOfEl(p, el);
+    return (t.label || t.name || el.type) + (room ? " · " + room.name : "");
+  }
   function collectUnrouted(p, points, juncts, panels) {
     const routed = new Set((p.routes || []).map((r) => r.fromId));
-    const TY = (EP.Plan.Elements && EP.Plan.Elements.TYPES) || {};
-    const nameOf = (el) => {
-      const t = TY[el.type] || {};
-      const room = roomOfEl(p, el);
-      return (t.label || t.name || el.type) + (room ? " · " + room.name : "");
-    };
     const out = [];
     points.concat(juncts.map((n) => n.el)).forEach((el) => {
       if (!el || routed.has(el.id)) return;
-      out.push({ id: el.id, name: nameOf(el), reason: unroutedReason(p, el, panels) });
+      out.push({ id: el.id, name: unroutedName(p, el), reason: unroutedReason(p, el, panels) });
     });
     lastUnrouted = out;
     lastUnroutedPid = p.id || null;
@@ -1673,6 +1679,25 @@
     });
     return out;
   }
+  /* СТАТУС СХЕМЫ ТРАСС (аудит 11.11, пакет 5): одной строкой в шапке редактора и в шторке
+     «Трассы» — можно ли верить трассам и смете прямо сейчас. Порядок — от самого важного:
+     идёт пересчёт → нужен пересчёт (входы трассировки изменились после сборки, или трассы ещё
+     не построены) → есть конфликт (трасса сквозь шахту) → есть разрыв (точки без трассы или
+     без пути до щита) → актуально. Считается дёшево: подпись входов уже есть (routeInputSig),
+     разрывы и конфликты — проход по трассам. */
+  function routeStatus(p) {
+    if (!p) return { code: "none", text: "" };
+    const needs = (p.elements || []).some((e) => e.type !== "riser" || riserRole(p, e) !== "sink");
+    const routes = p.routes || [];
+    if (!routes.length) return needs ? { code: "stale", text: T.stNone } : { code: "none", text: "" };
+    if (autoBusy || solverBusy) return { code: "busy", text: T.stBusy };
+    if (lastInSig != null && routeInputSig(p) !== lastInSig) return { code: "stale", text: T.stStale };
+    const conf = shaftConflicts(p).length;
+    if (conf) return { code: "conflict", text: T.stConflict(conf), n: conf };
+    const gap = unroutedForSheet(p).length + feedIssues(p).length;
+    if (gap) return { code: "gap", text: T.stGap(gap), n: gap };
+    return { code: "ok", text: T.stOk };
+  }
   // трассы, которые всё-таки идут сквозь шахту (обойти не вышло) — для «Проверок»
   function shaftConflicts(p) {
     const res = [];
@@ -2021,11 +2046,21 @@
   // ИСХОДЯЩЕЙ из стояка-источника (у приёмника своей трассы нет — он цель), поэтому
   // ровно один раз на пару. Высота берётся у этажа, ЧЕРЕЗ перекрытие которого идёт
   // кабель — это этаж более дальнего от щита конца (приёмника).
+  // СТОЯК ЧЕРЕЗ НЕСКОЛЬКО ЭТАЖЕЙ (аудит 11.11, п.14): пара 1→3 этаж давала высоту ОДНОГО этажа
+  // (300 вместо 600) — кабель проходит каждое перекрытие между ними. Этажи стоят по порядку
+  // p.floors; складываются высоты этажей от соседнего с источником до приёмника включительно
+  // (для соседних этажей — ровно прежнее: высота этажа приёмника).
   function riserRun(p, el) {
     if (!el || el.type !== "riser") return 0;
     if (riserRole(p, el) !== "source") return 0;
     const mate = (p.elements || []).find((x) => x.id === el.riserLink);
-    return floorHeight(p, (mate && mate.floorId) || el.floorId);
+    const fl = p.floors || [];
+    const i = fl.findIndex((f) => f.id === el.floorId), j = fl.findIndex((f) => f.id === (mate && mate.floorId));
+    if (i < 0 || j < 0 || i === j) return floorHeight(p, (mate && mate.floorId) || el.floorId);
+    let sum = 0;
+    if (j > i) { for (let k = i + 1; k <= j; k++) sum += floorHeight(p, fl[k].id); }
+    else { for (let k = j; k <= i - 1; k++) sum += floorHeight(p, fl[k].id); }
+    return sum;
   }
   // Узлы-стояки активного этажа в виде псевдо-щитов для трассировки. noComb — «гребёнка»
   // входа (panelCombPos) относится к корпусу реального щита, у стояка её нет.
@@ -2581,11 +2616,25 @@
     // без трассы + проложенные, но без пути до щита (кольцо/обрыв): вариант, где точка
     // «соединена» по кругу, не должен выигрывать у варианта с настоящим питанием (аудит п.4)
     const unrouted = unroutedForSheet(p).length + feedIssues(p).length;
-    // вес: пересечение линий — главное зло (просьба пользователя), потом лишние отверстия,
-    // потом транзит мимо магистрали и изломы, потом метраж; unrouted — запретительный вес,
-    // вариант без трасс не может «выиграть»
-    const cost = crossDiff * 100 + crossSame * 40 + holes * 30 + offTrunk / 100 * OFF_TRUNK_W + turns * TURN_W + len / 100 + unrouted * 10000;
-    return { crossings: crossDiff, crossSame, holes, len: Math.round(len), turns, offTrunk: Math.round(offTrunk), unrouted, cost: Math.round(cost) };
+    const conflicts = shaftConflicts(p).length;
+    const sc = { crossings: crossDiff, crossSame, holes, len: Math.round(len), turns, offTrunk: Math.round(offTrunk), unrouted, conflicts };
+    sc.invalid = unrouted + conflicts;
+    sc.cost = costOf(sc);
+    return sc;
+  }
+  /* ЦЕНА ВАРИАНТА — СНАЧАЛА КОРРЕКТНОСТЬ (аудит 11.11, п.15). Раньше всё складывалось в одну
+     сумму, и «без трассы» весил 10 000 — столько же, сколько 100 пересечений линий: на
+     запутанной квартире вариант, бросивший одну точку без кабеля, мог выиграть у полного.
+     Теперь некорректные места (точка без трассы, нет пути до щита, трасса сквозь шахту)
+     весят столько, что никакая эстетика их не перекроет, — по сути сравнение сначала по
+     корректности, потом по виду: пересечение линий — главное зло (просьба пользователя),
+     потом лишние отверстия, транзит мимо магистрали и изломы, потом метраж. */
+  const INVALID_W = 1e9;
+  function costOf(sc) {
+    const s = sc || {};
+    const invalid = s.invalid != null ? s.invalid : (s.unrouted || 0) + (s.conflicts || 0);
+    return Math.round(invalid * INVALID_W + (s.crossings || 0) * 100 + (s.crossSame || 0) * 40 + (s.holes || 0) * 30
+      + (s.offTrunk || 0) / 100 * OFF_TRUNK_W + (s.turns || 0) * TURN_W + (s.len || 0) / 100);
   }
   // ================== ОПТИМИЗАТОР РАЗВОДКИ (тяжёлый режим) ==================
   // Просьба пользователя: «готов дополнительно задействовать CPU телефона, если нужно
@@ -2969,7 +3018,11 @@
   }
   function setUnroutedFrom(p, list) {
     if (!Array.isArray(list)) return;
-    lastUnrouted = list.filter((u) => u && u.id).map((u) => ({ id: String(u.id), name: String(u.name || ""), reason: String(u.reason || "") }));
+    const byId = new Map((p.elements || []).map((e) => [e.id, e]));
+    lastUnrouted = list.filter((u) => u && u.id).map((u) => {
+      const el = byId.get(String(u.id));
+      return { id: String(u.id), name: el ? unroutedName(p, el) : String(u.name || ""), reason: String(u.reason || "") };
+    });
     lastUnroutedPid = p.id || null;
   }
   // ЕДИНАЯ точка запуска пула: раскидываем ОДИН И ТОТ ЖЕ снимок по всем воркерам (свой сид
@@ -3272,7 +3325,6 @@
       rebuilding = true; try { build({ silent: true, noUndo: true }); } finally { rebuilding = false; } return;
     }
     const seq = ++autoSeq, pid = p.id, ver = editVer;
-    const inSig = routeInputSig(p); // по ЭТОМУ состоянию считает воркер
     autoBusy = true;
     runJob(w, { type: "solve", project: snapshot, mode: "fast" }, (d) => whenIdle(() => {
       autoBusy = false;
@@ -3297,9 +3349,11 @@
           const fid0 = cur.floors && cur.floors[0] && cur.floors[0].id;
           cur.routes = d.routes.map((r) => (r.floorId ? r : Object.assign({}, r, { floorId: cur.activeFloorId || fid0 })));
           setUnroutedFrom(cur, d.unrouted);
-          // подпись — того состояния, что считал воркер: если модель с тех пор поменялась,
-          // следующая проверка подписи это увидит и досчитает
-          lastInSig = inSig;
+          // подпись — ПОСЛЕ замены трасс: версия совпала, значит входы те же, что в снимке, а в
+          // подпись входит и набор проложенных точек — снятая до сборки подпись (inSig) с ним
+          // расходилась, статус залипал на «нужен пересчёт» и следующая правка запускала лишнюю
+          // перестройку (поймано живой проверкой статуса)
+          markInputs(cur);
           c.persist("routes-build");
           if (rooms().renderScene) rooms().renderScene();
         } finally { rebuilding = false; }
@@ -3873,6 +3927,10 @@
         <div class="ep-plan-unrlist">${unrouted.slice(0, 12).map((u) => `<div class="ep-plan-unrrow"><button type="button" class="ep-plan-mini ep-clickable" data-prt-show="${esc(u.id)}" aria-label="Показать на плане">👁</button><b>${esc(u.name)}</b> — ${esc(u.reason)}</div>`).join("")}${unrouted.length > 12 ? `<div class="ep-plan-unrrow">…и ещё ${unrouted.length - 12}</div>` : ""}</div></div>` : "";
     // фоновый просчёт сломался/не ответил (аудит п.8): честно говорим, что случилось, и даём
     // повторить тем же режимом — раньше «Просчёт уже идёт» мог висеть до перезагрузки
+    // статус схемы одной строкой (тот же, что чип в шапке); «нужен пересчёт» — с кнопкой полной
+    // перестройки (не «Построить»: та только достраивает новые точки и изменённые не тронет)
+    const rst = routeStatus(p);
+    const statusHtml = rst.code !== "none" ? `<div class="ep-plan-rstatline is-${rst.code}"><span>${esc(rst.text)}</span>${rst.code === "stale" && (p.routes || []).length ? `<button type="button" class="ep-plan-mini ep-clickable ep-plan-rstatbtn" data-prt-rebuild>↻ Пересчитать</button>` : ""}</div>` : "";
     const jobErrHtml = lastJobError ? `<div class="ep-plan-modehint ep-plan-warnhint">${esc(T.jobBanner(lastJobError.why, lastJobError.heavy))}
         <div class="ep-plan-srow"><button type="button" class="ep-plan-tbtn ep-clickable" data-prt-retry>${T.jobRetry}</button></div></div>` : "";
     const solo = rooms().soloCircuitId ? rooms().soloCircuitId() : null;
@@ -3911,6 +3969,7 @@
         ${p.routes.length ? `<button type="button" class="ep-plan-tbtn ep-clickable" data-prt-optimize>${T.optimizeBtn}</button>` : ""}
         ${p.routes.length ? `<button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-prt-clear>${T.clear}</button>` : ""}
       </div>
+      ${statusHtml}
       ${jobErrHtml}
       ${unroutedHtml}
       ${p.routes.length ? `<div class="ep-plan-srow ep-plan-rlens"><span>${T.total}: <b>${G().fmtLen(st.total)}</b></span><span title="физических отверстий сверлить">${holes} ${T.crossings}</span>${st.crossings !== holes ? `<span class="ep-plan-dim">(кабеле-пересечений ${st.crossings})</span>` : ""}</div>${qualityRowHtml(p)}` : ""}
@@ -3983,7 +4042,8 @@
   document.addEventListener("click", (e) => {
     if (!rooms() || !rooms().isActive()) return;
     const t = e.target; let b;
-    if (t.closest("[data-plan-routes]")) return sheet();
+    if (t.closest("[data-plan-routes]") || t.closest("[data-plan-rstat]")) return sheet();
+    if (t.closest("[data-prt-rebuild]")) { build(); return; }
     if (t.closest("[data-prt-build]")) return sheetBuildConfirm();
     if (t.closest("[data-prt-build-go]")) return buildIncrementalMaybeAsync();
     let qb;
@@ -4109,5 +4169,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { feedIssues, shaftConflicts, routeInputSig, routeTurns, build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, unroutedComputed: () => lastUnroutedPid != null, jobs: { run: runJob, state: jobsState, cancel: cancelQueued }, editVersion: () => editVer, pointVert, panelVert, hopVertMul, cableStub, keys24Of, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, dropCollinear, colinearMid, routeLen, feedPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
+  EP.Plan.Routes = { feedIssues, shaftConflicts, costOf, routeStatus, routeInputSig, routeTurns, build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, unroutedComputed: () => lastUnroutedPid != null, jobs: { run: runJob, state: jobsState, cancel: cancelQueued }, editVersion: () => editVer, pointVert, panelVert, hopVertMul, cableStub, keys24Of, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, dropCollinear, colinearMid, routeLen, feedPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
 })();

@@ -94,11 +94,13 @@
       const cc = (p.circuits || []).find((c) => c.id === rt.circuitId);
       if (!r.mark) {
         const i24 = r.has24 || is24Circuit(p, rt.circuitId);
-        r.mark = (cc && cc.cable) || defaultCableMark(p, rt.layer, i24, i24 && !!(cc && cc.rgb));
+        // линия есть — её кабель из ЕДИНОГО подбора (EP.Plan.Circuits.cableOf: вручную или по
+        // автомату, не ниже таблицы); без линии — по слою, как раньше
+        r.mark = cc ? lineCable(p, cc, rt.layer) : defaultCableMark(p, rt.layer, i24, false);
       }
     });
     return (p.circuits || []).map((c) => {
-      const r = byId[c.id] || { cableLen: 0, mark: c.cable || null, points: 0, posts: 0, crossings: 0, has24: false };
+      const r = byId[c.id] || { cableLen: 0, mark: lineCable(p, c, null) || null, points: 0, posts: 0, crossings: 0, has24: false };
       const i24 = r.has24 || is24Circuit(p, c.id);
       // автоподбор марок для 24В-линии, чтобы кнопки «до щита»/«от щита» показывали то, что
       // реально уйдёт в смету, а не «—», когда марка вручную не задана
@@ -194,6 +196,17 @@
   // и для блока «По линиям (QF)»: раньше смета подставляла «ВВГнг(А)-LS 3×2.5», а «По
   // линиям» на тех же данных — «3×2.5», т.е. одна линия показывала разные марки.
   // Бренд берётся из settings.cableBrand (EP.Plan.Core.cableMark), сечение — по слою.
+  // кабель трассы линии: единый подбор движка цепей (схема/смета/«По линиям»/PDF совпадают).
+  // Тёплый пол без своей марки — по-прежнему «Кабель тёплого пола» (это сама секция, а не
+  // подвод по автомату); движок цепей не загружен — прежний подбор по слою.
+  function lineCable(p, cc, layer) {
+    if (cc.cable) return cc.cable;
+    if (layer === "warm") return defaultCableMark(p, "warm", false, false);
+    const CX = EP.Plan.Circuits;
+    if (CX && CX.autoCable) return CX.autoCable(p, cc);
+    const i24 = is24Circuit(p, cc.id);
+    return defaultCableMark(p, layer, i24, i24 && !!cc.rgb);
+  }
   function defaultCableMark(p, layer, is24, rgb) {
     const C = EP.Plan.Core;
     // 24В «от щита»: своя марка из настроек (КГ ВВГнг-LS 2×2.5), у RGB-линии — 5 жил
@@ -516,7 +529,7 @@
         key = chainMark(p, r) + " · между выключателями";
       } else {
         const i24 = is24Circuit(p, r.circuitId);
-        key = (cc && cc.cable) || defaultCableMark(p, r.layer, i24, i24 && rgbOf(p, r.circuitId));
+        key = cc ? lineCable(p, cc, r.layer) : defaultCableMark(p, r.layer, i24, i24 && rgbOf(p, r.circuitId));
       }
       // Камера/домофон с ОТДЕЛЬНЫМ питанием (el.feed === "sep") — это ДВА кабеля на одну
       // трассу: питание КГ ВВГнг 3×1.5 и данные (витая пара или оптика). При PoE

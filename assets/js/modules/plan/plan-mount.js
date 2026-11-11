@@ -146,6 +146,7 @@
         ${floorsBarHtml(p)}
         <div class="ep-plan-toolbar ep-plan-savebar">
           <button type="button" class="ep-plan-ready ep-clickable" id="ep-plan-ready" data-plan-daytask hidden aria-label="Готовность объекта — задание на день"></button>
+          <button type="button" class="ep-plan-rstat ep-clickable" id="ep-plan-rstat" data-plan-rstat hidden></button>
           <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-undo aria-label="Отменить">${T.undo}</button>
           <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-redo aria-label="Вернуть">${T.redo}</button>
           <span class="ep-plan-savenote" id="ep-plan-savenote"></span>
@@ -440,6 +441,22 @@
     const note = $("#ep-plan-savenote");
     if (note) note.textContent = V.saveNote;
     refreshReady();
+    refreshRouteStatus();
+  }
+  // чип статуса трасс (аудит 11.11, пакет 5): актуальны ли трассы и смета прямо сейчас —
+  // «✓ Трассы» / «↻ Пересчёт» / «⚠ Разрыв N» / «⛔ Конфликт N». Тап — шторка «Трассы»,
+  // где та же строка развёрнута и есть кнопка пересчёта
+  const RST_SHORT = { ok: "✓ Трассы", busy: "⏳ Пересчёт", stale: "↻ Пересчёт", gap: "⚠ Разрыв", conflict: "⛔ Конфликт" };
+  function refreshRouteStatus() {
+    const chip = $("#ep-plan-rstat"), p = core().project, RT = EP.Plan.Routes;
+    if (!chip) return;
+    const st = (p && RT && RT.routeStatus) ? RT.routeStatus(p) : { code: "none" };
+    chip.hidden = st.code === "none";
+    if (chip.hidden) return;
+    chip.className = "ep-plan-rstat ep-clickable is-" + st.code;
+    chip.textContent = RST_SHORT[st.code] + (st.n ? " " + st.n : "");
+    chip.setAttribute("aria-label", st.text);
+    chip.title = st.text;
   }
   // чип «Готовность N%» — только в режиме монтажника (там он и нужен); считается по
   // статусам точек и отметкам задач (EP.Plan.Work.readiness — без пересчёта сметы, дёшево)

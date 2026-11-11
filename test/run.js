@@ -981,7 +981,8 @@ test("автомат ↔ сечение: три копии таблицы в sch
     m[1].replace(/amp:\s*(\d+(?:\.\d+)?)\s*,\s*sec:\s*(\d+(?:\.\d+)?)/g, (_, a, s) => { out[a] = parseFloat(s); return ""; });
     return out;
   };
-  const scheme = pairs(read("plan-scheme.js"), "SECTION_BY_AMP");
+  // подбор кабеля живёт в движке цепей (plan-circuits.js) — схема берёт его оттуда
+  const scheme = pairs(read("plan-circuits.js"), "SECTION_BY_AMP");
   const furn = pairs(read("plan-furniture.js"), "SEC_BY_AMP");
   eq(JSON.stringify(scheme), JSON.stringify(furn), "scheme и furniture дают одно и то же сечение на номинал");
   const rm = read("plan-rules.js").match(/CABLE_AMP\s*=\s*\{([^}]+)\}/);
@@ -3993,7 +3994,9 @@ test("фото: deleteProject чистит кэш фото своего прое
     const p = EP.Plan.Core.createProject("lightcab");
     const r = M.newRoom(G.rectPoints(0, 0, 300, 300), "К");
     p.rooms.push(r);
-    const cl = M.newCircuit("QF1", "#facc15", 16); p.circuits.push(cl);
+    // свет — 3×1.5 под автомат 10A (по таблице 1.5 мм² держит 10A; новая линия света так и
+    // создаётся). Под 16A подбор уже не опускается ниже таблицы — 2.5 (аудит 11.11, п.16)
+    const cl = M.newCircuit("QF1", "#facc15", 10); p.circuits.push(cl);
     const lamp = M.newElement("light", null, 0, 270, "light");
     lamp.circuitId = cl.id; lamp.params = { x: 150, y: 150 };
     const sock = M.newElement("socket", r.id + ":0", 100, 30, "power");
@@ -4001,7 +4004,7 @@ test("фото: deleteProject чистит кэш фото своего прое
     sock.circuitId = cp.id;
     p.elements.push(lamp, sock);
     EP.Plan.Core.commit(); EP.Plan.Core.persist("seed");
-    ok(/3×1\.5/.test(EP.Plan.Scheme.autoCable(p, cl)), "свет — 3×1.5");
+    ok(/3×1\.5/.test(EP.Plan.Scheme.autoCable(p, cl)), "свет на 10A — 3×1.5");
     ok(/3×2\.5/.test(EP.Plan.Scheme.autoCable(p, cp)), "розетки — по номиналу автомата (2.5)");
     // кап по безопасности: под автомат 25А 1.5мм² нельзя
     cl.breaker = 25;
@@ -6468,7 +6471,7 @@ test("фото: deleteProject чистит кэш фото своего прое
       const r = M.newRoom(G.rectPoints(0, 0, 600, 400), "Коридор");
       p.rooms.push(r);
       p.panels.push(M.newPanel(20, 380, "Щит"));
-      const c = M.newCircuit("QF1", "#facc15"); c.cable = null; p.circuits.push(c);
+      const c = M.newCircuit("QF1", "#facc15", 10); c.cable = null; p.circuits.push(c); // свет — на 10A (3×1.5)
       const sws = kinds.map((k, i) => {
         const e = M.newElement("switch", r.id + ":0", 100 + i * 150, 90, "light");
         e.swKind = k; e.circuitId = c.id; return e;
@@ -8882,10 +8885,11 @@ test("фото: deleteProject чистит кэш фото своего прое
       ok(RT.buildHeavy("incremental"), "запуск");
       const w = FakeWorker.last;
       const lost = P.elements[1];
-      w.reply({ ok: true, jobId: w.job().jobId, routes: copyRoutes(P), unrouted: [{ id: lost.id, name: "Розетка · К", reason: "нет магистрали" }] });
+      w.reply({ ok: true, jobId: w.job().jobId, routes: copyRoutes(P), unrouted: [{ id: lost.id, name: "socket · К", reason: "нет магистрали" }] });
       const un = RT.unroutedList();
       eq(un.length, 1, "список из воркера принят");
       eq(un[0].id, lost.id, "та самая точка");
+      ok(/Розетка/.test(un[0].name) && !/socket/.test(un[0].name), "имя — по справочнику типов главного потока, а не сырой тип из воркера: " + un[0].name);
       ok(toasts.some((t) => /без трассы/i.test(t)), "сообщение говорит про непроложенные, а не «Трассы построены»: " + toasts.join(" | "));
     });
     test("сбой воркера: «занято» снимается, «Построить» достраивает напрямую и не трогает готовые трассы (аудит п.8)", () => {
@@ -8966,8 +8970,11 @@ test("фото: deleteProject чистит кэш фото своего прое
       const w2 = FakeWorker.last, j2 = w2.job();
       ok(j2 && j2.jobId !== j1.jobId, "посчитано заново по текущему состоянию");
       ok(j2.project.routes.some((r) => r.manual), "новый снимок уже с ручной правкой");
-      w2.reply({ ok: true, jobId: j2.jobId, routes: j2.project.routes, unrouted: [] });
+      // результат, где у одной точки трассы не вышло: набор проложенных точек сменился
+      const lost = j2.project.routes.find((r) => !r.manual);
+      w2.reply({ ok: true, jobId: j2.jobId, routes: j2.project.routes.filter((r) => r !== lost), unrouted: [{ id: lost.fromId, name: "Розетка", reason: "тест" }] });
       ok(!RT.jobs.state().auto, "автоперестройка завершена");
+      ok(RT.routeStatus(P).code !== "stale", "после приёма статус не залипает на «нужен пересчёт»: " + RT.routeStatus(P).code);
     });
     test("воркер возвращает номер задания и список без трассы во всех ответах", () => {
       const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "solver-worker.js"), "utf8");
@@ -9095,6 +9102,92 @@ test("фото: deleteProject чистит кэш фото своего прое
       const crosses = (pts) => { for (let i = 0; i < pts.length - 1; i++) if (G.segIntersect(pts[i], pts[i + 1], walls[0].a, walls[0].b)) return true; return false; };
       ok(!crosses(routes[1].points), "физически вторая линия перегородку не пересекает");
       ok(!crosses(out.get("r2").pts), "и на экране тоже не пересекает");
+    });
+  }
+
+  // ===== 73. Аудит 11.11, пакет 5: расчёт и интерфейс =====
+  {
+    const RT = EP.Plan.Routes, CX = EP.Plan.Circuits, SC = EP.Plan.Scheme;
+    test("стояк через этаж: вертикаль = сумма высот пройденных этажей (аудит п.14)", () => {
+      const { P } = install();
+      P.panels.push(M.newPanel(-50, -50, "Щ1"));
+      const r1 = M.newElement("riser", null, 0, 270, "power"); r1.params = { x: 200, y: 200 }; P.elements.push(r1);
+      const f2 = EP.Plan.Core.addFloor("2 этаж");
+      const f3 = EP.Plan.Core.addFloor("3 этаж");
+      const r3 = M.newElement("riser", null, 0, 270, "power"); r3.params = { x: 200, y: 200 }; P.elements.push(r3);
+      r1.riserLink = r3.id; r3.riserLink = r1.id;
+      P.floors.forEach((f) => { f.height = 300; });
+      eq(r3.floorId, f3.id, "приёмник на 3 этаже");
+      eq(RT.riserRole(P, r1), "source", "источник на 1 этаже");
+      eq(RT.riserRun(P, r1), 600, "кабель поднимается через два этажа — 600, а не 300");
+      f2.height = 320;
+      eq(RT.riserRun(P, r1), 620, "высоты пройденных этажей складываются");
+    });
+    const lineWith = (types, breaker, poles) => {
+      const room = M.newRoom(G.rectPoints(0, 0, 500, 400), "К");
+      const pn = M.newPanel(30, 200, "ЩК");
+      const c = M.newCircuit("QF1", "#e11", breaker); if (poles) c.poles = poles;
+      const { P } = install({ rooms: [room], panels: [pn], circuits: [c] });
+      types.forEach((t, i) => { const e = M.newElement(t, P.rooms[0].id + ":0", 100 + i * 80, t === "light" ? 270 : 30, t === "light" ? "light" : "power"); if (t === "light") { e.wallId = null; e.params = { x: 150 + i * 60, y: 200 }; } e.circuitId = P.circuits[0].id; P.elements.push(e); });
+      RT.build({ silent: true });
+      return { P, c: P.circuits[0] };
+    };
+    const secOf = (m) => { const r = String(m || "").match(/[×x](\d+(?:\.\d+)?)/); return r ? parseFloat(r[1]) : null; };
+    const NEED = { 10: 1.5, 16: 2.5, 25: 4, 32: 6, 40: 10, 50: 10, 63: 16 };
+    test("автоподбор кабеля не ниже таблицы и один и тот же в схеме и смете (аудит п.16)", () => {
+      [10, 16, 25, 32, 40, 50, 63].forEach((br) => {
+        const { P, c } = lineWith(["socket", "socket"], br);
+        const auto = CX.autoCable(P, c);
+        ok(secOf(auto) >= NEED[br], br + "A: сечение " + auto + " не меньше " + NEED[br]);
+        eq(SC.autoCable(P, c), auto, br + "A: однолинейка показывает тот же кабель");
+        const per = EP.Plan.Calc.perCircuit(P).find((x) => x.id === c.id);
+        ok(per && per.mark === auto, br + "A: «По линиям» и смета — тот же кабель: " + (per && per.mark) + " / " + auto);
+        const items = EP.Plan.Calc.calcByRoutes(P).items;
+        ok(items.some((it) => it.type === "material" && it.name.indexOf(auto) >= 0), br + "A: в смете кабель " + auto);
+      });
+    });
+    test("свет: 3×1.5 под автомат 10A, под 16A — уже 2.5; новая линия света получает 10A", () => {
+      const a = lineWith(["light", "light"], 10);
+      eq(secOf(CX.autoCable(a.P, a.c)), 1.5, "свет на 10A — 1.5");
+      const b = lineWith(["light", "light"], 16);
+      ok(secOf(CX.autoCable(b.P, b.c)) >= 2.5, "свет на 16A — не меньше 2.5 по таблице");
+      const { P } = install();
+      const e = M.newElement("light", null, 0, 270, "light"); e.params = { x: 100, y: 100 }; P.elements.push(e);
+      EP.Plan.Elements.assignNewCircuit(e);
+      const cc = P.circuits.find((x) => x.id === e.circuitId);
+      eq(cc && cc.breaker, 10, "линия, созданная для светильника, — на автомате 10A");
+    });
+    test("«Проверки» сверяют с автоматом и автоподобранный кабель", () => {
+      const { P, c } = lineWith(["socket"], 32);
+      const SCa = SC.autoCable; SC.autoCable = () => "ВВГнг 3×2.5"; // как будто подбор ошибся
+      const CXa = CX.autoCable; CX.autoCable = () => "ВВГнг 3×2.5";
+      try {
+        const rr = EP.Plan.Rules.run(P), list = Array.isArray(rr) ? rr : rr.issues || [];
+        ok(list.some((x) => x.circuitId === c.id && /2\.5/.test(x.msg || "")), "тонкий автоподобранный кабель помечен: " + list.map((x) => x.msg).join(" | ").slice(0, 200));
+      } finally { SC.autoCable = SCa; CX.autoCable = CXa; }
+    });
+    test("оптимизатор: сначала корректность — разрыв дороже любых пересечений (аудит п.15)", () => {
+      const bad = RT.costOf({ unrouted: 1, crossings: 0, crossSame: 0, holes: 0, offTrunk: 0, turns: 0, len: 0 });
+      const ugly = RT.costOf({ unrouted: 0, crossings: 400, crossSame: 300, holes: 200, offTrunk: 50000, turns: 900, len: 900000 });
+      ok(bad > ugly, "вариант с одной непроложенной точкой хуже самого запутанного полного: " + bad + " vs " + ugly);
+      const sc = RT.scoreRoutes(lineWith(["socket"], 16).P);
+      ok(typeof sc.invalid === "number", "у оценки есть отдельный счёт некорректных мест");
+    });
+    test("статус схемы трасс: актуально / нужен пересчёт / есть разрыв / есть конфликт", () => {
+      const { P } = lineWith(["socket", "socket"], 16);
+      eq(RT.routeStatus(P).code, "ok", "после сборки — актуально");
+      // правка без перестройки (как будто фоновая перестройка ещё не вернулась)
+      P.elements[0].offset += 50;
+      eq(RT.routeStatus(P).code, "stale", "входы изменились — нужен пересчёт");
+      RT.build({ silent: true });
+      eq(RT.routeStatus(P).code, "ok", "перестроили — снова актуально");
+      P.routes = P.routes.slice(1);
+      ok(RT.routeStatus(P).code === "gap" || RT.routeStatus(P).code === "stale", "трассу потеряли — разрыв (или пересчёт)");
+      RT.build({ silent: true });
+      P.voids = [M.newVoid({ x: 0, y: 0 }, { x: 500, y: 400 }, "shaft")]; // шахта на всю комнату — обойти нельзя
+      RT.build({ silent: true });
+      eq(RT.routeStatus(P).code, "conflict", "трасса через шахту — конфликт");
+      ok(/конфликт/i.test(RT.routeStatus(P).text), "текст статуса: " + RT.routeStatus(P).text);
     });
   }
 
