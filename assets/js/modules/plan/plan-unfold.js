@@ -298,9 +298,9 @@
     });
 
     // щит (тоже в <g data-pu-panel> — тянется вдоль стены, сохраняя отступ от неё)
-    (p.panels || []).forEach((pn) => {
-      const c = G().closestOnSeg({ x: pn.x, y: pn.y }, w.a, w.b);
-      if (c.d > 60) return;
+    (G().floorScoped(p).panels || []).forEach((pn) => {
+      const c = G().panelOnWall(p, w, pn);
+      if (!c) return;
       // высота щита — НИЗ корпуса (как в смете и в 3D — G.panelBottom/panelBoxCm, пакет 4);
       // раньше здесь она была серединой, и щит на чертеже стоял на полкорпуса ниже
       const bxc = G().panelBoxCm(p), px = c.t * L, ph = G().panelBottom(p, pn);
@@ -342,7 +342,7 @@
     svg.appendChild(svgEl("text", { x: (inA + inB) / 2, y: ovY - 5 * ks, "font-size": 11 * ks, "text-anchor": "middle", class: "ep-plan-unfdimT" }, Math.round(inB - inA) + ""));
 
     // ШТРОБЫ (по кнопке 〰): откуда физически идёт кабель (потолок/пол) до поста;
-    // вход в блок — раздельно по видам (силовая/свет/слаботочка), см. blockChaseEntries.
+    // вход в блок — раздельно по видам (силовая/свет/слаботочка), см. UnfoldGeo.chases.
     // Символично: широкая полупрозрачная "канавка" + пунктирный центр + подпись сечения.
     // «1:1» (settings.realScale) и ЕДИНАЯ геометрия блока постов — объявлены ДО штроб,
     // потому что штробы ОБЯЗАНЫ идти в те же посты, что нарисованы: раньше штробы
@@ -358,30 +358,19 @@
     const gopt = { k: ks, real, H, inA, inB };
     const blockGeom = (el) => UG.blockGeom(el, gopt);
     if (S.showChases) {
-      // Поверхность (пол/потолок) больше НЕ одна на проект: у каждой группы слоёв своя
-      // (settings.surfaces). Направление штробы считаем НА КАЖДУЮ точку/пост — по её
-      // построенной трассе, иначе по настройкам её группы (G.routeSurface). У блока постов
-      // виды разные (силовая/свет/слаботочка), поэтому там — по виду входа.
-      const RTm = EP.Plan.Routes;
-      const surfFor = (layer, el2) => {
-        if (el2 && el2.type !== "block" && RTm && RTm.surfaceOfEl) return RTm.surfaceOfEl(p, el2);
-        return G().routeSurface ? G().routeSurface(p, layer, el2) : (p.settings.routeType === "floor" ? "floor" : "ceiling");
-      };
-      const isFloor = (layer, el2) => surfFor(layer, el2) === "floor";
-      const y0Of = (layer, el2) => (isFloor(layer, el2) ? H : 0);
-      const KIND_LAYER = { power: "power", light: "light", lv: "lv", warm: "warm" };
-      const CHASE_COL = UG.CHASE_COL;            // цвета и подписи сечений — общие
-      const SIZE_LBL = UG.chaseLabels(p);        // с печатной развёрткой
-      const chaseKindOf = UG.chaseKindOf;
+      // ШТРОБЫ — общий список UnfoldGeo.chases (тот же, что у печатной развёртки и по тем же
+      // правилам, что смета): к щиту, «×n» у параллельных, без штроб к «было» и к точкам без
+      // трассы, силовая штроба блока — в пост входа трассы (аудит цепей, пакет 5)
+      const CHASE_COL = UG.CHASE_COL;
       // одинаковые подписи сечения у соседних штроб блока сливались в «25×3025×30» —
       // рисуем такую подпись рядом (ближе 22см на той же высоте) ОДИН раз
       const lbls = [];
-      const drawChase = (cx, cy0, cy1, kind) => {
+      const drawChase = (cx, cy0, cy1, kind, n) => {
         if (Math.abs(cy1 - cy0) < 1) return;
         const col = CHASE_COL[kind] || CHASE_COL.power;
-        svg.appendChild(svgEl("line", { x1: cx, y1: cy0, x2: cx, y2: cy1, class: "ep-plan-unfchasebg", stroke: col, "stroke-width": kk * 5 }));
+        svg.appendChild(svgEl("line", { x1: cx, y1: cy0, x2: cx, y2: cy1, class: "ep-plan-unfchasebg", stroke: col, "stroke-width": kk * (n > 1 ? 7 : 5) }));
         svg.appendChild(svgEl("line", { x1: cx, y1: cy0, x2: cx, y2: cy1, class: "ep-plan-unfchase", stroke: col, "stroke-width": kk * 1.6 }));
-        const txt = SIZE_LBL[kind] || "";
+        const txt = UG.chaseText(p, kind, n);
         if (!txt) return;
         let labelY = cy0 + (cy1 > cy0 ? 12 * ks : -6 * ks);
         // порог по X — от РЕАЛЬНОЙ ширины подписи (шрифт 8*ks), а не магических 22см:
@@ -393,27 +382,7 @@
         lbls.push({ txt, x: cx, y: labelY });
         svg.appendChild(svgEl("text", { x: cx + 3 * ks, y: labelY, "font-size": 8 * ks, class: "ep-plan-unfchaselbl", fill: col }, txt));
       };
-      els.forEach((el2) => {
-        const xx = el2.offset, yy = H - el2.height;
-        if (el2.type === "block") {
-          const bg = blockGeom(el2);
-          (G().blockChaseEntries ? G().blockChaseEntries(el2) : []).forEach((en) => {
-            const c = bg.cell(en.idx);
-            // выключатель в блоке при разводке по полу — штроба тянется до потолка (дальше к лампе)
-            const enLayer = KIND_LAYER[en.kind] || "power";
-            const y0 = (en.kind === "light" && isFloor(enLayer, el2)) ? 0 : y0Of(enLayer, el2);
-            drawChase(c.cx, y0, c.cy, en.kind);
-          });
-        } else if (el2.layer === "warm") {
-          // ТП: подача обычной штробой к термостату + ОТДЕЛЬНО всегда 50×50 от термостата в пол
-          drawChase(xx, y0Of("warm", el2), yy, "power");
-          if (el2.height > 1) drawChase(xx, yy, H, "warm");
-        } else {
-          const kind = chaseKindOf(el2.layer);
-          const y0 = (el2.type === "switch" && isFloor(el2.layer, el2)) ? 0 : y0Of(el2.layer, el2);
-          drawChase(xx, y0, yy, kind);
-        }
-      });
+      UG.chases(p, w, els, { H, blockGeom }).forEach((c) => drawChase(c.x, c.y0, c.y1, c.kind, c.n));
     }
 
     const TY = EL().TYPES;
@@ -437,7 +406,7 @@
     // AABB символов постов, имён QF и подписей «от угла» — подпись высоты не должна
     // ложиться ни на одно из них. Всё считает общий UnfoldGeo, тем же кодом, что и
     // печатная развёртка (раньше рамки обхода у них уже разъехались: 15×9 против 14×8).
-    const { elBoxes, qfBoxes, obstacles } = UG.labelBoxes(els, gopt, (e) => circ(p, e));
+    const { elBoxes, offPos, obstacles } = UG.labelBoxes(els, gopt, (e) => circ(p, e));
     const cornerOf = (x) => UG.cornerOf(x, inA, inB);
     const placeHLabel = (idx) => UG.placeHLabel(idx, elBoxes, obstacles, ks);
     // ДВА прохода: сначала все символы постов, потом ВСЕ размеры/подписи высоты —
@@ -525,17 +494,11 @@
         const gh = svgEl("g", { "data-pu-dimh": el.id, transform: `translate(0 ${uh})` });
         gh.appendChild(svgEl("line", { x1: cx0, y1: y, x2: x, y2: y, class: "ep-plan-unfdimE", "stroke-width": kk * 0.7 }));
         gh.appendChild(svgEl("line", { x1: cx0, y1: y - 3 * ks, x2: cx0, y2: y + 3 * ks, class: "ep-plan-unfdimE", "stroke-width": kk * 0.7 }));
-        // цифра «от угла» стоит на середине выноски — а там часто оказывается ДРУГОЙ пост
-        // (соседняя точка на близкой высоте) или его имя QF, и цифры сливались. Приподнимаем,
-        // пока не выйдет из чужих габаритов (тот же приём, что у подписи высоты). Если
-        // пользователь двигал линию сам (uh) — автоподъём не мешаем, стоит ровно где поставил.
-        const lx = (cx0 + x) / 2;
-        let ly = y - 3 * ks;
-        if (!uh) {
-          const bad = (yy2) => elBoxes.concat(qfBoxes).some((o) => Math.abs(lx - o.x) < 12 * ks + o.hw && Math.abs(yy2 - o.y) < 6 * ks + o.hh);
-          for (let i = 0; i < 2 && bad(ly); i++) ly -= 7 * ks; // не больше двух шагов — иначе цифра уедет от своей выноски
-        }
-        gh.appendChild(svgEl("text", { x: lx, y: ly, "font-size": 9.5 * ks, "text-anchor": "middle", class: "ep-plan-unfdimT" }, Math.round(Math.abs(x - cx0)) + ""));
+        // цифра «от угла» — место считает общий UnfoldGeo.offLabelPos (через labelBoxes, тем
+        // же кодом, что печатная развёртка): обход чужого поста/имени линии, у короткой выноски
+        // — снаружи засечки угла. Позиция — без ручного сдвига линии: его даёт transform gh.
+        const op = offPos[idx] || { x: (cx0 + x) / 2, y: y - 3 * ks };
+        gh.appendChild(svgEl("text", { x: op.x, y: op.y, "font-size": 9.5 * ks, "text-anchor": "middle", class: "ep-plan-unfdimT" }, Math.round(Math.abs(x - cx0)) + ""));
         const gx = Math.abs(x - cx0) - 18 * ks;
         if (gx > 10 * ks) gh.appendChild(svgEl("line", { x1: cx0, y1: y, x2: cx0 + (x > cx0 ? gx : -gx), y2: y, stroke: "transparent", "stroke-width": 10 * ks }));
         svg.appendChild(gh);

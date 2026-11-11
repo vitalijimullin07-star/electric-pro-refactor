@@ -9505,6 +9505,123 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 77. Аудит цепей, пакет 5: развёртки — штробы как в смете, щит в PDF =====
+  {
+    const RT = EP.Plan.Routes, UG = EP.Plan.UnfoldGeo;
+    const chasesOf = (P, w) => {
+      const room = P.rooms.find((r) => String(w.id).indexOf(r.id + ":") === 0) || P.rooms[0];
+      const H = room.height || P.settings.ceilingHeight;
+      const els = P.elements.filter((e) => e.wallId === w.id);
+      return UG.chases(P, w, els, { H, blockGeom: (el) => UG.blockGeom(el, { k: 1, real: false, H, inA: 0, inB: w.len }) });
+    };
+    const allChases = (P) => P.rooms.reduce((acc, r) => acc.concat(...G.walls(r).map((w) => chasesOf(P, w))), []);
+    const lenOf = (cs) => cs.reduce((s2, c) => s2 + Math.abs(c.y1 - c.y0) * c.n, 0);
+    const flat = () => {
+      const q = M.newCircuit("QF1", "#e11", 16), ql = M.newCircuit("QF2", "#fa0", 10);
+      const pk = M.newPanel(200, 8, "ЩК"); // середина верхней стены — щит ровно на одной стене
+      const { P } = install({ panels: [pk], circuits: [q, ql] });
+      const W = (i) => P.rooms[0].id + ":" + i;
+      const cid = P.circuits[0].id, lid = P.circuits[1].id;
+      [[1, 60], [1, 160], [1, 260]].forEach(([wi, off]) => { const e = M.newElement("socket", W(wi), off, 30, "power"); e.circuitId = cid; P.elements.push(e); });
+      const b = M.newElement("block", W(2), 150, 30, "power"); b.params = { items: ["socket", "socket", "internet"] }; b.circuitId = cid; P.elements.push(b);
+      const sw = M.newElement("switch", W(3), 120, 90, "light"); sw.circuitId = lid; P.elements.push(sw);
+      const lamp = M.newElement("light", null, 0, 270, "light"); lamp.params = { x: 200, y: 150 }; lamp.circuitId = lid; P.elements.push(lamp);
+      sw.targetIds = [lamp.id];
+      const tp = M.newElement("warmfloor", W(3), 220, 30, "warm"); tp.circuitId = cid; P.elements.push(tp);
+      const inet = M.newElement("internet", W(2), 320, 30, "lv"); P.elements.push(inet);
+      RT.build({ silent: true });
+      return { P, b, sw, pk: P.panels[0] };
+    };
+    test("сумма штроб всех развёрток = штроба в смете (одно и то же правило)", () => {
+      const { P } = flat();
+      const res = EP.Plan.Calc.calcByRoutes(P);
+      const est = Object.keys(res.strobe).reduce((s2, k) => s2 + res.strobe[k], 0) * 100;
+      const unf = lenOf(allChases(P));
+      near(unf, est, 1, "развёртки " + unf.toFixed(1) + " см против сметы " + est.toFixed(1) + " см");
+    });
+    test("штроба к щиту — на его стене, до корпуса; «×n» у параллельных", () => {
+      const { P, pk } = flat();
+      const w0 = G.walls(P.rooms[0])[0];
+      const cs = chasesOf(P, w0);
+      const box = G.panelBoxCm(P).h, bottom = G.panelBottom(P, pk);
+      const pc = cs.filter((c) => Math.abs((c.y1) - (270 - bottom - box)) < 0.5 && c.y0 === 0);
+      ok(pc.length >= 1, "есть штроба от потолка до верха корпуса");
+      const nPow = Math.ceil(P.routes.filter((r) => r.toPanel && r.toId === pk.id && !/^(lv|tv|cctv)$/.test(r.layer)).length / UG.chaseCap(P));
+      ok(pc.some((c) => c.kind === "power" && c.n === nPow), "силовых параллельно — по кабелям/ёмкости: " + nPow);
+      eq(UG.chaseText(P, "power", 3), "25×30 ×3", "подпись «×n»");
+      eq(UG.chaseText(P, "power", 1), "25×30", "одна штроба — без «×»");
+    });
+    test("без штробы: точка «было» и точка без трассы; до сборки трасс — показываем все", () => {
+      const { P } = flat();
+      const w1 = G.walls(P.rooms[0])[1];
+      const s0 = P.elements.find((e) => e.wallId === w1.id);
+      s0.status = "existing";
+      ok(!chasesOf(P, w1).some((c) => Math.abs(c.x - s0.offset) < 0.5), "к «было» штробы нет");
+      const fresh = M.newElement("socket", w1.id, 330, 30, "power"); P.elements.push(fresh);
+      ok(!chasesOf(P, w1).some((c) => Math.abs(c.x - 330) < 0.5), "к точке без трассы штробы нет (трассы построены)");
+      P.routes = [];
+      ok(chasesOf(P, w1).some((c) => Math.abs(c.x - 330) < 0.5), "трасс ещё нет — развёртка показывает, откуда пойдёт штроба");
+    });
+    test("силовая штроба блока — в пост входа трассы («Штроба к посту»), выключатель по полу — на всю высоту", () => {
+      const { P, b, sw } = flat();
+      b.entryPost = 1;
+      const w2 = G.walls(P.rooms[0])[2];
+      const H = 270, bg = UG.blockGeom(b, { k: 1, real: false, H, inA: 0, inB: w2.len });
+      const pw = chasesOf(P, w2).filter((c) => c.kind === "power" && Math.abs(c.y1 - (H - b.height)) < 0.5);
+      ok(pw.some((c) => Math.abs(c.x - bg.cell(1).cx) < 0.01), "в пост 2 — куда заходит трасса");
+      P.settings.surfaces = Object.assign({}, P.settings.surfaces, { light: "floor" });
+      RT.build({ silent: true });
+      const w3 = G.walls(P.rooms[0])[3];
+      const cs = chasesOf(P, w3).filter((c) => Math.abs(c.x - sw.offset) < 0.5);
+      ok(cs.some((c) => Math.min(c.y0, c.y1) === 0 && Math.max(c.y0, c.y1) === 270), "выключатель по полу — от пола до потолка");
+    });
+    test("«Авто»-вход силовой трассы в блок — среди розеток/выключателей, не в пост ТВ/интернета", () => {
+      const el = { params: { items: ["socket", "internet", "tv"] } };
+      eq(G.blockEntryIndex(el), 0, "в розетку, а не в интернет (середина всех постов = 1)");
+      eq(G.blockEntryIndex({ params: { items: ["socket", "socket", "socket"] } }), 1, "без слаботочки — середина, как раньше");
+      eq(G.blockEntryIndex({ params: { items: ["internet", "socket", "socket", "tv"] } }), 1, "середина среди силовых постов");
+      eq(G.blockEntryIndex({ entryPost: 2, params: { items: ["socket", "internet", "tv"] } }), 2, "выбор «Штроба к посту» главнее");
+    });
+    test("цифра «от угла» у короткой выноски не ложится на свой пост и имя линии; подпись высоты её обходит", () => {
+      // как домофон «Int1» в 30 см от угла прихожей: середина выноски — под самим постом,
+      // над ней — его имя линии; «25» налезало на «Int1» в обеих развёртках
+      const o = { k: 1, real: false, H: 270, inA: 5, inB: 235 };
+      const els = [{ id: "a", type: "intercom", offset: 30, height: 150, circuitId: "c" }];
+      const lb = UG.labelBoxes(els, o, () => ({ name: "Int1" }));
+      const op = lb.offPos[0];
+      const half = 2 * 2.8 + 1.5, hit = (b) => Math.abs(op.x - b.x) < half + b.hw && Math.abs(op.y - 3 - b.y) < 5 + b.hh;
+      ok(op && !hit(lb.qfBoxes[0]) && !hit(lb.elBoxes[0]), "цифра не на посту и не на имени линии: " + JSON.stringify(op));
+      ok(op.x < 5, "короткая выноска — цифра снаружи засечки угла (x=" + op.x.toFixed(1) + ")");
+      // длинная выноска без помех — как было, середина над линией
+      const lb2 = UG.labelBoxes([{ id: "b", type: "socket", offset: 80, height: 30 }], o, () => null);
+      eq(lb2.offPos[0].x, 42.5, "середина выноски (от ближнего угла 5)"); eq(lb2.offPos[0].y, 270 - 30 - 3, "над линией");
+      // препятствие для подписи высоты — там, где цифра реально стоит
+      ok(lb.offBoxes.some((b) => b.x === op.x && b.y === op.y), "offBoxes = итоговая позиция цифры");
+      // ручной сдвиг линии — цифра ровно над ней, без автообхода
+      const lb3 = UG.labelBoxes([{ id: "c", type: "socket", offset: 30, height: 150, circuitId: "c", uDim: { h: 20 } }], o, () => ({ name: "Int1" }));
+      eq(lb3.offPos[0].x, 17.5, "сдвинутую руками — не двигаем"); eq(lb3.offPos[0].uh, 20, "сдвиг отдаётся отдельно");
+      const fs = require("fs");
+      const ex = fs.readFileSync(__dirname + "/../assets/js/modules/plan/plan-export.js", "utf8");
+      const un = fs.readFileSync(__dirname + "/../assets/js/modules/plan/plan-unfold.js", "utf8");
+      ok(/lb\.offPos\[idx\]/.test(ex) && /offPos\[idx\]/.test(un), "обе развёртки ставят цифру по общему offPos");
+      ok(!/ly -= 7 \*/.test(ex) && !/ly -= 7 \*/.test(un), "своих копий автоподъёма не осталось");
+    });
+    test("щит на общей стене — только в развёртке своей комнаты; в печатной развёртке есть щит и «×n»", () => {
+      const a = M.newRoom(G.rectPoints(0, 0, 400, 300), "A"), bR = M.newRoom(G.rectPoints(400, 0, 300, 300), "B");
+      const { P } = install({ rooms: [a, bR], panels: [M.newPanel(392, 150, "ЩК")] }); // щит в комнате A у общей стены x=400
+      const pn = P.panels[0];
+      const wa = G.walls(P.rooms[0])[1], wb = G.walls(P.rooms[1])[3];
+      ok(G.panelOnWall(P, wa, pn), "у стены комнаты A щит есть");
+      ok(!G.panelOnWall(P, wb, pn), "у той же стены со стороны B — нет");
+      const fs = require("fs");
+      const ex = fs.readFileSync(__dirname + "/../assets/js/modules/plan/plan-export.js", "utf8");
+      const un = fs.readFileSync(__dirname + "/../assets/js/modules/plan/plan-unfold.js", "utf8");
+      ok(/UG\.chases\(p, w, sorted/.test(ex) && /UG\.chases\(p, w, els/.test(un), "обе развёртки берут штробы из одного списка");
+      ok(!/blockChaseEntries/.test(ex) && !/blockChaseEntries/.test(un), "своих копий правил штроб у развёрток не осталось");
+      ok(/class="unfpanel"/.test(ex), "печатная развёртка рисует щит");
+    });
+  }
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

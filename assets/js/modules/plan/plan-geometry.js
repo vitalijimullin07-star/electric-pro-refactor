@@ -1014,6 +1014,19 @@
     const D = G.PANEL_BOX_DEF;
     return { w: b.wmm > 0 ? b.wmm / 10 : D.w, h: b.hmm > 0 ? b.hmm / 10 : D.h, d: b.dmm > 0 ? b.dmm / 10 : D.d };
   };
+  // Щит на этой стене? (развёртки, штроба к щиту) — ближе 60 см к оси И с ЕЁ стороны: общая
+  // стена двух комнат — два объекта стены с одной осью, а щит висит только с одной стороны
+  // (раньше он рисовался и считался в развёртках ОБЕИХ комнат). Щит прямо на оси — на обеих.
+  G.panelOnWall = (project, w, pn) => {
+    if (!w || !pn) return null;
+    const c = G.closestOnSeg({ x: pn.x, y: pn.y }, w.a, w.b);
+    if (c.d > 60) return null;
+    if (c.d > 2 && !w.isBeam) {
+      const fr = G.wallFrame(project, w);
+      if (fr && fr.nrm && (pn.x - c.x) * fr.nrm.x + (pn.y - c.y) * fr.nrm.y < 0) return null;
+    }
+    return c;
+  };
   G.panelBottom = (project, pn) => {
     const s = (project && project.settings) || {};
     const v = (pn && pn.height != null) ? pn.height : s.panelHeight;
@@ -1040,7 +1053,15 @@
     const items = (el.params && el.params.items) || [];
     const n = Math.max(1, items.length);
     let idx = el.entryPost;
-    if (idx == null || idx < 0 || idx >= n) idx = n >= 2 ? Math.floor((n - 1) / 2) : 0;
+    if (idx == null || idx < 0 || idx >= n) {
+      // «Авто» — середина среди постов, куда приходит СВОЙ кабель блока (розетки/выключатели):
+      // у ТВ/интернета теперь свой кабель к роутеру (аудит цепей, пакет 3), и силовая трасса
+      // в блоке «розетка + интернет + ТВ» заходила бы в пост интернета. Блок без слаботочных
+      // постов — как раньше (середина всех постов).
+      const pw = items.map((t, i) => (t === "socket" || t === "switch") ? i : -1).filter((i) => i >= 0);
+      if (pw.length && pw.length < items.length) idx = pw[Math.floor((pw.length - 1) / 2)];
+      else idx = n >= 2 ? Math.floor((n - 1) / 2) : 0;
+    }
     return idx;
   };
   // Мировая точка входа штробы в блок (позиция нужного подрозетника, с отступом от стены).
