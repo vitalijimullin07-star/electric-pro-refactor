@@ -203,9 +203,22 @@
     }
 
     // ---------- сетка (адаптивный шаг) ----------
+    /* Сетка — ТРИ узла <path> (мелкая, крупная, оси), а не линия на каждую черту. Раньше
+       это были ~80 отдельных <line> во весь холст, и каждая — свой элемент отрисовки с
+       огромным охватом: движок на КАЖДОМ кадре любого движения (сдвиг плана, масштаб,
+       перенос комнаты) заново раскладывает сцену по слоям, и цена этой раскладки росла
+       именно от числа таких длинных пересекающихся элементов. Замер (28 комнат, CPU ×4):
+       раскладка 12,6 мс на кадр с линиями и 4,5 мс с одним контуром — при той же картинке.
+       Узлы создаются один раз и дальше только получают новый d (без пересоздания). */
+    const gridNodes = {};
+    function gridPath(key, cls, d, sw) {
+      let n = gridNodes[key];
+      if (!n) { n = gridNodes[key] = el("path", { class: cls, fill: "none" }); layers.grid.appendChild(n); }
+      if (n.getAttribute("d") !== d) n.setAttribute("d", d);
+      const s = String(sw);
+      if (n.getAttribute("stroke-width") !== s) n.setAttribute("stroke-width", s);
+    }
     function drawGrid() {
-      const g = layers.grid;
-      while (g.firstChild) g.removeChild(g.firstChild);
       const px = pxToCm();
       let step = CFG.gridSteps[CFG.gridSteps.length - 1];
       for (const s of CFG.gridSteps) { if (s / px >= CFG.gridMinPx) { step = s; break; } }
@@ -215,17 +228,19 @@
       const x0 = Math.floor(gx / step) * step, x1 = gx + gw;
       const y0 = Math.floor(gy / step) * step, y1 = gy + gh;
       const sw = px; // ~1px в мировых единицах
+      let minor = "", major = "";
       for (let x = x0; x <= x1; x += step) {
-        const major = x % CFG.gridMajorEvery === 0;
-        g.appendChild(el("line", { x1: x, y1: gy, x2: x, y2: y1, class: major ? "ep-plan-grid-major" : "ep-plan-grid-line", "stroke-width": sw * (major ? 1.4 : 1) }));
+        const seg = "M" + x + " " + gy + "V" + y1;
+        if (x % CFG.gridMajorEvery === 0) major += seg; else minor += seg;
       }
       for (let y = y0; y <= y1; y += step) {
-        const major = y % CFG.gridMajorEvery === 0;
-        g.appendChild(el("line", { x1: gx, y1: y, x2: x1, y2: y, class: major ? "ep-plan-grid-major" : "ep-plan-grid-line", "stroke-width": sw * (major ? 1.4 : 1) }));
+        const seg = "M" + gx + " " + y + "H" + x1;
+        if (y % CFG.gridMajorEvery === 0) major += seg; else minor += seg;
       }
+      gridPath("minor", "ep-plan-grid-line", minor, sw);
+      gridPath("major", "ep-plan-grid-major", major, sw * 1.4);
       // оси координат (начало — точка отсчёта квартиры)
-      g.appendChild(el("line", { x1: 0, y1: gy, x2: 0, y2: y1, class: "ep-plan-grid-axis", "stroke-width": sw * 1.6 }));
-      g.appendChild(el("line", { x1: gx, y1: 0, x2: x1, y2: 0, class: "ep-plan-grid-axis", "stroke-width": sw * 1.6 }));
+      gridPath("axis", "ep-plan-grid-axis", "M0 " + gy + "V" + y1 + "M" + gx + " 0H" + x1, sw * 1.6);
     }
 
     // ---------- указатели: пан / пинч / тап ----------
@@ -352,7 +367,9 @@
       // в viewBox (одна перерисовка на весь жест)
       if (pts.size === 0 && !(dragHandler && dragMoved) && startInertia()) { /* зафиксирует сама инерция */ }
       else if (pts.size === 0 && liveT) apply();
-      if (dragHandler && dragMoved && pts.size === 0) { dragMoved = false; dragHandler(0, 0, "end"); }
+      // cb.dragDone — ПЕРЕД "end": снять живой слой тяги, чтобы обработчик отпускания
+      // (запись, перерисовка) работал уже с основной сценой
+      if (dragHandler && dragMoved && pts.size === 0) { dragMoved = false; if (cb.dragDone) cb.dragDone(false); dragHandler(0, 0, "end"); }
       if (tapStart && tapStart.id === e.pointerId) {
         const dt = Date.now() - tapStart.t;
         if (dt <= CFG.tapMaxMs) {
@@ -499,7 +516,9 @@
       onHover: (fn) => { cb.hover = fn; },     // (worldPt, e) — живой предпросмотр снапа/прицела пера
       onHoverEnd: (fn) => { cb.hoverEnd = fn; }, // указатель ушёл с холста — убрать предпросмотр
       onLongPress: (fn) => { cb.longPress = fn; }, // (worldPt, e) — держали палец на месте, e.clientX/Y для позиционирования UI
-      setDragHandler: (fn) => { dragHandler = fn || null; dragMoved = false; },
+      // смена обработчика посреди тяги: "end" прежнему уже не придёт — снимаем его слои сами
+      setDragHandler: (fn) => { if (dragMoved && cb.dragDone) cb.dragDone(true); dragHandler = fn || null; dragMoved = false; },
+      onDragDone: (fn) => { cb.dragDone = fn; }, // (aborted) — тяга закончилась или оборвана
       destroy: () => { stopMotion(); clearTimeout(commitTimer); if (ro) ro.disconnect(); if (wrap.parentNode) wrap.parentNode.removeChild(wrap); }
     };
   }
