@@ -193,9 +193,46 @@
           vpos[j] = { x: p.x + v.x, y: p.y + v.y }; push(vpos[j]);
         }
       }
+      // ЭКРАННЫЙ РАЗНОС НЕ ДОЛЖЕН ПРОТАСКИВАТЬ ЛИНИЮ СКВОЗЬ СТЕНУ (аудит 11.11, п.13). Грани
+      // стен ограничивают ленту только для ПАРАЛЛЕЛЬНЫХ стен; перегородка поперёк, которая
+      // обрывается между линиями пучка (или косая стена рядом), раздвигу не мешала, и линия,
+      // идущая под торцом перегородки, на экране уезжала через неё. Проверяем итог: если
+      // нарисованная линия пересекает стену, которую физическая трасса не пересекает, эта
+      // линия рисуется по своему физическому месту (лучше совпасть с соседкой, чем показать
+      // кабель там, где его нет).
+      if (opts && opts.walls && opts.walls.length && S.some((x) => x && x.d) && newCross(src, pts, opts.walls)) {
+        out.set(r.id, { pts: src.map((q) => ({ x: q.x, y: q.y })), vpos: src.map((q) => ({ x: q.x, y: q.y })), shift: src.slice(1).map(() => ({ x: 0, y: 0 })) });
+        return;
+      }
       out.set(r.id, { pts, vpos, shift });
     });
     return out;
+  }
+  // пересечение отрезков (с касанием)
+  function hit(a, b, c, d) {
+    const o = (p, q, r) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+    const d1 = o(c, d, a), d2 = o(c, d, b), d3 = o(a, b, c), d4 = o(a, b, d);
+    return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+  }
+  function crossed(pts, walls, w) {
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1];
+      if (Math.max(a.x, b.x) < w.x0 || Math.min(a.x, b.x) > w.x1 || Math.max(a.y, b.y) < w.y0 || Math.min(a.y, b.y) > w.y1) continue;
+      if (hit(a, b, w.a, w.b)) return true;
+    }
+    return false;
+  }
+  // есть ли у нарисованной ломаной стена, которую физическая не пересекает
+  function newCross(src, pts, walls) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    pts.concat(src).forEach((q) => { if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; if (q.y < y0) y0 = q.y; if (q.y > y1) y1 = q.y; });
+    for (let j = 0; j < walls.length; j++) {
+      const w0 = walls[j];
+      const w = { a: w0.a, b: w0.b, x0: Math.min(w0.a.x, w0.b.x), x1: Math.max(w0.a.x, w0.b.x), y0: Math.min(w0.a.y, w0.b.y), y1: Math.max(w0.a.y, w0.b.y) };
+      if (w.x1 < x0 || w.x0 > x1 || w.y1 < y0 || w.y0 > y1) continue;
+      if (crossed(pts, walls, w) && !crossed(src, walls, w)) return true;
+    }
+    return false;
   }
 
   /* Точка касания на ОТОБРАЖАЕМОЙ трассе → та же точка на физической: правка трассы

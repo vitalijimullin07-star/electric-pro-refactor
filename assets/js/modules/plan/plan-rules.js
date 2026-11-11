@@ -199,6 +199,21 @@
         if (e) badIds.add(e.id);
       });
     }
+    // трасса сквозь вентшахту (аудит п.9): обход по комнате не нашёлся — шахта перекрыла проход
+    // или точка стоит вплотную к ней. Кабель через шахту не проложить — говорим, где и что делать
+    if (RT && RT.shaftConflicts) {
+      const elById = new Map((p.elements || []).map((e) => [e.id, e]));
+      const TYn = (EP.Plan.Elements && EP.Plan.Elements.TYPES) || {};
+      const cName = new Map((p.circuits || []).map((c) => [c.id, c.name]));
+      const seen = new Set();
+      RT.shaftConflicts(p).slice(0, 30).forEach((x) => {
+        const key = x.fromId + "|" + x.shaftId;
+        if (seen.has(key)) return; seen.add(key);
+        const e = elById.get(x.fromId), nm = e ? ((TYn[e.type] || {}).name || "Точка") : "Трасса";
+        issues.push({ id: e ? e.id : null, msg: (x.circuitId && cName.get(x.circuitId) ? cName.get(x.circuitId) + ", " : "") + nm + ": трасса проходит через вентшахту «" + x.shaft + "» — обойти по комнате не получилось. Перенеси точку или нарисуй магистраль (⇉) в обход шахты" });
+        if (e) badIds.add(e.id);
+      });
+    }
     (p.elements || []).forEach((e) => {
       if (e.type !== "pir" && e.type !== "lux") return;
       const tid = (G().allTargetIds ? G().allTargetIds(e) : [])[0]; // цель может быть массивом (несколько на клавишу)
