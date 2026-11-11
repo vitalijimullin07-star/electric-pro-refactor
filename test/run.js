@@ -1314,10 +1314,11 @@ test("calcByRoutes: штробы/подрозетники/кабель/ниша 
   P.settings.cableRoundM = 0; // точная формула (до 0,1 м); округление до метра — отдельный тест
   const res = EP.Plan.Calc.calcByRoutes(P);
   ok(res && res.items.length, "есть позиции");
-  // спуск точки: 270-30=240; спуск щита: 270-150=120 → 3.6 м штробы 25x30 по бетону
+  // спуск точки: 270-30=240; у щита штроба идёт только до ВЕРХА корпуса (низ 150 + высота
+  // корпуса), а не до его низа — стену за корпусом не штробят (аудит цепей, пакет 4)
   const strb = res.items.find((i) => i.name === "Штробление 25x30 бетон");
   ok(strb, "есть штробление по материалу");
-  near(strb.qty, 3.6, 0.05, "метры штробы по трассе");
+  near(strb.qty, 2.4 + (270 - 150 - G.panelBoxCm(P).h) / 100, 0.05, "метры штробы по трассе");
   // подрозетники: розетка (обычный) — бетон; выключатель (глубокий) — бетон
   const drillStd = res.items.find((i) => i.name.indexOf("обычных бетон") >= 0);
   const drillDeep = res.items.find((i) => i.name.indexOf("глубоких бетон") >= 0);
@@ -1472,7 +1473,7 @@ test("calcByRoutes: слаботочка не сливается с силово
   // слаботочка — ОТДЕЛЬНАЯ строка с суффиксом (не совпадает с силовой той же ширины)
   const lv = res.items.find((i) => i.name === "Штробление 25x30 бетон (слаботочка)");
   ok(lv, "слаботочка — своя строка");
-  near(lv.qty, 2.6, 0.05, "свой спуск (140см) + спуск у щита (120см)");
+  near(lv.qty, 1.4 + (270 - 150 - G.panelBoxCm(P).h) / 100, 0.05, "свой спуск (140см) + у щита до верха корпуса");
   // интернет/ТВ/видеонаблюдение — «Витая пара» (просьба пользователя), не «Слаботочный (UTP/RG-6)»
   ok(res.items.some((i) => i.name.indexOf("Витая пара") >= 0), "марка слаботочки — витая пара");
 });
@@ -1484,10 +1485,10 @@ test("calcByRoutes: ТП — подача обычной штробой + ВСЕ
   const r = M.newRoute("warm", "ceiling", [{ x: 200, y: 282 }, { x: 50, y: 50 }], tp.id, pn.id); r.toPanel = true;
   P.routes.push(r);
   const res = EP.Plan.Calc.calcByRoutes(P);
-  // подача к термостату: потолок(270)-высота(30)=240см силовой штробой + спуск у щита 120см = 3.6м
+  // подача к термостату: потолок(270)-высота(30)=240см силовой штробой + у щита до верха корпуса
   const pw = res.items.find((i) => i.name === "Штробление 25x30 бетон");
   ok(pw, "подача к термостату — обычная штроба (не 50×50)");
-  near(pw.qty, 3.6, 0.05, "спуск к термостату 240см + у щита 120см");
+  near(pw.qty, 2.4 + (270 - 150 - G.panelBoxCm(P).h) / 100, 0.05, "спуск к термостату 240см + у щита до верха корпуса");
   // от термостата вниз в пол — ВСЕГДА 50×50, равно высоте термостата (30см)
   const warm = res.items.find((i) => i.name === "Штробление 50x50 бетон");
   ok(warm, "от термостата в пол — отдельная 50×50 строка");
@@ -9442,6 +9443,65 @@ test("фото: deleteProject чистит кэш фото своего прое
       RT.build({ silent: true });
       ok(P.routes.some((r) => String(r.fromId).indexOf("sw24:") === 0), "трасса «до щита» есть");
       eq(RT.feedIssues(P).filter((x) => String(x.id).indexOf("sw24:") === 0).length, 0, "и она не считается висячей");
+    });
+  }
+
+  // ===== 76. Аудит цепей, пакет 4: штроба у щита по каждому щиту, высота щита = низ =====
+  {
+    const RT = EP.Plan.Routes;
+    const twoPanels = (order) => {
+      const q = M.newCircuit("QF1", "#e11", 16);
+      const pk = M.newPanel(10, 150, "ЩК"), pr = M.newPanel(390, 150, "ЩС"); pr.router = true; pr.height = 180;
+      const { P } = install({ panels: order === "rk" ? [pr, pk] : [pk, pr], circuits: [q] });
+      const PK = P.panels.find((x) => x.name === "ЩК"), PR = P.panels.find((x) => x.name === "ЩС");
+      const s1 = M.newElement("socket", P.rooms[0].id + ":0", 100, 30, "power"); s1.circuitId = P.circuits[0].id;
+      const i1 = M.newElement("internet", P.rooms[0].id + ":2", 200, 30, "lv");
+      P.elements.push(s1, i1);
+      return { P, PK, PR };
+    };
+    test("корпус щита: подобранный габарит или типовой на 36 модулей; высота щита — низ корпуса", () => {
+      const p0 = M.newProject("x");
+      const d = G.panelBoxCm(p0);
+      eq([d.w, d.h, d.d].join(","), "39.5,43.5,12", "типовой корпус");
+      p0.settings.panelBox = { wmm: 300, hmm: 500, dmm: 100 };
+      const b = G.panelBoxCm(p0);
+      eq([b.w, b.h, b.d].join(","), "30,50,10", "подобранный корпус");
+      eq(G.panelBottom(p0, { height: null }), p0.settings.panelHeight, "своей высоты нет — общая");
+      eq(G.panelBottom(p0, { height: 175 }), 175, "своя высота щита");
+    });
+    test("штроба у щита — по каждому щиту: своя стена, своя высота, только до корпуса", () => {
+      const { P, PK, PR } = twoPanels();
+      P.rooms[0].wallMat = [null, "Кирпич", null, null]; // ЩС висит на кирпичной стене
+      RT.build({ silent: true });
+      const box = G.panelBoxCm(P).h;
+      eq(RT.panelChaseVert(P, PK, "ceiling"), 270 - 150 - box, "ЩК: от потолка до верха корпуса");
+      eq(RT.panelChaseVert(P, PR, "ceiling"), 270 - 180 - box, "ЩС: своя высота");
+      eq(RT.panelChaseVert(P, PR, "floor"), 180, "по полу — до низа корпуса");
+      eq(RT.panelVert(P, PK, "ceiling"), 270 - 150, "кабель по-прежнему уходит в корпус до низа");
+      const res = EP.Plan.Calc.calcByRoutes(P);
+      near(res.strobe["25x30|Кирпич|lv"] || 0, (270 - 180 - box) / 100, 0.01, "у ЩС — его кирпич и его высота");
+      near(res.strobe["25x30|Бетон|power"] || 0, (240 + 270 - 150 - box) / 100, 0.01, "у ЩК — свой спуск, не общий с ЩС");
+      const o = res.origin["work|Штробление 25x30 кирпич (слаботочка)"];
+      ok(o && (o.byRoom || []).some((x) => /у щита ЩС/.test(x.room)), "в «Откуда взялось» видно, у какого щита");
+    });
+    test("ниша под щит — по стене ГЛАВНОГО щита, а не первого в списке", () => {
+      const { P } = twoPanels("rk");          // первым в списке стоит слаботочный
+      P.rooms[0].wallMat = [null, null, null, "Кирпич"]; // квартирный ЩК — на кирпичной стене
+      RT.build({ silent: true });
+      const res = EP.Plan.Calc.calcByRoutes(P);
+      ok(res.items.some((i) => /^Вырубка ниши под щит \(кирпич\)/.test(i.name)), "ниша — по материалу стены ЩК: " + res.items.filter((i) => /ниши/.test(i.name)).map((i) => i.name).join(", "));
+    });
+    test("развёртка и 3D рисуют щит от низа корпуса тем же габаритом, что считает смета", () => {
+      const fs = require("fs");
+      const un = fs.readFileSync(__dirname + "/../assets/js/modules/plan/plan-unfold.js", "utf8");
+      ok(/G\(\)\.panelBottom\(p, pn\)/.test(un) && /y: py - phh, width: pw/.test(un), "развёртка: низ корпуса на высоте щита");
+      ok(/grabY/.test(un), "тяга щита в развёртке не прыгает низом под палец");
+      // обработчик pointermove развёртки живёт ВНЕ области видимости проекта `p` — живой
+      // прогон поймал ReferenceError на каждом шаге тяги щита
+      ok(/panelBoxCm\(core\(\)\.project\)/.test(un), "в тяге щита проект берётся из ядра");
+      const d3 = fs.readFileSync(__dirname + "/../assets/js/modules/plan3d/plan3d-electro.js", "utf8");
+      ok(/G\(\)\.panelBottom\(p, pn\) \+ h \/ 2/.test(d3), "3D: корпус стоит низом на высоте щита");
+      ok(/panelBoxCm/.test(d3) && /panelBoxCm/.test(un), "габарит — общий");
     });
   }
 

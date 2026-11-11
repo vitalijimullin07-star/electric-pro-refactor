@@ -113,12 +113,14 @@
     });
 
     // щиты — шкаф на стене/в нише
+    // высота щита — НИЗ корпуса, габарит — тот же, что в развёртке и смете (пакет 4 аудита
+    // цепей); раньше корпус стоял центром на этой высоте — на полкорпуса ниже
+    const pbox = G().panelBoxCm(p);
     (p.panels || []).forEach((pn) => {
-      const box = S.panelBox || {};
-      const w = (box.wmm || 350) / 10, h = (box.hmm || 300) / 10, d = (box.dmm || 120) / 10;
+      const w = pbox.w, h = pbox.h, d = pbox.d;
       const g = new THREE.BoxGeometry(w * M, h * M, d * M);
       const m = new THREE.Mesh(g, solid(0xd7dbe2));
-      const y = (pn.height != null ? pn.height : S.panelHeight || 150);
+      const y = G().panelBottom(p, pn) + h / 2;
       m.position.set(pn.x * M, y * M, pn.y * M);
       group.add(m);
     });
@@ -158,7 +160,8 @@
         const pn = (p.panels || []).find((x) => x.id === id);
         let y = null;
         if (el) y = (el.height == null ? HH : el.height) * M;
-        else if (pn) y = (pn.height != null ? pn.height : S.panelHeight || 150) * M;
+        // в щит штроба приходит к его верху (по потолку) или к низу (по полу)
+        else if (pn) y = (G().panelBottom(p, pn) + (floor ? 0 : pbox.h)) * M;
         if (y == null) return;
         const m = segBox(q.x * M, runY, q.y * M, q.x * M, y, q.y * M, cw, ch, mat);
         if (m) group.add(m);

@@ -496,28 +496,32 @@
       addStrobe(keyStd, mat, Math.max(1, Math.ceil(cables / capOf(keyStd))) * vert, "power", esurf, rn);
     });
     // спуск у щита: линии приходят в одну точку — ёмкость из пула; слаботочку
-    // считаем ОТДЕЛЬНОЙ штробой у щита (не мешаем её с силовой и там)
-    const panelMat = () => {
-      const pn = (p.panels || [])[0];
-      const hit = pn && G2.wallAt(p, { x: pn.x, y: pn.y }, 60);
-      return hit ? G2.wallMatOf(p, hit.wall) : ((s && s.wallMaterial) || "Бетон");
-    };
+    // считаем ОТДЕЛЬНОЙ штробой у щита (не мешаем её с силовой и там).
+    // ПО КАЖДОМУ ЩИТУ ОТДЕЛЬНО (аудит цепей, пакет 4): раньше все кабели всех щитов
+    // складывались в один спуск по стене ПЕРВОГО щита, его материалу и общей высоте — у
+    // квартирного и слаботочного щитов на разных стенах выходила одна штроба. Теперь у
+    // каждого щита свой материал стены, своя высота (низ корпуса) и свои кабели, а штроба
+    // идёт только до корпуса (panelChaseVert), не через него.
     const panelRoutes = routes.filter((r) => r.toPanel && !r.toRiser); // стояк — не щит, спуска в корпус нет
-    if ((p.panels || []).length && panelRoutes.length) {
-      const pm = panelMat();
+    const multiPn = (p.panels || []).length > 1;
+    (p.panels || []).forEach((pn) => {
+      const rs = panelRoutes.filter((r) => r.toId === pn.id);
+      if (!rs.length) return;
+      const pm = panelMatOf(p, pn);
+      const where = multiPn ? "у щита " + (pn.name || "") : "у щита";
       // РАЗДЕЛЬНО по поверхности прихода: при комбинированной разводке к щиту часть линий
       // приходит сверху, часть снизу — это два разных спуска разной длины, и складывать их
       // в один нельзя (ёмкость штробы тоже считается внутри своей поверхности)
       ["ceiling", "floor"].forEach((sf) => {
-        const inSf = panelRoutes.filter((r) => sfOf(r.routeType) === sf);
+        const inSf = rs.filter((r) => sfOf(r.routeType) === sf);
         if (!inSf.length) return;
         const lvN = inSf.filter((r) => LV_LAYERS[r.layer]).length;
         const powN = inSf.length - lvN;
-        const vert = RT.panelVert(p, null, sf);
-        if (powN > 0) addStrobe(keyStd, pm, Math.ceil(powN / capOf(keyStd)) * vert, "power", sf, "у щита");
-        if (lvN > 0) addStrobe(keyStd, pm, Math.ceil(lvN / capOf(keyStd)) * vert, "lv", sf, "у щита");
+        const vert = RT.panelChaseVert ? RT.panelChaseVert(p, pn, sf) : RT.panelVert(p, pn, sf);
+        if (powN > 0) addStrobe(keyStd, pm, Math.ceil(powN / capOf(keyStd)) * vert, "power", sf, where);
+        if (lvN > 0) addStrobe(keyStd, pm, Math.ceil(lvN / capOf(keyStd)) * vert, "lv", sf, where);
       });
-    }
+    });
 
     // кабель по МАРКАМ: марка линии (QF) или по слою; с настраиваемым запасом
     const cableBy = {};
@@ -664,7 +668,8 @@
     if ((p.panels || []).length) {
       const modules = (s.panelBox && s.panelBox.modules) ||
         (EP.Plan.Scheme && EP.Plan.Scheme.neededModules ? EP.Plan.Scheme.neededModules(p) : circuitsModules(p));
-      if (modules > 0) add("work", `Вырубка ниши под щит (${low(panelMat())})`, modules, "мод");
+      const mainPn = (EP.Plan.Circuits && EP.Plan.Circuits.mainPanel) ? EP.Plan.Circuits.mainPanel(p) : (p.panels || [])[0];
+      if (modules > 0) add("work", `Вырубка ниши под щит (${low(panelMatOf(p, mainPn))})`, modules, "мод");
       add("work", "Монтаж щита в нишу/стену", 1, "шт");
       // система АВР (автоматический ввод резерва: второй ввод/генератор) — отмечается
       // галочкой у КОНКРЕТНОГО щита (panel.avr), считается по числу таких щитов:
@@ -789,6 +794,15 @@
   // plan-scheme.js не грузит, и «Вырубка ниши под щит» там молча выпадала из сметы —
   // предрасчёт расходился с главным потоком (поймано живым сравнением). Scheme.neededModules
   // сама считает через EP.Plan.Circuits — берём тот же движок напрямую.
+  // Материал стены, на которой висит щит, — на ЕГО этаже (поиск стены по позиции смотрит на
+  // активный этаж, а щит может стоять на другом). Нет стены рядом — материал проекта.
+  function panelMatOf(p, pn) {
+    const G2 = G(), s = p.settings || {};
+    if (!pn) return s.wallMaterial || "Бетон";
+    const pf = pn.floorId && pn.floorId !== p.activeFloorId ? Object.assign({}, p, { activeFloorId: pn.floorId }) : p;
+    const hit = G2.wallAt(pf, { x: pn.x, y: pn.y }, 60);
+    return hit ? G2.wallMatOf(p, hit.wall) : (s.wallMaterial || "Бетон");
+  }
   function circuitsModules(p) {
     const CX = EP.Plan.Circuits;
     if (!CX || !CX.modules) return 0;

@@ -3942,9 +3942,17 @@
   // settings.panelHeight на проект (как раньше, обратная совместимость).
   // surf — поверхность хопа, который приходит в щит (у разных линий может отличаться)
   function panelVert(p, pn, surf) {
-    const ph = (pn && pn.height != null) ? pn.height : p.settings.panelHeight;
+    const ph = G().panelBottom(p, pn);
     const sf = (surf === "floor" || surf === "ceiling") ? surf : (p.settings.routeType === "floor" ? "floor" : "ceiling");
     return sf === "floor" ? ph : Math.max(0, p.settings.ceilingHeight - ph);
+  }
+  // ШТРОБА у щита (аудит цепей, пакет 4) — не то же, что кабель (panelVert): кабель уходит в
+  // корпус и спускается к аппаратам, а стену штробят только ДО корпуса — сверху до его верха
+  // (по потолку), снизу до его низа (по полу). Ниша под сам корпус — своя позиция сметы.
+  function panelChaseVert(p, pn, surf) {
+    const ph = G().panelBottom(p, pn);
+    const sf = (surf === "floor" || surf === "ceiling") ? surf : (p.settings.routeType === "floor" ? "floor" : "ceiling");
+    return sf === "floor" ? ph : Math.max(0, p.settings.ceilingHeight - ph - G().panelBoxCm(p).h);
   }
   /* ---- МЕТРАЖ ОДНОГО КАБЕЛЯ (хопа): спуск и выпуск у ОБОИХ концов ----
      Кабель хопа идёт от поверхности трассы (потолок/пол) вниз/вверх к точке на ОДНОМ конце,
@@ -4401,5 +4409,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { feedIssues, shaftConflicts, costOf, routeStatus, routeInputSig, routeTurns, build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, unroutedComputed: () => lastUnroutedPid != null, jobs: { run: runJob, state: jobsState, cancel: cancelQueued }, editVersion: () => editVer, pointVert, panelVert, endVert, hopParts, srcElOf, cableStub, keys24Of, isFeeder, routeLayerOf, STAR_LV, BLOCK_LV, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, dropCollinear, colinearMid, routeLen, feedPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
+  EP.Plan.Routes = { feedIssues, shaftConflicts, costOf, routeStatus, routeInputSig, routeTurns, build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, unroutedComputed: () => lastUnroutedPid != null, jobs: { run: runJob, state: jobsState, cancel: cancelQueued }, editVersion: () => editVer, pointVert, panelVert, panelChaseVert, endVert, hopParts, srcElOf, cableStub, keys24Of, isFeeder, routeLayerOf, STAR_LV, BLOCK_LV, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, dropCollinear, colinearMid, routeLen, feedPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
 })();
