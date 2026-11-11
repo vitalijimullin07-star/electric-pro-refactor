@@ -185,6 +185,20 @@
         }
       });
     }
+    // связность трасс (аудит п.4, п.16): у каждой проложенной точки цепочка кабеля обязана
+    // дойти до щита. Кольцо без щита и трасса к удалённому объекту раньше проходили проверку
+    // молча («все точки соединены трассами»), а смета считала по ним метраж
+    const RT = EP.Plan.Routes;
+    if (RT && RT.feedIssues) {
+      const elById = new Map((p.elements || []).map((e) => [e.id, e]));
+      const TYn = (EP.Plan.Elements && EP.Plan.Elements.TYPES) || {};
+      RT.feedIssues(p).slice(0, 30).forEach((x) => {
+        const e = elById.get(x.id), nm = e ? ((TYn[e.type] || {}).name || "Точка") : "Трасса";
+        const why = x.reason === "cycle" ? "кабель замкнут в кольцо без щита" : x.reason === "dangling" ? "трасса ведёт к удалённому объекту" : "цепочка кабеля обрывается";
+        issues.push({ id: e ? e.id : null, msg: nm + ": нет пути до щита — " + why + ". Перестрой трассы (🧵 → ⚡ Построить)" });
+        if (e) badIds.add(e.id);
+      });
+    }
     (p.elements || []).forEach((e) => {
       if (e.type !== "pir" && e.type !== "lux") return;
       const tid = (G().allTargetIds ? G().allTargetIds(e) : [])[0]; // цель может быть массивом (несколько на клавишу)

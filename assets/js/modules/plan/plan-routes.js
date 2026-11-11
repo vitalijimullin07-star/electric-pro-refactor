@@ -1567,8 +1567,59 @@
         if (!b || dist(b, old.points[old.points.length - 1]) > anchorTol(p, old.toId)) return;
       }
       const idx = p.routes.findIndex((r) => r.fromId === old.fromId);
-      if (idx >= 0) p.routes[idx] = old;
+      if (idx < 0) return;
+      // Ручная связь «откуда → куда» могла устареть ТОПОЛОГИЧЕСКИ, даже если оба конца на
+      // месте (аудит п.4): шлейф B → A → щит, B → A правлена вручную, щит перенесли к B —
+      // автосборка развернула шлейф (A → B → щит), и возврат ручной B → A замыкал кольцо
+      // A ↔ B без щита. Проверяем: от цели ручной трассы по текущим трассам дойдём до щита,
+      // не вернувшись в её начало? Нет — правка устарела, остаётся автоматическая трасса.
+      if (!old.toPanel && old.toId && reachesFrom(p, old.toId, old.fromId)) return;
+      p.routes[idx] = old;
     });
+  }
+  // по цепочке трасс (fromId → toId) от start возвращаемся в target? (кольцо)
+  function reachesFrom(p, start, target) {
+    const next = new Map();
+    (p.routes || []).forEach((r) => { if (r.fromId && !next.has(r.fromId)) next.set(r.fromId, r); });
+    let cur = start;
+    for (let g = 0; g < 512 && cur; g++) {
+      if (cur === target) return true;
+      const r = next.get(cur);
+      if (!r || r.toPanel) return false;
+      cur = r.toId;
+    }
+    return true; // зациклилось в другом месте — тоже не годится
+  }
+  /* ПРОВЕРКА СВЯЗНОСТИ (аудит п.4, п.16): у каждой проложенной точки цепочка трасс обязана
+     дойти до щита (или стояка-приёмника). Возвращает [{ id, reason }]:
+       "cycle"    — цепочка замкнулась сама на себя (кольцо без щита);
+       "dangling" — трасса ведёт к объекту, которого в проекте нет (удалён);
+       "nopath"   — цепочка оборвалась на точке без своей трассы.
+     Её читают «Проверки» (plan-rules.js) и оценка вариантов оптимизатором (scoreRoutes). */
+  function feedIssues(p) {
+    const next = new Map();
+    (p.routes || []).forEach((r) => { if (r.fromId && !next.has(r.fromId)) next.set(r.fromId, r); });
+    const ids = new Set((p.elements || []).map((e) => e.id).concat((p.panels || []).map((x) => x.id)));
+    const out = [], memo = new Map();
+    next.forEach((r0, id0) => {
+      if (!ids.has(id0)) { out.push({ id: id0, reason: "dangling" }); return; }
+      let cur = id0, reason = null;
+      const seen = new Set();
+      for (let g = 0; g < 512; g++) {
+        if (memo.has(cur)) { reason = memo.get(cur); break; }
+        if (seen.has(cur)) { reason = "cycle"; break; }
+        seen.add(cur);
+        const r = next.get(cur);
+        if (!r) { reason = "nopath"; break; }
+        if (r.toId && !ids.has(r.toId)) { reason = "dangling"; break; }
+        if (r.toPanel || r.toRiser) { reason = ""; break; }
+        cur = r.toId;
+        if (!cur) { reason = "nopath"; break; }
+      }
+      seen.forEach((x) => { if (!memo.has(x)) memo.set(x, reason || ""); });
+      if (reason) out.push({ id: id0, reason });
+    });
+    return out;
   }
 
   // группирует точки по линии (QF) и строит их трассы: точки с доступной распайкой
@@ -2049,6 +2100,7 @@
     hideGuides(p); // прячем ТОЛЬКО применённые магистрали (см. usedGuideIds/hideGuides)
     usedGuideIds = null;
     const un = collectUnrouted(p, points, juncts, panels);
+    if (!quiet) markInputs(p);
     if (!quiet) c.persist("routes-build");
     if (!silent) { if (un.length) rooms().toast(T.unroutedToast(un.length)); sheet(); }
   }
@@ -2119,6 +2171,7 @@
     usedGuideIds = null;
     const unInc = collectUnrouted(p, newPoints, newJuncts,
       (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y } })).concat(risersHere));
+    if (!quiet) markInputs(p);
     c.persist("routes-build-inc");
     if (!silent) { if (unInc.length) rooms().toast(T.unroutedToast(unInc.length)); sheet(); }
   }
@@ -2298,7 +2351,9 @@
       }
     }
     const holes = sleeveHoles(p);
-    const unrouted = unroutedForSheet(p).length;
+    // без трассы + проложенные, но без пути до щита (кольцо/обрыв): вариант, где точка
+    // «соединена» по кругу, не должен выигрывать у варианта с настоящим питанием (аудит п.4)
+    const unrouted = unroutedForSheet(p).length + feedIssues(p).length;
     // вес: пересечение линий — главное зло (просьба пользователя), потом лишние отверстия,
     // потом транзит мимо магистрали и изломы, потом метраж; unrouted — запретительный вес,
     // вариант без трасс не может «выиграть»
@@ -2781,6 +2836,37 @@
   // ---- автоперестройка: геометрия сдвинулась (точка/стена/перегородка) —
   // ранее построенные трассы устарели бы молча (кривые длины/штробы в Расчёте).
   // Перестраиваем тихо, только если трассы уже были построены.
+  /* ПОДПИСЬ ВХОДОВ ТРАССИРОВКИ (аудит 11.11, п.16). Раньше пересчёт трасс запускал только белый
+     список событий (AUTOREBUILD_ON ниже): удаление точки, правка отступа/высоты ЧИСЛОМ, смена
+     линии, размеры комнаты числом, новая дверь — трассы оставались старыми, а смета считала по
+     ним. Теперь после любого сохранения сверяется подпись всего, от чего зависит путь кабеля;
+     изменилась — та же автоперестройка. Белый список остался (он срабатывает и без подписи).
+     В подпись входят только точки, которые УЖЕ участвуют в трассах (откуда или куда идёт
+     кабель): новая точка без трассы ничего не перестраивает — кнопка «⚡ Построить» по-прежнему
+     достраивает только новое (просьба пользователя, см. buildIncremental). */
+  let lastInSig = null;
+  function routeInputSig(p) {
+    if (!p) return "";
+    const used = new Set();
+    (p.routes || []).forEach((r) => { if (r.fromId) used.add(r.fromId); if (r.toId) used.add(r.toId); });
+    const els = (p.elements || []).filter((e) => used.has(e.id) || isJunction(e)).map((e) => [e.id, e.type, e.wallId, e.offset, e.height,
+      e.params && e.params.x, e.params && e.params.y, e.params && e.params.items, e.params && e.params.itemMeta, e.circuitId, e.layer,
+      e.targetIds, e.targetId, e.chainNext, e.keys, e.swKind, e.riserLink, e.floorId, e.beamSide, e.blockVert, e.entryPost, e.reveal]);
+    const st = p.settings || {};
+    try {
+      return JSON.stringify([els, used.size,
+        (p.rooms || []).map((r) => [r.id, r.points, r.wallTh, r.floorId]),
+        (p.beams || []).map((b) => [b.id, b.a, b.b, b.width, b.kind, b.floorId]),
+        (p.openings || []).map((o) => [o.id, o.wallId, o.offset, o.width, o.sill, o.kind, o.type]),
+        (p.voids || []).map((v) => [v.id, v.a, v.b, v.kind, v.floorId]),
+        (p.panels || []).map((pn) => [pn.id, pn.x, pn.y, pn.router, pn.transformer, pn.neptun, pn.height, pn.floorId]),
+        (p.guides || []).map((g) => [g.id, g.points, g.kinds, g.floorId]),
+        (p.circuits || []).map((c) => [c.id, c.panelId]),
+        (p.floors || []).map((f) => [f.id, f.height]),
+        [st.routeOffset, st.routeType, st.surfaces, st.wallThickness, st.lampDirect, st.ceilingHeight, st.slabThickness]]);
+    } catch (e) { return String(Math.random()); }
+  }
+  function markInputs(p) { lastInSig = routeInputSig(p); }
   const AUTOREBUILD_ON = { "elem-move": 1, "room-reshape": 1, "room-merge": 1, "room-move": 1, "wall-th": 1, "wall-mat": 1, "beam-move": 1, "beam-w": 1, "panel-move": 1, "panel-router": 1, "panel-neptun": 1, "panel-trafo": 1, "opening-move": 1, "elem-target": 1, "riser-pair": 1, "circuit-panel": 1, "autoproject": 1, "guide-kinds": 1 };
   let rebuilding = false;
   // ---- АВТОПЕРЕСТРОЙКА БЕЗ ФРИЗА: тяжёлый build() уходит в фоновый воркер ----
@@ -2813,6 +2899,7 @@
       rebuilding = true; try { build({ silent: true, noUndo: true }); } finally { rebuilding = false; } return;
     }
     const seq = ++autoSeq, pid = p.id;
+    const inSig = routeInputSig(p); // по ЭТОМУ состоянию считает воркер
     autoBusy = true;
     const onMsg = (e) => {
       const d = (e && e.data) || {};
@@ -2829,6 +2916,9 @@
           // БЕЗ c.commit(): снимок «до правки» уже в истории (см. noUndo в build)
           const fid0 = cur.floors && cur.floors[0] && cur.floors[0].id;
           cur.routes = d.routes.map((r) => (r.floorId ? r : Object.assign({}, r, { floorId: cur.activeFloorId || fid0 })));
+          // подпись — того состояния, что считал воркер: если модель с тех пор поменялась,
+          // следующая проверка подписи это увидит и досчитает
+          lastInSig = inSig;
           c.persist("routes-build");
           if (rooms().renderScene) rooms().renderScene();
         } finally { rebuilding = false; }
@@ -2841,15 +2931,22 @@
   if (core().onChange) {
     core().onChange((what) => {
       // другой проект открыт — список «Без трассы» от прошлого проекта больше не про него
-      if (what === "open" || what === "import") { lastUnrouted = []; lastUnroutedPid = null; graphCache.clear(); wallsCache = null; autoSeq++; autoPending = false; precalc = null; schedulePrecalc(); return; }
+      if (what === "open" || what === "import") { lastUnrouted = []; lastUnroutedPid = null; graphCache.clear(); wallsCache = null; autoSeq++; autoPending = false; precalc = null; schedulePrecalc(); markInputs(core().project); return; }
       // ↶/↷ восстанавливают трассы из снимка вместе с геометрией — результат фоновой
       // автоперестройки, начатой ДО отмены, считался по уже отменённой геометрии: не применять
       if (what === "undo" || what === "redo") { autoSeq++; autoPending = false; }
       // ЛЮБОЕ изменение обесценивает фоновый предрасчёт (он был на прошлом состоянии) —
       // сбрасываем кэш и переводим таймер на новую точку простоя
       if (!rebuilding) { precalc = null; schedulePrecalc(); }
-      if (rebuilding || !AUTOREBUILD_ON[what]) return;
-      autoRebuild();
+      if (rebuilding) return;
+      if (what === "open" || what === "import" || what === "undo" || what === "redo" || what === "routes-clear") { markInputs(core().project); return; }
+      if (AUTOREBUILD_ON[what]) { autoRebuild(); return; }
+      // любое другое сохранение: изменились ли входы трассировки (см. routeInputSig)
+      const p = core().project;
+      if (!p || !(p.routes || []).length) { lastInSig = null; return; }
+      const sig = routeInputSig(p);
+      if (lastInSig === null) { lastInSig = sig; return; } // первое сравнение — запомнить
+      if (sig !== lastInSig) autoRebuild();
     });
   }
 
@@ -3618,5 +3715,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { routeTurns, build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, keys24Of, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, dropCollinear, colinearMid, routeLen, feedPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
+  EP.Plan.Routes = { feedIssues, routeInputSig, routeTurns, build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, pointVert, panelVert, hopVertMul, cableStub, keys24Of, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, dropCollinear, colinearMid, routeLen, feedPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
 })();

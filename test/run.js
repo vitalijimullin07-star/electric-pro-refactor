@@ -8715,6 +8715,93 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 70. Аудит 11.11, пакет 2: целостность схемы =====
+  // Трассы обязаны следовать за моделью при ЛЮБОЙ правке точек/стен, а не только при тяге:
+  // раньше пересчёт запускал белый список событий (AUTOREBUILD_ON), и удаление точки, правка
+  // отступа числом, смена линии, размеры комнаты числом оставляли трассы старыми.
+  {
+    const RT = EP.Plan.Routes;
+    // комната 600×400, щит слева, три розетки одной линии на верхней стене (шлейф щит → A → B → C)
+    function chain3() {
+      const room = M.newRoom(G.rectPoints(0, 0, 600, 400), "К");
+      const pn = M.newPanel(30, 200, "ЩК");
+      const qf = M.newCircuit("QF1", "#e11", 16), qf2 = M.newCircuit("QF2", "#11e", 16);
+      const { P } = install({ rooms: [room], panels: [pn], circuits: [qf, qf2] });
+      const mk = (off) => { const e = M.newElement("socket", P.rooms[0].id + ":0", off, 30, "power"); e.circuitId = qf.id; P.elements.push(e); return e; };
+      const a = mk(150), b = mk(300), c = mk(450);
+      RT.build();
+      return { P, a, b, c, pn, qf: P.circuits[0], qf2: P.circuits[1] };
+    }
+    const routeOf = (P, id) => (P.routes || []).find((r) => r.fromId === id);
+    const dangling = (P) => {
+      const ids = new Set((P.elements || []).map((e) => e.id).concat((P.panels || []).map((x) => x.id)));
+      return (P.routes || []).filter((r) => !ids.has(r.fromId) || (r.toId && !ids.has(r.toId)));
+    };
+    test("удаление точки: не остаётся трасс к удалённой, соседи перетрассированы", () => {
+      const { P, a, b, c } = chain3();
+      ok(routeOf(P, c.id), "до удаления у C есть трасса");
+      const old = sandbox.confirm; sandbox.confirm = () => true;
+      try { EP.Plan.Elements.deleteElement(P.elements.find((e) => e.id === b.id)); } finally { sandbox.confirm = old; }
+      eq(dangling(P).length, 0, "ни одна трасса не ведёт к удалённой точке и не начинается от неё");
+      const rc = routeOf(P, c.id);
+      ok(rc, "у C, питавшейся через B, трасса построена заново");
+      ok(RT.feedPath(P, c.id) && RT.feedPath(P, c.id).toPanel, "и доходит до щита");
+    });
+    test("правка отступа точки ЧИСЛОМ перестраивает её трассу", () => {
+      const { P, c } = chain3();
+      const el = P.elements.find((e) => e.id === c.id);
+      EP.Plan.Core.commit(); el.offset = 520; EP.Plan.Core.persist("elem-edit");
+      const r = routeOf(P, c.id), a = G.routeAnchor ? G.routeAnchor(P, el) : G.elemDrawPoint(P, el);
+      ok(r && a && Math.hypot(r.points[0].x - a.x, r.points[0].y - a.y) < 1.5, "трасса начинается в новом месте точки");
+    });
+    test("размер комнаты числом перестраивает трассы", () => {
+      const { P } = chain3();
+      const before = JSON.stringify(P.routes.map((r) => r.points));
+      const room = P.rooms[0];
+      EP.Plan.Core.commit(); room.points = G.rectPoints(0, -100, 600, 500); EP.Plan.Core.persist("room-edit");
+      ok(JSON.stringify(P.routes.map((r) => r.points)) !== before, "трассы пересчитаны под новый контур");
+    });
+    test("перенос точки на другую линию переносит её трассу и метраж", () => {
+      const { P, c, qf2 } = chain3();
+      const el = P.elements.find((e) => e.id === c.id);
+      EP.Plan.Core.commit(); el.circuitId = qf2.id; EP.Plan.Core.persist("elem-circuit");
+      const r = routeOf(P, c.id);
+      ok(r && r.circuitId === qf2.id, "трасса отнесена к новой линии");
+      const by = RT.lengths(P).byCircuit;
+      ok(by[qf2.id] > 0, "метраж новой линии посчитан");
+    });
+    test("ручная трасса не замыкает шлейф в кольцо без щита (аудит п.4)", () => {
+      const { P, a, b, pn } = chain3();
+      // B → A сделана вручную, затем щит переносится к B
+      const rb = routeOf(P, b.id);
+      eq(rb.toId, a.id, "исходно B питается через A");
+      rb.manual = true;
+      const panel = P.panels[0];
+      EP.Plan.Core.commit(); panel.x = 330; panel.y = 60; EP.Plan.Core.persist("panel-move");
+      const bad = (P.elements || []).filter((e) => routeOf(P, e.id) && !(RT.feedPath(P, e.id) || {}).toPanel);
+      eq(bad.length, 0, "у каждой проложенной точки есть путь до щита: " + bad.map((e) => e.id).join(","));
+    });
+    test("проверка находит точки без пути до щита (кольцо, обрыв)", () => {
+      const { P, a, b } = chain3();
+      // вручную портим схему: A ↔ B
+      routeOf(P, a.id).toId = b.id; routeOf(P, a.id).toPanel = false;
+      routeOf(P, b.id).toId = a.id; routeOf(P, b.id).toPanel = false;
+      const iss = RT.feedIssues(P);
+      ok(iss.some((x) => x.id === a.id && x.reason === "cycle") && iss.some((x) => x.id === b.id), "кольцо найдено");
+      const rr = EP.Plan.Rules.run(P), list = Array.isArray(rr) ? rr : (rr.issues || []);
+      const msgs = list.map((x) => x.msg || String(x)).join(" | ");
+      ok(/до щита/i.test(msgs), "«Проверки» сообщают об этом: " + msgs.slice(0, 200));
+      ok(RT.scoreRoutes(P).unrouted >= 2, "оптимизатор считает их непроложенными");
+    });
+    test("добавление новой точки НЕ перестраивает готовые трассы (кнопка «Построить» по-прежнему инкрементальна)", () => {
+      const { P } = chain3();
+      const before = JSON.stringify(P.routes);
+      const e = M.newElement("socket", P.rooms[0].id + ":2", 200, 30, "power"); e.circuitId = P.circuits[0].id;
+      EP.Plan.Core.commit(); P.elements.push(e); EP.Plan.Core.persist("elem-add");
+      eq(JSON.stringify(P.routes), before, "существующие трассы не тронуты");
+    });
+  }
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);
