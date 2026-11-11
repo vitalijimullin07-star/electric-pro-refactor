@@ -82,12 +82,10 @@
     });
     routes.forEach((rt) => {
       if (!rt.circuitId) return;
-      const el = (p.elements || []).find((e) => e.id === rt.fromId);
-      const pn = (rt.toPanel && !rt.toRiser) ? (p.panels || []).find((x) => x.id === rt.toId) : null;
-      // вертикали считаем по ПОВЕРХНОСТИ ЭТОГО хопа (rt.routeType) — при комбинированной
-      // разводке спуск у одной и той же точки разный: от пола или от потолка
-      const L = G().polylineLen(rt.points || []) + (el ? RT.pointVert(p, el, rt.routeType) * RT.hopVertMul(p, rt) : 0)
-        + (pn ? RT.panelVert(p, pn, rt.routeType) : 0) + (RT.riserRun ? RT.riserRun(p, el) : 0) + RT.cableStub(p, el, rt);
+      // метраж кабеля хопа — ТА ЖЕ раскладка, что у сметы и «Кабель по трассам» (спуск и
+      // выпуск у обоих концов, по поверхности ЭТОГО хопа), плюс выпуски на разделку
+      const h = RT.hopParts(p, rt);
+      const L = h.geom + h.vSrc + h.vTgt + h.panel + h.riser + h.stub;
       const r = row(rt.circuitId);
       r.cableLen += L; r.crossings += (rt.throughWalls || []).length;
       if (rt.leg === "pri24" || rt.leg === "sec24") r.has24 = true; // линия с 24В-разводкой (до/от щита)
@@ -497,18 +495,13 @@
     const reserve = 1 + (Number(s.cableReserve == null ? 10 : s.cableReserve) || 0) / 100;
     const cableRows = []; // слагаемые КАЖДОЙ трассы — для расшифровки «откуда N м»
     routes.forEach((r) => {
-      const e2 = elById(r.fromId);
+      // источник через srcElOf: у «до щита» 24В и поста блока fromId синтетический
+      const e2 = RT.srcElOf ? RT.srcElOf(p, r) : elById(r.fromId);
       const pn = (r.toPanel && !r.toRiser) ? (p.panels || []).find((x) => x.id === r.toId) : null;
-      // без распайки на конце кабель проходит штробу туда-обратно (нет коробки,
-      // принимающей горизонталь на месте) — hopVertMul=2 для такого хопа; + выпуск
-      // на разделку/подключение (RT.cableStub — см. её инвариант)
-      const part = {
-        geom: G2.polylineLen(r.points || []),
-        vert: e2 ? RT.pointVert(p, e2, r.routeType) * RT.hopVertMul(p, r) : 0,
-        panel: pn ? RT.panelVert(p, pn, r.routeType) : 0,
-        riser: RT.riserRun ? RT.riserRun(p, e2) : 0,
-        stub: RT.cableStub(p, e2, r)
-      };
+      // спуск и выпуск у ОБОИХ концов кабеля (RT.hopParts — единая раскладка с «По линиям»,
+      // «Кабель по трассам» и путём питания точки)
+      const h = RT.hopParts(p, r);
+      const part = { geom: h.geom, vert: h.vSrc + h.vTgt, panel: h.panel, riser: h.riser, stub: h.stub };
       const L = part.geom + part.vert + part.panel + part.riser + part.stub;
       const toEl = r.toPanel ? null : elById(r.toId);
       const row = { routeId: r.id, circuitId: r.circuitId || null, room: roomNameOf(e2), part, L,
@@ -598,8 +591,8 @@
     // · «на потолке» = число потолочных распаечных коробок (элементы type:"junction").
     // · «в подрозетнике» = число точек-ТРАНЗИТОВ шлейфа: в подрозетник кабель и приходит,
     //   и уходит дальше (outCnt+inCnt > 1) — именно там физически делается соединение без
-    //   отдельной коробки. Тот же признак, по которому hopVertMul в plan-routes.js считает
-    //   штробу у такой точки дважды, и по которому connectorsByRoutes считает пины
+    //   отдельной коробки. Тот же признак (два кабеля и больше в одном подрозетнике), по
+    //   которому штроба у точки считается по числу кабелей, и по которому connectorsByRoutes считает пины
     //   соединителей — источник один (inCnt/outCnt по графу трасс), расходиться не могут.
     let spliceInBox = 0;
     (p.elements || []).forEach((e2) => {

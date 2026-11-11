@@ -1916,27 +1916,75 @@ test("тип «Вывод»: layerChoice, силовой по умолчанию
   ok(TY.layerChoice, "есть переключатель силовой/слаботочный в редакторе");
 });
 
-// ===== 13. Провод без распайки ×2, выключатель на всю высоту при полу =====
-test("hopVertMul: хоп точка→точка без распайки — штроба ×2 в длине кабеля", () => {
+// ===== 13. Метраж кабеля: спуск и выпуск у ОБОИХ концов, выключатель на всю высоту при полу =====
+// Аудит цепей: раньше у дальнего конца кабеля спуск брался как «ещё раз свой» (×2), у
+// выключателя/распайки/звена цепочки не брался вовсе, выпуск считался только у начала.
+test("hopParts: шлейф точка→точка — спуск у обоих концов по СВОИМ высотам", () => {
   const { P, w } = install();
   const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
-  const s1 = M.newElement("socket", w(0), 100, 30, "power");
-  const s2 = M.newElement("socket", w(0), 150, 30, "power");
+  const s1 = M.newElement("socket", w(0), 100, 110, "power"); // кухонная, 110
+  const s2 = M.newElement("socket", w(0), 150, 30, "power");  // обычная, 30
   P.elements.push(s1, s2);
   const r1 = M.newRoute("power", "ceiling", [{ x: 100, y: 18 }, { x: 50, y: 50 }], s1.id, pn.id); r1.toPanel = true;
-  const r2 = M.newRoute("power", "ceiling", [{ x: 150, y: 18 }, { x: 100, y: 18 }], s2.id, s1.id); // шлейф: s2 -> s1, без распайки
+  const r2 = M.newRoute("power", "ceiling", [{ x: 150, y: 18 }, { x: 100, y: 18 }], s2.id, s1.id);
   P.routes.push(r1, r2);
-  eq(EP.Plan.Routes.hopVertMul(P, r1), 1, "хоп в щит — ×1");
-  eq(EP.Plan.Routes.hopVertMul(P, r2), 2, "хоп в обычную точку (нет распайки) — ×2");
+  const H = P.settings.ceilingHeight;
+  const h2 = EP.Plan.Routes.hopParts(P, r2);
+  eq(h2.vSrc, H - 30, "спуск у начала — по высоте s2");
+  eq(h2.vTgt, H - 110, "спуск у конца — по высоте s1, а не «ещё раз s2» (×2)");
+  eq(h2.stub, 20 + 20, "выпуск у обоих подрозетников");
+  const h1 = EP.Plan.Routes.hopParts(P, r1);
+  eq(h1.vTgt, 0, "у щита — свой спуск в корпус, не спуск точки");
+  eq(h1.panel, EP.Plan.Routes.panelVert(P, pn, "ceiling"), "спуск в щит");
+  eq(h1.stub, 20 + 50, "подрозетник + запас в щите");
+  near(EP.Plan.Routes.routeLen(P, r2), 50 + (H - 30) + (H - 110), 0.5, "routeLen = план + оба спуска");
 });
-test("hopVertMul: хоп в распайку (junction) — ×1, не удваиваем", () => {
+test("hopParts: светильник → выключатель — подъём от выключателя к потолку считается", () => {
+  const { P, w } = install();
+  const sw = M.newElement("switch", w(3), 100, 90, "light");
+  const l = M.newElement("light", null, 0, P.settings.ceilingHeight, "light"); l.params = { x: 200, y: 150 };
+  P.elements.push(sw, l);
+  const r = M.newRoute("light", "ceiling", [{ x: 200, y: 150 }, { x: 18, y: 200 }], l.id, sw.id);
+  P.routes.push(r);
+  const h = EP.Plan.Routes.hopParts(P, r);
+  eq(h.vSrc, 0, "светильник на потолке — спуска нет");
+  eq(h.vTgt, P.settings.ceilingHeight - 90, "кабель спускается к выключателю (раньше терялось 1,8 м на каждый такой кабель)");
+});
+test("hopParts: точка → распайка — выпуск в коробке, спуска у потолочной коробки нет", () => {
   const { P, w } = install();
   const j = M.newElement("junction", null, 0, 0, "routes"); j.params = { x: 200, y: 150 };
   const s1 = M.newElement("socket", w(0), 100, 30, "power");
   P.elements.push(j, s1);
   const r = M.newRoute("power", "ceiling", [{ x: 100, y: 18 }, { x: 200, y: 150 }], s1.id, j.id);
   P.routes.push(r);
-  eq(EP.Plan.Routes.hopVertMul(P, r), 1, "распайка принимает горизонталь — штроба не удваивается");
+  const h = EP.Plan.Routes.hopParts(P, r);
+  eq(h.vTgt, 0, "потолочная коробка: кабель приходит по потолку");
+  eq(h.stub, 20 + 30, "выпуск у подрозетника + выпуск в коробке (раньше в коробке был только у её собственного кабеля)");
+});
+test("hopParts: «до щита» 24В — источник находится по синтетическому id, спуск к выключателю есть", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "ЩС"); pn.transformer = true; P.panels.push(pn);
+  const sw = M.newElement("switch", w(3), 100, 90, "light");
+  P.elements.push(sw);
+  const r = M.newRoute("power", "ceiling", [{ x: 18, y: 100 }, { x: 50, y: 50 }], "sw24:" + sw.id + "@" + pn.id, pn.id); r.toPanel = true; r.leg = "pri24";
+  P.routes.push(r);
+  ok(EP.Plan.Routes.srcElOf(P, r) === sw, "srcElOf отрезает sw24: и @щит");
+  eq(EP.Plan.Routes.hopParts(P, r).vSrc, P.settings.ceilingHeight - 90, "спуск к выключателю у кабеля «до щита»");
+});
+test("hopParts: по полу выключатель + свет — сумма вертикалей прежняя (пол→выкл + выкл→потолок)", () => {
+  const { P, w } = install();
+  const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
+  const sw = M.newElement("switch", w(3), 100, 90, "light");
+  const l = M.newElement("light", null, 0, P.settings.ceilingHeight, "light"); l.params = { x: 200, y: 150 };
+  P.elements.push(sw, l);
+  const rs = M.newRoute("light", "floor", [{ x: 18, y: 100 }, { x: 50, y: 50 }], sw.id, pn.id); rs.toPanel = true;
+  const rl = M.newRoute("light", "ceiling", [{ x: 200, y: 150 }, { x: 18, y: 100 }], l.id, sw.id);
+  P.routes.push(rs, rl);
+  const a = EP.Plan.Routes.hopParts(P, rs), b = EP.Plan.Routes.hopParts(P, rl);
+  eq(a.vSrc, 90, "кабель щит→выключатель по полу — от пола до выключателя");
+  eq(b.vTgt, P.settings.ceilingHeight - 90, "подъём к свету — свой кабель");
+  eq(a.vSrc + b.vTgt, P.settings.ceilingHeight, "вместе — вся высота, как и было");
+  eq(EP.Plan.Routes.pointVert(P, sw), P.settings.ceilingHeight, "ШТРОБА у выключателя по полу по-прежнему на всю высоту");
 });
 test("pointVert: выключатель при разводке ПО ПОЛУ — штроба на всю высоту (до потолка, к лампе)", () => {
   const { P, w } = install();
