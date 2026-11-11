@@ -111,20 +111,36 @@
       const tx = (committed.x - v.x) * k, ty = (committed.y - v.y) * k;
       return s >= 0.5 && s <= 2 && Math.abs(tx) <= cw * 0.5 && Math.abs(ty) <= (ch || cw) * 0.5;
     }
-    function applyLive() {
+    /* Пока жест ИДЁТ (пальцы на экране или серия колеса), живой вид держим дольше: масштаб
+       до ×4 вместо ×2 — на время движения лёгкое размытие незаметно, зато обычный пинч
+       (×2–×3) проходит вообще без промежуточной фиксации. А если фиксировать всё же
+       пришлось (вид ушёл дальше нарисованного), она ЛЁГКАЯ: меняется только viewBox, сцену
+       под новый масштаб не пересобираем (толщины линий и размер значков на эти доли
+       секунды остаются «как у сдвинутой картинки» — ровно то, что и так было на экране).
+       Полная пересборка под масштаб — один раз, когда жест закончился. Раньше каждая
+       промежуточная фиксация пересобирала стены, цепочки и трассы всей квартиры посреди
+       движения пальцев: на большой квартире 70–130 мс счёта (CPU ×4) плюс раскладка и
+       покраска — кадр до 300 мс прямо во время пинча. */
+    let rescalePending = false; // была лёгкая фиксация — сцена ждёт пересборки под масштаб
+    function applyLive(active) {
       if (!committed || !cw) { apply(); return; }
+      const act = !!active || pts.size > 0;
       const s = committed.w / view.w;
       const k = cw / view.w; // экранных px на см в живом виде
       const tx = (committed.x - view.x) * k, ty = (committed.y - view.y) * k;
-      if (!(s >= 0.5 && s <= 2) || Math.abs(tx) > cw * 0.5 || Math.abs(ty) > (ch || cw) * 0.5) { apply(); return; }
+      if (!(s >= (act ? 0.4 : 0.5) && s <= (act ? 4 : 2)) || Math.abs(tx) > cw * 0.5 || Math.abs(ty) > (ch || cw) * 0.5) {
+        apply(act);
+        if (act && pts.size === 0) commitSoon(140); // серия колеса: полная фиксация после паузы
+        return;
+      }
       liveTransform(tx, ty, s);
       commitSoon(140); // палец остановился — дорисуем открывшиеся края
     }
     function commitSoon(ms) {
       clearTimeout(commitTimer);
-      commitTimer = setTimeout(() => { commitTimer = 0; if (liveT) apply(); }, ms);
+      commitTimer = setTimeout(() => { commitTimer = 0; if (liveT || rescalePending) apply(); }, ms);
     }
-    function apply() {
+    function apply(light) {
       clearTimeout(commitTimer); commitTimer = 0;
       restRect = null;
       committed = { x: view.x, y: view.y, w: view.w, h: view.h };
@@ -132,6 +148,8 @@
       if (liveT) { liveT = null; wrap.style.transform = ""; }
       svg.setAttribute("viewBox", view.x + " " + view.y + " " + view.w + " " + view.h);
       drawGrid();
+      if (light) { rescalePending = true; return; }
+      rescalePending = false;
       if (cb.viewChanged) cb.viewChanged({ ...view });
     }
     function pxToCm() { if (!cw) measureBox(); return view.w / Math.max(1, cw); } // читает КЭШ (см. measureBox), не форсит reflow
@@ -195,7 +213,7 @@
         const k = pxToCm();
         view.x -= vx * dt * k; view.y -= vy * dt * k;
         applyLive();
-        if (Math.hypot(vx, vy) < 0.02) { inertia = 0; if (liveT) apply(); return; }
+        if (Math.hypot(vx, vy) < 0.02) { inertia = 0; if (liveT || rescalePending) apply(); return; }
         inertia = requestAnimationFrame(step);
       };
       inertia = requestAnimationFrame(step);
@@ -366,7 +384,7 @@
       // жест закончен: быстрый бросок — докатываем по инерции, иначе фиксируем живой вид
       // в viewBox (одна перерисовка на весь жест)
       if (pts.size === 0 && !(dragHandler && dragMoved) && startInertia()) { /* зафиксирует сама инерция */ }
-      else if (pts.size === 0 && liveT) apply();
+      else if (pts.size === 0 && (liveT || rescalePending)) apply();
       // cb.dragDone — ПЕРЕД "end": снять живой слой тяги, чтобы обработчик отпускания
       // (запись, перерисовка) работал уже с основной сценой
       if (dragHandler && dragMoved && pts.size === 0) { dragMoved = false; if (cb.dragDone) cb.dragDone(false); dragHandler(0, 0, "end"); }
@@ -405,7 +423,7 @@
     svg.addEventListener("pointerup", endPointer);
     svg.addEventListener("pointercancel", (e) => {
       clearLongPress(); pts.delete(e.pointerId); pinch = null; tapStart = null;
-      if (pts.size === 0 && liveT) apply();
+      if (pts.size === 0 && (liveT || rescalePending)) apply();
     });
 
     svg.addEventListener("wheel", (e) => {
@@ -419,7 +437,7 @@
       const wc2 = toWorld(e.clientX, e.clientY);
       view.x += wc.x - wc2.x; view.y += wc.y - wc2.y;
       // колесо — серия событий без явного «конца»: фиксируем после паузы
-      applyLive();
+      applyLive(true);
     }, { passive: false });
 
     // ---------- вписать содержимое ----------
