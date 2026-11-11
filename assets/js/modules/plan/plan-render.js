@@ -1228,13 +1228,18 @@
       const scalable = !(design && pt && pt.wall) && !(real && elem.wallId) && !elem.hOff && !(elem.type === "junction" && elem.wallId);
       nc.els.set(elem.id, { sig: eSig, base: eBase, node: grp, kb: k, scalable });
       if (elem.type === "junction") {
+        // цвет коробки — цвет её ЛИНИИ, как у любой точки (аудит цепей, пакет 6): с пакета 2
+        // коробка принадлежит линии, а рисовалась одним голубым цветом на все линии, и чья она,
+        // на плане было не видно. Инлайн-стилем: правило класса .ep-plan-junction перебивает
+        // атрибут fill. Без линии — прежний цвет из CSS.
+        const jst = cc0 ? { style: "fill:" + cc0.color } : {};
         if (gost) {
           // ГОСТ: соединительная коробка — закрашенный кружок
-          grp.appendChild(el("circle", { cx: pt.x, cy: pt.y, r: 5.5 * k, class: "ep-plan-junction is-gost", "stroke-width": sw * 0.7 }));
+          grp.appendChild(el("circle", Object.assign({ cx: pt.x, cy: pt.y, r: 5.5 * k, class: "ep-plan-junction is-gost", "stroke-width": sw * 0.7 }, jst)));
         } else {
           // распайка: ромб (повёрнутый квадрат) на слое трасс — на самой стене, без отступа
           const s2 = 12 * k;
-          grp.appendChild(el("rect", { x: pt.x - s2, y: pt.y - s2, width: s2 * 2, height: s2 * 2, transform: `rotate(45 ${pt.x} ${pt.y})`, class: "ep-plan-junction", "stroke-width": sw * 0.7 }));
+          grp.appendChild(el("rect", Object.assign({ x: pt.x - s2, y: pt.y - s2, width: s2 * 2, height: s2 * 2, transform: `rotate(45 ${pt.x} ${pt.y})`, class: "ep-plan-junction", "stroke-width": sw * 0.7 }, jst)));
         }
         if (bad.has(elem.id)) grp.appendChild(el("circle", { cx: pt.x, cy: pt.y, r: r0 * 1.7, class: "ep-plan-warnring", "stroke-width": sw * 0.7 }));
       } else if (elem.type === "block") {

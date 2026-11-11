@@ -625,33 +625,25 @@
     // свет/слаботочка/тёплый пол), линия идёт от потолка ИЛИ от пола (по
     // routeType) до высоты поста — это и есть направление; подпись сечения
     // рядом с концом линии.
+    // значки постов и имена линий — ДО штроб: подписи штроб их обходят (placeChaseLabels)
+    const lb0 = UG.labelBoxes(sorted, gopt, (e) => (p.circuits || []).find((c) => c.id === e.circuitId));
+    let chaseBoxes = [];
     {
       // ШТРОБЫ — общий список UnfoldGeo.chases, тот же, что у живой развёртки и по правилам
       // сметы: к щиту, «×n» у параллельных, без штроб к «было» и к точкам без трассы, силовая
       // штроба блока — в пост входа трассы (аудит цепей, пакет 5)
       const CHASE_COL = UG.CHASE_COL;
-      // подписи сечения у соседних штроб (блок постов) вставали друг на друга —
-      // «25×3025×25×30» на скриншоте печатного листа. Одинаковую подпись рядом
-      // (ближе 22см на той же высоте) рисуем ОДИН раз: сечение у них всё равно одно.
-      const lbls = [];
-      const drawChase = (cx, cy0, cy1, kind, n) => {
-        if (Math.abs(cy1 - cy0) < 1) return;
-        const col = CHASE_COL[kind] || CHASE_COL.power;
-        s += `<line x1="${cx}" y1="${cy0}" x2="${cx}" y2="${cy1}" stroke="${col}" stroke-width="${kk * (n > 1 ? 7 : 5)}" opacity="0.28"/>`;
-        s += `<line x1="${cx}" y1="${cy0}" x2="${cx}" y2="${cy1}" stroke="${col}" stroke-width="${kk * 1.4}" stroke-dasharray="${3 * kk} ${2 * kk}"/>`;
-        const txt = UG.chaseText(p, kind, n);
-        if (!txt) return;
-        let labelY = cy0 + (cy1 > cy0 ? 12 * kk : -6 * kk);
-        // порог по X — от РЕАЛЬНОЙ ширины подписи (шрифт 8*kk), а не магических 22см:
-        // на «1:1» подписи крупные и рядом стоящие штробы блока сливались в «25×3025×30»
-        const lw2 = Math.max(22, txt.length * 4.6 * kk);
-        const near = (ly, t) => lbls.some((l) => (t === undefined || l.txt === t) && Math.abs(l.x - cx) < lw2 && Math.abs(l.y - ly) < 9 * kk);
-        if (near(labelY, txt)) return;              // такое же сечение рядом уже подписано
-        for (let i = 0; i < 3 && near(labelY); i++) labelY += 10 * kk; // разное — разносим по высоте
-        lbls.push({ txt, x: cx, y: labelY });
-        s += `<text x="${cx + 3 * kk}" y="${labelY}" font-size="${8 * kk}" fill="${col}">${txt}</text>`;
-      };
-      UG.chases(p, w, sorted, { H, blockGeom }).forEach((c) => drawChase(c.x, c.y0, c.y1, c.kind, c.n));
+      const list = UG.chases(p, w, sorted, { H, blockGeom });
+      list.forEach((c) => {
+        const col = CHASE_COL[c.kind] || CHASE_COL.power;
+        s += `<line x1="${c.x}" y1="${c.y0}" x2="${c.x}" y2="${c.y1}" stroke="${col}" stroke-width="${kk * (c.n > 1 ? 7 : 5)}" opacity="0.28"/>`;
+        s += `<line x1="${c.x}" y1="${c.y0}" x2="${c.x}" y2="${c.y1}" stroke="${col}" stroke-width="${kk * 1.4}" stroke-dasharray="${3 * kk} ${2 * kk}"/>`;
+      });
+      // подписи сечения — общим размещением с живой развёрткой: мимо значков и имён линий,
+      // одинаковое сечение рядом — один раз; цифры размеров и высот их обходят (пакет 6)
+      const labs = UG.placeChaseLabels(p, list, kk, lb0.elBoxes.concat(lb0.qfBoxes), H);
+      labs.forEach((l) => { s += `<text x="${l.x}" y="${l.y}" font-size="${8 * kk}" fill="${CHASE_COL[l.kind] || CHASE_COL.power}">${l.txt}</text>`; });
+      chaseBoxes = labs.map((l) => l.box);
     }
     // ЩИТ на этой стене — в печатной развёртке его не было вовсе, хотя живая его рисовала
     // (пакет 5): тот же корпус от низа (G.panelBottom/panelBoxCm), что в живой и в 3D
@@ -669,7 +661,7 @@
     // подписи высоты — всё из общего UnfoldGeo, тем же кодом, что и живая развёртка:
     // раньше рамка обхода тут была 14×8 против 15×9 у живой, то есть копии уже разъехались.
     const symHalf = (el) => UG.symHalf(el, gopt);
-    const lb = UG.labelBoxes(sorted, gopt, (e) => (p.circuits || []).find((c) => c.id === e.circuitId));
+    const lb = UG.labelBoxes(sorted, gopt, (e) => (p.circuits || []).find((c) => c.id === e.circuitId), chaseBoxes);
     const boxes = lb.elBoxes, obstacles = lb.obstacles;
     const inA = edges.inA, inB = edges.inB;
     const cornerOf = (x) => UG.cornerOf(x, inA, inB);

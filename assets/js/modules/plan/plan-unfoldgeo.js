@@ -71,8 +71,10 @@
   /* Препятствия для подписи высоты: сами посты, имена линий QF над ними и подписи
      расстояния от угла. Раньше учитывались только посты, и подпись высоты садилась
      ровно на чужое имя QF или на чужую цифру расстояния (репорт со скриншотом).
-     circuitOf — функция поиска линии элемента: у живой и печатной она своя. */
-  function labelBoxes(els, o, circuitOf) {
+     circuitOf — функция поиска линии элемента: у живой и печатной она своя. extra —
+     дополнительные прямоугольники (подписи штроб, placeChaseLabels): их обходят и цифра
+     «от угла», и подпись высоты. */
+  function labelBoxes(els, o, circuitOf, extra) {
     const k = (o && o.k) || 1, H = (o && o.H) || 0;
     const { inA, inB } = o;
     const elBoxes = els.map((e) => {
@@ -89,7 +91,8 @@
     // могла стоять выше (обход чужого поста), и подпись высоты ложилась прямо на неё.
     // offPos — по индексу точки (null — размера нет), y без ручного сдвига линии (uh):
     // в живой развёртке горизонталь сдвигается своим transform, в печатной — прибавляется.
-    const blockers = elBoxes.concat(qfBoxes);
+    const ext = extra || [];
+    const blockers = elBoxes.concat(qfBoxes, ext);
     const offPos = els.map((e) => {
       const x = e.offset, y = H - e.height, c = cornerOf(x, inA, inB);
       if (Math.abs(x - c) <= 2) return null;
@@ -100,7 +103,7 @@
     const offBoxes = offPos.filter(Boolean).map((o) => ({ x: o.x, y: o.y + o.uh, hw: 14 * k, hh: 8 * k }));
     // qfBoxes/offBoxes отдаются отдельно: цифра «от угла» обходит только посты и имена QF
     // (её собственные offBoxes в препятствия себе не годятся), а подпись высоты — всё разом.
-    return { elBoxes, qfBoxes, offBoxes, offPos, obstacles: elBoxes.concat(qfBoxes, offBoxes) };
+    return { elBoxes, qfBoxes, offBoxes, offPos, obstacles: elBoxes.concat(qfBoxes, offBoxes, ext) };
   }
 
   /* Где стоит цифра «от угла» (размер от ближайшего внутреннего угла до поста): середина
@@ -261,8 +264,41 @@
     return t && n > 1 ? t + " ×" + n : t;
   }
 
+  /* ПОДПИСИ СЕЧЕНИЯ ШТРОБ — одно размещение на обе развёртки (аудит цепей, пакет 6). Раньше
+     каждая развёртка ставила подпись у начала штробы без оглядки на соседей: у короткой штробы
+     (коробка под потолком — 20 см) подпись уходила под значок поста, её закрывали цифра высоты
+     и цифра «от угла» — подписи штроб в обходе подписей не участвовали вовсе. Кандидаты: как
+     было (у начала штробы), дальше по штробе, правее (мимо значка и имени линии), за линией
+     потолка/пола; первый, что не задевает blockers (значки постов, имена линий) и уже
+     поставленные подписи. Такое же сечение рядом — один раз (как было: штробы блока).
+     Возвращает [{ txt, kind, x, y, box }] — box отдаётся в labelBoxes(..., extra), и цифры
+     размеров и высот обходят подпись. x — левый край текста (text-anchor start). */
+  function placeChaseLabels(p, list, k, blockers, H) {
+    const out = [];
+    (list || []).forEach((c) => {
+      const txt = chaseText(p, c.kind, c.n);
+      if (!txt) return;
+      const down = c.y1 > c.y0;                       // от потолка вниз (иначе от пола вверх)
+      const yDef = c.y0 + (down ? 12 * k : -6 * k);
+      const tw = txt.length * 4.6 * k;                // ширина текста (шрифт 8)
+      const lw2 = Math.max(22, tw);
+      if (out.some((l) => l.txt === txt && Math.abs(l.cx - c.x) < lw2 && Math.abs(l.yDef - yDef) < 9 * k)) return;
+      const boxAt = (x, y) => ({ x: x + tw / 2, y: y - 3 * k, hw: tw / 2 + k, hh: 4.5 * k }); // 4.5: соседний ряд через 10 не «касается» из-за округления
+      const all = (blockers || []).concat(out.map((l) => l.box));
+      const hits = (b) => all.some((o) => Math.abs(b.x - o.x) < b.hw + o.hw && Math.abs(b.y - o.y) < b.hh + o.hh);
+      const dir = down ? 1 : -1, yOut = down ? -4 * k : (H || 0) + 10 * k;
+      const cand = [[c.x + 3 * k, yDef], [c.x + 3 * k, yDef + 10 * k * dir], [c.x + 3 * k, yDef + 20 * k * dir],
+        [c.x + 16 * k, yDef], [c.x + 26 * k, yDef], [c.x + 3 * k, yOut], [c.x + 16 * k, yOut], [c.x - 3 * k - tw, yOut]];
+      let pick = null;
+      for (let i = 0; i < cand.length && !pick; i++) { const b = boxAt(cand[i][0], cand[i][1]); if (!hits(b)) pick = { x: cand[i][0], y: cand[i][1], box: b }; }
+      if (!pick) pick = { x: c.x + 3 * k, y: yDef, box: boxAt(c.x + 3 * k, yDef) };
+      out.push({ txt, kind: c.kind, cx: c.x, yDef, x: pick.x, y: pick.y, box: pick.box });
+    });
+    return out;
+  }
+
   EP.Plan.UnfoldGeo = {
     frameW, frameH, blockGeom, insideEdges, cornerOf, symHalf,
-    labelBoxes, offLabelPos, placeHLabel, CHASE_COL, chaseKindOf, chaseLabels, chaseCap, chases, chaseText
+    labelBoxes, offLabelPos, placeHLabel, CHASE_COL, chaseKindOf, chaseLabels, chaseCap, chases, chaseText, placeChaseLabels
   };
 })();

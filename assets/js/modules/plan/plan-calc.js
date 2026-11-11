@@ -284,14 +284,49 @@
     if (kind === "cross") return "cross_" + Math.min(2, keys);
     return "switch_" + keys;
   }
+  // ПОДРОЗЕТНИК-РАСПАЙКА (аудит цепей, пакет 6): в подрозетнике, куда приходят 2+ кабеля
+  // (шлейф: вход и выход), или где один кабель расходится на несколько розеток блока, жилы
+  // соединяют клеммой. ОДИН признак и для работы «Собрать распайку в подрозетнике», и для клемм
+  // (connectorsByRoutes) — раньше работа считалась, а клемм под неё не было вовсе.
+  // [{ el, cables, dev, cond }]: dev — приборов в этом месте (розеток блока / 1 у одиночной
+  // точки); 0 — клеммы тут не считаем: у выключателя свой шаблон, слаботочка и датчик в цепи
+  // света подключаются на клеммы самого прибора. cond — проводников (L/N/PE; у вывода 3ф пять).
+  function spliceNodes(p, inCnt, outCnt) {
+    const RT = EP.Plan.Routes, out = [];
+    (p.elements || []).forEach((e2) => {
+      if (e2.status === "existing" || e2.type === "junction" || e2.type === "riser") return;
+      // свободная точка (светильник в шлейфе своей клавиши) — не подрозетник: соединение там
+      // делается в клеммнике самого светильника и входит в его монтаж
+      if (!e2.wallId) return;
+      const cables = (inCnt[e2.id] || 0) + (outCnt[e2.id] || 0);
+      if (!cables) return;
+      const sockets = e2.type === "block" ? ((e2.params && e2.params.items) || []).filter((t) => t === "socket").length : 0;
+      if (cables < 2 && sockets < 2) return; // ни шлейфа, ни нескольких розеток на один кабель
+      const noClamp = e2.type === "switch" || !!LV_LAYERS[e2.layer] || !!(RT && RT.isFeeder && RT.isFeeder(p, e2));
+      out.push({ el: e2, cables, dev: noClamp ? 0 : (e2.type === "block" ? sockets : 1), cond: e2.type === "output3" ? 5 : 3 });
+    });
+    return out;
+  }
+  // типоразмеры клемм (ВАГО и СИЗ — 2..6, 8, 10 мест): 7 и 9 мест не бывает — берём ближайшую
+  // большую; больше 10 — несколько клемм с перемычкой (каждая теряет место под неё). Раньше
+  // клемма на 7 жил выходила позицией «pin7» без названия.
+  const PIN_SIZES = [2, 3, 4, 5, 6, 8, 10];
   function connectorsByRoutes(p, inCnt, outCnt) {
     const mode = (p.settings && p.settings.connectorMode) || "gml";
     const pinMap = {};
-    const addPin = (pins, q) => { if (pins >= 2 && q > 0) pinMap["pin" + pins] = (pinMap["pin" + pins] || 0) + q; };
+    const addPin = (pins, q) => {
+      if (!(pins >= 2) || !(q > 0)) return;
+      if (pins > 10) { pinMap.pin10 = (pinMap.pin10 || 0) + q * Math.ceil((pins - 2) / 8); return; }
+      const sz = PIN_SIZES.find((x) => x >= pins);
+      pinMap["pin" + sz] = (pinMap["pin" + sz] || 0) + q;
+    };
     (p.elements || []).forEach((e2) => {
       if (e2.status === "existing" || e2.type !== "junction") return;
       addPin((inCnt[e2.id] || 0) + (outCnt[e2.id] || 0), 3);
     });
+    // подрозетник-распайка: на каждый проводник клемма на (кабелей + приборов) мест — как пул в
+    // режиме «В подрозетниках» (pin(2+розеток)×3), только кабелей ровно столько, сколько сходится
+    spliceNodes(p, inCnt, outCnt).forEach((n) => { if (n.dev) addPin(n.cables + n.dev, n.cond); });
     (p.elements || []).forEach((e2) => {
       if (e2.status === "existing") return;
       if (e2.type === "switch") {
@@ -453,16 +488,29 @@
 
     const podroz = {}; // материал -> { std, deep }
     const P = (m) => (podroz[m] = podroz[m] || { std: 0, deep: 0 });
-    let junctBoxes = 0;
+    let junctBoxes = 0, junctWall = 0; // все коробки с кабелями / из них в стене
     const keyStd = sizeKey(s.chaseW || 25, s.chaseH || 30);
     (p.elements || []).forEach((e2) => {
       if (e2.status === "existing") return;
-      // коробка, к которой ничего не подключено (без линии / без точек своей линии в комнате),
-      // кабеля не получает — и в смету не идёт: о ней говорят «Проверки» (аудит цепей, пакет 2)
-      if (e2.type === "junction") { if (inCnt[e2.id] || outCnt[e2.id]) junctBoxes++; return; }
       const mat = matOfEl(e2);
       // подрозетники по материалу СВОЕЙ стены (выключатели/ТП — глубокие, как в пуле)
       const rn = roomNameOf(e2);
+      if (e2.type === "junction") {
+        // коробка, к которой ничего не подключено (без линии / без точек своей линии в комнате),
+        // кабеля не получает — и в смету не идёт: о ней говорят «Проверки» (аудит цепей, пакет 2)
+        const jc = (inCnt[e2.id] || 0) + (outCnt[e2.id] || 0);
+        if (!jc) return;
+        junctBoxes++;
+        if (!e2.wallId) return; // потолочная — кабели приходят по потолку, штробы к ней нет
+        // коробка В СТЕНЕ (аудит цепей, пакет 6): своя позиция (не «потолок») и штроба — все
+        // кабели коробки спускаются к ней с поверхности трассы; сколько штроб рядом — по ёмкости,
+        // как у точки шлейфа. Развёртка рисует её тем же правилом (UnfoldGeo.chases)
+        junctWall++;
+        const jsf = RT.surfaceOfEl ? RT.surfaceOfEl(p, e2) : genSurf;
+        const jv = RT.pointVert(p, e2, jsf);
+        if (jv >= 1) addStrobe(keyStd, mat, Math.max(1, Math.ceil(jc / capOf(keyStd))) * jv, "power", jsf, rn);
+        return;
+      }
       const addPost = (t) => {
         if (t === "switch" || t === "warmfloor") { P(mat).deep++; trAdd("podroz|deep|" + mat, rn, 1); }
         else if (t === "socket" || t === "tv" || t === "internet" || t === "ac" || t === "sensor") { P(mat).std++; trAdd("podroz|std|" + mat, rn, 1); }
@@ -617,27 +665,24 @@
     Object.keys(podroz).forEach((m) => { pStd += podroz[m].std; pDeep += podroz[m].deep; });
     if (pStd) add("material", "Подрозетник Ø68 40-50 мм", pStd, "шт");
     if (pDeep) add("material", "Подрозетник Ø68 65 мм глубокий", pDeep, "шт");
-    if (junctBoxes) add("material", "Распаечная коробка (потолок)", junctBoxes, "шт");
+    // коробка в стене — своя позиция (раньше и она шла как «(потолок)»: аудит цепей, пакет 6)
+    const junctCeil = junctBoxes - junctWall;
+    if (junctCeil) add("material", "Распаечная коробка (потолок)", junctCeil, "шт");
+    if (junctWall) add("material", "Распаечная коробка (стена)", junctWall, "шт");
     // Работы по распайкам РАЗДЕЛЕНЫ по МЕСТУ распайки — просьба пользователя: «работы по
     // распайкам (Собрать распаяную коробку на потолке / в подрозетнике)». Раньше была одна
     // общая строка «Монтаж и расключение распределительной коробки», хотя это две разные
     // по трудоёмкости операции: коробка на потолке (отдельная коробка, крышка, доступ с
     // лестницы) и распайка ВНУТРИ подрозетника (тесно, без отдельной коробки).
-    // · «на потолке» = число потолочных распаечных коробок (элементы type:"junction").
-    // · «в подрозетнике» = число точек-ТРАНЗИТОВ шлейфа: в подрозетник кабель и приходит,
-    //   и уходит дальше (outCnt+inCnt > 1) — именно там физически делается соединение без
-    //   отдельной коробки. Тот же признак (два кабеля и больше в одном подрозетнике), по
-    //   которому штроба у точки считается по числу кабелей, и по которому connectorsByRoutes считает пины
-    //   соединителей — источник один (inCnt/outCnt по графу трасс), расходиться не могут.
-    let spliceInBox = 0;
-    (p.elements || []).forEach((e2) => {
-      if (e2.status === "existing" || e2.type === "junction") return;
-      // свободная точка (светильник в шлейфе своей клавиши) — не подрозетник: соединение там
-      // делается в клеммнике самого светильника и входит в его монтаж
-      if (!e2.wallId) return;
-      if (((outCnt[e2.id] || 0) + (inCnt[e2.id] || 0)) > 1) spliceInBox++;
-    });
-    if (junctBoxes) add("work", "Собрать распаянную коробку на потолке", junctBoxes, "шт");
+    // · «на потолке» = число потолочных распаечных коробок (элементы type:"junction" без стены),
+    //   «в стене» — коробки на стене (аудит цепей, пакет 6: раньше обе шли «на потолке»).
+    // · «в подрозетнике» = точки-ТРАНЗИТЫ шлейфа (кабель и приходит, и уходит дальше) и блоки,
+    //   где один кабель расходится на несколько розеток, — именно там физически делается
+    //   соединение без отдельной коробки. Признак ОДИН с клеммами (spliceNodes — его же читает
+    //   connectorsByRoutes), источник один — inCnt/outCnt по графу трасс.
+    const spliceInBox = spliceNodes(p, inCnt, outCnt).length;
+    if (junctCeil) add("work", "Собрать распаянную коробку на потолке", junctCeil, "шт");
+    if (junctWall) add("work", "Собрать распаянную коробку в стене", junctWall, "шт");
     if (spliceInBox) add("work", "Собрать распайку в подрозетнике", spliceInBox, "шт");
     Object.keys(cableBy).forEach((m) => add("material", `Кабель ${m}`, cableBy[m], "м"));
     // прокладка кабеля — работа отдельно от материала, ОТДЕЛЬНОЙ СТРОКОЙ на каждую марку
@@ -744,7 +789,7 @@
       origin["material|Кабель " + m] = o;
       origin["work|Прокладка кабеля " + m] = o;
     });
-    return { items: applyCalcEdits(p, addRiserItems(p, addAvrItems(p, items))), cableBy, strobe, conn, podroz, junctBoxes, origin };
+    return { items: applyCalcEdits(p, addRiserItems(p, addAvrItems(p, items))), cableBy, strobe, conn, podroz, junctBoxes, junctWall, origin };
   }
 
   // ---------- правки сметы (p.calcEdits, бэкофилл в plan-core.js): скрытые позиции,
