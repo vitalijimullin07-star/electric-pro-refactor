@@ -1356,7 +1356,9 @@ test("calcByRoutes: сборка щита — автоматы/УЗО по чи�
   P.elements.push(s1, s2, j1);
   const rt1 = M.newRoute("power", "ceiling", [{ x: 100, y: 18 }, { x: 50, y: 50 }], s1.id, pn.id); rt1.toPanel = true;
   const rt2 = M.newRoute("power", "ceiling", [{ x: 100, y: 18 }, { x: 50, y: 50 }], s2.id, pn.id); rt2.toPanel = true;
-  P.routes.push(rt1, rt2);
+  // коробка в смете — только подключённая (аудит цепей, пакет 2): даём ей кабель к щиту
+  const rt3 = M.newRoute("power", "ceiling", [{ x: 380, y: 100 }, { x: 50, y: 50 }], j1.id, pn.id); rt3.toPanel = true;
+  P.routes.push(rt1, rt2, rt3);
   const res = EP.Plan.Calc.calcByRoutes(P);
   const breakers = res.items.find((i) => i.name === "Установка автоматического выключателя");
   // дифавтомат линии cc1 — ОДИН аппарат (движок цепей): не автомат + УЗО разом, как раньше
@@ -9236,6 +9238,102 @@ test("фото: deleteProject чистит кэш фото своего прое
       RT.build({ silent: true });
       eq(RT.routeStatus(P).code, "conflict", "трасса через шахту — конфликт");
       ok(/конфликт/i.test(RT.routeStatus(P).text), "текст статуса: " + RT.routeStatus(P).text);
+    });
+  }
+
+  // ===== 74. Аудит цепей, пакет 2: распаечные коробки =====
+  {
+    const RT = EP.Plan.Routes;
+    const twoRooms = (extra) => {
+      const a = M.newRoom(G.rectPoints(0, 0, 500, 400), "A"), b = M.newRoom(G.rectPoints(500, 0, 500, 400), "B");
+      const c = M.newCircuit("QF1", "#e11", 16);
+      const { P } = install(Object.assign({ rooms: [a, b], panels: [M.newPanel(10, 200, "ЩК")], circuits: [c], guides: [M.newGuide([{ x: 50, y: 200 }, { x: 950, y: 200 }])] }, extra || {}));
+      const W = (ri, i) => P.rooms[ri].id + ":" + i;
+      const sock = (ri, wi, off) => { const e = M.newElement("socket", W(ri, wi), off, 30, "power"); e.circuitId = P.circuits[0].id; P.elements.push(e); return e; };
+      return { P, W, sock, cid: P.circuits[0].id };
+    };
+    test("распайка: точки комнаты без коробки — шлейфом, а не каждая своим кабелем через стену", () => {
+      const { P, sock, cid } = twoRooms();
+      const a1 = sock(0, 0, 100), a2 = sock(0, 0, 300);
+      const b = [sock(1, 0, 100), sock(1, 0, 250), sock(1, 0, 400), sock(1, 2, 200)];
+      const j = M.newElement("junction", null, 0, 270, "routes"); j.params = { x: 250, y: 150 }; j.circuitId = cid; P.elements.push(j);
+      RT.build({ silent: true });
+      const to = (e) => (P.routes.find((r) => r.fromId === e.id) || {}).toId;
+      eq(to(a1), j.id, "розетка комнаты с коробкой — в коробку");
+      eq(to(a2), j.id, "вторая розетка той же комнаты — в коробку");
+      ok(b.filter((e) => to(e) === j.id).length <= 1, "из соседней комнаты в коробку идёт не больше одного кабеля (голова шлейфа)");
+      eq(RT.sleeveHoles(P), 1, "одна проходка между комнатами, а не по кабелю на каждую розетку (было 4)");
+      eq(RT.unroutedList().length, 0, "все точки проложены");
+    });
+    test("узел выбирается по длине пути, а не по прямой: щит за стеной проигрывает своему", () => {
+      const a = M.newRoom(G.rectPoints(0, 0, 400, 300), "A"), b = M.newRoom(G.rectPoints(400, 0, 400, 300), "B"), cor = M.newRoom(G.rectPoints(0, 300, 800, 150), "Коридор");
+      const t1 = M.newPanel(430, 150, "Т1"); t1.transformer = true;   // за стеной: по прямой 50 см
+      const t2 = M.newPanel(40, 40, "Т2"); t2.transformer = true;     // в своей комнате: по прямой ~360 см
+      const c = M.newCircuit("24В1", "#38f", 10);
+      const gd = M.newGuide([{ x: 200, y: 150 }, { x: 200, y: 375 }, { x: 600, y: 375 }, { x: 600, y: 150 }]);
+      const { P } = install({ rooms: [a, b, cor], panels: [t1, t2], circuits: [c], guides: [gd] });
+      const o = M.newElement("output24", null, 0, 270, "lv"); o.params = { x: 370, y: 150 }; o.circuitId = P.circuits[0].id; P.elements.push(o);
+      RT.build({ silent: true });
+      const r = P.routes.find((x) => x.fromId === o.id);
+      ok(r, "трасса построена");
+      eq(r.toId, P.panels[1].id, "в трансформатор своей комнаты, а не в ближайший по прямой за стеной (путь через коридор)");
+    });
+    const lampRoom = (keys, withJ) => {
+      const room = M.newRoom(G.rectPoints(0, 0, 500, 400), "Зал");
+      const c = M.newCircuit("QF2", "#fa0", 10);
+      const { P } = install({ rooms: [room], panels: [M.newPanel(10, 200, "ЩК")], circuits: [c] });
+      const cid = P.circuits[0].id;
+      const sw = M.newElement("switch", P.rooms[0].id + ":2", 400, 90, "light"); sw.keys = keys; sw.circuitId = cid; P.elements.push(sw);
+      const L = (x, y) => { const e = M.newElement("light", null, 0, 270, "light"); e.params = { x, y }; e.circuitId = cid; P.elements.push(e); return e; };
+      const l1 = L(150, 120), l2 = L(350, 120), l3 = L(250, 280);
+      sw.targetIds = keys >= 3 ? [[l1.id], [l2.id], [l3.id]] : [[l1.id], [l2.id, l3.id]];
+      let j = null;
+      if (withJ) { j = M.newElement("junction", null, 0, 270, "routes"); j.params = { x: 250, y: 200 }; j.circuitId = cid; P.elements.push(j); }
+      RT.build({ silent: true });
+      return { P, sw, l1, l2, l3, j };
+    };
+    test("распайка на линии света: светильники — из коробки, выключатель — спуском в неё", () => {
+      const { P, sw, l1, l2, l3, j } = lampRoom(2, true);
+      const rs = P.routes.find((r) => r.fromId === sw.id);
+      eq(rs.toId, j.id, "выключатель спускается в коробку");
+      eq(rs.leg, "swdrop", "это спуск выключателя");
+      const to = (e) => (P.routes.find((r) => r.fromId === e.id) || {}).toId;
+      eq(to(l1), j.id, "светильник первой клавиши — из коробки");
+      ok(to(l2) === j.id || to(l3) === j.id, "шлейф второй клавиши начинается в коробке");
+      ok(![l1, l2, l3].some((l) => to(l) === sw.id), "к выключателю светильники больше не тянутся");
+      const res = EP.Plan.Calc.calcByRoutes(P);
+      ok(Object.keys(res.cableBy).some((m) => /3×1\.5$/.test(m)), "спуск 2-клавишного — та же марка 3×1.5, без отдельной позиции");
+    });
+    test("спуск 3-клавишного выключателя в коробку — 5 жил", () => {
+      const { P } = lampRoom(3, true);
+      const res = EP.Plan.Calc.calcByRoutes(P);
+      ok(Object.keys(res.cableBy).some((m) => /5×1\.5$/.test(m)), "у 3 клавиш спуск 5×1.5: " + Object.keys(res.cableBy).join(", "));
+    });
+    test("без коробки — прежняя схема: свет от выключателя", () => {
+      const { P, sw, l1 } = lampRoom(2, false);
+      eq((P.routes.find((r) => r.fromId === l1.id) || {}).toId, sw.id, "светильник к выключателю");
+    });
+    test("«Сформировать проект» (пересобрать всё) сохраняет линию распайки", () => {
+      const { P, sock, cid } = twoRooms();
+      sock(0, 0, 100); sock(0, 0, 300); sock(0, 3, 150);
+      const j = M.newElement("junction", null, 0, 270, "routes"); j.params = { x: 250, y: 150 }; j.circuitId = cid; P.elements.push(j);
+      EP.Plan.AutoProject.apply(EP.Plan.AutoProject.propose(P, "all"));
+      const P2 = EP.Plan.Core.project, j2 = P2.elements.find((e) => e.id === j.id);
+      const sockLine = P2.elements.find((e) => e.type === "socket").circuitId;
+      ok(j2.circuitId && P2.circuits.some((c) => c.id === j2.circuitId), "у коробки есть линия после пересборки");
+      eq(j2.circuitId, sockLine, "та же линия, что у розеток её комнаты");
+    });
+    test("распайка без линии: кабеля «в никуда» нет, в смете её нет, «Проверки» говорят", () => {
+      const { P, sock } = twoRooms();
+      sock(0, 0, 100); sock(0, 0, 300);
+      const j = M.newElement("junction", null, 0, 270, "routes"); j.params = { x: 250, y: 150 }; P.elements.push(j);
+      RT.build({ silent: true });
+      ok(!P.routes.some((r) => r.fromId === j.id || r.toId === j.id), "к коробке без линии кабель не прокладывается");
+      ok(!RT.unroutedList().some((u) => u.id === j.id), "и это не «без трассы»");
+      const res = EP.Plan.Calc.calcByRoutes(P);
+      ok(!res.items.some((it) => /Распаечная коробка/.test(it.name)), "неиспользуемая коробка в смету не идёт");
+      const rep = EP.Plan.Rules.report(P);
+      ok(rep.issues.some((i) => /Распайка/.test(i.msg) && /линия не назначена/.test(i.msg)), "замечание в «Проверках»");
     });
   }
 

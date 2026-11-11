@@ -238,6 +238,18 @@
     const sec = (cc && cc.cable && String(cc.cable).split("×")[1]) || "1.5";
     return EP.Plan.Core.cableMark(p, (r.chainCross ? "5×" : "3×") + sec);
   }
+  /* Спуск выключателя в распайку (leg "swdrop", схема «всё сходится в коробке», аудит цепей,
+     пакет 2): по одному кабелю фаза идёт вниз, а ветки клавиш — вверх. 1–2 клавиши — 3 жилы
+     (фаза + две ветки), 3 клавиши — 5 жил. Сечение — у линии, если её марка задана вручную,
+     иначе 1.5, как у света. Отдельной позиции «спуск» в смете нет: марка та же, что у света
+     (3×1.5), и метраж просто входит в неё; у 3-клавишного — своя марка 5×1.5. */
+  function swDropMark(p, r) {
+    const sw = (p.elements || []).find((e) => e.id === r.fromId);
+    const keys = sw ? Math.max(1, Math.min(3, sw.keys || 1)) : 1;
+    const cc = (p.circuits || []).find((c) => c.id === r.circuitId);
+    const sec = (cc && cc.cable && String(cc.cable).split("×")[1]) || "1.5";
+    return EP.Plan.Core.cableMark(p, (keys >= 3 ? "5×" : "3×") + sec);
+  }
   // у линии 24В: RGB ли она (для марки «от щита»)
   function rgbOf(p, circuitId) {
     const cc = (p.circuits || []).find((c) => c.id === circuitId);
@@ -437,7 +449,9 @@
     const keyStd = sizeKey(s.chaseW || 25, s.chaseH || 30);
     (p.elements || []).forEach((e2) => {
       if (e2.status === "existing") return;
-      if (e2.type === "junction") { junctBoxes++; return; }
+      // коробка, к которой ничего не подключено (без линии / без точек своей линии в комнате),
+      // кабеля не получает — и в смету не идёт: о ней говорят «Проверки» (аудит цепей, пакет 2)
+      if (e2.type === "junction") { if (inCnt[e2.id] || outCnt[e2.id]) junctBoxes++; return; }
       const mat = matOfEl(e2);
       // подрозетники по материалу СВОЕЙ стены (выключатели/ТП — глубокие, как в пуле)
       const rn = roomNameOf(e2);
@@ -520,6 +534,8 @@
         key = ((cc && cc.cable) || defaultCableMark(p, r.layer, true, rgbOf(p, r.circuitId))) + " · от щита (24В)";
       } else if (r.leg === "chain") {
         key = chainMark(p, r) + " · между выключателями";
+      } else if (r.leg === "swdrop") {
+        key = swDropMark(p, r);
       } else {
         const i24 = is24Circuit(p, r.circuitId);
         key = cc ? lineCable(p, cc, r.layer) : defaultCableMark(p, r.layer, i24, i24 && rgbOf(p, r.circuitId));

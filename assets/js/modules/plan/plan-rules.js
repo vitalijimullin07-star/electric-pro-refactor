@@ -332,6 +332,13 @@
       const RT = EP.Plan.Routes;
       if (RT && RT.sleeveHoles) { try { passed.push(`Проходки рассчитаны: ${RT.sleeveHoles(p)} отв.`); } catch (e) {} }
     }
+    // 4а. распайки (аудит цепей, пакет 2): без линии точки к коробке не подключатся, а к
+    // коробке без подключённых точек кабель не прокладывается — значит, она стоит не там
+    (p.elements || []).forEach((j) => {
+      if (j.type !== "junction" || j.status === "existing") return;
+      if (!j.circuitId || !cIds.has(j.circuitId)) issues.push({ level: "warn", msg: "Распайка: линия не назначена — точки к ней не подключатся. Назначь коробке линию её точек.", ref: { kind: "el", id: j.id } });
+      else if (routes.length && !routes.some((r) => r.toId === j.id)) issues.push({ level: "warn", msg: "Распайка: в этой комнате нет точек её линии — коробка не используется, кабель к ней не прокладывается.", ref: { kind: "el", id: j.id } });
+    });
     // 5. влажные помещения по имени, но без отметки зоны — от неё зависят проверки УЗО/высот
     (p.rooms || []).forEach((r) => {
       if (WET_NAME.test(r.name || "") && (r.zones || []).indexOf("wet") < 0)
