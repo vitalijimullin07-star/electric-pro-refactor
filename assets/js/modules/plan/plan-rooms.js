@@ -198,7 +198,27 @@
     try { localStorage.setItem(MONTAGE_KEY, R.montage ? "1" : "0"); } catch (e) {}
     renderScene();
   }
-  function ui() { return { montage: !!R.montage, selectedRoomId: R.selectedRoomId, draft: R.draft, ruler: R.ruler, beamDraft: R.beamDraft, voidDraft: R.voidDraft, soloCircuit: R.soloCircuit, guideDraft: R.guideDraft, guideMode: R.mode === "guide", selectedDimId: R.selectedDimId }; }
+  /* Окно отсечения невидимого (см. ui.cull в plan-render.js): видимая область + CULL_PAD
+     экрана с каждой стороны. Перерисовка с новым окном нужна, только когда нарисованная
+     область холста (вид + запас картинки) выходит за прежнее окно — то есть примерно раз на
+     экран пройденного пути, а не на каждую фиксацию вида. */
+  const CULL_PAD = 1.5;
+  function cullWindow() {
+    if (!R.canvas || !R.canvas.getView) return null;
+    const v = R.canvas.getView();
+    if (!(v.w > 0 && v.h > 0)) return null;
+    const w = { x0: v.x - v.w * CULL_PAD, y0: v.y - v.h * CULL_PAD, x1: v.x + v.w * (1 + CULL_PAD), y1: v.y + v.h * (1 + CULL_PAD) };
+    R.cullWin = w;
+    return w;
+  }
+  // нарисованная область холста (вид + запас картинки) всё ещё внутри окна отсечения?
+  function cullCovers(v) {
+    const w = R.cullWin;
+    if (!w) return true;
+    const k = R.canvas.cmPerPx(), o = R.canvas.overscan ? R.canvas.overscan() : { x: 0, y: 0 };
+    return v.x - o.x * k >= w.x0 && v.y - o.y * k >= w.y0 && v.x + v.w + o.x * k <= w.x1 && v.y + v.h + o.y * k <= w.y1;
+  }
+  function ui() { return { cull: cullWindow(), montage: !!R.montage, selectedRoomId: R.selectedRoomId, draft: R.draft, ruler: R.ruler, beamDraft: R.beamDraft, voidDraft: R.voidDraft, soloCircuit: R.soloCircuit, guideDraft: R.guideDraft, guideMode: R.mode === "guide", selectedDimId: R.selectedDimId }; }
   // solo линии QF (изоляция на плане): тап по линии в шторке 🧵 Трассы — только она ярко,
   // остальные приглушены. Повторный тап по той же линии — снять solo. Не персистится.
   function setSoloCircuit(id) { R.soloCircuit = (R.soloCircuit === id) ? null : (id || null); renderScene(); }
@@ -279,7 +299,8 @@
   let scaledRaf = 0, lastScaledK = null;
   function onViewChanged() {
     const k = R.canvas ? R.canvas.cmPerPx() : null;
-    if (k !== null && lastScaledK !== null && Math.abs(k - lastScaledK) < 1e-6) return; // пан — масштаб тот же
+    // пан — масштаб тот же: перерисовка не нужна, если нарисованное покрывает новый вид
+    if (k !== null && lastScaledK !== null && Math.abs(k - lastScaledK) < 1e-6 && cullCovers(R.canvas.getView())) return;
     lastScaledK = k;
     if (scaledRaf) return;
     scaledRaf = (window.requestAnimationFrame || ((f) => setTimeout(f, 16)))(() => { scaledRaf = 0; renderScaled(); });
@@ -874,7 +895,8 @@
     if (!R.canvas || !worldPt) return;
     const host = document.querySelector("#ep-plan-canvas"); if (!host) return;
     const hb = host.getBoundingClientRect();
-    const r = R.canvas.svg.getBoundingClientRect();
+    // видимая область холста — обёртка (svg шире её на запас, см. placeSvg в plan-canvas.js)
+    const r = (R.canvas.wrap || R.canvas.svg).getBoundingClientRect();
     const v = R.canvas.getView();
     if (!v.h || !r.height) return;
     const sy = r.top + ((worldPt.y - v.y) / v.h) * r.height; // экранный Y точки
@@ -2837,6 +2859,8 @@
     canvas.onTap(onTap);
     if (canvas.onDblTap) canvas.onDblTap(onDoubleTap);
     canvas.onViewChanged(onViewChanged);
+    // лёгкая фиксация посреди жеста ушла за окно отсечения — дорисовать (масштаб сцены тот же)
+    if (canvas.onViewMoved) canvas.onViewMoved((v) => { if (!cullCovers(v)) renderSceneSoon(); });
     canvas.onHover(onCanvasHover);
     canvas.onHoverEnd(clearHoverPreview);
     canvas.onLongPress(onCanvasLongPress);

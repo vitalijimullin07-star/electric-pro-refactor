@@ -93,13 +93,16 @@
     const host = document.createElement("div");
     host.style.cssText = "position:fixed;left:-2000px;top:0;width:1050px;height:700px;";
     document.body.appendChild(host);
-    const cv = EP.Plan.Canvas.create(host);
+    const cv = EP.Plan.Canvas.create(host, { overscan: 0 }); // без запаса: viewBox = ровно кадр листа
     // ЯВНЫЙ размер офскрин-холста: .ep-plan-svg в plan.css — flex:1 1 auto; width:auto;
     // height:auto (нужно живому редактору), а host здесь НЕ flex-контейнер, поэтому svg
     // сжимался до интринсик-размера и fit() мерил не 1050×700, а почти вертикальный бокс —
     // viewBox выходил портретным, и подбор масштаба давал 1:150 вместо 1:50 (поймано живым
     // прогоном печати: план 8×4м печатался как 60×142мм вместо 160×80мм).
     cv.svg.style.width = "1050px"; cv.svg.style.height = "700px";
+    // видимую область холст меряет по обёртке svg (plan-canvas.js measureBox) — здесь она не
+    // во flex-контейнере и без явного размера была бы нулевой высоты
+    if (cv.wrap) { cv.wrap.style.width = "1050px"; cv.wrap.style.height = "700px"; }
     const bb = G().projectBBox(p);
     if (bb) cv.fit(bb, 0.07);
     // print: печатные пороги детализации и имя линии у каждой точки (см. CFG.lodDimKPrint)
@@ -155,7 +158,7 @@
     // печатался в неизменном боксе 1050×700px ≈ 278×185мм (поле листа A4!). Именно это
     // видел пользователь: «выбрал А1, а проект как будто в А4 остался» и «общий план не во
     // весь лист» — формат листа и масштаб в штампе менялись, физический размер чертежа нет.
-    cv.svg.style.width = ""; cv.svg.style.height = "";
+    cv.svg.style.width = ""; cv.svg.style.height = ""; cv.svg.style.left = ""; cv.svg.style.top = "";
     if (!cv.svg.getAttribute("style")) cv.svg.removeAttribute("style");
     const html = cv.svg.outerHTML;
     cv.destroy();

@@ -8351,11 +8351,44 @@ test("фото: deleteProject чистит кэш фото своего прое
           "transform у самого svg заставляет заново раскладывать SVG-текст — только обёртка");
         ok(/else \{ userAdjusted = true; view\.x -= dx; view\.y -= dy; trackPan\(e\.clientX, e\.clientY\); applyLive\(\); \}/.test(cv), "пан — живым сдвигом");
         ok(/if \(pts\.size === 0 && \(liveT \|\| rescalePending\)\) apply\(\);/.test(cv), "по окончании жеста вид фиксируется в viewBox (и после лёгкой фиксации — полная пересборка)");
-        ok(/function apply\(light\)/.test(cv) && /if \(light\) \{ rescalePending = true; return; \}/.test(cv), "во время жеста фиксация лёгкая: только viewBox, без пересборки сцены");
+        ok(/function apply\(light\)/.test(cv) && /if \(light\) \{ rescalePending = true;[^\n]*return; \}/.test(cv), "во время жеста фиксация лёгкая: только viewBox, без пересборки сцены");
         ok(/if \(liveT\) \{ left -= liveT\.tx;/.test(cv), "попадание тапом учитывает сдвиг во время жеста");
         const css = rd66("assets", "css", "plan.css");
         ok(/\.ep-plan-svgwrap \{[^}]*will-change: transform/.test(css), "обёртка — свой композитный слой");
         ok(!/\.ep-plan-svg \{[^}]*overflow: visible/.test(css), "overflow: visible у svg не возвращать: раскладка слоя в 4 раза дороже");
+      });
+      test("холст: запас картинки вокруг экрана — при перемещении края не появляются из пустоты (аудит п.1-2)", () => {
+        const cv = rd66("assets", "js", "modules", "plan", "plan-canvas.js");
+        // svg больше видимой области на запас, viewBox описывает ту же расширенную область
+        ok(/function placeSvg\(\)/.test(cv) && /svg\.style\.left = -mx \+ "px"/.test(cv), "svg шире экрана на запас");
+        ok(/svg\.setAttribute\("viewBox", \(view\.x - ovX \* kx\)/.test(cv), "viewBox включает запас");
+        // видимая область и попадание тапом — по обёртке, а не по svg
+        ok(/const w = wrap\.clientWidth, h = wrap\.clientHeight/.test(cv) && /const r = wrap\.getBoundingClientRect\(\)/.test(cv), "масштаб и тап считаются от видимой области");
+        ok(/ro\.observe\(wrap\)/.test(cv), "ресайз ловится по видимой области (размер svg задаём сами)");
+        // фиксация до появления края: проверка покрытия вместо «полэкрана»
+        ok(/function covers\(tx, ty, s\)/.test(cv) && /!covers\(tx, ty, s\)/.test(cv), "фиксация, пока край не показался");
+        // пока пальцы на экране — без таймерной фиксации посреди жеста
+        ok(/if \(pts\.size === 0\) commitSoon\(140\);/.test(cv), "таймер фиксации не срабатывает, пока палец на экране");
+        // длинный жест — второстепенные подписи скрыты до остановки
+        ok(/svg\.classList\.add\("is-moving"\)/.test(cv) && /svg\.classList\.remove\("is-moving"\)/.test(cv), "подписи прячутся только на длинном жесте");
+        const css = rd66("assets", "css", "plan.css");
+        ok(/\.ep-plan-svg\.is-moving \.ep-plan-chaintext/.test(css) && !/\.ep-plan-svg\.is-moving \.ep-plan-name/.test(css), "имена комнат остаются для ориентира");
+        // печать — без запаса: иначе масштаб чертежа считался бы с полями
+        const ex = rd66("assets", "js", "modules", "plan", "plan-export.js");
+        ok(/Canvas\.create\(host, \{ overscan: 0 \}\)/.test(ex), "офскрин-холст печати без запаса");
+        // копия холста для тяги — того же бокса
+        const rn = rd66("assets", "js", "modules", "plan", "plan-render.js");
+        ok((rn.match(/copyBox\(svg, px\)/g) || []).length === 2, "подъём и живой слой копируют бокс svg");
+      });
+      test("отрисовка: отсечение невидимого — вне окна не рисуется, кэш узлов сохраняется", () => {
+        const rn = rd66("assets", "js", "modules", "plan", "plan-render.js");
+        ok(/const cull = \(!only && ui && ui\.cull\) \|\| null;/.test(rn), "окно отсечения не действует на живой слой и печать");
+        // seen-метка ставится ДО отсечения — иначе pruneCache выбросил бы узел, ушедший за окно
+        ok(/seenRoutes\.add\(rt\.id\);\n\s*if \(cull && !bbVis\(bbOf\(rt\.points\)\)\) return;/.test(rn), "трасса за окном не теряет кэш");
+        ok(/seenEls\.add\(elem\.id\);\n\s*if \(!ptVis\(cx, cy\)\) return;/.test(rn), "точка за окном не теряет кэш");
+        const rm = rd66("assets", "js", "modules", "plan", "plan-rooms.js");
+        ok(/cull: cullWindow\(\)/.test(rm) && /cullCovers\(R\.canvas\.getView\(\)\)/.test(rm), "перерисовка при выходе нарисованного за окно");
+        ok(/canvas\.onViewMoved\(/.test(rm), "лёгкая фиксация посреди жеста тоже проверяет окно");
       });
     }
   }
