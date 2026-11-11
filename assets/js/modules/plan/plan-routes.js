@@ -3759,33 +3759,80 @@
     const sf = (surf === "floor" || surf === "ceiling") ? surf : (p.settings.routeType === "floor" ? "floor" : "ceiling");
     return sf === "floor" ? ph : Math.max(0, p.settings.ceilingHeight - ph);
   }
-  // Без распайки на конце (обычная точка, не щит/распайка) кабель у ЭТОЙ точки
-  // проходит штробу ДВАЖДЫ — вниз к посту и обратно вверх продолжать шлейф
-  // дальше (нет коробки, которая приняла бы горизонтальную линию на месте).
-  function hopVertMul(p, r) {
-    if (r.toPanel) return 1;
-    const target = (p.elements || []).find((e) => e.id === r.toId);
-    // распайка и ВЫКЛЮЧАТЕЛЬ — терминалы хопа: там есть коробка/подрозетник, принимающая
-    // кабель на месте, штроба вниз проходится один раз (у обычной точки шлейфа — дважды)
-    return (target && target.type !== "junction" && target.type !== "switch") ? 2 : 1;
+  /* ---- МЕТРАЖ ОДНОГО КАБЕЛЯ (хопа): спуск и выпуск у ОБОИХ концов ----
+     Кабель хопа идёт от поверхности трассы (потолок/пол) вниз/вверх к точке на ОДНОМ конце,
+     по поверхности — и снова к точке/коробке/щиту на ДРУГОМ. Раньше у дальнего конца спуск
+     брался как «ещё раз свой» (×2 у обычной точки шлейфа, hopVertMul), у выключателя,
+     распайки и звена цепочки проходных не брался вовсе, а выпуск на разделку — только у
+     начала кабеля. Аудит на демо-квартире: смета недосчитывала 38 м из 362 — 27 м подъёма
+     от выключателя к потолку у кабеля «светильник → выключатель», 7,8 м выпусков на дальнем
+     конце (в коробке на 5 кабелей учитывался выпуск одного), 3,3 м от «×2» при точках
+     разной высоты на одной линии. Теперь ОДНА раскладка (hopParts) на «Кабель по трассам»,
+     «По линиям», смету и путь питания точки.
+     ВЕРТИКАЛЬ КАБЕЛЯ (endVert) ≠ ШТРОБА (pointVert): у выключателя по полу штроба одна и на
+     всю высоту (кабель к свету уходит дальше вверх), а кабель «щит → выключатель» — только от
+     пола до выключателя; подъём к свету — СВОЙ кабель (хоп «светильник → выключатель»), и он
+     считается у этого хопа как дальний конец. Сумма та же, но больше не держится на костыле. */
+
+  // Элемент-ИСТОЧНИК хопа. У «до щита» 24В fromId синтетический ("sw24:<выключатель>@<щит>"),
+  // у слаботочного поста блока — "blk:<блок>#<пост>": прямой поиск по id их не находил, и
+  // спуск у такого конца в метраж не попадал вовсе (у «до щита» терялся спуск к выключателю)
+  function srcElOf(p, r) {
+    const id = String((r && r.fromId) || "");
+    let key = id;
+    if (id.indexOf("sw24:") === 0) key = id.slice(5).split("@")[0];
+    else if (id.indexOf("blk:") === 0) key = id.slice(4).split("#")[0];
+    return (p.elements || []).find((e) => e.id === key) || null;
+  }
+  // Элемент на ДАЛЬНЕМ конце (точка шлейфа, выключатель, распайка, светильник, стояк-приёмник).
+  // Щит — не элемент: у него свой спуск (panelVert) и свой запас на расключение.
+  function tgtElOf(p, r) {
+    if (!r || !r.toId || (r.toPanel && !r.toRiser)) return null;
+    return (p.elements || []).find((e) => e.id === r.toId) || null;
+  }
+  // вертикаль КАБЕЛЯ у одного конца: от поверхности хопа (sf) до самой точки
+  function endVert(p, el, surf) {
+    if (!el) return 0;
+    if (el.type === "riser") return 0;                  // стояк сам вертикаль — его метраж в riserRun
+    if (el.type === "junction" && !el.wallId) return 0; // потолочная распайка: кабель приходит по потолку
+    const sf = (surf === "floor" || surf === "ceiling") ? surf : surfaceOfEl(p, el);
+    if (sf === "floor") return el.height || 0;
+    return Math.max(0, p.settings.ceilingHeight - (el.height || 0));
+  }
+  // выпуск на разделку у одного конца: подрозетник/светильник — cableStubPoint, коробка
+  // (и стояк — там та же протяжка/разделка) — cableStubJunction
+  function stubOf(p, el) {
+    const s = p.settings;
+    if (el && (el.type === "junction" || el.type === "riser")) return s.cableStubJunction != null ? s.cableStubJunction : 30;
+    return s.cableStubPoint != null ? s.cableStubPoint : 20;
   }
   // Выпуск кабеля на разделку/подключение — просьба пользователя: «выпуск кабеля из
-  // подрозетников… длину вывода из стены любого кабеля, и так же в распред коробках…
-  // запас в щите на расключение». Считается ОДИН раз на каждый хоп (route), как и
-  // pointVert — по типу СВОЕГО источника (fromEl): обычная точка — cableStubPoint,
-  // распайка — cableStubJunction (там разделка нескольких кабелей сразу, запас больше).
-  // Если хоп доходит до щита (r.toPanel) — ДОПОЛНИТЕЛЬНО cableStubPanel (расключение в
-  // щите нужно НЕЗАВИСИМО от того, что стоит на другом конце). Используется ТОЛЬКО там,
-  // где считается сам метраж материала (calcByRoutes/perCircuit) — «Кабель по трассам»
-  // (lengths() ниже) остаётся ЧИСТОЙ длиной трассы без запаса/выпуска, как и раньше.
+  // подрозетников… и так же в распред коробках… запас в щите на расключение». У КАЖДОГО
+  // кабеля два конца, и выпуск нужен на обоих: у начала — по типу источника, у конца — по
+  // типу цели (коробка/подрозетник), в щите — cableStubPanel, в стояке — как в коробке.
+  // Используется ТОЛЬКО там, где считается сам метраж материала (calcByRoutes/perCircuit) —
+  // «Кабель по трассам» (lengths() ниже) остаётся длиной трассы без запаса/выпуска.
   function cableStub(p, fromEl, r) {
     const s = p.settings;
-    const base = (fromEl && fromEl.type === "junction")
-      ? (s.cableStubJunction != null ? s.cableStubJunction : 30)
-      : (s.cableStubPoint != null ? s.cableStubPoint : 20);
-    // стояк — не корпус щита: там разделка/протяжка как в распаечной коробке
-    if (r.toRiser) return base + (s.cableStubJunction != null ? s.cableStubJunction : 30);
-    return base + (r.toPanel ? (s.cableStubPanel != null ? s.cableStubPanel : 50) : 0);
+    const base = stubOf(p, fromEl || srcElOf(p, r));
+    if (r && r.toRiser) return base + (s.cableStubJunction != null ? s.cableStubJunction : 30);
+    if (r && r.toPanel) return base + (s.cableStubPanel != null ? s.cableStubPanel : 50);
+    const tgt = tgtElOf(p, r);
+    return base + (tgt ? stubOf(p, tgt) : 0);
+  }
+  // раскладка метража хопа в см: план, спуск у начала, спуск у конца, спуск в щит, стояк, выпуски
+  function hopParts(p, r) {
+    const src = srcElOf(p, r);
+    const sf = r.routeType;
+    const pn = (r.toPanel && !r.toRiser) ? (p.panels || []).find((x) => x.id === r.toId) : null;
+    return {
+      geom: G().polylineLen(r.points || []),
+      vSrc: endVert(p, src, sf),
+      vTgt: endVert(p, tgtElOf(p, r), sf),
+      panel: pn ? panelVert(p, pn, sf) : 0,
+      riser: riserRun(p, src),
+      stub: cableStub(p, src, r)
+    };
   }
   // ---- ФИЗИЧЕСКИЕ проходки (отверстия), а не кабеле-пересечения ----
   // ЕДИНЫЙ источник для шторки «Трассы» И для сметы (plan-calc.js). Раньше шторка
@@ -3829,10 +3876,8 @@
   // длина КАБЕЛЯ одной трассы (план + спуски к точке и в щит + стояк) — та же формула, что в
   // сводке «Кабель по трассам»; общая для lengths() и пути питания точки (feedPath)
   function routeLen(p, r) {
-    const el = (p.elements || []).find((e) => e.id === r.fromId);
-    const pn = (r.toPanel && !r.toRiser) ? (p.panels || []).find((x) => x.id === r.toId) : null;
-    return G().polylineLen(r.points) + pointVert(p, el, r.routeType) * hopVertMul(p, r)
-      + ((r.toPanel && !r.toRiser) ? panelVert(p, pn, r.routeType) : 0) + riserRun(p, el);
+    const h = hopParts(p, r);
+    return h.geom + h.vSrc + h.vTgt + h.panel + h.riser;
   }
   // Путь питания точки до щита по построенным трассам: точка → (выключатель, соседний
   // светильник шлейфа, распайка, стояк) → … → щит. Трассы — дерево: у узла РОВНО одна
@@ -4169,5 +4214,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { feedIssues, shaftConflicts, costOf, routeStatus, routeInputSig, routeTurns, build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, unroutedComputed: () => lastUnroutedPid != null, jobs: { run: runJob, state: jobsState, cancel: cancelQueued }, editVersion: () => editVer, pointVert, panelVert, hopVertMul, cableStub, keys24Of, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, dropCollinear, colinearMid, routeLen, feedPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
+  EP.Plan.Routes = { feedIssues, shaftConflicts, costOf, routeStatus, routeInputSig, routeTurns, build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, unroutedComputed: () => lastUnroutedPid != null, jobs: { run: runJob, state: jobsState, cancel: cancelQueued }, editVersion: () => editVer, pointVert, panelVert, endVert, hopParts, srcElOf, cableStub, keys24Of, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, dropCollinear, colinearMid, routeLen, feedPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
 })();
