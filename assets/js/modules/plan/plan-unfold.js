@@ -301,11 +301,13 @@
     (p.panels || []).forEach((pn) => {
       const c = G().closestOnSeg({ x: pn.x, y: pn.y }, w.a, w.b);
       if (c.d > 60) return;
-      const bx = p.settings.panelBox, px = c.t * L, ph = (pn.height != null ? pn.height : p.settings.panelHeight) || 150;
-      const pw = bx && bx.wmm ? bx.wmm / 10 : 36, phh = bx && bx.hmm ? bx.hmm / 10 : 60, py = H - ph;
+      // высота щита — НИЗ корпуса (как в смете и в 3D — G.panelBottom/panelBoxCm, пакет 4);
+      // раньше здесь она была серединой, и щит на чертеже стоял на полкорпуса ниже
+      const bxc = G().panelBoxCm(p), px = c.t * L, ph = G().panelBottom(p, pn);
+      const pw = bxc.w, phh = bxc.h, py = H - ph; // py — низ корпуса
       const grp = svgEl("g", { "data-pu-panel": pn.id });
-      grp.appendChild(svgEl("rect", { x: px - pw / 2, y: py - phh / 2, width: pw, height: phh, rx: 3, class: "ep-plan-unfpanel", "stroke-width": 1.5 * kk }));
-      grp.appendChild(svgEl("text", { x: px, y: py, "font-size": 12 * ks, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfpanelt" }, "Щ"));
+      grp.appendChild(svgEl("rect", { x: px - pw / 2, y: py - phh, width: pw, height: phh, rx: 3, class: "ep-plan-unfpanel", "stroke-width": 1.5 * kk }));
+      grp.appendChild(svgEl("text", { x: px, y: py - phh / 2, "font-size": 12 * ks, "text-anchor": "middle", "dominant-baseline": "central", class: "ep-plan-unfpanelt" }, "Щ"));
       svg.appendChild(grp);
     });
 
@@ -638,13 +640,16 @@
         const pn = (p.panels || []).find((x) => x.id === pg2.getAttribute("data-pu-panel"));
         if (!pn) return;
         const c0 = G().closestOnSeg({ x: pn.x, y: pn.y }, w.a, w.b);
-        const ph0 = (pn.height != null ? pn.height : p.settings.panelHeight) || 150;
+        const ph0 = G().panelBottom(p, pn);
+        const H0 = wallH(p, S.wallId), pt0 = toWorld(svg, e.clientX, e.clientY);
         core().commit();
         // тянем щит ВДОЛЬ стены (сохраняя перпендикулярный отступ от неё, perp) И ПО
-        // ВЫСОТЕ (pn.height — своя высота щита, изначально null = общая settings.panelHeight)
+        // ВЫСОТЕ (pn.height — своя высота щита, изначально null = общая settings.panelHeight).
+        // grabX/grabY — где именно взяли корпус: без них он прыгал бы низом под палец
         S.drag = {
           kind: "panel", pn, moved: false, g: pg2, x0: c0.t * w.len, curPx: c0.t * w.len,
-          perp: { x: pn.x - c0.x, y: pn.y - c0.y }, y0: wallH(p, S.wallId) - ph0, curHeight: ph0
+          perp: { x: pn.x - c0.x, y: pn.y - c0.y }, y0: H0 - ph0, curHeight: ph0,
+          grabX: pt0 ? pt0.x - c0.t * w.len : 0, grabY: pt0 ? (H0 - pt0.y) - ph0 : 0
         };
         return;
       }
@@ -716,13 +721,15 @@
           const oh = op2.height || (op2.type === "window" ? 140 : 200);
           op2.sill = Math.round(Math.max(0, Math.min(Math.max(0, H - oh), (H - pt.y) - oh / 2)));
         } else if (S.drag.kind === "panel") {
-          const px = Math.round(Math.max(0, Math.min(w.len, pt.x)));
+          const px = Math.round(Math.max(0, Math.min(w.len, pt.x - (S.drag.grabX || 0))));
           S.drag.curPx = px;
           const t = w.len ? px / w.len : 0;
           const nearest = { x: w.a.x + (w.b.x - w.a.x) * t, y: w.a.y + (w.b.y - w.a.y) * t };
           S.drag.pn.x = nearest.x + S.drag.perp.x; // сохраняем перпендикулярный отступ от стены
           S.drag.pn.y = nearest.y + S.drag.perp.y;
-          S.drag.curHeight = Math.round(Math.max(0, Math.min(H, H - pt.y))); // и по высоте
+          // и по высоте: низ корпуса от пола, верх не выше потолка
+          const topMax = Math.max(0, H - G().panelBoxCm(core().project).h);
+          S.drag.curHeight = Math.round(Math.max(0, Math.min(topMax, (H - pt.y) - (S.drag.grabY || 0))));
           S.drag.pn.height = S.drag.curHeight;
         } else if (S.drag.kind === "led") {
           const x0 = Math.round(Math.max(0, Math.min(w.len - S.drag.len, pt.x - S.drag.len / 2)));

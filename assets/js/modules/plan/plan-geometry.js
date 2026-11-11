@@ -1003,6 +1003,22 @@
 
   // Шаг подрозетников в блоке, см (стандарт межцентрового расстояния ~71 мм)
   G.POST_SPACING = 7;
+  /* КОРПУС ЩИТА — единый источник для развёртки, 3D и штробы у щита в смете (аудит цепей,
+     пакет 4). Высота щита (panel.height, иначе settings.panelHeight) везде означает НИЗ
+     корпуса — так она и описана в DEFAULTS; раньше развёртка и 3D рисовали её как СЕРЕДИНУ,
+     и щит на чертеже стоял на полкорпуса ниже, чем считала смета. Габарит — подобранный
+     корпус (settings.panelBox, мм), пока его не подобрали — типовой на 36 модулей (IEK). */
+  G.PANEL_BOX_DEF = { w: 39.5, h: 43.5, d: 12 };
+  G.panelBoxCm = (project) => {
+    const b = (project && project.settings && project.settings.panelBox) || {};
+    const D = G.PANEL_BOX_DEF;
+    return { w: b.wmm > 0 ? b.wmm / 10 : D.w, h: b.hmm > 0 ? b.hmm / 10 : D.h, d: b.dmm > 0 ? b.dmm / 10 : D.d };
+  };
+  G.panelBottom = (project, pn) => {
+    const s = (project && project.settings) || {};
+    const v = (pn && pn.height != null) ? pn.height : s.panelHeight;
+    return Number.isFinite(Number(v)) ? Number(v) : 150;
+  };
   /* Свойства ОТДЕЛЬНОГО ПОСТА блока (клавишность и вид выключателя).
      params.items — массив СТРОК-типов, и таким он и остаётся: его читают восемь мест
      (рендер, развёртка, расчёт, PDF, DXF, шаблоны, «мои блоки», геометрия штроб), и смена
