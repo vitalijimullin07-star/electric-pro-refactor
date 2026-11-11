@@ -1027,6 +1027,8 @@ body[data-visual-mode="day"] .ep-plan-opnum { fill: #0f172a; stroke: rgba(255,25
 .ep-plan-pdfpreview .unfdimh { stroke: #38bdf8; stroke-width: .8; }
 .ep-plan-pdfpreview .unfdimt { fill: #0e7490; font-family: system-ui; }
 .ep-plan-pdfpreview .unfshape { stroke: #111; stroke-width: 1; }
+.ep-plan-pdfpreview .unfpanel { fill: #e2e8f0; stroke: #111; }
+.ep-plan-pdfpreview .unfpanelt { fill: #111; font-weight: 700; font-family: system-ui; }
 .ep-plan-pdfpreview .unfglyph { fill: #fff; font-weight: 700; font-family: system-ui; }
 .ep-plan-pdfpreview .unfqf { font-weight: 700; font-family: system-ui; }
 

@@ -626,31 +626,20 @@
     // routeType) до высоты поста — это и есть направление; подпись сечения
     // рядом с концом линии.
     {
-      // Поверхность (пол/потолок) больше НЕ одна на проект: у каждой группы слоёв своя
-      // (settings.surfaces). Направление штробы считаем НА КАЖДУЮ точку/пост — по её
-      // построенной трассе, иначе по настройкам её группы (G.routeSurface). У блока постов
-      // виды разные (силовая/свет/слаботочка), поэтому там — по виду входа.
-      const RTm = EP.Plan.Routes;
-      const surfFor = (layer, el2) => {
-        if (el2 && el2.type !== "block" && RTm && RTm.surfaceOfEl) return RTm.surfaceOfEl(p, el2);
-        return G().routeSurface ? G().routeSurface(p, layer, el2) : (p.settings.routeType === "floor" ? "floor" : "ceiling");
-      };
-      const isFloor = (layer, el2) => surfFor(layer, el2) === "floor";
-      const y0Of = (layer, el2) => (isFloor(layer, el2) ? H : 0);
-      const KIND_LAYER = { power: "power", light: "light", lv: "lv", warm: "warm" };
-      const CHASE_COL = UG.CHASE_COL;            // цвета и подписи сечений — общие
-      const SIZE_LBL = UG.chaseLabels(p);        // с живой развёрткой
-      const chaseKindOf = UG.chaseKindOf;
+      // ШТРОБЫ — общий список UnfoldGeo.chases, тот же, что у живой развёртки и по правилам
+      // сметы: к щиту, «×n» у параллельных, без штроб к «было» и к точкам без трассы, силовая
+      // штроба блока — в пост входа трассы (аудит цепей, пакет 5)
+      const CHASE_COL = UG.CHASE_COL;
       // подписи сечения у соседних штроб (блок постов) вставали друг на друга —
       // «25×3025×25×30» на скриншоте печатного листа. Одинаковую подпись рядом
       // (ближе 22см на той же высоте) рисуем ОДИН раз: сечение у них всё равно одно.
       const lbls = [];
-      const drawChase = (cx, cy0, cy1, kind) => {
+      const drawChase = (cx, cy0, cy1, kind, n) => {
         if (Math.abs(cy1 - cy0) < 1) return;
         const col = CHASE_COL[kind] || CHASE_COL.power;
-        s += `<line x1="${cx}" y1="${cy0}" x2="${cx}" y2="${cy1}" stroke="${col}" stroke-width="${kk * 5}" opacity="0.28"/>`;
+        s += `<line x1="${cx}" y1="${cy0}" x2="${cx}" y2="${cy1}" stroke="${col}" stroke-width="${kk * (n > 1 ? 7 : 5)}" opacity="0.28"/>`;
         s += `<line x1="${cx}" y1="${cy0}" x2="${cx}" y2="${cy1}" stroke="${col}" stroke-width="${kk * 1.4}" stroke-dasharray="${3 * kk} ${2 * kk}"/>`;
-        const txt = SIZE_LBL[kind] || "";
+        const txt = UG.chaseText(p, kind, n);
         if (!txt) return;
         let labelY = cy0 + (cy1 > cy0 ? 12 * kk : -6 * kk);
         // порог по X — от РЕАЛЬНОЙ ширины подписи (шрифт 8*kk), а не магических 22см:
@@ -662,24 +651,18 @@
         lbls.push({ txt, x: cx, y: labelY });
         s += `<text x="${cx + 3 * kk}" y="${labelY}" font-size="${8 * kk}" fill="${col}">${txt}</text>`;
       };
-      sorted.forEach((el2) => {
-        const xx = el2.offset, yy = H - el2.height;
-        if (el2.type === "block") {
-          const bg = blockGeom(el2);
-          (G().blockChaseEntries ? G().blockChaseEntries(el2) : []).forEach((en) => {
-            const c = bg.cell(en.idx);
-            const enLayer = KIND_LAYER[en.kind] || "power";
-            const y0 = (en.kind === "light" && isFloor(enLayer, el2)) ? 0 : y0Of(enLayer, el2);
-            drawChase(c.cx, y0, c.cy, en.kind);
-          });
-        } else if (el2.layer === "warm") {
-          drawChase(xx, y0Of("warm", el2), yy, "power");
-          if (el2.height > 1) drawChase(xx, yy, H, "warm");
-        } else {
-          const kind = chaseKindOf(el2.layer);
-          const y0 = (el2.type === "switch" && isFloor(el2.layer, el2)) ? 0 : y0Of(el2.layer, el2);
-          drawChase(xx, y0, yy, kind);
-        }
+      UG.chases(p, w, sorted, { H, blockGeom }).forEach((c) => drawChase(c.x, c.y0, c.y1, c.kind, c.n));
+    }
+    // ЩИТ на этой стене — в печатной развёртке его не было вовсе, хотя живая его рисовала
+    // (пакет 5): тот же корпус от низа (G.panelBottom/panelBoxCm), что в живой и в 3D
+    {
+      const box = G().panelBoxCm(p);
+      (G().floorScoped(p).panels || []).forEach((pn) => {
+        const c = G().panelOnWall(p, w, pn);
+        if (!c) return;
+        const px = c.t * L, py = H - G().panelBottom(p, pn);
+        s += `<rect x="${px - box.w / 2}" y="${py - box.h}" width="${box.w}" height="${box.h}" rx="2" class="unfpanel" stroke-width="${1.2 * kk}"/>`;
+        s += `<text x="${px}" y="${py - box.h / 2}" font-size="${11 * kk}" text-anchor="middle" dominant-baseline="central" class="unfpanelt">Щ</text>`;
       });
     }
     // AABB символов, имён QF и подписей «от угла», ближайший внутренний угол и позиция
@@ -687,7 +670,7 @@
     // раньше рамка обхода тут была 14×8 против 15×9 у живой, то есть копии уже разъехались.
     const symHalf = (el) => UG.symHalf(el, gopt);
     const lb = UG.labelBoxes(sorted, gopt, (e) => (p.circuits || []).find((c) => c.id === e.circuitId));
-    const boxes = lb.elBoxes, qfBoxes = lb.qfBoxes, obstacles = lb.obstacles;
+    const boxes = lb.elBoxes, obstacles = lb.obstacles;
     const inA = edges.inA, inB = edges.inB;
     const cornerOf = (x) => UG.cornerOf(x, inA, inB);
     const placeHLabel = (idx) => UG.placeHLabel(idx, boxes, obstacles, kk);
@@ -736,17 +719,11 @@
         const hy = y + uh;
         s += `<line x1="${cx0}" y1="${hy}" x2="${x}" y2="${hy}" class="unfdimh"/>`;
         s += `<line x1="${cx0}" y1="${hy - 3 * kk}" x2="${cx0}" y2="${hy + 3 * kk}" class="unfdimh"/>`;
-        // цифра «от угла» стоит на середине выноски — а там часто оказывается ДРУГОЙ пост
-        // (соседняя точка на близкой высоте) или его имя QF: на скриншотах пользователя
-        // цифры сливались в «1236»/«1387». Приподнимаем её, пока не выйдет из чужих габаритов
-        // (при ручном сдвиге линии — не трогаем, стоит ровно где поставили).
-        const lx = (cx0 + x) / 2;
-        let ly = hy - 3 * kk;
-        if (!uh) {
-          const bad = (yy2) => boxes.concat(qfBoxes).some((o) => Math.abs(lx - o.x) < 12 * kk + o.hw && Math.abs(yy2 - o.y) < 6 * kk + o.hh);
-          for (let i = 0; i < 2 && bad(ly); i++) ly -= 7 * kk; // не больше двух шагов — иначе цифра уедет от своей выноски
-        }
-        s += `<text x="${lx}" y="${ly}" font-size="${9.5 * kk}" text-anchor="middle" class="unfdimt">${Math.round(Math.abs(x - cx0))}</text>`;
+        // цифра «от угла» — место считает общий UnfoldGeo.offLabelPos (через labelBoxes):
+        // обход чужого поста/имени линии, а у короткой выноски — снаружи засечки угла;
+        // при ручном сдвиге линии стоит ровно над ней (позиция — без сдвига, прибавляем hy)
+        const op = lb.offPos[idx] || { x: (cx0 + x) / 2, y: y - 3 * kk };
+        s += `<text x="${op.x}" y="${op.y + uh}" font-size="${9.5 * kk}" text-anchor="middle" class="unfdimt">${Math.round(Math.abs(x - cx0))}</text>`;
       }
       const hl = (ud.lx != null || ud.ly != null)
         ? { x: x + (Number(ud.lx) || 0), y: y + (Number(ud.ly) || 0) }
@@ -800,7 +777,10 @@
       const walls = G().walls(room);
       walls.forEach((w) => {
         const els = (p.elements || []).filter((e) => e.wallId === w.id);
-        if (els.length) out.push({ p, room, w, els, walls });
+        // стена со щитом — тоже лист развёртки, даже без точек: к щиту идёт самая длинная
+        // штроба стены (пакет 5 аудита цепей)
+        const hasPanel = (p.panels || []).some((pn) => !!G().panelOnWall(p, w, pn));
+        if (els.length || hasPanel) out.push({ p, room, w, els, walls });
       });
     });
     return out;
@@ -1511,6 +1491,8 @@
       .unfdimh { stroke: #38bdf8; stroke-width: .8; }
       .unfdimt { fill: #0e7490; font-family: system-ui; }
       .unfshape { stroke: #111; stroke-width: 1; }
+      .unfpanel { fill: #e2e8f0; stroke: #111; }
+      .unfpanelt { fill: #111; font-weight: 700; font-family: system-ui; }
       .unfglyph { fill: #fff; font-weight: 700; font-family: system-ui; }
       .unfqf { font-weight: 700; font-family: system-ui; }
       /* однолинейка + линии */
