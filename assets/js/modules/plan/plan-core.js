@@ -1143,6 +1143,17 @@
     persist("redo");
     return true;
   }
+  // ОТКАТ незавершённой правки: вернуть снимок, который сделал commit() в её начале, без
+  // записи в «вернуть» — правки не было. Нужен, когда правку отклонила проверка геометрии
+  // (контур пересёк сам себя, проём не влез) или жест оборвала система (pointercancel).
+  // Сохраняем как обычно: во время жеста отложенная запись могла унести на диск промежуточный
+  // кадр (persistDirty указывает на тот же объект проекта, что мутировался на ходу).
+  function rollback() {
+    if (!S.project || !S.undo.length) return false;
+    S.project = S.undo.pop();
+    persist("rollback");
+    return true;
+  }
   const canUndo = () => S.undo.length > 0;
   const canRedo = () => S.redo.length > 0;
 
@@ -1257,7 +1268,7 @@
     get project() { return S.project; },
     onChange,
     listProjects, createProject, openProject, closeProject, deleteProject, renameProject,
-    commit, undo, redo, canUndo, canRedo, persist,
+    commit, undo, redo, rollback, canUndo, canRedo, persist,
     flushPersist, // добить отложенную запись немедленно (уход со страницы, тесты)
     exportJSON, exportJSONById, importJSON, cloudPullIndex, cloudPushPending, syncState, cloudReady,
     sanitizeProject, // проверка/починка модели на входе (импорт/облако/чат) — см. функцию

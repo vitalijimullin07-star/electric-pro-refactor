@@ -73,6 +73,7 @@
     layersTitle: "Слои", legendTitle: "Условные обозначения", legendEmpty: "Пока пусто — добавь точки на план.",
     tooSmall: "Комната слишком маленькая (мин. 30 см).",
     polyNeed: "Нужно минимум 3 точки.",
+    polySelf: "Контур пересекает сам себя — так комнату не замкнуть. Убери лишние точки (↩) и обведи заново.",
     qbEdit: "✎ Быстрый доступ", qbClose: "✕",
     qbEditHint: "Отметь инструменты, которые всегда должны быть под рукой на плавающей панели снизу. Первые места панель дополнительно подстраивает сама — под последние использованные инструменты.",
     qbReset: "↺ Сбросить"
@@ -490,6 +491,7 @@
     if (R.mode === "poly") {
       const pts = R.draft.points;
       if (pts.length >= 3 && G().dist(w, pts[0]) <= CFG.closePolyPx * R.canvas.cmPerPx()) {
+        if (G().polySelfIntersects(pts)) { vibrate([12, 40, 12]); flash(T.polySelf); return; } // не замыкаем — поправь точки
         vibrate([10, 30, 10]); // замкнули контур — отклик заметнее обычного снапа
         R.pendingPoly = pts.slice();
         sheetCreatePoly();
@@ -875,6 +877,27 @@
     placeSheetBtn(); // во весь экран кнопка сворачивания живёт в углу, обычная — над кромкой шторки
   }
   function toast(msg) { openSheet(`<div class="ep-plan-srow ep-plan-toast">${esc(msg)}</div>`, { transient: true }); setTimeout(() => { if (sheet() && sheet().querySelector(".ep-plan-toast")) closeSheet(); }, 1800); }
+  // Короткое сообщение ПОВЕРХ холста, шторку не трогает. toast() рисуется в самой шторке и
+  // через 1,8 с её закрывает: отказ правки посреди карточки комнаты закрыл бы карточку, и
+  // пользователь потерял бы то, что в ней правил.
+  let flashTimer = 0;
+  function flash(msg) {
+    R.lastFlash = msg; // для тестов и проверки, что объяснение действительно показано
+    const host = document.querySelector && document.querySelector("#ep-plan-canvas");
+    if (!host || !host.querySelector || !document.createElement) { toast(msg); return; }
+    let n = host.querySelector(".ep-plan-flash");
+    if (!n) {
+      n = document.createElement("div");
+      n.className = "ep-plan-flash";
+      n.setAttribute("role", "status");
+      n.setAttribute("aria-live", "polite");
+      host.appendChild(n);
+    }
+    n.textContent = msg;
+    n.hidden = false;
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => { n.hidden = true; }, 3600);
+  }
 
   // редактируемый объект может оказаться под шторкой (она до 60% высоты холста
   // снизу) — сдвигаем вид вверх, чтобы точку/комнату было видно, пока её правишь.
@@ -1215,40 +1238,63 @@
   // (свет/ТП/распайка/вывод — params.x/y), щиты, балки/перегородки и пустоты (обе точки/
   // оба угла внутри). Магистрали (p.guides) НЕ трогаем: это осевые линии коридоров, они
   // рисуются по всей квартире и к одной комнате не привязаны.
+  // ТОЛЬКО ЭТОГО ЭТАЖА (аудит Астры, п. 4): у этажей общие координаты, и без фильтра перенос
+  // комнаты 1-го этажа двигал щит, свет и перегородки 2-го, стоящие «над» ней. Мебель и
+  // техника, заметки и свои размеры внутри комнаты тоже едут с ней (п. 3) — раньше
+  // оставались на месте, и холодильник оказывался посреди соседней комнаты. Размер — только
+  // если оба его конца в комнате (или на её контуре): размер к соседней стене не наш.
   function roomAttached(p, room) {
-    const inside = (q) => q && G().pointInPolygon(q, room.points || []);
-    const els = (p.elements || []).filter((el) => !el.wallId && el.params && el.params.x != null && inside({ x: el.params.x, y: el.params.y }));
-    const panels = (p.panels || []).filter((pn) => inside({ x: pn.x, y: pn.y }));
-    const beams = (p.beams || []).filter((bm) => inside(bm.a) && inside(bm.b));
-    const voids = (p.voids || []).filter((vd) => inside(vd.a) && inside(vd.b));
-    return { els, panels, beams, voids };
+    const fl = room.floorId || null;
+    const same = (x) => (x.floorId || null) === fl;
+    const pts = room.points || [];
+    const inside = (q) => q && G().pointInPolygon(q, pts);
+    const onOrIn = (q) => {
+      if (!q) return false;
+      if (inside(q)) return true;
+      for (let i = 0; i < pts.length; i++) if (G().closestOnSeg(q, pts[i], pts[(i + 1) % pts.length]).d <= 2) return true;
+      return false;
+    };
+    const els = (p.elements || []).filter((el) => same(el) && !el.wallId && el.params && el.params.x != null && inside({ x: el.params.x, y: el.params.y }));
+    const panels = (p.panels || []).filter((pn) => same(pn) && inside({ x: pn.x, y: pn.y }));
+    const beams = (p.beams || []).filter((bm) => same(bm) && inside(bm.a) && inside(bm.b));
+    const voids = (p.voids || []).filter((vd) => same(vd) && inside(vd.a) && inside(vd.b));
+    const appls = (p.appliances || []).filter((a) => same(a) && inside({ x: a.x, y: a.y }));
+    const notes = (p.notes || []).filter((nt) => same(nt) && inside({ x: nt.x, y: nt.y }));
+    const dims = (p.dims || []).filter((dm) => same(dm) && onOrIn(dm.a) && onOrIn(dm.b));
+    return { els, panels, beams, voids, appls, notes, dims };
   }
   // снимок исходных координат — двигаем ОТ него на суммарный сдвиг (без накопления
   // погрешности от пошаговых мутаций) и на нём же считаем магнит углов
   function roomMoveSnapshot(p, room) {
     const at = roomAttached(p, room);
+    const xy = (q) => ({ x: q.x, y: q.y });
     return {
       room, at,
-      pts: (room.points || []).map((q) => ({ x: q.x, y: q.y })),
+      pts: (room.points || []).map(xy),
       els: at.els.map((el) => ({ x: el.params.x, y: el.params.y })),
-      panels: at.panels.map((pn) => ({ x: pn.x, y: pn.y })),
-      beams: at.beams.map((bm) => ({ a: { x: bm.a.x, y: bm.a.y }, b: { x: bm.b.x, y: bm.b.y } })),
-      voids: at.voids.map((vd) => ({ a: { x: vd.a.x, y: vd.a.y }, b: { x: vd.b.x, y: vd.b.y } }))
+      panels: at.panels.map(xy),
+      beams: at.beams.map((bm) => ({ a: xy(bm.a), b: xy(bm.b) })),
+      voids: at.voids.map((vd) => ({ a: xy(vd.a), b: xy(vd.b) })),
+      appls: at.appls.map(xy),
+      notes: at.notes.map((nt) => ({ x: nt.x, y: nt.y, ax: nt.ax, ay: nt.ay })),
+      dims: at.dims.map((dm) => ({ a: xy(dm.a), b: xy(dm.b) }))
     };
   }
   function applyRoomMove(snap, dx, dy) {
     const { room, at } = snap;
+    const mv = (q) => ({ x: q.x + dx, y: q.y + dy });
     (room.points || []).forEach((q, i) => { q.x = snap.pts[i].x + dx; q.y = snap.pts[i].y + dy; });
     at.els.forEach((el, i) => { el.params.x = snap.els[i].x + dx; el.params.y = snap.els[i].y + dy; });
     at.panels.forEach((pn, i) => { pn.x = snap.panels[i].x + dx; pn.y = snap.panels[i].y + dy; });
-    at.beams.forEach((bm, i) => {
-      bm.a = { x: snap.beams[i].a.x + dx, y: snap.beams[i].a.y + dy };
-      bm.b = { x: snap.beams[i].b.x + dx, y: snap.beams[i].b.y + dy };
+    at.beams.forEach((bm, i) => { bm.a = mv(snap.beams[i].a); bm.b = mv(snap.beams[i].b); });
+    at.voids.forEach((vd, i) => { vd.a = mv(snap.voids[i].a); vd.b = mv(snap.voids[i].b); });
+    at.appls.forEach((a, i) => { a.x = snap.appls[i].x + dx; a.y = snap.appls[i].y + dy; });
+    at.notes.forEach((nt, i) => {
+      const s0 = snap.notes[i];
+      nt.x = s0.x + dx; nt.y = s0.y + dy;
+      if (s0.ax != null) { nt.ax = s0.ax + dx; nt.ay = s0.ay + dy; } // стрелка заметки едет с ней
     });
-    at.voids.forEach((vd, i) => {
-      vd.a = { x: snap.voids[i].a.x + dx, y: snap.voids[i].a.y + dy };
-      vd.b = { x: snap.voids[i].b.x + dx, y: snap.voids[i].b.y + dy };
-    });
+    at.dims.forEach((dm, i) => { dm.a = mv(snap.dims[i].a); dm.b = mv(snap.dims[i].b); });
   }
   // сдвиг по сетке + МАГНИТ: если после сдвига какой-то угол комнаты оказался в пределах
   // CFG.cornerSnapCm от угла ДРУГОЙ комнаты — доводим ровно на него (тот же порог и та же
@@ -1356,6 +1402,9 @@
         snap.at.panels.forEach((pn) => sel.push("[data-pn=\"" + pn.id + "\"]"));
         snap.at.beams.forEach((bm) => sel.push("[data-bm=\"" + bm.id + "\"]"));
         snap.at.voids.forEach((vd) => sel.push("[data-pl-void=\"" + vd.id + "\"]"));
+        snap.at.appls.forEach((a) => sel.push("[data-ap=\"" + a.id + "\"]"));
+        snap.at.notes.forEach((nt) => sel.push("[data-nt=\"" + nt.id + "\"]"));
+        snap.at.dims.forEach((dm) => sel.push("[data-dm=\"" + dm.id + "\"]"));
         liftNodes(sel);
         return;
       }
@@ -1390,7 +1439,7 @@
   // veto-паттерн, что у балки/комнаты: жест, начатый НЕ на проёме, остаётся панорамой.
   function enableOpeningDrag(openingId) {
     if (!R.canvas) return;
-    let cur = null;
+    let cur = null, grab = null; // grab: на какой стене взяли и как далеко палец от центра проёма
     R.canvas.setDragHandler((dx, dy, phase, start) => {
       const c = core(), p = c.project;
       const op = p && (p.openings || []).find((o) => o.id === openingId);
@@ -1402,6 +1451,11 @@
         const hit = EL.hitAt(start, EL.CFG.hitPx * k);
         if (!hit || !hit.opening || hit.opening.id !== op.id) return false;
         cur = { x: start.x, y: start.y };
+        // ТОЧКА ЗАХВАТА (аудит Астры, п. 11): раньше проём вставал центром под палец — взял
+        // дверь у края, повёл на 20 см, а она уехала на 55. Держим смещение пальца от центра
+        // вдоль стены; на другой стене — центр под пальцем (там своё направление отсчёта)
+        const w0 = G().wallById(p, op.wallId);
+        grab = { wallId: op.wallId, d: w0 ? G().offsetOnWall(w0, start) - (op.offset + op.width / 2) : 0 };
         c.commit();
         liveBegin(wallScope(op.wallId));
         return;
@@ -1412,16 +1466,21 @@
       const hitW = G().wallAt(p, cur, snapPx);
       if (hitW) {
         const wl = hitW.wall;
-        if (wl.id !== op.wallId) {
-          op.wallId = wl.id;
-          liveAdd(wallScope(wl.id)); // новая стена — её комната и соседи тоже в живом слое
-          // створка/откосы считаются от центроида комнаты-владельца — на новой стене
-          // сторона другая, пересчитываем (иначе дверь открывалась бы наружу)
-          const fl = EL.openingFlipFor && EL.openingFlipFor(p, wl);
-          if (fl) op.flip = fl;
+        // место — свободное от других проёмов этой стены и общей стены соседа (п. 13): упёрся
+        // в соседний проём — встаёт вплотную; на стене нет места вовсе — проём остаётся, где был
+        const center = G().offsetOnWall(wl, cur) - (wl.id === grab.wallId ? grab.d : 0);
+        const fit = G().fitOpening(p, wl, op.width, center, op.id);
+        if (fit != null) {
+          if (wl.id !== op.wallId) {
+            op.wallId = wl.id;
+            liveAdd(wallScope(wl.id)); // новая стена — её комната и соседи тоже в живом слое
+            // створка/откосы считаются от центроида комнаты-владельца — на новой стене
+            // сторона другая, пересчитываем (иначе дверь открывалась бы наружу)
+            const fl = EL.openingFlipFor && EL.openingFlipFor(p, wl);
+            if (fl) op.flip = fl;
+          }
+          op.offset = Math.round(fit);
         }
-        const maxOff = Math.max(0, wl.len - op.width);
-        op.offset = Math.round(Math.max(0, Math.min(maxOff, hitW.offset - op.width / 2)));
       }
       // палец вне зоны любой стены — проём просто остаётся там, где был (не отвязываем
       // его от стены: проёма «в воздухе» в модели не существует)
@@ -1745,27 +1804,62 @@
       <div class="ep-plan-modehint">Впиши длину — стена встанет в размер, соседние подстроятся. Точки на ней останутся на своих местах.</div>
     </details>`;
   }
+  // комнаты того же этажа: проверка «до/после» у правки числом — по всему этажу (общая стена
+  // может задеть соседей, а заранее не известно, каких)
+  function floorRoomIds(p, room) {
+    const fl = (room && room.floorId) || null;
+    return (p.rooms || []).filter((r) => (r.floorId || null) === fl).map((r) => r.id);
+  }
   function setWallLength(roomId, i, len) {
     const c = core(), p = c.project;
     const room = (p.rooms || []).find((r) => r.id === roomId);
     if (!room) return null;
     const next = G().setWallLength(room.points, i, len);
-    if (!next) { toast("Так стену не изменить — попробуй другую или потяни угол."); return null; }
+    if (!next) { flash("Так стену не изменить — попробуй другую или потяни угол."); return null; }
+    // вершины, которые сдвинулись (все на ОДИН вектор, см. G.setWallLength): стены, у которых
+    // сдвинулись оба конца, тянут за собой общие стены соседей — как при тяге пальцем
+    const moved = [];
+    let v = null;
+    next.forEach((q, k) => { const dx = q.x - room.points[k].x, dy = q.y - room.points[k].y; if (Math.abs(dx) > 1e-6 || Math.abs(dy) > 1e-6) { moved.push(k); v = { x: dx, y: dy }; } });
+    if (!moved.length) return room;
+    const ids0 = floorRoomIds(p, room), before = G().geomProblems(p, ids0);
     c.commit();
-    room.points = next;
-    // offsets точек/проёмов не должны вылезать за укоротившиеся стены
-    const wl = {};
-    G().walls(room).forEach((w) => { wl[w.id] = w.len; });
-    (p.elements || []).forEach((el) => {
-      if (el.wallId && wl[el.wallId] != null) el.offset = Math.max(0, Math.min(el.offset || 0, wl[el.wallId]));
-    });
-    (p.openings || []).forEach((op) => {
-      if (op.wallId && wl[op.wallId] != null) op.offset = Math.max(0, Math.min(op.offset || 0, Math.max(0, wl[op.wallId] - (op.width || 0))));
-    });
+    const shifted = shapeApply(p, shapeCtx(p, room, "shift", moved), v);
+    const bad = G().newProblems(before, G().geomProblems(p, ids0));
+    if (bad.length) { c.rollback(); flash(bad[0].msg + " — правка отменена."); return null; }
     c.persist("room-reshape"); // уже в AUTOREBUILD_ON — трассы пересчитаются сами
+    if (shifted.length) flash(shiftedMsg(shifted));
     return room;
   }
-  function sheetRoom(room) {
+  // публичная правка размеров прямоугольной комнаты (тесты, внешние вызовы): одна транзакция,
+  // с той же проверкой «до/после», что и ✓ в карточке комнаты
+  function resizeRoomRect(roomId, w, h) {
+    const c = core(), p = c.project, room = (p.rooms || []).find((r) => r.id === roomId);
+    if (!room || !G().isRect(room)) return false;
+    const ids0 = floorRoomIds(p, room), before = G().geomProblems(p, ids0);
+    c.commit();
+    const shifted = resizeRect(p, room, w, h);
+    const bad = G().newProblems(before, G().geomProblems(p, ids0));
+    if (bad.length) { c.rollback(); flash(bad[0].msg + " — размеры не применены."); return false; }
+    c.persist("room-edit");
+    if (shifted.length) flash(shiftedMsg(shifted));
+    return true;
+  }
+  // размеры прямоугольной комнаты числом: правая сторона едет на разницу ширины, нижняя — на
+  // разницу глубины (левый верхний угол стоит, как и раньше). Тем же механизмом, что тяга
+  // стены, — общая стена соседа едет вместе, точки и проёмы остаются на местах.
+  function resizeRect(p, room, W, H) {
+    const d = G().rectDims(room);
+    if (!d) return [];
+    const side = (key, val) => (room.points || []).map((q, k) => (Math.abs(q[key] - val) < 0.01 ? k : -1)).filter((k) => k >= 0);
+    let shifted = [];
+    if (Math.abs(W - d.w) > 0.01) { const right = side("x", d.x + d.w); if (right.length === 2) shifted = shifted.concat(shapeApply(p, shapeCtx(p, room, "shift", right), { x: W - d.w, y: 0 })); }
+    if (Math.abs(H - d.h) > 0.01) { const bot = side("y", d.y + d.h); if (bot.length === 2) shifted = shifted.concat(shapeApply(p, shapeCtx(p, room, "shift", bot), { x: 0, y: H - d.h })); }
+    return shifted;
+  }
+  // opts.keepView — перерисовать карточку, НЕ подводя вид (после тяги стены/угла: поля
+  // размеров должны показать то, что получилось, а камеру пользователь только что выбрал сам)
+  function sheetRoom(room, opts) {
     const p = core().project;
     const isR = G().isRect(room), d = isR ? G().rectDims(room) : null;
     const wet = (room.zones || []).indexOf("wet") >= 0;
@@ -1790,7 +1884,7 @@
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pr-delroom="${esc(room.id)}">${T.del}</button>
       </div>`);
     enableRoomDrag(room.id); // тяни углы/стены выбранной комнаты
-    ensureVisibleAboveSheet(G().centroid(room.points));
+    if (!(opts && opts.keepView)) ensureVisibleAboveSheet(G().centroid(room.points));
   }
   function sheetUnderlay() {
     const u = core().project && core().project.underlay;
@@ -2131,13 +2225,145 @@
     });
   }
 
+  /* ---------- ПРАВКА КОНТУРА: общая граница + проверка (аудит Астры, п. 1-2) ----------
+     Один механизм на тягу стены/угла и на правку размеров числом:
+     · стена — едет вся прямая: стены соседних комнат этого этажа на той же оси, что
+       перекрываются с ней (G.lineWalls), двигаются вместе, а с ними концы перегородок,
+       упирающиеся в эту стену, и щиты на ней. Раньше соседняя комната оставалась на месте,
+       и комнаты наезжали друг на друга;
+     · угол — вместе с ним едут совпадающие углы соседних комнат (G.coincidentVerts);
+     · точки, проёмы и лента на изменившихся стенах остаются, где стояли (G.wallItemsRestore);
+     · в конце — проверка: если правка добавила проблему геометрии (контур пересёк сам себя,
+       проём не влез, проёмы наложились), она откатывается целиком, а над планом всплывает
+       почему. Отмена правки — один шаг (commit делается один раз в начале). */
+  // mode "shift": idx — свои вершины, которые сдвигаются на ОДИН вектор (тяга стены — её два
+  // конца, длина стены числом — цепочка вершин, размеры прямоугольника — сторона). Стена, у
+  // которой сдвигаются ОБА конца, едет целиком — за ней едут общие стены соседей, концы
+  // перегородок на ней и щиты на ней. mode "corner": idx — один угол, с ним совпадающие углы.
+  function shapeCtx(p, room, mode, idx) {
+    const verts = new Map();
+    const addV = (r, k) => { const key = r.id + "#" + k; if (!verts.has(key)) verts.set(key, { room: r, i: k }); };
+    const pts = room.points || [], n = pts.length;
+    const lines = [];
+    if (mode === "corner") {
+      addV(room, idx);
+      G().coincidentVerts(p, room, pts[idx]).forEach((cv) => addV(cv.room, cv.i));
+    } else {
+      const own = new Set(idx);
+      own.forEach((k) => addV(room, k));
+      for (let k = 0; k < n; k++) {
+        const j = (k + 1) % n;
+        if (!own.has(k) || !own.has(j)) continue; // целиком едет стена, у которой сдвигаются оба конца
+        const a = pts[k], b = pts[j], len = G().dist(a, b);
+        if (len < 0.5) continue;
+        const lw = G().lineWalls(p, room, a, b);
+        lw.forEach((cw) => { addV(cw.room, cw.wall.i); addV(cw.room, (cw.wall.i + 1) % cw.room.points.length); });
+        lines.push({
+          a: { x: a.x, y: a.y }, b: { x: b.x, y: b.y }, d: { x: (b.x - a.x) / len, y: (b.y - a.y) / len },
+          ivs: [[0, len]].concat(lw.map((cw) => [cw.s, cw.e])),
+          walls: [G().wallById(p, room.id + ":" + k)].concat(lw.map((cw) => cw.wall))
+        });
+      }
+    }
+    const vs = [...verts.values()];
+    const ids = [...new Set(vs.map((v) => v.room.id))];
+    const ctx = {
+      mode, room, ids, line: lines[0] || null,
+      v0: vs.map((v) => ({ room: v.room, i: v.i, x: v.room.points[v.i].x, y: v.room.points[v.i].y })),
+      beams: [], panels: [],
+      items: G().wallItemsSnap(p, ids),
+      before: G().geomProblems(p, ids)
+    };
+    // перегородки, упирающиеся концом в сдвигаемую стену, и щиты на ней — едут вместе с ней
+    const fl = room.floorId || null, seenB = new Set(), seenP = new Set();
+    lines.forEach((line) => {
+      const nx = -line.d.y, ny = line.d.x, th = G().wallThOf(p, line.walls[0]);
+      (p.beams || []).forEach((bm) => {
+        if ((bm.floorId || null) !== fl) return;
+        ["a", "b"].forEach((end) => {
+          const q = bm[end], key = bm.id + end;
+          if (seenB.has(key)) return;
+          const dn = Math.abs((q.x - line.a.x) * nx + (q.y - line.a.y) * ny);
+          const t = (q.x - line.a.x) * line.d.x + (q.y - line.a.y) * line.d.y;
+          if (dn <= th / 2 + G().SHARED_TOL && line.ivs.some(([s0, e0]) => t >= s0 - 1 && t <= e0 + 1)) { seenB.add(key); ctx.beams.push({ bm, end, x: q.x, y: q.y }); }
+        });
+      });
+      (p.panels || []).forEach((pn) => {
+        if ((pn.floorId || null) !== fl || seenP.has(pn.id)) return;
+        if (line.walls.some((w) => w && G().panelOnWall(p, w, pn))) { seenP.add(pn.id); ctx.panels.push({ pn, x: pn.x, y: pn.y }); }
+      });
+    });
+    return ctx;
+  }
+  // shift: сдвиг v всех вершин (своих и соседей); corner: все совпадающие углы — в точку at
+  function shapeApply(p, ctx, v, at) {
+    if (ctx.mode === "shift") ctx.v0.forEach((q) => { q.room.points[q.i] = { x: q.x + v.x, y: q.y + v.y }; });
+    else ctx.v0.forEach((q) => { q.room.points[q.i] = { x: at.x, y: at.y }; });
+    if (v) {
+      ctx.beams.forEach((b) => { b.bm[b.end] = { x: b.x + v.x, y: b.y + v.y }; });
+      ctx.panels.forEach((b) => { b.pn.x = b.x + v.x; b.pn.y = b.y + v.y; });
+    }
+    return G().wallItemsRestore(p, ctx.items); // вещи, сдвинутые к краю укоротившейся стены
+  }
+  // «Розетка и ещё 2 — прежнее место оказалось за концом стены»: сказать, а не двигать молча
+  function shiftedMsg(list) {
+    if (!list || !list.length) return "";
+    const TY = (EP.Plan.Elements && EP.Plan.Elements.TYPES) || {}, OT = (EP.Plan.Elements && EP.Plan.Elements.OPEN_TYPES) || {};
+    const nm = (it) => it.k === "op" ? ((OT[it.o.kind] || {}).name || "Проём") : it.k === "led" ? "Лента" : ((TY[it.o.type] || {}).name || "Точка");
+    return nm(list[0]) + (list.length > 1 ? " и ещё " + (list.length - 1) : "") + ": прежнее место оказалось за концом стены — сдвинуто к её краю.";
+  }
+  // итоговый сдвиг стены по нормали n на d: у осевой стены доводим её ОСЬ до ближайшего —
+  // узла сетки или оси/угла другой комнаты рядом (не дальше полушага сетки: так совпадающие
+  // на глаз стены совпадают точно, а мелкий сдвиг по-прежнему возможен — сетка всегда в
+  // кандидатах). Вторую координату вершин не трогаем вовсе (раньше округлялись обе, и у
+  // соседних стен, нарисованных не по сетке, уезжал угол).
+  function snapWallShift(p, ctx, d, n) {
+    const step = (p.settings && p.settings.gridStep) || 10;
+    const ax = Math.abs(n.x) > 0.999 ? "x" : (Math.abs(n.y) > 0.999 ? "y" : null);
+    if (!ax) { const ds = G().snap(d, step); return { x: n.x * ds, y: n.y * ds }; }
+    const c0 = ctx.line.a[ax], want = c0 + (n[ax] > 0 ? 1 : -1) * d;
+    let target = G().snap(want, step), bd = Math.abs(target - want);
+    const moving = new Set(ctx.v0.map((q) => q.room.id + "#" + q.i));
+    (G().floorScoped(p).rooms || []).forEach((r) => (r.points || []).forEach((q, k) => {
+      if (moving.has(r.id + "#" + k)) return;
+      const dd = Math.abs(q[ax] - want);
+      if (dd <= step / 2 + 0.5 && dd <= bd) { bd = dd; target = q[ax]; }
+    }));
+    const v = { x: 0, y: 0 };
+    v[ax] = target - c0;
+    return v;
+  }
+  // проверить итог правки контура: появилась новая проблема — откатить (одним шагом, как и
+  // не было), показать почему и вернуть false
+  function shapeFinish(p, ctx, what, shifted) {
+    const bad = G().newProblems(ctx.before, G().geomProblems(p, ctx.ids));
+    if (bad.length) {
+      core().rollback();
+      vibrate([12, 40, 12]);
+      flash(bad[0].msg + " — правка отменена.");
+      return false;
+    }
+    core().persist(what || "room-reshape");
+    if (shifted && shifted.length) flash(shiftedMsg(shifted));
+    return true;
+  }
+  // живой слой тяги: все затронутые комнаты (своя + соседи по общей стене), перегородки, щиты
+  function shapeLiveScope(ctx) {
+    const ids = ctx.ids;
+    const sc = { walls: ids, fills: ids, chains: ids, ops: ids, leds: ids, elOwners: ids };
+    if (ctx.beams.length) sc.beams = true;
+    if (ctx.panels.length) sc.panels = ctx.panels.map((b) => b.pn.id);
+    return sc;
+  }
+
   // тянуть УГЛЫ и СТЕНЫ выбранной комнаты: угол — форма, стена — сдвиг по нормали.
   // Если палец не попал ни в угол, ни в стену — жест панорамирует (return false).
+  // dx/dy — ПРИРАЩЕНИЕ с прошлого шага: копим и считаем от снимка (без накопления дрейфа).
   function enableRoomDrag(roomId) {
     if (!R.canvas) return;
-    let grab = null; // { kind: 'corner'|'wall', i, n?{x,y} }
+    let grab = null, ctx = null, acc = null; // grab: { kind: 'corner'|'wall', i, n?{x,y} }
     R.canvas.setDragHandler((dx, dy, phase, start) => {
-      const c = core(), room = (c.project.rooms || []).find((r) => r.id === roomId);
+      const c = core(), p = c.project, room = (p.rooms || []).find((r) => r.id === roomId);
       if (!room || (room.points || []).length < 3) return false;
       const pts = room.points;
       if (phase === "start") {
@@ -2158,27 +2384,34 @@
           });
         }
         if (!grab) return false;
+        ctx = grab.kind === "corner" ? shapeCtx(p, room, "corner", grab.i) : shapeCtx(p, room, "shift", [grab.i, (grab.i + 1) % pts.length]);
+        acc = { x: 0, y: 0 };
         c.commit();
-        liveBegin({ walls: [roomId], fills: [roomId], chains: [roomId], ops: [roomId], leds: [roomId], elOwners: [roomId] });
+        liveBegin(shapeLiveScope(ctx));
         return;
       }
-      if (phase === "move" && grab) {
-        if (grab.kind === "corner") {
-          pts[grab.i] = { x: pts[grab.i].x + dx, y: pts[grab.i].y + dy };
-        } else {
-          const d = dx * grab.n.x + dy * grab.n.y; // проекция на нормаль — стена едет параллельно себе
-          const j = (grab.i + 1) % pts.length;
-          pts[grab.i] = { x: pts[grab.i].x + grab.n.x * d, y: pts[grab.i].y + grab.n.y * d };
-          pts[j] = { x: pts[j].x + grab.n.x * d, y: pts[j].y + grab.n.y * d };
+      if (!grab || !ctx) return;
+      if (phase === "move") {
+        acc.x += dx; acc.y += dy;
+        if (grab.kind === "corner") shapeApply(p, ctx, null, { x: ctx.v0[0].x + acc.x, y: ctx.v0[0].y + acc.y });
+        else {
+          const d = acc.x * grab.n.x + acc.y * grab.n.y; // проекция на нормаль — стена едет параллельно себе
+          shapeApply(p, ctx, { x: grab.n.x * d, y: grab.n.y * d });
         }
         renderSceneSoon();
-      } else if (phase === "end" && grab) {
-        const step = c.project.settings.gridStep || 10;
-        if (grab.kind === "corner") pts[grab.i] = G().snapPoint(pts[grab.i], step);
-        else { const j = (grab.i + 1) % pts.length; pts[grab.i] = G().snapPoint(pts[grab.i], step); pts[j] = G().snapPoint(pts[j], step); }
-        c.persist("room-reshape");
-        grab = null;
+      } else if (phase === "end") {
+        const step = p.settings.gridStep || 10;
+        const shifted = grab.kind === "corner"
+          ? shapeApply(p, ctx, null, G().snapPoint({ x: ctx.v0[0].x + acc.x, y: ctx.v0[0].y + acc.y }, step))
+          : shapeApply(p, ctx, snapWallShift(p, ctx, acc.x * grab.n.x + acc.y * grab.n.y, grab.n));
+        const moved = ctx.v0.some((q) => G().dist(q.room.points[q.i], q) > 0.01);
+        const cx = ctx;
+        grab = null; ctx = null; acc = null;
+        if (!moved) { core().rollback(); renderScene(); return; } // отпустили на месте — правки не было
+        shapeFinish(p, cx, "room-reshape", shifted);
         renderScene();
+        const r2 = (core().project.rooms || []).find((r) => r.id === roomId);
+        if (r2) sheetRoom(r2, { keepView: true }); // поля размеров — текущие, не те, что были до тяги
       }
     });
   }
@@ -2249,6 +2482,7 @@
   function createPoly() {
     const name = ($("#ep-pr-name") || {}).value || "";
     if (!R.pendingPoly || R.pendingPoly.length < 3) { toast(T.polyNeed); return; }
+    if (G().polySelfIntersects(R.pendingPoly)) { flash(T.polySelf); return; }
     const c = core();
     c.commit();
     const room = c.model.newRoom(R.pendingPoly.slice(), name.trim() || undefined);
@@ -2258,7 +2492,8 @@
     setMode("view"); sheetRoom(room);
   }
   function applyRoom(id) {
-    const c = core(), room = c.project.rooms.find((r) => r.id === id); if (!room) return;
+    const c = core(), p = c.project, room = p.rooms.find((r) => r.id === id); if (!room) return;
+    const ids0 = floorRoomIds(p, room), before = G().geomProblems(p, ids0);
     c.commit();
     const name = ($("#ep-pr-rname") || {}).value;
     if (name && name.trim()) room.name = name.trim();
@@ -2266,13 +2501,19 @@
     room.height = hv >= 150 ? hv : null;
     const thv = Number(($("#ep-pr-th") || {}).value) || 0;
     if (thv >= 4) c.project.settings.wallThickness = thv;
+    let shifted = [];
     if (G().isRect(room)) {
       const w = Number(($("#ep-pr-rw") || {}).value) || 0, h = Number(($("#ep-pr-rh") || {}).value) || 0;
-      if (w >= CFG.minRoomCm && h >= CFG.minRoomCm) G().setRectDims(room, w, h);
+      if (w >= CFG.minRoomCm && h >= CFG.minRoomCm) shifted = resizeRect(p, room, w, h);
     }
     const wet = !!($("#ep-pr-wet") || {}).checked;
     room.zones = wet ? ["wet"] : [];
+    // размеры дали неверную геометрию (дверь не влезла в укоротившуюся стену и т.п.) —
+    // не применяем ничего, карточка остаётся открытой с набранным, чтобы поправить
+    const bad = G().newProblems(before, G().geomProblems(p, ids0));
+    if (bad.length) { c.rollback(); flash(bad[0].msg + " — размеры не применены."); renderScene(); return; }
     c.persist("room-edit");
+    if (shifted.length) flash(shiftedMsg(shifted));
     R.selectedRoomId = null; closeSheet(); if (R.canvas) R.canvas.setDragHandler(null);
     renderScene(); // ✓ — применить и закрыть вкладку
   }
@@ -2643,7 +2884,13 @@
     if (t.closest("[data-pr-create-poly]")) return createPoly();
     if ((el = t.closest("[data-pr-pdir]"))) return polyDirAdd(el.getAttribute("data-pr-pdir"));
     if (t.closest("[data-pr-pundo]")) { R.draft.points.pop(); renderScaled(); if (R.draft.points.length) sheetPolyDraft(); else closeSheet(); return; }
-    if (t.closest("[data-pr-pclosepoly]")) { if (R.draft.points.length >= 3) { R.pendingPoly = R.draft.points.slice(); sheetCreatePoly(); } return; }
+    if (t.closest("[data-pr-pclosepoly]")) {
+      if (R.draft.points.length >= 3) {
+        if (G().polySelfIntersects(R.draft.points)) { flash(T.polySelf); return; }
+        R.pendingPoly = R.draft.points.slice(); sheetCreatePoly();
+      }
+      return;
+    }
     if ((el = t.closest("[data-pr-symst]"))) {
       const c = core(); c.commit();
       c.project.settings.symbolStyle = el.getAttribute("data-pr-symst");
@@ -2888,7 +3135,8 @@
   EP.Plan.Rooms = {
     attach, detach, setActive, setMode, renderScene, T, CFG, gestureBusy,
     // общий доступ для модулей слоёв 2-6
-    openSheet, closeSheet, overlaySheet, closeOverlaySheet, overlayOpen, toast, ensureVisibleAboveSheet, toggleSheetFullscreen, sheetRoom,
+    openSheet, closeSheet, overlaySheet, closeOverlaySheet, overlayOpen, toast, flash, lastFlash: () => R.lastFlash || "", ensureVisibleAboveSheet, toggleSheetFullscreen, sheetRoom,
+    resizeRoomRect,
     collapseSheet, expandSheet, toggleSheetCollapsed, placeSheetBtn, enableOpeningDrag,
     isActive: () => R.active,
     currentMode: () => R.mode,

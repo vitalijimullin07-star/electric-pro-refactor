@@ -377,10 +377,14 @@
     const b = G.bbox(room.points);
     return b ? { x: b.x, y: b.y, w: b.w, h: b.h } : null;
   };
+  // ПОРЯДОК ВЕРШИН сохраняется: стены — это «комната:индекс», к ним привязаны точки и проёмы.
+  // Раньше контур собирался заново от левого верхнего угла, и у отражённой или нарисованной не
+  // с того угла комнаты все точки молча переезжали на другие стены.
   G.setRectDims = (room, w, h) => {
     const d = G.rectDims(room);
     if (!d) return;
-    room.points = G.rectPoints(d.x, d.y, Math.max(10, w), Math.max(10, h));
+    const W = Math.max(10, w), H = Math.max(10, h);
+    room.points = (room.points || []).map((q) => ({ x: Math.abs(q.x - d.x) < 0.01 ? d.x : d.x + W, y: Math.abs(q.y - d.y) < 0.01 ? d.y : d.y + H }));
   };
 
   // ---- трансформации ----
@@ -1137,6 +1141,239 @@
     // держим подписи/глифы «не вверх ногами»
     if (angle > 90) angle -= 180; else if (angle < -90) angle += 180;
     return { dir, nrm, angle };
+  };
+
+  /* ---------- ЦЕЛОСТНОСТЬ ГЕОМЕТРИИ (аудит Астры, 12.11) ----------
+     Три вещи, без которых правка плана ломала модель молча:
+     1) ОБЩАЯ ГРАНИЦА. Две комнаты, нарисованные вплотную, хранят каждая СВОЮ стену на одной
+        оси. Тяга стены одной комнаты двигала только её — соседняя оставалась на месте, и
+        комнаты наезжали друг на друга (аудит: стену гостиной на X=490, спальня осталась на
+        400 — наложение 90 см). G.lineWalls находит стены других комнат ЭТОГО этажа на той же
+        прямой, перекрывающиеся с тянущейся (и дальше вдоль прямой по цепочке перекрытий):
+        физически это одна стена, двигаются они вместе.
+     2) ВАЛИДНЫЙ КОНТУР И ПРОЁМЫ. G.geomProblems — что делает геометрию неверной: контур
+        пересекает сам себя или выродился, проём шире стены или вылез за её край, проёмы
+        перекрываются. Правка сравнивает список ДО и ПОСЛЕ и отказывает, только если появилась
+        НОВАЯ проблема — проекты с уже кривыми данными остаются редактируемыми (их покажут
+        «Проверки»), а сохранить новую ошибку нельзя ни пальцем, ни мышью, ни числом.
+     3) ТОЧКИ И ПРОЁМЫ НА МЕСТЕ. Позиция на стене — отступ от её начала. Когда соседняя стена
+        сдвигается, у этой меняется длина, и если сдвинулось именно НАЧАЛО, всё на ней уезжало
+        вместе с ним. G.wallItemsSnap/G.wallItemsRestore: стена сдвинулась целиком — всё на ней
+        едет с ней; поменяла длину или наклон — каждая вещь остаётся, где стояла (проекция
+        прежней точки на новую стену). */
+  G.SHARED_TOL = 2; // см: оси двух стен разошлись не больше — это одна стена
+  const flOf = (project, x) => (x && x.floorId) || (project.floors && project.floors[0] && project.floors[0].id) || null;
+  // стены других комнат того же этажа на прямой отрезка a-b, перекрывающиеся с ним (и дальше
+  // по цепочке перекрытий вдоль этой прямой). Касание концами (комнаты в ряд) — не перекрытие.
+  G.lineWalls = (project, room, a, b, tol) => {
+    const T = tol == null ? G.SHARED_TOL : tol;
+    const len = G.dist(a, b);
+    if (len < 0.5) return [];
+    const d = { x: (b.x - a.x) / len, y: (b.y - a.y) / len }, n = { x: -d.y, y: d.x };
+    const fl = flOf(project, room), cands = [];
+    (project.rooms || []).forEach((r) => {
+      if (r.id === room.id || flOf(project, r) !== fl) return;
+      G.walls(r).forEach((w) => {
+        if (w.len < 0.5) return;
+        const da = (w.a.x - a.x) * n.x + (w.a.y - a.y) * n.y, db = (w.b.x - a.x) * n.x + (w.b.y - a.y) * n.y;
+        if (Math.abs(da) > T || Math.abs(db) > T) return;
+        const ta = (w.a.x - a.x) * d.x + (w.a.y - a.y) * d.y, tb = (w.b.x - a.x) * d.x + (w.b.y - a.y) * d.y;
+        cands.push({ room: r, wall: w, s: Math.min(ta, tb), e: Math.max(ta, tb) });
+      });
+    });
+    const ivs = [[0, len]], out = [];
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (let k = 0; k < cands.length; k++) {
+        const c = cands[k];
+        if (c.taken || !ivs.some(([s, e]) => Math.min(e, c.e) - Math.max(s, c.s) > 1)) continue;
+        c.taken = true; ivs.push([c.s, c.e]); out.push(c); grew = true;
+      }
+    }
+    return out;
+  };
+  // вершины других комнат того же этажа в точке pt — общий угол
+  G.coincidentVerts = (project, room, pt, tol) => {
+    const T = tol == null ? 1 : tol, fl = flOf(project, room), out = [];
+    (project.rooms || []).forEach((r) => {
+      if (r.id === room.id || flOf(project, r) !== fl) return;
+      (r.points || []).forEach((q, i) => { if (G.dist(q, pt) <= T) out.push({ room: r, i }); });
+    });
+    return out;
+  };
+  function segSegDist(p1, p2, q1, q2) {
+    if (G.segIntersect(p1, p2, q1, q2)) return 0;
+    return Math.min(G.closestOnSeg(p1, q1, q2).d, G.closestOnSeg(p2, q1, q2).d, G.closestOnSeg(q1, p1, p2).d, G.closestOnSeg(q2, p1, p2).d);
+  }
+  // контур пересекает или касается сам себя: несоседние рёбра сошлись, либо соседнее ребро
+  // сложилось «назад» поверх предыдущего (шпилька). Вырожденные рёбра — отдельная проверка.
+  G.polySelfIntersects = (pts) => {
+    const n = (pts || []).length;
+    if (n < 4) return false;
+    for (let i = 0; i < n; i++) {
+      const a1 = pts[i], a2 = pts[(i + 1) % n];
+      for (let j = i + 2; j < n; j++) {
+        if (i === 0 && j === n - 1) continue; // первое и последнее рёбра делят вершину
+        if (segSegDist(a1, a2, pts[j], pts[(j + 1) % n]) < 0.5) return true;
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n];
+      const ax = p1.x - p0.x, ay = p1.y - p0.y, bx = p2.x - p1.x, by = p2.y - p1.y;
+      const la = Math.sqrt(ax * ax + ay * ay), lb = Math.sqrt(bx * bx + by * by);
+      if (la >= 0.5 && lb >= 0.5 && (ax * bx + ay * by) / (la * lb) < -0.999) return true;
+    }
+    return false;
+  };
+  const opName = (o) => {
+    const k = o.kind || (o.type === "window" ? "window" : "door");
+    return k === "window" ? "Окно" : k === "opening" ? "Проём" : k === "balcony" ? "Балконная дверь" : k === "sliding" ? "Раздвижная дверь" : "Дверь";
+  };
+  // все проёмы на ОДНОЙ ФИЗИЧЕСКОЙ стене: свои + со стен соседей того же этажа на этой оси.
+  // Допуск плотный (SHARED_TOL), а не «×4 толщины», как у выреза в wallOpeningSpans: здесь
+  // ищем ПЕРЕКРЫТИЕ, и дверь на стене через узкий коридор чужой считаться не должна.
+  // s/e — интервал проёма в см вдоль этой стены от её начала.
+  function physWallOpenings(project, wall, fl) {
+    const len = wall.len || 1;
+    const d = { x: (wall.b.x - wall.a.x) / len, y: (wall.b.y - wall.a.y) / len }, n = { x: -d.y, y: d.x };
+    const on = (w2) => {
+      if (w2.id === wall.id) return true;
+      if (!(w2.len >= 0.5)) return false;
+      const da = (w2.a.x - wall.a.x) * n.x + (w2.a.y - wall.a.y) * n.y, db = (w2.b.x - wall.a.x) * n.x + (w2.b.y - wall.a.y) * n.y;
+      return Math.abs(da) <= G.SHARED_TOL && Math.abs(db) <= G.SHARED_TOL;
+    };
+    const byId = {};
+    (project.rooms || []).forEach((r) => { if (flOf(project, r) === fl) G.walls(r).forEach((w2) => { if (on(w2)) byId[w2.id] = w2; }); });
+    (project.beams || []).forEach((bm) => { if (flOf(project, bm) === fl) { const bw = G.beamWall(bm); if (bw && on(bw)) byId[bw.id] = bw; } });
+    if (wall.isBeam || !byId[wall.id]) byId[wall.id] = wall;
+    const out = [];
+    (project.openings || []).forEach((o) => {
+      const w2 = byId[o.wallId];
+      if (!w2) return;
+      const pa = G.pointAtOffset(w2, o.offset || 0), pb = G.pointAtOffset(w2, (o.offset || 0) + (o.width || 0));
+      const ta = (pa.x - wall.a.x) * d.x + (pa.y - wall.a.y) * d.y, tb = (pb.x - wall.a.x) * d.x + (pb.y - wall.a.y) * d.y;
+      out.push({ op: o, s: Math.min(ta, tb), e: Math.max(ta, tb) });
+    });
+    return out;
+  }
+  const wallFloor = (project, wall) => {
+    if (!wall) return null;
+    const own = wall.isBeam ? (project.beams || []).find((b) => b.id === wall.beamId) : (project.rooms || []).find((r) => r.id === wall.roomId);
+    return flOf(project, own || {});
+  };
+  // проблемы стены: проём шире/за краем, проёмы перекрываются
+  function wallProblems(project, w, label, push) {
+    if (!(w.len >= 0.5)) return;
+    const list = physWallOpenings(project, w, wallFloor(project, w));
+    list.forEach((it) => {
+      if (it.op.wallId !== w.id) return; // свой проём проверяем на своей стене
+      if (it.op.width > w.len + 0.5) push("opwide:" + it.op.id, `${opName(it.op)} не помещается на стене ${w.n} ${label}: ширина ${Math.round(it.op.width)} см, стена ${Math.round(w.len)} см`, { kind: "opening", id: it.op.id });
+      else if ((it.op.offset || 0) < -0.5 || (it.op.offset || 0) + it.op.width > w.len + 0.5) push("opout:" + it.op.id, `${opName(it.op)} выходит за край стены ${w.n} ${label}`, { kind: "opening", id: it.op.id });
+    });
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const A = list[i], B = list[j];
+        if (A.op.id === B.op.id || Math.min(A.e, B.e) - Math.max(A.s, B.s) <= 1) continue;
+        if (A.op.wallId !== w.id && B.op.wallId !== w.id) continue; // чужая пара — проверит своя стена
+        const own = A.op.wallId === w.id ? A.op : B.op;
+        push("opover:" + [A.op.id, B.op.id].sort().join("|"), `Проёмы перекрываются на стене ${w.n} ${label}: ${opName(A.op).toLowerCase()} и ${opName(B.op).toLowerCase()}`, { kind: "opening", id: own.id });
+      }
+    }
+  }
+  // roomIds — только эти комнаты (правка), без него — весь проект (все этажи, «Проверки»)
+  G.geomProblems = (project, roomIds) => {
+    const ids = roomIds ? new Set(roomIds) : null;
+    const out = [], seen = new Set();
+    const push = (key, msg, ref) => { if (!seen.has(key)) { seen.add(key); out.push({ key, msg, ref }); } };
+    (project.rooms || []).forEach((r) => {
+      if (ids && !ids.has(r.id)) return;
+      const label = "«" + (r.name || "Комната") + "»", ref = { kind: "room", id: r.id };
+      const pts = r.points || [];
+      if (pts.length < 3) { push("pts:" + r.id, `Комната ${label}: меньше трёх углов`, ref); return; }
+      const ws = G.walls(r);
+      if (ws.some((w) => w.len < 0.5)) push("edge:" + r.id, `Комната ${label}: два угла в одной точке — стена нулевой длины`, ref);
+      else if (G.polySelfIntersects(pts)) push("self:" + r.id, `Контур комнаты ${label} пересекает сам себя`, ref);
+      if (G.area(pts) < 1000) push("area:" + r.id, `Комната ${label} выродилась — меньше 0,1 м²`, ref);
+      ws.forEach((w) => wallProblems(project, w, "(" + label + ")", push));
+    });
+    if (!ids) (project.beams || []).forEach((bm) => { const bw = G.beamWall(bm); if (bw) wallProblems(project, bw, "(перегородка)", push); });
+    return out;
+  };
+  // проблемы, которых не было в списке before — то, что внесла эта правка
+  G.newProblems = (before, after) => {
+    const had = new Set((before || []).map((x) => x.key));
+    return (after || []).filter((x) => !had.has(x.key));
+  };
+  // свободное место для проёма шириной width с центром около c на стене (свободное — не
+  // занятое другими проёмами этой физической стены): offset или null, если места нет нигде.
+  // Берётся промежуток, ближайший к желаемому центру. excludeId — сам этот проём.
+  G.fitOpening = (project, wall, width, c, excludeId) => {
+    if (!wall || !(width > 0) || width > wall.len + 0.5) return null;
+    const occ = physWallOpenings(project, wall, wallFloor(project, wall))
+      .filter((it) => it.op.id !== excludeId).map((it) => [it.s, it.e]).sort((x, y) => x[0] - y[0]);
+    const free = [];
+    let cur = 0;
+    occ.forEach(([s, e]) => { if (s > cur) free.push([cur, s]); cur = Math.max(cur, e); });
+    if (cur < wall.len) free.push([cur, wall.len]);
+    let best = null;
+    free.forEach(([s, e]) => {
+      if (e - s + 0.5 < width) return;
+      const off = Math.max(s, Math.min(e - width, c - width / 2));
+      const dd = Math.abs(off + width / 2 - c);
+      if (!best || dd < best.d) best = { d: dd, off };
+    });
+    return best ? Math.max(0, best.off) : null;
+  };
+  // снимок «что стоит на стенах этих комнат» (точки, проёмы, лента): прежние отступы, концы
+  // стены и мировые позиции — чтобы после правки контура вернуть каждой вещи её место
+  G.wallItemsSnap = (project, roomIds) => {
+    const ids = new Set(roomIds || []);
+    const mine = (wid) => { const s = String(wid || ""); return !!s && s.slice(0, 5) !== "beam:" && ids.has(s.split(":")[0]); };
+    const out = [];
+    const take = (k, o, wid, orig, at) => {
+      const w = G.wallById(project, wid);
+      if (!w) return;
+      out.push({ k, o, wid, a: { x: w.a.x, y: w.a.y }, b: { x: w.b.x, y: w.b.y }, orig, pts: at.map((v) => G.pointAtOffset(w, v)) });
+    };
+    (project.elements || []).forEach((el) => { if (mine(el.wallId)) take("el", el, el.wallId, [el.offset], [el.offset || 0]); });
+    (project.openings || []).forEach((op) => { if (mine(op.wallId)) take("op", op, op.wallId, [op.offset], [(op.offset || 0) + (op.width || 0) / 2]); });
+    (project.ledStrips || []).forEach((ls) => { if (mine(ls.wallId)) take("led", ls, ls.wallId, [ls.offsetA, ls.offsetB], [ls.offsetA || 0, ls.offsetB || 0]); });
+    return out;
+  };
+  // Возвращает вещи, которые пришлось СДВИНУТЬ к краю стены (их прежнее место оказалось за её
+  // концом — стену укоротили): вызывающий говорит об этом, а не переносит молча.
+  G.wallItemsRestore = (project, snap) => {
+    const r1 = (v) => Math.round(v * 10) / 10;
+    const shifted = [];
+    (snap || []).forEach((it) => {
+      const w = G.wallById(project, it.wid);
+      if (!w) return;
+      const vax = w.a.x - it.a.x, vay = w.a.y - it.a.y, vbx = w.b.x - it.b.x, vby = w.b.y - it.b.y;
+      // стена не изменилась или сдвинулась целиком — отступы прежние (данные не трогаем вовсе)
+      if (Math.abs(vax - vbx) < 0.01 && Math.abs(vay - vby) < 0.01) {
+        if (it.k === "led") { it.o.offsetA = it.orig[0]; it.o.offsetB = it.orig[1]; } else it.o.offset = it.orig[0];
+        return;
+      }
+      // проекция прежней мировой точки на прямую стены, БЕЗ обрезки — по ней видно, что вещь
+      // оказалась за концом стены
+      const L = w.len || 0, dx = w.b.x - w.a.x, dy = w.b.y - w.a.y;
+      const raw = it.pts.map((q) => (L ? ((q.x - w.a.x) * dx + (q.y - w.a.y) * dy) / L : 0));
+      if (it.k === "el") {
+        const v = Math.max(0, Math.min(L, raw[0]));
+        if (Math.abs(v - raw[0]) > 1) shifted.push(it);
+        it.o.offset = r1(v);
+      } else if (it.k === "op") {
+        const ww = it.o.width || 0, want = raw[0] - ww / 2, v = Math.max(0, Math.min(Math.max(0, L - ww), want));
+        if (Math.abs(v - want) > 1) shifted.push(it);
+        it.o.offset = r1(v);
+      } else {
+        const x = Math.max(0, Math.min(L, raw[0])), y = Math.max(0, Math.min(L, raw[1]));
+        if (Math.abs(x - raw[0]) > 1 || Math.abs(y - raw[1]) > 1) shifted.push(it);
+        it.o.offsetA = r1(Math.min(x, y)); it.o.offsetB = r1(Math.max(x, y));
+      }
+    });
+    return shifted;
   };
 
   G.polylineLen = (pts) => {

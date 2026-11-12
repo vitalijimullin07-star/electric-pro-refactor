@@ -9843,6 +9843,203 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 80. Аудит Астры, пакет 1: целостность геометрии =====
+  // Общая стена двух комнат двигается вместе; правка, ломающая контур или проём, не сохраняется;
+  // проёмы не накладываются; перенос комнаты везёт её мебель/заметки/размеры и не трогает другой этаж.
+  {
+    // холст, который запоминает обработчик тяги — жест гоняем прямо из теста
+    const dragCanvas = () => {
+      const c = fakeCanvas();
+      let h = null;
+      Object.assign(c, {
+        setDragHandler: (fn) => { h = fn; }, onTap() {}, onDblTap() {}, onViewChanged() {}, onViewMoved() {},
+        onHover() {}, onHoverEnd() {}, onLongPress() {}, onDragDone() {}, panBy() {}, fit() {}, redraw() {},
+        getView: () => ({ x: -300, y: -300, w: 1600, h: 1200 }), wrap: fakeNode(), overscan: () => ({ x: 0, y: 0 }),
+        userAdjustedView: () => false, isMoving: () => false
+      });
+      c.drag = (start, steps) => {
+        if (!h || h(0, 0, "start", start, {}) === false) return false;
+        steps.forEach(([dx, dy]) => h(dx, dy, "move"));
+        h(0, 0, "end");
+        return true;
+      };
+      return c;
+    };
+    const two = (extra) => {
+      const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "Гостиная");
+      const B = M.newRoom(G.rectPoints(400, 0, 400, 300), "Спальня");
+      const { P } = install(Object.assign({ rooms: [A, B] }, extra || {}));
+      return { P, A: P.rooms[0], B: P.rooms[1] };
+    };
+    const xs = (room) => room.points.map((q) => q.x).sort((a, b) => a - b);
+    test("общая стена: тяга стены гостиной двигает и стену спальни, точки на месте, отмена одна", () => {
+      const { P, A, B } = two();
+      const sock = M.newElement("socket", B.id + ":0", 200, 30, "power"); // верх спальни, x = 600
+      P.elements.push(sock);
+      const cv = dragCanvas();
+      EP.Plan.Rooms.attach(cv);
+      EP.Plan.Rooms.sheetRoom(A);
+      ok(cv.drag({ x: 400, y: 150 }, [[45, 0], [45, 0]]), "жест по стене гостиной начался");
+      const P2 = EP.Plan.Core.project, A2 = P2.rooms[0], B2 = P2.rooms[1];
+      eq(Math.max(...xs(A2)), 490, "стена гостиной на 490");
+      eq(Math.min(...xs(B2)), 490, "и стена спальни на 490 — наложения нет");
+      const s2 = P2.elements.find((e) => e.id === sock.id);
+      near(G.pointAtOffset(G.wallById(P2, s2.wallId), s2.offset).x, 600, 0.2, "розетка спальни осталась на месте (x=600), хотя начало стены уехало");
+      EP.Plan.Core.undo();
+      const P3 = EP.Plan.Core.project;
+      eq(Math.max(...xs(P3.rooms[0])), 400, "одна отмена вернула гостиную");
+      eq(Math.min(...xs(P3.rooms[1])), 400, "и спальню");
+      EP.Plan.Rooms.detach();
+    });
+    test("общая стена по цепочке: стена гостиной над коридором тянет весь коридор и стену спальни", () => {
+      const Cr = M.newRoom(G.rectPoints(0, 300, 800, 150), "Коридор");
+      const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "Гостиная"), B = M.newRoom(G.rectPoints(400, 0, 400, 300), "Спальня");
+      const { P } = install({ rooms: [A, B, Cr] });
+      const cv = dragCanvas();
+      EP.Plan.Rooms.attach(cv);
+      EP.Plan.Rooms.sheetRoom(P.rooms[0]);
+      ok(cv.drag({ x: 200, y: 300 }, [[0, 20]]), "жест по нижней стене гостиной");
+      const P2 = EP.Plan.Core.project;
+      const maxY = (r) => Math.max(...r.points.map((q) => q.y)), minY = (r) => Math.min(...r.points.map((q) => q.y));
+      eq(maxY(P2.rooms[0]), 320, "низ гостиной 320");
+      eq(minY(P2.rooms[2]), 320, "верх коридора 320 — по всей длине");
+      eq(maxY(P2.rooms[1]), 320, "низ спальни тоже 320 (это одна прямая стена)");
+      eq(P2.rooms.filter((r) => G.polySelfIntersects(r.points)).length, 0, "контуры целы");
+      EP.Plan.Rooms.detach();
+    });
+    test("комнаты в ряд, касаются углом: общей стены нет — соседа не трогаем", () => {
+      const { P, A, B } = two();
+      const cv = dragCanvas();
+      EP.Plan.Rooms.attach(cv);
+      EP.Plan.Rooms.sheetRoom(A);
+      cv.drag({ x: 200, y: 0 }, [[0, -30]]); // верх гостиной вверх
+      const P2 = EP.Plan.Core.project;
+      eq(Math.min(...P2.rooms[0].points.map((q) => q.y)), -30, "верх гостиной уехал");
+      eq(Math.min(...P2.rooms[1].points.map((q) => q.y)), 0, "верх спальни на месте — их верхние стены только касаются концами");
+      EP.Plan.Rooms.detach();
+    });
+    test("вывернутый контур не сохраняется: тяга угла через комнату откатывается и объясняет почему", () => {
+      const { P, A } = two();
+      const before = JSON.stringify(A.points);
+      const cv = dragCanvas();
+      EP.Plan.Rooms.attach(cv);
+      EP.Plan.Rooms.sheetRoom(A);
+      // угол (400,0) → (-100,200): контур (0,0),(-100,200),(400,300),(0,300) — пересекает сам себя
+      ok(G.polySelfIntersects([{ x: 0, y: 0 }, { x: -100, y: 200 }, { x: 400, y: 300 }, { x: 0, y: 300 }]), "геометрия: такой контур — самопересечение");
+      ok(cv.drag({ x: 400, y: 0 }, [[-250, 100], [-250, 100]]), "жест по углу");
+      const P2 = EP.Plan.Core.project;
+      eq(JSON.stringify(P2.rooms[0].points), before, "контур вернулся как был");
+      ok(/пересекает сам себя/.test(EP.Plan.Rooms.lastFlash()), "сообщение: " + EP.Plan.Rooms.lastFlash());
+      eq(EP.Plan.Core.canUndo(), false, "в истории отмены лишнего шага нет");
+      EP.Plan.Rooms.detach();
+    });
+    test("укоротили комнату: дверь не влезла — размеры не применены; влезла у края — сдвинута с объяснением", () => {
+      const A = M.newRoom(G.rectPoints(0, 0, 300, 300), "Кухня");
+      let { P } = install({ rooms: [A] });
+      const door = M.newOpening("door", P.rooms[0].id + ":0", 180, 90);
+      P.openings.push(door);
+      ok(!EP.Plan.Rooms.resizeRoomRect(P.rooms[0].id, 80, 300), "стена 80 см короче двери 90 — отказ");
+      P = EP.Plan.Core.project;
+      eq(Math.max(...xs(P.rooms[0])), 300, "ширина прежняя");
+      ok(/не помещается/.test(EP.Plan.Rooms.lastFlash()), "сообщение: " + EP.Plan.Rooms.lastFlash());
+      ok(EP.Plan.Rooms.resizeRoomRect(P.rooms[0].id, 100, 300), "стена 100 см — дверь 90 влезает");
+      P = EP.Plan.Core.project;
+      const d2 = P.openings[0];
+      eq(d2.offset, 10, "дверь у края: 10..100");
+      ok(/за концом стены/.test(EP.Plan.Rooms.lastFlash()), "и это сказано: " + EP.Plan.Rooms.lastFlash());
+      eq(G.geomProblems(P).length, 0, "проблем геометрии нет");
+    });
+    test("длина стены числом тянет общую стену соседа", () => {
+      const { P, A } = two();
+      ok(EP.Plan.Rooms.setWallLength(A.id, 0, 450), "верхняя стена гостиной 450");
+      const P2 = EP.Plan.Core.project;
+      eq(Math.max(...xs(P2.rooms[0])), 450, "гостиная до 450");
+      eq(Math.min(...xs(P2.rooms[1])), 450, "спальня с 450");
+    });
+    test("размеры числом сохраняют порядок вершин: точки не переезжают на другие стены", () => {
+      const A = M.newRoom(G.rectPoints(0, 0, 400, 300).reverse(), "Отражённая"); // обход в другую сторону
+      const { P } = install({ rooms: [A] });
+      const wid = P.rooms[0].id + ":1";
+      const w0 = G.wallById(P, wid), mid0 = { x: w0.mx, y: w0.my };
+      P.elements.push(M.newElement("socket", wid, Math.round(w0.len / 2), 30, "power"));
+      ok(EP.Plan.Rooms.resizeRoomRect(P.rooms[0].id, 500, 300), "ширина 500");
+      const P2 = EP.Plan.Core.project, w1 = G.wallById(P2, wid);
+      ok(Math.abs(w1.mx - mid0.x) < 200 && G.dist(w1.a, w0.a) + G.dist(w1.b, w0.b) < 300, "стена с тем же номером — та же сторона комнаты");
+      // и сама G.setRectDims: вершины на своих местах в прежнем порядке
+      const r = { points: G.rectPoints(0, 0, 400, 300).reverse() };
+      const ord0 = r.points.map((q) => (q.x > 0 ? "R" : "L") + (q.y > 0 ? "B" : "T")).join();
+      G.setRectDims(r, 500, 350);
+      eq(r.points.map((q) => (q.x > 0 ? "R" : "L") + (q.y > 0 ? "B" : "T")).join(), ord0, "порядок углов прежний");
+      eq(Math.max(...r.points.map((q) => q.x)), 500, "ширина 500");
+    });
+    test("проёмы не накладываются: тап рядом с дверью ставит новую вплотную, тяга упирается в окно", () => {
+      const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "Кухня");
+      let { P } = install({ rooms: [A] });
+      const wid = P.rooms[0].id + ":0";
+      P.openings.push(M.newOpening("window", wid, 0, 140));
+      const door = M.newOpening("door", wid, 200, 90);
+      P.openings.push(door);
+      const cv = dragCanvas();
+      EP.Plan.Rooms.attach(cv);
+      EP.Plan.Elements.placeOpening({ x: 240, y: 3 }); // по двери
+      P = EP.Plan.Core.project;
+      eq(P.openings.length, 3, "новый проём поставлен");
+      const nw = P.openings[2];
+      ok(nw.offset >= 290 && nw.offset + nw.width <= 400, "рядом, а не поверх двери: " + nw.offset + "..." + (nw.offset + nw.width));
+      eq(G.geomProblems(P).filter((g) => /^opover:/.test(g.key)).length, 0, "наложений нет");
+      // тяга двери влево до окна: встаёт вплотную к окну (140), а не поверх
+      EP.Plan.Elements.openOpeningEditor(P.openings[1]);
+      ok(cv.drag({ x: 245, y: 0 }, [[-60, 0], [-60, 0]]), "жест по двери");
+      P = EP.Plan.Core.project;
+      eq(P.openings[1].offset, 140, "дверь упёрлась в окно");
+      eq(G.geomProblems(P).length, 0, "и ничего не наложилось");
+      EP.Plan.Rooms.detach();
+    });
+    test("точка захвата: дверь, взятая у края, едет на столько же, на сколько палец", () => {
+      const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "Кухня");
+      let { P } = install({ rooms: [A] });
+      P.openings.push(M.newOpening("door", P.rooms[0].id + ":0", 100, 90)); // центр 145
+      const cv = dragCanvas();
+      EP.Plan.Rooms.attach(cv);
+      EP.Plan.Elements.openOpeningEditor(P.openings[0]);
+      ok(cv.drag({ x: 180, y: 0 }, [[20, 0]]), "взяли в 35 см от центра");
+      P = EP.Plan.Core.project;
+      eq(P.openings[0].offset, 120, "сдвиг 20 см — дверь на 20 см (раньше — центром под палец, на 55)");
+      EP.Plan.Rooms.detach();
+    });
+    test("«Проверки» показывают проём шире стены и наложение — со ссылкой на проём", () => {
+      const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "Кухня");
+      const { P } = install({ rooms: [A] });
+      const wid = P.rooms[0].id + ":1"; // 300 см
+      P.openings.push(M.newOpening("door", wid, 0, 90), M.newOpening("door", wid, 50, 90), M.newOpening("balcony", P.rooms[0].id + ":0", 0, 500));
+      const rep = EP.Plan.Rules.report(P);
+      const geo = rep.issues.filter((i) => i.ref && i.ref.kind === "opening");
+      ok(geo.some((i) => /перекрываются/.test(i.msg)), "наложение дверей: " + geo.map((i) => i.msg).join(" | "));
+      ok(geo.some((i) => /не помещается/.test(i.msg)), "балконная дверь шире стены");
+      ok(geo.every((i) => i.level === "err"), "это ошибки");
+    });
+    test("перенос комнаты: мебель, заметка и размер внутри едут с ней, щит другого этажа — нет", () => {
+      const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "Кухня");
+      const { P } = install({ rooms: [A] });
+      P.appliances.push(M.newAppliance("appl", "fridge", 100, 100, 60, 60));
+      const nt = M.newNote(200, 150, "тут"); nt.ax = 380; nt.ay = 280; P.notes.push(nt);
+      P.dims.push(M.newDim({ x: 0, y: 200 }, { x: 400, y: 200 }, 10));
+      const f1 = P.floors[0].id;
+      P.rooms[0].floorId = f1; P.appliances[0].floorId = f1; P.notes[0].floorId = f1; P.dims[0].floorId = f1;
+      EP.Plan.Core.addFloor("2 этаж");
+      const pn2 = M.newPanel(200, 150); P.panels.push(pn2); // на 2-м этаже «над» кухней
+      EP.Plan.Core.setActiveFloor(f1);
+      const d = EP.Plan.Rooms.moveRoom(P.rooms[0].id, 100, 0, { raw: true });
+      ok(d && d.x === 100, "комната уехала на 100");
+      const P2 = EP.Plan.Core.project;
+      eq(P2.appliances[0].x, 200, "холодильник с ней");
+      ok(P2.notes[0].x === 300 && P2.notes[0].ax === 480, "заметка вместе со стрелкой");
+      ok(P2.dims[0].a.x === 100 && P2.dims[0].b.x === 500, "свой размер внутри — тоже");
+      const pnAfter = P2.panels.find((x) => x.id === pn2.id);
+      eq(pnAfter.x, 200, "щит 2-го этажа на месте");
+    });
+  }
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

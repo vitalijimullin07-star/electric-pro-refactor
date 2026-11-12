@@ -71,6 +71,8 @@
     offset: "Отступ от угла, см", height: "Высота от пола, см",
     status: "Статус", del: "✕ Удалить", apply: "✓", photo: "📷 Фото",
     confirmDel: "Удалить точку?", tapWall: "Тапни ближе к стене — элемент сядет на неё.",
+    openWide: (w, len) => `Проём шире стены: ${w} см на стене ${len} см — выбери стену длиннее или поменяй ширину после установки.`,
+    openNoRoom: "На этой стене нет свободного места под проём — мешают другие двери и окна.",
     tapWallTP: "Тёплый пол — это терморегулятор на стене: тапни ближе к стене (по умолчанию 90 см от пола).",
     poolTitle: "📦 Из пула", poolLeft: (n2) => `осталось расставить: ${n2}`,
     poolHint: "Заготовки из «Пула розеток»: тапни заготовку, потом тапай по стенам — каждая точка садится со своей высотой и составом, счётчик убывает.",
@@ -233,10 +235,18 @@
     const k = rooms().canvasCmPerPx();
     const hit = G().wallAt(p, w, CFG.wallSnapPx * k);
     if (!hit) { rooms().toast(T.tapWall); return; }
+    const d = EP.Plan.Core.OPENING_KINDS[S.openType] || {};
+    const width = d.w || 90;
+    // место — свободное от других проёмов этой стены и общей стены соседа (аудит Астры, п. 13):
+    // как можно ближе к тапу, но не поверх двери и не за краем стены. Нигде не влезает —
+    // объясняем, а не кладём проём поверх другого
+    const want = G().snap(Math.max(0, hit.offset - width / 2), p.settings.gridStep);
+    const off = G().fitOpening(p, hit.wall, width, want + width / 2, null);
+    const fl0 = rooms().flash || rooms().toast;
+    if (off == null) { fl0(width > hit.wall.len + 0.5 ? T.openWide(Math.round(width), Math.round(hit.wall.len)) : T.openNoRoom); return; }
     vibrate(10);
     c.commit();
-    const d = EP.Plan.Core.OPENING_KINDS[S.openType] || {};
-    const op = c.model.newOpening(S.openType, hit.wall.id, G().snap(Math.max(0, hit.offset - (d.w || 90) / 2), p.settings.gridStep), undefined);
+    const op = c.model.newOpening(S.openType, hit.wall.id, Math.round(off), undefined);
     const fl = openingFlipFor(p, hit.wall);
     if (fl) op.flip = fl;
     p.openings.push(op);
@@ -1244,15 +1254,25 @@
       c.persist("opening-kind"); openOpeningEditor(op); return;
     }
     if (t.closest("[data-po-apply]")) {
-      const c = core(), op = currentOpening(); if (!op) return;
-      const wall = G().wallById(c.project, op.wallId);
+      const c = core(), p = c.project, op = currentOpening(); if (!op) return;
+      const wall = G().wallById(p, op.wallId);
+      // проверка «до/после» (аудит Астры, п. 13): числом проём можно было сделать шире стены
+      // или поставить поверх другого — теперь такая правка не применяется, а над планом
+      // написано, что мешает. Уже кривые старые данные редактировать не мешают
+      // проём на стене комнаты — проверяем её (соседей по общей стене она видит сама),
+      // на перегородке — весь проект (своей комнаты у перегородки нет)
+      const ids = wall && !wall.isBeam ? [wall.roomId] : undefined;
+      const probs = () => G().geomProblems(p, ids);
+      const before = probs();
       c.commit();
       const off = numVal("#ep-po-off"), wd = numVal("#ep-po-w");
       const hd = numVal("#ep-po-h"), sill = numVal("#ep-po-sill");
       if (Number.isFinite(wd) && wd >= 40) op.width = wd;
       if (Number.isFinite(hd) && hd >= 40) op.height = hd;
       if (Number.isFinite(sill) && sill >= 0) op.sill = sill;
-      if (Number.isFinite(off) && wall) op.offset = Math.max(0, Math.min(wall.len - op.width, off));
+      if (Number.isFinite(off)) op.offset = Math.max(0, off); // за краем стены — скажет проверка, молча не двигаем
+      const bad = G().newProblems(before, probs());
+      if (bad.length) { c.rollback(); (rooms().flash || rooms().toast)(bad[0].msg + " — не применено."); rooms().renderScene(); return; }
       c.persist("opening-edit");
       S.selId = null; rooms().closeSheet(); rooms().renderScene(); return; // ✓ применить и закрыть
     }

@@ -298,7 +298,7 @@
   // К замечаниям run() добавляются ПОЛОЖИТЕЛЬНЫЕ пункты (что уже в порядке — мастеру важно
   // видеть и это перед монтажом) и проверки полноты: помещения без точек, точки без линии,
   // точки без трассы, влажные по имени без отметки зоны, свободные модули щита. У каждого
-  // замечания — ссылка ref {kind:"el"|"room"|"circuit"|"appl"|"panel", id}: тап ведёт к объекту.
+  // замечания — ссылка ref {kind:"el"|"room"|"circuit"|"appl"|"panel"|"opening", id}: тап ведёт к объекту.
   const NOT_POINT = { junction: 1, riser: 1, panel: 1, door: 1, window: 1 };
   const WET_NAME = /ванн|санузел|с\/у|туалет|уборн|душ|сауна/i;
   function report(p) {
@@ -373,6 +373,14 @@
     // 7. УЗО по ПУЭ — если run() не нашёл замечаний про УЗО, это тоже пройденный пункт
     if (cs.length && !res.issues.some((i) => /УЗО/.test(i.msg))) passed.push("Линии розеток и влажных зон защищены УЗО");
     if (!(p.panels || []).length && pts.length) issues.push({ level: "err", msg: "Нет щита — поставь щит (🔌 → Щит)." });
+    // 8. геометрия (аудит Астры, п. 2 и 13): контур пересекает сам себя, проём шире стены или
+    // за её краем, проёмы наложились. Правка такое больше сохранить не даёт, но оно могло
+    // прийти из старого проекта или импорта — показываем, тап ведёт к комнате/проёму
+    try {
+      const gp = G().geomProblems(p);
+      if (!gp.length && (p.rooms || []).length) passed.push("Контуры комнат и проёмы в порядке");
+      gp.slice(0, 30).forEach((g) => issues.push({ level: "err", msg: g.msg, ref: g.ref }));
+    } catch (e) {}
     // у замечаний про ТОЧКУ — какая и где («Розетка · Кухня: …»): иначе «Точка попадает в
     // проём» не говорит, какую из сорока точек смотреть
     const roomOfEl = (el) => {
@@ -398,7 +406,9 @@
     const p = core().project; if (!p || !ref) return false;
     const R = rooms(), E = EP.Plan.Elements;
     if (ref.kind === "el") { const el = (p.elements || []).find((e) => e.id === ref.id); if (el && E) { if (el.floorId && p.activeFloorId !== el.floorId && core().setActiveFloor) core().setActiveFloor(el.floorId); E.openEditor(el); return true; } }
-    if (ref.kind === "room") { const r = (p.rooms || []).find((x) => x.id === ref.id); if (r && R.sheetRoom) { R.sheetRoom(r); return true; } }
+    const toFloor = (x) => { if (x && x.floorId && p.activeFloorId !== x.floorId && core().setActiveFloor) core().setActiveFloor(x.floorId); };
+    if (ref.kind === "room") { const r = (p.rooms || []).find((x) => x.id === ref.id); if (r && R.sheetRoom) { toFloor(r); R.sheetRoom(r); return true; } }
+    if (ref.kind === "opening") { const op = (p.openings || []).find((x) => x.id === ref.id); if (op && E && E.openOpeningEditor) { toFloor(op); E.openOpeningEditor(op); return true; } }
     if (ref.kind === "panel") { const pn = (p.panels || []).find((x) => x.id === ref.id); if (pn && E && E.openPanelEditor) { E.openPanelEditor(pn); return true; } }
     if (ref.kind === "appl") { const a = (p.appliances || []).find((x) => x.id === ref.id); const F = EP.Plan.Furniture; if (a && F && F.openEditor) { F.openEditor(a); return true; } }
     if (ref.kind === "circuit") { if (R.setSoloCircuit) R.setSoloCircuit(ref.id); if (EP.Plan.Routes && EP.Plan.Routes.sheet) EP.Plan.Routes.sheet(); return true; }
