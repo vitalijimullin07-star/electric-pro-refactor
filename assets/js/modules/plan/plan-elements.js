@@ -485,12 +485,12 @@
     const isBeamEl = el.wallId && String(el.wallId).slice(0, 5) === "beam:";
     const wallLen = el.wallId ? Math.round((G().wallById(p, el.wallId) || { len: 0 }).len) : 0;
     const put = editorOverlay ? rooms().overlaySheet : rooms().openSheet;
-    put(`<div class="ep-plan-srow"><b>${esc(t.name)}</b>
+    put(`<div class="ep-plan-srow" data-draft-scope="el:${esc(el.id)}"><b>${esc(t.name)}</b>
         ${el.wallId ? `<span>· ${isBeamEl ? "перегородка" : "стена " + esc(el.wallId.split(":")[1] * 1 + 1)} (${wallLen} см)</span>` : "· свободно"}
         <span class="ep-plan-flex"></span>${editorOverlay ? `<button type="button" class="ep-plan-mini ep-clickable" data-pe-ovclose aria-label="Закрыть редактор">✕</button>` : ""}</div>
       <div class="ep-plan-srow ep-plan-s2">
-        ${el.wallId ? `<label>${T.offset}<input id="ep-pe-off" type="number" inputmode="numeric" min="0" max="${wallLen}" value="${Math.round(el.offset)}"></label>` : ""}
-        <label>${T.height}<input id="ep-pe-h" type="number" inputmode="numeric" min="0" value="${Math.round(el.height)}"></label>
+        ${el.wallId ? `<label>${T.offset}<input id="ep-pe-off" type="number" inputmode="numeric" min="0" max="${wallLen}" value="${Math.round(el.offset)}" data-draft></label>` : ""}
+        <label>${T.height}<input id="ep-pe-h" type="number" inputmode="numeric" min="0" value="${Math.round(el.height)}" data-draft></label>
       </div>
       ${isBeamEl ? `<div class="ep-plan-srow">${T.beamSide}
         <button type="button" class="ep-plan-chip ep-clickable" data-pe-beamside="1">${T.beamSideFlip}</button>
@@ -518,10 +518,12 @@
       </div>
       <input id="ep-pe-file" type="file" accept="image/*" capture="environment" hidden>`);
     rooms().renderScene();
+    // после ↶/↷ — перерисовать по новой модели (или закрыть, если точки больше нет)
+    if (rooms().setSheetObj) rooms().setSheetObj("el", el.id, () => { const e2 = (core().project.elements || []).find((x) => x.id === el.id); if (!e2) return false; openEditor(e2, { keepView: true }); return true; }, editorOverlay);
     // камеру главного вида двигаем ТОЛЬКО у обычного редактора: накладной висит поверх
     // развёртки, там своя картина стены, и подвинуть план под ним — значит дёрнуть вид,
     // которого пользователь сейчас не видит
-    if (!editorOverlay) {
+    if (!editorOverlay && !(opts && opts.keepView)) {
       const pt = G().elemPoint(p, el);
       if (pt && rooms().ensureVisibleAboveSheet) rooms().ensureVisibleAboveSheet(pt);
     }
@@ -532,18 +534,18 @@
     const kind = op.kind || (op.type === "window" ? "window" : "door");
     const meta = OPEN_TYPES[kind] || OPEN_TYPES.door;
     const swingKind = kind === "door" || kind === "balcony";
-    rooms().openSheet(`<div class="ep-plan-srow"><b>${esc(meta.name)} ${esc(openingNum(p, op))}</b>
+    rooms().openSheet(`<div class="ep-plan-srow" data-draft-scope="op:${esc(op.id)}"><b>${esc(meta.name)} ${esc(openingNum(p, op))}</b>
         <span>· стена ${wall ? wall.n : "?"} (${wall ? Math.round(wall.len) : 0} см)</span></div>
       <div class="ep-plan-srow">Тип:
         ${Object.keys(OPEN_TYPES).map((k) => `<button type="button" class="ep-plan-chip ep-clickable ${kind === k ? "on" : ""}" data-po-kind="${k}">${esc(OPEN_TYPES[k].name)}</button>`).join("")}
       </div>
       <div class="ep-plan-srow ep-plan-s2">
-        <label>${T.offset}<input id="ep-po-off" type="number" inputmode="numeric" min="0" value="${Math.round(op.offset)}"></label>
-        <label>Ширина, см<input id="ep-po-w" type="number" inputmode="numeric" min="40" value="${Math.round(op.width)}"></label>
+        <label>${T.offset}<input id="ep-po-off" type="number" inputmode="numeric" min="0" value="${Math.round(op.offset)}" data-draft></label>
+        <label>Ширина, см<input id="ep-po-w" type="number" inputmode="numeric" min="40" value="${Math.round(op.width)}" data-draft></label>
       </div>
       <div class="ep-plan-srow ep-plan-s2">
-        <label>Высота проёма, см<input id="ep-po-h" type="number" inputmode="numeric" min="40" value="${Math.round(op.height || 200)}"></label>
-        <label>Низ от пола, см<input id="ep-po-sill" type="number" inputmode="numeric" min="0" value="${Math.round(op.sill || 0)}"></label>
+        <label>Высота проёма, см<input id="ep-po-h" type="number" inputmode="numeric" min="40" value="${Math.round(op.height || 200)}" data-draft></label>
+        <label>Низ от пола, см<input id="ep-po-sill" type="number" inputmode="numeric" min="0" value="${Math.round(op.sill || 0)}" data-draft></label>
       </div>
       ${swingKind ? `<div class="ep-plan-srow">
         <button type="button" class="ep-plan-chip ep-clickable" data-po-hinge>Петли: ${op.hinge === "a" ? "слева" : "справа"}</button>
@@ -567,6 +569,7 @@
       rooms().ensureVisibleAboveSheet(G().pointAtOffset(wall, op.offset + op.width / 2));
     }
     if (rooms().enableOpeningDrag) rooms().enableOpeningDrag(op.id); // тяга по плану
+    if (rooms().setSheetObj) rooms().setSheetObj("op", op.id, () => { const o2 = (core().project.openings || []).find((x) => x.id === op.id); if (!o2) return false; openOpeningEditor(o2, { keepView: true }); return true; });
   }
   // розетки, привязанные к откосу этого проёма (el.reveal.openingId === op.id)
   function revealSockets(p, op) { return (p.elements || []).filter((e) => e.reveal && e.reveal.openingId === op.id); }
@@ -594,21 +597,23 @@
       <div class="ep-mstats">${btn("planned", "План", "○")}${btn("work", "В работе", "◐")}${btn("mounted", "Готово", "✓")}</div>
       <div class="ep-plan-srow ep-plan-sbtns"><button type="button" class="btn ep-clickable" data-pe-mfull>✎ Полный редактор</button></div>`);
     rooms().renderScene();
+    if (rooms().setSheetObj) rooms().setSheetObj("elst", el.id, () => { const e2 = (core().project.elements || []).find((x) => x.id === el.id); if (!e2) return false; openStatusCard(e2); return true; });
   }
-  function openPanelEditor(pn) {
+  function openPanelEditor(pn, opts) {
     S.selId = pn.id;
-    rooms().openSheet(`<div class="ep-plan-srow"><b>${esc(pn.name || "Щит")}</b></div>
-      <div class="ep-plan-srow"><input id="ep-pe-pname" type="text" value="${esc(pn.name || "Щит")}" maxlength="30"></div>
-      <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-ptrafo="${esc(pn.id)}" ${pn.transformer ? "checked" : ""}>Трансформатор в слаботочном щите (24В для ленты)</label></div>
-      <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-prouter="${esc(pn.id)}" ${pn.router ? "checked" : ""}>Роутер — сюда идут все линии интернет/ТВ/видеонаблюдение</label></div>
-      <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-pavr="${esc(pn.id)}" ${pn.avr ? "checked" : ""}>Система АВР (автоматический ввод резерва: второй ввод / генератор)</label></div>
-      <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-pneptun="${esc(pn.id)}" ${pn.neptun ? "checked" : ""}>Контроллер «Нептун» — сюда идут датчики протечки</label></div>
+    rooms().openSheet(`<div class="ep-plan-srow" data-draft-scope="pn:${esc(pn.id)}"><b>${esc(pn.name || "Щит")}</b></div>
+      <div class="ep-plan-srow"><input id="ep-pe-pname" type="text" value="${esc(pn.name || "Щит")}" maxlength="30" data-draft></div>
+      <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-ptrafo="${esc(pn.id)}" ${pn.transformer ? "checked" : ""} data-draft>Трансформатор в слаботочном щите (24В для ленты)</label></div>
+      <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-prouter="${esc(pn.id)}" ${pn.router ? "checked" : ""} data-draft>Роутер — сюда идут все линии интернет/ТВ/видеонаблюдение</label></div>
+      <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-pavr="${esc(pn.id)}" ${pn.avr ? "checked" : ""} data-draft>Система АВР (автоматический ввод резерва: второй ввод / генератор)</label></div>
+      <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-pneptun="${esc(pn.id)}" ${pn.neptun ? "checked" : ""} data-draft>Контроллер «Нептун» — сюда идут датчики протечки</label></div>
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pe-papply="${esc(pn.id)}">${T.apply}</button>
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pe-pdel="${esc(pn.id)}">${T.del}</button>
       </div>`);
     rooms().renderScene();
-    if (rooms().ensureVisibleAboveSheet) rooms().ensureVisibleAboveSheet({ x: pn.x, y: pn.y });
+    if (rooms().setSheetObj) rooms().setSheetObj("pn", pn.id, () => { const p2 = (core().project.panels || []).find((x) => x.id === pn.id); if (!p2) return false; openPanelEditor(p2, { keepView: true }); return true; });
+    if (!(opts && opts.keepView) && rooms().ensureVisibleAboveSheet) rooms().ensureVisibleAboveSheet({ x: pn.x, y: pn.y });
   }
   // создаёт новую линию (QF) и назначает её элементу — первый незанятый цвет,
   // номер = максимум существующих QF + 1 (без повторов после удалений). Общая
@@ -998,18 +1003,25 @@
     const n = $(sel); const v = n && n.value != null ? String(n.value).trim() : "";
     return v ? Number(v.replace(",", ".")) : NaN;
   }
+  // поле черновика менял человек? (plan-rooms.js draftDirty: data-orig ставит шторка при отрисовке)
+  function dirtyF(sel) { const n = $(sel), R = rooms(); return !!n && (R.draftDirty ? R.draftDirty(n) : true); }
+  // число из поля — ТОЛЬКО если его меняли (иначе NaN = «не трогать»): ✓ не должен затирать модель
+  // устаревшим значением формы — точку/проём могли подвинуть тягой или вернуть ↶ (аудит Астры, п. 5-6)
+  function dnum(sel) { return dirtyF(sel) ? numVal(sel) : NaN; }
 
   function applyEditor() {
     const c = core(), el = current(); if (!el) return;
-    c.commit();
-    if (el.wallId) {
-      const w = G().wallById(c.project, el.wallId);
-      const off = numVal("#ep-pe-off");
-      if (Number.isFinite(off) && w) el.offset = Math.max(0, Math.min(w.len, off));
+    // только изменённые поля; без правок ✓ просто закрывает (без пустого шага ↶)
+    const off = el.wallId ? dnum("#ep-pe-off") : NaN, h = dnum("#ep-pe-h");
+    if (Number.isFinite(off) || Number.isFinite(h)) {
+      c.commit();
+      if (el.wallId) {
+        const w = G().wallById(c.project, el.wallId);
+        if (Number.isFinite(off) && w) el.offset = Math.max(0, Math.min(w.len, off));
+      }
+      if (Number.isFinite(h)) el.height = Math.max(0, h);
+      c.persist("elem-edit");
     }
-    const h = numVal("#ep-pe-h");
-    if (Number.isFinite(h)) el.height = Math.max(0, h);
-    c.persist("elem-edit");
     // ✓ — применить и закрыть. У НАКЛАДНОГО редактора (поверх развёртки) закрываем только
     // его самого: под ним развёртка, и closeSheet() снёс бы её вместе с редактором —
     // ровно то, от чего накладной лист и заводился
@@ -1266,10 +1278,13 @@
       // на перегородке — весь проект (своей комнаты у перегородки нет)
       const ids = wall && !wall.isBeam ? [wall.roomId] : undefined;
       const probs = () => G().geomProblems(p, ids);
+      // только изменённые поля (отступ после тяги или ↶ в форме мог устареть); без правок —
+      // просто закрыть, без пустого шага ↶
+      const off = dnum("#ep-po-off"), wd = dnum("#ep-po-w");
+      const hd = dnum("#ep-po-h"), sill = dnum("#ep-po-sill");
+      if (![off, wd, hd, sill].some(Number.isFinite)) { S.selId = null; rooms().closeSheet(); rooms().renderScene(); return; }
       const before = probs();
       c.commit();
-      const off = numVal("#ep-po-off"), wd = numVal("#ep-po-w");
-      const hd = numVal("#ep-po-h"), sill = numVal("#ep-po-sill");
       if (Number.isFinite(wd) && wd >= 40) op.width = wd;
       if (Number.isFinite(hd) && hd >= 40) op.height = hd;
       if (Number.isFinite(sill) && sill >= 0) op.sill = sill;
@@ -1339,19 +1354,16 @@
     }
     if ((b = t.closest("[data-pe-papply]"))) {
       const c = core(), pn = c.project.panels.find((x) => x.id === b.getAttribute("data-pe-papply")); if (!pn) return;
+      // только изменённые поля/галочки (как у остальных карточек): без правок ✓ просто закрывает
+      const nameF = "#ep-pe-pname", trafoF = `[data-pe-ptrafo="${pn.id}"]`, routerF = `[data-pe-prouter="${pn.id}"]`, avrF = `[data-pe-pavr="${pn.id}"]`, nepF = `[data-pe-pneptun="${pn.id}"]`;
+      if (![nameF, trafoF, routerF, avrF, nepF].some(dirtyF)) { S.selId = null; rooms().closeSheet(); rooms().renderScene(); return; }
       c.commit();
-      pn.name = (($("#ep-pe-pname") || {}).value || "Щит").trim() || "Щит";
-      const trafo = $(`[data-pe-ptrafo="${pn.id}"]`);
-      const trafoWas = pn.transformer;
-      pn.transformer = !!(trafo && trafo.checked);
-      const routerChk = $(`[data-pe-prouter="${pn.id}"]`);
-      const routerWas = pn.router;
-      pn.router = !!(routerChk && routerChk.checked);
-      const avrChk = $(`[data-pe-pavr="${pn.id}"]`);
-      pn.avr = !!(avrChk && avrChk.checked); // АВР — на трассировку не влияет, только смета/подпись
-      const nepChk = $(`[data-pe-pneptun="${pn.id}"]`);
-      const nepWas = pn.neptun;
-      pn.neptun = !!(nepChk && nepChk.checked); // цель датчиков протечки — влияет на трассы
+      if (dirtyF(nameF)) pn.name = (($(nameF) || {}).value || "Щит").trim() || "Щит";
+      const trafoWas = pn.transformer, routerWas = pn.router, nepWas = pn.neptun;
+      if (dirtyF(trafoF)) pn.transformer = !!$(trafoF).checked;
+      if (dirtyF(routerF)) pn.router = !!$(routerF).checked;
+      if (dirtyF(avrF)) pn.avr = !!$(avrF).checked; // АВР — на трассировку не влияет, только смета/подпись
+      if (dirtyF(nepF)) pn.neptun = !!$(nepF).checked; // цель датчиков протечки — влияет на трассы
       // panel-router/panel-trafo — отдельные метки от panel-edit: только смена флага
       // роутера/трансформатора должна тихо перестроить уже построенные трассы (LV-точки/
       // выводы 24В могли сменить целевой щит), обычное переименование щита такой

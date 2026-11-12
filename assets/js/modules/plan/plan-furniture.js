@@ -165,18 +165,18 @@
     return a;
   }
 
-  function openEditor(a) {
+  function openEditor(a, opts) {
     const p = core().project;
     S.selId = a.id;
     const cat = byId(a.catId) || {};
     const nd = a.kind === "appl" ? needFor(a) : null;
     const circ = nd ? (p.circuits || []).find((c) => c.id === a.circuitId) : null;
     const pts = (a.kind === "appl") ? (G().floorScoped(p).elements || []).filter((e) => e.type === "socket" || e.type === "output" || e.type === "block") : [];
-    rooms().openSheet(`<div class="ep-plan-srow"><b>${esc(a.name || cat.name || "Предмет")}</b>
+    rooms().openSheet(`<div class="ep-plan-srow" data-draft-scope="ap:${esc(a.id)}"><b>${esc(a.name || cat.name || "Предмет")}</b>
         <span class="ep-plan-flex"></span><span>${a.kind === "appl" ? "техника" : "мебель"}</span></div>
       <div class="ep-plan-srow ep-plan-s2">
-        <label>Ширина, см<input id="ep-pf-w" type="number" inputmode="numeric" min="10" value="${Math.round(a.w)}"></label>
-        <label>Глубина, см<input id="ep-pf-d" type="number" inputmode="numeric" min="10" value="${Math.round(a.d)}"></label>
+        <label>Ширина, см<input id="ep-pf-w" type="number" inputmode="numeric" min="10" value="${Math.round(a.w)}" data-draft></label>
+        <label>Глубина, см<input id="ep-pf-d" type="number" inputmode="numeric" min="10" value="${Math.round(a.d)}" data-draft></label>
       </div>
       <div class="ep-plan-srow">
         <button type="button" class="ep-plan-chip ep-clickable" data-pf-rot="90">⟳ 90°</button>
@@ -186,8 +186,8 @@
       </div>
       ${a.kind === "appl" ? `
       <div class="ep-plan-srow ep-plan-s2">
-        <label>Мощность, Вт<input id="ep-pf-watt" type="number" inputmode="numeric" min="0" value="${Math.round(a.watt != null ? a.watt : (cat.kw || 0))}"></label>
-        <label class="ep-plan-chk"><input id="ep-pf-p3" type="checkbox" ${a.phases === 3 ? "checked" : ""}> 3 фазы</label>
+        <label>Мощность, Вт<input id="ep-pf-watt" type="number" inputmode="numeric" min="0" value="${Math.round(a.watt != null ? a.watt : (cat.kw || 0))}" data-draft></label>
+        <label class="ep-plan-chk"><input id="ep-pf-p3" type="checkbox" ${a.phases === 3 ? "checked" : ""} data-draft> 3 фазы</label>
       </div>
       ${nd ? `<div class="ep-plan-modehint"><b>Нагрузка:</b> ${(nd.watt / 1000).toFixed(nd.watt >= 1000 ? 1 : 2)} кВт · ${nd.amps} А →
         нужен кабель <b>${esc(nd.cable)}</b>, автомат <b>${nd.breaker}A</b>${nd.rcd ? ", <b>УЗО обязательно</b>" : ""}${nd.own ? ". Своя отдельная линия." : ""}
@@ -206,7 +206,9 @@
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pf-del>✕ Удалить</button>
       </div>`);
     rooms().renderScene();
-    if (rooms().ensureVisibleAboveSheet) rooms().ensureVisibleAboveSheet({ x: a.x, y: a.y });
+    // после ↶/↷ — перерисовать по новой модели (или закрыть, если предмета больше нет)
+    if (rooms().setSheetObj) rooms().setSheetObj("ap", a.id, () => { const a2 = (core().project.appliances || []).find((x) => x.id === a.id); if (!a2) return false; openEditor(a2, { keepView: true }); return true; });
+    if (!(opts && opts.keepView) && rooms().ensureVisibleAboveSheet) rooms().ensureVisibleAboveSheet({ x: a.x, y: a.y });
     enableDrag(a.id);
   }
 
@@ -241,7 +243,7 @@
         a.x = sp.x; a.y = sp.y;
         c.persist("appl-move");
         R.renderScene();
-        openEditor(a);
+        openEditor(a, { keepView: true }); // вид не дёргаем — его только что выбрали тягой
       }
     });
   }
@@ -254,20 +256,24 @@
     const a = cur(); if (!a) return;
     const c = core();
     // пустое поле = «не менять» (Number("") дал бы 0 — у мощности это «0 Вт»)
-    const nv = (sel) => { const n = $(sel); const v = n && n.value != null ? String(n.value).trim() : ""; return v ? Number(v.replace(",", ".")) : NaN; };
+    // и только изменённые поля (аудит Астры, п. 5-6): предмет могли подвинуть/повернуть или
+    // вернуть ↶ после того, как форма нарисована, — нетронутое поле модель не затирает
+    const dirty = (sel) => { const n = $(sel); return !!n && (rooms().draftDirty ? rooms().draftDirty(n) : true); };
+    const nv = (sel) => { if (!dirty(sel)) return NaN; const n = $(sel); const v = n && n.value != null ? String(n.value).trim() : ""; return v ? Number(v.replace(",", ".")) : NaN; };
     const w = nv("#ep-pf-w"), d = nv("#ep-pf-d");
     const watt = nv("#ep-pf-watt");
-    const p3 = !!($("#ep-pf-p3") || {}).checked;
+    const p3dirty = a.kind === "appl" && dirty("#ep-pf-p3");
+    if (![w, d, watt].some(Number.isFinite) && !p3dirty) { rooms().renderScene(); openEditor(a, { keepView: true }); return; }
     c.commit();
     if (Number.isFinite(w) && w >= 10) a.w = w;
     if (Number.isFinite(d) && d >= 10) a.d = d;
     if (a.kind === "appl") {
       if (Number.isFinite(watt) && watt >= 0) a.watt = watt;
-      a.phases = p3 ? 3 : 1;
+      if (p3dirty) a.phases = $("#ep-pf-p3").checked ? 3 : 1;
     }
     c.persist("appl-edit");
     rooms().renderScene();
-    openEditor(a);
+    openEditor(a, { keepView: true });
   }
 
   document.addEventListener("click", (e) => {
@@ -284,13 +290,13 @@
       const a = cur(); if (!a) return;
       const c = core(); c.commit();
       a.rot = ((a.rot || 0) + Number(el.getAttribute("data-pf-rot")) + 360) % 360;
-      c.persist("appl-rot"); rooms().renderScene(); openEditor(a); return;
+      c.persist("appl-rot"); rooms().renderScene(); openEditor(a, { keepView: true }); return;
     }
     if ((el = t.closest("[data-pf-circ]"))) {
       const a = cur(); if (!a) return;
       const c = core(); c.commit();
       a.circuitId = el.getAttribute("data-pf-circ") || null;
-      c.persist("appl-circ"); rooms().renderScene(); openEditor(a); return;
+      c.persist("appl-circ"); rooms().renderScene(); openEditor(a, { keepView: true }); return;
     }
     if ((el = t.closest("[data-pf-el]"))) {
       const a = cur(); if (!a) return;
@@ -300,7 +306,7 @@
       a.elementId = a.elementId === (pe && pe.id) ? null : (pe ? pe.id : null);
       // линия питания подтягивается с точки — чтобы не задавать её дважды
       if (a.elementId && pe && pe.circuitId) a.circuitId = pe.circuitId;
-      c.persist("appl-link"); rooms().renderScene(); openEditor(a); return;
+      c.persist("appl-link"); rooms().renderScene(); openEditor(a, { keepView: true }); return;
     }
     if (t.closest("[data-pf-apply]")) { editApply(); return; }
     if (t.closest("[data-pf-dup]")) {
