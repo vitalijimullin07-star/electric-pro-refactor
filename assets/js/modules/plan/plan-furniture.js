@@ -203,15 +203,19 @@
       <div class="ep-plan-srow">Точка питания:
         ${pts.length ? pts.slice(0, 12).map((e) => `<button type="button" class="ep-plan-chip ep-clickable ${a.elementId === e.id ? "on" : ""}" data-pf-el="${esc(e.id)}">${esc((EP.Plan.Elements.TYPES[e.type] || {}).glyph || "?")} ${Math.round(e.height || 0)}см</button>`).join("") : "<span>розеток/выводов пока нет</span>"}
       </div>` : ""}
-      <div class="ep-plan-srow ep-plan-sbtns">
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-pf-apply>✓</button>
+      <div class="ep-plan-srow ep-plan-sbtns ep-plan-actbar">
+        <button type="button" class="ep-plan-tbtn is-primary ep-clickable" data-pf-apply>✓ Применить</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pf-dup>Копия</button>
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pf-del>✕ Удалить</button>
       </div>`);
     rooms().renderScene();
     // после ↶/↷ — перерисовать по новой модели (или закрыть, если предмета больше нет)
     if (rooms().setSheetObj) rooms().setSheetObj("ap", a.id, () => { const a2 = (core().project.appliances || []).find((x) => x.id === a.id); if (!a2) return false; openEditor(a2, { keepView: true }); return true; });
-    if (!(opts && opts.keepView) && rooms().ensureVisibleAboveSheet) rooms().ensureVisibleAboveSheet({ x: a.x, y: a.y });
+    // в видимой части — предмет целиком (габарит с учётом поворота), а не его центр
+    if (!(opts && opts.keepView) && rooms().ensureVisibleAboveSheet) {
+      const r = Math.hypot(a.w || 0, a.d || 0) / 2 + 6;
+      rooms().ensureVisibleAboveSheet({ x: a.x - r, y: a.y - r, w: 2 * r, h: 2 * r });
+    }
     enableDrag(a.id);
   }
 

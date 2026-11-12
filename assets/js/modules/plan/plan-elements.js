@@ -69,7 +69,7 @@
     palette: "Палитра", progress: "Смонтировано",
     paletteHint: "Выбери тип — палитра свернётся вниз, и можно ставить точки тапом по плану. Вернуть палитру — кнопка ︿ в правом нижнем углу.",
     offset: "Отступ от угла, см", height: "Высота от пола, см",
-    status: "Статус", del: "✕ Удалить", apply: "✓", photo: "📷 Фото",
+    status: "Статус", del: "✕ Удалить", apply: "✓ Применить", photo: "📷 Фото",
     confirmDel: "Удалить точку?", tapWall: "Тапни ближе к стене — элемент сядет на неё.",
     openWide: (w, len) => `Проём шире стены: ${w} см на стене ${len} см — выбери стену длиннее или поменяй ширину после установки.`,
     openNoRoom: "На этой стене нет свободного места под проём — мешают другие двери и окна.",
@@ -513,9 +513,9 @@
         ${STATUS.map(([v, l]) => `<button type="button" class="ep-plan-chip ep-clickable ${el.status === v ? "on" : ""}" data-pe-status="${v}">${l}</button>`).join("")}
       </div>
       <div class="ep-plan-srow" id="ep-pe-photos">${photosHtml(el)}</div>
-      <div class="ep-plan-srow ep-plan-sbtns">
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-pe-apply>${T.apply}</button>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-pe-photo>${T.photo} (${(el.photos || []).length})</button>
+      <div class="ep-plan-srow"><button type="button" class="ep-plan-tbtn ep-clickable" data-pe-photo>${T.photo} (${(el.photos || []).length})</button></div>
+      <div class="ep-plan-srow ep-plan-sbtns ep-plan-actbar">
+        <button type="button" class="ep-plan-tbtn is-primary ep-clickable" data-pe-apply>${T.apply}</button>
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pe-del>${T.del}</button>
       </div>
       <input id="ep-pe-file" type="file" accept="image/*" capture="environment" hidden>`);
@@ -559,8 +559,8 @@
       </div>
       ${revealListHtml(p, op)}
       <div class="ep-plan-modehint">Проём можно тянуть пальцем прямо по плану — он едет вдоль стены, а если довести до другой стены, перевесится на неё (створка развернётся сама). По высоте («Низ от пола») проём тянется в развёртке стены. Розетка в откосе стоит на кромке проёма (слева/справа), тапни её на плане для редактирования. Номера проёмов вкл/выкл — слой «Подписи» (🗂).</div>
-      <div class="ep-plan-srow ep-plan-sbtns">
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-po-apply>${T.apply}</button>
+      <div class="ep-plan-srow ep-plan-sbtns ep-plan-actbar">
+        <button type="button" class="ep-plan-tbtn is-primary ep-clickable" data-po-apply>${T.apply}</button>
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-po-del>${T.del}</button>
       </div>`);
     rooms().renderScene();
@@ -568,7 +568,7 @@
     // подтягиваем проём из-под шторки только при обычном открытии по тапу (тот же
     // keepView-паттерн, что у sheetMoveRoom в plan-rooms.js)
     if (!(opts && opts.keepView) && wall && rooms().ensureVisibleAboveSheet) {
-      rooms().ensureVisibleAboveSheet(G().pointAtOffset(wall, op.offset + op.width / 2));
+      rooms().ensureVisibleAboveSheet(openingBox(p, op) || G().pointAtOffset(wall, op.offset + op.width / 2));
     }
     if (rooms().enableOpeningDrag) rooms().enableOpeningDrag(op.id); // тяга по плану
     if (rooms().setSheetObj) rooms().setSheetObj("op", op.id, () => { const o2 = (core().project.openings || []).find((x) => x.id === op.id); if (!o2) return false; openOpeningEditor(o2, { keepView: true }); return true; });
@@ -583,6 +583,18 @@
       `<button type="button" class="ep-plan-chip ep-plan-danger ep-clickable" data-po-revdel="${esc(e.id)}">✕</button>`).join("")}</div>`;
   }
   function currentOpening() { return (core().project.openings || []).find((o) => o.id === S.selId) || null; }
+  // прямоугольник проёма целиком: вырез в стене и размах створки (G.openingShape — та же
+  // геометрия, что рисует план), чтобы подвод вида показал дверь, а не её середину
+  function openingBox(p, op) {
+    const sh = G().openingShape ? G().openingShape(p, op) : null;
+    if (!sh) return null;
+    const half = (sh.th || 10) / 2 + 6, pts = [];
+    [sh.a, sh.b].forEach((q) => { pts.push({ x: q.x + sh.n.x * half, y: q.y + sh.n.y * half }, { x: q.x - sh.n.x * half, y: q.y - sh.n.y * half }); });
+    if (sh.swing) pts.push({ x: sh.swing.h.x + sh.n.x * sh.swing.r, y: sh.swing.h.y + sh.n.y * sh.swing.r }, sh.swing.far);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    pts.forEach((q) => { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); });
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  }
 
   // ---- карточка статуса (режим монтажника 👷): на объекте нужен статус, а не поля.
   // Три крупные кнопки + «Полный редактор»; после выбора карточка остаётся открытой —
@@ -597,7 +609,7 @@
         <button type="button" class="ep-plan-mini ep-clickable" data-pe-mclose aria-label="Закрыть">✕</button></div>
       <div class="ep-plan-srow ep-plan-mshint">h=${Math.round(el.height)} см${c ? ` · линия <b style="color:${esc(c.color)}">${esc(c.name)}</b>` : " · без линии"}</div>
       <div class="ep-mstats">${btn("planned", "План", "○")}${btn("work", "В работе", "◐")}${btn("mounted", "Готово", "✓")}</div>
-      <div class="ep-plan-srow ep-plan-sbtns"><button type="button" class="btn ep-clickable" data-pe-mfull>✎ Полный редактор</button></div>`);
+      <div class="ep-plan-srow ep-plan-sbtns ep-plan-actbar"><button type="button" class="btn ep-clickable" data-pe-mfull>✎ Полный редактор</button></div>`);
     rooms().renderScene();
     if (rooms().setSheetObj) rooms().setSheetObj("elst", el.id, () => { const e2 = (core().project.elements || []).find((x) => x.id === el.id); if (!e2) return false; openStatusCard(e2); return true; });
   }
@@ -609,8 +621,8 @@
       <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-prouter="${esc(pn.id)}" ${pn.router ? "checked" : ""} data-draft>Роутер — сюда идут все линии интернет/ТВ/видеонаблюдение</label></div>
       <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-pavr="${esc(pn.id)}" ${pn.avr ? "checked" : ""} data-draft>Система АВР (автоматический ввод резерва: второй ввод / генератор)</label></div>
       <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-pneptun="${esc(pn.id)}" ${pn.neptun ? "checked" : ""} data-draft>Контроллер «Нептун» — сюда идут датчики протечки</label></div>
-      <div class="ep-plan-srow ep-plan-sbtns">
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-pe-papply="${esc(pn.id)}">${T.apply}</button>
+      <div class="ep-plan-srow ep-plan-sbtns ep-plan-actbar">
+        <button type="button" class="ep-plan-tbtn is-primary ep-clickable" data-pe-papply="${esc(pn.id)}">${T.apply}</button>
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pe-pdel="${esc(pn.id)}">${T.del}</button>
       </div>`);
     rooms().renderScene();
@@ -1431,5 +1443,5 @@
   }
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, SW_TARGET_TYPES, onModeEnter, onOpeningModeEnter, selectType, placeAt, placeOpening, openFitMsg, hoverSnapPoint, openingNum, hitAt, openEditor, openStatusCard, closeEditorOverlay, openPanelEditor, openOpeningEditor, openingFlipFor, selectedId, deselect, deleteElement, duplicateElement, circuitRow, assignNewCircuit, syncTargetCircuit, riserMate };
+  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, SW_TARGET_TYPES, onModeEnter, onOpeningModeEnter, selectType, placeAt, placeOpening, openFitMsg, hoverSnapPoint, openingNum, hitAt, openEditor, openStatusCard, closeEditorOverlay, openPanelEditor, openOpeningEditor, openingFlipFor, openingBox, selectedId, deselect, deleteElement, duplicateElement, circuitRow, assignNewCircuit, syncTargetCircuit, riserMate };
 })();
