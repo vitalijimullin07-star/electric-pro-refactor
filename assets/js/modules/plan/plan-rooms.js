@@ -75,6 +75,9 @@
     polyNeed: "Нужно минимум 3 точки.",
     polySelf: "Контур пересекает сам себя — так комнату не замкнуть. Убери лишние точки (↩) и обведи заново.",
     dragCancelled: "Жест прервала система (звонок, жест «назад») — перенос отменён, всё на прежнем месте.",
+    sheetGone: "Этого объекта больше нет (отменено ↶) — карточка закрыта.",
+    thickProj: "Толщина стен по умолчанию — для всего проекта, см",
+    thickProjHint: "Меняет все стены проекта, у которых не задана своя толщина. Толщину одной стены — в её развёртке (📐).",
     qbEdit: "✎ Быстрый доступ", qbClose: "✕",
     qbEditHint: "Отметь инструменты, которые всегда должны быть под рукой на плавающей панели снизу. Первые места панель дополнительно подстраивает сама — под последние использованные инструменты.",
     qbReset: "↺ Сбросить"
@@ -791,6 +794,81 @@
     syncSheetBtn();
   }
   function toggleSheetCollapsed() { if (R.sheetCollapsed) expandSheet(); else collapseSheet(); }
+  /* ---------- ЧЕРНОВИК ФОРМЫ И СВЯЗЬ КАРТОЧКИ С ОБЪЕКТОМ (аудит Астры, п. 5-7) ----------
+     Поле с атрибутом data-draft — часть черновика карточки: в модель оно попадает по ✓ и ТОЛЬКО
+     если человек его менял. При каждой отрисовке поле получает data-orig — значение из модели на
+     этот момент; ✓ сравнивает с ним (draftDirty) и нетронутые поля не пишет. Раньше ✓ записывал
+     ВСЕ поля формы: потянул стену (ширина стала 490), поменял название — ✓ вернул ширину из формы
+     (400); отменил ↶ перенос двери — ✓ вернул отменённое значение.
+     Перерисовка карточки ТОГО ЖЕ объекта (конец тяги, ↶/↷, выбран материал) переносит набранное в
+     новую форму. Объект карточки — атрибут data-draft-scope («room:id»): набранное переносится
+     только в карточку с тем же объектом (две комнаты «Комната» черновиками не обменяются). Поля,
+     которые применяются сразу (длины стен, толщина перегородки), data-draft не несут и всегда
+     показывают модель. */
+  const fieldVal = (n) => ((n.type === "checkbox" || n.type === "radio") ? (n.checked ? "1" : "0") : String(n.value == null ? "" : n.value));
+  function draftKey(n) {
+    if (n.id) return "#" + n.id;
+    const a = [], at = n.attributes || [];
+    for (let i = 0; i < at.length; i++) {
+      const nm = at[i].name;
+      if (nm.slice(0, 5) === "data-" && nm !== "data-draft" && nm !== "data-orig") a.push(nm + "=" + at[i].value);
+    }
+    return a.sort().join("|");
+  }
+  const draftFields = (root) => (root && root.querySelectorAll ? Array.prototype.slice.call(root.querySelectorAll("[data-draft]")) : []);
+  function draftStamp(root) { draftFields(root).forEach((n) => n.setAttribute("data-orig", fieldVal(n))); }
+  // человек менял поле? Поле без отметки (форма собрана не через шторку) — как раньше: пишем
+  function draftDirty(n) {
+    if (!n || !n.getAttribute) return false;
+    const o = n.getAttribute("data-orig");
+    return o == null ? true : fieldVal(n) !== o;
+  }
+  function draftCapture(root) {
+    const m = new Map();
+    draftFields(root).forEach((n) => { if (n.getAttribute("data-orig") != null && draftDirty(n)) { const k = draftKey(n); if (k) m.set(k, fieldVal(n)); } });
+    return m;
+  }
+  function draftRestore(root, m) {
+    if (!m || !m.size) return;
+    draftFields(root).forEach((n) => {
+      const k = draftKey(n);
+      if (!m.has(k)) return;
+      const v = m.get(k);
+      if (n.type === "checkbox" || n.type === "radio") n.checked = v === "1"; else n.value = v;
+    });
+  }
+  const draftScope = (root) => { const x = root && root.querySelector && root.querySelector("[data-draft-scope]"); return x ? x.getAttribute("data-draft-scope") : null; };
+  // заменить содержимое карточки, сохранив набранное, если это карточка того же объекта
+  function putForm(node, html) {
+    const scope0 = draftScope(node), keep = scope0 ? draftCapture(node) : null;
+    node.innerHTML = html;
+    draftStamp(node);
+    if (keep && keep.size && draftScope(node) === scope0) draftRestore(node, keep);
+  }
+  /* Карточка какого объекта открыта (п. 6): после ↶/↷ её перерисовываем по НОВОЙ модели (поля
+     показывают восстановленные значения, набранное не теряется — см. putForm) или закрываем, если
+     объекта больше нет. Раньше ↶ откатывал модель, а форма показывала отменённое, и ✓ возвращал
+     его обратно. reopen() → false, если объект пропал. Отдельный слот — у накладного листа
+     (полный редактор точки поверх развёртки). */
+  function setSheetObj(kind, id, reopen, overlay) {
+    const o = { kind, id, reopen };
+    if (overlay) R.overlayObj = o; else R.sheetObj = o;
+  }
+  function refreshSheetObj() {
+    let gone = false;
+    const run = (o, isOv) => {
+      if (!o || !o.reopen) return;
+      let ok = false;
+      try { ok = o.reopen() !== false; } catch (e) { ok = false; }
+      if (ok) return;
+      gone = true;
+      if (isOv) { R.overlayObj = null; closeOverlaySheet(); } else { R.sheetObj = null; closeSheet(); }
+    };
+    if (overlayOpen()) run(R.overlayObj, true);
+    const s = sheet();
+    if (s && !s.hidden) run(R.sheetObj, false);
+    if (gone) flash(T.sheetGone);
+  }
   // opts.keepCollapsed — ПЕРЕрисовка той же шторки (счётчик палитры после установки
   // точки и т.п.): если пользователь свернул её, она НЕ должна выпрыгивать обратно.
   // opts.transient — тост (сам закроется), кнопку сворачивания не показываем.
@@ -810,7 +888,8 @@
     const key = sheetKeyOf(html);
     const fresh = !s || s.hidden || key !== R.sheetKey;
     R.sheetKey = key;
-    if (s) { s.innerHTML = html; s.hidden = false; s.classList.toggle("is-collapsed", keep); if (fresh) s.scrollTop = 0; }
+    R.sheetObj = null; // карточка объекта отметит себя сама (setSheetObj) после отрисовки
+    if (s) { putForm(s, html); s.hidden = false; s.classList.toggle("is-collapsed", keep); if (fresh) s.scrollTop = 0; }
     syncQuickbarForSheet(!keep);
     syncSheetBtn();
   }
@@ -833,11 +912,13 @@
       ov.className = "ep-plan-sheet2";
       s.appendChild(ov);
     }
-    ov.innerHTML = html;
+    R.overlayObj = null;
+    putForm(ov, html);
     ov.hidden = false;
     return ov;
   }
   function closeOverlaySheet() {
+    R.overlayObj = null;
     const ov = document.getElementById("ep-plan-sheet2");
     if (ov) { ov.hidden = true; ov.innerHTML = ""; }
   }
@@ -846,6 +927,7 @@
   function closeSheet() {
     const s = sheet();
     R.sheetKey = null;   // следующая шторка — с начала
+    R.sheetObj = null;
     closeOverlaySheet();
     R.sheetCollapsed = false; R.sheetTransient = false;
     if (s) s.classList.remove("is-collapsed");
@@ -1382,6 +1464,7 @@
     renderScene();
     // после ТЯГИ вид не дёргаем (пользователь только что сам выбрал, куда смотреть) —
     // подтягиваем комнату из-под шторки только при первом открытии по тапу
+    setSheetObj("movroom", room.id, () => { const r2 = (core().project.rooms || []).find((x) => x.id === room.id); if (!r2) return false; sheetMoveRoom(r2, { keepView: true }); return true; });
     if (!(opts && opts.keepView)) ensureVisibleAboveSheet(G().centroid(room.points || []));
   }
   // тяга ВСЕЙ комнаты пальцем. Жест начинается ТОЛЬКО внутри выбранной комнаты — иначе
@@ -1525,7 +1608,7 @@
     return best ? best.dm : null;
   }
   function dimById(id) { return ((core().project || {}).dims || []).find((x) => x.id === id) || null; }
-  function sheetDim(dm) {
+  function sheetDim(dm, opts) {
     const g = G().dimGeom(dm);
     openSheet(`<div class="ep-plan-srow"><b>⟷ Размер</b> · ${g ? esc(G().fmtLen(g.len)) : "—"}</div>
       <div class="ep-plan-srow ep-plan-s2">
@@ -1540,7 +1623,8 @@
       <div class="ep-plan-modehint">Тяни за цифру — размер вынесется дальше или ближе. Тяни за концы — переставишь точки замера.</div>`);
     R.selectedDimId = dm.id;
     enableDimDrag(dm.id);
-    ensureVisibleAboveSheet(g ? g.mid : dm.a);
+    setSheetObj("dim", dm.id, () => { const d2 = (core().project.dims || []).find((x) => x.id === dm.id); if (!d2) return false; sheetDim(d2, { keepView: true }); return true; });
+    if (!(opts && opts.keepView)) ensureVisibleAboveSheet(g ? g.mid : dm.a);
   }
   /* ---------- АВТОМАТИЧЕСКИЕ размеры: вынести и подвинуть ----------
      Цепочка вдоль стены и подпись высоты h=NNN существуют всегда (их считает рендер),
@@ -1705,7 +1789,7 @@
         c.persist("dim-move");
         renderScene();
         const cur = dimById(dimId);
-        if (cur) sheetDim(cur);                    // в шторке живое число выноса/длины
+        if (cur) sheetDim(cur, { keepView: true }); // в шторке живое число выноса/длины (вид не дёргаем — его только что выбрали тягой)
         mode = null;
       }
     });
@@ -1726,7 +1810,7 @@
     });
     return best ? best.nt : null;
   }
-  function sheetNote(nt) {
+  function sheetNote(nt, opts) {
     const has = nt.ax != null && nt.ay != null;
     openSheet(`<div class="ep-plan-srow"><b>📝 Заметка</b></div>
       <div class="ep-plan-srow"><textarea id="ep-pr-nt" rows="3" maxlength="400" placeholder="Например: здесь штробить нельзя — несущая"
@@ -1739,7 +1823,8 @@
       <div class="ep-plan-modehint">${has ? "Тяни кончик стрелки — он указывает на место. Саму заметку тоже можно двигать." : "Заметку можно двигать пальцем. «Выноска» добавит стрелку к нужной точке."}</div>`);
     R.noteId = nt.id;
     enableNoteDrag(nt.id);
-    ensureVisibleAboveSheet({ x: nt.x, y: nt.y });
+    setSheetObj("note", nt.id, () => { const n2 = (core().project.notes || []).find((x) => x.id === nt.id); if (!n2) return false; sheetNote(n2, { keepView: true }); return true; });
+    if (!(opts && opts.keepView)) ensureVisibleAboveSheet({ x: nt.x, y: nt.y });
   }
   // Тяга: за текст — вся заметка целиком (вместе со стрелкой), за кончик стрелки —
   // только он. Тот же veto-паттерн, что у балки/комнаты: жест НЕ на заметке
@@ -1869,19 +1954,22 @@
     const p = core().project;
     const isR = G().isRect(room), d = isR ? G().rectDims(room) : null;
     const wet = (room.zones || []).indexOf("wet") >= 0;
-    openSheet(`<div class="ep-plan-srow"><b>${esc(room.name)}</b> · ${G().fmtArea(G().roomNetArea(p, room))}</div>
-      <div class="ep-plan-srow"><input id="ep-pr-rname" type="text" value="${esc(room.name)}" maxlength="40" data-pr-room="${esc(room.id)}"></div>
+    openSheet(`<div class="ep-plan-srow" data-draft-scope="room:${esc(room.id)}"><b>${esc(room.name)}</b> · ${G().fmtArea(G().roomNetArea(p, room))}</div>
+      <div class="ep-plan-srow"><input id="ep-pr-rname" type="text" value="${esc(room.name)}" maxlength="40" data-pr-room="${esc(room.id)}" data-draft></div>
       <div class="ep-plan-srow ep-plan-s2">
-        ${isR ? `<label>${T.width}<input id="ep-pr-rw" type="number" inputmode="numeric" min="30" value="${Math.round(d.w)}"></label>
-        <label>${T.depth}<input id="ep-pr-rh" type="number" inputmode="numeric" min="30" value="${Math.round(d.h)}"></label>` : ""}
-        <label>${T.ceil}<input id="ep-pr-rc" type="number" inputmode="numeric" min="150" placeholder="${p.settings.ceilingHeight}" value="${room.height || ""}"></label>
-        <label>Толщина стен, см<input id="ep-pr-th" type="number" inputmode="numeric" min="4" value="${Math.round(p.settings.wallThickness || 10)}"></label>
+        ${isR ? `<label>${T.width}<input id="ep-pr-rw" type="number" inputmode="numeric" min="30" value="${Math.round(d.w)}" data-draft></label>
+        <label>${T.depth}<input id="ep-pr-rh" type="number" inputmode="numeric" min="30" value="${Math.round(d.h)}" data-draft></label>` : ""}
+        <label>${T.ceil}<input id="ep-pr-rc" type="number" inputmode="numeric" min="150" placeholder="${p.settings.ceilingHeight}" value="${room.height || ""}" data-draft></label>
       </div>
       <div class="ep-plan-srow">Стены:
         ${(EP.Plan.Core.DEFAULTS.materials || []).map((m) => `<button type="button" class="ep-plan-chip ep-clickable ${(room.material || p.settings.wallMaterial) === m ? "on" : ""}" data-pr-mat="${esc(m)}">${esc(m)}</button>`).join("")}
       </div>
-      <div class="ep-plan-srow"><label class="ep-plan-chk"><input id="ep-pr-wet" type="checkbox" ${wet ? "checked" : ""}> ${T.wet}</label></div>
+      <div class="ep-plan-srow"><label class="ep-plan-chk"><input id="ep-pr-wet" type="checkbox" ${wet ? "checked" : ""} data-draft> ${T.wet}</label></div>
       ${wallLenHtml(room)}
+      <div class="ep-plan-projset">
+        <label>${T.thickProj}<input id="ep-pr-th" type="number" inputmode="numeric" min="4" value="${Math.round(p.settings.wallThickness || 10)}" data-draft></label>
+        <div class="ep-plan-modehint">${T.thickProjHint}</div>
+      </div>
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-apply="${esc(room.id)}">✓</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-unfold="${esc(room.id)}">📐 ${T.unfoldBtn}</button>
@@ -1890,6 +1978,7 @@
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pr-delroom="${esc(room.id)}">${T.del}</button>
       </div>`);
     enableRoomDrag(room.id); // тяни углы/стены выбранной комнаты
+    setSheetObj("room", room.id, () => { const r2 = (core().project.rooms || []).find((x) => x.id === room.id); if (!r2) return false; sheetRoom(r2, { keepView: true }); return true; });
     if (!(opts && opts.keepView)) ensureVisibleAboveSheet(G().centroid(room.points));
   }
   function sheetUnderlay() {
@@ -1924,7 +2013,7 @@
     });
     return best && best.beam;
   }
-  function sheetBeam(bm) {
+  function sheetBeam(bm, opts) {
     const p = core().project;
     const mat = bm.material || p.settings.wallMaterial;
     openSheet(`<div class="ep-plan-srow"><b>${bm.kind === "lintel" ? "Перемычка" : "Балка/перегородка"}</b> · ${G().fmtLen(G().dist(bm.a, bm.b))}</div>
@@ -1943,7 +2032,8 @@
     R.selectedBeam = bm.id;
     enableBeamDrag();
     renderScene();
-    ensureVisibleAboveSheet({ x: (bm.a.x + bm.b.x) / 2, y: (bm.a.y + bm.b.y) / 2 });
+    setSheetObj("beam", bm.id, () => { const b2 = (core().project.beams || []).find((x) => x.id === bm.id); if (!b2) { clearBeamSel(); return false; } sheetBeam(b2, { keepView: true }); return true; });
+    if (!(opts && opts.keepView)) ensureVisibleAboveSheet({ x: (bm.a.x + bm.b.x) / 2, y: (bm.a.y + bm.b.y) / 2 });
   }
   // тянуть концы выбранной балки/перегородки пальцем
   function enableBeamDrag() {
@@ -1981,17 +2071,17 @@
       return w.x >= r.x1 && w.x <= r.x2 && w.y >= r.y1 && w.y <= r.y2;
     }) || null;
   }
-  function sheetVoid(vd) {
+  function sheetVoid(vd, opts) {
     const r = G().voidRect(vd);
-    openSheet(`<div class="ep-plan-srow"><b>${esc(vd.kind === "room" ? "Мини-комната" : "Вент. шахта")}</b></div>
+    openSheet(`<div class="ep-plan-srow" data-draft-scope="void:${esc(vd.id)}"><b>${esc(vd.kind === "room" ? "Мини-комната" : "Вент. шахта")}</b></div>
       <div class="ep-plan-srow">
         <button type="button" class="ep-plan-chip ep-clickable ${vd.kind !== "room" ? "on" : ""}" data-pr-voidkind="shaft">Шахта</button>
         <button type="button" class="ep-plan-chip ep-clickable ${vd.kind === "room" ? "on" : ""}" data-pr-voidkind="room">Комната</button>
       </div>
-      <div class="ep-plan-srow"><input id="ep-pr-vname" type="text" value="${esc(vd.name || "")}" maxlength="30" placeholder="Название"></div>
+      <div class="ep-plan-srow"><input id="ep-pr-vname" type="text" value="${esc(vd.name || "")}" maxlength="30" placeholder="Название" data-draft></div>
       <div class="ep-plan-srow ep-plan-s2">
-        <label>${T.width}<input id="ep-pr-vw" type="number" inputmode="numeric" min="10" value="${Math.round(r.w)}"></label>
-        <label>${T.depth}<input id="ep-pr-vh" type="number" inputmode="numeric" min="10" value="${Math.round(r.h)}"></label>
+        <label>${T.width}<input id="ep-pr-vw" type="number" inputmode="numeric" min="10" value="${Math.round(r.w)}" data-draft></label>
+        <label>${T.depth}<input id="ep-pr-vh" type="number" inputmode="numeric" min="10" value="${Math.round(r.h)}" data-draft></label>
       </div>
       <div class="ep-plan-modehint">Тяни целиком, чтобы переместить.</div>
       <div class="ep-plan-srow ep-plan-sbtns">
@@ -2000,21 +2090,27 @@
     R.selectedVoid = vd.id;
     enableVoidDrag();
     renderScene();
-    ensureVisibleAboveSheet({ x: (r.x1 + r.x2) / 2, y: (r.y1 + r.y2) / 2 });
+    setSheetObj("void", vd.id, () => { const v2 = (core().project.voids || []).find((x) => x.id === vd.id); if (!v2) { clearVoidSel(); return false; } sheetVoid(v2, { keepView: true }); return true; });
+    if (!(opts && opts.keepView)) ensureVisibleAboveSheet({ x: (r.x1 + r.x2) / 2, y: (r.y1 + r.y2) / 2 });
   }
   function applyVoid(id) {
     const c = core(), vd = (c.project.voids || []).find((v) => v.id === id);
     if (!vd) return;
-    c.commit();
-    const nm = ($("#ep-pr-vname") || {}).value;
-    vd.name = (nm || "").trim() || (vd.kind === "room" ? "Комната" : "Шахта");
-    const r = G().voidRect(vd);
-    const cx = (r.x1 + r.x2) / 2, cy = (r.y1 + r.y2) / 2;
-    const wv = Math.max(10, Number(($("#ep-pr-vw") || {}).value) || r.w);
-    const hv = Math.max(10, Number(($("#ep-pr-vh") || {}).value) || r.h);
-    vd.a = { x: cx - wv / 2, y: cy - hv / 2 };
-    vd.b = { x: cx + wv / 2, y: cy + hv / 2 };
-    c.persist("void-apply");
+    // только изменённые поля (как у комнаты): шахту могли подвинуть тягой после отрисовки формы
+    const fN = $("#ep-pr-vname"), fW = $("#ep-pr-vw"), fH = $("#ep-pr-vh");
+    if ([fN, fW, fH].some(draftDirty)) {
+      c.commit();
+      if (draftDirty(fN)) vd.name = String(fN.value || "").trim() || (vd.kind === "room" ? "Комната" : "Шахта");
+      if (draftDirty(fW) || draftDirty(fH)) {
+        const r = G().voidRect(vd);
+        const cx = (r.x1 + r.x2) / 2, cy = (r.y1 + r.y2) / 2;
+        const wv = Math.max(10, (draftDirty(fW) && Number(fW.value)) || r.w);
+        const hv = Math.max(10, (draftDirty(fH) && Number(fH.value)) || r.h);
+        vd.a = { x: cx - wv / 2, y: cy - hv / 2 };
+        vd.b = { x: cx + wv / 2, y: cy + hv / 2 };
+      }
+      c.persist("void-apply");
+    }
     clearVoidSel(); closeSheet(); renderScene();
   }
   // тянуть весь прямоугольник целиком (без ресайза — размер только числом в редакторе)
@@ -2083,6 +2179,7 @@
     R.selectedRouteTap = tapPos || (rt.points && rt.points[Math.floor((rt.points.length - 1) / 2)]) || null;
     enableRouteDrag();
     renderScene();
+    setSheetObj("route", rt.id, () => { const r2 = (core().project.routes || []).find((x) => x.id === rt.id); if (!r2) { clearRouteSel(); return false; } sheetRoute(r2, null); return true; });
     if (tapPos) ensureVisibleAboveSheet(tapPos);
   }
   function clearRouteSel() { R.selectedRoute = null; R.selectedRouteTap = null; if (R.canvas) R.canvas.setDragHandler(null); }
@@ -2499,21 +2596,24 @@
   }
   function applyRoom(id) {
     const c = core(), p = c.project, room = p.rooms.find((r) => r.id === id); if (!room) return;
+    // пишем ТОЛЬКО поля, которые человек менял (draftDirty): остальные могут показывать уже
+    // устаревшее значение (стену потянули, ↶ отменил правку) и не должны затирать модель
+    const fName = $("#ep-pr-rname"), fCeil = $("#ep-pr-rc"), fTh = $("#ep-pr-th"), fW = $("#ep-pr-rw"), fH = $("#ep-pr-rh"), fWet = $("#ep-pr-wet");
+    const dirty = [fName, fCeil, fTh, fW, fH, fWet].some(draftDirty);
+    if (!dirty) { R.selectedRoomId = null; closeSheet(); if (R.canvas) R.canvas.setDragHandler(null); renderScene(); return; } // ✓ без правок — просто закрыть, без пустого шага ↶
     const ids0 = floorRoomIds(p, room), before = G().geomProblems(p, ids0);
     c.commit();
-    const name = ($("#ep-pr-rname") || {}).value;
-    if (name && name.trim()) room.name = name.trim();
-    const hv = Number(($("#ep-pr-rc") || {}).value) || 0;
-    room.height = hv >= 150 ? hv : null;
-    const thv = Number(($("#ep-pr-th") || {}).value) || 0;
-    if (thv >= 4) c.project.settings.wallThickness = thv;
+    if (draftDirty(fName) && String(fName.value || "").trim()) room.name = String(fName.value).trim();
+    if (draftDirty(fCeil)) { const hv = Number(fCeil.value) || 0; room.height = hv >= 150 ? hv : null; }
+    if (draftDirty(fTh)) { const thv = Number(fTh.value) || 0; if (thv >= 4) c.project.settings.wallThickness = thv; }
     let shifted = [];
-    if (G().isRect(room)) {
-      const w = Number(($("#ep-pr-rw") || {}).value) || 0, h = Number(($("#ep-pr-rh") || {}).value) || 0;
+    if (G().isRect(room) && (draftDirty(fW) || draftDirty(fH))) {
+      // изменённый размер — из формы, нетронутый — из текущей модели (а не из устаревшей формы)
+      const d0 = G().rectDims(room);
+      const w = draftDirty(fW) ? (Number(fW.value) || 0) : d0.w, h = draftDirty(fH) ? (Number(fH.value) || 0) : d0.h;
       if (w >= CFG.minRoomCm && h >= CFG.minRoomCm) shifted = resizeRect(p, room, w, h);
     }
-    const wet = !!($("#ep-pr-wet") || {}).checked;
-    room.zones = wet ? ["wet"] : [];
+    if (draftDirty(fWet)) room.zones = fWet.checked ? ["wet"] : [];
     // размеры дали неверную геометрию (дверь не влезла в укоротившуюся стену и т.п.) —
     // не применяем ничего, карточка остаётся открытой с набранным, чтобы поправить
     const bad = G().newProblems(before, G().geomProblems(p, ids0));
@@ -2906,7 +3006,9 @@
     if (t.closest("[data-pr-legend]")) return sheetLegend();
     if ((el = t.closest("[data-pr-mat]"))) {
       const c = core(), room = c.project.rooms.find((r) => r.id === R.selectedRoomId);
-      if (room) { c.commit(); room.material = el.getAttribute("data-pr-mat"); c.persist("room-mat"); sheetRoom(room); }
+      // материал применяется сразу, но набранное в карточке (название, размеры) не теряется:
+      // перерисовка той же карточки переносит черновик (putForm, аудит Астры п. 7)
+      if (room) { c.commit(); room.material = el.getAttribute("data-pr-mat"); c.persist("room-mat"); sheetRoom(room, { keepView: true }); renderScene(); }
       return;
     }
     if ((el = t.closest("[data-pr-apply]"))) return applyRoom(el.getAttribute("data-pr-apply"));
@@ -3087,7 +3189,8 @@
     if (rid) {
       const room = setWallLength(rid, Number(t.getAttribute("data-pr-wli")) || 0, Number(t.value) || 0);
       renderScene();
-      if (room) sheetRoom(room); else sheetRoom((core().project.rooms || []).find((r) => r.id === rid));
+      const r2 = room || (core().project.rooms || []).find((r) => r.id === rid);
+      if (r2) sheetRoom(r2, { keepView: true });
     }
   });
   document.addEventListener("input", (e) => {
@@ -3157,7 +3260,9 @@
     attach, detach, setActive, setMode, renderScene, T, CFG, gestureBusy,
     // общий доступ для модулей слоёв 2-6
     openSheet, closeSheet, overlaySheet, closeOverlaySheet, overlayOpen, toast, flash, lastFlash: () => R.lastFlash || "", ensureVisibleAboveSheet, toggleSheetFullscreen, sheetRoom,
-    resizeRoomRect,
+    resizeRoomRect, applyRoom, setSheetObj, refreshSheetObj, draftDirty,
+    draft: { stamp: draftStamp, capture: draftCapture, restore: draftRestore, scope: draftScope, key: draftKey, putForm },
+    sheetObjInfo: () => ({ sheet: R.sheetObj ? { kind: R.sheetObj.kind, id: R.sheetObj.id } : null, overlay: R.overlayObj ? { kind: R.overlayObj.kind, id: R.overlayObj.id } : null }),
     collapseSheet, expandSheet, toggleSheetCollapsed, placeSheetBtn, enableOpeningDrag,
     isActive: () => R.active,
     currentMode: () => R.mode,

@@ -6743,7 +6743,7 @@ test("фото: deleteProject чистит кэш фото своего прое
         "закрытие: сначала пробуем закрыть НАКЛАДНОЙ лист, и только иначе всю шторку");
       eq((src.match(/if \(!closeEditorOverlayAndRefresh\(\)\) rooms\(\)\.closeSheet\(\);/g) || []).length, 2,
         "и в «применить», и в «удалить»");
-      ok(/if \(!editorOverlay\) \{[\s\S]{0,200}ensureVisibleAboveSheet/.test(src),
+      ok(/if \(!editorOverlay[^{]{0,60}\{[\s\S]{0,200}ensureVisibleAboveSheet/.test(src),
         "камеру главного вида накладной редактор не дёргает — под ним развёртка, а не план");
     });
 
@@ -7387,7 +7387,8 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
     test("пустое числовое поле = «не менять», а не 0", () => {
       const el = psrc56("plan-elements"), un = psrc56("plan-unfold"), fu = psrc56("plan-furniture");
-      ok(/function numVal\(sel\)/.test(el) && /numVal\("#ep-pe-h"\)/.test(el) && /numVal\("#ep-po-sill"\)/.test(el), "редакторы точки и проёма читают через numVal");
+      ok(/function numVal\(sel\)/.test(el) && /(?:numVal|dnum)\("#ep-pe-h"\)/.test(el) && /(?:numVal|dnum)\("#ep-po-sill"\)/.test(el), "редакторы точки и проёма читают через numVal");
+      ok(/function dnum\(sel\) \{ return dirtyF\(sel\) \? numVal\(sel\) : NaN; \}/.test(el), "dnum — тот же numVal (пустое = NaN), только для изменённых полей");
       ok(!/Number\(\(\$\("#ep-pe-h"\)/.test(el) && !/Number\(\(\$\("#ep-po-sill"\)/.test(el), "прямого Number(поле) не осталось");
       ok(/if \(!raw\) return; \/\/ пусто = не менять/.test(un), "карточка развёртки не ставит 0 на пустом");
       ok(/const watt = nv\("#ep-pf-watt"\)/.test(fu), "мощность техники тоже");
@@ -10237,6 +10238,161 @@ test("фото: deleteProject чистит кэш фото своего прое
       // поверх него — касание они ловить не должны (тянуть размер — за прозрачную зону рядом)
       ok(/\.ep-plan-unfdimL, \.ep-plan-unfdimE \{ pointer-events: none; \}/.test(srcOf("assets/css/plan.css")), "видимые размерные линии развёртки не перехватывают касание значка");
       ok(/stroke: "transparent", "stroke-width": 10 \* ks/.test(u), "у размеров осталась своя прозрачная зона тяги");
+    });
+  }
+
+  // ===== 82. Аудит Астры, пакет 3: формы ↔ модель =====
+  // ✓ пишет только то, что человек менял; перерисовка карточки того же объекта (тяга, ↶/↷, материал)
+  // не теряет набранное; после ↶/↷ карточка показывает восстановленную модель или закрывается;
+  // Ctrl+Z в поле ввода отменяет текст; толщина стен в карточке комнаты подписана как общепроектная.
+  {
+    const fsx = require("fs"), pathx = require("path");
+    const srcOf = (f) => fsx.readFileSync(pathx.join(__dirname, "..", f), "utf8");
+    const D = EP.Plan.Rooms.draft;
+    // поле формы: значение, тип, атрибуты (data-orig ставит шторка при отрисовке)
+    const fld = (id, value, type, attrs) => {
+      const a = Object.assign({}, attrs || {});
+      return {
+        id: id || "", type: type || "text", value: String(value == null ? "" : value), checked: type === "checkbox" ? value === true : false,
+        get attributes() { return Object.keys(a).map((k) => ({ name: k, value: a[k] })); },
+        getAttribute(k) { return k in a ? a[k] : null; }, setAttribute(k, v) { a[k] = String(v); }, removeAttribute(k) { delete a[k]; }
+      };
+    };
+    // «узел шторки»: innerHTML = ключ заготовленной формы (разбирать HTML в песочнице нечем)
+    const formHost = (forms) => {
+      let cur = null;
+      return {
+        set innerHTML(h) { cur = forms[h] || null; }, get innerHTML() { return ""; },
+        querySelectorAll: (sel) => (sel === "[data-draft]" && cur ? cur.fields : []),
+        querySelector: (sel) => (sel === "[data-draft-scope]" && cur && cur.scope ? { getAttribute: () => cur.scope } : null)
+      };
+    };
+    // подменить поиск полей формы (document.querySelector) на время теста
+    const withFields = (map, fn) => {
+      const keep = sandbox.document.querySelector;
+      sandbox.document.querySelector = (sel) => (sel in map ? map[sel] : null);
+      try { return fn(); } finally { sandbox.document.querySelector = keep; }
+    };
+
+    test("черновик формы: отметка, «менял ли человек», перенос в карточку ТОГО ЖЕ объекта", () => {
+      const nA1 = fld("ep-pr-rname", "Гостиная"), wA1 = fld("ep-pr-rw", "400"), chk = fld("ep-pr-wet", false, "checkbox");
+      const host = formHost({
+        a1: { scope: "room:A", fields: [nA1, wA1, chk] },
+        a2: { scope: "room:A", fields: [fld("ep-pr-rname", "Гостиная"), fld("ep-pr-rw", "490"), fld("ep-pr-wet", false, "checkbox")] },
+        b1: { scope: "room:B", fields: [fld("ep-pr-rname", "Спальня"), fld("ep-pr-rw", "300")] }
+      });
+      D.putForm(host, "a1");
+      eq(nA1.getAttribute("data-orig"), "Гостиная", "при отрисовке поле запомнило значение из модели");
+      eq(EP.Plan.Rooms.draftDirty(nA1), false, "нетронутое поле — не черновик");
+      nA1.value = "Детская"; chk.checked = true;
+      ok(EP.Plan.Rooms.draftDirty(nA1) && EP.Plan.Rooms.draftDirty(chk), "набранное и отмеченная галочка — черновик");
+      D.putForm(host, "a2"); // та же комната перерисована (стену потянули — ширина 490)
+      const a2 = host.querySelectorAll("[data-draft]");
+      eq(a2[0].value, "Детская", "набранное название пережило перерисовку");
+      eq(a2[2].checked, true, "и галочка тоже");
+      eq(a2[1].value, "490", "нетронутая ширина показывает НОВУЮ модель");
+      eq(EP.Plan.Rooms.draftDirty(a2[1]), false, "и черновиком не считается");
+      ok(EP.Plan.Rooms.draftDirty(a2[0]), "перенесённое название по-прежнему черновик (✓ его запишет)");
+      D.putForm(host, "b1"); // другая комната — черновики не переезжают
+      eq(host.querySelectorAll("[data-draft]")[0].value, "Спальня", "карточка другой комнаты набранное чужой не получает");
+      eq(D.key(fld("", "1", "checkbox", { "data-pe-ptrafo": "pn1", "data-draft": "" })), "data-pe-ptrafo=pn1", "поле без id узнаётся по своим data-атрибутам");
+    });
+
+    test("✓ комнаты пишет только изменённое: потянутая стена не возвращается, пустого шага ↶ нет", () => {
+      const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "Гостиная");
+      const { P } = install({ rooms: [A] });
+      const id = P.rooms[0].id;
+      EP.Plan.Rooms.resizeRoomRect(id, 490, 300); // как тяга стены после отрисовки формы
+      const P1 = EP.Plan.Core.project;
+      eq(G.rectDims(P1.rooms[0]).w, 490, "стену потянули — 490");
+      const undo0 = EP.Plan.Core.commitCount();
+      // форма нарисована ДО тяги: ширина 400 (устаревшая), название человек поменял
+      const F = {
+        "#ep-pr-rname": fld("ep-pr-rname", "Детская", "text", { "data-orig": "Гостиная" }),
+        "#ep-pr-rw": fld("ep-pr-rw", "400", "number", { "data-orig": "400" }),
+        "#ep-pr-rh": fld("ep-pr-rh", "300", "number", { "data-orig": "300" }),
+        "#ep-pr-rc": fld("ep-pr-rc", "", "number", { "data-orig": "" }),
+        "#ep-pr-th": fld("ep-pr-th", "10", "number", { "data-orig": "10" }),
+        "#ep-pr-wet": fld("ep-pr-wet", false, "checkbox", { "data-orig": "0" })
+      };
+      withFields(F, () => EP.Plan.Rooms.applyRoom(id));
+      const P2 = EP.Plan.Core.project, r2 = P2.rooms[0];
+      eq(r2.name, "Детская", "название записано");
+      eq(G.rectDims(r2).w, 490, "ширина осталась 490 — устаревшее 400 из формы не вернулось (было: вернулось)");
+      eq(P2.settings.wallThickness, P.settings.wallThickness, "толщина стен проекта не тронута");
+      eq(EP.Plan.Core.commitCount(), undo0 + 1, "один шаг ↶ на правку");
+      // ✓ без правок — просто закрыть, без пустого шага
+      const F2 = Object.assign({}, F, { "#ep-pr-rname": fld("ep-pr-rname", "Детская", "text", { "data-orig": "Детская" }), "#ep-pr-rw": fld("ep-pr-rw", "490", "number", { "data-orig": "490" }) });
+      const n1 = EP.Plan.Core.commitCount();
+      withFields(F2, () => EP.Plan.Rooms.applyRoom(id));
+      eq(EP.Plan.Core.commitCount(), n1, "✓ без правок шага ↶ не добавляет");
+      // изменили только глубину — ширина берётся из МОДЕЛИ (490), а не из формы
+      const F3 = Object.assign({}, F2, { "#ep-pr-rh": fld("ep-pr-rh", "350", "number", { "data-orig": "300" }), "#ep-pr-rw": fld("ep-pr-rw", "400", "number", { "data-orig": "400" }) });
+      withFields(F3, () => EP.Plan.Rooms.applyRoom(id));
+      const d3 = G.rectDims(EP.Plan.Core.project.rooms[0]);
+      ok(d3.w === 490 && d3.h === 350, "глубина 350, ширина из модели 490: " + JSON.stringify(d3));
+    });
+
+    test("↶/↷ при открытой карточке: проём показывает восстановленный отступ; удалённый объект — карточка закрыта", () => {
+      const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "Кухня");
+      const { P } = install({ rooms: [A] });
+      P.openings.push(M.newOpening("door", P.rooms[0].id + ":0", 240, 90));
+      const opId = P.openings[0].id;
+      const htmls = [], keepOpen = EP.Plan.Rooms.openSheet;
+      EP.Plan.Rooms.openSheet = (h) => { htmls.push(h); };
+      const sheetNode = { hidden: false, innerHTML: "", classList: { add() {}, remove() {}, toggle() {} }, querySelectorAll: () => [], querySelector: () => null };
+      try {
+        withFields({ "#ep-plan-sheet": sheetNode }, () => {
+          EP.Plan.Elements.openOpeningEditor(EP.Plan.Core.project.openings[0]);
+          eq(JSON.stringify(EP.Plan.Rooms.sheetObjInfo().sheet), JSON.stringify({ kind: "op", id: opId }), "карточка проёма отметила свой объект");
+          // тяга: отступ 185
+          EP.Plan.Core.commit(); EP.Plan.Core.project.openings[0].offset = 185; EP.Plan.Core.persist("opening-move");
+          EP.Plan.Core.undo();
+          eq(EP.Plan.Core.project.openings[0].offset, 240, "↶ вернул модель");
+          htmls.length = 0;
+          EP.Plan.Rooms.refreshSheetObj(); // так делает plan-mount на «undo»/«redo»
+          ok(htmls.length === 1 && /id="ep-po-off"[^>]*value="240"/.test(htmls[0]), "карточка перерисована с 240 (было: показывала 185, и ✓ возвращал его)");
+          // объект пропал (отменили его создание) — карточка закрывается с объяснением
+          EP.Plan.Core.commit(); EP.Plan.Core.project.openings = []; EP.Plan.Core.persist("test");
+          EP.Plan.Rooms.refreshSheetObj();
+          eq(EP.Plan.Rooms.sheetObjInfo().sheet, null, "карточки удалённого объекта больше нет");
+          ok(/больше нет/.test(EP.Plan.Rooms.lastFlash()), "и сказано почему: " + EP.Plan.Rooms.lastFlash());
+        });
+      } finally { EP.Plan.Rooms.openSheet = keepOpen; }
+    });
+
+    test("карточки всех объектов отмечают себя для ↶/↷ и пишут по ✓ только изменённое", () => {
+      const r = srcOf("assets/js/modules/plan/plan-rooms.js"), el = srcOf("assets/js/modules/plan/plan-elements.js"), fu = srcOf("assets/js/modules/plan/plan-furniture.js");
+      const all = r + el + fu;
+      ["room", "movroom", "dim", "note", "beam", "void", "route", "el", "elst", "op", "pn", "ap"].forEach((k) => {
+        ok(new RegExp('setSheetObj\\("' + k + '"').test(all), "карточка «" + k + "» перерисовывается после ↶/↷");
+      });
+      ["room:", "void:"].forEach((k) => ok(r.indexOf('data-draft-scope="' + k) >= 0, "черновик карточки " + k));
+      ["el:", "op:", "pn:"].forEach((k) => ok(el.indexOf('data-draft-scope="' + k) >= 0, "черновик карточки " + k));
+      ok(fu.indexOf('data-draft-scope="ap:') >= 0, "черновик карточки мебели");
+      ok(/const off = el\.wallId \? dnum\("#ep-pe-off"\) : NaN, h = dnum\("#ep-pe-h"\)/.test(el), "точка: только изменённые поля");
+      ok(/const off = dnum\("#ep-po-off"\), wd = dnum\("#ep-po-w"\)/.test(el), "проём: только изменённые поля");
+      ok(/if \(dirtyF\(trafoF\)\) pn\.transformer/.test(el), "щит: галочка — только если её трогали");
+      ok(/const nv = \(sel\) => \{ if \(!dirty\(sel\)\) return NaN;/.test(fu), "мебель: только изменённые поля");
+      ok(/if \(\[fN, fW, fH\]\.some\(draftDirty\)\)/.test(r), "шахта: только изменённые поля");
+      ok(/function putForm\(node, html\)/.test(r) && /putForm\(s, html\)/.test(r) && /putForm\(ov, html\)/.test(r), "черновик переносится через ЛЮБУЮ перерисовку шторки и накладного листа");
+      ok(/EP\.Plan\.Rooms\.refreshSheetObj\(\)/.test(srcOf("assets/js/modules/plan/plan-mount.js")), "plan-mount на ↶/↷ обновляет открытую карточку");
+    });
+
+    test("Ctrl+Z в поле ввода отменяет текст, а не план; на холсте — по-прежнему план", () => {
+      const m = srcOf("assets/js/modules/plan/plan-mount.js");
+      ok(/function isTextEditable\(n\)/.test(m), "проверка «поле для текста»");
+      ok(/if \(isTextEditable\(e\.target\) \|\| isTextEditable\(document\.activeElement\)\) return;/.test(m), "в текстовом поле обработчик не вмешивается (ни undo, ни preventDefault)");
+      ok(/\["checkbox", "radio", "button", "submit", "reset", "range", "color", "file", "image"\]/.test(m), "галочки/кнопки/ползунки текста не держат — там Ctrl+Z отменяет план");
+      ok(/if \(n\.isContentEditable\) return true;/.test(m) && /if \(tg === "textarea"\) return true;/.test(m), "contenteditable и textarea — тоже текст");
+    });
+
+    test("толщина стен в карточке комнаты — явно «для всего проекта» и отдельно от полей комнаты", () => {
+      const r = srcOf("assets/js/modules/plan/plan-rooms.js");
+      ok(/thickProj: "Толщина стен по умолчанию — для всего проекта, см"/.test(r), "подпись говорит про весь проект");
+      ok(/<div class="ep-plan-projset">\s*<label>\$\{T\.thickProj\}<input id="ep-pr-th"/.test(r), "поле в отдельном блоке, не среди размеров комнаты");
+      ok(/Толщину одной стены — в её развёртке/.test(r), "подсказка, где своя толщина одной стены");
+      ok(/\.ep-plan-projset \{[^}]*border: 1px dashed/.test(srcOf("assets/css/plan.css")), "блок визуально отделён");
     });
   }
 

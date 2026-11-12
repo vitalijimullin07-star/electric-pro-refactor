@@ -832,11 +832,27 @@
     if (EP.Plan.Rooms && EP.Plan.Rooms.placeSheetBtn) EP.Plan.Rooms.placeSheetBtn();
   });
 
+  /* Фокус в поле ввода текста — Ctrl/Cmd+Z отменяет набранный ТЕКСТ (штатно, браузер), а не
+     правку плана (аудит Астры, п. 8). Раньше глобальный обработчик откатывал геометрию и глушил
+     отмену текста: дописал « тест» в названии, нажал Ctrl+Z — комната уехала назад, а «Гостиная
+     тест» осталось в поле. Галочки, кнопки, ползунки текста не держат — там Ctrl+Z, как и на
+     холсте, отменяет правку плана. */
+  const NOT_TEXT = ["checkbox", "radio", "button", "submit", "reset", "range", "color", "file", "image"];
+  function isTextEditable(n) {
+    if (!n || !n.tagName) return false;
+    if (n.isContentEditable) return true;
+    const tg = String(n.tagName).toLowerCase();
+    if (tg === "textarea") return true;
+    if (tg !== "input") return false;
+    return NOT_TEXT.indexOf(String(n.getAttribute("type") || "text").toLowerCase()) < 0;
+  }
   document.addEventListener("keydown", (e) => {
     if (!V.active || !core().project) return;
     const z = (e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z" || e.key === "я" || e.key === "Я");
-    if (z && e.shiftKey) { e.preventDefault(); core().redo(); }
-    else if (z) { e.preventDefault(); core().undo(); }
+    if (!z) return;
+    if (isTextEditable(e.target) || isTextEditable(document.activeElement)) return; // отмена текста — браузеру
+    e.preventDefault();
+    if (e.shiftKey) core().redo(); else core().undo();
   });
 
   function onCoreChange(what) {
@@ -848,6 +864,9 @@
       if ((what === "undo" || what === "redo") && EP.Plan.Rooms) {
         EP.Plan.Rooms.renderScene();
         if (EP.Plan.Unfold && EP.Plan.Unfold.isOpen()) EP.Plan.Unfold.drawStrip();
+        // открытая карточка объекта — по новой модели (или закрыть, если объекта нет): иначе
+        // форма показывает отменённое, и ✓ вернул бы его обратно (аудит Астры, п. 6)
+        if (EP.Plan.Rooms.refreshSheetObj) EP.Plan.Rooms.refreshSheetObj();
       }
       if (what === "floor-switch" || what === "floor-add" || what === "floor-del") {
         refreshFloorsBar();
