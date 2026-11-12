@@ -406,6 +406,17 @@ body[data-flatshadow="1"] .ep-plan-wallhatch { display: none; }
 .ep-plan-layers { display: flex; flex-direction: column; gap: 9px; }
 .ep-plan-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: none; }
 .ep-plan-toast { justify-content: center; color: #fbbf24; }
+/* сообщение ПОВЕРХ холста (отказ правки геометрии и т.п.): шторку не трогает — тост рисуется
+   в самой шторке и закрыл бы карточку, которую сейчас правят */
+.ep-plan-flash {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 12;
+  max-width: min(92%, 520px); padding: 9px 13px; border-radius: 12px;
+  background: rgba(15, 23, 42, .95); color: #fde68a; border: 1px solid rgba(251, 191, 36, .45);
+  font: 600 13px/1.35 system-ui; text-align: center; pointer-events: none;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, .35);
+}
+.ep-plan-flash[hidden] { display: none; }
+body[data-visual-mode="day"] .ep-plan-flash { background: #fffbeb; color: #78350f; border-color: #f59e0b; box-shadow: 0 6px 22px rgba(15, 23, 42, .18); }
 
 /* — сцена (SVG) — */
 .ep-plan-room { fill: rgba(56, 189, 248, .07); stroke: none; }

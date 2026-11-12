@@ -614,8 +614,16 @@
       if (og) {
         const op = (p.openings || []).find((x) => x.id === og.getAttribute("data-pu-open"));
         if (!op) return;
+        const pt0 = toWorld(svg, e.clientX, e.clientY), H0 = wallH(p, S.wallId);
+        const oh0 = op.height || (op.type === "window" ? 140 : 200);
         core().commit();
-        S.drag = { kind: "open", op, moved: false, g: og, x0: op.offset, y0: op.sill || 0 };
+        // grabX/grabY — где именно взяли проём (аудит Астры, п. 11): без них он прыгал центром
+        // под палец — взял у края, повёл на 20 см, а проём уехал на 55
+        S.drag = {
+          kind: "open", op, moved: false, g: og, x0: op.offset, y0: op.sill || 0,
+          grabX: pt0 ? pt0.x - (op.offset + op.width / 2) : 0,
+          grabY: pt0 ? (H0 - pt0.y) - ((op.sill || 0) + oh0 / 2) : 0
+        };
         return;
       }
       const lg = e.target.closest && e.target.closest("[data-pu-led]");
@@ -669,14 +677,16 @@
         S.drag.moved = true;
         if (S.drag.kind === "open") {
           const op2 = S.drag.op;
-          const maxOff = Math.max(0, w.len - op2.width);
-          op2.offset = Math.round(Math.max(0, Math.min(maxOff, pt.x - op2.width / 2))); // тянем за центр проёма
+          // тянем за ту точку, где взяли; место — свободное от других проёмов этой стены (и общей
+          // стены соседа): упёрся в соседний проём — встаёт вплотную, а не поверх него
+          const fit = G().fitOpening(core().project, w, op2.width, pt.x - (S.drag.grabX || 0), op2.id);
+          if (fit != null) op2.offset = Math.round(fit);
           // ВТОРАЯ ось (просьба пользователя «двигать по оси икс и игрик»): низ от пола.
           // Раньше проём в развёртке ехал ТОЛЬКО вдоль стены, а подоконник менялся лишь
           // числом в редакторе. Тянем за центр по высоте, тем же принципом, что и по X;
           // oh считается ТАК ЖЕ, как в отрисовке проёма выше, иначе рект «прыгал» бы.
           const oh = op2.height || (op2.type === "window" ? 140 : 200);
-          op2.sill = Math.round(Math.max(0, Math.min(Math.max(0, H - oh), (H - pt.y) - oh / 2)));
+          op2.sill = Math.round(Math.max(0, Math.min(Math.max(0, H - oh), (H - pt.y) - (S.drag.grabY || 0) - oh / 2)));
         } else if (S.drag.kind === "panel") {
           const px = Math.round(Math.max(0, Math.min(w.len, pt.x - (S.drag.grabX || 0))));
           S.drag.curPx = px;

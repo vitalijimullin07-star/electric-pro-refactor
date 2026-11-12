@@ -1489,7 +1489,8 @@
       });
     }
     const pbox = project.settings && project.settings.panelBox;
-    (only ? [] : (project.panels || [])).forEach((pn) => {
+    // в живом слое — только щиты области (щит на сдвигаемой стене едет вместе с ней)
+    (only ? (project.panels || []).filter((pn) => inSet(only.panels, pn.id)) : (project.panels || [])).forEach((pn) => {
       // габарит щита = реальный корпус (мм→см), иначе типовой квадрат
       const wc = pbox && pbox.wmm ? pbox.wmm / 10 : 28;
       const hc = pbox && pbox.hmm ? pbox.hmm / 10 : 20;
@@ -1648,11 +1649,11 @@
      кадра от размера квартиры не зависит. На отпускании слой снимается, сцена рисуется
      один раз.
      scope — что перерисовывать: { walls, fills, chains, leds, elOwners — id комнат; ops —
-     владельцы стен ("<id комнаты>" | "beam:<id>"); els, routes, dims, notes — id объектов;
+     владельцы стен ("<id комнаты>" | "beam:<id>"); els, routes, dims, notes, panels — id объектов;
      beams, underlay — флаги }. Значения — массивы или Set. */
   const lives = new WeakMap(); // canvas -> { px, lc, hidden, scope }
-  const LIVE_SETS = ["walls", "fills", "chains", "leds", "elOwners", "ops", "els", "routes", "dims", "notes"];
-  const LIVE_SEL = { walls: "data-rw", fills: "data-room", chains: "data-rc", leds: "data-ledo", elOwners: "data-eo", ops: "data-opo", els: "data-e", routes: "data-r", dims: "data-dm", notes: "data-nt" };
+  const LIVE_SETS = ["walls", "fills", "chains", "leds", "elOwners", "ops", "els", "routes", "dims", "notes", "panels"];
+  const LIVE_SEL = { walls: "data-rw", fills: "data-room", chains: "data-rc", leds: "data-ledo", elOwners: "data-eo", ops: "data-opo", els: "data-e", routes: "data-r", dims: "data-dm", notes: "data-nt", panels: "data-pn" };
   function liveHide(canvas, L, scope) {
     const svg = canvas.svg;
     const hide = (n) => { if (n && L.hidden.indexOf(n) === -1) { n.setAttribute("visibility", "hidden"); L.hidden.push(n); } };
