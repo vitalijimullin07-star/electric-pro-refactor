@@ -905,6 +905,49 @@
     const len = w.len || 1;
     return ((pt.x - w.a.x) * (w.b.x - w.a.x) + (pt.y - w.a.y) * (w.b.y - w.a.y)) / len;
   };
+  /* ВИДИМАЯ ГЕОМЕТРИЯ ПРОЁМА — одна на рисование (plan-render.js buildOpenings) и на попадание
+     тапом (plan-elements.js hitAt, аудит Астры п. 11). Раньше проём ловился кругом вокруг своей
+     середины: тап по нарисованной створке или дуге двери промахивался и открывал комнату, а
+     круг при этом заходил на полширины проёма в комнату с ДРУГОЙ стороны, где двери не видно.
+     a→b — проём вдоль стены, n — сторона открывания (знак op.flip), swing — створка двери:
+     петли h, второй край проёма far, радиус r (у балконного блока — только его дверная часть). */
+  G.openingShape = (project, op) => {
+    const w = op && G.wallById(project, op.wallId);
+    if (!w) return null;
+    const a = G.pointAtOffset(w, op.offset), b = G.pointAtOffset(w, op.offset + op.width);
+    const dir = { x: (w.b.x - w.a.x) / (w.len || 1), y: (w.b.y - w.a.y) / (w.len || 1) };
+    const n = { x: -dir.y * op.flip, y: dir.x * op.flip };
+    const kind = op.kind || (op.type === "window" ? "window" : "door");
+    let swing = null;
+    if (kind === "door") {
+      swing = { h: op.hinge === "a" ? a : b, far: op.hinge === "a" ? b : a, r: op.width };
+    } else if (kind === "balcony") {
+      const r = Math.min(80, op.width * 0.5), h = op.hinge === "a" ? a : b, s = op.hinge === "a" ? r : -r;
+      swing = { h, far: { x: h.x + dir.x * s, y: h.y + dir.y * s }, r };
+    }
+    return { wall: w, a, b, dir, n, kind, th: G.wallThOf(project, w), swing };
+  };
+  // Расстояние от точки до НАРИСОВАННОГО проёма: вырез в стене (вдоль — от a до b, поперёк —
+  // полтолщины), полотно двери (отрезок от петель) и дуга открывания. Внутренность дуги — пол
+  // комнаты: тап туда остаётся комнате, трассе, точке (по ней же часто идёт кабель через дверь).
+  G.openingHitDist = (project, op, pt) => {
+    const s = G.openingShape(project, op);
+    if (!s) return null;
+    const L = G.dist(s.a, s.b);
+    const along = (pt.x - s.a.x) * s.dir.x + (pt.y - s.a.y) * s.dir.y;
+    const across = Math.abs((pt.x - s.a.x) * s.n.x + (pt.y - s.a.y) * s.n.y);
+    const ex = Math.max(0, -along, along - L), ey = Math.max(0, across - s.th / 2);
+    let d = Math.sqrt(ex * ex + ey * ey);
+    if (s.swing) {
+      const { h, far, r } = s.swing;
+      const u = { x: (far.x - h.x) / (r || 1), y: (far.y - h.y) / (r || 1) };
+      const leaf = { x: h.x + s.n.x * r, y: h.y + s.n.y * r };
+      d = Math.min(d, G.closestOnSeg(pt, h, leaf).d);
+      const vu = (pt.x - h.x) * u.x + (pt.y - h.y) * u.y, vn = (pt.x - h.x) * s.n.x + (pt.y - h.y) * s.n.y;
+      d = Math.min(d, (vu >= 0 && vn >= 0) ? Math.abs(Math.sqrt(vu * vu + vn * vn) - r) : Math.min(G.dist(pt, far), G.dist(pt, leaf)));
+    }
+    return d;
+  };
   // Проём ДО ПОЛА (дверь/раздвижная/балконная/проём — sill=0, НЕ окно) на стене
   // рядом с точкой — трассировка по полу ведёт кабель прямо через такой проём
   // (там уже физический разрыв стены), без новой гильзы-проходки. Через

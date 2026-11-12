@@ -266,6 +266,27 @@
     const l = (project.layers || []).find((x) => x.id === id);
     return !l || l.visible !== false;
   };
+  /* ЧТО НАРИСОВАНО — ТО И ЛОВИТ ТАП (аудит Астры, п. 12). Раньше хит-тесты ограничивались только
+     этажом: выключил слой «Силовые» — розетки не видно, а тап на её месте открывал её редактор
+     вместо стены под ней; так же трассы скрытой линии, мебель на выключенном слое, размеры в
+     режиме монтажника. Эти условия — ЕДИНСТВЕННОЕ правило видимости: им пользуются и рисование
+     (drawScaled ниже), и хит-тесты (Elements.hitAt, routeAt, Furniture.hitAt, свои размеры,
+     цепочки и подписи высоты, двойной тап — через EP.Plan.Rooms.shownOnPlan).
+     view — { soloCircuit, montage }: то же, что рендеру отдаёт ui(). В solo скрытые линии видны
+     (solo и так приглушает всё, кроме выбранной). */
+  function circHiddenIn(project, id, view, circOf) {
+    if ((view && view.soloCircuit) || !id) return false;
+    const c = circOf ? circOf(id) : (project.circuits || []).find((x) => x.id === id);
+    return !!(c && c.hidden);
+  }
+  const SHOWN = {
+    elem: (project, e, view, circOf) => !!e && layerOn(project, e.layer) && !circHiddenIn(project, e.circuitId, view, circOf),
+    route: (project, rt, view, circOf) => !!rt && layerOn(project, "routes") && layerOn(project, rt.layer) &&
+      !circHiddenIn(project, rt.circuitId, view, circOf) && (rt.points || []).length > 1,
+    furn: (project, a, view) => layerOn(project, "furn") && !(view && view.montage),
+    dims: (project, d, view) => layerOn(project, "dims") && !(view && view.montage)
+  };
+  const shown = (kind, project, obj, view, circOf) => { const f = SHOWN[kind]; return f ? f(project, obj, view, circOf) : true; };
 
   // ---------- условные обозначения по ГОСТ 21.210 ----------
   // розетка — полукруг со штрихом; выключатель — кружок с «крючком»; светильник —
@@ -426,14 +447,14 @@
     // точки, трассы, номера линий, высоты, щит, проходки, заметки; размеры, мебель и
     // магистрали прячутся. Слои проекта при этом НЕ трогаются (это вид, а не настройка)
     const montage = !!(ui && ui.montage);
-    const dimsOn = layerOn(project, "dims") && !montage, labelsOn = layerOn(project, "labels");
+    const dimsOn = shown("dims", project, null, ui), labelsOn = layerOn(project, "labels");
     // Работа по линиям (QF): солo — показать только одну линию ярко, остальные приглушить
     // (ui.soloCircuit); видимость — circuit.hidden скрывает линию целиком. В режиме solo
     // hidden игнорируем (solo и так приглушает всё, кроме выбранной). Общие хелперы —
     // объявлены ДО блока трасс, чтобы и трассы, и точки, и связи их использовали.
     const soloC = ui && ui.soloCircuit;
     const circById = (id) => (project.circuits || []).find((c) => c.id === id);
-    const circHidden = (id) => { if (soloC) return false; const c = id && circById(id); return !!(c && c.hidden); };
+    const circHidden = (id) => circHiddenIn(project, id, ui, circById);
     const circDim = (id) => soloC && id !== soloC; // приглушить: solo активен и это НЕ выбранная линия
     const DIM_OP = "0.12";
     // level-of-detail: на отдалении детальные подписи прячем (см. CFG.lodDimK/lodQfK).
@@ -552,7 +573,9 @@
       // вынос размерной цепочки (wallDimOff) на стены не влияет — у цепочки свой узел и своя
       // подпись; без этого тяга цифры размера пересобирала стены комнаты на каждом кадре
       const roomKey = room.wallDimOff ? Object.assign({}, room, { wallDimOff: 0 }) : room;
-      const base = JSON.stringify([roomKey, opsByOwner.get(room.id) || 0, nb, globBase, labelNudge(room), !!(ui && ui.selectedRoomId === room.id), idSfx]);
+      // выбор комнаты: 1 — ручки углов (тянуть угол/стену), 2 — перенос целиком (контур)
+      const selState = (ui && ui.selectedRoomId === room.id) ? (ui.moveRoom ? 2 : 1) : 0;
+      const base = JSON.stringify([roomKey, opsByOwner.get(room.id) || 0, nb, globBase, labelNudge(room), selState, idSfx]);
       const sig = base + "|" + kBucket;
       const cached = wc.rooms.get(room.id);
       if (reuse(cached, sig)) { wallParts.push(cached.node); return; }
@@ -646,8 +669,11 @@
           g.appendChild(el("path", Object.assign({ d: dBand, "fill-rule": "evenodd", class: "ep-plan-wallfill" + matClass + (sel ? " is-sel" : "") }, maskAttr)));
           g.appendChild(el("path", Object.assign({ d: dBand, "fill-rule": "evenodd", fill: HATCH(mat), class: "ep-plan-wallhatch" }, maskAttr)));
           g.appendChild(el("path", Object.assign({ d: dBand, "fill-rule": "evenodd", class: "ep-plan-walledge", fill: "none", "stroke-width": Math.min(1, sw * 0.3) }, maskAttr)));
-          // ручки углов выбранной комнаты: тяни угол — форма, тяни стену — сдвиг стены
-          if (sel) pts.forEach((v) => g.appendChild(el("circle", { cx: v.x, cy: v.y, r: CFG.pointPx * 1.25 * k, class: "ep-plan-roomhandle" })));
+          // ручки углов выбранной комнаты: тяни угол — форма, тяни стену — сдвиг стены. В режиме
+          // «Перенести комнату» углы по одному не тянутся — ручки там обещали бы не то действие
+          // (аудит Астры, п. 14); вместо них пунктир по наружному контуру: едет комната целиком
+          if (sel && ui && ui.moveRoom) g.appendChild(el("path", { d: ringD(band.outer), class: "ep-plan-roommove", fill: "none", "stroke-width": sw * 0.9, "stroke-dasharray": (9 * k) + " " + (6 * k) }));
+          else if (sel) pts.forEach((v) => g.appendChild(el("circle", { cx: v.x, cy: v.y, r: CFG.pointPx * 1.25 * k, class: "ep-plan-roomhandle" })));
         } else if (pts.length >= 2) {
           const th = Math.max(4, (project.settings && project.settings.wallThickness) || 10);
           g.appendChild(el("path", { d: "M" + pts.map((p) => p.x + " " + p.y).join(" L"), class: "ep-plan-wallband" + matClass, "stroke-width": th, fill: "none" }));
@@ -743,12 +769,13 @@
       // комнаты её проёмы «поднимаются» вместе с ней (liftForDrag)
       (opList || project.openings || []).forEach((op) => {
         const g = el("g", { "data-opo": ownerOf(op.wallId) }); gOps.appendChild(g);
-        const w = G.wallById(project, op.wallId);
-        if (!w) return;
-        const a = G.pointAtOffset(w, op.offset), b = G.pointAtOffset(w, op.offset + op.width);
-        const dirx = (w.b.x - w.a.x) / (w.len || 1), diry = (w.b.y - w.a.y) / (w.len || 1);
-        const nx = -diry * op.flip, ny = dirx * op.flip; // сторона открывания/выступа
-        const kind = op.kind || (op.type === "window" ? "window" : "door");
+        // геометрия — общая с попаданием тапом (G.openingShape / G.openingHitDist): что
+        // нарисовано, по тому и выбирается (аудит Астры, п. 11)
+        const sh = G.openingShape(project, op);
+        if (!sh) return;
+        const a = sh.a, b = sh.b, dirx = sh.dir.x, diry = sh.dir.y;
+        const nx = sh.n.x, ny = sh.n.y; // сторона открывания/выступа
+        const kind = sh.kind;
         const drawSwing = (h, far, width) => {
           const leaf = { x: h.x + nx * width, y: h.y + ny * width };
           const cross = (far.x - h.x) * (leaf.y - h.y) - (far.y - h.y) * (leaf.x - h.x);
@@ -762,20 +789,17 @@
           [pa, pb].forEach((p) => g.appendChild(el("line", { x1: p.x + nx * off3, y1: p.y + ny * off3, x2: p.x - nx * off3, y2: p.y - ny * off3, class: "ep-plan-window", "stroke-width": sw * 0.5 })));
         };
         if (kind === "door") {
-          const h = op.hinge === "a" ? a : b, far = op.hinge === "a" ? b : a;
-          drawSwing(h, far, op.width);
+          drawSwing(sh.swing.h, sh.swing.far, sh.swing.r);
         } else if (kind === "sliding") {
           const off3 = 3.5 * k, mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
           g.appendChild(el("line", { x1: a.x + nx * off3, y1: a.y + ny * off3, x2: mid.x + dirx * 3 * k + nx * off3, y2: mid.y + diry * 3 * k + ny * off3, class: "ep-plan-doorleaf", "stroke-width": sw * 0.7 }));
           g.appendChild(el("line", { x1: mid.x - dirx * 3 * k - nx * off3, y1: mid.y - diry * 3 * k - ny * off3, x2: b.x - nx * off3, y2: b.y - ny * off3, class: "ep-plan-doorleaf", "stroke-width": sw * 0.7 }));
           g.appendChild(el("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: "ep-plan-window", "stroke-width": sw * 0.4 }));
         } else if (kind === "balcony") {
-          const dW = Math.min(80, op.width * 0.5);
-          const hinge = op.hinge === "a" ? a : b;
-          const doorFar = { x: hinge.x + dirx * (op.hinge === "a" ? dW : -dW), y: hinge.y + diry * (op.hinge === "a" ? dW : -dW) };
-          const winA = op.hinge === "a" ? doorFar : a, winB = op.hinge === "a" ? b : doorFar;
+          const sw0 = sh.swing; // дверная часть балконного блока, остальное — окно
+          const winA = op.hinge === "a" ? sw0.far : a, winB = op.hinge === "a" ? b : sw0.far;
           drawWindow(winA, winB);
-          drawSwing(hinge, doorFar, dW);
+          drawSwing(sw0.h, sw0.far, sw0.r);
         } else if (kind === "opening") {
           // просто проём — без двери и без окна, только вырез в стене (маска выше)
         } else {
@@ -972,7 +996,7 @@
     // мебель и бытовая техника (p.appliances) — прямоугольник на полу с поворотом,
     // свой слой "furn" (можно выключить). Рисуется ДО точек и трасс, чтобы электрика
     // всегда была ПОВЕРХ мебели (она главная на этом чертеже).
-    if (!only && layerOn(project, "furn") && !montage) {
+    if (!only && shown("furn", project, null, ui)) {
       const FN = EP.Plan.Furniture;
       const selAp = FN && FN.selectedId && FN.selectedId();
       (project.appliances || []).forEach((a) => {
@@ -1039,7 +1063,7 @@
          идущие ближе читаемого шага (CFG.routePitchPx экранных px), раздвигаются до него —
          только на экране; модель трассы не трогается. Толщина линии привязана к шагу, чтобы
          между соседними линиями всегда оставался просвет. */
-      const visRoutes = (project.routes || []).filter((rt) => layerOn(project, rt.layer) && !circHidden(rt.circuitId) && (rt.points || []).length > 1);
+      const visRoutes = (project.routes || []).filter((rt) => shown("route", project, rt, ui, circById));
       const pitch = Math.max(2, CFG.routePitchPx * k);                 // читаемый шаг, см
       const BN = EP.Plan.Bundle;
       let disp = null;
@@ -1157,7 +1181,7 @@
     if (labelsOn && lodQf && !qfEach && anyEls) {
       const groups = new Map();
       (project.elements || []).forEach((e) => {
-        if (!e.circuitId || !layerOn(project, e.layer) || circHidden(e.circuitId)) return;
+        if (!e.circuitId || !shown("elem", project, e, ui, circById)) return;
         const q = e.wallId ? G.elemDrawPoint(project, e) : G.elemPoint(project, e);
         if (!q) return;
         const rm = e.wallId ? ownerOf(e.wallId) : ((G.roomAt(project, q) || {}).id || "-");
@@ -1183,8 +1207,7 @@
     (anyEls ? (project.elements || []) : []).forEach((elem) => {
       const k = kSym, sw = swSym;
       if (!elIn(elem)) return;
-      if (!layerOn(project, elem.layer)) return;
-      if (circHidden(elem.circuitId)) return; // скрытая линия — не рисуем её точки
+      if (!shown("elem", project, elem, ui, circById)) return; // выключенный слой / скрытая линия
       const pt = EP.Plan.Geometry.elemPoint(project, elem);
       if (!pt) return;
       const r0 = 11 * k;
@@ -1783,6 +1806,8 @@
     liveBegin, liveAdd, liveDraw, liveEnd, isLive,
     // как трасса НАРИСОВАНА на этом холсте (после разноса пучка) — для попадания пальцем
     routeDisplay: (canvas, id) => { const c = canvas && nodeCache.get(canvas); return c && c.disp ? (c.disp.get(id) || null) : null; },
+    // правило «видно на плане» — общее для рисования и хит-тестов (см. SHOWN)
+    shown,
     // реальные габариты и «лица» приборов — общие для плана, развёртки, PDF и DXF.
     // Сами таблицы FRAME_MM/FRAME_H_MM наружу не отдаём: снаружи их не читал никто,
     // ширина и высота рамки берутся через frameWmm/frameWcm/frameHcm (там же

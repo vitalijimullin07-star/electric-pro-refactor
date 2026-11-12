@@ -3435,9 +3435,11 @@
   // хит-тест по уже построенным трассам (для ручного редактирования, plan-rooms.js)
   // dispOf(rt) — необязательный: как трасса нарисована на экране (после разноса пучка);
   // тогда попадание считается по нарисованной ломаной, а не по физической
-  function routeAt(p, w, maxD, dispOf) {
+  // keep(rt) — только видимые на плане трассы (скрытая линия, выключенный слой тап не ловят)
+  function routeAt(p, w, maxD, dispOf, keep) {
     let best = null;
     (G().floorScoped(p).routes || []).forEach((rt) => {
+      if (keep && !keep(rt)) return;
       const pts = (dispOf && dispOf(rt)) || rt.points || [];
       for (let i = 0; i < pts.length - 1; i++) {
         const cl = G().closestOnSeg(w, pts[i], pts[i + 1]);

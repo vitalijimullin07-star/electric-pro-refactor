@@ -445,8 +445,12 @@
             // хендлер может отказаться (вернуть false) — тогда жест панорамирует
             if (cb.dragStart) cb.dragStart(); // модуль запоминает, с какого шага истории начался жест (для отката)
             const res = dragHandler(0, 0, "start", toWorld((downClient || e).x, (downClient || e).y), { dbl: dblDown });
-            if (res === false) { dragVeto = true; userAdjusted = true; view.x -= dx; view.y -= dy; trackPan(e.clientX, e.clientY); applyLive(); }
-            else { dragMoved = true; clearLongPress(); dragHandler(dx, dy, "move"); }
+            // первый шаг — смещение от точки КАСАНИЯ, а не от прошлого события: движение под
+            // порогом старта иначе терялось, и объект (или план при пане) отставал от пальца на
+            // величину порога — точка захвата не сохранялась (аудит Астры, п. 11)
+            const sx = downClient ? (e.clientX - downClient.x) * k : dx, sy = downClient ? (e.clientY - downClient.y) * k : dy;
+            if (res === false) { dragVeto = true; userAdjusted = true; view.x -= sx; view.y -= sy; trackPan(e.clientX, e.clientY); applyLive(); }
+            else { dragMoved = true; clearLongPress(); dragHandler(sx, sy, "move"); }
           } else dragHandler(dx, dy, "move");
         }
         else { userAdjusted = true; view.x -= dx; view.y -= dy; trackPan(e.clientX, e.clientY); applyLive(); }
