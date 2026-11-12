@@ -167,7 +167,8 @@
         <button type="button" class="ep-plan-gtab ep-clickable" data-plan-group="elec" aria-label="Электрика: точки, трассы, смета">⚡ Электрика</button>
       </div>
       <div class="ep-plan-toolbar ep-plan-modes">
-        <button type="button" class="ep-plan-tbtn on ep-clickable" data-plan-mode="view" aria-label="Просмотр и выбор">☝</button>
+        <button type="button" class="ep-plan-tbtn on ep-clickable" data-plan-mode="view" aria-label="Просмотр и выбор" aria-pressed="true">☝</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-fit aria-label="Показать всё">⛶</button>
         <span class="ep-plan-modesep" aria-hidden="true"></span>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="rect" aria-label="Прямоугольная комната">▭</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="build" data-plan-mode="poly" aria-label="Комната по точкам">⬠</button>
@@ -195,7 +196,6 @@
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-scheme aria-label="Однолинейная схема">▤</button>
         <span class="ep-plan-modesep" aria-hidden="true"></span>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-mode="wall" aria-label="Развёртка: выбрать комнату">📐</button>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-fit aria-label="Показать всё">⛶</button>
       </div>
       <div class="ep-plan-modehint" id="ep-plan-modehint"></div>
       <div class="ep-plan-canvas" id="ep-plan-canvas">
@@ -252,8 +252,24 @@
     if (topRO) { topRO.disconnect(); topRO = null; }
     const top = topBar(); if (!top) return;
     syncTopNarrow();
+    const row = modesRow();
+    if (row) { row.addEventListener("scroll", syncModesEdge, { passive: true }); syncModesEdge(); }
     // ширина шапки меняется не только с окном: боковое меню, «во весь экран», поворот экрана
-    if (typeof ResizeObserver === "function") { topRO = new ResizeObserver(() => syncTopNarrow()); topRO.observe(top); }
+    if (typeof ResizeObserver === "function") {
+      topRO = new ResizeObserver(() => { syncTopNarrow(); syncModesEdge(); });
+      topRO.observe(top);
+      if (row) topRO.observe(row);
+    }
+  }
+  /* Ряд инструментов на телефоне шире экрана и листается вбок (аудит Астры, п. 17: «не
+     очевидно без знания интерфейса»). Признак — затухание у того края, за которым есть ещё
+     кнопки (классы can-l / can-r, маска в plan.css); долистали до конца — край чёткий. */
+  function modesRow() { return document.querySelector(".ep-plan-modes"); }
+  function syncModesEdge() {
+    const row = modesRow(); if (!row) return;
+    const max = row.scrollWidth - row.clientWidth;
+    row.classList.toggle("can-l", max > 2 && row.scrollLeft > 2);
+    row.classList.toggle("can-r", max > 2 && row.scrollLeft < max - 2);
   }
 
   // Высота .ep-plan — ЯВНО измеряется через JS (window.innerHeight/visualViewport),
@@ -355,6 +371,7 @@
       b.classList.toggle("on", on);
       b.setAttribute("aria-pressed", on ? "true" : "false");
     });
+    syncModesEdge(); // набор кнопок в ряду сменился — и признак прокрутки тоже
   }
   function setToolGroup(root, g) {
     if (g !== "build" && g !== "elec") return;

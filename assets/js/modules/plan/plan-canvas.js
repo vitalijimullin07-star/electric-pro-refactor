@@ -450,7 +450,7 @@
             // величину порога — точка захвата не сохранялась (аудит Астры, п. 11)
             const sx = downClient ? (e.clientX - downClient.x) * k : dx, sy = downClient ? (e.clientY - downClient.y) * k : dy;
             if (res === false) { dragVeto = true; userAdjusted = true; view.x -= sx; view.y -= sy; trackPan(e.clientX, e.clientY); applyLive(); }
-            else { dragMoved = true; clearLongPress(); dragHandler(sx, sy, "move"); }
+            else { dragMoved = true; clearLongPress(); if (cb.dragBegin) cb.dragBegin(); dragHandler(sx, sy, "move"); }
           } else dragHandler(dx, dy, "move");
         }
         else { userAdjusted = true; view.x -= dx; view.y -= dy; trackPan(e.clientX, e.clientY); applyLive(); }
@@ -595,8 +595,17 @@
     // безопасен — окно всё равно закрывается на первом же осознанном действии
     // пользователя (зум/пан вызывают fit() заново с новыми параметрами через apply()).
     const settleUntil = Date.now() + 3000;
+    // размер, под который вид уже подогнан: наблюдатель размера, сработавший ПОСЛЕ ручной
+    // сверки (syncSize), видит тот же размер — повторная фиксация вида не нужна (она оборвала
+    // бы начатую анимацию подвода вида перерисовкой сцены)
+    let fitW = 0, fitH = 0;
     function resize() { // подгон пропорций viewBox под контейнер (или полный re-fit во время «устаканивания»)
       measureBox(); // RO сработал — размер реально изменился, освежаем кэш (единая точка свежести cw/ch)
+      if (cw === fitW && ch === fitH && committed) return;
+      afterMeasure();
+    }
+    function afterMeasure() {
+      fitW = cw; fitH = ch;
       if (lastFit && Date.now() < settleUntil && !interacted) { fit(lastFit.bbox, lastFit.padRatio); return; }
       const aspect = ch > 0 ? cw / ch : 1.5;
       const cy = view.y + view.h / 2;
@@ -621,6 +630,26 @@
         stopMotion(); view.x += dx; view.y += dy; apply();
       },
       isMoving: () => !!(anim || inertia || liveT),
+      /* Поставить вид целиком (мировые см), {animate:true} — плавно. Пропорции приводятся к
+         холсту, масштаб — к допустимому диапазону. Нужен подводу вида к объекту над шторкой
+         (аудит Астры, п. 16): объект может не помещаться в свободную часть — тогда вид
+         отдаляется, а не только сдвигается. */
+      viewTo: (t, opts) => {
+        if (!t || !(t.w > 0) || !(t.h > 0)) return;
+        const v0 = { ...view };
+        Object.assign(view, { x: t.x, y: t.y, w: t.w, h: t.h }); clampView(); fixAspect();
+        const t2 = { ...view }; Object.assign(view, v0);
+        if (opts && opts.animate) animateTo(t2, 260);
+        else { stopMotion(); Object.assign(view, t2); apply(); }
+      },
+      /* Сверить размер холста СЕЙЧАС, не дожидаясь наблюдателя размера. Боковая панель на
+         компьютере сужает холст в момент открытия, а наблюдатель срабатывает только после
+         раскладки кадра — подвод вида, посчитанный раньше, взял бы старые пропорции. */
+      syncSize: () => {
+        const w0 = cw, h0 = ch; measureBox();
+        if (Math.abs(cw - w0) < 0.5 && Math.abs(ch - h0) < 0.5) return false;
+        afterMeasure(); return true;
+      },
       // ЖЁСТКО задать масштаб (см в одном экранном пикселе), сохраняя центр вида —
       // нужно для истинного 1:1 (кнопка «1:1» в шапке плана): 1 CSS-пиксель по
       // спецификации CSS = 1/96 дюйма, значит 1см = 96/2.54 px, т.е. cmPerPx = 2.54/96.
@@ -649,6 +678,7 @@
       setDragHandler: (fn) => { if (dragMoved && cb.dragDone) cb.dragDone(true); dragHandler = fn || null; dragMoved = false; },
       onDragDone: (fn) => { cb.dragDone = fn; }, // (aborted) — тяга закончилась или оборвана
       onDragStart: (fn) => { cb.dragStart = fn; },   // перед "start" обработчика тяги
+      onDragBegin: (fn) => { cb.dragBegin = fn; },   // обработчик взял объект (не пан) — тяга пошла
       onDragCancel: (fn) => { cb.dragCancel = fn; }, // тягу оборвала система (pointercancel) — откатить
       destroy: () => { stopMotion(); clearTimeout(commitTimer); if (ro) ro.disconnect(); if (wrap.parentNode) wrap.parentNode.removeChild(wrap); }
     };

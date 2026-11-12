@@ -1010,12 +1010,20 @@
         // техника — маркер ⚡ и мощность; мебель — только имя (если влезает)
         const cat = FN && FN.byId ? FN.byId(a.catId) : null;
         const nm = a.name || (cat ? cat.name : "");
-        const fs = Math.max(6 * k, Math.min(a.d * 0.3, 11 * k));
-        if (nm && a.w > fs * 2.2) {
-          grpA.appendChild(el("text", Object.assign({
-            x: a.x, y: a.y, "font-size": fs, "text-anchor": "middle", "dominant-baseline": "central",
-            class: "ep-plan-furntext"
-          }, tr ? { transform: tr } : {}), nm.length > 16 ? nm.slice(0, 15) + "…" : nm));
+        // Имя предмета — на приближенном плане (тот же порог, что у размеров) или у выбранного,
+        // и только если помещается в ширину предмета (кегль ужимается до минимума). На обзорном
+        // виде телефона имена мебели наползали друг на друга и на подписи электрики (аудит
+        // Астры, п. 18); прежняя проверка «ширина > 2,2 кегля» пропускала длинные имена.
+        if (nm && (lodDims || a.id === selAp)) {
+          const label = nm.length > 16 ? nm.slice(0, 15) + "…" : nm, fitW = a.w * 0.9;
+          let fs = Math.max(6 * k, Math.min(a.d * 0.3, 11 * k));
+          if (textW(label, fs) > fitW) fs = Math.max(6 * k, fitW / Math.max(1e-6, textW(label, 1)));
+          if (textW(label, fs) <= fitW) {
+            grpA.appendChild(el("text", Object.assign({
+              x: a.x, y: a.y, "font-size": fs, "text-anchor": "middle", "dominant-baseline": "central",
+              class: "ep-plan-furntext"
+            }, tr ? { transform: tr } : {}), label));
+          }
         }
         if (isAp) {
           const nd = FN && FN.needFor ? FN.needFor(a) : null;

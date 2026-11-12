@@ -80,7 +80,13 @@
     thickProjHint: "Меняет все стены проекта, у которых не задана своя толщина. Толщину одной стены — в её развёртке (📐).",
     qbEdit: "✎ Быстрый доступ", qbClose: "✕",
     qbEditHint: "Отметь инструменты, которые всегда должны быть под рукой на плавающей панели снизу. Первые места панель дополнительно подстраивает сама — под последние использованные инструменты.",
-    qbReset: "↺ Сбросить"
+    qbReset: "↺ Сбросить",
+    // компактная карточка комнаты (аудит Астры, п. 16-17): главное — сразу, остальное — в «Ещё»
+    ctxMove: "Перенести",
+    roomCardHint: "Стены и углы тяни прямо на плане.",
+    wallsLbl: "Стены:",
+    applyLbl: "✓ Применить", closeLbl: "✕ Закрыть", doneLbl: "✓ Готово",
+    moreRoom: "Ещё: потолок, влажная зона, длины стен, копия, удаление"
   };
   const CFG = { cornerSnapCm: 20, closePolyPx: 22, minRoomCm: 30, dupShiftCm: 40, hitWallPx: 18 };
 
@@ -100,7 +106,8 @@
     soloCircuit: null, // работа по линиям: id единственной показанной ярко линии QF (view-состояние, не в модели)
     routeDragMode: "point", // "point"|"segment" — явный переключатель режима тяги трассы (кнопки в sheetRoute), см. enableRouteDrag
     guideDraft: { points: [] }, // черновик рисуемой магистрали трасс (режим ⇉)
-    targetPick: null // одноразовый выбор цели клавиши выключателя тапом: {elId, ki} (armTargetPick)
+    targetPick: null, // одноразовый выбор цели клавиши выключателя тапом: {elId, ki} (armTargetPick)
+    moreOpen: {} // раскрыт ли блок «Ещё» в карточках (data-pr-more="room" и т.п.) — помним, пока открыт проект
   };
 
   // ---------- плавающая quickbar: быстрый доступ (просьба пользователя — редактируемая
@@ -322,6 +329,18 @@
   }
 
   // ---------- режимы ----------
+  // Выбранный инструмент виден в ряду (аудит Астры, п. 17): ряд на телефоне листается вбок, и
+  // режим, включённый с быстрой панели или из карточки («🧭 Перенести»), мог оказаться за краем —
+  // подсветка была, но её не видно. Подкручиваем ряд ровно настолько, чтобы кнопка вошла.
+  function revealModeBtn(mode) {
+    const row = document.querySelector && document.querySelector(".ep-plan-modes");
+    if (!row || !(row.scrollWidth > row.clientWidth + 1)) return;
+    const b = row.querySelector('[data-plan-mode="' + mode + '"]');
+    if (!b || b.hidden) return;
+    const rr = row.getBoundingClientRect(), br = b.getBoundingClientRect(), m = 28;
+    if (br.left < rr.left + m) row.scrollLeft -= (rr.left + m) - br.left;
+    else if (br.right > rr.right - m) row.scrollLeft += br.right - (rr.right - m);
+  }
   function setMode(mode) {
     R.mode = mode;
     R.draft = { points: [] }; R.pendingRect = null; R.pendingPoly = null; R.rectAnchor = null; R.attach = null; R.split = null; R.noteId = null; R.dimDraft = null;
@@ -337,6 +356,7 @@
       b.classList.toggle("on", on);
       b.setAttribute("aria-pressed", on ? "true" : "false");
     });
+    revealModeBtn(mode);
     qbTrack(mode); // запомнить как «последний использованный» + перерисовать панель быстрого доступа
     syncQuickbarVisibility();
     if (mode === "underlay") sheetUnderlay();
@@ -768,9 +788,21 @@
     // на широком экране шторка — БОКОВАЯ панель (position:static, plan.css @media
     // 1024px): она не закрывает низ холста и высотой равна ему, поднимать над ней
     // кнопку нельзя (уехала бы за верх холста) — оставляем в углу
+    if (b.hidden || R.sheetCollapsed || overlay) { b.style.bottom = ""; b.style.right = ""; return; }
+    // Шторка СБОКУ — панель справа на компьютере (в потоке) или поверх холста на телефоне в
+    // горизонтали (plan.css). Над её кромкой кнопку не поднять (панель на всю высоту), а в углу
+    // холста кнопка легла бы на саму панель и закрыла её низ — ставим её внизу слева от панели.
+    const host = document.querySelector("#ep-plan-canvas");
+    if (host && host.getBoundingClientRect) {
+      const hr = host.getBoundingClientRect(), sr = s.getBoundingClientRect();
+      if (hr.width > 0 && sr.width > 0 && sr.width < hr.width * 0.7) {
+        b.style.bottom = ""; b.style.right = Math.round(hr.right - sr.left + 8) + "px"; return;
+      }
+    }
+    b.style.right = "";
     let side = false;
     try { side = window.getComputedStyle(s).position !== "absolute"; } catch (e) {}
-    if (b.hidden || R.sheetCollapsed || overlay || side) { b.style.bottom = ""; return; }
+    if (side) { b.style.bottom = ""; return; }
     // клавиатура открыта — шторка поднята на её высоту (plan.css, body[data-kb]), значит
     // и кнопку над кромкой надо поднять на столько же: инлайн-стиль здесь ПОБЕЖДАЕТ
     // CSS-правило, поэтому учитываем клавиатуру прямо в вычислении, а не только в CSS
@@ -952,7 +984,7 @@
     // #ep-plan-sheet; снимаем здесь же (единая точка закрытия ЛЮБОЙ шторки, не
     // только своим ✕) — иначе класс мог бы залипнуть на элементе и сломать вид
     // СЛЕДУЮЩЕЙ открытой шторки.
-    if (s) { s.hidden = true; s.innerHTML = ""; s.classList.remove("ep-plan-sheet-full"); s.classList.remove("is-landscape-forced"); }
+    if (s) { s.hidden = true; s.innerHTML = ""; s.classList.remove("ep-plan-sheet-full"); s.classList.remove("is-landscape-forced"); s.classList.remove("is-dragging"); }
     // solo линии управляется из шторки 🧵 Трассы — закрыли шторку, вернули полный вид
     // (иначе план остался бы приглушённым без видимого элемента управления)
     if (R.soloCircuit) { R.soloCircuit = null; renderScene(); }
@@ -1004,35 +1036,91 @@
     n._epT = setTimeout(() => { n.hidden = true; }, 3600);
   }
 
-  // редактируемый объект может оказаться под шторкой (она до 60% высоты холста
-  // снизу) — сдвигаем вид вверх, чтобы точку/комнату было видно, пока её правишь.
-  // Вызывается ПОСЛЕ openSheet(...) с мировой точкой объекта.
-  // Подвести вид так, чтобы объект не прятался под шторкой. Замер прямоугольников — в
-  // следующем кадре (как у placeSheetBtn: сразу после записи шторки он заставлял браузер
-  // раскладывать страницу посреди тапа), а сам сдвиг — плавный (panBy с анимацией живым
-  // transform'ом, без перерисовки сцены на кадре), а не прыжок вида.
+  /* ПОДВОД ВИДА К РЕДАКТИРУЕМОМУ ОБЪЕКТУ (аудит Астры, п. 16). Раньше вид сдвигался только по
+     вертикали и считал, что шторка всегда занимает нижние 60% холста: центр комнаты оказывался
+     над шторкой, а её стены и углы — под ней; на компьютере (боковая панель, низ холста
+     свободен) вид дёргался зря. Теперь свободная часть холста берётся ФАКТИЧЕСКАЯ — по месту
+     шторки (снизу, сбоку поверх холста, сбоку в потоке, свёрнута, во весь экран), а целью
+     служит ВЕСЬ объект (прямоугольник комнаты, двери с размахом створки…), не одна точка:
+     помещается — вид сдвигается ровно настолько, чтобы объект вошёл; не помещается — вид
+     отдаляется и ставит объект в середину свободной части. Вызывается ПОСЛЕ openSheet(...);
+     замер — в следующем кадре (сразу после записи шторки он заставлял браузер раскладывать
+     страницу посреди тапа), сам переход — плавный (живой transform, без перерисовки сцены на
+     кадре). Цель — точка {x,y} или прямоугольник {x,y,w,h} в мировых см. */
+  // Чистый расчёт (без DOM, для тестов): view — текущий вид (мир), box — экранный прямоугольник
+  // видимого холста {left, top, width, height}, free — свободная от шторки часть экрана
+  // {l, t, r, b}, tgt — цель (мир), pad — отступ от края свободной части, px. Возвращает новый
+  // вид или null, если объект и так целиком виден (или показать его негде).
+  function fitTargetView(view, box, free, tgt, pad) {
+    if (!view || !box || !free || !tgt || !(box.width > 0) || !(box.height > 0) || !(view.w > 0) || !(view.h > 0)) return null;
+    pad = pad == null ? 18 : pad;
+    const fl = (free.l + pad - box.left) / box.width, fr = (free.r - pad - box.left) / box.width;
+    const ft = (free.t + pad - box.top) / box.height, fb = (free.b - pad - box.top) / box.height;
+    if (fr - fl < 0.06 || fb - ft < 0.06) return null; // свободного места почти нет — не мучаем вид
+    const tw = Math.max(0, tgt.w || 0), th = Math.max(0, tgt.h || 0);
+    const needW = tw / (fr - fl), needH = th / (fb - ft); // ширина/высота вида, при которых цель влезает
+    let w = view.w, h = view.h;
+    if (needW > w || needH > h) {
+      const s = Math.max(needW / w, needH / h); // отдаление (s > 1) — пропорции вида сохраняются
+      w *= s; h *= s;
+      const cx = tgt.x + tw / 2, cy = tgt.y + th / 2;
+      return { x: cx - ((fl + fr) / 2) * w, y: cy - ((ft + fb) / 2) * h, w, h };
+    }
+    // помещается: минимальный сдвиг, пока каждая сторона цели не окажется в свободной части
+    const x0 = view.x + fl * w, x1 = view.x + fr * w, y0 = view.y + ft * h, y1 = view.y + fb * h;
+    let dx = 0, dy = 0;
+    if (tgt.x < x0) dx = tgt.x - x0; else if (tgt.x + tw > x1) dx = tgt.x + tw - x1;
+    if (tgt.y < y0) dy = tgt.y - y0; else if (tgt.y + th > y1) dy = tgt.y + th - y1;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return null;
+    return { x: view.x + dx, y: view.y + dy, w, h };
+  }
+  // свободная от шторки часть видимого холста (экран) — по месту шторки, а не «нижние 60%»
+  function sheetFreeArea() {
+    if (!R.canvas) return null;
+    const box = (R.canvas.wrap || R.canvas.svg).getBoundingClientRect();
+    if (!(box.width > 0 && box.height > 0)) return null;
+    const free = { l: box.left, t: box.top, r: box.right, b: box.bottom };
+    const s = sheet();
+    if (!s || s.hidden || R.sheetCollapsed) return { box, free };
+    // шторка во весь экран (Расчёт ⛶, развёртка) — холста под ней не видно, двигать нечего
+    if (s.classList.contains("ep-plan-sheet-full") || s.classList.contains("is-landscape-forced")) return null;
+    let pos = "";
+    try { pos = window.getComputedStyle(s).position; } catch (e) {}
+    if (pos !== "absolute") return { box, free }; // боковая панель В ПОТОКЕ (компьютер): холст уже сузился
+    const sr = s.getBoundingClientRect();
+    if (sr.width >= box.width * 0.7) free.b = Math.min(free.b, sr.top);               // шторка снизу
+    else if (sr.left >= box.left + box.width / 2) free.r = Math.min(free.r, sr.left); // сбоку справа
+    else free.l = Math.max(free.l, sr.right);                                          // сбоку слева
+    return { box, free };
+  }
+  // прямоугольник по набору мировых точек (+ запас, напр. полтолщины стены)
+  function boxOf(pts, padCm) {
+    if (!pts || !pts.length) return null;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    pts.forEach((q) => { if (!q) return; x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); });
+    if (!isFinite(x0)) return null;
+    const m = padCm || 0;
+    return { x: x0 - m, y: y0 - m, w: x1 - x0 + 2 * m, h: y1 - y0 + 2 * m };
+  }
   let evRaf = 0, evPt = null;
-  function ensureVisibleAboveSheet(worldPt) {
-    if (!R.canvas || !worldPt) return;
-    evPt = worldPt;
+  function ensureVisibleAboveSheet(target) {
+    if (!R.canvas || !target) return;
+    evPt = target;
     if (evRaf) return;
     const raf = window.requestAnimationFrame || ((f) => setTimeout(f, 16));
     evRaf = raf(() => { evRaf = 0; const pt = evPt; evPt = null; ensureVisibleNow(pt); });
   }
-  function ensureVisibleNow(worldPt) {
-    if (!R.canvas || !worldPt) return;
-    const host = document.querySelector("#ep-plan-canvas"); if (!host) return;
-    const hb = host.getBoundingClientRect();
-    // видимая область холста — обёртка (svg шире её на запас, см. placeSvg в plan-canvas.js)
-    const r = (R.canvas.wrap || R.canvas.svg).getBoundingClientRect();
-    const v = R.canvas.getView();
-    if (!v.h || !r.height) return;
-    const sy = r.top + ((worldPt.y - v.y) / v.h) * r.height; // экранный Y точки
-    const sheetTopScreen = hb.top + hb.height * 0.4; // шторка занимает нижние ~60%
-    const margin = 40; // px запаса над шторкой
-    if (sy < sheetTopScreen - margin) return; // и так видно — не дёргаем вид
-    const dyPx = sy - (sheetTopScreen - margin);
-    R.canvas.panBy(0, dyPx * R.canvas.cmPerPx(), { animate: true });
+  function ensureVisibleNow(target) {
+    if (!R.canvas || !target) return;
+    // боковая панель на компьютере уже сузила холст, а наблюдатель размера сработает позже —
+    // сверяем размер сейчас, иначе расчёт шёл бы по старым пропорциям вида
+    if (R.canvas.syncSize) R.canvas.syncSize();
+    const fa = sheetFreeArea(); if (!fa) return;
+    const pt = !(target.w > 0 || target.h > 0);
+    const nv = fitTargetView(R.canvas.getView(), fa.box, fa.free, target, pt ? 44 : 18);
+    if (!nv) return;
+    if (R.canvas.viewTo) R.canvas.viewTo(nv, { animate: true });
+    else { const v = R.canvas.getView(); R.canvas.panBy(nv.x - v.x, nv.y - v.y, { animate: true }); }
   }
 
   // ---------- живой предпросмотр снапа при наведении (мышь/S-Pen до тапа) ----------
@@ -1469,7 +1557,7 @@
     const p = core().project;
     openSheet(`<div class="ep-plan-srow"><b>${T.mvTitle}</b> · ${esc(room.name)} · ${G().fmtArea(G().roomNetArea(p, room))}${R.mvLast ? ` · <span class="ep-plan-dim">${T.mvMoved(R.mvLast.x, R.mvLast.y)}</span>` : ""}</div>
       <div class="ep-plan-modehint">${T.mvHint}</div>
-      <div class="ep-plan-srow ep-plan-sbtns">
+      <div class="ep-plan-srow ep-plan-sbtns ep-plan-actbar">
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-mvnudge="l" aria-label="Влево">←</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-mvnudge="u" aria-label="Вверх">↑</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-mvnudge="d" aria-label="Вниз">↓</button>
@@ -1482,7 +1570,7 @@
     // после ТЯГИ вид не дёргаем (пользователь только что сам выбрал, куда смотреть) —
     // подтягиваем комнату из-под шторки только при первом открытии по тапу
     setSheetObj("movroom", room.id, () => { const r2 = (core().project.rooms || []).find((x) => x.id === room.id); if (!r2) return false; sheetMoveRoom(r2, { keepView: true }); return true; });
-    if (!(opts && opts.keepView)) ensureVisibleAboveSheet(G().centroid(room.points || []));
+    if (!(opts && opts.keepView)) ensureVisibleAboveSheet(boxOf(room.points || [], (p.settings.wallThickness || 10) / 2 + 6));
   }
   // тяга ВСЕЙ комнаты пальцем. Жест начинается ТОЛЬКО внутри выбранной комнаты — иначе
   // return false и жест остаётся панорамой (тот же veto-паттерн, что у балки/пустоты).
@@ -1643,7 +1731,7 @@
         <label>Вынос, см<input id="ep-pr-dmoff" type="number" inputmode="numeric" step="5"
           value="${Math.round(Number(dm.off) || 0)}" data-pr-dimoff="${esc(dm.id)}"></label>
       </div>
-      <div class="ep-plan-srow ep-plan-sbtns">
+      <div class="ep-plan-srow ep-plan-sbtns ep-plan-actbar">
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-dimflip="${esc(dm.id)}">⇄ На другую сторону</button>
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pr-dimdel="${esc(dm.id)}">${T.del}</button>
         <button type="button" class="btn btn-primary ep-clickable" data-pr-cancel>${T.close}</button>
@@ -1652,7 +1740,7 @@
     R.selectedDimId = dm.id;
     enableDimDrag(dm.id);
     setSheetObj("dim", dm.id, () => { const d2 = (core().project.dims || []).find((x) => x.id === dm.id); if (!d2) return false; sheetDim(d2, { keepView: true }); return true; });
-    if (!(opts && opts.keepView)) ensureVisibleAboveSheet(g ? g.mid : dm.a);
+    if (!(opts && opts.keepView)) ensureVisibleAboveSheet(boxOf(g ? [dm.a, dm.b, g.A, g.B] : [dm.a, dm.b], 10));
   }
   /* ---------- АВТОМАТИЧЕСКИЕ размеры: вынести и подвинуть ----------
      Цепочка вдоль стены и подпись высоты h=NNN существуют всегда (их считает рендер),
@@ -1719,7 +1807,7 @@
         <label>Вынос от стены, см<input id="ep-pr-choff" type="number" inputmode="numeric" step="5"
           value="${Math.round(cur)}" data-pr-wdimoff="${esc(roomId)}|${i}"></label>
       </div>
-      <div class="ep-plan-srow ep-plan-sbtns">
+      <div class="ep-plan-srow ep-plan-sbtns ep-plan-actbar">
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-wdimflip="${esc(roomId)}|${i}">⇄ На другую сторону</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-wdimreset="${esc(roomId)}|${i}">↺ Как у всех</button>
         <button type="button" class="btn btn-primary ep-clickable" data-pr-cancel>${T.close}</button>
@@ -1732,11 +1820,11 @@
     const ho = e.hOff || { x: 0, y: 0 };
     const moved = Math.abs(ho.x || 0) > 0.5 || Math.abs(ho.y || 0) > 0.5;
     openSheet(`<div class="ep-plan-srow"><b>⟷ Подпись высоты</b> · h=${Math.round(e.height)} см</div>
-      <div class="ep-plan-srow ep-plan-sbtns">
+      <div class="ep-plan-modehint">Тяни подпись — отведёшь её от соседнего блока. Сама точка при этом не двигается.</div>
+      <div class="ep-plan-srow ep-plan-sbtns ep-plan-actbar">
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-hoffreset="${esc(elId)}"${moved ? "" : " disabled"}>↺ На место</button>
         <button type="button" class="btn btn-primary ep-clickable" data-pr-cancel>${T.close}</button>
-      </div>
-      <div class="ep-plan-modehint">Тяни подпись — отведёшь её от соседнего блока. Сама точка при этом не двигается.</div>`);
+      </div>`);
   }
   // Тяга: за цифру/линию — ВЫНОС (перпендикулярно), за конец — сама точка замера.
   // Без выбранного размера (dimId=null, вход в режим ⟷) тем же жестом двигаются
@@ -1845,16 +1933,16 @@
     openSheet(`<div class="ep-plan-srow"><b>📝 Заметка</b></div>
       <div class="ep-plan-srow"><textarea id="ep-pr-nt" rows="3" maxlength="400" placeholder="Например: здесь штробить нельзя — несущая"
         data-pr-note="${esc(nt.id)}">${esc(nt.text || "")}</textarea></div>
-      <div class="ep-plan-srow ep-plan-sbtns">
+      <div class="ep-plan-modehint">${has ? "Тяни кончик стрелки — он указывает на место. Саму заметку тоже можно двигать." : "Заметку можно двигать пальцем. «Выноска» добавит стрелку к нужной точке."}</div>
+      <div class="ep-plan-srow ep-plan-sbtns ep-plan-actbar">
         <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-notearrow="${esc(nt.id)}">${has ? "✕ Убрать выноску" : "➚ Выноска"}</button>
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pr-notedel="${esc(nt.id)}">${T.del}</button>
         <button type="button" class="btn btn-primary ep-clickable" data-pr-cancel>${T.close}</button>
-      </div>
-      <div class="ep-plan-modehint">${has ? "Тяни кончик стрелки — он указывает на место. Саму заметку тоже можно двигать." : "Заметку можно двигать пальцем. «Выноска» добавит стрелку к нужной точке."}</div>`);
+      </div>`);
     R.noteId = nt.id;
     enableNoteDrag(nt.id);
     setSheetObj("note", nt.id, () => { const n2 = (core().project.notes || []).find((x) => x.id === nt.id); if (!n2) return false; sheetNote(n2, { keepView: true }); return true; });
-    if (!(opts && opts.keepView)) ensureVisibleAboveSheet({ x: nt.x, y: nt.y });
+    if (!(opts && opts.keepView)) ensureVisibleAboveSheet(nt.ax != null ? boxOf([{ x: nt.x, y: nt.y }, { x: nt.ax, y: nt.ay }], 30) : { x: nt.x, y: nt.y });
   }
   // Тяга: за текст — вся заметка целиком (вместе со стрелкой), за кончик стрелки —
   // только он. Тот же veto-паттерн, что у балки/комнаты: жест НЕ на заметке
@@ -1980,36 +2068,61 @@
   }
   // opts.keepView — перерисовать карточку, НЕ подводя вид (после тяги стены/угла: поля
   // размеров должны показать то, что получилось, а камеру пользователь только что выбрал сам)
+  /* КОМПАКТНАЯ КАРТОЧКА КОМНАТЫ (аудит Астры, п. 16-17). Раньше все поля и пять кнопок шли
+     одним столбцом, ✓ оказывалась за прокруткой, а над шторкой на телефоне оставалось около
+     200 px плана. Теперь сразу видно то, что правят чаще всего: понятные команды «Перенести» и
+     «Развёртка», подсказку, что стены и углы тянутся прямо на плане, название и размеры одной
+     строкой, материал стен. Остальное (потолок, влажная зона, длины стен, общая толщина, копия,
+     зеркало, удаление) — в «Ещё»; раскрытость «Ещё» помнится, пока открыт проект. «✓ Применить»
+     и «✕ Закрыть» закреплены у нижнего края шторки и видны без прокрутки. Поля «Ещё» остаются в
+     разметке и когда блок свёрнут — черновик и ✓ работают с ними как раньше. */
   function sheetRoom(room, opts) {
     const p = core().project;
     const isR = G().isRect(room), d = isR ? G().rectDims(room) : null;
     const wet = (room.zones || []).indexOf("wet") >= 0;
-    openSheet(`<div class="ep-plan-srow" data-draft-scope="room:${esc(room.id)}"><b>${esc(room.name)}</b> · ${G().fmtArea(G().roomNetArea(p, room))}</div>
-      <div class="ep-plan-srow"><input id="ep-pr-rname" type="text" value="${esc(room.name)}" maxlength="40" data-pr-room="${esc(room.id)}" data-draft></div>
-      <div class="ep-plan-srow ep-plan-s2">
+    const id = esc(room.id);
+    openSheet(`<div class="ep-plan-srow ep-plan-cardhead" data-draft-scope="room:${id}"><b>${esc(room.name)}</b><span>· ${G().fmtArea(G().roomNetArea(p, room))}</span></div>
+      <div class="ep-plan-srow ep-plan-ctxrow">
+        <button type="button" class="ep-plan-chip ep-plan-ctx ep-clickable" data-pr-tomove="${id}" title="Тяни комнату целиком — поедет с точками, проёмами и мебелью">🧭 ${T.ctxMove}</button>
+        <button type="button" class="ep-plan-chip ep-plan-ctx ep-clickable" data-pr-unfold="${id}" title="Развёртка стен этой комнаты во весь экран">📐 ${T.unfoldBtn}</button>
+      </div>
+      <div class="ep-plan-modehint">${T.roomCardHint}</div>
+      <div class="ep-plan-roomgrid${isR ? "" : " is-poly"}">
+        <label class="ep-plan-rgname">${T.name}<input id="ep-pr-rname" type="text" value="${esc(room.name)}" maxlength="40" data-pr-room="${id}" data-draft></label>
         ${isR ? `<label>${T.width}<input id="ep-pr-rw" type="number" inputmode="numeric" min="30" value="${Math.round(d.w)}" data-draft></label>
         <label>${T.depth}<input id="ep-pr-rh" type="number" inputmode="numeric" min="30" value="${Math.round(d.h)}" data-draft></label>` : ""}
-        <label>${T.ceil}<input id="ep-pr-rc" type="number" inputmode="numeric" min="150" placeholder="${p.settings.ceilingHeight}" value="${room.height || ""}" data-draft></label>
       </div>
-      <div class="ep-plan-srow">Стены:
-        ${(EP.Plan.Core.DEFAULTS.materials || []).map((m) => `<button type="button" class="ep-plan-chip ep-clickable ${(room.material || p.settings.wallMaterial) === m ? "on" : ""}" data-pr-mat="${esc(m)}">${esc(m)}</button>`).join("")}
+      ${isR ? "" : wallLenHtml(room)}
+      <div class="ep-plan-srow ep-plan-matrow">${T.wallsLbl}
+        ${(EP.Plan.Core.DEFAULTS.materials || []).map((m) => `<button type="button" class="ep-plan-chip ep-clickable ${(room.material || p.settings.wallMaterial) === m ? "on" : ""}" data-pr-mat="${esc(m)}" aria-pressed="${(room.material || p.settings.wallMaterial) === m ? "true" : "false"}">${esc(m)}</button>`).join("")}
       </div>
-      <div class="ep-plan-srow"><label class="ep-plan-chk"><input id="ep-pr-wet" type="checkbox" ${wet ? "checked" : ""} data-draft> ${T.wet}</label></div>
-      ${wallLenHtml(room)}
-      <div class="ep-plan-projset">
-        <label>${T.thickProj}<input id="ep-pr-th" type="number" inputmode="numeric" min="4" value="${Math.round(p.settings.wallThickness || 10)}" data-draft></label>
-        <div class="ep-plan-modehint">${T.thickProjHint}</div>
-      </div>
-      <div class="ep-plan-srow ep-plan-sbtns">
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-apply="${esc(room.id)}">✓</button>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-unfold="${esc(room.id)}">📐 ${T.unfoldBtn}</button>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-dup="${esc(room.id)}">${T.dup}</button>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-mirror="${esc(room.id)}">${T.mirror}</button>
-        <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pr-delroom="${esc(room.id)}">${T.del}</button>
+      <details class="ep-plan-more" data-pr-more="room"${R.moreOpen.room ? " open" : ""}>
+        <summary>${T.moreRoom}</summary>
+        <div class="ep-plan-morebody">
+          <div class="ep-plan-srow ep-plan-s2">
+            <label>${T.ceil}<input id="ep-pr-rc" type="number" inputmode="numeric" min="150" placeholder="${p.settings.ceilingHeight}" value="${room.height || ""}" data-draft></label>
+          </div>
+          <div class="ep-plan-srow"><label class="ep-plan-chk"><input id="ep-pr-wet" type="checkbox" ${wet ? "checked" : ""} data-draft> ${T.wet}</label></div>
+          ${isR ? wallLenHtml(room) : ""}
+          <div class="ep-plan-projset">
+            <label>${T.thickProj}<input id="ep-pr-th" type="number" inputmode="numeric" min="4" value="${Math.round(p.settings.wallThickness || 10)}" data-draft></label>
+            <div class="ep-plan-modehint">${T.thickProjHint}</div>
+          </div>
+          <div class="ep-plan-srow ep-plan-sbtns">
+            <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-dup="${id}">${T.dup}</button>
+            <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-mirror="${id}">${T.mirror}</button>
+            <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pr-delroom="${id}">${T.del}</button>
+          </div>
+        </div>
+      </details>
+      <div class="ep-plan-srow ep-plan-sbtns ep-plan-actbar">
+        <button type="button" class="ep-plan-tbtn is-primary ep-clickable" data-pr-apply="${id}">${T.applyLbl}</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-close="${id}">${T.closeLbl}</button>
       </div>`);
     enableRoomDrag(room.id); // тяни углы/стены выбранной комнаты
     setSheetObj("room", room.id, () => { const r2 = (core().project.rooms || []).find((x) => x.id === room.id); if (!r2) return false; sheetRoom(r2, { keepView: true }); return true; });
-    if (!(opts && opts.keepView)) ensureVisibleAboveSheet(G().centroid(room.points));
+    // в видимой части — вся комната вместе со стенами, а не только её центр
+    if (!(opts && opts.keepView)) ensureVisibleAboveSheet(boxOf(room.points, (p.settings.wallThickness || 10) / 2 + 6));
   }
   function sheetUnderlay() {
     const u = core().project && core().project.underlay;
@@ -2055,15 +2168,15 @@
       <div class="ep-plan-srow">Материал:
         ${(EP.Plan.Core.DEFAULTS.partitionMaterials || []).map((m) => `<button type="button" class="ep-plan-chip ep-clickable ${mat === m ? "on" : ""}" data-pr-beammat="${esc(m)}">${esc(m)}</button>`).join("")}
       </div>
-      <div class="ep-plan-modehint">Тяни синие концы, чтобы двигать. ✓ — закрыть.</div>
-      <div class="ep-plan-srow ep-plan-sbtns">
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-beamdone>✓</button>
+      <div class="ep-plan-modehint">Тяни синие концы, чтобы двигать. «Готово» — закрыть.</div>
+      <div class="ep-plan-srow ep-plan-sbtns ep-plan-actbar">
+        <button type="button" class="ep-plan-tbtn is-primary ep-clickable" data-pr-beamdone>${T.doneLbl}</button>
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pr-beamdel="${esc(bm.id)}">✕ Удалить</button></div>`);
     R.selectedBeam = bm.id;
     enableBeamDrag();
     renderScene();
     setSheetObj("beam", bm.id, () => { const b2 = (core().project.beams || []).find((x) => x.id === bm.id); if (!b2) { clearBeamSel(); return false; } sheetBeam(b2, { keepView: true }); return true; });
-    if (!(opts && opts.keepView)) ensureVisibleAboveSheet({ x: (bm.a.x + bm.b.x) / 2, y: (bm.a.y + bm.b.y) / 2 });
+    if (!(opts && opts.keepView)) ensureVisibleAboveSheet(boxOf([bm.a, bm.b], (bm.width || p.settings.wallThickness || 10) / 2 + 6));
   }
   // тянуть концы выбранной балки/перегородки пальцем
   function enableBeamDrag() {
@@ -2114,14 +2227,14 @@
         <label>${T.depth}<input id="ep-pr-vh" type="number" inputmode="numeric" min="10" value="${Math.round(r.h)}" data-draft></label>
       </div>
       <div class="ep-plan-modehint">Тяни целиком, чтобы переместить.</div>
-      <div class="ep-plan-srow ep-plan-sbtns">
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-pr-voidapply="${esc(vd.id)}">✓</button>
+      <div class="ep-plan-srow ep-plan-sbtns ep-plan-actbar">
+        <button type="button" class="ep-plan-tbtn is-primary ep-clickable" data-pr-voidapply="${esc(vd.id)}">${T.applyLbl}</button>
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pr-voiddel="${esc(vd.id)}">${T.del}</button></div>`);
     R.selectedVoid = vd.id;
     enableVoidDrag();
     renderScene();
     setSheetObj("void", vd.id, () => { const v2 = (core().project.voids || []).find((x) => x.id === vd.id); if (!v2) { clearVoidSel(); return false; } sheetVoid(v2, { keepView: true }); return true; });
-    if (!(opts && opts.keepView)) ensureVisibleAboveSheet({ x: (r.x1 + r.x2) / 2, y: (r.y1 + r.y2) / 2 });
+    if (!(opts && opts.keepView)) ensureVisibleAboveSheet({ x: r.x1 - 6, y: r.y1 - 6, w: r.w + 12, h: r.h + 12 });
   }
   function applyVoid(id) {
     const c = core(), vd = (c.project.voids || []).find((v) => v.id === id);
@@ -2201,11 +2314,13 @@
         <button type="button" class="ep-plan-chip ep-clickable ${R.routeDragMode !== "segment" ? "on" : ""}" data-prt2-mode="point">${T.routeModePoint}</button>
         <button type="button" class="ep-plan-chip ep-clickable ${R.routeDragMode === "segment" ? "on" : ""}" data-prt2-mode="segment">${T.routeModeSegment}</button>
       </div>
-      <div class="ep-plan-srow ep-plan-sbtns">
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-prt2-flip>${T.routeFlip}</button>
+      ${rt.manual || EP.Plan.Calc ? `<div class="ep-plan-srow ep-plan-sbtns">
         ${rt.manual ? `<button type="button" class="ep-plan-tbtn ep-clickable" data-prt2-auto="${esc(rt.id)}">${T.routeAuto}</button>` : ""}
         ${EP.Plan.Calc ? `<button type="button" class="ep-plan-tbtn ep-clickable" data-prt2-calc>${T.routeCalc}</button>` : ""}
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-prt2-done>✓</button>
+      </div>` : ""}
+      <div class="ep-plan-srow ep-plan-sbtns ep-plan-actbar">
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-prt2-flip>${T.routeFlip}</button>
+        <button type="button" class="ep-plan-tbtn is-primary ep-clickable" data-prt2-done>${T.doneLbl}</button>
       </div>`);
     R.selectedRoute = rt.id;
     R.selectedRouteTap = tapPos || (rt.points && rt.points[Math.floor((rt.points.length - 1) / 2)]) || null;
@@ -2942,6 +3057,11 @@
   }
 
   // ---------- события ----------
+  // раскрыт ли «Ещё» в карточке: событие toggle НЕ всплывает — ловим в фазе перехвата
+  document.addEventListener("toggle", (e) => {
+    const d = e.target;
+    if (d && d.matches && d.matches("details[data-pr-more]")) R.moreOpen[d.getAttribute("data-pr-more")] = !!d.open;
+  }, true);
   document.addEventListener("click", (e) => {
     if (!R.active) return;
     const t = e.target; let el;
@@ -3044,6 +3164,17 @@
       return;
     }
     if ((el = t.closest("[data-pr-apply]"))) return applyRoom(el.getAttribute("data-pr-apply"));
+    // «✕ Закрыть» — без записи: набранное в карточке отбрасывается
+    if (t.closest("[data-pr-close]")) { R.selectedRoomId = null; closeSheet(); if (R.canvas) R.canvas.setDragHandler(null); renderScene(); return; }
+    // «🧭 Перенести» из карточки — тот же режим, что кнопка 🧭 тулбара, сразу с этой комнатой
+    if ((el = t.closest("[data-pr-tomove]"))) {
+      const room = (core().project.rooms || []).find((r) => r.id === el.getAttribute("data-pr-tomove"));
+      if (!room) return;
+      setMode("movroom");
+      R.selectedRoomId = room.id; R.mvLast = null;
+      sheetMoveRoom(room, { keepView: true });
+      return;
+    }
     if ((el = t.closest("[data-pr-unfold]"))) {
       const rid = el.getAttribute("data-pr-unfold");
       const room2 = (core().project.rooms || []).find((r) => r.id === rid);
@@ -3254,7 +3385,15 @@
     canvas.onLongPress(onCanvasLongPress);
     // тяга закончилась (или оборвана сменой обработчика) — снять живой слой; оборванной
     // тяге заодно снять «подъём», иначе копия объекта осталась бы висеть поверх холста
+    /* Шторка на время тяги (аудит Астры, п. 16): потянул стену, угол или дверь, а часть
+       объекта под открытой карточкой — карточка становится почти прозрачной и пропускает
+       касания, пока палец на плане; отпустил — вернулась с тем же набранным текстом (её
+       содержимое не перерисовывается). На компьютере панель сбоку и холст не закрывает —
+       там это правило в CSS отключено. Только тяга объекта: обычный сдвиг плана карточку
+       не трогает (иначе она мигала бы на каждом пане). */
+    if (canvas.onDragBegin) canvas.onDragBegin(() => { const s = sheet(); if (s && !s.hidden) s.classList.add("is-dragging"); });
     if (canvas.onDragDone) canvas.onDragDone((aborted) => {
+      { const s = sheet(); if (s) s.classList.remove("is-dragging"); }
       const hadLive = liveEnd();
       if (aborted) { const RN = EP.Plan.Render; if (RN && RN.isLifted && RN.isLifted(canvas)) RN.dropLift(canvas); renderSceneSoon(); }
       return hadLive;
@@ -3292,7 +3431,7 @@
     attach, detach, setActive, setMode, renderScene, T, CFG, gestureBusy,
     // общий доступ для модулей слоёв 2-6
     openSheet, closeSheet, overlaySheet, closeOverlaySheet, overlayOpen, toast, flash, lastFlash: () => R.lastFlash || "", ensureVisibleAboveSheet, toggleSheetFullscreen, sheetRoom,
-    resizeRoomRect, applyRoom, setSheetObj, refreshSheetObj, draftDirty,
+    resizeRoomRect, applyRoom, setSheetObj, refreshSheetObj, draftDirty, fitTargetView, boxOf,
     draft: { stamp: draftStamp, capture: draftCapture, restore: draftRestore, scope: draftScope, key: draftKey, putForm },
     sheetObjInfo: () => ({ sheet: R.sheetObj ? { kind: R.sheetObj.kind, id: R.sheetObj.id } : null, overlay: R.overlayObj ? { kind: R.overlayObj.kind, id: R.overlayObj.id } : null }),
     collapseSheet, expandSheet, toggleSheetCollapsed, placeSheetBtn, enableOpeningDrag,

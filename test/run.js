@@ -8523,7 +8523,7 @@ test("фото: deleteProject чистит кэш фото своего прое
       ok(/\(liveT && restRect\) \? restRect : measureRest\(\)/.test(cv), "во время жеста — замер начала, без принудительной раскладки");
       ok(/animateTo\(target, 240\)/.test(cv), "двойной тап зумит плавно");
       const rm = rd67("assets", "js", "modules", "plan", "plan-rooms.js");
-      ok(/panBy\(0, dyPx \* R\.canvas\.cmPerPx\(\), \{ animate: true \}\)/.test(rm), "подвод вида над шторкой — плавно");
+      ok(/R\.canvas\.viewTo\(nv, \{ animate: true \}\)/.test(rm), "подвод вида над шторкой — плавно");
       ok(/sheetBtnRaf = raf/.test(rm) && /evRaf = raf/.test(rm), "замеры шторки — в следующем кадре");
     });
     test("APK: сохранение при уходе в фон и облако без сети", () => {
@@ -10557,9 +10557,247 @@ test("фото: deleteProject чистит кэш фото своего прое
       ok(top.indexOf("data-plan-full") < 0 && top.indexOf("data-plan-ctrls") < 0, "«во весь экран» и «свернуть панель» остаются в строке");
       ok(/data-plan-topx aria-label=/.test(m) && /aria-expanded="false" aria-controls="ep-plan-topx"/.test(m), "кнопка ⋮ с состоянием для диктора");
       ok(/function titleHtml\(p\) \{[\s\S]*?data-plan-rename/.test(m), "тап по названию — переименовать");
-      ok(/const narrow = w < TOP_NARROW_PX;/.test(m) && /new ResizeObserver\(\(\) => syncTopNarrow\(\)\)/.test(m), "раскладка по ширине самой шапки (не окна) и при любом её изменении");
+      ok(/const narrow = w < TOP_NARROW_PX;/.test(m) && /new ResizeObserver\(\(\) => \{ syncTopNarrow\(\);/.test(m), "раскладка по ширине самой шапки (не окна) и при любом её изменении");
       ok(/\.ep-plan-topxbtn \{ display: none; \}/.test(css) && /\.ep-plan-top\.is-narrow \.ep-plan-topx \{\s*display: none;/.test(css) && /\.ep-plan-top\.is-narrow\.is-xopen \.ep-plan-topx \{ display: flex; \}/.test(css), "на широкой — в строке, на узкой — в меню");
       ok(/if \(!t\.closest\("\[data-plan-topx\]"\)\) closeTopX\(\);/.test(m), "любой клик мимо закрывает меню");
+    });
+  }
+
+  // ===== 84. Аудит Астры, пакет 5: шторка на телефоне, тулбар, подписи и контраст =====
+  // Подвод вида учитывает фактическую свободную часть холста и показывает объект целиком (а не
+  // его центр над «нижними 60%»); карточка комнаты компактная, «✓ Применить / ✕ Закрыть»
+  // закреплены у края шторки; на время тяги шторка гаснет; в горизонтали шторка сбоку; ряд
+  // инструментов показывает, что листается; SVG-подписи стен — размера рендерера; днём чипы и
+  // «Удалить» читаются как кнопки.
+  {
+    const fsx = require("fs"), pathx = require("path");
+    const srcOf = (f) => fsx.readFileSync(pathx.join(__dirname, "..", f), "utf8");
+    const R = EP.Plan.Rooms;
+    // попадает ли цель (мир) целиком в свободную часть экрана при виде v
+    const inFree = (v, box, free, t, pad) => {
+      const sx = (x) => box.left + (x - v.x) / v.w * box.width, sy = (y) => box.top + (y - v.y) / v.h * box.height;
+      const e = 0.01;
+      return sx(t.x) >= free.l + pad - e && sx(t.x + (t.w || 0)) <= free.r - pad + e && sy(t.y) >= free.t + pad - e && sy(t.y + (t.h || 0)) <= free.b - pad + e;
+    };
+
+    test("подвод вида: объект целиком в свободной части — сдвиг до края, отдаление если не помещается, шторка сбоку", () => {
+      const v = { x: 0, y: 0, w: 800, h: 1000 }, box = { left: 0, top: 0, width: 400, height: 500 }; // 2 см в пикселе
+      const below = { l: 0, t: 0, r: 400, b: 250 }; // шторка снизу закрывает нижнюю половину
+      eq(R.fitTargetView(v, box, below, { x: 100, y: 100, w: 100, h: 100 }, 18), null, "объект и так виден — вид не трогаем");
+      const t1 = { x: 100, y: 300, w: 200, h: 200 }; // низ на экране 250 — у самой кромки шторки
+      const v1 = R.fitTargetView(v, box, below, t1, 18);
+      ok(v1 && v1.w === 800 && v1.h === 1000, "помещается — масштаб прежний, только сдвиг");
+      ok(inFree(v1, box, below, t1, 18), "после сдвига объект целиком над шторкой");
+      near(v1.y, 300 + 200 - (250 - 18) * 2, 1e-9, "сдвиг ровно до свободного края, не больше");
+      const big = { x: 0, y: 0, w: 800, h: 900 }; // на экране 400×450 — в свободные 364×214 не влезет
+      const v2 = R.fitTargetView(v, box, below, big, 18);
+      ok(v2 && v2.w > 800, "не помещается — вид отдаляется (было: только сдвиг по вертикали, стены уходили под шторку)");
+      near(v2.w / v2.h, 0.8, 1e-9, "пропорции вида сохраняются");
+      ok(inFree(v2, box, below, big, 18), "после отдаления объект целиком виден");
+      const side = { l: 0, t: 0, r: 200, b: 500 }; // шторка справа (телефон в горизонтали)
+      const t3 = { x: 500, y: 100, w: 100, h: 100 };
+      const v3 = R.fitTargetView(v, box, side, t3, 18);
+      ok(v3 && inFree(v3, box, side, t3, 18), "шторка сбоку — объект уходит в левую часть холста");
+      eq(v3.y, 0, "по вертикали при этом не дёргаем");
+      const pt = { x: 700, y: 900 }; // точка под шторкой
+      const v4 = R.fitTargetView(v, box, below, pt, 44);
+      ok(v4 && inFree(v4, box, below, pt, 44), "точка — с запасом над кромкой шторки");
+      eq(R.fitTargetView(v, box, { l: 0, t: 0, r: 400, b: 20 }, t1, 18), null, "свободного места почти нет — не мучаем вид");
+      const bx = R.boxOf([{ x: 10, y: 20 }, { x: 110, y: 70 }], 5);
+      eq(JSON.stringify(bx), JSON.stringify({ x: 5, y: 15, w: 110, h: 60 }), "прямоугольник объекта с запасом");
+    });
+
+    test("подвод вида: свободная часть — по месту шторки; карточки передают весь объект, а не точку", () => {
+      const r = srcOf("assets/js/modules/plan/plan-rooms.js"), el = srcOf("assets/js/modules/plan/plan-elements.js"), fu = srcOf("assets/js/modules/plan/plan-furniture.js");
+      ok(!/hb\.height \* 0\.4/.test(r), "больше не «шторка = нижние 60% холста»");
+      const fa = r.slice(r.indexOf("function sheetFreeArea()"), r.indexOf("function boxOf("));
+      ok(/if \(pos !== "absolute"\) return \{ box, free \};/.test(fa), "панель в потоке (компьютер) холст не закрывает");
+      ok(/sr\.width >= box\.width \* 0\.7\) free\.b = Math\.min\(free\.b, sr\.top\)/.test(fa) && /free\.r = Math\.min\(free\.r, sr\.left\)/.test(fa), "снизу — по верху шторки, сбоку — по её краю");
+      ok(/ep-plan-sheet-full"\) \|\| s\.classList\.contains\("is-landscape-forced"\)\) return null;/.test(fa), "во весь экран — холста не видно, вид не двигаем");
+      ok(/if \(R\.canvas\.syncSize\) R\.canvas\.syncSize\(\);/.test(r), "размер холста сверяется до расчёта (боковая панель уже сузила холст)");
+      ok(/ensureVisibleAboveSheet\(boxOf\(room\.points, \(p\.settings\.wallThickness \|\| 10\) \/ 2 \+ 6\)\)/.test(r), "комната — целиком со стенами");
+      ok(/ensureVisibleAboveSheet\(boxOf\(\[bm\.a, bm\.b\]/.test(r) && /ensureVisibleAboveSheet\(\{ x: r\.x1 - 6, y: r\.y1 - 6, w: r\.w \+ 12, h: r\.h \+ 12 \}\)/.test(r), "перегородка и шахта — целиком");
+      ok(/ensureVisibleAboveSheet\(openingBox\(p, op\)/.test(el), "проём — с размахом створки");
+      ok(/rooms\(\)\.ensureVisibleAboveSheet\(\{ x: a\.x - r, y: a\.y - r, w: 2 \* r, h: 2 \* r \}\)/.test(fu), "мебель — по габариту с учётом поворота");
+    });
+
+    test("проём: прямоугольник для подвода вида охватывает вырез и всю створку", () => {
+      const A = M.newRoom(G.rectPoints(0, 0, 420, 320), "Гостиная");
+      const { P } = install({ rooms: [A] });
+      const w = G.walls(P.rooms[0])[2]; // нижняя стена: от x=420 к x=0
+      const op = M.newOpening("door", w.id, 150, 90); op.hinge = "a"; op.flip = 1;
+      EP.Plan.Core.project.openings.push(op);
+      const bb = EP.Plan.Elements.openingBox(EP.Plan.Core.project, op);
+      const sh = G.openingShape(EP.Plan.Core.project, op);
+      const leafEnd = { x: sh.swing.h.x + sh.n.x * sh.swing.r, y: sh.swing.h.y + sh.n.y * sh.swing.r };
+      const has = (q) => q.x >= bb.x - 1e-6 && q.x <= bb.x + bb.w + 1e-6 && q.y >= bb.y - 1e-6 && q.y <= bb.y + bb.h + 1e-6;
+      ok(has(sh.a) && has(sh.b), "вырез в стене внутри");
+      ok(has(leafEnd) && has(sh.swing.far), "конец створки и дуга внутри (было: только середина проёма)");
+      ok(bb.h >= 90, "по глубине — на всю ширину двери: " + bb.h);
+    });
+
+    // холст с настоящими слушателями (как в разделе 81)
+    const evNode84 = () => {
+      const L = {}, attrs = {};
+      const n = {
+        attrs, style: {}, children: [], parentNode: null, clientWidth: 0, clientHeight: 0,
+        classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+        setAttribute(k, v) { attrs[k] = String(v); }, getAttribute(k) { return k in attrs ? attrs[k] : null; },
+        removeAttribute(k) { delete attrs[k]; },
+        appendChild(c) { n.children.push(c); c.parentNode = n; return c; },
+        removeChild(c) { n.children = n.children.filter((x) => x !== c); c.parentNode = null; return c; },
+        addEventListener(t, f) { (L[t] = L[t] || []).push(f); }, removeEventListener() {},
+        fire(t, e) { (L[t] || []).forEach((f) => f(Object.assign({ preventDefault() {}, button: 0, pointerType: "touch" }, e))); },
+        setPointerCapture() {},
+        getBoundingClientRect() { return { left: 0, top: 0, width: n.clientWidth, height: n.clientHeight }; }
+      };
+      return n;
+    };
+    const canvas84 = (W, H) => {
+      const keep = { ns: sandbox.document.createElementNS, ce: sandbox.document.createElement, perf: sandbox.performance, raf: sandbox.requestAnimationFrame, caf: sandbox.cancelAnimationFrame, ro: sandbox.ResizeObserver };
+      const env = { clock: 1000, raf: [], ro: null };
+      sandbox.document.createElementNS = () => evNode84();
+      sandbox.document.createElement = () => evNode84();
+      sandbox.performance = { now: () => env.clock };
+      sandbox.requestAnimationFrame = (fn) => { env.raf.push(fn); return env.raf.length; };
+      sandbox.cancelAnimationFrame = () => { env.raf = []; };
+      sandbox.ResizeObserver = function (cb) { env.ro = cb; this.observe = () => {}; this.disconnect = () => {}; };
+      env.cv = EP.Plan.Canvas.create(evNode84());
+      env.wrap = env.cv.wrap; env.svg = env.cv.svg;
+      env.size = (w, h) => { env.wrap.clientWidth = w; env.wrap.clientHeight = h; };
+      env.size(W, H);
+      env.frame = (dt) => { env.clock += dt; const q = env.raf; env.raf = []; q.forEach((f) => f(env.clock)); };
+      env.restore = () => {
+        env.cv.destroy();
+        sandbox.document.createElementNS = keep.ns; sandbox.document.createElement = keep.ce;
+        sandbox.performance = keep.perf; sandbox.requestAnimationFrame = keep.raf; sandbox.cancelAnimationFrame = keep.caf; sandbox.ResizeObserver = keep.ro;
+      };
+      return env;
+    };
+
+    test("холст: вид целиком (viewTo), сверка размера сразу (syncSize), событие «тяга пошла»", () => {
+      const env = canvas84(800, 400);
+      try {
+        const cv = env.cv; cv.redraw();
+        cv.viewTo({ x: 100, y: 50, w: 1000, h: 300 });
+        const v = cv.getView();
+        near(v.w, 1000, 1e-9, "ширина вида — как просили");
+        near(v.w / v.h, 2, 1e-9, "высота приведена к пропорциям холста 800×400");
+        near(v.y + v.h / 2, 200, 1e-9, "центр по высоте сохранён");
+        cv.viewTo({ x: 0, y: -100, w: 1200, h: 600 }, { animate: true }); // в пределах готовой картинки
+        ok(env.raf.length === 1, "с animate — плавно");
+        env.frame(60); env.frame(400);
+        near(cv.getView().w, 1200, 1e-6, "доехали до цели");
+        env.size(400, 400); // боковая панель сузила холст, наблюдатель размера ещё не сработал
+        eq(cv.syncSize(), true, "сверка увидела новый размер");
+        near(cv.getView().w / cv.getView().h, 1, 1e-9, "и привела вид к новым пропорциям сразу");
+        eq(cv.syncSize(), false, "повторная сверка — без изменений");
+        let begun = 0;
+        cv.onDragBegin(() => { begun++; });
+        cv.setDragHandler(() => {});
+        env.svg.fire("pointerdown", { pointerId: 1, clientX: 100, clientY: 100 });
+        env.svg.fire("pointermove", { pointerId: 1, clientX: 130, clientY: 100 });
+        env.svg.fire("pointermove", { pointerId: 1, clientX: 160, clientY: 100 });
+        env.svg.fire("pointerup", { pointerId: 1, clientX: 160, clientY: 100 });
+        eq(begun, 1, "объект взяли — событие один раз за жест");
+        cv.setDragHandler(() => false); // обработчик отказался — это пан
+        env.svg.fire("pointerdown", { pointerId: 2, clientX: 100, clientY: 100 });
+        env.svg.fire("pointermove", { pointerId: 2, clientX: 140, clientY: 100 });
+        env.svg.fire("pointerup", { pointerId: 2, clientX: 140, clientY: 100 });
+        eq(begun, 1, "сдвиг плана событие не даёт — шторка на пане не мигает");
+      } finally { env.restore(); }
+    });
+
+    test("карточка комнаты: главное сразу, остальное в «Ещё», «✓ Применить / ✕ Закрыть» последними и закреплены", () => {
+      const A = M.newRoom(G.rectPoints(0, 0, 420, 320), "Гостиная");
+      install({ rooms: [A] });
+      const node = { hidden: true, innerHTML: "", scrollTop: 0, classList: { add() {}, remove() {}, toggle() {}, contains: () => false }, querySelectorAll: () => [], querySelector: () => null };
+      const keep = sandbox.document.querySelector;
+      sandbox.document.querySelector = (sel) => (sel === "#ep-plan-sheet" ? node : null);
+      try { R.sheetRoom(EP.Plan.Core.project.rooms[0]); } finally { sandbox.document.querySelector = keep; }
+      const h = node.innerHTML;
+      ok(h.length > 200, "карточка нарисована");
+      const iMore = h.indexOf('data-pr-more="room"'), iBar = h.indexOf("ep-plan-actbar");
+      ok(/data-pr-tomove="/.test(h) && /data-pr-unfold="/.test(h), "понятные команды «Перенести» и «Развёртка» — сразу");
+      ok(h.indexOf("Стены и углы тяни прямо на плане") >= 0, "подсказка, что стены и углы тянутся на плане");
+      ok(/class="ep-plan-roomgrid"[\s\S]*id="ep-pr-rname"[\s\S]*id="ep-pr-rw"[\s\S]*id="ep-pr-rh"/.test(h), "название и размеры одной строкой");
+      ok(iMore > 0 && h.indexOf('id="ep-pr-rc"') > iMore && h.indexOf('id="ep-pr-wet"') > iMore && h.indexOf('id="ep-pr-th"') > iMore, "потолок, влажная зона, общая толщина — в «Ещё»");
+      ok(h.indexOf("data-pr-dup") > iMore && h.indexOf("data-pr-delroom") > iMore, "копия и удаление — тоже в «Ещё»");
+      ok(iBar > iMore, "закреплённые кнопки — после «Ещё»");
+      ok(/data-pr-apply="[^"]+">✓ Применить<\/button>\s*<button[^>]*data-pr-close="[^"]+">✕ Закрыть<\/button>\s*<\/div>\s*$/.test(h), "«✓ Применить / ✕ Закрыть» — последним блоком карточки");
+      ok(h.indexOf("data-draft-scope=\"room:") >= 0, "черновик карточки на месте");
+    });
+
+    test("закреплённые кнопки: у всех карточек объектов последним блоком; полоса ложится на край шторки", () => {
+      const r = srcOf("assets/js/modules/plan/plan-rooms.js"), el = srcOf("assets/js/modules/plan/plan-elements.js"), fu = srcOf("assets/js/modules/plan/plan-furniture.js");
+      const last = (src, mark) => { // разметка карточки от mark до конца шаблона: последний блок — закреплённые кнопки
+        const i = src.indexOf(mark); if (i < 0) return false;
+        const end = src.indexOf("`);", i); const body = src.slice(i, end);
+        const j = body.lastIndexOf("ep-plan-actbar");
+        return j > 0 && !/<div class="ep-plan-(srow|modehint)/.test(body.slice(j + 15));
+      };
+      [["data-pr-apply=\"${id}\"", r, "комната"], ["data-pr-beamdone", r, "перегородка"], ["data-pr-voidapply", r, "шахта"],
+       ["data-pr-dimflip", r, "свой размер"], ["data-pr-wdimflip", r, "цепочка"], ["data-pr-hoffreset", r, "подпись высоты"],
+       ["data-pr-notearrow", r, "заметка"], ["data-pr-mvnudge=\"l\"", r, "перенос комнаты"], ["data-prt2-done", r, "трасса"],
+       ["data-pe-apply>", el, "точка"], ["data-po-apply>", el, "проём"], ["data-pe-papply", el, "щит"], ["data-pe-mfull", el, "карточка монтажника"],
+       ["data-pf-apply", fu, "мебель"]].forEach(([mark, src, name]) => {
+        const i = src.indexOf(mark), seg = src.slice(Math.max(0, i - 400), i);
+        ok(i > 0 && /ep-plan-actbar/.test(seg), name + ": кнопки в закреплённой полосе");
+      });
+      ok(last(r, 'data-pr-hoffreset="${esc(elId)}"') !== null, "подпись высоты: подсказка выше кнопок");
+      ok(/<div class="ep-plan-modehint">\$\{has \? "Тяни кончик стрелки[\s\S]{0,300}<div class="ep-plan-srow ep-plan-sbtns ep-plan-actbar">/.test(r), "заметка: подсказка выше кнопок (раньше шла после них)");
+      ok(/data-pe-photo>\$\{T\.photo\}[\s\S]{0,200}ep-plan-actbar">\s*<button[^>]*data-pe-apply>/.test(el), "точка: «Фото» — строкой выше, в полосе только ✓ и «Удалить»");
+      ok(/apply: "✓ Применить"/.test(el), "кнопка подписана словом, а не одним значком");
+      const css = srcOf("assets/css/plan.css");
+      ok(/\.ep-plan-actbar \{\s*position: sticky; bottom: -12px;[\s\S]{0,80}margin: 0 -12px -12px; padding: 10px 12px 12px;/.test(css), "полоса прилипает к нижнему краю шторки и закрывает её отступ");
+      ok(/\.ep-plan-actbar \{[^}]*background: rgb\(var\(--card-bg-rgb/.test(css), "фон полосы непрозрачный");
+    });
+
+    test("шторка: гаснет на время тяги, в горизонтали — сбоку, на компьютере — справа; кнопка сворачивания не на панели", () => {
+      const r = srcOf("assets/js/modules/plan/plan-rooms.js"), css = srcOf("assets/css/plan.css");
+      ok(/canvas\.onDragBegin\(\(\) => \{ const s = sheet\(\); if \(s && !s\.hidden\) s\.classList\.add\("is-dragging"\); \}\)/.test(r), "тяга объекта гасит шторку");
+      ok(/canvas\.onDragDone\(\(aborted\) => \{\s*\{ const s = sheet\(\); if \(s\) s\.classList\.remove\("is-dragging"\); \}/.test(r), "отпустил или жест оборван — шторка вернулась");
+      ok(/s\.classList\.remove\("is-dragging"\); \}/.test(r.slice(r.indexOf("function closeSheet()"), r.indexOf("function closeSheet()") + 1400)), "и закрытие шторки снимает признак");
+      ok(/\.ep-plan-sheet\.is-dragging \{ opacity: \.14; pointer-events: none;/.test(css), "почти прозрачна и пропускает касания");
+      ok(/@media \(min-width: 1024px\) \{[\s\S]*?\.ep-plan-sheet\.is-dragging \{ opacity: 1; pointer-events: auto; \}/.test(css), "боковую панель компьютера не гасим");
+      ok(/@media \(orientation: landscape\) and \(max-height: 520px\) and \(max-width: 1023px\) \{\s*\.ep-plan-sheet:not\(\.ep-plan-sheet-full\):not\(\.is-landscape-forced\) \{\s*left: auto; right: 8px; top: 8px; bottom: 8px;/.test(css), "телефон в горизонтали: шторка — панель справа во всю высоту");
+      ok(/position: static; left: auto; right: auto; bottom: auto; order: 2;/.test(css), "компьютер: панель справа (обёртка холста добавлялась после шторки — панель уезжала влево)");
+      ok(/sr\.width < hr\.width \* 0\.7\) \{\s*b\.style\.bottom = ""; b\.style\.right = Math\.round\(hr\.right - sr\.left \+ 8\) \+ "px"; return;/.test(r), "кнопка ⌄ при боковой шторке — слева от панели, а не поверх неё");
+    });
+
+    test("подсказки внутри шторок не пропадают при свёрнутой панели («во весь экран»)", () => {
+      const css = srcOf("assets/css/plan.css");
+      ok(/\.ep-plan\.is-ctrls-collapsed #ep-plan-modehint \{ display: none; \}/.test(css), "прячется только строка-подсказка под тулбаром");
+      ok(!/\.ep-plan\.is-ctrls-collapsed \.ep-plan-modehint/.test(css), "правило по классу (оно гасило подсказки ВО ВСЕХ шторках) убрано");
+    });
+
+    test("ряд инструментов: «Просмотр» и «Вписать» рядом в начале, признак прокрутки, выбранный инструмент виден", () => {
+      const m = srcOf("assets/js/modules/plan/plan-mount.js"), r = srcOf("assets/js/modules/plan/plan-rooms.js"), css = srcOf("assets/css/plan.css");
+      const row = (m.match(/<div class="ep-plan-toolbar ep-plan-modes">([\s\S]*?)<\/div>\s*<div class="ep-plan-modehint"/) || [])[1] || "";
+      const btns = row.match(/data-plan-(mode="[a-z]+"|fit|montage|daytask|autoproj|layers|routes|calc|checks|scheme)/g) || [];
+      eq(btns[0], 'data-plan-mode="view"', "первым — «Просмотр»");
+      eq(btns[1], "data-plan-fit", "вторым — «Вписать»: оба видны без прокрутки ряда");
+      eq((row.match(/data-plan-fit/g) || []).length, 1, "«Вписать» в ряду один раз");
+      ok(/function syncModesEdge\(\) \{[\s\S]{0,300}classList\.toggle\("can-l"[\s\S]{0,120}classList\.toggle\("can-r"/.test(m), "признак «есть ещё кнопки» слева и справа");
+      ok(/row\.addEventListener\("scroll", syncModesEdge, \{ passive: true \}\)/.test(m) && /if \(row\) topRO\.observe\(row\);/.test(m), "обновляется на прокрутке и смене размера");
+      ok(/syncModesEdge\(\); \/\/ набор кнопок в ряду сменился/.test(m), "и при смене вкладки");
+      ok(/\.ep-plan-modes\.can-l\.can-r \{[\s\S]{0,200}mask-image: linear-gradient/.test(css), "затухание края — маской");
+      ok(/function revealModeBtn\(mode\)/.test(r) && /revealModeBtn\(mode\);/.test(r), "включённый инструмент подкручивается в видимую часть ряда");
+    });
+
+    test("подписи и контраст: SVG-подписи стен — размера рендерера, мебель — по зуму, днём чипы и «Удалить» видны", () => {
+      const css = srcOf("assets/css/plan.css"), rd = srcOf("assets/js/modules/plan/plan-render.js");
+      ok(!/(^|\n)\.ep-plan-dim \{ opacity: \.6; font-size: 12px; \}/.test(css), "правило без тега больше не перебивает размер SVG-подписей (было 12 мировых см на любом зуме)");
+      ok(/span\.ep-plan-dim \{ color: var\(--muted, #94a3b8\); font-size: 12px; \}/.test(css), "приписки в шторке — отдельным правилом для span");
+      ok(/body\[data-visual-mode="day"\] \.ep-plan-dim \{ fill: #64748b; \}/.test(css), "днём подписи #64748b без прозрачности (контраст около 4,8:1, было около 2,3:1)");
+      ok(/if \(nm && \(lodDims \|\| a\.id === selAp\)\) \{/.test(rd), "имя мебели — на приближенном плане или у выбранной");
+      ok(/if \(textW\(label, fs\) <= fitW\) \{/.test(rd), "и только если помещается в ширину предмета");
+      ok(/body\[data-visual-mode="day"\] \.ep-plan-chip \{ background: #f1f5f9; border-color: #cbd5e1;/.test(css), "днём чип с рамкой и фоном — видно, что это кнопка");
+      ok(/body\[data-visual-mode="day"\] \.ep-plan-chip\.on \{ background: var\(--accent/.test(css), "и выбранный чип днём подсвечен");
+      const iDanger = css.indexOf('body[data-visual-mode="day"] .ep-plan-danger { color: #dc2626'), iTbtn = css.indexOf('body[data-visual-mode="day"] .ep-plan-tbtn { background: #fff');
+      ok(iDanger > iTbtn && iTbtn > 0, "«Удалить» днём красный — правило идёт после дневного правила кнопок");
+      ok(/body\[data-visual-mode="day"\] \.ep-plan-projset input\[type="number"\]/.test(css), "поле общей толщины днём с рамкой (было белое на белом)");
+      ok(/body\[data-visual-mode="day"\] \.ep-plan-tbtn\.is-primary/.test(css), "главная кнопка карточки и днём залита акцентом");
     });
   }
 

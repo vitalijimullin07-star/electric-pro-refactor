@@ -325,7 +325,12 @@ body[data-visual-mode="day"] .ep-plan-qbtn.on { background: var(--accent, #22c55
 .ep-plan-unrlist { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
 .ep-plan-unrrow { display: flex; align-items: center; gap: 6px; font: 500 12px system-ui; color: var(--text); opacity: .9; }
 .ep-plan-unrrow b { font-weight: 700; }
-.ep-plan-dim { opacity: .6; font-size: 12px; }
+/* приглушённая приписка в шторке («(кабеле-пересечений N)», «перенесена на …»). Только HTML-span:
+   правило без тега задевало и SVG-текст .ep-plan-dim на плане (подписи стен «N · длина», модули
+   щита) — CSS-размер 12 перебивал размер, который рендерер считает от масштаба, и подписи
+   росли и мельчали вместе с чертежом; прозрачность .6 давала днём контраст около 2,3:1
+   (аудит Астры, п. 18). */
+span.ep-plan-dim { color: var(--muted, #94a3b8); font-size: 12px; }
 
 .ep-plan-sheet {
   position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 5;
@@ -463,6 +468,72 @@ body[data-flatshadow="1"] .ep-plan-wallhatch { display: none; }
 }
 .ep-plan-flash[hidden] { display: none; }
 body[data-visual-mode="day"] .ep-plan-flash { background: #fffbeb; color: #78350f; border-color: #f59e0b; box-shadow: 0 6px 22px rgba(15, 23, 42, .18); }
+
+/* — Шторка на телефоне (аудит Астры, п. 16-18) — */
+/* «✓ Применить / ✕ Закрыть» закреплены у нижнего края шторки: форма листается, кнопки видны
+   всегда. Шторка листается внутри себя, и Chromium держит закреплённый блок у края СОДЕРЖИМОГО
+   (внутри отступа 12px) — поэтому bottom:-12px и отрицательные поля: полоса ложится ровно на
+   нижний край шторки и закрывает собой отступ, из-под неё ничего не выглядывает. Фон —
+   непрозрачный: сквозь полупрозрачный поля формы читались бы поверх кнопок. */
+.ep-plan-actbar {
+  position: sticky; bottom: -12px; z-index: 3;
+  margin: 0 -12px -12px; padding: 10px 12px 12px;
+  background: rgb(var(--card-bg-rgb, 15, 23, 42));
+  border-top: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 0 0 14px 14px;
+}
+body[data-visual-mode="day"] .ep-plan-actbar { border-top-color: #dbe3ee; }
+.ep-plan-sheet2 .ep-plan-actbar { border-radius: 0; }
+/* главная кнопка карточки — залита акцентом, остальные — обычные */
+.ep-plan-tbtn.is-primary { background: var(--accent, #38bdf8); border-color: transparent; color: #06121f; font-weight: 700; }
+body[data-visual-mode="day"] .ep-plan-tbtn.is-primary { background: var(--accent, #22c55e); border-color: transparent; color: #06121f; }
+/* компактная карточка комнаты: команды, название и размеры одной строкой, остальное — в «Ещё» */
+.ep-plan-cardhead { gap: 6px; }
+.ep-plan-cardhead > span { color: var(--muted, #94a3b8); font-weight: 600; }
+.ep-plan-ctxrow { gap: 6px; }
+.ep-plan-ctxrow .ep-plan-ctx { padding: 7px 12px; }
+.ep-plan-roomgrid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: end; }
+.ep-plan-roomgrid.is-poly { grid-template-columns: minmax(0, 1fr); }
+.ep-plan-roomgrid label { display: flex; flex-direction: column; gap: 4px; min-width: 0; font: 600 11.5px system-ui; color: var(--muted, #94a3b8); }
+/* поля карточки вне .ep-plan-srow (сетка комнаты, общая толщина стен, длины стен) — тем же видом,
+   что и остальные: днём они были белыми на белом, без рамки */
+.ep-plan-roomgrid input, .ep-plan-projset input[type="number"], .ep-plan-wlgrid input {
+  width: 100%; min-width: 0; padding: 9px 10px; border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, .16); background: rgba(255, 255, 255, .05);
+  color: var(--text, #e8eef7); font: 500 14px system-ui;
+}
+body[data-visual-mode="day"] .ep-plan-roomgrid input,
+body[data-visual-mode="day"] .ep-plan-projset input[type="number"],
+body[data-visual-mode="day"] .ep-plan-wlgrid input { background: #fff; border-color: #cbd5e1; color: #0f172a; }
+.ep-plan-matrow { gap: 5px; }
+.ep-plan-matrow .ep-plan-chip { padding: 6px 9px; font-size: 12px; }
+.ep-plan-more { border-top: 1px solid rgba(148, 163, 184, .25); padding-top: 4px; }
+.ep-plan-more > summary { cursor: pointer; list-style: none; padding: 6px 0; font: 600 12.5px system-ui; color: var(--muted, #94a3b8); }
+.ep-plan-more > summary::-webkit-details-marker { display: none; }
+.ep-plan-more > summary::before { content: "▸ "; }
+.ep-plan-more[open] > summary::before { content: "▾ "; }
+.ep-plan-morebody { display: flex; flex-direction: column; gap: 8px; padding-top: 4px; }
+/* Тяга объекта на плане: карточка почти прозрачна и пропускает касания, пока палец на плане
+   (часть стены или двери под ней видна); отпустил — вернулась с тем же набранным. */
+.ep-plan-sheet.is-dragging { opacity: .14; pointer-events: none; transition: opacity .12s ease; }
+@media (prefers-reduced-motion: reduce) { .ep-plan-sheet.is-dragging { transition: none; } }
+/* Телефон в горизонтали: снизу шторке места нет (над ней оставалось ~100 px плана) — она
+   становится панелью справа, план остаётся слева во всю высоту. Шторка «во весь экран» и
+   повёрнутая развёртка — со своими правилами, их не трогаем. */
+@media (orientation: landscape) and (max-height: 520px) and (max-width: 1023px) {
+  .ep-plan-sheet:not(.ep-plan-sheet-full):not(.is-landscape-forced) {
+    left: auto; right: 8px; top: 8px; bottom: 8px; width: min(380px, 50%); max-height: none;
+  }
+  body[data-kb="1"] .ep-plan-sheet:not(.ep-plan-sheet-full):not(.is-landscape-forced) { bottom: calc(8px + var(--kb, 0px)); }
+}
+/* Ряд инструментов листается вбок: затухание у края, за которым есть ещё кнопки (классы
+   ставит plan-mount.js syncModesEdge), — видно, что ряд продолжается (аудит Астры, п. 17) */
+.ep-plan-modes.can-r { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); }
+.ep-plan-modes.can-l { -webkit-mask-image: linear-gradient(to right, transparent, #000 36px); mask-image: linear-gradient(to right, transparent, #000 36px); }
+.ep-plan-modes.can-l.can-r {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 36px, #000 calc(100% - 36px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 36px, #000 calc(100% - 36px), transparent);
+}
 
 /* — сцена (SVG) — */
 .ep-plan-room { fill: rgba(56, 189, 248, .07); stroke: none; }
@@ -605,6 +676,11 @@ body[data-visual-mode="day"] .ep-plan-notetext { fill: #b45309; stroke: rgba(255
   font: 600 12.5px system-ui; cursor: pointer;
 }
 .ep-plan-chip.on { background: var(--accent, #38bdf8); border-color: transparent; color: #06121f; }
+/* днём чип был без рамки и фона — читался как простой текст, не как кнопка (аудит Астры, п. 18) */
+body[data-visual-mode="day"] .ep-plan-chip { background: #f1f5f9; border-color: #cbd5e1; color: #0f172a; }
+body[data-visual-mode="day"] .ep-plan-chip.on { background: var(--accent, #22c55e); border-color: transparent; color: #06121f; }
+/* «Удалить» днём оставался тёмным: дневное правило кнопок специфичнее .ep-plan-danger */
+body[data-visual-mode="day"] .ep-plan-danger { color: #dc2626; border-color: rgba(220, 38, 38, .4); }
 .ep-plan-tplgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 7px; margin-bottom: 4px; }
 .ep-plan-tplcard {
   display: flex; flex-direction: column; gap: 3px; padding: 10px 11px; border-radius: 11px;
@@ -840,7 +916,10 @@ body[data-visual-mode="day"] .ep-plan-wall.mat-soft { stroke: #94a3b8; }
    внутри .ep-plan, скрыт тулбар или нет — свернуть панель просто освобождает
    больше места, flex-grow съедает его автоматически, без отдельного правила. */
 .ep-plan.is-ctrls-collapsed .ep-plan-toolbar,
-.ep-plan.is-ctrls-collapsed .ep-plan-modehint { display: none; }
+.ep-plan.is-ctrls-collapsed #ep-plan-modehint { display: none; }
+/* ↑ только строка-подсказка режима под тулбаром: правило по классу .ep-plan-modehint прятало и
+   подсказки ВНУТРИ шторок (как тянуть проём, стены комнаты, режим тяги трассы) — а панель
+   сворачивается сама при «во весь экран», то есть ровно там, где места меньше всего */
 
 /* Fullscreen: min-height:0 у холста — намеренно НЕ жёстко удерживать 320px-пол
    (как у базового .ep-plan-canvas), а дать холсту честно ужаться, если видимая
@@ -857,11 +936,15 @@ body[data-visual-mode="day"] .ep-plan-wall.mat-soft { stroke: #94a3b8; }
    шторка не сжимала его до неюзабельной ширины. */
 @media (min-width: 1024px) {
   .ep-plan-svgwrap { min-width: 280px; }
+  /* order:2 — панель СПРАВА от холста, как задумано: обёртка svg (.ep-plan-svgwrap) создаётся
+     холстом и добавляется в конец, ПОСЛЕ шторки, и панель уезжала влево (аудит Астры, п. 16) */
   .ep-plan-sheet {
-    position: static; left: auto; right: auto; bottom: auto;
+    position: static; left: auto; right: auto; bottom: auto; order: 2;
     flex: 0 1 380px; min-width: 260px; width: auto; height: auto; max-height: none;
     border-radius: 0; border-width: 0 0 0 1px; margin: 0;
   }
+  /* боковая панель холст не закрывает — гасить её на время тяги незачем */
+  .ep-plan-sheet.is-dragging { opacity: 1; pointer-events: auto; }
   /* плавающий quickbar — под палец на телефоне; на десктопе мышь и так всегда
      видит полный тулбар, дублирующая мини-панель лишняя */
   .ep-plan-quickbar { display: none; }
