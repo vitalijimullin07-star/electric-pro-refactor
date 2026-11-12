@@ -10040,6 +10040,206 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 81. Аудит Астры, пакет 2: жесты и координаты =====
+  // Оборванный системой жест откатывается, второй палец заканчивает тягу, пропорции вида всегда
+  // совпадают с холстом (иначе тап попадал мимо нарисованного), развёртка без пустых шагов ↶.
+  {
+    const fsx = require("fs"), pathx = require("path");
+    const srcOf = (f) => fsx.readFileSync(pathx.join(__dirname, "..", f), "utf8");
+    // DOM с настоящими слушателями — гоняем pointer-события прямо в EP.Plan.Canvas
+    const evNode = () => {
+      const L = {}, attrs = {};
+      const n = {
+        attrs, style: {}, children: [], parentNode: null, clientWidth: 0, clientHeight: 0,
+        classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+        setAttribute(k, v) { attrs[k] = String(v); }, getAttribute(k) { return k in attrs ? attrs[k] : null; },
+        removeAttribute(k) { delete attrs[k]; },
+        appendChild(c) { n.children.push(c); c.parentNode = n; return c; },
+        removeChild(c) { n.children = n.children.filter((x) => x !== c); c.parentNode = null; return c; },
+        addEventListener(t, f) { (L[t] = L[t] || []).push(f); }, removeEventListener() {},
+        fire(t, e) { (L[t] || []).forEach((f) => f(Object.assign({ preventDefault() {}, button: 0, pointerType: "touch" }, e))); },
+        setPointerCapture() {},
+        getBoundingClientRect() { return { left: 0, top: 0, width: n.clientWidth, height: n.clientHeight }; }
+      };
+      return n;
+    };
+    const canvasEnv = (W, H) => {
+      const keep = { ns: sandbox.document.createElementNS, ce: sandbox.document.createElement, perf: sandbox.performance, raf: sandbox.requestAnimationFrame, caf: sandbox.cancelAnimationFrame, ro: sandbox.ResizeObserver };
+      const env = { clock: 1000, raf: [], ro: null };
+      sandbox.document.createElementNS = () => evNode();
+      sandbox.document.createElement = () => evNode();
+      sandbox.performance = { now: () => env.clock };
+      sandbox.requestAnimationFrame = (fn) => { env.raf.push(fn); return env.raf.length; };
+      sandbox.cancelAnimationFrame = () => { env.raf = []; };
+      sandbox.ResizeObserver = function (cb) { env.ro = cb; this.observe = () => {}; this.disconnect = () => {}; };
+      env.host = evNode();
+      env.cv = EP.Plan.Canvas.create(env.host);
+      env.wrap = env.cv.wrap; env.svg = env.cv.svg;
+      env.size = (w, h) => { env.wrap.clientWidth = w; env.wrap.clientHeight = h; };
+      env.size(W, H);
+      env.resize = (w, h) => { env.size(w, h); if (env.ro) env.ro(); };
+      env.frame = (dt) => { env.clock += dt; const q = env.raf; env.raf = []; q.forEach((f) => f(env.clock)); };
+      // где браузер РИСУЕТ мировую точку: viewBox вписывается в размер svg с сохранением
+      // пропорций и по центру (preserveAspectRatio по умолчанию — xMidYMid meet)
+      env.drawn = (cx, cy) => {
+        const vb = env.svg.getAttribute("viewBox").split(/\s+/).map(Number);
+        const sw = parseFloat(env.svg.style.width), sh = parseFloat(env.svg.style.height);
+        const sl = parseFloat(env.svg.style.left), st = parseFloat(env.svg.style.top);
+        const sc = Math.min(sw / vb[2], sh / vb[3]);
+        const ox = (sw - vb[2] * sc) / 2, oy = (sh - vb[3] * sc) / 2;
+        return { x: vb[0] + (cx - sl - ox) / sc, y: vb[1] + (cy - st - oy) / sc };
+      };
+      env.restore = () => {
+        env.cv.destroy();
+        sandbox.document.createElementNS = keep.ns; sandbox.document.createElement = keep.ce;
+        sandbox.performance = keep.perf; sandbox.requestAnimationFrame = keep.raf; sandbox.cancelAnimationFrame = keep.caf; sandbox.ResizeObserver = keep.ro;
+      };
+      return env;
+    };
+    const logDrag = (cv) => {
+      const log = [];
+      cv.setDragHandler((dx, dy, phase) => { log.push(phase); });
+      cv.onDragStart(() => log.push("hook"));
+      cv.onDragDone((ab) => log.push(ab ? "done:abort" : "done"));
+      cv.onDragCancel(() => log.push("cancel"));
+      return log;
+    };
+
+    test("холст: жест оборвала система — тяга снимается, модуль узнаёт об обрыве, «end» не приходит", () => {
+      const env = canvasEnv(800, 400);
+      try {
+        const cv = env.cv; cv.redraw();
+        const log = logDrag(cv);
+        env.svg.fire("pointerdown", { pointerId: 1, clientX: 100, clientY: 100 });
+        env.svg.fire("pointermove", { pointerId: 1, clientX: 120, clientY: 100 });
+        env.svg.fire("pointermove", { pointerId: 1, clientX: 130, clientY: 100 });
+        eq(log.join(","), "hook,start,move,move", "тяга началась");
+        env.svg.fire("pointercancel", { pointerId: 1, clientX: 130, clientY: 100 });
+        eq(log.slice(4).join(","), "done:abort,cancel", "обрыв: слои сняты (done:abort) и модуль предупреждён (cancel)");
+        ok(log.indexOf("end") < 0, "«end» на обрыве не приходит — запись полусделанной правки не случится");
+        // следующий жест — честная новая тяга, а не продолжение оборванной
+        env.svg.fire("pointerdown", { pointerId: 2, clientX: 100, clientY: 100 });
+        env.svg.fire("pointermove", { pointerId: 2, clientX: 120, clientY: 100 });
+        env.svg.fire("pointerup", { pointerId: 2, clientX: 120, clientY: 100 });
+        eq(log.slice(6).join(","), "hook,start,move,done,end", "новая тяга с «start» и обычным отпусканием");
+      } finally { env.restore(); }
+    });
+
+    test("холст: второй палец посреди тяги заканчивает её; после пинча палец двигает вид, а не объект", () => {
+      const env = canvasEnv(800, 400);
+      try {
+        const cv = env.cv; cv.redraw();
+        const log = logDrag(cv);
+        env.svg.fire("pointerdown", { pointerId: 1, clientX: 100, clientY: 100 });
+        env.svg.fire("pointermove", { pointerId: 1, clientX: 120, clientY: 100 });
+        env.svg.fire("pointerdown", { pointerId: 2, clientX: 300, clientY: 100 });
+        eq(log.join(","), "hook,start,move,done,end", "второй палец: тяга закончена «как отпустили»");
+        env.svg.fire("pointermove", { pointerId: 2, clientX: 340, clientY: 100 }); // пинч
+        env.svg.fire("pointerup", { pointerId: 2, clientX: 340, clientY: 100 });
+        const x0 = cv.getView().x;
+        env.svg.fire("pointermove", { pointerId: 1, clientX: 200, clientY: 100 });
+        env.svg.fire("pointermove", { pointerId: 1, clientX: 260, clientY: 100 });
+        eq(log.length, 5, "оставшийся палец объект больше не тянет (было: тяга заново с места первого касания)");
+        ok(cv.getView().x < x0, "он панорамирует вид");
+        env.svg.fire("pointerup", { pointerId: 1, clientX: 260, clientY: 100 });
+        eq(log.length, 5, "отпускание не даёт второго «end»");
+      } finally { env.restore(); }
+    });
+
+    test("холст: размер изменился посреди подвода вида — пропорции вида от нового холста, тап попадает в нарисованное", () => {
+      const env = canvasEnv(800, 400);
+      try {
+        const cv = env.cv; cv.redraw();
+        near(cv.getView().w / cv.getView().h, 2, 1e-9, "вид по холсту 800×400");
+        cv.panBy(60, 0, { animate: true });
+        ok(env.raf.length === 1, "подвод вида идёт анимацией");
+        env.resize(400, 400); // открылась боковая панель / повернули экран
+        env.frame(60);
+        near(cv.getView().w / cv.getView().h, 1, 1e-6, "посреди анимации пропорции уже от нового холста");
+        env.frame(400);
+        const v = cv.getView();
+        near(v.w / v.h, 1, 1e-6, "в конце анимации тоже (было: старые пропорции 2:1 — замер аудита 964×598 на холсте 610×614)");
+        [[0, 0], [400, 400], [37, 311]].forEach(([cx, cy]) => {
+          const a = cv.toWorld(cx, cy), b = env.drawn(cx, cy);
+          near(a.x, b.x, 1e-6, "x тапа в (" + cx + "," + cy + ") = нарисованное");
+          near(a.y, b.y, 1e-6, "y тапа в (" + cx + "," + cy + ") = нарисованное");
+        });
+      } finally { env.restore(); }
+    });
+
+    test("ядро: счётчик снимков растёт на commit и уменьшается на откате", () => {
+      install();
+      const C = EP.Plan.Core, n0 = C.commitCount();
+      C.commit(); C.commit();
+      eq(C.commitCount(), n0 + 2, "два снимка");
+      C.rollback();
+      eq(C.commitCount(), n0 + 1, "откат забрал один");
+      C.undo();
+      eq(C.commitCount(), n0 + 1, "обычная отмена счётчик не трогает (это не откат жеста)");
+    });
+
+    test("обрыв жеста откатывает перенос стены: всё на месте, лишнего шага ↶ нет, на диск не уходит полусделанное", () => {
+      const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "Гостиная");
+      const { P } = install({ rooms: [A] });
+      const id = P.id, rid = P.rooms[0].id;
+      const cv = fakeCanvas();
+      cv.svg.parentNode = fakeNode(); // есть куда положить живой слой тяги
+      const hk = {};
+      Object.assign(cv, {
+        setDragHandler: (fn) => { hk.h = fn; }, onTap() {}, onDblTap() {}, onViewChanged() {}, onViewMoved() {},
+        onHover() {}, onHoverEnd() {}, onLongPress() {},
+        onDragDone: (fn) => { hk.done = fn; }, onDragStart: (fn) => { hk.start = fn; }, onDragCancel: (fn) => { hk.cancel = fn; },
+        panBy() {}, fit() {}, redraw() {}, getView: () => ({ x: -300, y: -300, w: 1600, h: 1200 }), wrap: fakeNode(),
+        overscan: () => ({ x: 0, y: 0 }), userAdjustedView: () => false, isMoving: () => false
+      });
+      EP.Plan.Rooms.attach(cv);
+      ok(hk.start && hk.cancel && hk.done, "модуль подписался на начало и обрыв тяги");
+      EP.Plan.Rooms.sheetRoom(EP.Plan.Core.project.rooms[0]);
+      const before = JSON.stringify(EP.Plan.Core.project.rooms[0].points);
+      EP.Plan.Core.flushPersist();
+      hk.start();
+      ok(hk.h(0, 0, "start", { x: 400, y: 150 }, {}) !== false, "взяли стену");
+      hk.h(40, 0, "move"); hk.h(40, 0, "move");
+      ok(EP.Plan.Core.project.rooms[0].points.some((q) => q.x === 480), "в памяти стена сдвинулась");
+      ok(EP.Plan.Rooms.gestureBusy(), "идёт жест (живой слой)");
+      hk.done(true); hk.cancel(); // так делает холст на pointercancel
+      eq(JSON.stringify(EP.Plan.Core.project.rooms[0].points), before, "стена вернулась на место");
+      eq(EP.Plan.Core.canUndo(), false, "пустого шага ↶ не осталось");
+      ok(!EP.Plan.Rooms.gestureBusy(), "жест не «висит»");
+      ok(/прервала система/.test(EP.Plan.Rooms.lastFlash()), "объяснили, почему всё вернулось: " + EP.Plan.Rooms.lastFlash());
+      EP.Plan.Core.flushPersist();
+      const saved = JSON.parse(store["ep_plan_v1_p_" + id]);
+      eq(JSON.stringify(saved.rooms.find((r) => r.id === rid).points), before, "на диске — контур до жеста");
+      EP.Plan.Rooms.detach();
+    });
+
+    test("подложка: перенос — со снимком истории (отменяется ↶ и откатывается при обрыве жеста)", () => {
+      const r = srcOf("assets/js/modules/plan/plan-rooms.js");
+      ok(/phase === "start"\) \{ core\(\)\.commit\(\); liveBegin\(\{ underlay: true \}\)/.test(r), "commit() на старте тяги подложки");
+      ok(/onDragCancel\(\(\) => \{[\s\S]{0,400}commitCount\(\) > mark[\s\S]{0,80}rollback\(\)/.test(r), "обрыв откатывает столько снимков, сколько сделал жест");
+    });
+
+    test("развёртка: снимок ↶ только при реальном сдвиге; второй палец и обрыв; проём тапом — без наложения", () => {
+      const u = srcOf("assets/js/modules/plan/plan-unfold.js");
+      const down = u.slice(u.indexOf('svg.addEventListener("pointerdown"'), u.indexOf('svg.addEventListener("pointermove"'));
+      ok(down.length > 500, "нашли обработчик касания");
+      ok(!/\.commit\(\)/.test(down), "на касании commit() больше нет — обычный тап не оставляет пустого шага ↶");
+      ok(/if \(pts\.size >= 2\) \{[\s\S]{0,600}finishDrag\(\)/.test(down), "второй палец заканчивает тягу");
+      const move = u.slice(u.indexOf('svg.addEventListener("pointermove"'), u.indexOf('svg.addEventListener("pointerleave"'));
+      ok(/if \(!S\.drag\.moved\) \{[\s\S]{0,300}commitCount\(\)[\s\S]{0,80}commit\(\)/.test(move), "снимок — на первом сдвиге, с номером для отката");
+      const cancel = u.slice(u.indexOf('svg.addEventListener("pointercancel"'));
+      ok(/commitCount\(\) > d\.mark[\s\S]{0,60}rollback\(\)/.test(cancel.slice(0, 900)), "обрыв жеста откатывает перенос");
+      ok(/entryPost !== S\.drag\.postIdx\) \{ core\(\)\.commit\(\);/.test(u), "тап по посту блока (вход кабеля) — со своим снимком");
+      ok(/confirm\("Удалить ленту\?"\)\) \{\s*core\(\)\.commit\(\);/.test(u), "удаление ленты тапом — со своим снимком");
+      ok(/G\(\)\.fitOpening\(p, w, dw, want \+ dw \/ 2, null\)/.test(u), "проём тапом ставится через fitOpening, как на плане");
+      ok(/openFitMsg/.test(u) && /openFitMsg/.test(srcOf("assets/js/modules/plan/plan-elements.js")), "объяснение «не влезает» — общее с планом");
+      // палец на значке берёт ТОЧКУ: видимые размерные линии начинаются в центре значка и лежат
+      // поверх него — касание они ловить не должны (тянуть размер — за прозрачную зону рядом)
+      ok(/\.ep-plan-unfdimL, \.ep-plan-unfdimE \{ pointer-events: none; \}/.test(srcOf("assets/css/plan.css")), "видимые размерные линии развёртки не перехватывают касание значка");
+      ok(/stroke: "transparent", "stroke-width": 10 \* ks/.test(u), "у размеров осталась своя прозрачная зона тяги");
+    });
+  }
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

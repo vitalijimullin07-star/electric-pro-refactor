@@ -74,6 +74,7 @@
     tooSmall: "Комната слишком маленькая (мин. 30 см).",
     polyNeed: "Нужно минимум 3 точки.",
     polySelf: "Контур пересекает сам себя — так комнату не замкнуть. Убери лишние точки (↩) и обведи заново.",
+    dragCancelled: "Жест прервала система (звонок, жест «назад») — перенос отменён, всё на прежнем месте.",
     qbEdit: "✎ Быстрый доступ", qbClose: "✕",
     qbEditHint: "Отметь инструменты, которые всегда должны быть под рукой на плавающей панели снизу. Первые места панель дополнительно подстраивает сама — под последние использованные инструменты.",
     qbReset: "↺ Сбросить"
@@ -359,7 +360,9 @@
     if (on) {
       R.canvas.setDragHandler((dx, dy, phase) => {
         const p = core().project; if (!p || !p.underlay) return;
-        if (phase === "start") { liveBegin({ underlay: true }); return; }
+        // снимок истории — как у всех тяг: перенос подложки отменяется ↶, а оборванный системой
+        // жест (pointercancel) откатывается к началу (onDragCancel в attach)
+        if (phase === "start") { core().commit(); liveBegin({ underlay: true }); return; }
         if (phase === "move") { p.underlay.x = (p.underlay.x || 0) + dx; p.underlay.y = (p.underlay.y || 0) + dy; renderSceneSoon(); }
         else if (phase === "end") { core().persist("underlay-move"); renderScene(); }
       });
@@ -880,12 +883,15 @@
   // Короткое сообщение ПОВЕРХ холста, шторку не трогает. toast() рисуется в самой шторке и
   // через 1,8 с её закрывает: отказ правки посреди карточки комнаты закрыл бы карточку, и
   // пользователь потерял бы то, что в ней правил.
-  let flashTimer = 0;
-  function flash(msg) {
+  // opts.inSheet — показать внутри шторки (развёртка во весь экран закрывает холст плана:
+  // сообщение над холстом там не видно). Таймер скрытия — у КАЖДОГО узла свой: общий таймер
+  // на два места снимал бы скрытие у первого сообщения, и оно висело бы до следующего
+  function flash(msg, opts) {
     R.lastFlash = msg; // для тестов и проверки, что объяснение действительно показано
-    const host = document.querySelector && document.querySelector("#ep-plan-canvas");
+    const sel = opts && opts.inSheet ? "#ep-plan-sheet" : "#ep-plan-canvas";
+    const host = document.querySelector && document.querySelector(sel);
     if (!host || !host.querySelector || !document.createElement) { toast(msg); return; }
-    let n = host.querySelector(".ep-plan-flash");
+    let n = host.querySelector(":scope > .ep-plan-flash");
     if (!n) {
       n = document.createElement("div");
       n.className = "ep-plan-flash";
@@ -895,8 +901,8 @@
     }
     n.textContent = msg;
     n.hidden = false;
-    clearTimeout(flashTimer);
-    flashTimer = setTimeout(() => { n.hidden = true; }, 3600);
+    clearTimeout(n._epT);
+    n._epT = setTimeout(() => { n.hidden = true; }, 3600);
   }
 
   // редактируемый объект может оказаться под шторкой (она до 60% высоты холста
@@ -3117,6 +3123,21 @@
       const hadLive = liveEnd();
       if (aborted) { const RN = EP.Plan.Render; if (RN && RN.isLifted && RN.isLifted(canvas)) RN.dropLift(canvas); renderSceneSoon(); }
       return hadLive;
+    });
+    /* ОБОРВАННЫЙ ЖЕСТ (аудит Астры, п. 9). Все обработчики тяги делают commit() на "start", а
+       запись на диск — только на "end". pointercancel (звонок, системный жест) "end" не даёт:
+       объект оставался сдвинутым в памяти, на диск ничего не уходило, а лишний шаг ↶ указывал
+       на состояние «до» — правка жила в полусостоянии. Теперь холст сообщает об обрыве, и мы
+       возвращаем проект ровно к началу жеста: снимаем столько снимков, сколько жест сделал
+       (счётчик commitCount, а не длина стека — стек ограничен и сдвигается). */
+    if (canvas.onDragStart) canvas.onDragStart(() => { const c = core(); R.gestureMark = c.commitCount ? c.commitCount() : null; });
+    if (canvas.onDragCancel) canvas.onDragCancel(() => {
+      const c = core(), mark = R.gestureMark;
+      R.gestureMark = null;
+      let n = 0;
+      if (mark != null && c.commitCount) while (c.commitCount() > mark && n < 16 && c.rollback()) n++;
+      renderScene();
+      if (n) flash(T.dragCancelled);
     });
     setMode("view");
     R.selectedRoomId = null;

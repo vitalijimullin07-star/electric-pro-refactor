@@ -426,6 +426,8 @@
         // авто-вписыванием (иначе вид «отпрыгивал» через ~секунду, если начать
         // зумить сразу после открытия проекта — пойман визуальным тестом)
         if (myCanvas.userAdjustedView && myCanvas.userAdjustedView()) return;
+        // и если уже начал работать (тапнул комнату, тянет стену) — вид под пальцем не прыгает
+        if (myCanvas.userInteracted && myCanvas.userInteracted()) return;
         fitToProject();
         myCanvas.redraw();
       }, ms);
