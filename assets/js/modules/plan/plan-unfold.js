@@ -568,15 +568,26 @@
       else if (e.pointerType === "touch" && penOn) return; // ладонь при работе стилусом
       svg.setPointerCapture(e.pointerId);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (pts.size === 2) { pinch = pinchInfo(); S.drag = null; pending = null; return; }
+      if (pts.size >= 2) {
+        // ВТОРОЙ ПАЛЕЦ ПОСРЕДИ ТЯГИ (аудит Астры, п. 9): тяга заканчивается там, где сейчас, —
+        // как если бы первый палец отпустили (правка записывается), дальше обычный пинч.
+        // Раньше S.drag просто обнулялся: точка оставалась сдвинутой в памяти, на диск не
+        // уходила, а снимок ↶ от её начала висел пустым шагом
+        finishDrag();
+        if (pts.size === 2) pinch = pinchInfo();
+        pending = null; return;
+      }
       const p = core().project;
       downClient = { x: e.clientX, y: e.clientY }; moved = false; pending = null;
+      // Снимок истории (commit) — НЕ здесь, а на первом реальном сдвиге (pointermove): раньше
+      // каждый тап по точке/проёму/щиту/ленте/размеру делал commit() заранее, и обычный тап
+      // (выделить, открыть карточку) оставлял пустой шаг ↶ — «отменить» ничего не отменяло.
+      // Тапы, которые что-то меняют (вход кабеля в блок, удаление ленты), делают commit сами.
       // цифра высоты: тап — карточка точки (как было), тяга — своё место подписи
       const hof = e.target.closest && e.target.closest("[data-pu-heightof]");
       if (hof) {
         const el0 = (p.elements || []).find((x) => x.id === hof.getAttribute("data-pu-heightof"));
         if (!el0) { pending = { kind: "dimof", id: hof.getAttribute("data-pu-heightof") }; return; }
-        core().commit();
         S.drag = { kind: "dimt", el: el0, moved: false, txt: svg.querySelector(`[data-pu-dimt="${el0.id}"]`) };
         return;
       }
@@ -588,7 +599,6 @@
       if (dg) {
         const el0 = (p.elements || []).find((x) => x.id === dg.getAttribute(dgv ? "data-pu-dimv" : "data-pu-dimh"));
         if (!el0) return;
-        core().commit();
         S.drag = { kind: dgv ? "dimv" : "dimh", el: el0, moved: false, g: dg };
         return;
       }
@@ -599,7 +609,6 @@
         const c0 = G().closestOnSeg({ x: pn.x, y: pn.y }, w.a, w.b);
         const ph0 = G().panelBottom(p, pn);
         const H0 = wallH(p, S.wallId), pt0 = toWorld(svg, e.clientX, e.clientY);
-        core().commit();
         // тянем щит ВДОЛЬ стены (сохраняя перпендикулярный отступ от неё, perp) И ПО
         // ВЫСОТЕ (pn.height — своя высота щита, изначально null = общая settings.panelHeight).
         // grabX/grabY — где именно взяли корпус: без них он прыгал бы низом под палец
@@ -616,7 +625,6 @@
         if (!op) return;
         const pt0 = toWorld(svg, e.clientX, e.clientY), H0 = wallH(p, S.wallId);
         const oh0 = op.height || (op.type === "window" ? 140 : 200);
-        core().commit();
         // grabX/grabY — где именно взяли проём (аудит Астры, п. 11): без них он прыгал центром
         // под палец — взял у края, повёл на 20 см, а проём уехал на 55
         S.drag = {
@@ -630,7 +638,6 @@
       if (lg) {
         const ls = (p.ledStrips || []).find((x) => x.id === lg.getAttribute("data-pu-led"));
         if (!ls) return;
-        core().commit();
         // тянем сегмент ЦЕЛИКОМ вдоль стены (длина сохраняется)
         S.drag = { kind: "led", ls, moved: false, g: lg, x0: Math.min(ls.offsetA, ls.offsetB), len: Math.abs(ls.offsetB - ls.offsetA) };
         return;
@@ -640,7 +647,6 @@
         const el = p.elements.find((x) => x.id === g.getAttribute("data-pu-el"));
         if (!el) return;
         const pg = e.target.closest && e.target.closest("[data-pu-post]");
-        core().commit();
         // узлы для ПЛАВНОЙ тяги на месте (без пересборки SVG во время движения)
         S.drag = {
           kind: "el", el, moved: false, postIdx: pg ? Number(pg.getAttribute("data-pu-post")) : null,
@@ -674,6 +680,12 @@
         // мёртвая зона тапа: палец всегда дрожит на пару пикселей — это ещё не тяга
         if (!S.drag.moved && downClient && Math.hypot(e.clientX - downClient.x, e.clientY - downClient.y) < 7) return;
         const pt = toWorld(svg, e.clientX, e.clientY);
+        if (!S.drag.moved) {
+          // первый сдвиг — снимок истории; mark — номер снимка до него (откат при обрыве жеста)
+          const c0 = core();
+          S.drag.mark = c0.commitCount ? c0.commitCount() : null;
+          c0.commit();
+        }
         S.drag.moved = true;
         if (S.drag.kind === "open") {
           const op2 = S.drag.op;
@@ -729,9 +741,7 @@
       if (pts.size < 2) pinch = null;
       if (S.drag) {
         if (S.drag.moved) {
-          const what = S.drag.kind === "open" ? "opening-move" : S.drag.kind === "panel" ? "panel-move" : S.drag.kind === "led" ? "led-move"
-            : (S.drag.kind === "dimv" || S.drag.kind === "dimh" || S.drag.kind === "dimt") ? "unfdim-move" : "elem-move";
-          core().persist(what);
+          core().persist(dragWhat(S.drag));
           S.drag = null;
           drawStrip(); rooms().renderScene(); // полная перерисовка ОДИН раз, на отпускании
           return;
@@ -764,6 +774,7 @@
         }
         else if (S.drag.kind === "led") {
           if (confirm("Удалить ленту?")) {
+            core().commit();
             const p2 = core().project;
             p2.ledStrips = (p2.ledStrips || []).filter((x) => x.id !== S.drag.ls.id);
             core().persist("led-del"); drawStrip(); rooms().renderScene();
@@ -776,7 +787,7 @@
             S.ptPanel = S.drag.el.id; S.lastTap = null; renderPtPanel();
           } else {
             S.lastTap = { id: S.drag.el.id, t: now };
-            if (S.drag.postIdx != null && S.drag.el.type === "block") { S.drag.el.entryPost = S.drag.postIdx; core().persist("block-entry"); drawStrip(); rooms().renderScene(); }
+            if (S.drag.postIdx != null && S.drag.el.type === "block" && S.drag.el.entryPost !== S.drag.postIdx) { core().commit(); S.drag.el.entryPost = S.drag.postIdx; core().persist("block-entry"); drawStrip(); rooms().renderScene(); }
           }
         }
         S.drag = null; return;
@@ -797,11 +808,20 @@
         }
         else if (pending.kind === "empty" && pt.x >= 0 && pt.x <= w.len) {
           if (isOpenKind(S.addType)) {
-            c.commit();
+            // место — свободное от других проёмов этой стены и стены соседа на той же оси (тот же
+            // G.fitOpening, что у установки на плане): упёрся в дверь — встаёт вплотную, нигде не
+            // влезает — объясняем, а не кладём проём поверх другого (аудит Астры, п. 13)
             const dw = (EP.Plan.Core.OPENING_KINDS[S.addType] || {}).w || 90;
-            const off = G().snap(Math.max(0, Math.min(w.len - dw, pt.x - dw / 2)), step);
-            p.openings.push(c.model.newOpening(S.addType, S.wallId, Math.max(0, off), undefined));
-            c.persist("opening-add"); drawStrip(); rooms().renderScene();
+            const want = G().snap(Math.max(0, Math.min(w.len - dw, pt.x - dw / 2)), step);
+            const off = G().fitOpening(p, w, dw, want + dw / 2, null);
+            if (off == null) {
+              const msg = EL().openFitMsg ? EL().openFitMsg(dw, w.len) : "Проём здесь не помещается.";
+              if (rooms().flash) rooms().flash(msg, { inSheet: true }); else rooms().toast(msg);
+            } else {
+              c.commit();
+              p.openings.push(c.model.newOpening(S.addType, S.wallId, Math.round(off), undefined));
+              c.persist("opening-add"); drawStrip(); rooms().renderScene();
+            }
           } else if (pt.y >= 0 && pt.y <= H) {
             const TYd = EL().TYPES[S.addType];
             c.commit();
@@ -816,7 +836,35 @@
       if (pts.size === 0 && S.view) drawStrip();
     }
     svg.addEventListener("pointerup", end);
-    svg.addEventListener("pointercancel", (e) => { if (e.pointerType === "pen") penOn = false; pts.delete(e.pointerId); pinch = null; S.drag = null; pending = null; });
+    // причина записи для тяги своего вида (по ней AUTOREBUILD_ON решает, перестраивать ли трассы)
+    function dragWhat(d) {
+      return d.kind === "open" ? "opening-move" : d.kind === "panel" ? "panel-move" : d.kind === "led" ? "led-move"
+        : (d.kind === "dimv" || d.kind === "dimh" || d.kind === "dimt") ? "unfdim-move" : "elem-move";
+    }
+    // закончить тягу «как отпустили»: правка записывается, а SVG перерисуется в конце жеста —
+    // сейчас под пальцами идёт пинч, и пересборка svg его оборвала бы (end() перерисует сам)
+    function finishDrag() {
+      const d = S.drag; S.drag = null;
+      if (!d || !d.moved) return;
+      core().persist(dragWhat(d));
+      rooms().renderScene();
+    }
+    /* ЖЕСТ ОБОРВАЛА СИСТЕМА (аудит Астры, п. 9): звонок, системный жест, жест «назад». Раньше
+       S.drag просто обнулялся — точка/проём/щит оставались сдвинутыми в памяти, на диск не
+       уходили, а следующая же запись по другому поводу молча сохраняла полусделанный перенос.
+       Теперь — откат ровно к началу жеста (столько снимков, сколько он сделал) и перерисовка. */
+    svg.addEventListener("pointercancel", (e) => {
+      if (e.pointerType === "pen") penOn = false;
+      pts.delete(e.pointerId); pinch = null; pending = null; moved = false;
+      const d = S.drag; S.drag = null;
+      if (d && d.moved) {
+        const c = core(); let n = 0;
+        if (d.mark != null && c.commitCount) while (c.commitCount() > d.mark && n < 16 && c.rollback()) n++;
+        rooms().renderScene();
+        if (n && rooms().flash && rooms().T) rooms().flash(rooms().T.dragCancelled, { inSheet: true });
+      }
+      if (pts.size === 0 && S.view) drawStrip();
+    });
   }
 
   document.addEventListener("click", (e) => {

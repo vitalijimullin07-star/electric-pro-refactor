@@ -230,6 +230,9 @@
     const nx = -(wall.b.y - wall.a.y), ny = wall.b.x - wall.a.x;
     return (nx * (cpt.x - wall.mx) + ny * (cpt.y - wall.my)) >= 0 ? 1 : -1;
   }
+  // почему проём не встал: шире стены — или на стене нет свободного места (общая формулировка
+  // для плана и развёртки, plan-unfold.js)
+  function openFitMsg(width, len) { return width > len + 0.5 ? T.openWide(Math.round(width), Math.round(len)) : T.openNoRoom; }
   function placeOpening(w) {
     const c = core(), p = c.project;
     const k = rooms().canvasCmPerPx();
@@ -243,7 +246,7 @@
     const want = G().snap(Math.max(0, hit.offset - width / 2), p.settings.gridStep);
     const off = G().fitOpening(p, hit.wall, width, want + width / 2, null);
     const fl0 = rooms().flash || rooms().toast;
-    if (off == null) { fl0(width > hit.wall.len + 0.5 ? T.openWide(Math.round(width), Math.round(hit.wall.len)) : T.openNoRoom); return; }
+    if (off == null) { fl0(openFitMsg(width, hit.wall.len)); return; }
     vibrate(10);
     c.commit();
     const op = c.model.newOpening(S.openType, hit.wall.id, Math.round(off), undefined);
@@ -1414,5 +1417,5 @@
   }
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, SW_TARGET_TYPES, onModeEnter, onOpeningModeEnter, selectType, placeAt, placeOpening, hoverSnapPoint, openingNum, hitAt, openEditor, openStatusCard, closeEditorOverlay, openPanelEditor, openOpeningEditor, openingFlipFor, selectedId, deselect, deleteElement, duplicateElement, circuitRow, assignNewCircuit, syncTargetCircuit, riserMate };
+  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, SW_TARGET_TYPES, onModeEnter, onOpeningModeEnter, selectType, placeAt, placeOpening, openFitMsg, hoverSnapPoint, openingNum, hitAt, openEditor, openStatusCard, closeEditorOverlay, openPanelEditor, openOpeningEditor, openingFlipFor, selectedId, deselect, deleteElement, duplicateElement, circuitRow, assignNewCircuit, syncTargetCircuit, riserMate };
 })();

@@ -1123,8 +1123,13 @@
     ? (o) => structuredClone(o)
     : (o) => JSON.parse(JSON.stringify(o));
   function snapshot() { return deepClone(S.project); }
+  // Счётчик снимков: растёт на КАЖДЫЙ commit() (стек отмены ограничен undoLimit и сдвигается,
+  // его длина счётчиком быть не может). По нему жест знает, сколько снимков он сделал, — чтобы
+  // оборванную тягу откатить ровно к её началу (plan-rooms.js onDragCancel).
+  let commits = 0;
   function commit() { // вызывать ПЕРЕД мутацией проекта
     if (!S.project) return;
+    commits++;
     S.undo.push(snapshot());
     if (S.undo.length > DEFAULTS.undoLimit) S.undo.shift();
     S.redo = [];
@@ -1151,6 +1156,7 @@
   function rollback() {
     if (!S.project || !S.undo.length) return false;
     S.project = S.undo.pop();
+    commits = Math.max(0, commits - 1); // снимка, который откатили, больше нет
     persist("rollback");
     return true;
   }
@@ -1268,7 +1274,7 @@
     get project() { return S.project; },
     onChange,
     listProjects, createProject, openProject, closeProject, deleteProject, renameProject,
-    commit, undo, redo, rollback, canUndo, canRedo, persist,
+    commit, undo, redo, rollback, canUndo, canRedo, persist, commitCount: () => commits,
     flushPersist, // добить отложенную запись немедленно (уход со страницы, тесты)
     exportJSON, exportJSONById, importJSON, cloudPullIndex, cloudPushPending, syncState, cloudReady,
     sanitizeProject, // проверка/починка модели на входе (импорт/облако/чат) — см. функцию

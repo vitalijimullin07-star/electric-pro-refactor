@@ -177,13 +177,29 @@
       clearTimeout(commitTimer);
       commitTimer = setTimeout(() => { commitTimer = 0; if (liveT || rescalePending) apply(); }, ms);
     }
+    /* ПРОПОРЦИИ ВИДА = ПРОПОРЦИИ ХОЛСТА (аудит Астры, п. 10). viewBox рисуется браузером с
+       сохранением пропорций (preserveAspectRatio meet — картинка вписывается и центрируется), а
+       toWorld пересчитывает экран в мир РАЗДЕЛЬНО по осям (view.w/ширина, view.h/высота). Пока
+       пропорции совпадают, это одно и то же. Разойтись они могли: подвод вида над шторкой
+       (анимация) начинался со старыми пропорциями, посреди него открытая боковая панель меняла
+       размер холста, и анимация в конце ставила вид со СТАРЫМИ пропорциями — тап попадал на
+       38 см ниже нарисованного (замер аудита: холст 610×614, вид 964×598). Теперь любая фиксация
+       вида сводит высоту вида к пропорциям холста (центр сохраняется), анимация — тоже. */
+    function fixAspect() {
+      if (!(cw > 0 && ch > 0) || !(view.w > 0) || !(view.h > 0)) return;
+      const asp = cw / ch;
+      if (Math.abs(view.w / view.h - asp) <= asp * 1e-9) return;
+      const cy = view.y + view.h / 2;
+      view.h = view.w / asp; view.y = cy - view.h / 2;
+    }
     function apply(light) {
       clearTimeout(commitTimer); commitTimer = 0;
       restRect = null;
+      if (!cw) measureBox();
+      fixAspect();
       committed = { x: view.x, y: view.y, w: view.w, h: view.h };
       // viewBox и сброс transform — в ОДНОМ кадре: иначе сцена на миг «прыгнула» бы
       if (liveT) { liveT = null; wrap.style.transform = ""; }
-      if (!cw) measureBox();
       placeSvg();
       const kx = view.w / Math.max(1, cw), ky = view.h / Math.max(1, ch || cw);
       svg.setAttribute("viewBox", (view.x - ovX * kx) + " " + (view.y - ovY * ky) + " " + (view.w + 2 * ovX * kx) + " " + (view.h + 2 * ovY * ky));
@@ -234,7 +250,7 @@
         const w = from.w * Math.pow(target.w / from.w, e); // масштаб — геометрически, без «рывка» на зуме
         const cx = from.x + from.w / 2 + ((target.x + target.w / 2) - (from.x + from.w / 2)) * e;
         const cy = from.y + from.h / 2 + ((target.y + target.h / 2) - (from.y + from.h / 2)) * e;
-        view.w = w; view.h = w * (from.h / from.w);
+        view.w = w; view.h = w / ((cw > 0 && ch > 0) ? cw / ch : from.w / from.h); // пропорции холста — он мог измениться посреди анимации
         view.x = cx - view.w / 2; view.y = cy - view.h / 2;
         applyLive();
         anim = requestAnimationFrame(step);
@@ -319,6 +335,12 @@
     // перебивать его вид (иначе «вид отпрыгивает» через ~секунду после открытия,
     // если начать зумить сразу — пойман визуальным тестом на моём же авто-refit'e)
     let userAdjusted = false;
+    // человек уже работает с холстом (коснулся/крутил колесо): автоподгоны «первых секунд»
+    // (окно устаканивания вёрстки ниже и таймеры fitToProject в plan-mount.js) больше не
+    // переставляют вид — иначе вид прыгал прямо под пальцем, если начать тянуть стену или
+    // открыть карточку комнаты в первые 2-3 секунды после открытия проекта (поймано живым
+    // прогоном: подвод вида над шторкой отменялся отложенным «вписать весь проект»)
+    let interacted = false;
     let tapStart = null;   // { x, y, t, id }
     let dragHandler = null, dragMoved = false; // перехват одиночного перетаскивания (подложка/элементы)
     let dragVeto = false; // хендлер вернул false на "start" — жест остаётся панорамой
@@ -352,6 +374,7 @@
     svg.addEventListener("pointerdown", (e) => {
       if (e.pointerType === "pen") armPen();
       else if (e.pointerType === "touch" && penActive) return; // ладонь при работе стилусом
+      interacted = true;
       stopMotion(); // новое касание ловит докатывающийся вид на месте
       panTrail = [];
       svg.setPointerCapture(e.pointerId);
@@ -379,7 +402,15 @@
           }, CFG.longPressMs);
         }
       }
-      if (pts.size === 2) { pinch = pinchInfo(); tapStart = null; clearLongPress(); }
+      if (pts.size === 2) {
+        // ВТОРОЙ ПАЛЕЦ ПОСРЕДИ ТЯГИ (аудит Астры, п. 9): тяга заканчивается там, где сейчас
+        // (как если бы первый палец отпустили), дальше — обычный пинч. Раньше тяга «висела»:
+        // пинч двигал вид, а оставшийся после пинча палец снова тянул объект с непонятного
+        // места. dragVeto — до конца этого жеста одиночный палец только панорамирует.
+        finishDrag();
+        dragVeto = true;
+        pinch = pinchInfo(); tapStart = null; clearLongPress();
+      }
     });
     svg.addEventListener("pointermove", (e) => {
       if (e.pointerType === "pen") armPen(); // в т.ч. ховер без касания — pts его не содержит
@@ -412,6 +443,7 @@
             // мусорный микро-шаг в истории отмены (commit() на "start" уже необратим)
             if (downClient && Math.hypot(e.clientX - downClient.x, e.clientY - downClient.y) < CFG.dragStartPx) return;
             // хендлер может отказаться (вернуть false) — тогда жест панорамирует
+            if (cb.dragStart) cb.dragStart(); // модуль запоминает, с какого шага истории начался жест (для отката)
             const res = dragHandler(0, 0, "start", toWorld((downClient || e).x, (downClient || e).y), { dbl: dblDown });
             if (res === false) { dragVeto = true; userAdjusted = true; view.x -= dx; view.y -= dy; trackPan(e.clientX, e.clientY); applyLive(); }
             else { dragMoved = true; clearLongPress(); dragHandler(dx, dy, "move"); }
@@ -425,6 +457,21 @@
       if (e.pointerType === "pen") disarmPenSoon();
       if (cb.hoverEnd) cb.hoverEnd();
     });
+    // закончить идущую тягу «как отпустили» / оборвать её с откатом
+    function finishDrag() {
+      if (!(dragHandler && dragMoved)) return false;
+      dragMoved = false;
+      if (cb.dragDone) cb.dragDone(false);
+      dragHandler(0, 0, "end");
+      return true;
+    }
+    function abortDrag() {
+      if (!(dragHandler && dragMoved)) return false;
+      dragMoved = false;
+      if (cb.dragDone) cb.dragDone(true);
+      if (cb.dragCancel) cb.dragCancel();
+      return true;
+    }
     function endPointer(e) {
       clearLongPress();
       pts.delete(e.pointerId);
@@ -437,7 +484,7 @@
       else if (pts.size === 0 && (liveT || rescalePending)) apply();
       // cb.dragDone — ПЕРЕД "end": снять живой слой тяги, чтобы обработчик отпускания
       // (запись, перерисовка) работал уже с основной сценой
-      if (dragHandler && dragMoved && pts.size === 0) { dragMoved = false; if (cb.dragDone) cb.dragDone(false); dragHandler(0, 0, "end"); }
+      if (pts.size === 0) finishDrag();
       if (tapStart && tapStart.id === e.pointerId) {
         const dt = Date.now() - tapStart.t;
         if (dt <= CFG.tapMaxMs) {
@@ -471,15 +518,21 @@
       }
     }
     svg.addEventListener("pointerup", endPointer);
+    /* ЖЕСТ ОБОРВАЛА СИСТЕМА (аудит Астры, п. 9): pointercancel приходит, когда браузер забирает
+       касание себе (входящий звонок, системный жест, жест «назад», прокрутка страницы). Раньше
+       тяга оставалась полусделанной: копия объекта висела поверх холста, gestureBusy() оставался
+       true, данные в памяти были сдвинуты, а на диск ничего не ушло. Теперь — снять слои тяги
+       (dragDone(true)) и сообщить модулю (dragCancel), он откатывает правку к началу жеста. */
     svg.addEventListener("pointercancel", (e) => {
-      clearLongPress(); pts.delete(e.pointerId); pinch = null; tapStart = null;
+      clearLongPress(); pts.delete(e.pointerId); pinch = null; tapStart = null; panTrail = [];
+      abortDrag();
       if (pts.size === 0 && (liveT || rescalePending)) apply();
     });
 
     svg.addEventListener("wheel", (e) => {
       e.preventDefault();
       stopMotion();
-      userAdjusted = true;
+      userAdjusted = true; interacted = true;
       const k = e.deltaY > 0 ? 1.12 : 1 / 1.12;
       const wc = toWorld(e.clientX, e.clientY);
       view.w *= k; view.h *= k;
@@ -540,7 +593,7 @@
     const settleUntil = Date.now() + 3000;
     function resize() { // подгон пропорций viewBox под контейнер (или полный re-fit во время «устаканивания»)
       measureBox(); // RO сработал — размер реально изменился, освежаем кэш (единая точка свежести cw/ch)
-      if (lastFit && Date.now() < settleUntil) { fit(lastFit.bbox, lastFit.padRatio); return; }
+      if (lastFit && Date.now() < settleUntil && !interacted) { fit(lastFit.bbox, lastFit.padRatio); return; }
       const aspect = ch > 0 ? cw / ch : 1.5;
       const cy = view.y + view.h / 2;
       view.h = view.w / aspect;
@@ -579,6 +632,7 @@
         if (cb.viewChanged) cb.viewChanged();
       },
       userAdjustedView: () => userAdjusted, // юзер сам зумил/панорамировал (авто-refit больше не перебивает)
+      userInteracted: () => interacted,     // юзер уже касался холста — автоподгоны первых секунд не трогают вид
       onTap: (fn) => { cb.tap = fn; },
       onDblTap: (fn) => { cb.dbl = fn; }, // (worldPt, e) → true, если двойной тап обработан (зум не делать)
       onViewChanged: (fn) => { cb.viewChanged = fn; },
@@ -590,6 +644,8 @@
       // смена обработчика посреди тяги: "end" прежнему уже не придёт — снимаем его слои сами
       setDragHandler: (fn) => { if (dragMoved && cb.dragDone) cb.dragDone(true); dragHandler = fn || null; dragMoved = false; },
       onDragDone: (fn) => { cb.dragDone = fn; }, // (aborted) — тяга закончилась или оборвана
+      onDragStart: (fn) => { cb.dragStart = fn; },   // перед "start" обработчика тяги
+      onDragCancel: (fn) => { cb.dragCancel = fn; }, // тягу оборвала система (pointercancel) — откатить
       destroy: () => { stopMotion(); clearTimeout(commitTimer); if (ro) ro.disconnect(); if (wrap.parentNode) wrap.parentNode.removeChild(wrap); }
     };
   }
