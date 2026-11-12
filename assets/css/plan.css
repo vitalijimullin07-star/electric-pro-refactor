@@ -80,6 +80,36 @@ body[data-visual-mode="day"] .ep-plan-newfield input[type="number"] {
   border: 0; background: rgba(255, 255, 255, .07); color: var(--muted, #cbd5e1);
   width: 40px; height: 40px; border-radius: 10px; cursor: pointer; flex: none;
 }
+/* включённый переключатель шапки (📄 бумажный вид, 1:1): раньше состояния не было видно вовсе */
+.ep-plan-mini.on { background: var(--accent, #22c55e); color: #06121f; box-shadow: inset 0 -3px 0 rgba(6, 18, 31, .55); }
+/* — шапка: название проекта видно всегда (аудит Астры, п. 15). Если шапке не хватает ширины,
+   второстепенные кнопки уходят в меню ⋮ (класс is-narrow ставит plan-mount.js syncTopNarrow —
+   меряет саму шапку, а не окно) — те же кнопки, меняется только раскладка — */
+.ep-plan-top { position: relative; }
+.ep-plan-titlebtn { flex: 0 1 auto; min-width: 0; max-width: 100%; padding: 4px 2px; border: 0; background: none; cursor: pointer; text-align: left; overflow: hidden; }
+.ep-plan-titlebtn b { display: block; }
+.ep-plan-topx { display: flex; align-items: center; gap: 10px; flex: none; }
+.ep-plan-xlbl { display: none; }
+.ep-plan-topxbtn { display: none; }
+.ep-plan-top.is-narrow { gap: 6px; }
+.ep-plan-top.is-narrow .ep-plan-backbtn { padding-left: 12px; padding-right: 12px; }
+.ep-plan-top.is-narrow .ep-plan-backtxt { display: none; }
+.ep-plan-top.is-narrow .ep-plan-topxbtn { display: block; }
+.ep-plan-top.is-narrow .ep-plan-topx {
+  display: none; position: absolute; right: 0; top: calc(100% + 6px); z-index: 40;
+  flex-direction: column; align-items: stretch; gap: 4px; padding: 8px; min-width: 240px; border-radius: 12px;
+  background: rgb(var(--card-bg-rgb, 15, 23, 42)); border: 1px solid rgba(255, 255, 255, .14); box-shadow: 0 12px 30px rgba(0, 0, 0, .4);
+}
+.ep-plan-top.is-narrow.is-xopen .ep-plan-topx { display: flex; }
+.ep-plan-top.is-narrow.is-xopen .ep-plan-topxbtn { background: var(--accent, #22c55e); color: #06121f; }
+.ep-plan-top.is-narrow .ep-plan-topx .ep-plan-mini {
+  width: auto; height: 42px; display: flex; align-items: center; gap: 12px; padding: 0 12px;
+  font-size: 16px; color: var(--text, #e8eef7); text-align: left;
+}
+.ep-plan-top.is-narrow .ep-plan-topx .ep-plan-mini.on { color: #06121f; }
+.ep-plan-top.is-narrow .ep-plan-topx .ep-plan-xlbl { display: inline; font: 600 14px system-ui; }
+body[data-visual-mode="day"] .ep-plan-top.is-narrow .ep-plan-topx { background: #fff; border-color: #dbe3ee; box-shadow: 0 12px 30px rgba(15, 23, 42, .18); }
+body[data-visual-mode="day"] .ep-plan-top.is-narrow .ep-plan-topx .ep-plan-mini:not(.on) { color: #0f172a; }
 /* «‹ Назад» в шапке под-вида шторки — та же кнопка, но с ТЕКСТОМ: у .ep-plan-mini
    жёсткие 40px под квадратную иконку, и подпись ломалась на две строки (тот же случай,
    что уже чинили у «✎ Этажи» и «⟳ Обновить») */
@@ -276,9 +306,19 @@ body[data-visual-mode="day"] .ep-plan-item-main { color: #0f172a; }
 }
 .ep-plan-gtab.on { background: var(--accent, #38bdf8); border-color: transparent; color: #06121f; }
 body[data-visual-mode="day"] .ep-plan-gtab { background: #fff; border-color: #cbd5e1; color: #475569; }
-body[data-visual-mode="day"] .ep-plan-gtab.on { background: var(--accent, #0284c7); color: #fff; border-color: transparent; }
+/* текст активной вкладки — тёмный, как ночью: белый на стандартном зелёном давал контраст
+   около 2,3:1 (аудит Астры, п. 18) */
+body[data-visual-mode="day"] .ep-plan-gtab.on { background: var(--accent, #22c55e); color: #06121f; border-color: transparent; }
 .ep-plan-tbtn[hidden], .ep-plan-modesep[hidden] { display: none; }
 .ep-plan-tbtn.on { background: var(--accent, #38bdf8); border-color: transparent; color: #06121f; }
+/* Активный инструмент в ДНЕВНОЙ теме (аудит Астры, п. 14): дневные правила выше
+   (body[data-visual-mode="day"] .ep-plan-tbtn / .ep-plan-qbtn) специфичнее, чем «.on», и
+   перекрывали подсветку — выбранный инструмент выглядел как остальные. Плюс признак НЕ только
+   цветом: полоска снизу (форма — видна при любой палитре), а для экранного диктора —
+   aria-pressed (plan-rooms.js setMode, plan-mount.js applyToolGroup). */
+body[data-visual-mode="day"] .ep-plan-tbtn.on,
+body[data-visual-mode="day"] .ep-plan-qbtn.on { background: var(--accent, #22c55e); border-color: transparent; color: #06121f; }
+.ep-plan-tbtn.on, .ep-plan-qbtn.on, .ep-plan-gtab.on { box-shadow: inset 0 -3px 0 rgba(6, 18, 31, .55); }
 .ep-plan-modehint { font: 500 12px system-ui; color: var(--muted, #94a3b8); padding: 0 2px; }
 .ep-plan-modehint.ep-plan-warnhint { color: #f59e0b; }
 /* список «Без трассы»: какие именно точки не построились и почему (шторка 🧵 Трассы) */
@@ -1215,6 +1255,8 @@ body[data-visual-mode="day"] .ep-plan-hatchln { stroke: rgba(15, 23, 42, .55); }
 .ep-plan.is-paper .ep-plan-hatchln { stroke: rgba(15, 23, 42, .55); }
 /* ручки выбранной комнаты: тяни угол — форма, тяни стену — сдвиг */
 .ep-plan-roomhandle { fill: #38bdf8; stroke: #fff; stroke-width: 1; opacity: .95; }
+/* режим «Перенести комнату»: пунктир по наружному контуру вместо ручек углов */
+.ep-plan-roommove { stroke: var(--accent, #22c55e); opacity: .95; pointer-events: none; }
 /* ГОСТ-символы: линии цветом линии/слоя, читаемая толщина */
 .ep-plan-gost { fill: none; }
 .ep-plan-gost text { font-family: system-ui; font-weight: 700; }

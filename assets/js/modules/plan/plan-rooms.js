@@ -158,7 +158,7 @@
     const c = core();
     const dyn = QB.mru;
     const pinned = QB.pinned.filter((m) => dyn.indexOf(m) === -1);
-    const toolBtn = (id) => `<button type="button" class="ep-plan-qbtn ep-clickable${R.mode === id ? " on" : ""}" data-plan-mode="${id}" aria-label="${esc(QB_LABELS[id] || id)}">${QB_TOOLS[id]}</button>`;
+    const toolBtn = (id) => `<button type="button" class="ep-plan-qbtn ep-clickable${R.mode === id ? " on" : ""}" data-plan-mode="${id}" aria-pressed="${R.mode === id ? "true" : "false"}" aria-label="${esc(QB_LABELS[id] || id)}">${QB_TOOLS[id]}</button>`;
     qb.innerHTML = `
       <div class="ep-plan-qb-top">
         <button type="button" class="ep-plan-qb-mini ep-clickable" data-plan-undo aria-label="Отменить" title="Назад по изменениям" ${c.canUndo() ? "" : "disabled"}>《</button>
@@ -223,7 +223,17 @@
     const k = R.canvas.cmPerPx(), o = R.canvas.overscan ? R.canvas.overscan() : { x: 0, y: 0 };
     return v.x - o.x * k >= w.x0 && v.y - o.y * k >= w.y0 && v.x + v.w + o.x * k <= w.x1 && v.y + v.h + o.y * k <= w.y1;
   }
-  function ui() { return { cull: cullWindow(), montage: !!R.montage, selectedRoomId: R.selectedRoomId, draft: R.draft, ruler: R.ruler, beamDraft: R.beamDraft, voidDraft: R.voidDraft, soloCircuit: R.soloCircuit, guideDraft: R.guideDraft, guideMode: R.mode === "guide", selectedDimId: R.selectedDimId }; }
+  function ui() { return { cull: cullWindow(), montage: !!R.montage, selectedRoomId: R.selectedRoomId, moveRoom: R.mode === "movroom", draft: R.draft, ruler: R.ruler, beamDraft: R.beamDraft, voidDraft: R.voidDraft, soloCircuit: R.soloCircuit, guideDraft: R.guideDraft, guideMode: R.mode === "guide", selectedDimId: R.selectedDimId }; }
+  // Видно ли объект на плане прямо сейчас — ТО ЖЕ правило, что у рисования (EP.Plan.Render.shown):
+  // выключенный слой, скрытая линия, режим монтажника. Хит-тесты всех модулей спрашивают
+  // здесь — по невидимому объекту тап не попадает (аудит Астры, п. 12).
+  function shownOnPlan(kind, obj) {
+    const RD = EP.Plan.Render, p = core().project;
+    if (!RD || !RD.shown || !p) return true;
+    return RD.shown(kind, p, obj || null, { soloCircuit: R.soloCircuit || null, montage: !!R.montage });
+  }
+  // подписи размеров и высот не скрыты LOD отдаления — тот же порог, что у рендера
+  const lodDimsAt = (k) => k <= ((EP.Plan.Render && EP.Plan.Render.CFG && EP.Plan.Render.CFG.lodDimK) || 3);
   // solo линии QF (изоляция на плане): тап по линии в шторке 🧵 Трассы — только она ярко,
   // остальные приглушены. Повторный тап по той же линии — снять solo. Не персистится.
   function setSoloCircuit(id) { R.soloCircuit = (R.soloCircuit === id) ? null : (id || null); renderScene(); }
@@ -321,7 +331,12 @@
     R.calib = { on: false, a: null, b: null };
     R.selectedBeam = null; R.selectedVoid = null; R.selectedRoute = null; R.selectedRouteTap = null; R.mergeFirst = null; R.mergePending = null;
     setMove(false);
-    document.querySelectorAll("[data-plan-mode]").forEach((b) => b.classList.toggle("on", b.getAttribute("data-plan-mode") === mode));
+    // активный инструмент: класс (цвет + полоска) и aria-pressed — состояние не только цветом (п. 14)
+    document.querySelectorAll("[data-plan-mode]").forEach((b) => {
+      const on = b.getAttribute("data-plan-mode") === mode;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
     qbTrack(mode); // запомнить как «последний использованный» + перерисовать панель быстрого доступа
     syncQuickbarVisibility();
     if (mode === "underlay") sheetUnderlay();
@@ -679,15 +694,17 @@
     if (!p || R.mode !== "view" || !R.canvas || !EP.Plan.Elements) return false;
     const k = R.canvas.cmPerPx();
     const tol = 16 * k;
-    const dimsOn = ((p.layers || []).find((l) => l.id === "dims") || {}).visible !== false;
+    // цепочки видны: слой «Размеры» включён и это не режим монтажника (то же правило, что у рисования)
+    const dimsOn = shownOnPlan("dims");
     // LOD: на отдалении подписи размеров/высот СКРЫТЫ (plan-render.js CFG.lodDimK) —
     // хит-тест по невидимой цифре не должен срабатывать (видимая цифра = зона тапа)
-    const lodDims = k <= ((EP.Plan.Render && EP.Plan.Render.CFG && EP.Plan.Render.CFG.lodDimK) || 3);
+    const lodDims = lodDimsAt(k);
     let best = null;
     const consider = (elemId, d) => { if (elemId && d < tol && (!best || d < best.d)) best = { elemId, d }; };
-    // подписи высоты h=NNN под маркерами (видимы, пока не сработал LOD)
+    // подписи высоты h=NNN под маркерами (видимы, пока не сработал LOD и видна сама точка)
     if (lodDims) (p.elements || []).forEach((e) => {
       if (!e.wallId || e.type === "junction" || e.height == null) return;
+      if (!shownOnPlan("elem", e)) return;
       const dp = G().elemDrawPoint(p, e); if (!dp) return;
       const lp = hLabelPos(p, e, k); if (!lp) return;
       consider(e.id, Math.hypot(w.x - lp.x, w.y - lp.y));
@@ -1543,8 +1560,11 @@
         // ТОЧКА ЗАХВАТА (аудит Астры, п. 11): раньше проём вставал центром под палец — взял
         // дверь у края, повёл на 20 см, а она уехала на 55. Держим смещение пальца от центра
         // вдоль стены; на другой стене — центр под пальцем (там своё направление отсчёта)
+        // Поперёк стены — тоже: дверь теперь берут и за створку/дугу (п. 11), это до метра от
+        // стены, и без поправки палец на кончике створки «не видел» бы стену своей двери
         const w0 = G().wallById(p, op.wallId);
-        grab = { wallId: op.wallId, d: w0 ? G().offsetOnWall(w0, start) - (op.offset + op.width / 2) : 0 };
+        const t0 = w0 ? G().offsetOnWall(w0, start) : 0, ax = w0 ? G().pointAtOffset(w0, t0) : start;
+        grab = { wallId: op.wallId, d: w0 ? t0 - (op.offset + op.width / 2) : 0, v: { x: start.x - ax.x, y: start.y - ax.y } };
         c.commit();
         liveBegin(wallScope(op.wallId));
         return;
@@ -1552,12 +1572,19 @@
       if (!cur) return;
       cur.x += dx; cur.y += dy;
       const snapPx = (EL.CFG.wallSnapPx || 26) * k;
-      const hitW = G().wallAt(p, cur, snapPx);
+      // своя стена — по точке на её оси под пальцем (палец минус смещение захвата поперёк
+      // стены); другая стена — та, к которой поднесли сам палец (центр проёма под пальцем)
+      const probe = { x: cur.x - grab.v.x, y: cur.y - grab.v.y };
+      let hitW = G().wallAt(p, probe, snapPx), at = probe;
+      if (!hitW || hitW.wall.id !== grab.wallId) {
+        const hCur = G().wallAt(p, cur, snapPx);
+        if (hCur) { hitW = hCur; at = cur; }
+      }
       if (hitW) {
         const wl = hitW.wall;
         // место — свободное от других проёмов этой стены и общей стены соседа (п. 13): упёрся
         // в соседний проём — встаёт вплотную; на стене нет места вовсе — проём остаётся, где был
-        const center = G().offsetOnWall(wl, cur) - (wl.id === grab.wallId ? grab.d : 0);
+        const center = G().offsetOnWall(wl, at) - (wl.id === grab.wallId ? grab.d : 0);
         const fit = G().fitOpening(p, wl, op.width, center, op.id);
         if (fit != null) {
           if (wl.id !== op.wallId) {
@@ -1593,6 +1620,7 @@
      смещение размерной линии), ровно как «вынести размер» на чертеже. На расчёт и
      трассировку не влияет — это оформление чертежа. */
   function dimAt(w) {
+    if (!shownOnPlan("dims")) return null; // слой «Размеры» выключен / режим монтажника — их не видно
     const p = G().floorScoped(core().project);
     const k = R.canvas.cmPerPx();
     let best = null;
@@ -1634,8 +1662,9 @@
      при зуме. На расчёт/трассировку не влияют — это оформление чертежа. */
   function chainAt(w) {
     const p = G().floorScoped(core().project);
-    if (((p.layers || []).find((l) => l.id === "dims") || {}).visible === false) return null;
     const k = R.canvas.cmPerPx();
+    // цепочку видно: слой «Размеры» включён, не режим монтажника и её не скрыл LOD отдаления
+    if (!shownOnPlan("dims") || !lodDimsAt(k)) return null;
     let best = null;
     (p.rooms || []).forEach((room) => {
       if ((room.points || []).length < 3) return;
@@ -1659,10 +1688,11 @@
     const p = G().floorScoped(core().project);
     const k = R.canvas.cmPerPx();
     // подпись скрыта LOD'ом — по невидимой цифре не тянем (тот же гейт, что у двойного тапа)
-    if (k > ((EP.Plan.Render && EP.Plan.Render.CFG && EP.Plan.Render.CFG.lodDimK) || 3)) return null;
+    if (!lodDimsAt(k)) return null;
     let best = null;
     (p.elements || []).forEach((e) => {
       if (!e.wallId || e.type === "junction" || e.height == null) return;
+      if (!shownOnPlan("elem", e)) return; // точку не видно — и её подпись высоты не нарисована
       const lp = hLabelPos(p, e, k); if (!lp) return;
       const d = Math.hypot(w.x - lp.x, w.y - lp.y);
       if (d <= 18 * k && (!best || d < best.d)) best = { d, el: e };
@@ -2156,7 +2186,9 @@
     return d && EP.Plan.Bundle ? EP.Plan.Bundle.toPhysical(d, rt.points, w, tol) : w;
   }
   function routeAt(p, w, maxD) {
-    return EP.Plan.Routes && EP.Plan.Routes.routeAt ? EP.Plan.Routes.routeAt(p, w, maxD, (rt) => { const d = routeDisplay(rt.id); return d ? d.pts : null; }) : null;
+    return EP.Plan.Routes && EP.Plan.Routes.routeAt ? EP.Plan.Routes.routeAt(p, w, maxD,
+      (rt) => { const d = routeDisplay(rt.id); return d ? d.pts : null; },
+      (rt) => shownOnPlan("route", rt)) : null; // трасса скрытой линии/выключенного слоя тап не ловит
   }
   function sheetRoute(rt, tapPos) {
     const p = core().project;
@@ -3270,6 +3302,7 @@
     selectedVoidId: () => R.selectedVoid || null,
     selectedRouteId: () => R.selectedRoute || null,
     soloCircuitId: () => R.soloCircuit || null,
+    shownOnPlan,
     setSoloCircuit, clearSolo, setMontage, montageOn: () => !!R.montage,
     canvasCmPerPx: () => (R.canvas ? R.canvas.cmPerPx() : 1),
     // для plan-furniture.js: своего доступа к канвасу у модулей слоёв нет (инвариант —

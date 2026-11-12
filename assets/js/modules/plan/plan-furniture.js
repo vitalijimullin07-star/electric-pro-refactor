@@ -145,6 +145,9 @@
     }));
   }
   function hitAt(pt) {
+    // слой «Мебель» выключен или режим монтажника — мебели не видно, тап её не ловит (аудит Астры, п. 12)
+    const R = rooms();
+    if (R && R.shownOnPlan && !R.shownOnPlan("furn")) return null;
     const p = G().floorScoped(core().project);
     const list = (p.appliances || []).slice().reverse(); // сверху лежащий — первым
     return list.find((a) => G().pointInPolygon(pt, corners(a))) || null;

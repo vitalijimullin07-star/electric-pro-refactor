@@ -432,8 +432,12 @@
   // ---------- попадание / выбор ----------
   function hitAt(w, maxCm) {
     const p = G().floorScoped(core().project); // хит-тест — только по видимому (активному) этажу
+    // ...и только по тому, что сейчас нарисовано: точку на выключенном слое или на скрытой
+    // линии не видно — тап по её месту достаётся стене/комнате под ней (аудит Астры, п. 12)
+    const R = rooms(), vis = R && R.shownOnPlan ? R.shownOnPlan : null;
     let best = null;
     p.elements.forEach((el) => {
+      if (vis && !vis("elem", el)) return;
       const pt = G().elemDrawPoint(p, el); // тап должен попадать по ВИДИМОМУ маркеру, а не по оси стены
       if (!pt) return;
       const d = G().dist(w, pt);
@@ -443,13 +447,11 @@
       const d = G().dist(w, pn);
       if (d <= maxCm && (!best || d < best.d)) best = { d, panel: pn };
     });
+    // проём — по НАРИСОВАННОМУ: вырез в стене, полотно и дуга двери (G.openingHitDist — та же
+    // геометрия, что у рисования). Раньше — круг вокруг середины: тап по створке промахивался
     (p.openings || []).forEach((op) => {
-      const wall = G().wallById(p, op.wallId);
-      if (!wall) return;
-      const mid = G().pointAtOffset(wall, op.offset + op.width / 2);
-      const d = G().dist(w, mid);
-      const r = Math.max(maxCm, op.width / 2);
-      if (d <= r && (!best || d < best.d)) best = { d, opening: op };
+      const d = G().openingHitDist(p, op, w);
+      if (d != null && d <= maxCm && (!best || d < best.d)) best = { d, opening: op };
     });
     return best;
   }

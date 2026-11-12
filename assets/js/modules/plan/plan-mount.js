@@ -23,7 +23,7 @@
     syncing: "Смотрю облако…",
     syncDone: (n) => (n ? `Список обновлён: проектов ${n}` : "Список обновлён"),
     syncNone: "Облако недоступно — нужен вход и интернет",
-    back: "‹ Проекты",
+    back: "‹ Проекты", backArrow: "‹", backText: " Проекты", backLabel: "К списку проектов",
     rename: "✎",
     meta: "ℹ️", metaTitle: "О проекте (для титульного листа PDF)",
     metaClient: "Заказчик", metaAddress: "Адрес объекта",
@@ -129,17 +129,18 @@
     if (!p) return renderList(root);
     root.innerHTML = `<div class="ep-plan${V.ctrlsOn ? "" : " is-ctrls-collapsed"}">
       <div class="ep-plan-top">
-        <button type="button" class="btn btn-ghost ep-clickable" data-plan-back>${T.back}</button>
-        <div class="ep-plan-title">
-          <b id="ep-plan-title-text">${esc(p.name)}</b>
-          <button type="button" class="ep-plan-mini ep-clickable" data-plan-rename aria-label="Переименовать проект">${T.rename}</button>
-          <button type="button" class="ep-plan-mini ep-clickable" data-plan-meta aria-label="${T.metaTitle}" title="${T.metaTitle}">${T.meta}</button>
+        <button type="button" class="btn btn-ghost ep-clickable ep-plan-backbtn" data-plan-back aria-label="${T.backLabel}">${T.backArrow}<span class="ep-plan-backtxt">${T.backText}</span></button>
+        <div class="ep-plan-title">${titleHtml(p)}</div>
+        <div class="ep-plan-topx" id="ep-plan-topx">
+          <button type="button" class="ep-plan-mini ep-clickable" data-plan-rename aria-label="Переименовать проект">${T.rename}<span class="ep-plan-xlbl">Переименовать</span></button>
+          <button type="button" class="ep-plan-mini ep-clickable" data-plan-meta aria-label="${T.metaTitle}" title="${T.metaTitle}">${T.meta}<span class="ep-plan-xlbl">О проекте</span></button>
+          <button type="button" class="ep-plan-mini ep-clickable" data-plan-3d aria-label="3D-прогулка по квартире" title="Пройтись по квартире от первого лица: стены, проёмы, точки и трассы в 3D">🚶<span class="ep-plan-xlbl">3D-прогулка</span></button>
+          <button type="button" class="ep-plan-mini ep-clickable" data-fb-open aria-label="Замечания и баги (чат)" title="Записать замечание/баг — потом скопировать и отправить">💬<span class="ep-plan-xlbl">Замечания (чат)</span></button>
+          <button type="button" class="ep-plan-mini ep-clickable${paperOn() ? " on" : ""}" data-plan-paper aria-label="Бумажный режим холста" title="Холст как печатный лист: белый фон, тёмные линии — видно, как выйдет из принтера">📄<span class="ep-plan-xlbl">Бумажный вид</span></button>
+          <button type="button" class="ep-plan-mini ep-clickable${p.settings.realScale ? " on" : ""}" data-plan-realscale aria-pressed="${p.settings.realScale ? "true" : "false"}" aria-label="Значки в реальном размере (1:1)" title="Значки в реальном размере, мм — рамки 84/155/226/300/368 мм (1:1)">1:1<span class="ep-plan-xlbl">Реальный размер значков</span></button>
         </div>
+        <button type="button" class="ep-plan-mini ep-clickable ep-plan-topxbtn" data-plan-topx aria-label="Ещё: переименовать, о проекте, 3D, бумажный вид, 1:1" aria-expanded="false" aria-controls="ep-plan-topx">⋮</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-plan-full aria-label="Во весь экран">⤢</button>
-        <button type="button" class="ep-plan-mini ep-clickable" data-plan-3d aria-label="3D-прогулка по квартире" title="Пройтись по квартире от первого лица: стены, проёмы, точки и трассы в 3D">🚶</button>
-        <button type="button" class="ep-plan-mini ep-clickable" data-fb-open aria-label="Замечания и баги (чат)" title="Записать замечание/баг — потом скопировать и отправить">💬</button>
-        <button type="button" class="ep-plan-mini ep-clickable${paperOn() ? " on" : ""}" data-plan-paper aria-label="Бумажный режим холста" title="Холст как печатный лист: белый фон, тёмные линии — видно, как выйдет из принтера">📄</button>
-        <button type="button" class="ep-plan-mini ep-clickable${p.settings.realScale ? " on" : ""}" data-plan-realscale aria-label="Значки в реальном размере (1:1)" title="Значки в реальном размере, мм — рамки 84/155/226/300/368 мм (1:1)">1:1</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-plan-ctrls aria-label="${V.ctrlsOn ? "Свернуть панель" : "Развернуть панель"}" title="Свернуть/развернуть панель инструментов">${V.ctrlsOn ? "︿" : "﹀"}</button>
       </div>
       <div class="ep-plan-compactrow">
@@ -203,6 +204,7 @@
         <button type="button" class="ep-plan-sheetbtn ep-clickable" id="ep-plan-sheetbtn" data-sheet-collapse hidden aria-label="Свернуть панель вниз">⌄</button>
       </div>
     </div>`;
+    watchTop();          // название проекта видно всегда: узкая шапка прячет второстепенное в ⋮
     syncPlanBoxHeight(); // ДО mountCanvas() — холст должен измерить УЖЕ верную высоту .ep-plan
     mountCanvas();
     refreshToolbar();
@@ -210,6 +212,48 @@
     applyPaper(root);     // бумажный режим холста — выбор устройства, переживает переоткрытие
     armBack(); // ставим «ловушку» для аппаратной кнопки Назад
     setNavHidden(true); // редактор уже имеет свою «‹ Проекты» — общая шапка не нужна
+  }
+
+  // Название проекта — кнопка: тап по нему = переименовать (на узкой шапке ✎ уходит в меню ⋮)
+  function titleHtml(p) {
+    return `<button type="button" class="ep-plan-titlebtn ep-clickable" data-plan-rename title="Переименовать" aria-label="Проект «${esc(p.name)}» — переименовать"><b id="ep-plan-title-text">${esc(p.name)}</b></button>`;
+  }
+  /* НАЗВАНИЕ ПРОЕКТА ВИДНО ВСЕГДА (аудит Астры, п. 15). На телефоне шесть кнопок справа сжимали
+     название до 0 px — не видно, какой проект открыт. Если шапке не хватает ширины на всё,
+     второстепенные кнопки (переименовать, о проекте, 3D, чат, бумажный вид, 1:1) уходят в меню ⋮:
+     это те же самые кнопки, меняется только раскладка (класс is-narrow, plan.css). На экране
+     остаются «‹», название, ⋮, «во весь экран» и «свернуть панель». Мерим саму шапку, а не окно:
+     на компьютере рядом стоит боковое меню, и окно широкое, а шапка — нет. clientWidth — в
+     CSS-пикселях шапки, как и размеры кнопок (масштаб интерфейса на сравнение не влияет). */
+  const TOP_NARROW_PX = 720;
+  let topRO = null;
+  const topBar = () => { const r = root(); return r ? r.querySelector(".ep-plan-top") : null; };
+  function closeTopX(top) {
+    const t = top || topBar(); if (!t || !t.classList.contains("is-xopen")) return;
+    t.classList.remove("is-xopen");
+    const b = t.querySelector("[data-plan-topx]"); if (b) b.setAttribute("aria-expanded", "false");
+  }
+  function toggleTopX() {
+    const t = topBar(); if (!t) return;
+    const open = !t.classList.contains("is-xopen");
+    t.classList.toggle("is-xopen", open);
+    const b = t.querySelector("[data-plan-topx]"); if (b) b.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+  function syncTopNarrow() {
+    const top = topBar(); if (!top) return;
+    const w = top.clientWidth;
+    if (!(w > 0)) return; // шапка ещё не разложена (скрытый контейнер) — решим на следующем замере
+    const narrow = w < TOP_NARROW_PX;
+    if (top.classList.contains("is-narrow") === narrow) return;
+    top.classList.toggle("is-narrow", narrow);
+    if (!narrow) closeTopX(top);
+  }
+  function watchTop() {
+    if (topRO) { topRO.disconnect(); topRO = null; }
+    const top = topBar(); if (!top) return;
+    syncTopNarrow();
+    // ширина шапки меняется не только с окном: боковое меню, «во весь экран», поворот экрана
+    if (typeof ResizeObserver === "function") { topRO = new ResizeObserver(() => syncTopNarrow()); topRO.observe(top); }
   }
 
   // Высота .ep-plan — ЯВНО измеряется через JS (window.innerHeight/visualViewport),
@@ -306,7 +350,11 @@
     r.querySelectorAll("[data-plan-grp]").forEach((n) => {
       n.hidden = (n.getAttribute("data-plan-grp") || "").split(/\s+/).indexOf(V.group) === -1;
     });
-    r.querySelectorAll("[data-plan-group]").forEach((b) => b.classList.toggle("on", b.getAttribute("data-plan-group") === V.group));
+    r.querySelectorAll("[data-plan-group]").forEach((b) => {
+      const on = b.getAttribute("data-plan-group") === V.group;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
   }
   function setToolGroup(root, g) {
     if (g !== "build" && g !== "elec") return;
@@ -351,7 +399,7 @@
     const box = r.querySelector(".ep-plan");
     if (box) box.classList.toggle("is-paper", paperOn());
     const btn = r.querySelector("[data-plan-paper]");
-    if (btn) btn.classList.toggle("on", paperOn());
+    if (btn) { btn.classList.toggle("on", paperOn()); btn.setAttribute("aria-pressed", paperOn() ? "true" : "false"); }
   }
   function toggleRealScale(root) {
     const c = core(), p = c.project; if (!p) return;
@@ -360,7 +408,7 @@
     p.settings.realScale = on;
     c.persist("realscale");
     const btn = (root || document).querySelector("[data-plan-realscale]");
-    if (btn) btn.classList.toggle("on", on);
+    if (btn) { btn.classList.toggle("on", on); btn.setAttribute("aria-pressed", on ? "true" : "false"); }
     if (on && V.canvas && V.canvas.setCmPerPx && EP.Plan.Render.CM_PER_PX_1TO1) {
       V.canvas.setCmPerPx(EP.Plan.Render.CM_PER_PX_1TO1);
     }
@@ -534,7 +582,7 @@
     const box = $(".ep-plan-title"); if (!box || box.querySelector("input")) return;
     box.innerHTML = `<input id="ep-plan-rn" type="text" value="${esc(p.name)}" maxlength="80">`;
     const inp = $("#ep-plan-rn");
-    const done = () => { core().renameProject(inp.value); const t = $(".ep-plan-title"); if (t) t.innerHTML = `<b id="ep-plan-title-text">${esc(core().project.name)}</b><button type="button" class="ep-plan-mini ep-clickable" data-plan-rename aria-label="Переименовать проект">${T.rename}</button>`; };
+    const done = () => { core().renameProject(inp.value); const t = $(".ep-plan-title"); if (t) t.innerHTML = titleHtml(core().project); };
     inp.addEventListener("keydown", (e) => { if (e.key === "Enter") inp.blur(); });
     inp.addEventListener("blur", done);
     inp.focus(); inp.select();
@@ -652,6 +700,10 @@
     const moreMenu = document.getElementById("ep-plan-moremenu");
     if (moreMenu && !moreMenu.hidden && !t.closest("[data-plan-more]")) moreMenu.hidden = true;
     if ((el = t.closest("[data-plan-more]"))) return toggleMoreMenu(el);
+    // меню ⋮ узкой шапки — так же: любой клик, кроме самой кнопки, его закрывает (пункт меню
+    // при этом срабатывает ниже как обычно)
+    if (!t.closest("[data-plan-topx]")) closeTopX();
+    if (t.closest("[data-plan-topx]")) return toggleTopX();
     if ((el = t.closest("[data-plan-group]"))) return setToolGroup(r, el.getAttribute("data-plan-group"));
     if ((el = t.closest("[data-plan-rt]"))) return pickNewRoute(r, el.getAttribute("data-plan-rt"));
     if ((el = t.closest("[data-plan-mt]"))) return pickNewMount(r, el.getAttribute("data-plan-mt"));

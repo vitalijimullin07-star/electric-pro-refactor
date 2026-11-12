@@ -7866,7 +7866,10 @@ test("фото: deleteProject чистит кэш фото своего прое
       R0.setMontage(false); ok(!R0.montageOn(), "выключен");
       ok(/\["work", "В работе ◐"\]/.test(src("plan-elements")) && /function openStatusCard/.test(src("plan-elements")), "статус «в работе» и карточка");
       const r = src("plan-render");
-      ok(/const dimsOn = layerOn\(project, "dims"\) && !montage/.test(r) && /layerOn\(project, "furn"\) && !montage/.test(r), "размеры и мебель скрыты в режиме монтажника");
+      // правило видимости одно на рисование и хит-тесты (SHOWN, аудит Астры п. 12)
+      ok(/dims: \(project, d, view\) => layerOn\(project, "dims"\) && !\(view && view\.montage\)/.test(r) &&
+        /furn: \(project, a, view\) => layerOn\(project, "furn"\) && !\(view && view\.montage\)/.test(r) &&
+        /const dimsOn = shown\("dims", project, null, ui\)/.test(r) && /shown\("furn", project, null, ui\)/.test(r), "размеры и мебель скрыты в режиме монтажника");
       ok(/circDim\(elem\.circuitId\), montage, real\]/.test(r), "режим — в подписи кэша узла точки");
       ok(/hit\.el && R\.montage && EP\.Plan\.Elements\.openStatusCard/.test(src("plan-rooms")), "тап по точке — карточка статуса");
       const m = src("plan-mount");
@@ -10239,6 +10242,28 @@ test("фото: deleteProject чистит кэш фото своего прое
       ok(/\.ep-plan-unfdimL, \.ep-plan-unfdimE \{ pointer-events: none; \}/.test(srcOf("assets/css/plan.css")), "видимые размерные линии развёртки не перехватывают касание значка");
       ok(/stroke: "transparent", "stroke-width": 10 \* ks/.test(u), "у размеров осталась своя прозрачная зона тяги");
     });
+
+    test("холст: движение под порогом старта тяги не теряется — объект не отстаёт от пальца (п. 11)", () => {
+      const env = canvasEnv(800, 400);
+      try {
+        const cv = env.cv; cv.redraw();
+        let sum = 0;
+        cv.setDragHandler((dx, dy, phase) => { if (phase === "move") sum += dx; });
+        const k = cv.cmPerPx();
+        env.svg.fire("pointerdown", { pointerId: 1, clientX: 100, clientY: 100 });
+        // мелкие шаги: первые два — под порогом старта (6 px), тяга начинается на третьем
+        [103, 105, 108, 112, 140].forEach((x) => env.svg.fire("pointermove", { pointerId: 1, clientX: x, clientY: 100 }));
+        env.svg.fire("pointerup", { pointerId: 1, clientX: 140, clientY: 100 });
+        ok(Math.abs(sum - 40 * k) < 1e-6, "объект сдвинулся на все 40 px пальца: " + (sum / k).toFixed(2) + " px (было 35 — первые 5 px терялись)");
+        // пан, если обработчик отказался от жеста, — тоже от точки касания
+        cv.setDragHandler(() => false);
+        const x0 = cv.getView().x;
+        env.svg.fire("pointerdown", { pointerId: 2, clientX: 300, clientY: 100 });
+        [303, 305, 308].forEach((x) => env.svg.fire("pointermove", { pointerId: 2, clientX: x, clientY: 100 }));
+        ok(Math.abs((x0 - cv.getView().x) - 8 * k) < 1e-6, "план под пальцем сдвинулся на все 8 px");
+        env.svg.fire("pointerup", { pointerId: 2, clientX: 308, clientY: 100 });
+      } finally { env.restore(); }
+    });
   }
 
   // ===== 82. Аудит Астры, пакет 3: формы ↔ модель =====
@@ -10393,6 +10418,148 @@ test("фото: deleteProject чистит кэш фото своего прое
       ok(/<div class="ep-plan-projset">\s*<label>\$\{T\.thickProj\}<input id="ep-pr-th"/.test(r), "поле в отдельном блоке, не среди размеров комнаты");
       ok(/Толщину одной стены — в её развёртке/.test(r), "подсказка, где своя толщина одной стены");
       ok(/\.ep-plan-projset \{[^}]*border: 1px dashed/.test(srcOf("assets/css/plan.css")), "блок визуально отделён");
+    });
+  }
+
+  // ===== 83. Аудит Астры, пакет 4: попадание по видимому, активный инструмент, название =====
+  // Дверь выбирается по нарисованной створке/дуге/вырезу; невидимое (выключенный слой, скрытая
+  // линия, режим монтажника) тап не ловит; дверь тянется и за створку; активный инструмент виден
+  // в дневной теме не только цветом; название проекта не сжимается в ноль на телефоне.
+  {
+    const fsx = require("fs"), pathx = require("path");
+    const srcOf = (f) => fsx.readFileSync(pathx.join(__dirname, "..", f), "utf8");
+    // комната 0..400 × 0..300, дверь 90 см на верхней стене (y = 0) с 70 до 160, петли слева,
+    // открывается внутрь комнаты (+y): полотно от (70,0) до (70,90), дуга от (160,0) до (70,90)
+    const doorRoom = () => {
+      const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "Прихожая");
+      const { P } = install({ rooms: [A] });
+      const w0 = G.walls(P.rooms[0])[0];
+      const op = M.newOpening("door", w0.id, 70, 90);
+      op.hinge = "a"; op.flip = 1;
+      EP.Plan.Core.project.openings.push(op);
+      return { P: EP.Plan.Core.project, op, w0 };
+    };
+
+    test("дверь ловится по нарисованному: полотно, дуга, вырез — а не кругом вокруг середины", () => {
+      const { P, op, w0 } = doorRoom();
+      eq(JSON.stringify([w0.a, w0.b]), JSON.stringify([{ x: 0, y: 0 }, { x: 400, y: 0 }]), "верхняя стена слева направо");
+      const sh = G.openingShape(P, op);
+      eq(JSON.stringify([sh.swing.h, sh.swing.far, sh.swing.r, sh.n]), JSON.stringify([{ x: 70, y: 0 }, { x: 160, y: 0 }, 90, { x: -0, y: 1 }]), "створка: петли, второй край, радиус, сторона");
+      const hit = (x, y) => { const h = EP.Plan.Elements.hitAt({ x, y }, 12); return h && h.opening ? h.opening.id : null; };
+      eq(hit(70, 45), op.id, "середина полотна");
+      eq(hit(72, 85), op.id, "конец полотна (тот самый тап из аудита: раньше открывалась комната)");
+      eq(hit(70 + 90 * Math.SQRT1_2, 90 * Math.SQRT1_2), op.id, "дуга открывания");
+      eq(hit(115, 3), op.id, "вырез в стене");
+      eq(hit(100, 30), null, "пол внутри дуги — не дверь (тап достаётся комнате/трассе под ним)");
+      eq(hit(115, -30), null, "по другую сторону стены, где двери не нарисовано (раньше круг 45 см ловил)");
+      // точка у самой двери выигрывает, если тап по ней
+      const s = M.newElement("socket", w0.id, 200, 30);
+      P.elements.push(s);
+      const dp = G.elemDrawPoint(P, s);
+      const h2 = EP.Plan.Elements.hitAt(dp, 12);
+      eq(h2 && h2.el && h2.el.id, s.id, "розетка рядом с дверью берётся тапом по ней");
+      ok(/const sh = G\.openingShape\(project, op\);/.test(srcOf("assets/js/modules/plan/plan-render.js")), "рисование двери — по той же геометрии (G.openingShape)");
+    });
+
+    test("невидимое не ловит тап: выключенный слой, скрытая линия, режим монтажника; в solo — видно", () => {
+      const { P, w0 } = doorRoom();
+      const s = M.newElement("socket", w0.id, 250, 30);
+      P.elements.push(s);
+      const c = M.newCircuit("QF1", "#ef4444"); P.circuits.push(c); s.circuitId = c.id;
+      const at = G.elemDrawPoint(P, s);
+      const el = () => { const h = EP.Plan.Elements.hitAt(at, 12); return h && h.el ? h.el.id : null; };
+      eq(el(), s.id, "видна — ловится");
+      const lp = P.layers.find((l) => l.id === s.layer);
+      lp.visible = false;
+      eq(el(), null, "слой выключен — розетки не видно, тап её не открывает (было: открывал редактор)");
+      lp.visible = true;
+      c.hidden = true;
+      eq(el(), null, "линия скрыта 👁 — точки этой линии тоже не ловятся");
+      EP.Plan.Rooms.setSoloCircuit(c.id);
+      eq(el(), s.id, "в solo скрытые линии снова видны — и ловятся");
+      EP.Plan.Rooms.clearSolo(); c.hidden = false;
+      // трасса: та же логика через общий фильтр
+      const rt = M.newRoute("power", "ceiling", [{ x: 250, y: 40 }, { x: 250, y: 200 }], s.id, null);
+      rt.circuitId = c.id; rt.color = c.color;
+      P.routes.push(rt);
+      const rAt = () => { const h = EP.Plan.Routes.routeAt(P, { x: 252, y: 120 }, 10, null, (r) => EP.Plan.Rooms.shownOnPlan("route", r)); return h ? h.route.id : null; };
+      eq(rAt(), rt.id, "трасса видна — ловится");
+      c.hidden = true; eq(rAt(), null, "скрытая линия — её трасса тап не ловит");
+      c.hidden = false;
+      P.layers.find((l) => l.id === "routes").visible = false; eq(rAt(), null, "слой «Трассы» выключен — тоже");
+      P.layers.find((l) => l.id === "routes").visible = true;
+      // мебель и размеры: слой и режим монтажника
+      const a = M.newAppliance("furn", "sofa", 200, 200, 120, 60); P.appliances.push(a);
+      eq((EP.Plan.Furniture.hitAt({ x: 200, y: 200 }) || {}).id, a.id, "мебель видна — ловится");
+      EP.Plan.Rooms.setMontage(true);
+      eq(EP.Plan.Furniture.hitAt({ x: 200, y: 200 }), null, "режим монтажника прячет мебель — тап её не ловит");
+      eq(EP.Plan.Rooms.shownOnPlan("dims"), false, "и размеры в режиме монтажника не видны");
+      eq(el(), s.id, "а точки в режиме монтажника видны и ловятся");
+      EP.Plan.Rooms.setMontage(false);
+      P.layers.find((l) => l.id === "furn").visible = false;
+      eq(EP.Plan.Furniture.hitAt({ x: 200, y: 200 }), null, "слой «Мебель» выключен — тоже");
+      P.layers.find((l) => l.id === "furn").visible = true;
+      const r = srcOf("assets/js/modules/plan/plan-rooms.js"), rd = srcOf("assets/js/modules/plan/plan-render.js");
+      ok(/function dimAt\(w\) \{\s*if \(!shownOnPlan\("dims"\)\) return null;/.test(r), "свои размеры — только если видны");
+      ok(/if \(!shownOnPlan\("dims"\) \|\| !lodDimsAt\(k\)\) return null;/.test(r), "цепочка — если видна (слой, монтажник, отдаление)");
+      ok((r.match(/if \(!shownOnPlan\("elem", e\)\) return;/g) || []).length === 2, "подпись высоты (тяга и двойной тап) — только у видимой точки");
+      ok(/if \(!shown\("elem", project, elem, ui, circById\)\) return;/.test(rd) && /filter\(\(rt\) => shown\("route", project, rt, ui, circById\)\)/.test(rd), "рисование — по тому же правилу SHOWN");
+    });
+
+    test("дверь тянется и за створку: точка захвата сохраняется вдоль и поперёк стены", () => {
+      const { P, op } = doorRoom();
+      const cv = fakeCanvas();
+      cv.svg.parentNode = fakeNode();
+      const hk = {};
+      Object.assign(cv, {
+        setDragHandler: (fn) => { hk.h = fn; }, onTap() {}, onDblTap() {}, onViewChanged() {}, onViewMoved() {},
+        onHover() {}, onHoverEnd() {}, onLongPress() {},
+        onDragDone: (fn) => { hk.done = fn; }, onDragStart: (fn) => { hk.start = fn; }, onDragCancel: (fn) => { hk.cancel = fn; },
+        panBy() {}, fit() {}, redraw() {}, getView: () => ({ x: -300, y: -300, w: 1600, h: 1200 }), wrap: fakeNode(),
+        overscan: () => ({ x: 0, y: 0 }), userAdjustedView: () => false, isMoving: () => false
+      });
+      EP.Plan.Rooms.attach(cv);
+      try {
+        EP.Plan.Rooms.enableOpeningDrag(op.id);
+        hk.start && hk.start();
+        ok(hk.h(0, 0, "start", { x: 72, y: 85 }, {}) !== false, "взяли за конец створки (раньше жест уходил в пан)");
+        hk.h(20, 0, "move"); hk.h(20, 0, "move"); // палец ведём вдоль стены на 40 см, в 85 см от неё
+        if (hk.done) hk.done(false);
+        hk.h(0, 0, "end");
+        const o2 = EP.Plan.Core.project.openings.find((o) => o.id === op.id);
+        eq(o2.offset, 110, "дверь уехала ровно на 40 см (раньше палец в 85 см от стены её не двигал)");
+        eq(o2.wallId, op.wallId, "и осталась на своей стене");
+      } finally { EP.Plan.Rooms.detach(); }
+      const r = srcOf("assets/js/modules/plan/plan-rooms.js");
+      ok(/const probe = \{ x: cur\.x - grab\.v\.x, y: cur\.y - grab\.v\.y \};/.test(r), "своя стена ищется по точке на оси под пальцем");
+    });
+
+    test("активный инструмент виден в дневной теме и не только цветом; включённые переключатели шапки видны", () => {
+      const css = srcOf("assets/css/plan.css"), r = srcOf("assets/js/modules/plan/plan-rooms.js"), m = srcOf("assets/js/modules/plan/plan-mount.js");
+      ok(/body\[data-visual-mode="day"\] \.ep-plan-tbtn\.on,\s*body\[data-visual-mode="day"\] \.ep-plan-qbtn\.on \{ background: var\(--accent/.test(css),
+        "дневное «.on» специфичнее дневного правила кнопок (было: перекрывалось, активная = как все)");
+      ok(/\.ep-plan-tbtn\.on, \.ep-plan-qbtn\.on, \.ep-plan-gtab\.on \{ box-shadow: inset 0 -3px 0/.test(css), "полоска снизу — признак формы, а не только цвета");
+      ok(/\.ep-plan-mini\.on \{ background: var\(--accent/.test(css), "📄 и 1:1 во включённом состоянии видны (раньше стиля не было вовсе)");
+      ok(!/body\[data-visual-mode="day"\] \.ep-plan-gtab\.on \{[^}]*color: #fff/.test(css), "текст активной вкладки днём не белый на зелёном (контраст ~2,3:1)");
+      ok(/b\.setAttribute\("aria-pressed", on \? "true" : "false"\);/.test(r) && /aria-pressed="\$\{R\.mode === id \? "true" : "false"\}"/.test(r), "aria-pressed у инструментов тулбара и быстрой панели");
+      ok((m.match(/setAttribute\("aria-pressed"/g) || []).length >= 3, "aria-pressed у вкладок, 📄 и 1:1");
+      // режим «Перенести комнату»: ручки углов не обещают тягу угла
+      const rd = srcOf("assets/js/modules/plan/plan-render.js");
+      ok(/if \(sel && ui && ui\.moveRoom\) g\.appendChild\(el\("path", \{ d: ringD\(band\.outer\), class: "ep-plan-roommove"/.test(rd), "при переносе комнаты — пунктирный контур вместо ручек углов");
+      ok(/const selState = \(ui && ui\.selectedRoomId === room\.id\) \? \(ui\.moveRoom \? 2 : 1\) : 0;/.test(rd), "и кэш стен комнаты это различает");
+      ok(/moveRoom: R\.mode === "movroom"/.test(r), "режим передаётся рендеру");
+    });
+
+    test("название проекта видно на узкой шапке: второстепенные кнопки уходят в меню ⋮", () => {
+      const m = srcOf("assets/js/modules/plan/plan-mount.js"), css = srcOf("assets/css/plan.css");
+      const top = (m.match(/<div class="ep-plan-topx" id="ep-plan-topx">([\s\S]*?)<\/div>/) || [])[1] || "";
+      ["data-plan-rename", "data-plan-meta", "data-plan-3d", "data-fb-open", "data-plan-paper", "data-plan-realscale"].forEach((a) => ok(top.indexOf(a) >= 0, "в группе второстепенных: " + a));
+      ok(top.indexOf("data-plan-full") < 0 && top.indexOf("data-plan-ctrls") < 0, "«во весь экран» и «свернуть панель» остаются в строке");
+      ok(/data-plan-topx aria-label=/.test(m) && /aria-expanded="false" aria-controls="ep-plan-topx"/.test(m), "кнопка ⋮ с состоянием для диктора");
+      ok(/function titleHtml\(p\) \{[\s\S]*?data-plan-rename/.test(m), "тап по названию — переименовать");
+      ok(/const narrow = w < TOP_NARROW_PX;/.test(m) && /new ResizeObserver\(\(\) => syncTopNarrow\(\)\)/.test(m), "раскладка по ширине самой шапки (не окна) и при любом её изменении");
+      ok(/\.ep-plan-topxbtn \{ display: none; \}/.test(css) && /\.ep-plan-top\.is-narrow \.ep-plan-topx \{\s*display: none;/.test(css) && /\.ep-plan-top\.is-narrow\.is-xopen \.ep-plan-topx \{ display: flex; \}/.test(css), "на широкой — в строке, на узкой — в меню");
+      ok(/if \(!t\.closest\("\[data-plan-topx\]"\)\) closeTopX\(\);/.test(m), "любой клик мимо закрывает меню");
     });
   }
 
