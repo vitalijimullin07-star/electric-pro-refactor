@@ -224,8 +224,9 @@
           push(c.cx, y0, c.cy, en.kind, en.kind === "power" ? nOf(el2.id) : 1);
         });
       } else if (el2.layer === "warm") {
-        // ТП: подача обычной штробой к термостату + ОТДЕЛЬНО всегда 50×50 от термостата в пол
-        push(xx, y0Of("warm", el2), yy, "power", 1);
+        // ТП: от терморегулятора в пол — всегда 50×50; по потолку к нему ещё своя штроба питания
+        // с потолка, по полу питание идёт в той же 50×50 (одна штроба — как в смете)
+        if (!isFloor("warm", el2)) push(xx, 0, yy, "power", 1);
         if (el2.height > 1) push(xx, yy, H, "warm", 1);
       } else {
         const feeder = RT && RT.isFeeder && RT.isFeeder(p, el2);

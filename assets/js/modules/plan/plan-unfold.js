@@ -867,7 +867,8 @@
     if (t.closest("[data-pu-full]")) return toggleFull();
     if (t.closest("[data-pu-fulllandscape]")) return toggleFullLandscape();
     if (t.closest("[data-pu-fit]")) { const p = core().project, w = G().wallById(p, S.wallId); if (w) { S.view = fitView(wallH(p, S.wallId), w.len); drawStrip(); } return; }
-    if (t.closest("[data-pu-chases]")) { S.showChases = !S.showChases; drawStrip(); return; }
+    // кнопка подсвечивается сразу: drawStrip перерисовывает только чертёж, не панель с кнопкой
+    if ((b = t.closest("[data-pu-chases]"))) { S.showChases = !S.showChases; b.classList.toggle("on", S.showChases); drawStrip(); return; }
     if ((b = t.closest("[data-pu-act]"))) {
       const act = b.getAttribute("data-pu-act"), c = core();
       if (act === "undo") { c.undo(); drawStrip(); rooms().renderScene(); }
