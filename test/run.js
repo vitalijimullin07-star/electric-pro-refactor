@@ -9803,6 +9803,31 @@ test("фото: deleteProject чистит кэш фото своего прое
       ok(ch.some((c) => c.kind === "power" && c.x === 200 && Math.min(c.y0, c.y1) === 0 && Math.max(c.y0, c.y1) === H - 90), "развёртка: подача с потолка до терморегулятора — " + JSON.stringify(ch));
       ok(ch.some((c) => c.kind === "warm" && c.x === 200 && Math.min(c.y0, c.y1) === H - 90 && Math.max(c.y0, c.y1) === H), "развёртка: 50×50 от терморегулятора в пол");
     });
+    test("по полу у терморегулятора одна штроба 50×50 — питание идёт в ней же", () => {
+      const q1 = M.newCircuit("QF1", "#e11", 16);
+      const { P, w } = install({ circuits: [q1], panels: [M.newPanel(390, 150)] });
+      P.settings.routeType = "floor";
+      const tp = M.newElement("warmfloor", w(0), 200, EP.Plan.Elements.TYPES.warmfloor.h, "warm");
+      tp.circuitId = P.circuits[0].id; P.elements.push(tp);
+      EP.Plan.Routes.build();
+      const r = P.routes.find((x) => x.fromId === tp.id);
+      ok(r && r.routeType === "floor", "трасса к терморегулятору — по полу");
+      const res = EP.Plan.Calc.calcByRoutes(P);
+      near(qtyOf(res, "Штробление 50x50 бетон"), 0.9, 0.001, "50×50 — от пола до терморегулятора, 90 см");
+      const toPanel = EP.Plan.Routes.panelChaseVert(P, P.panels[0], "floor");
+      near(qtyOf(res, "Штробление 25x30 бетон"), toPanel / 100, 0.001, "25×30 — только спуск к щиту, отдельной подачи к терморегулятору нет");
+      const H = P.settings.ceilingHeight;
+      const wall = G.wallById(P, w(0));
+      const ch = EP.Plan.UnfoldGeo.chases(P, wall, [tp], { H, blockGeom: () => ({ cell: () => ({ cx: 0, cy: 0 }) }) });
+      const atTp = ch.filter((c) => c.x === 200);
+      eq(atTp.length, 1, "развёртка: у терморегулятора одна штроба — " + JSON.stringify(atTp));
+      ok(atTp[0].kind === "warm" && Math.min(atTp[0].y0, atTp[0].y1) === H - 90 && Math.max(atTp[0].y0, atTp[0].y1) === H, "и это 50×50 от пола до терморегулятора");
+      // сумма по всем стенам комнаты = штроба в смете (то же правило в двух местах)
+      const all = G.walls(P.rooms[0]).reduce((acc, ww) => acc.concat(EP.Plan.UnfoldGeo.chases(P, ww, P.elements.filter((e) => e.wallId === ww.id), { H, blockGeom: () => ({ cell: () => ({ cx: 0, cy: 0 }) }) })), []);
+      const unf = all.reduce((s2, c) => s2 + Math.abs(c.y1 - c.y0) * c.n, 0);
+      const est = Object.keys(res.strobe).reduce((s2, k) => s2 + res.strobe[k], 0) * 100;
+      near(unf, est, 0.5, "развёртки " + unf.toFixed(1) + " см = смета " + est.toFixed(1) + " см");
+    });
     test("«Проверки»: старый тёплый пол в полу и на 0 см — подсказывают, на стене на 90 см — молчат", () => {
       const { P, w } = install();
       const old = M.newElement("warmfloor", null, 0, 0, "warm"); old.params = { x: 200, y: 150 }; P.elements.push(old);
