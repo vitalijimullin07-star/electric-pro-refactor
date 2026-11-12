@@ -1,5 +1,5 @@
 /* Electric Pro V29 — Проект квартиры: элементы (Слой 2).
-   Палитра типов, посадка на стену (отступ+высота) или свободно (свет/ТП/щит),
+   Палитра типов, посадка на стену (отступ+высота) или свободно (свет/вывод/щит),
    редактор числом, пресеты высот, статус монтажа, фото точки, прогресс. */
 (() => {
   "use strict";
@@ -16,7 +16,11 @@
     bra:       { name: "Бра",         glyph: "Бра", layer: "light", h: 170 },
     track:     { name: "Трек",        glyph: "Трек", layer: "light", h: null, free: true },
     ac:        { name: "Кондиционер", glyph: "КД", layer: "ac",    h: 220 },
-    warmfloor: { name: "Тёплый пол",  glyph: "ТП", layer: "warm",  h: 0, free: true },
+    // точка ТП — это ТЕРМОРЕГУЛЯТОР на стене (по умолчанию 90 см — просьба пользователя), от
+    // него штроба 50×50 вниз в пол. Раньше h:0 + free: точка ставилась в пол посреди комнаты,
+    // штроба 50×50 по умолчанию не считалась вовсе (высота 0), а у точки без стены развёртке
+    // негде нарисовать спуск, который смета считает. Старые такие точки ловят «Проверки».
+    warmfloor: { name: "Тёплый пол",  glyph: "ТП", layer: "warm",  h: 90 },
     internet:  { name: "Интернет",    glyph: "И",  layer: "lv",    h: 30 },
     tv:        { name: "ТВ",          glyph: "ТВ", layer: "tv",    h: 130 },
     // камера: КАЖДАЯ своей линией в слаботочный щит (ownLine — placeAt сразу создаёт ей
@@ -67,6 +71,7 @@
     offset: "Отступ от угла, см", height: "Высота от пола, см",
     status: "Статус", del: "✕ Удалить", apply: "✓", photo: "📷 Фото",
     confirmDel: "Удалить точку?", tapWall: "Тапни ближе к стене — элемент сядет на неё.",
+    tapWallTP: "Тёплый пол — это терморегулятор на стене: тапни ближе к стене (по умолчанию 90 см от пола).",
     poolTitle: "📦 Из пула", poolLeft: (n2) => `осталось расставить: ${n2}`,
     poolHint: "Заготовки из «Пула розеток»: тапни заготовку, потом тапай по стенам — каждая точка садится со своей высотой и составом, счётчик убывает.",
     poolClear: "✕", poolClearAria: "Убрать очередь заготовок из пула", poolClearAsk: "Убрать очередь заготовок из пула? Уже расставленные точки останутся.",
@@ -238,6 +243,11 @@
     c.persist("opening-add");
     openOpeningEditor(op);
   }
+  // выбор типа в палитре: обычный тип снимает вооружённую заготовку пула и «мой блок»
+  function selectType(k) {
+    if (!TYPES[k]) return;
+    S.pool = null; S.myb = null; S.selType = k;
+  }
   function defaultHeight(type) {
     const s = core().project.settings;
     if (type === "socket") return s.heightPresets.socket;
@@ -295,9 +305,9 @@
       el.params = { x: sp.x, y: sp.y };
       p.elements.push(el);
       if (t.ownLine && !el.circuitId) assignNewCircuit(el); // см. комментарий выше (камеры)
-    } else { rooms().toast(T.tapWall); return; }
+    } else { rooms().toast(S.selType === "warmfloor" ? T.tapWallTP : T.tapWall); return; }
     c.persist("elem-add");
-    sheetPalette(true); // тот же счётчик — ветка свободной точки (свет/ТП/вывод)
+    sheetPalette(true); // тот же счётчик — ветка свободной точки (свет/трек/вывод)
   }
 
   // Ставит ОДНУ заготовку из очереди пула: тип/высота/клавишность приходят из пула, место —
@@ -317,7 +327,7 @@
     const k = rooms().canvasCmPerPx();
     const hit = G().wallAt(p, w, CFG.wallSnapPx * k);
     if (hit) vibrate(10);
-    if (!hit && !t.free) { rooms().toast(T.tapWall); return; }
+    if (!hit && !t.free) { rooms().toast(e.type === "warmfloor" ? T.tapWallTP : T.tapWall); return; }
     c.commit();
     const h = e.height != null ? Math.max(0, Number(e.height) || 0) : defaultHeight(e.type);
     let el;
@@ -1034,7 +1044,7 @@
     // выбрал тип — палитра сворачивается вниз (просьба пользователя: «при выборе
     // хотел чтобы окно скрывалось… сворачивалось в нижнюю часть экрана»), холст
     // свободен для расстановки; вернуть — кнопка ︿ в правом нижнем углу
-    if ((b = t.closest("[data-pe-type]"))) { S.pool = null; S.myb = null; S.selType = b.getAttribute("data-pe-type"); sheetPalette(true); rooms().collapseSheet(); return; }
+    if ((b = t.closest("[data-pe-type]"))) { selectType(b.getAttribute("data-pe-type")); sheetPalette(true); rooms().collapseSheet(); return; }
     if ((b = t.closest("[data-pe-pool]"))) { // заготовка из пула — вооружаем её вместо типа
       const i = Number(b.getAttribute("data-pe-pool")) || 0;
       // храним И индекс, И id: если пул успел перезалить очередь (кнопка «В проект квартиры»
@@ -1384,5 +1394,5 @@
   }
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, SW_TARGET_TYPES, onModeEnter, onOpeningModeEnter, placeAt, placeOpening, hoverSnapPoint, openingNum, hitAt, openEditor, openStatusCard, closeEditorOverlay, openPanelEditor, openOpeningEditor, openingFlipFor, selectedId, deselect, deleteElement, duplicateElement, circuitRow, assignNewCircuit, syncTargetCircuit, riserMate };
+  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, SW_TARGET_TYPES, onModeEnter, onOpeningModeEnter, selectType, placeAt, placeOpening, hoverSnapPoint, openingNum, hitAt, openEditor, openStatusCard, closeEditorOverlay, openPanelEditor, openOpeningEditor, openingFlipFor, selectedId, deselect, deleteElement, duplicateElement, circuitRow, assignNewCircuit, syncTargetCircuit, riserMate };
 })();

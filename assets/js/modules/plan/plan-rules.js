@@ -35,6 +35,9 @@
     title: "Проверки", close: "Закрыть", ok: "Замечаний нет ✓", save: "Сохранить пороги",
     wet: (h, min) => `Розетка во влажной зоне на ${h} см (мин. ${min} см)`,
     low: (h) => `Точка слишком низко: ${h} см`,
+    // в «Проверке проекта» перед сообщением стоит «Тёплый пол · Помещение:» — тип не повторяем
+    tpFree: "Терморегулятор стоит не на стене — поставь его на стену (обычно 90 см): от него штроба 50×50 идёт в пол, без стены развёртка её не покажет",
+    tpLow: (h) => `Терморегулятор на высоте ${h} см — обычно его ставят на 90 см`,
     high: (h) => `Точка слишком высоко: ${h} см`,
     offWall: "Точка за пределами стены",
     inOpening: "Точка попадает в дверной/оконный проём",
@@ -85,7 +88,12 @@
         const inOpening = (p.openings || []).some((o) => o.wallId === el.wallId && el.offset >= o.offset && el.offset <= o.offset + o.width);
         if (inOpening) { issues.push({ id: el.id, msg: T.inOpening }); badIds.add(el.id); }
       }
-      if (el.type !== "warmfloor" && el.height < R.minSocketH) {
+      if (el.type === "warmfloor") {
+        // ТП — терморегулятор на стене (по умолчанию 90 см). Раньше тип ставился точкой в пол
+        // (h:0, свободно) — такие точки в старых проектах остаются как есть, их показываем здесь
+        if (!el.wallId) { issues.push({ id: el.id, msg: T.tpFree }); badIds.add(el.id); }
+        else if (el.height < R.minSocketH) { issues.push({ id: el.id, msg: T.tpLow(Math.round(el.height)) }); badIds.add(el.id); }
+      } else if (el.height < R.minSocketH) {
         issues.push({ id: el.id, msg: T.low(Math.round(el.height)) }); badIds.add(el.id);
       }
       // «слишком высоко» — только для НАСТЕННЫХ устройств (el.wallId): у них высота

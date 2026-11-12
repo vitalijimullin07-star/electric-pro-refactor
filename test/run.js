@@ -9762,6 +9762,62 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 79. Тёплый пол: терморегулятор на стене, 90 см по умолчанию =====
+  // Просьба пользователя: «тёплый пол ставится на 90 см по умолчанию». Точка ТП — терморегулятор:
+  // раньше тип стоял на 0 см и ставился точкой в пол посреди комнаты — штроба 50×50 от терморегулятора
+  // в пол по умолчанию не считалась вовсе, а у точки без стены развёртке негде нарисовать спуск.
+  {
+    const qtyOf = (res, name) => { const it = res.items.find((i) => i.name === name); return it ? it.qty : 0; };
+    test("тёплый пол ставится только на стену и по умолчанию на 90 см", () => {
+      const { P, w } = install();
+      const E = EP.Plan.Elements, R = EP.Plan.Rooms;
+      const toasts = [], toast0 = R.toast;
+      R.toast = (m) => toasts.push(m);
+      try {
+        E.selectType("warmfloor");
+        E.placeAt({ x: 200, y: 150 }); // посреди комнаты
+        eq(P.elements.length, 0, "посреди комнаты терморегулятор не ставится");
+        ok(/терморегулятор на стене/.test(toasts[0] || ""), "и говорит почему: " + toasts[0]);
+        E.placeAt({ x: 200, y: 4 }); // у верхней стены
+        eq(P.elements.length, 1, "у стены — ставится");
+        const tp = P.elements[0];
+        eq(tp.wallId, w(0), "на стену");
+        eq(tp.height, 90, "по умолчанию 90 см");
+        eq(tp.layer, "warm", "слой тёплого пола");
+      } finally { R.toast = toast0; E.selectType("socket"); }
+    });
+    test("смета и развёртка: подача до терморегулятора + штроба 50×50 от него в пол", () => {
+      const q1 = M.newCircuit("QF1", "#e11", 16);
+      const { P, w } = install({ circuits: [q1], panels: [M.newPanel(390, 150)] });
+      const tp = M.newElement("warmfloor", w(0), 200, EP.Plan.Elements.TYPES.warmfloor.h, "warm");
+      tp.circuitId = P.circuits[0].id; P.elements.push(tp);
+      EP.Plan.Routes.build();
+      ok(P.routes.some((r) => r.fromId === tp.id), "трасса к терморегулятору есть");
+      const res = EP.Plan.Calc.calcByRoutes(P);
+      const H = P.settings.ceilingHeight;
+      near(qtyOf(res, "Штробление 50x50 бетон"), 0.9, 0.001, "50×50 — от терморегулятора в пол, 90 см");
+      const toPanel = EP.Plan.Routes.panelChaseVert(P, P.panels[0], "ceiling");
+      near(qtyOf(res, "Штробление 25x30 бетон"), (H - 90 + toPanel) / 100, 0.06, "подача — с потолка до терморегулятора (+ спуск к щиту)");
+      const wall = G.wallById(P, w(0));
+      const ch = EP.Plan.UnfoldGeo.chases(P, wall, [tp], { H, blockGeom: () => ({ cell: () => ({ cx: 0, cy: 0 }) }) });
+      ok(ch.some((c) => c.kind === "power" && c.x === 200 && Math.min(c.y0, c.y1) === 0 && Math.max(c.y0, c.y1) === H - 90), "развёртка: подача с потолка до терморегулятора — " + JSON.stringify(ch));
+      ok(ch.some((c) => c.kind === "warm" && c.x === 200 && Math.min(c.y0, c.y1) === H - 90 && Math.max(c.y0, c.y1) === H), "развёртка: 50×50 от терморегулятора в пол");
+    });
+    test("«Проверки»: старый тёплый пол в полу и на 0 см — подсказывают, на стене на 90 см — молчат", () => {
+      const { P, w } = install();
+      const old = M.newElement("warmfloor", null, 0, 0, "warm"); old.params = { x: 200, y: 150 }; P.elements.push(old);
+      const low = M.newElement("warmfloor", w(1), 100, 0, "warm"); P.elements.push(low);
+      const good = M.newElement("warmfloor", w(2), 100, 90, "warm"); P.elements.push(good);
+      const r = EP.Plan.Rules.run(P);
+      const msgOf = (id) => r.issues.filter((i) => i.id === id).map((i) => i.msg).join(" | ");
+      ok(/не на стене/.test(msgOf(old.id)), "в полу посреди комнаты: " + msgOf(old.id));
+      ok(!/слишком низко/.test(msgOf(old.id)), "без второго сообщения о той же точке");
+      ok(/на высоте 0 см/.test(msgOf(low.id)), "на стене на 0 см: " + msgOf(low.id));
+      eq(msgOf(good.id), "", "на стене на 90 см — замечаний нет");
+      ok(r.badIds.has(old.id) && r.badIds.has(low.id) && !r.badIds.has(good.id), "подсветка на плане — у двух старых");
+    });
+  }
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);
