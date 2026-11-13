@@ -70,7 +70,7 @@
   function renderList(root) {
     const rows = core().listProjects();
     root.innerHTML = `<div class="ep-plan">
-      <div class="page-head"><h1>${T.title}</h1><p>${esc(T.subtitle)}</p></div>
+      <div class="page-head"><p>${esc(T.subtitle)}</p></div>
       <div class="card ep-plan-new">
         <div class="ep-plan-newrow">
           <input id="ep-plan-name" type="text" placeholder="${esc(T.newPlaceholder)}" maxlength="80">

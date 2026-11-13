@@ -79,7 +79,7 @@
   color: var(--text); cursor: pointer; font-size: 13px; line-height: 1; padding: 0;
 }
 .ep-db-iconbtn:active { transform: scale(.94); }
-.ep-db-empty { color: var(--muted); text-align: center; padding: 22px 8px; }
+.ep-db-empty { color: var(--muted); text-align: center; padding: 22px 8px; font-size: 14px; line-height: 1.45; }
 
 /* редактирование / добавление */
 .ep-db-row-edit, .ep-db-addform { flex-direction: column; align-items: stretch; gap: 8px; }

@@ -2,7 +2,7 @@
    Заменяет разнородные .page-head, использует историю роутера (EP.Router.back). */
 (() => {
   "use strict";
-  const TITLES = { shield: "Конфигуратор щита", pool: "Пул розеток", consumables: "Расходники", materials: "Материалы", work: "Работа", scheme: "Однолинейная схема", settings: "Настройки", subscription: "Подписка", admin: "Админка" };
+  const TITLES = { shield: "Конфигуратор щита", pool: "Пул розеток", consumables: "Расходники", materials: "Материалы", work: "Работа", scheme: "Однолинейная схема", settings: "Настройки", subscription: "Подписка", admin: "Админка", plan: "Проект квартиры", ai: "ИИ-ассистент", estimate: "Смета", details: "Поставщику", documents: "Документы", clients: "Клиенты", database: "База данных", profile: "Профиль и реквизиты", stock: "Склад", costs: "Затраты", tools: "Инструмент", guide: "Гайд", whatsnew: "Что нового", privacy: "Политика конфиденциальности" };
   const NO_BAR = { main: 1, login: 1 };
   function cap(s) { s = String(s || ""); return s.charAt(0).toUpperCase() + s.slice(1); }
   function clean(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }

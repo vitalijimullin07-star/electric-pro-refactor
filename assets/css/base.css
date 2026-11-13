@@ -264,6 +264,9 @@ body[data-animation="off"] .app-bg {
   color: #f8fafc !important;
   text-shadow: 0 1px 8px rgba(0,0,0,.75);
 }
+/* светлая тема («Бумага»): белая подпись на светлом образце не читалась */
+.theme-btn.is-light strong { color: #0f172a !important; text-shadow: none; }
+.theme-btn.is-light small { color: #475569 !important; text-shadow: none; }
 
 
 .switch-row {
@@ -1876,3 +1879,11 @@ body[data-kb="1"] .ep-pset-ov { padding-bottom: calc(var(--kb) + 12px); }
 .topbar-right{display:flex;align-items:center;gap:2px}
 .topbar-chat{border:0;background:transparent;width:34px;height:30px;display:grid;place-items:center;font-size:18px;line-height:1;border-radius:9px;cursor:pointer;color:var(--text)}
 .topbar-chat[hidden]{display:none}
+.ep-cost-padd[data-cost-wear-add]{width:auto;padding:0 10px;font-size:calc(13px * var(--eff-text-scale,1));white-space:nowrap}
+.ep-tool-add-r input[data-tool-price]{flex:0 0 92px}.ep-tool-add-r select{flex:1 1 0;width:auto;min-width:0}
+/* днём обычные кнопки были белым по белому (рамка и фон — белые полупрозрачные) — читались как текст */
+body[data-visual-mode="day"] .btn:not(.btn-primary):not(.btn-danger){border-color:rgba(15,23,42,.14);background:rgba(15,23,42,.045)}
+/* днём у части полей ввода рамка была белой полупрозрачной — на светлой карточке поле не отличалось от фона */
+body[data-visual-mode="day"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+body[data-visual-mode="day"] select,
+body[data-visual-mode="day"] textarea{border-color:rgba(15,23,42,.2)}

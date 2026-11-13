@@ -289,7 +289,9 @@
     const groups = [];
     getRules().groups.forEach((g) => {
       if (g.on === false) return;
-      const trig = g.always ? { name: g.name, qty: 1, always: true } : findTrigger(list, g);
+      // «всегда» — для любого объекта, но не для ПУСТОЙ сметы: там предлагать акт и протокол рано
+      // (выглядело как «не включены обязательные позиции: 4» на чистом экране)
+      const trig = g.always ? (list.length ? { name: g.name, qty: 1, always: true } : null) : findTrigger(list, g);
       if (!trig) return;
       const need = (g.items || []).filter((r) => r && r.name).map((r) => {
         const q = qtyOf(r, trig.qty, prm);
