@@ -11434,6 +11434,118 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 87. Замок 🔒 «только просмотр» =====
+  // Просьба: «кнопка (просмотр), которая позволяет кликать, но не изменять, в виде замка —
+  // случайные клики замучили». Держит ядро: любая правка под замком откатывается в persist().
+  {
+    const fsx = require("fs"), pathx = require("path");
+    const srcOf = (f) => fsx.readFileSync(pathx.join(__dirname, "..", f), "utf8");
+    const C = EP.Plan.Core, RM = EP.Plan.Rooms;
+    const withLock = (fn) => { try { C.setLocked(true); fn(); } finally { C.setLocked(false); } };
+
+    test("замок: правка любого вида откатывается, история отмены не растёт, ядро сообщает lock-revert", () => {
+      const { P } = install();
+      C.commit(); P.rooms[0].name = "Было"; C.persist("room-edit");
+      withLock(() => {
+        const ev = []; const off = C.onChange((w) => ev.push(w));
+        const undoN = C.canUndo();
+        C.commit(); C.project.rooms[0].name = "Случайно"; C.project.rooms[0].points[0].x += 50; C.persist("room-edit");
+        eq(C.project.rooms[0].name, "Было", "имя вернулось");
+        eq(C.project.rooms[0].points[0].x, 0, "геометрия вернулась");
+        ok(ev.includes("lock-revert"), "событие для перерисовки и подсказки");
+        ok(!ev.includes("room-edit"), "сама правка наружу не ушла (трассы не перестраиваются)");
+        eq(C.canUndo(), false, "↶ под замком выключен"); ok(undoN === false || undoN === true);
+        ok(C.undo() === false && ev.includes("lock-blocked"), "↶ под замком ничего не делает и объясняет почему");
+        off();
+      });
+      eq(C.canUndo(), true, "после замка история прежняя");
+      C.undo(); eq(C.project.rooms[0].name, "R", "↶ отменяет то, что было до замка");
+    });
+
+    test("замок: настройки вида (этаж, слои, скрытые линии, стиль значков, 1:1) — можно", () => {
+      install();
+      withLock(() => {
+        const l = C.project.layers[0], vis = !!l.visible;
+        C.commit(); l.visible = !vis; C.persist("layer-toggle");
+        eq(!!C.project.layers[0].visible, !vis, "слой переключился");
+        C.commit(); C.project.rooms[0].name = "x"; C.persist("room-edit");
+        eq(!!C.project.layers[0].visible, !vis, "последующий откат правки слой не возвращает");
+        eq(C.project.rooms[0].name, "R");
+      });
+    });
+
+    test("замок: отказ жеста (rollback) и другой проект — откат к снимку ЭТОГО проекта", () => {
+      install();
+      withLock(() => {
+        C.commit(); C.project.rooms[0].points[1].x += 30;
+        C.rollback(); eq(C.project.rooms[0].points[1].x, 400, "rollback под замком — к снимку замка");
+        const room2 = M.newRoom(G.rectPoints(0, 0, 200, 200), "Второй");
+        C.importJSON(JSON.stringify({ project: Object.assign(M.newProject("P2"), { rooms: [room2] }) }));
+        C.commit(); C.project.rooms[0].name = "y"; C.persist("room-edit");
+        eq(C.project.name, "P2", "остались в новом проекте");
+        eq(C.project.rooms[0].name, "Второй", "откат к новому проекту, а не к старому");
+      });
+    });
+
+    await test("замок: открыли другой проект из списка — правка в нём тоже откатывается (снимок при открытии)", async () => {
+      install(); const id1 = C.project.id;
+      const room2 = M.newRoom(G.rectPoints(0, 0, 200, 200), "Второй");
+      C.importJSON(JSON.stringify({ project: Object.assign(M.newProject("P2"), { rooms: [room2] }) }));
+      C.flushPersist();
+      try {
+        C.setLocked(true);
+        await C.openProject(id1);
+        eq(C.project.id, id1);
+        C.commit(); C.project.rooms[0].name = "Случайно"; C.persist("room-edit");
+        eq(C.project.rooms[0].name, "R", "снимок замка взят при открытии, а не при первой правке");
+      } finally { C.setLocked(false); }
+    });
+
+    test("замок: запоминается на устройстве, снимается — правка снова работает", () => {
+      install();
+      C.setLocked(true);
+      eq(sandbox.localStorage.getItem("ep_plan_lock_v1"), "1", "выбор устройства");
+      ok(C.locked());
+      C.setLocked(false);
+      eq(sandbox.localStorage.getItem("ep_plan_lock_v1"), "0");
+      C.commit(); C.project.rooms[0].name = "Можно"; C.persist("room-edit");
+      eq(C.project.rooms[0].name, "Можно");
+    });
+
+    test("замок: инструменты рисования не включаются, «Просмотр» и рулетка — да", () => {
+      install();
+      withLock(() => {
+        RM.setMode("rect"); eq(RM.currentMode(), "view", "▭ под замком не включается");
+        RM.setMode("ruler"); eq(RM.currentMode(), "ruler", "рулетка — только смотреть");
+        RM.setMode("view");
+      });
+      RM.setMode("rect"); eq(RM.currentMode(), "rect", "без замка — как обычно"); RM.setMode("view");
+    });
+
+    test("замок: тяга = панорама, поля карточек только для чтения, кнопка в шапке", () => {
+      ok(/cb\.dragAllow && !cb\.dragAllow\(\)\) \? false/.test(srcOf("assets/js/modules/plan/plan-canvas.js")), "холст: тяга под замком не начинается");
+      const rm = srcOf("assets/js/modules/plan/plan-rooms.js");
+      ok(/canvas\.onDragAllow\(\(\) => !isLocked\(\)\)/.test(rm), "план отдаёт холсту запрет");
+      ok(/draftStamp\(node\);\s*lockForm\(node\);/.test(rm), "все карточки идут через lockForm");
+      ok(/function onCanvasLongPress[\s\S]{0,80}isLocked\(\)\) return/.test(rm), "меню «копия/удалить» под замком не открывается");
+      ok(/pointerType === "eraser"[^\n]*!isLocked\(\)/.test(rm), "ластик стилуса под замком не стирает");
+      ok(/!S\.drag\.moved && core\(\)\.locked && core\(\)\.locked\(\)\) \{ S\.drag = null/.test(srcOf("assets/js/modules/plan/plan-unfold.js")), "развёртка: тяга под замком — панорама");
+      const mt = srcOf("assets/js/modules/plan/plan-mount.js");
+      ok(/\$\{lockBtnHtml\(\)\}\s*<button[^>]*data-plan-full/.test(mt), "кнопка 🔒 в шапке рядом с ⤢ (не в меню ⋮)");
+      ok(/data-plan-lock aria-pressed=/.test(mt), "состояние — в aria-pressed");
+      // поля: только чтение, ползунок и кнопки — нет
+      const mk = (tag, type) => { const n = { tagName: tag, readOnly: false, disabled: false, cls: [], getAttribute: (k) => (k === "type" ? type : null), closest: () => null, classList: { add: (c) => n.cls.push(c) } }; return n; };
+      const f = [mk("INPUT", "text"), mk("INPUT", "number"), mk("SELECT", null), mk("INPUT", "checkbox"), mk("INPUT", "range"), mk("TEXTAREA", null)];
+      const node = { querySelectorAll: () => f };
+      withLock(() => RM.lockForm(node));
+      ok(f[0].readOnly && f[1].readOnly && f[5].readOnly, "текст и числа — только чтение");
+      ok(f[2].disabled && f[3].disabled, "списки и галочки — выключены");
+      ok(!f[4].readOnly && !f[4].disabled, "ползунок (масштаб PDF) — работает");
+      const g = [mk("INPUT", "text")]; RM.lockForm({ querySelectorAll: () => g });
+      ok(!g[0].readOnly, "без замка поля не трогаем");
+    });
+  }
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

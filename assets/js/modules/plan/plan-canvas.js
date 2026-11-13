@@ -444,7 +444,7 @@
             if (downClient && Math.hypot(e.clientX - downClient.x, e.clientY - downClient.y) < CFG.dragStartPx) return;
             // хендлер может отказаться (вернуть false) — тогда жест панорамирует
             if (cb.dragStart) cb.dragStart(); // модуль запоминает, с какого шага истории начался жест (для отката)
-            const res = dragHandler(0, 0, "start", toWorld((downClient || e).x, (downClient || e).y), { dbl: dblDown });
+            const res = (cb.dragAllow && !cb.dragAllow()) ? false : dragHandler(0, 0, "start", toWorld((downClient || e).x, (downClient || e).y), { dbl: dblDown });
             // первый шаг — смещение от точки КАСАНИЯ, а не от прошлого события: движение под
             // порогом старта иначе терялось, и объект (или план при пане) отставал от пальца на
             // величину порога — точка захвата не сохранялась (аудит Астры, п. 11)
@@ -681,7 +681,8 @@
       setDragHandler: (fn) => { if (dragMoved && cb.dragDone) cb.dragDone(true); dragHandler = fn || null; dragMoved = false; },
       onDragDone: (fn) => { cb.dragDone = fn; }, // (aborted) — тяга закончилась или оборвана
       onDragEndWrap: (fn) => { cb.endWrap = fn; }, // (run) — обёртка вокруг "end" обработчика тяги
-      onDragStart: (fn) => { cb.dragStart = fn; },   // перед "start" обработчика тяги
+      onDragStart: (fn) => { cb.dragStart = fn; },
+      onDragAllow: (fn) => { cb.dragAllow = fn; },   // false — тяга запрещена (замок 🔒), жест = пан   // перед "start" обработчика тяги
       onDragBegin: (fn) => { cb.dragBegin = fn; },   // обработчик взял объект (не пан) — тяга пошла
       onDragCancel: (fn) => { cb.dragCancel = fn; }, // тягу оборвала система (pointercancel) — откатить
       destroy: () => { stopMotion(); clearTimeout(commitTimer); if (ro) ro.disconnect(); if (wrap.parentNode) wrap.parentNode.removeChild(wrap); }

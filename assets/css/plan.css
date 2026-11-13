@@ -1457,3 +1457,16 @@ body[data-flatshadow="1"] .ep-plan-furn.is-sel .ep-plan-furnrect { filter: none;
 .ep-plan-gdrow { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; border-top: 1px solid rgba(148, 163, 184, .22); }
 .ep-plan-guidenum { font: 800 12px system-ui; paint-order: stroke; stroke: rgba(11, 18, 32, .75); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
 body[data-visual-mode="day"] .ep-plan-guidenum, .ep-plan.is-paper .ep-plan-guidenum { stroke: rgba(255, 255, 255, .85); }
+
+/* Замок 🔒 «только просмотр»: инструменты, которые меняют план, приглушены (тап по ним
+   объясняет, почему не включаются), поля карточек — только для чтения */
+.ep-plan-lockbtn.on { background: rgba(245, 158, 11, .22); border-color: rgba(245, 158, 11, .6); }
+.ep-plan.is-locked .ep-plan-tbtn[data-plan-mode]:not([data-plan-mode="view"]):not([data-plan-mode="ruler"]),
+.ep-plan.is-locked .ep-plan-tbtn[data-plan-byroom],
+.ep-plan.is-locked [data-plan-undo], .ep-plan.is-locked [data-plan-redo] { opacity: .38; }
+.ep-plan-sheet .is-locked { opacity: .75; cursor: default; }
+/* под замком «✓ Применить» в карточках не показываем — применять нечего, остаётся «✕ Закрыть» */
+.ep-plan.is-locked .ep-plan-sheet .ep-plan-actbar .is-primary:not([data-pr-beamdone]):not([data-prt2-done]) { display: none; }
+.ep-plan-sheet input.is-locked, .ep-plan-sheet textarea.is-locked, .ep-plan-sheet select.is-locked { border-style: dashed; }
+.ep-plan.is-locked .ep-plan-sheet .ep-plan-danger { display: none; }
+.ep-plan.is-locked #ep-plan-modehint::before { content: "🔒 Просмотр — менять нельзя. "; font-weight: 600; }

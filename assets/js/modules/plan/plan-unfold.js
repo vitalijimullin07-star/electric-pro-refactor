@@ -692,6 +692,7 @@
       if (S.drag) {
         // мёртвая зона тапа: палец всегда дрожит на пару пикселей — это ещё не тяга
         if (!S.drag.moved && downClient && Math.hypot(e.clientX - downClient.x, e.clientY - downClient.y) < 7) return;
+        if (!S.drag.moved && core().locked && core().locked()) { S.drag = null; return; } // замок 🔒 — двигать нельзя
         const pt = toWorld(svg, e.clientX, e.clientY);
         if (!S.drag.moved) {
           // первый сдвиг — снимок истории; mark — номер снимка до него (откат при обрыве жеста)
