@@ -321,6 +321,9 @@
   const S = { project: null, index: [], undo: [], redo: [], cloudTimer: null, listeners: new Set() };
 
   function emit(what) {
+    // замок 🔒: проект сменился (открыли/импортировали другой) — снимок «как было» берём заново,
+    // ДО любой правки нового проекта (откат возвращает именно к нему)
+    if (S.lock && S.project && S.lockFor !== S.project) lockRebase();
     S.listeners.forEach((fn) => { try { fn(what); } catch (e) {} });
   }
   function onChange(fn) { S.listeners.add(fn); return () => S.listeners.delete(fn); }
@@ -1096,6 +1099,7 @@
   }
   function persist(what) {
     const p = S.project;
+    if (p && S.lock && lockReject(what)) return;
     if (p) {
       p.updatedAt = now();
       // отложенная запись хранит ОДИН проект: если она ещё не ушла, а сохраняется уже
@@ -1139,11 +1143,13 @@
   function commit() { // вызывать ПЕРЕД мутацией проекта
     if (!S.project) return;
     commits++;
+    if (S.lock) return; // под замком снимок не нужен: откат — к снимку замка (lockReject)
     S.undo.push(snapshot());
     if (S.undo.length > DEFAULTS.undoLimit) S.undo.shift();
     S.redo = [];
   }
   function undo() {
+    if (S.lock) { emit("lock-blocked"); return false; }
     if (!S.project || !S.undo.length) return false;
     S.redo.push(snapshot());
     S.project = S.undo.pop();
@@ -1151,6 +1157,7 @@
     return true;
   }
   function redo() {
+    if (S.lock) { emit("lock-blocked"); return false; }
     if (!S.project || !S.redo.length) return false;
     S.undo.push(snapshot());
     S.project = S.redo.pop();
@@ -1163,14 +1170,50 @@
   // Сохраняем как обычно: во время жеста отложенная запись могла унести на диск промежуточный
   // кадр (persistDirty указывает на тот же объект проекта, что мутировался на ходу).
   function rollback() {
+    if (S.lock && S.project) { // под замком снимков нет — назад к состоянию замка
+      commits = Math.max(0, commits - 1);
+      S.project = deepClone(S.lockBase); S.lockFor = S.project;
+      emit("rollback");
+      return true;
+    }
     if (!S.project || !S.undo.length) return false;
     S.project = S.undo.pop();
     commits = Math.max(0, commits - 1); // снимка, который откатили, больше нет
     persist("rollback");
     return true;
   }
-  const canUndo = () => S.undo.length > 0;
-  const canRedo = () => S.redo.length > 0;
+  const canUndo = () => !S.lock && S.undo.length > 0;
+  const canRedo = () => !S.lock && S.redo.length > 0;
+
+  // ---------- замок 🔒 «только просмотр» ----------
+  // Против случайных касаний: под замком можно тапать и смотреть (карточки, расчёт, развёртки),
+  // но ничего не меняется. Защита — ЗДЕСЬ, в ядре, а не в каждом обработчике: любая правка
+  // идёт через persist(), и под замком persist() возвращает проект к снимку, сделанному при
+  // включении замка (событие "lock-revert" — UI перерисовывается и говорит, что включён замок).
+  // Так ни один путь правки (их сотни: тяга, поля, чипы, кнопки шторок, развёртка) не может
+  // обойти замок, даже новый, о котором UI не знает. Пропускаются только настройки ВИДА,
+  // которые хранятся в проекте: этаж, слои, скрытые линии, стиль значков, «1:1».
+  // Сам замок — свойство устройства (localStorage), как бумажный вид; в модель не попадает.
+  const LOCK_KEY = "ep_plan_lock_v1";
+  const LOCK_PASS = new Set(["floor-switch", "layer-toggle", "circuit-hide", "symbol-style", "realscale", "create", "import"]);
+  S.lock = (() => { try { return localStorage.getItem(LOCK_KEY) === "1"; } catch (e) { return false; } })();
+  S.lockBase = null; S.lockFor = null;
+  function lockRebase() { S.lockBase = S.project ? deepClone(S.project) : null; S.lockFor = S.project; }
+  function lockReject(what) {
+    if (S.lockFor !== S.project || !S.lockBase) { lockRebase(); return false; } // другой проект — принимаем как есть
+    if (LOCK_PASS.has(what)) { lockRebase(); return false; }
+    S.project = deepClone(S.lockBase); S.lockFor = S.project;
+    emit("lock-revert");
+    return true;
+  }
+  function setLocked(on) {
+    on = !!on;
+    try { localStorage.setItem(LOCK_KEY, on ? "1" : "0"); } catch (e) {}
+    if (on === S.lock) return;
+    S.lock = on;
+    if (on) lockRebase(); else { S.lockBase = null; S.lockFor = null; }
+    emit("lock");
+  }
 
   // ---------- экспорт / импорт ----------
   // exportJSON() отдаёт файл для переноса на ДРУГОЕ устройство/браузер — там нет
@@ -1284,6 +1327,7 @@
     onChange,
     listProjects, createProject, openProject, closeProject, deleteProject, renameProject,
     commit, undo, redo, rollback, canUndo, canRedo, persist, commitCount: () => commits,
+    setLocked, locked: () => !!S.lock, // замок 🔒 «только просмотр»
     flushPersist, // добить отложенную запись немедленно (уход со страницы, тесты)
     exportJSON, exportJSONById, importJSON, cloudPullIndex, cloudPushPending, syncState, cloudReady,
     sanitizeProject, // проверка/починка модели на входе (импорт/облако/чат) — см. функцию

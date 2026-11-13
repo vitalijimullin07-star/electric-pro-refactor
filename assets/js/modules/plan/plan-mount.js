@@ -140,6 +140,7 @@
           <button type="button" class="ep-plan-mini ep-clickable${p.settings.realScale ? " on" : ""}" data-plan-realscale aria-pressed="${p.settings.realScale ? "true" : "false"}" aria-label="Значки в реальном размере (1:1)" title="Значки в реальном размере, мм — рамки 84/155/226/300/368 мм (1:1)">1:1<span class="ep-plan-xlbl">Реальный размер значков</span></button>
         </div>
         <button type="button" class="ep-plan-mini ep-clickable ep-plan-topxbtn" data-plan-topx aria-label="Ещё: переименовать, о проекте, 3D, бумажный вид, 1:1" aria-expanded="false" aria-controls="ep-plan-topx">⋮</button>
+        ${lockBtnHtml()}
         <button type="button" class="ep-plan-mini ep-clickable" data-plan-full aria-label="Во весь экран">⤢</button>
         <button type="button" class="ep-plan-mini ep-clickable" data-plan-ctrls aria-label="${V.ctrlsOn ? "Свернуть панель" : "Развернуть панель"}" title="Свернуть/развернуть панель инструментов">${V.ctrlsOn ? "︿" : "﹀"}</button>
       </div>
@@ -211,6 +212,7 @@
     refreshToolbar();
     applyToolGroup(root); // вкладка «Планировка»/«Электрика» — сразу после вставки разметки
     applyPaper(root);     // бумажный режим холста — выбор устройства, переживает переоткрытие
+    applyLock(root);      // замок 🔒 — тоже выбор устройства
     armBack(); // ставим «ловушку» для аппаратной кнопки Назад
     setNavHidden(true); // редактор уже имеет свою «‹ Проекты» — общая шапка не нужна
   }
@@ -418,6 +420,36 @@
     if (box) box.classList.toggle("is-paper", paperOn());
     const btn = r.querySelector("[data-plan-paper]");
     if (btn) { btn.classList.toggle("on", paperOn()); btn.setAttribute("aria-pressed", paperOn() ? "true" : "false"); }
+  }
+  // Замок 🔒 «только просмотр» (EP.Plan.Core.setLocked) — против случайных касаний: тапать и
+  // смотреть можно (карточки, расчёт, развёртки, рулетка), менять — нет. Кнопка всегда в шапке
+  // (не в меню ⋮): её нажимают чаще остальных. Состояние — свойство устройства.
+  const lockedNow = () => !!(core() && core().locked && core().locked());
+  function lockBtnHtml() {
+    const on = lockedNow();
+    return `<button type="button" class="ep-plan-mini ep-clickable ep-plan-lockbtn${on ? " on" : ""}" data-plan-lock aria-pressed="${on ? "true" : "false"}" aria-label="${on ? "Просмотр: правка выключена — снять замок" : "Включить просмотр: только смотреть, без правки"}" title="Замок: только просмотр — тапать можно, менять нельзя">${on ? "🔒" : "🔓"}</button>`;
+  }
+  function applyLock(root) {
+    const r = root || document;
+    const on = lockedNow();
+    const box = r.querySelector(".ep-plan");
+    if (box) box.classList.toggle("is-locked", on);
+    const btn = r.querySelector("[data-plan-lock]");
+    if (btn) btn.outerHTML = lockBtnHtml();
+  }
+  function toggleLock(root) {
+    const c = core(); if (!c || !c.setLocked) return;
+    const on = !lockedNow();
+    const Rm = EP.Plan.Rooms;
+    if (on && Rm) Rm.setMode("view"); // ДО замка: недорисованная магистраль успеет сохраниться
+    c.setLocked(on);
+    applyLock(root);
+    refreshToolbar();
+    if (Rm) {
+      Rm.renderScene();
+      if (Rm.refreshSheetObj) Rm.refreshSheetObj(); // поля открытой карточки — только чтение / снова правка
+      if (Rm.flash) Rm.flash(on ? "🔒 Просмотр: тапай и смотри — менять ничего не будет." : "🔓 Правка включена.");
+    }
   }
   function toggleRealScale(root) {
     const c = core(), p = c.project; if (!p) return;
@@ -754,6 +786,7 @@
     if (t.closest("[data-plan-paper]")) return togglePaper(r);
     if (t.closest("[data-plan-montage]")) return toggleMontage(r);
     if (t.closest("[data-plan-realscale]")) return toggleRealScale(r);
+    if (t.closest("[data-plan-lock]")) return toggleLock(r);
     if (t.closest("[data-plan-rename]")) return doRename();
     if (t.closest("[data-plan-meta]")) return doMeta();
     if (t.closest("[data-plan-meta-close]")) { EP.Plan.Rooms.closeSheet(); return; }
@@ -946,8 +979,28 @@
     if (e.shiftKey) core().redo(); else core().undo();
   });
 
+  let lockFlashAt = 0;
   function onCoreChange(what) {
     if (!V.active) return;
+    if (what === "lock-revert" || what === "lock-blocked") {
+      // правку под замком ядро откатило — перерисовать по модели и сказать, почему не вышло
+      const Rm = EP.Plan.Rooms;
+      if (Rm) {
+        if (what === "lock-revert") {
+          Rm.renderScene();
+          if (EP.Plan.Unfold && EP.Plan.Unfold.isOpen()) EP.Plan.Unfold.drawStrip();
+          if (Rm.refreshSheetObj) Rm.refreshSheetObj();
+        }
+        const t = Date.now();
+        if (t - lockFlashAt > 1500 && Rm.flash) {
+          lockFlashAt = t;
+          const inSheet = !!(EP.Plan.Unfold && EP.Plan.Unfold.isOpen());
+          Rm.flash("🔒 Просмотр: изменения выключены. Сними замок 🔒 в шапке, чтобы править.", inSheet ? { inSheet: true } : undefined);
+        }
+      }
+      return;
+    }
+    if (what === "lock") return;
     if (what === "storage-full") { V.saveNote = T.storageFull; refreshToolbar(); return; }
     if (what !== "index" && what !== "close") {
       V.saveNote = T.savedAt + " " + fmtDate(Date.now());

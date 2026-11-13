@@ -76,6 +76,8 @@
     tooSmall: "Комната слишком маленькая (мин. 30 см).",
     polyNeed: "Нужно минимум 3 точки.",
     polySelf: "Контур пересекает сам себя — так комнату не замкнуть. Убери лишние точки (↩) и обведи заново.",
+    lockedTool: "🔒 Просмотр: этот инструмент меняет план. Сними замок 🔒 в шапке, чтобы рисовать.",
+    lockedEdit: "🔒 Просмотр: изменения выключены. Сними замок 🔒 в шапке, чтобы править.",
     dragCancelled: "Жест прервала система (звонок, жест «назад») — перенос отменён, всё на прежнем месте.",
     sheetGone: "Этого объекта больше нет (отменено ↶) — карточка закрыта.",
     thickProj: "Толщина стен по умолчанию — для всего проекта, см",
@@ -382,7 +384,25 @@
     if (br.left < rr.left + m) row.scrollLeft -= (rr.left + m) - br.left;
     else if (br.right > rr.right - m) row.scrollLeft += br.right - (rr.right - m);
   }
+  // Замок 🔒 «только просмотр» (EP.Plan.Core.setLocked): тапать и смотреть можно, менять — нет.
+  // Само «нельзя» держит ядро (любая правка откатывается в persist); здесь — чтобы случайное
+  // касание вообще не начинало правку: инструменты рисования не включаются, тяга = панорама,
+  // поля карточек только для чтения, ластик и меню копировать/удалить не работают.
+  const isLocked = () => { const c = core(); return !!(c && c.locked && c.locked()); };
+  const LOCK_MODES = new Set(["view", "ruler"]); // не меняют проект
+  function lockForm(node) {
+    if (!node || !isLocked()) return;
+    node.querySelectorAll("input, textarea, select").forEach((n) => {
+      if (n.closest("[data-lock-ok]")) return;
+      const tp = (n.getAttribute("type") || "").toLowerCase();
+      if (tp === "range" || tp === "button" || tp === "hidden") return;
+      if (n.tagName === "SELECT" || tp === "checkbox" || tp === "radio") n.disabled = true;
+      else n.readOnly = true;
+      n.classList.add("is-locked");
+    });
+  }
   function setMode(mode) {
+    if (isLocked() && !LOCK_MODES.has(mode)) { if (mode) flash(T.lockedTool); mode = "view"; }
     // Черновик магистрали НЕ теряется при выходе из ⇉ (просьба «легче сохранять магистраль»):
     // смена инструмента, ✕ шторки, Android-«назад», повторный тап по ⇉ — линия из 2+ точек
     // сохраняется. Раньше её молча стирал сброс ниже, а сохранить можно было только точным
@@ -461,7 +481,7 @@
     const p = core().project; if (!p) return;
     // ластик стилуса (Apple Pencil/Wacom, pointerType="eraser") — удаляет точку
     // под собой в любом режиме, если под ним реально что-то есть; иначе — обычный тап
-    if (e && e.pointerType === "eraser" && R.canvas && EP.Plan.Elements) {
+    if (e && e.pointerType === "eraser" && R.canvas && EP.Plan.Elements && !isLocked()) {
       const k = R.canvas.cmPerPx();
       const hit = EP.Plan.Elements.hitAt(w, EP.Plan.Elements.CFG.hitPx * k);
       if (hit && hit.el) { EP.Plan.Elements.deleteElement(hit.el); return; }
@@ -968,6 +988,7 @@
     const scope0 = draftScope(node), keep = scope0 ? draftCapture(node) : null;
     node.innerHTML = html;
     draftStamp(node);
+    lockForm(node);
     if (keep && keep.size && draftScope(node) === scope0) draftRestore(node, keep);
   }
   /* Карточка какого объекта открыта (п. 6): после ↶/↷ её перерисовываем по НОВОЙ модели (поля
@@ -1237,6 +1258,7 @@
   // Только удалить/копия — смену линии и так удобно делать в редакторе по обычному тапу.
   function closeQuickMenu() { const m = document.querySelector("#ep-plan-qmenu"); if (m) m.remove(); }
   function onCanvasLongPress(w, e) {
+    if (isLocked()) return; // меню «копия/удалить» под замком не нужно
     if (R.mode !== "view" || !EP.Plan.Elements || !R.canvas) return;
     const k = R.canvas.cmPerPx();
     const hit = EP.Plan.Elements.hitAt(w, EP.Plan.Elements.CFG.hitPx * k);
@@ -3595,6 +3617,7 @@
        на состояние «до» — правка жила в полусостоянии. Теперь холст сообщает об обрыве, и мы
        возвращаем проект ровно к началу жеста: снимаем столько снимков, сколько жест сделал
        (счётчик commitCount, а не длина стека — стек ограничен и сдвигается). */
+    if (canvas.onDragAllow) canvas.onDragAllow(() => !isLocked()); // замок 🔒: тяга = панорама
     if (canvas.onDragStart) canvas.onDragStart(() => { const c = core(); R.gestureMark = c.commitCount ? c.commitCount() : null; });
     if (canvas.onDragCancel) canvas.onDragCancel(() => {
       const c = core(), mark = R.gestureMark;
@@ -3619,6 +3642,7 @@
     return !!(R.canvas && Rn && ((Rn.isLive && Rn.isLive(R.canvas)) || (Rn.isLifted && Rn.isLifted(R.canvas))));
   }
   EP.Plan.Rooms = {
+    isLocked, lockForm, LOCK_MODES,
     attach, detach, setActive, setMode, renderScene, T, CFG, gestureBusy,
     // общий доступ для модулей слоёв 2-6
     openSheet, closeSheet, overlaySheet, closeOverlaySheet, overlayOpen, toast, flash, lastFlash: () => R.lastFlash || "", ensureVisibleAboveSheet, toggleSheetFullscreen, sheetRoom,
