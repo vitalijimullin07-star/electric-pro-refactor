@@ -225,23 +225,37 @@
     return { mode, lines: real, attach, groups, skipped, noApplPoint };
   }
 
+  // РАСПАЙКИ в раскладку не входят (SKIP), а «пересобрать всё» стирало им линию — коробка
+  // становилась «без линии», точки её больше не видели, а к ней тянулся кабель «в никуда»
+  // (аудит цепей, пакет 2). Запоминаем, с какими точками коробка делила линию, и после
+  // раскладки отдаём ей ту новую линию, на которую ушло большинство этих точек её комнаты.
+  // only — переразложить только коробки, чьи точки затронуты (автоматы по комнатам).
+  function junctionMates(p, only) {
+    const jMates = new Map();
+    (p.elements || []).forEach((j) => {
+      if (j.type !== "junction" || !j.circuitId) return;
+      const mates = (p.elements || []).filter((e) => e !== j && e.type !== "junction" && e.circuitId === j.circuitId);
+      if (mates.length && (!only || mates.some((e) => only.has(e.id)))) jMates.set(j.id, mates);
+    });
+    return jMates;
+  }
+  function junctionRevote(p, jMates, byId) {
+    jMates.forEach((mates, jid) => {
+      const j = byId.get(jid);
+      if (!j) return;
+      const jr = roomOf(p, j);
+      const vote = (list) => { const n = {}; list.forEach((e) => { if (e.circuitId) n[e.circuitId] = (n[e.circuitId] || 0) + 1; }); return Object.keys(n).sort((a, b) => n[b] - n[a])[0] || null; };
+      const inRoom = jr ? mates.filter((e) => { const r = roomOf(p, e); return r && r.id === jr.id; }) : [];
+      j.circuitId = vote(inRoom) || vote(mates);
+    });
+  }
+
   // ---- ПРИМЕНИТЬ предложение (одна транзакция undo) ----
   function apply(prop) {
     const c = core(), p = c.project;
     if (!p || !prop) return null;
     c.commit();
-    // РАСПАЙКИ в раскладку не входят (SKIP), а «пересобрать всё» стирало им линию — коробка
-    // становилась «без линии», точки её больше не видели, а к ней тянулся кабель «в никуда»
-    // (аудит цепей, пакет 2). Запоминаем, с какими точками коробка делила линию, и после
-    // раскладки отдаём ей ту новую линию, на которую ушло большинство этих точек её комнаты.
-    const jMates = new Map();
-    if (prop.mode === "all") {
-      (p.elements || []).forEach((j) => {
-        if (j.type !== "junction" || !j.circuitId) return;
-        const mates = (p.elements || []).filter((e) => e !== j && e.type !== "junction" && e.circuitId === j.circuitId);
-        if (mates.length) jMates.set(j.id, mates);
-      });
-    }
+    const jMates = prop.mode === "all" ? junctionMates(p, null) : new Map();
     if (prop.mode === "all") {
       p.circuits = []; p.rcdGroups = [];
       (p.elements || []).forEach((el) => { el.circuitId = null; });
@@ -266,14 +280,7 @@
       made.push(circ);
     });
     prop.attach.forEach((a) => a.elIds.forEach((id) => { const el = byId.get(id); if (el) el.circuitId = a.attach; }));
-    jMates.forEach((mates, jid) => {
-      const j = byId.get(jid);
-      if (!j) return;
-      const jr = roomOf(p, j);
-      const vote = (list) => { const n = {}; list.forEach((e) => { if (e.circuitId) n[e.circuitId] = (n[e.circuitId] || 0) + 1; }); return Object.keys(n).sort((a, b) => n[b] - n[a])[0] || null; };
-      const inRoom = jr ? mates.filter((e) => { const r = roomOf(p, e); return r && r.id === jr.id; }) : [];
-      j.circuitId = vote(inRoom) || vote(mates);
-    });
+    junctionRevote(p, jMates, byId);
     // техника — на линию своей точки питания; лента — на свет своей комнаты
     (p.appliances || []).forEach((a) => { const el = a.elementId && byId.get(a.elementId); if (el && el.circuitId && (!a.circuitId || prop.mode === "all")) a.circuitId = el.circuitId; });
     (p.ledStrips || []).forEach((ls) => {
@@ -286,8 +293,256 @@
     return made;
   }
 
+  /* ---------- АВТОМАТЫ ПО КОМНАТАМ ----------
+     Просьба пользователя: «отдельную кнопку, где могу этот процесс автоматизировать — назначить
+     на комнату отдельные автоматы на розетки, ТП, кондей, свет и т.д., но это должна быть
+     галочка — что та, что эта, в виде тумблера». В отличие от «⚡ Сформировать проект» (соседние
+     комнаты вместе, пока помещается) здесь КАЖДАЯ комната получает свой автомат на каждый
+     включённый вид нагрузки, а ТП, кондиционер, выводы и техника — свой на каждую точку.
+     Выключенный тумблер — этот вид не трогаем вовсе. Комнаты — все на этаже или выбранные.
+     proposeByRoom — чистая функция (проект не меняет), applyByRoom — одна транзакция ↶, после неё
+     трассы прокладываются сразу (routeAssigned) — как при назначении линии в редакторе точки.
+     Тумблеры — свойство УСТРОЙСТВА (как мастер обычно разносит щит), не проекта. */
+  const BR_CATS = [
+    { key: "sock", icon: "🔌", label: "Розетки", hint: "свой автомат на комнату; во влажной — свой диф" },
+    { key: "light", icon: "💡", label: "Свет", hint: "свой автомат на комнату; выключатели — к своему свету" },
+    { key: "warm", icon: "🌡", label: "Тёплый пол", hint: "свой автомат с дифом на каждый терморегулятор" },
+    { key: "ac", icon: "❄", label: "Кондиционер", hint: "свой автомат на каждый" },
+    { key: "out", icon: "⚡", label: "Выводы и техника", hint: "свой автомат на каждый вывод и прибор со своей линией" },
+    { key: "v24", icon: "🔆", label: "24В", hint: "своя линия на комнату" },
+    { key: "lv", icon: "🌐", label: "Слаботочка", hint: "интернет, ТВ, камеры — своя линия к роутеру на каждую точку" }
+  ];
+  const BR_DEF = { sock: true, light: true, warm: true, ac: true, out: true, v24: true, lv: false };
+  const BR_KEY = "ep_plan_byroom_v1";
+  const LV_TYPES = { internet: 1, tv: 1, camera: 1, sensor: 1, intercom: 1, leak: 1 };
+  function brLoad() {
+    const o = Object.assign({}, BR_DEF);
+    try {
+      const s = JSON.parse(localStorage.getItem(BR_KEY) || "null");
+      if (s && typeof s === "object") Object.keys(BR_DEF).forEach((k) => { if (typeof s[k] === "boolean") o[k] = s[k]; });
+    } catch (e) { /* хранилище недоступно — умолчания */ }
+    return o;
+  }
+  function brSave(o) { try { localStorage.setItem(BR_KEY, JSON.stringify(o)); } catch (e) { /* без запоминания */ } }
+  const BS = { cats: null, rooms: null, mode: "free", last: null }; // rooms: null — все комнаты этажа
+
+  // вид нагрузки точки (null — не раскладывается: распайка, стояк, щит, проём, «было»)
+  function brCatOf(el, appl) {
+    if (SKIP[el.type] || el.status === "existing") return null;
+    if (el.type === "block" && !((el.params && el.params.items) || []).some((t) => t === "socket" || t === "switch")) return null;
+    if (SWITCHES[el.type]) return "switch";        // садится на линию своего света (вид «Свет»)
+    if (LIGHTS[el.type]) return "light";
+    if (el.type === "output24") return "v24";
+    if (el.type === "warmfloor") return "warm";
+    if (el.type === "ac") return "ac";
+    if (LV_TYPES[el.type] || (el.type === "output" && el.layer === "lv")) return "lv";
+    const F = EP.Plan.Furniture, nd = appl && F && F.needFor ? F.needFor(appl) : null;
+    if ((nd && nd.own) || el.type === "output" || el.type === "output3") return "out";
+    return "sock"; // розетки, блоки и прочее силовое
+  }
+
+  function proposeByRoom(p, o) {
+    o = o || {};
+    const cats = Object.assign({}, BR_DEF, o.cats || {});
+    const mode = o.mode === "all" ? "all" : "free";
+    const fp = G().floorScoped(p);
+    const roomSel = o.rooms && o.rooms.length ? new Set(o.rooms) : null;
+    const cIds = new Set((p.circuits || []).map((c) => c.id));
+    const maxSock = ((p.settings && p.settings.rules && p.settings.rules.maxSocketsPerCircuit) || 8);
+    const F = EP.Plan.Furniture;
+    const applByEl = new Map();
+    (p.appliances || []).forEach((a) => { if (a.kind === "appl" && a.elementId) applByEl.set(a.elementId, a); });
+    const lines = [], groups = [], attach = [], switches = [];
+    const mk = (x) => { const ln = Object.assign({ prot: "none", poles: 1, elIds: [], rooms: [] }, x); lines.push(ln); return ln; };
+    const B = { sock: new Map(), light: new Map(), v24: new Map(), leak: new Map() };
+    const byRoom = (m, r, el) => { const k = r ? r.id : "_"; if (!m.has(k)) m.set(k, { room: r, els: [] }); m.get(k).els.push(el); };
+    const scope = new Set(); // точки, которым это действие назначает линию
+    let skipped = 0;
+    (fp.elements || []).forEach((el) => {
+      const appl = applByEl.get(el.id);
+      const cat = brCatOf(el, appl);
+      if (!cat || !cats[cat === "switch" ? "light" : cat]) return;
+      const r = roomOf(p, el);
+      if (roomSel && !(r && roomSel.has(r.id))) return;
+      if (mode !== "all" && el.circuitId && cIds.has(el.circuitId)) { skipped++; return; }
+      scope.add(el.id);
+      const rn = r ? r.name : "";
+      const nd = appl && F && F.needFor ? F.needFor(appl) : null;
+      if (cat === "switch") { switches.push({ el, r }); return; }
+      if (cat === "light") { byRoom(B.light, r, el); return; }
+      if (cat === "v24") { byRoom(B.v24, r, el); return; }
+      if (cat === "sock") { byRoom(B.sock, r, el); return; }
+      if (cat === "warm") { mk({ prefix: "QF", kind: "ded", title: `Тёплый пол${rn ? " · " + rn : ""}`, breaker: 16, prot: "own", elIds: [el.id], rooms: [rn] }); return; }
+      if (cat === "ac") { mk({ prefix: "QF", kind: "ded", title: `Кондиционер${rn ? " · " + rn : ""}`, breaker: 16, elIds: [el.id], rooms: [rn] }); return; }
+      if (cat === "out") {
+        if (nd && nd.own) {
+          mk({ prefix: "QF", kind: "ded", title: `${appl.name || ((F.byId && F.byId(appl.catId)) || {}).name || "Прибор"}${rn ? " · " + rn : ""}`,
+            breaker: nd.breaker, poles: appl.phases === 3 ? 3 : 1, prot: nd.rcd ? "own" : "none", elIds: [el.id], rooms: [rn], applId: appl.id });
+          return;
+        }
+        if (el.type === "output3") { mk({ prefix: "QF", kind: "ded", title: `Вывод 3ф${rn ? " · " + rn : ""}`, breaker: 25, poles: 3, elIds: [el.id], rooms: [rn] }); return; }
+        mk({ prefix: "QF", kind: "ded", title: `${nd ? (appl.name || "Прибор") : "Вывод"}${rn ? " · " + rn : ""}`, breaker: nd ? nd.breaker : 16,
+          prot: (nd && nd.rcd) || isWet(r) ? "own" : "none", elIds: [el.id], rooms: [rn] });
+        return;
+      }
+      if (cat === "lv") {
+        if (el.type === "leak") { byRoom(B.leak, r, el); return; }
+        const pre = el.type === "tv" ? "TV" : el.type === "camera" ? "CCTV" : "Int";
+        const nm = el.type === "tv" ? "ТВ" : el.type === "camera" ? "Камера" : tname(el);
+        mk({ prefix: pre, kind: "lv", title: `${nm}${rn ? " · " + rn : ""}`, breaker: 6, elIds: [el.id], rooms: [rn] });
+      }
+    });
+    // комнаты — туром от главного щита (соседние подряд — и номера линий идут по квартире)
+    const tourOf = (m) => roomTour(p, [...m.values()].filter((b) => b.room).map((b) => b.room)).map((r) => m.get(r.id)).concat(m.get("_") ? [m.get("_")] : []);
+    const parts = (own) => { if (own.length > 1) own.forEach((l, i) => { l.title += ` (${i + 1}/${own.length})`; }); };
+    // розетки: своя линия на комнату (больше порога «Проверок» — делим), влажная — свой диф
+    const sockLines = [];
+    tourOf(B.sock).forEach((b) => {
+      const rn = b.room ? b.room.name : "без комнаты", wet = isWet(b.room), own = [];
+      let cur = null;
+      b.els.forEach((el) => {
+        const n = Math.max(1, socketCount(el));
+        if (!cur || (cur.n + n > maxSock && cur.n > 0)) {
+          cur = mk({ prefix: "QF", kind: wet ? "wet" : "sock", title: `Розетки: ${rn}`, breaker: 16, prot: wet ? "own" : "none", rooms: [rn] });
+          cur.n = 0; own.push(cur); if (!wet) sockLines.push(cur);
+        }
+        cur.elIds.push(el.id); cur.n += n;
+      });
+      parts(own);
+    });
+    // линии, у которых НЕ останется точек (все их точки переназначаем), — их номера свободны,
+    // а сами линии после применения уберём; новые номера — наименьшие свободные у префикса
+    const willFree = new Set();
+    if (mode === "all") (p.circuits || []).forEach((c) => {
+      const mem = (p.elements || []).filter((e) => e.circuitId === c.id && e.type !== "junction");
+      if (mem.length && mem.every((e) => scope.has(e.id))) willFree.add(c.id);
+    });
+    // групповые УЗО на розетки — по RCD_GROUP_LINES линий на УЗО 40A 30 мА, как у «Сформировать
+    // проект». Но сначала — в УЖЕ стоящие групповые УЗО, где есть место: «Автоматы по комнатам»
+    // часто применяют к одной комнате за раз, и новое УЗО на каждую комнату (при полупустом
+    // соседнем) — лишний аппарат и два модуля в щите
+    const joined = [];
+    let si = 0;
+    (p.rcdGroups || []).forEach((g) => {
+      const n = (p.circuits || []).filter((c) => c.rcdGroupId === g.id && !willFree.has(c.id)).length;
+      let left = n > 0 ? RCD_GROUP_LINES - n : 0, k = 0;
+      while (left > 0 && si < sockLines.length) { const ln = sockLines[si++]; ln.prot = "group"; ln.groupId = g.id; ln.groupName = g.name; left--; k++; }
+      if (k) joined.push({ name: g.name, n: k });
+    });
+    sockLines.slice(si).forEach((ln, i) => {
+      const gi = Math.floor(i / RCD_GROUP_LINES);
+      if (!groups[gi]) groups[gi] = { key: "g" + gi, rating: 40, leak: 30 };
+      ln.prot = "group"; ln.groupKey = groups[gi].key;
+    });
+    // свет: своя линия на комнату (до LIGHT_MAX точек)
+    const lightOfRoom = new Map(), lineOf = new Map();
+    tourOf(B.light).forEach((b) => {
+      const rn = b.room ? b.room.name : "без комнаты", own = [];
+      let cur = null;
+      b.els.forEach((el) => {
+        if (!cur || cur.n >= LIGHT_MAX) { cur = mk({ prefix: "QF", kind: "light", title: `Свет: ${rn}`, breaker: 10, rooms: [rn] }); cur.n = 0; own.push(cur); }
+        cur.elIds.push(el.id); cur.n++; lineOf.set(el.id, cur);
+      });
+      parts(own);
+      if (b.room) lightOfRoom.set(b.room.id, own[0]);
+    });
+    // выключатели и датчики — на линию света, которым управляют; цель вне этого действия со своей
+    // линией — на её линию; иначе — на свет своей комнаты, иначе своя линия света
+    const existing = new Map((p.circuits || []).map((c) => [c.id, c]));
+    const elById = new Map((p.elements || []).map((e) => [e.id, e]));
+    switches.forEach(({ el, r }) => {
+      const tids = G().allTargetIds ? G().allTargetIds(el) : [];
+      let ln = null, keep = null;
+      for (const id of tids) {
+        if (lineOf.has(id)) { ln = lineOf.get(id); break; }
+        const t = elById.get(id);
+        if (t && t.type !== "output24" && t.circuitId && existing.has(t.circuitId) && !scope.has(t.id)) { keep = t.circuitId; break; }
+      }
+      if (!ln && !keep && r) ln = lightOfRoom.get(r.id) || null;
+      if (ln) ln.elIds.push(el.id);
+      else if (keep) attach.push({ attach: keep, elIds: [el.id] });
+      else mk({ prefix: "QF", kind: "light", title: `Свет${r ? ": " + r.name : ""}`, breaker: 10, elIds: [el.id], rooms: [r ? r.name : ""] });
+    });
+    tourOf(B.v24).forEach((b) => { const rn = b.room ? b.room.name : ""; mk({ prefix: "24В", kind: "v24", title: `24В${rn ? " · " + rn : ""}`, breaker: 6, elIds: b.els.map((e) => e.id), rooms: [rn], rgb: null }); });
+    tourOf(B.leak).forEach((b) => { const rn = b.room ? b.room.name : ""; mk({ prefix: "Int", kind: "lv", title: `Протечка → Нептун${rn ? " · " + rn : ""}`, breaker: 6, elIds: b.els.map((e) => e.id), rooms: [rn] }); });
+
+    const ORDER = { sock: 0, wet: 1, ded: 2, light: 3, v24: 4, lv: 5 };
+    lines.sort((a, b) => ORDER[a.kind] - ORDER[b.kind]);
+    const used = {};
+    const usedOf = (prefix) => {
+      if (used[prefix]) return used[prefix];
+      const re = new RegExp("^" + prefix + "\\s*(\\d+)$"), s = new Set();
+      (p.circuits || []).forEach((c) => { if (willFree.has(c.id)) return; const mm = re.exec(String(c.name)); if (mm) s.add(parseInt(mm[1], 10)); });
+      return (used[prefix] = s);
+    };
+    lines.forEach((l) => { const s = usedOf(l.prefix); let n = 1; while (s.has(n)) n++; s.add(n); l.name = l.prefix + n; });
+    const keptG = (p.rcdGroups || []).filter((g) => { const ls = (p.circuits || []).filter((c) => c.rcdGroupId === g.id); return !(ls.length && ls.every((c) => willFree.has(c.id))); });
+    const gUsed = new Set(keptG.map((g) => parseInt(String(g.name).replace(/\D/g, ""), 10)).filter(Number.isFinite));
+    groups.forEach((g) => { let n = 1; while (gUsed.has(n)) n++; gUsed.add(n); g.name = "УЗО" + n; });
+    return { mode, cats, rooms: roomSel ? [...roomSel] : null, lines, attach, groups, joined, skipped, scope: [...scope], willFree: [...willFree] };
+  }
+
+  function applyByRoom(prop) {
+    const c = core(), p = c.project;
+    if (!p || !prop || !(prop.lines.length || prop.attach.length)) return null;
+    const scope = new Set(prop.scope);
+    c.commit();
+    const hadEls = new Set((p.elements || []).map((e) => e.circuitId).filter(Boolean));
+    const hadG = new Set((p.circuits || []).map((x) => x.rcdGroupId).filter(Boolean));
+    const jMates = prop.mode === "all" ? junctionMates(p, scope) : new Map();
+    const byId = new Map((p.elements || []).map((e) => [e.id, e]));
+    if (prop.mode === "all") scope.forEach((id) => { const el = byId.get(id); if (el) el.circuitId = null; });
+    p.rcdGroups = Array.isArray(p.rcdGroups) ? p.rcdGroups : [];
+    const gById = {};
+    prop.groups.forEach((g) => { const ng = { id: core().uid("rg"), name: g.name, rating: g.rating, leak: g.leak }; p.rcdGroups.push(ng); gById[g.key] = ng; });
+    const colors = core().DEFAULTS.circuitColors;
+    const made = [];
+    prop.lines.forEach((l) => {
+      // цвет — первый свободный (как у «+ линия» в редакторе точки), чтобы линии различались
+      const usedC = new Set((p.circuits || []).map((x) => x.color));
+      const color = colors.find((col) => !usedC.has(col)) || colors[(p.circuits || []).length % colors.length];
+      const circ = c.model.newCircuit(l.name, color, l.breaker);
+      circ.poles = l.poles === 3 ? 3 : 1;
+      circ.title = l.title || "";
+      if (l.prot === "own") circ.rcd = true;
+      if (l.prot === "group") {
+        // в уже стоящее УЗО (groupId) или в новое этого действия (groupKey); УЗО пропало (не
+        // должно — предложение считается заново перед применением) — свой диф: розетки без
+        // защиты не оставляем
+        const g = l.groupId ? p.rcdGroups.find((x) => x.id === l.groupId) : gById[l.groupKey];
+        circ.rcd = true;
+        if (g) circ.rcdGroupId = g.id;
+      }
+      if (l.kind === "v24") circ.rgb = l.rgb == null ? null : l.rgb;
+      p.circuits.push(circ);
+      l.elIds.forEach((id) => { const el = byId.get(id); if (el) el.circuitId = circ.id; });
+      made.push(circ);
+    });
+    prop.attach.forEach((a) => a.elIds.forEach((id) => { const el = byId.get(id); if (el) el.circuitId = a.attach; }));
+    junctionRevote(p, jMates, byId);
+    // техника — на линию своей точки; лента без линии (или на опустевшей) — на свет своей комнаты
+    (p.appliances || []).forEach((a) => { const el = a.elementId && byId.get(a.elementId); if (el && scope.has(el.id) && el.circuitId) a.circuitId = el.circuitId; });
+    const nowEls = new Set((p.elements || []).map((e) => e.circuitId).filter(Boolean));
+    (p.ledStrips || []).forEach((ls) => {
+      if (ls.circuitId && nowEls.has(ls.circuitId)) return;
+      const rid = String(ls.wallId || "").split(":")[0];
+      const lamp = (p.elements || []).find((e) => LIGHTS[e.type] && e.circuitId && scope.has(e.id) && roomOf(p, e) && roomOf(p, e).id === rid);
+      if (lamp) ls.circuitId = lamp.circuitId;
+    });
+    // опустевшие ЭТИМ действием линии и групповые УЗО — убрать (в схеме остались бы пустыми строками);
+    // линии, которые были пустыми и до этого (мастер завёл заранее), не трогаем
+    const refd = (id) => nowEls.has(id) || (p.ledStrips || []).some((l) => l.circuitId === id) || (p.appliances || []).some((a) => a.circuitId === id);
+    const gone = new Set((p.circuits || []).filter((x) => hadEls.has(x.id) && !refd(x.id)).map((x) => x.id));
+    if (gone.size) {
+      p.circuits = p.circuits.filter((x) => !gone.has(x.id));
+      p.rcdGroups = p.rcdGroups.filter((g) => !(hadG.has(g.id) && !p.circuits.some((x) => x.rcdGroupId === g.id)));
+    }
+    c.persist("byroom");
+    return { made, ids: [...scope], removed: gone.size };
+  }
+
   // ---- шторка ----
-  const PROT = (p, l, prop) => l.prot === "group" ? (prop.groups.find((g) => g.key === l.groupKey) || {}).name : l.prot === "own" ? "диф 30мА" : "без УЗО";
+  const PROT = (p, l, prop) => l.prot === "group" ? (l.groupName || (prop.groups.find((g) => g.key === l.groupKey) || {}).name) : l.prot === "own" ? "диф 30мА" : "без УЗО";
   function cableFor(p, l) {
     const SC = EP.Plan.Scheme, SEC = { 6: "1.5", 10: "1.5", 16: "2.5", 20: "2.5", 25: "4", 32: "6", 40: "10", 50: "10", 63: "16" };
     if (l.kind === "lv") return "витая пара";
@@ -300,11 +555,6 @@
     const p = core().project; if (!p) return;
     const prop = propose(p, S.mode);
     S.last = prop;
-    const rows = prop.lines.map((l) => `<tr>
-        <td><b>${esc(l.name)}</b></td>
-        <td>${esc(l.title)}<div class="ep-ap-sub">${l.elIds.length} ${l.elIds.length === 1 ? "точка" : "точ."}</div></td>
-        <td>${l.poles === 3 ? "3P " : ""}${l.breaker}A<div class="ep-ap-sub">${esc(PROT(p, l, prop))}</div></td>
-        <td>${esc(cableFor(p, l))}</td></tr>`).join("");
     const attachN = prop.attach.reduce((s, a) => s + a.elIds.length, 0);
     rooms().openSheet(`<div class="ep-plan-srow"><b>⚡ Сформировать проект</b><span class="ep-plan-flex"></span>
         <button type="button" class="ep-plan-mini ep-clickable" data-sheet-fs aria-label="Во весь экран">⛶</button>
@@ -316,14 +566,82 @@
       </div>
       ${S.mode === "all" && (p.circuits || []).length ? `<div class="ep-plan-warnhint">Текущие линии (${p.circuits.length}) и групповые УЗО будут заменены. ↶ вернёт как было.</div>` : ""}
       ${prop.skipped && S.mode === "free" ? `<div class="ep-plan-modehint">Уже на линиях: ${prop.skipped} точ. — не трогаю.</div>` : ""}
-      ${prop.lines.length ? `<div class="ep-ap-wrap"><table class="ep-ap-table"><thead><tr><th>Линия</th><th>Что питает</th><th>Защита</th><th>Кабель</th></tr></thead><tbody>${rows}</tbody></table></div>`
+      ${prop.lines.length ? linesTable(p, prop)
         : `<div class="ep-plan-modehint">${(p.elements || []).length ? "Все точки уже на линиях. Выбери «Пересобрать все линии», чтобы разложить заново." : "Сначала расставь точки (🔌)."}</div>`}
       ${prop.groups.length ? `<div class="ep-plan-modehint">Групповые УЗО: ${prop.groups.map((g) => `${esc(g.name)} ${g.rating}A ${g.leak}мА`).join(", ")}</div>` : ""}
       ${attachN ? `<div class="ep-plan-modehint">Выключателей на уже существующие линии света: ${attachN}.</div>` : ""}
       ${prop.noApplPoint ? `<div class="ep-plan-warnhint">Техника без точки питания: ${prop.noApplPoint} — назначь ей точку в 🛋, иначе своей линии не будет.</div>` : ""}
-      <div class="ep-plan-srow ep-plan-sbtns ep-ap-apply">
+      <div class="ep-plan-srow"><button type="button" class="ep-plan-chip ep-clickable" data-plan-byroom>🎚 Свой автомат на каждую комнату →</button></div>
+      <div class="ep-plan-srow ep-plan-sbtns ep-plan-actbar">
         <button type="button" class="btn btn-primary ep-clickable" data-pap-apply ${prop.lines.length || attachN ? "" : "disabled"}>✓ Применить (${prop.lines.length} ${prop.lines.length === 1 ? "линия" : "линий"})</button>
       </div>`);
+  }
+  // таблица предложения — общая для обеих шторок
+  function linesTable(p, prop) {
+    const rows = prop.lines.map((l) => `<tr>
+        <td><b>${esc(l.name)}</b></td>
+        <td>${esc(l.title)}<div class="ep-ap-sub">${l.elIds.length} ${l.elIds.length === 1 ? "точка" : "точ."}</div></td>
+        <td>${l.poles === 3 ? "3P " : ""}${l.breaker}A<div class="ep-ap-sub">${esc(PROT(p, l, prop))}</div></td>
+        <td>${esc(cableFor(p, l))}</td></tr>`).join("");
+    return `<div class="ep-ap-wrap"><table class="ep-ap-table"><thead><tr><th>Линия</th><th>Что питает</th><th>Защита</th><th>Кабель</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  // шторка «🎚 Автоматы по комнатам»: тумблеры видов нагрузки, комнаты, режим, предпросмотр
+  function sheetByRoom() {
+    const p = core().project; if (!p) return;
+    if (!BS.cats) BS.cats = brLoad();
+    const rs = (G().floorScoped(p).rooms || []).filter((r) => (r.points || []).length >= 3);
+    if (BS.rooms) { BS.rooms = BS.rooms.filter((id) => rs.some((r) => r.id === id)); if (!BS.rooms.length) BS.rooms = null; }
+    const prop = proposeByRoom(p, { cats: BS.cats, rooms: BS.rooms, mode: BS.mode });
+    BS.last = prop;
+    const tgl = (cc) => `<button type="button" class="ep-plan-tgl ep-clickable" role="switch" aria-checked="${BS.cats[cc.key] ? "true" : "false"}" data-pbr-cat="${cc.key}">
+        <span class="ep-plan-tglic" aria-hidden="true">${cc.icon}</span><span class="ep-plan-tgltx"><b>${esc(cc.label)}</b><small>${esc(cc.hint)}</small></span><span class="ep-plan-tglsw" aria-hidden="true"></span></button>`;
+    const roomChips = `<button type="button" class="ep-plan-chip ep-clickable ${!BS.rooms ? "on" : ""}" data-pbr-room="all" aria-pressed="${!BS.rooms}">Все комнаты</button>`
+      + rs.map((r) => { const on = !!(BS.rooms && BS.rooms.indexOf(r.id) >= 0); return `<button type="button" class="ep-plan-chip ep-clickable ${on ? "on" : ""}" data-pbr-room="${esc(r.id)}" aria-pressed="${on}">${esc(r.name)}</button>`; }).join("");
+    const attachN = prop.attach.reduce((s, a) => s + a.elIds.length, 0);
+    const anyCat = BR_CATS.some((cc) => BS.cats[cc.key]);
+    const routeHint = p.settings && p.settings.routeOnAssign === false ? "" : `<div class="ep-plan-modehint">После «Применить» трассы новых линий проложатся сразу (нужны щит и магистраль ⇉ до комнат).</div>`;
+    rooms().openSheet(`<div class="ep-plan-srow"><b>🎚 Автоматы по комнатам</b><span class="ep-plan-flex"></span>
+        <button type="button" class="ep-plan-mini ep-clickable" data-sheet-fs aria-label="Во весь экран">⛶</button>
+        <button type="button" class="ep-plan-mini ep-clickable" data-pbr-close aria-label="Закрыть">✕</button></div>
+      <div class="ep-plan-hintrow">Каждой комнате — свой автомат на включённые виды нагрузки. Тёплый пол, кондиционер и выводы — свой на каждую точку. Выключенное не трогаем.</div>
+      <div class="ep-plan-tgls">${BR_CATS.map(tgl).join("")}</div>
+      <div class="ep-plan-slabel">Комнаты${rs.length ? "" : " — сначала нарисуй комнаты"}</div>
+      <div class="ep-plan-chips">${roomChips}</div>
+      <div class="ep-plan-srow">
+        <button type="button" class="ep-plan-chip ep-clickable ${BS.mode === "free" ? "on" : ""}" data-pbr-mode="free">Только точки без линии</button>
+        <button type="button" class="ep-plan-chip ep-clickable ${BS.mode === "all" ? "on" : ""}" data-pbr-mode="all">Переназначить и уже назначенные</button>
+      </div>
+      ${BS.mode === "all" && prop.willFree.length ? `<div class="ep-plan-warnhint">Линий останется без точек: ${prop.willFree.length} — они будут убраны. ↶ вернёт как было.</div>` : ""}
+      ${prop.skipped && BS.mode === "free" ? `<div class="ep-plan-modehint">Уже на линиях: ${prop.skipped} точ. — не трогаю.</div>` : ""}
+      ${prop.lines.length ? linesTable(p, prop)
+        : `<div class="ep-plan-modehint">${!anyCat ? "Включи хотя бы один вид нагрузки." : (prop.skipped ? "Все точки этих видов уже на линиях — выбери «Переназначить», чтобы разнести заново." : "В выбранных комнатах нет точек этих видов.")}</div>`}
+      ${prop.joined.length ? `<div class="ep-plan-modehint">Розетки — в уже стоящие групповые УЗО, где есть место: ${prop.joined.map((j) => `${esc(j.name)} +${j.n}`).join(", ")}.</div>` : ""}
+      ${prop.groups.length ? `<div class="ep-plan-modehint">Новые групповые УЗО на розетки: ${prop.groups.map((g) => `${esc(g.name)} ${g.rating}A ${g.leak}мА`).join(", ")}</div>` : ""}
+      ${attachN ? `<div class="ep-plan-modehint">Выключателей на уже существующие линии света: ${attachN}.</div>` : ""}
+      ${prop.lines.length ? routeHint : ""}
+      <div class="ep-plan-srow ep-plan-sbtns ep-plan-actbar">
+        <button type="button" class="btn btn-primary ep-clickable" data-pbr-apply ${prop.lines.length || attachN ? "" : "disabled"}>✓ Применить (${prop.lines.length} ${prop.lines.length === 1 ? "линия" : "линий"})</button>
+      </div>`);
+  }
+  // применить «Автоматы по комнатам» + трассы сразу; итог — над планом
+  function applyByRoomAndRoute() {
+    const p = core().project; if (!p) return null;
+    const prop = proposeByRoom(p, { cats: BS.cats || brLoad(), rooms: BS.rooms, mode: BS.mode }); // свежее: проект мог измениться
+    const res = applyByRoom(prop);
+    if (!res) return null;
+    const RT = EP.Plan.Routes;
+    const rr = RT && RT.routeAssigned ? RT.routeAssigned(res.ids) : null;
+    const p2 = core().project;
+    const lined = res.ids.filter((id) => (p2.elements || []).some((e) => e.id === id && e.circuitId));
+    const routed = lined.filter((id) => (p2.routes || []).some((r) => r.fromId === id)).length;
+    const busy = RT && RT.routeStatus && RT.routeStatus(p2).code === "busy";
+    let msg = `Готово: линий ${res.made.length}${res.removed ? `, убрано пустых ${res.removed}` : ""}.`;
+    if (rr && !rr.off) {
+      if (busy) msg += " Трассы перестраиваются…";
+      else if (lined.length) msg += ` Трассы: ${routed} из ${lined.length}${rr.unrouted.length ? ` · без трассы — ${rr.unrouted[0].reason}` : ""}.`;
+    }
+    res.msg = msg; res.routed = routed;
+    return res;
   }
 
   if (typeof document !== "undefined") {
@@ -339,9 +657,35 @@
         rooms().closeSheet();
         if (rooms().renderScene) rooms().renderScene();
         if (rooms().toast) rooms().toast(`Готово: линий ${made ? made.length : 0}. Проверь в ▤ Схеме и ✅ Проверках.`);
+        return;
+      }
+      // 🎚 автоматы по комнатам
+      if (t.closest("[data-plan-byroom]")) { sheetByRoom(); return; }
+      if (t.closest("[data-pbr-close]")) { rooms().closeSheet(); return; }
+      if ((b = t.closest("[data-pbr-cat]"))) {
+        const k = b.getAttribute("data-pbr-cat");
+        BS.cats = BS.cats || brLoad();
+        if (k in BR_DEF) { BS.cats[k] = !BS.cats[k]; brSave(BS.cats); }
+        sheetByRoom(); return;
+      }
+      if ((b = t.closest("[data-pbr-room]"))) {
+        const id = b.getAttribute("data-pbr-room");
+        if (id === "all") BS.rooms = null;
+        else { const cur = BS.rooms ? BS.rooms.slice() : []; const i = cur.indexOf(id); if (i >= 0) cur.splice(i, 1); else cur.push(id); BS.rooms = cur.length ? cur : null; }
+        sheetByRoom(); return;
+      }
+      if ((b = t.closest("[data-pbr-mode]"))) { BS.mode = b.getAttribute("data-pbr-mode") === "all" ? "all" : "free"; sheetByRoom(); return; }
+      if (t.closest("[data-pbr-apply]")) {
+        const res = applyByRoomAndRoute();
+        rooms().closeSheet();
+        if (rooms().renderScene) rooms().renderScene();
+        if (res) (rooms().flash || rooms().toast)(res.msg);
       }
     });
   }
 
-  EP.Plan.AutoProject = { propose, apply, sheet, roomOf, isWet, isKitchen, LIGHT_MAX, RCD_GROUP_LINES };
+  EP.Plan.AutoProject = { propose, apply, sheet, roomOf, isWet, isKitchen, LIGHT_MAX, RCD_GROUP_LINES,
+    // автоматы по комнатам
+    BR_CATS, BR_DEF, brLoad, brCatOf, proposeByRoom, applyByRoom, applyByRoomAndRoute, sheetByRoom,
+    byRoomState: () => BS, setByRoom: (o) => { if (o && o.cats) BS.cats = Object.assign({}, BR_DEF, o.cats); if (o && "rooms" in o) BS.rooms = o.rooms; if (o && o.mode) BS.mode = o.mode === "all" ? "all" : "free"; } };
 })();

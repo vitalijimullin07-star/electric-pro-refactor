@@ -152,9 +152,18 @@ body[data-visual-mode="day"] .ep-plan-moremenu { background: rgba(255, 255, 255,
    тулбар плана (свёрнут тулбар или развёрнут — без отдельного
    .is-ctrls-collapsed магического числа, оно больше не нужно: flex-grow
    сам съедает освободившееся место). */
+/* Ряды над холстом (шапка, этажи, вкладки, инструменты, подсказка) НЕ сжимаются, а холст берёт
+   ровно остаток (flex-basis 0, см. ниже). Раньше basis был auto — от содержимого: на компьютере
+   шторка стоит боковой панелью ВНУТРИ холста, и высокая шторка («🎚 Автоматы по комнатам»)
+   раздувала холст, а ряды инструментов с прокруткой (у них нулевой минимум) сплющивало до 13 px. */
+.ep-plan > * { flex-shrink: 0; }
 .ep-plan-canvas {
-  position: relative; display: flex; align-items: stretch; flex: 1 1 auto; min-height: 320px; height: auto;
+  position: relative; display: flex; align-items: stretch; flex: 1 1 0; min-height: 320px; height: auto;
   border-radius: 16px; overflow: hidden;
+  /* clip — блок, который нельзя прокрутить даже программно: фокус на поле в шторке и
+     scrollIntoView сдвигали весь холст вверх, внизу оставалась пустая полоса (plan-mount.js —
+     страховка для браузеров без clip) */
+  overflow: clip;
   background: rgba(255, 255, 255, .03); border: 1px solid rgba(255, 255, 255, .09);
 }
 /* flex:1 1 auto вместо width/height:100% — ОБЯЗАТЕЛЬНО: .ep-plan-canvas сам
@@ -824,7 +833,32 @@ button.ep-plan-qa { cursor: pointer; }
 .ep-plan-origc > summary::-webkit-details-marker { display: none; }
 .ep-plan-origr { display: flex; flex-direction: column; gap: 2px; padding: 4px 0 4px 16px; font: 500 12px system-ui; color: var(--text); }
 .ep-plan-roundchips { display: inline-flex; align-items: center; gap: 4px; font: 500 12px system-ui; color: var(--muted, #94a3b8); flex-wrap: wrap; }
-.ep-ap-apply { position: sticky; bottom: -1px; z-index: 2; background: rgb(var(--card-bg-rgb, 15,23,42)); padding: 8px 0 4px; margin-bottom: 0; }
+/* «🎚 Автоматы по комнатам»: тумблеры видов нагрузки (role="switch", состояние — aria-checked:
+   и цветом дорожки, и положением бегунка — не только цветом) */
+.ep-plan-tgls { display: flex; flex-direction: column; margin: 4px 0 6px; border: 1px solid rgba(148,163,184,.22); border-radius: 10px; overflow: hidden; flex: none; }
+.ep-plan-tgl { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 7px 10px; background: none; border: 0; border-bottom: 1px solid rgba(148,163,184,.14);
+  color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.ep-plan-tgl:last-child { border-bottom: 0; }
+.ep-plan-tgl:focus-visible { outline: 2px solid var(--accent, #22c55e); outline-offset: -2px; }
+.ep-plan-tglic { flex: none; width: 24px; text-align: center; font-size: 18px; line-height: 1; }
+.ep-plan-tgltx { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ep-plan-tgltx b { font: 600 14px system-ui; }
+.ep-plan-tgltx small { font: 500 11.5px system-ui; color: var(--muted, #94a3b8); }
+.ep-plan-tglsw { flex: none; position: relative; width: 44px; height: 26px; border-radius: 13px; background: rgba(148,163,184,.38); transition: background .15s ease; }
+.ep-plan-tglsw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35); transition: transform .15s ease; }
+.ep-plan-tgl[aria-checked="true"] .ep-plan-tglsw { background: var(--accent, #22c55e); }
+.ep-plan-tgl[aria-checked="true"] .ep-plan-tglsw::after { transform: translateX(18px); }
+.ep-plan-tgl[aria-checked="false"] .ep-plan-tgltx b { color: var(--muted, #94a3b8); }
+@media (prefers-reduced-motion: reduce) { .ep-plan-tglsw, .ep-plan-tglsw::after { transition: none; } }
+/* 🧵 трасса точки в её редакторе: вооружена — тянется на плане */
+.ep-plan-rtrow { gap: 6px; }
+.ep-plan-rtrow.is-armed b { color: var(--accent, #22c55e); }
+/* ⇉ полоса черновика магистрали — одна строка: «⇉ N · длина» и три кнопки (узкий телефон —
+   холст почти свободен, коридор, по которому рисуют, не закрыт) */
+.ep-plan-gdbar { flex-wrap: nowrap; align-items: center; }
+.ep-plan-gdbar .ep-plan-tbtn { flex: none; }
+.ep-plan-gdbar .ep-plan-gdcnt { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font: 700 15px system-ui; color: var(--text); }
+.ep-plan-gdbar .ep-plan-gdcnt small { font: 600 13px system-ui; color: var(--muted, #94a3b8); }
 .ep-plan-qfnums { color: var(--text, #e8eef7); font-size: 11.5px; text-align: right; }
 /* марка кабеля линии — кликабельна (просьба пользователя: менять сечение/марку прямо
    из «По линиям»), переопределяем жирный зелёный вид .ep-plan-iprice (тот для цены) на
@@ -927,7 +961,7 @@ body[data-visual-mode="day"] .ep-plan-wall.mat-soft { stroke: #94a3b8; }
    is-full сам position:fixed;inset:0 (полностью ограничен вьюпортом), поэтому
    .ep-plan{min-height:...} из базового правила тут ни на что не влияет (высота уже
    однозначно задана инсетами). */
-.ep-plan.is-full .ep-plan-canvas { flex: 1 1 auto; min-height: 0; height: auto; }
+.ep-plan.is-full .ep-plan-canvas { flex: 1 1 0; min-height: 0; height: auto; }
 
 /* — десктоп: шторка становится боковой панелью справа от холста, а не нижней
    (просьба пользователя «адаптировать под ПК»). display:flex у .ep-plan-canvas

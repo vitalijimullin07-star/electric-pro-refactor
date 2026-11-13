@@ -73,6 +73,9 @@
     // (true, как кладут гофру по потолку) или вдоль стен по контуру, как силовые (false).
     // Тумблер «Свет по потолку» в «⚙ Настройки трасс» шторки 🧵 Трассы.
     lampDirect: true,
+    // трасса СРАЗУ при назначении линии точке без трассы (plan-routes.js routeAssigned);
+    // выключается в «⚙ Настройки трасс»
+    routeOnAssign: true,
     cable24: "КГ ВВГнг-LS 2×2.5",
     cable24Rgb: "КГ ВВГнг-LS 5×1.5",
     // выпуск кабеля (концы на разделку/подключение) — см НА КАЖДЫЙ конец кабеля, добавляется
@@ -172,7 +175,7 @@
         mainBreaker: DEFAULTS.mainBreaker, phases: DEFAULTS.phases, meter: false, mainRcd: false,
         panelBrand: DEFAULTS.panelBrand, panelReserve: DEFAULTS.panelReserve, panelBox: null,
         symbolStyle: DEFAULTS.symbolStyle, realScale: DEFAULTS.realScale, cableReserve: DEFAULTS.cableReserve, cableRoundM: DEFAULTS.cableRoundM, cableBrand: DEFAULTS.cableBrand,
-        cable24: DEFAULTS.cable24, cable24Rgb: DEFAULTS.cable24Rgb, routeQuality: DEFAULTS.routeQuality, routePrecalc: DEFAULTS.routePrecalc, lampDirect: DEFAULTS.lampDirect,
+        cable24: DEFAULTS.cable24, cable24Rgb: DEFAULTS.cable24Rgb, routeQuality: DEFAULTS.routeQuality, routePrecalc: DEFAULTS.routePrecalc, lampDirect: DEFAULTS.lampDirect, routeOnAssign: DEFAULTS.routeOnAssign,
         cableStubPoint: DEFAULTS.cableStubPoint, cableStubJunction: DEFAULTS.cableStubJunction, cableStubPanel: DEFAULTS.cableStubPanel,
         routeOffset: DEFAULTS.routeOffset, sleeveD: DEFAULTS.sleeveD, connectorMode: DEFAULTS.connectorMode,
         gofraCeil: DEFAULTS.gofraCeil,
@@ -878,6 +881,7 @@
     if (p.settings.routeQuality == null) p.settings.routeQuality = DEFAULTS.routeQuality;
     if (p.settings.routePrecalc == null) p.settings.routePrecalc = DEFAULTS.routePrecalc;
     if (typeof p.settings.lampDirect !== "boolean") p.settings.lampDirect = DEFAULTS.lampDirect;
+    if (typeof p.settings.routeOnAssign !== "boolean") p.settings.routeOnAssign = DEFAULTS.routeOnAssign;
     if (p.settings.cable24 == null) p.settings.cable24 = DEFAULTS.cable24;
     if (p.settings.cable24Rgb == null) p.settings.cable24Rgb = DEFAULTS.cable24Rgb;
     if (p.settings.cableStubPoint == null) p.settings.cableStubPoint = DEFAULTS.cableStubPoint;
@@ -1094,6 +1098,11 @@
     const p = S.project;
     if (p) {
       p.updatedAt = now();
+      // отложенная запись хранит ОДИН проект: если она ещё не ушла, а сохраняется уже
+      // ДРУГОЙ (создал/открыл следующий за 400 мс) — сначала записать прежний. Раньше его
+      // последние правки молча терялись (замер: из 18 проектов, созданных подряд, на диске
+      // оставался один)
+      if (persistDirty && persistDirty !== p) flushPersist();
       persistDirty = p;
       clearTimeout(persistTimer);
       persistTimer = setTimeout(flushPersist, DEFAULTS.persistDebounceMs);

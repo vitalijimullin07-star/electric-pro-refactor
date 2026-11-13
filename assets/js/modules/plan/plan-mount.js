@@ -188,6 +188,7 @@
         <button type="button" class="ep-plan-tbtn ep-clickable${EP.Plan.Rooms && EP.Plan.Rooms.montageOn && EP.Plan.Rooms.montageOn() ? " on" : ""}" data-plan-grp="elec" data-plan-montage aria-label="Режим монтажника: только нужное на объекте, статусы точек" title="Режим монтажника">👷</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-daytask aria-label="Задание на день и готовность объекта" title="Задание на день">📋</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-autoproj aria-label="Сформировать проект: линии, автоматы, УЗО по точкам" title="Сформировать проект: линии, автоматы и УЗО по расставленным точкам">⚡</button>
+        <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-byroom aria-label="Автоматы по комнатам: свой автомат на комнату — розетки, свет, тёплый пол, кондиционер (тумблеры)" title="Автоматы по комнатам: свой автомат на каждую комнату по видам нагрузки">🎚</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-mode="guide" aria-label="Магистраль трасс — приоритетное направление автотрассировки" title="Нарисуй линию по коридору — трассы пойдут по ней">⇉</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-layers aria-label="Слои">🗂</button>
         <button type="button" class="ep-plan-tbtn ep-clickable" data-plan-grp="elec" data-plan-routes aria-label="Трассы">🧵</button>
@@ -466,6 +467,16 @@
     if (V.canvas) { try { V.canvas.destroy(); } catch (e) {} }
     V.canvas = EP.Plan.Canvas.create(host);
     if (EP.Plan.Rooms) EP.Plan.Rooms.attach(V.canvas);
+    // Холст не прокручивается НИКОГДА. У него overflow:hidden, а такой блок всё равно
+    // прокручивается программно: браузер, показывая поле ввода в шторке (фокус), и
+    // scrollIntoView сдвигали ВСЁ содержимое холста вверх — план и шторка уезжали, внизу
+    // оставалась пустая полоса, пока что-нибудь не перерисует экран (поймано замером:
+    // scrollTop холста 81 px). В CSS — overflow:clip (такой блок прокрутить нельзя вовсе);
+    // где clip не поддерживается (старый Safari) — сбрасываем прокрутку тут же.
+    if (!host.__epNoScroll) {
+      host.__epNoScroll = true;
+      host.addEventListener("scroll", () => { if (host.scrollTop || host.scrollLeft) { host.scrollTop = 0; host.scrollLeft = 0; } }, { passive: true });
+    }
     fitToProject();
     V.canvas.redraw();
     // Повторный «пустой холст снизу» (репорт пользователя, скриншот: пустота внизу
@@ -621,7 +632,15 @@
     const el = $("#ep-plan-floors");
     if (el) el.outerHTML = floorsBarHtml(p);
   }
+  // Выйти из инструмента ДО того, как сменится проект или этаж: незаконченная магистраль (⇉)
+  // сохраняется туда, где её рисовали (setMode). Раньше этаж/проект менялся первым, и черновик
+  // тихо пропадал — сохранять его было уже некуда.
+  function leaveMode() {
+    const R3 = EP.Plan.Rooms;
+    if (R3 && R3.currentMode && R3.currentMode() !== "view") R3.setMode("view");
+  }
   function doSwitchFloor(id) {
+    leaveMode();
     core().setActiveFloor(id);
     if (EP.Plan.Rooms) EP.Plan.Rooms.setMode("view"); // прошлая шторка/режим — с чужого этажа, закрываем
   }
@@ -682,7 +701,7 @@
     f.onchange = () => {
       const file = f.files && f.files[0]; if (!file) return;
       const rd = new FileReader();
-      rd.onload = () => { if (core().importJSON(String(rd.result || ""))) renderEditor(root); };
+      rd.onload = () => { leaveMode(); if (core().importJSON(String(rd.result || ""))) renderEditor(root); };
       rd.readAsText(file);
     };
     f.click();
@@ -727,7 +746,10 @@
     if ((el = t.closest("[data-plan-create]"))) return doCreate(r);
     if ((el = t.closest("[data-plan-open]"))) return void doOpen(r, el.getAttribute("data-plan-open"));
     if ((el = t.closest("[data-plan-del]"))) return doDelete(r, el.getAttribute("data-plan-del"));
-    if (t.closest("[data-plan-back]")) { core().closeProject(); return renderList(r); }
+    if (t.closest("[data-plan-back]")) {
+      leaveMode(); // незаконченная магистраль — в ЭТОТ проект, а не в никуда
+      core().closeProject(); return renderList(r);
+    }
     if (t.closest("[data-plan-ctrls]")) return toggleTopCtrls(r);
     if (t.closest("[data-plan-paper]")) return togglePaper(r);
     if (t.closest("[data-plan-montage]")) return toggleMontage(r);

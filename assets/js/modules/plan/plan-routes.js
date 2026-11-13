@@ -36,6 +36,8 @@
     title: "Трассы", build: "⚡ Построить", clear: "✕ Очистить",
     setTitle: "⚙ Настройки трасс",
     lampLbl: "Свет по потолку:", lampDirect: "напрямую", lampContour: "по контуру",
+    assignLbl: "Назначил линию точке:", assignOn: "трасса сразу", assignOff: "только по «Построить»",
+    assignHint: "Сразу — линия назначена в редакторе точки (или в развёртке) — её трасса появляется тут же, и её можно править прямо на плане. Нужны щит и магистраль (⇉) до комнаты.",
     lampHint: "Напрямую — от светильника к светильнику и к выключателю прямыми отрезками под 90° (как кладут гофру по потолку), к стене — перпендикулярно. По контуру — вдоль стен, как силовые линии (длиннее).",
     noPanel: "Поставь щит: режим 🔌, тип «Щ», тап по плану. На этаже без щита — стояк «СТ», связанный с этажом, где щит есть.",
     noElems: "Нет точек — добавь розетки/свет в режиме 🔌.",
@@ -2394,13 +2396,16 @@
   // между комнатами выключателя и щита — трасса не строится (как любая межкомнатная).
   // Ручная правка sw24-трассы (drag) на rebuild НЕ восстанавливается (anchorPos не знает
   // синтетический id) — регенерируется заново; редактировать её вручную смысла мало.
-  function build24Legs(c, p, panels) {
+  function build24Legs(c, p, panels, only) {
     const trafo = panels.filter((pn) => pn.transformer);
     const fp = G().floorScoped(p);
     const byId = new Map((fp.elements || []).map((e) => [e.id, e]));
     if (trafo.length) {
       (fp.elements || []).forEach((sw) => {
         if (sw.type !== "switch") return;
+        // onlyIds (трасса при назначении линии): только выключатели, которых это касается —
+        // сам назначенный или управляющий назначенной точкой 24В
+        if (only && !only.has(sw.id) && !G().allTargetIds(sw).some((id) => only.has(id))) return;
         const a = G().routeAnchor(p, sw);
         if (!a) return;
         // ВСЕ 24В-цели ВСЕХ клавиш этого выключателя (одна клавиша может нести несколько —
@@ -2462,7 +2467,7 @@
      слою (витая пара), как у слаботочки без линии. Идемпотентна (для «⚡ Построить»), трассы
      исчезнувших постов (пост удалили/поменяли тип, блок удалили) убираются.
      Возвращает посты, до которых трассу построить не вышло, — для списка «Без трассы». */
-  function buildBlockLvLegs(c, p, panels) {
+  function buildBlockLvLegs(c, p, panels, only) {
     const fp = G().floorScoped(p);
     const want = new Map(); // fromId -> { el, idx, type }
     (fp.elements || []).forEach((el) => {
@@ -2481,6 +2486,9 @@
     const failed = [];
     want.forEach((w, fid) => {
       if (have.has(fid)) return;
+      // onlyIds: строим кабели постов только у назначенных блоков (очистка исчезнувших постов
+      // выше — по всему этажу, она ничего не строит)
+      if (only && !only.has(w.el.id)) return;
       const pos = G().blockPostPoint(p, w.el, w.idx);
       if (!pos || !targets.length) { failed.push(w); return; }
       // «точка» поста для трассировки: тот же блок на стене, но со своим id и слоем
@@ -2574,6 +2582,13 @@
   function buildIncremental(opts) {
     const silent = !!(opts && opts.silent); // тихо — не открывать шторку «Трассы» (напр. поверх fullscreen развёртки)
     const quiet = !!(opts && opts.noCommit); // пробный/воркерный прогон — без undo и записи на диск
+    // noUndo — запись на диск есть, своего снимка истории нет: трасса СРАЗУ при назначении
+    // линии (routeAssigned) — снимок «до назначения» уже сделал тот, кто назначал, и ↶ одним
+    // шагом снимает и линию, и её трассу
+    const noUndo = quiet || !!(opts && opts.noUndo);
+    // onlyIds — достроить ТОЛЬКО эти точки (назначили линию — трасса появляется у неё, а не
+    // у всех непроложенных точек этажа сразу)
+    const only = opts && opts.onlyIds ? new Set(opts.onlyIds) : null;
     const c = core(), p = c.project;
     p.circuits = p.circuits || [];
     const fp = G().floorScoped(p); // только активный этаж — та же причина, что и в build()
@@ -2585,13 +2600,13 @@
     const lvBlocks = (fp.elements || []).some((el) => el.type === "block" && el.status !== "existing" && ((el.params && el.params.items) || []).some((it) => BLOCK_LV[it]));
     if (!points.length && !lvBlocks) { if (!silent) rooms().toast(T.noElems); return; }
     setAutoLane(fp);                 // порядок полос по геометрии (см. computeAutoLane)
-    if (!quiet) c.commit();
+    if (!noUndo) c.commit();
 
     // проходки уже существующих ручных трасс — актуализируем, путь НЕ трогаем
     (p.routes || []).forEach((rt) => { if (rt.manual) recomputeThroughWalls(p, rt); });
 
     const haveRoute = new Set((p.routes || []).map((r) => r.fromId));
-    const newPoints = points.filter((el) => !haveRoute.has(el.id));
+    const newPoints = points.filter((el) => !haveRoute.has(el.id) && (!only || only.has(el.id)));
     const allJuncts = (fp.elements || []).filter(isJunction).map((el) => ({ kind: "junction", id: el.id, el, circuitId: el.circuitId, pos: G().elemPoint(p, el) })).filter((n) => n.pos);
     const newJuncts = allJuncts.filter((n) => !haveRoute.has(n.id));
 
@@ -2609,9 +2624,9 @@
     }
     // «до щита» 24В (выкл→трансформатор) — достраиваем недостающие даже если новых точек
     // нет (напр. только-только назначили клавише 24В-цель): идемпотентна, не дублирует
-    build24Legs(c, p, (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, transformer: !!pn.transformer })));
+    build24Legs(c, p, (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, transformer: !!pn.transformer })), only);
     // ТВ/интернет в блоках — свой кабель к роутеру (только недостающие)
-    const lvFailInc = buildBlockLvLegs(c, p, (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, router: !!pn.router, transformer: !!pn.transformer })).concat(risersHere));
+    const lvFailInc = buildBlockLvLegs(c, p, (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, router: !!pn.router, transformer: !!pn.transformer })).concat(risersHere), only);
 
     // relayPanelCombs здесь НАМЕРЕННО НЕ зовём: пере-упорядочивание гребёнки двигает
     // хвосты УЖЕ построенных трасс, а инкрементальная сборка по инварианту существующие
@@ -2620,11 +2635,91 @@
     // щит в порядок — полная перестройка или «✨ Оптимизировать».
     hideGuides(p); // прячем ТОЛЬКО применённые к новым точкам (уже применённые ранее — уже скрыты)
     usedGuideIds = null;
+    // при onlyIds список «Без трассы» не заменяем, а обновляем ТОЛЬКО по этим точкам: иначе
+    // назначение линии одной розетке стирало бы из баннера остальные непроложенные точки
+    const prevUn = only && lastUnroutedPid === (p.id || null) ? lastUnrouted.filter((u) => !only.has(u.id)) : null;
     const unInc = collectUnrouted(p, newPoints, newJuncts,
       (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y } })).concat(risersHere), lvFailInc);
+    if (prevUn) lastUnrouted = prevUn.concat(unInc);
     if (!quiet) markInputs(p);
     c.persist("routes-build-inc");
     if (!silent) { if (unInc.length) rooms().toast(T.unroutedToast(unInc.length)); sheet(); }
+    return unInc;
+  }
+
+  /* ---------- ТРАССА СРАЗУ ПРИ НАЗНАЧЕНИИ ЛИНИИ ----------
+     Просьба пользователя: «когда магистраль и точки с щитом выставлены, когда назначаю линию на
+     точку — сразу рисовалась трасса, и по пути мог её редактировать». Назначили линию точке без
+     трассы — строим трассу ТОЛЬКО ей (и тому, что от неё неотделимо), без своего шага ↶: ↶ одним
+     шагом снимает и линию, и трассу. Неотделимо:
+      · у выключателя (и датчика, коммутирующего свет) — светильники его клавиш и следующие звенья
+        цепочки проходных: свет питается ЧЕРЕЗ него;
+      · у светильника — выключатель, через который он питается (и звенья цепочки до головы), если
+        тот ещё не проложен: иначе кабель «светильник → выключатель» висел бы без питания.
+        Выключателю без линии ставится линия его света — физически он в ней.
+     Точка, у которой трасса уже есть, сюда не попадает: смену её линии перестраивает обычная
+     автоперестройка (подпись входов). settings.routeOnAssign === false — выключено в настройках. */
+  function assignScope(p, ids) {
+    const fp = G().floorScoped(p);
+    const byId = new Map((fp.elements || []).map((e) => [e.id, e]));
+    const feed = switchFeedMap(p), prev = chainPrevMap(p);
+    const out = new Map();
+    const put = (e) => { if (e && isRoutable(e)) out.set(e.id, e); };
+    ids.forEach((id) => {
+      const el = byId.get(id);
+      if (!el) return;
+      put(el);
+      // вверх: выключатель (и звенья цепочки до головы), через который питается точка
+      let up = feed.get(el.id) || (el.type === "switch" ? prev.get(el.id) : null), guard = 0;
+      while (up && guard++ < 16) {
+        if (!up.circuitId && el.circuitId && up.type === "switch") up.circuitId = el.circuitId;
+        put(up);
+        up = up.type === "switch" ? prev.get(up.id) : null;
+      }
+      // вниз: светильники клавиш и следующие звенья цепочки
+      const down = [el];
+      guard = 0;
+      while (down.length && guard++ < 64) {
+        const s = down.shift();
+        if (s.type !== "switch" && !isFeeder(p, s)) continue;
+        G().allTargetIds(s).forEach((tid) => put(byId.get(tid)));
+        const nx = s.chainNext ? byId.get(s.chainNext) : null;
+        if (nx && !out.has(nx.id)) { put(nx); down.push(nx); }
+      }
+    });
+    return out;
+  }
+  // почему у точки нет трассы — тем же правилом, что в списке «Без трассы» шторки
+  function whyUnrouted(p, el) {
+    const fp = G().floorScoped(p);
+    const fid = p.activeFloorId || (p.floors && p.floors[0] && p.floors[0].id);
+    const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y } })).concat(riserNodes(p, fid));
+    return unroutedReason(p, el, panels);
+  }
+  const ownRoute = (p, elId) => (p.routes || []).find((r) => r.fromId === elId) || null;
+  // ids — точки, которым только что назначили линию. Возвращает {built — новые трассы,
+  // unrouted — {id, name, reason} тех, кому трассу построить не вышло, off — выключено}
+  // opts.force — явная кнопка «⚡ Проложить»: работает и при выключенной автоматике
+  function routeAssigned(ids, opts) {
+    const c = core(), p = c.project;
+    const res = { built: [], unrouted: [], off: false };
+    if (!p || !ids || !ids.length) return res;
+    if (!(opts && opts.force) && p.settings && p.settings.routeOnAssign === false) { res.off = true; return res; }
+    const scope = assignScope(p, ids);
+    const had = new Set((p.routes || []).map((r) => r.fromId));
+    const todo = Array.from(scope.keys()).filter((id) => !had.has(id));
+    if (!todo.length) return res;
+    const before = new Set((p.routes || []).map((r) => r.id));
+    const fp = G().floorScoped(p);
+    const fid = p.activeFloorId || (p.floors && p.floors[0] && p.floors[0].id);
+    if (!(fp.panels || []).length && !riserNodes(p, fid).length) {
+      res.unrouted = todo.map((id) => ({ id, name: unroutedName(p, scope.get(id)), reason: whyUnrouted(p, scope.get(id)) }));
+      return res;
+    }
+    const un = buildIncremental({ silent: true, noUndo: true, onlyIds: todo }) || [];
+    res.built = (p.routes || []).filter((r) => !before.has(r.id));
+    res.unrouted = un.filter((u) => scope.has(u.id));
+    return res;
   }
 
   // сброс конкретной трассы к авто-варианту (кнопка "↺ Авто" в sheetRoute) — пересчитывает
@@ -3474,9 +3569,16 @@
       if (r.fromId) { used.add(r.fromId); if (/^(sw24|blk):/.test(r.fromId)) { const e = srcElOf(p, r); if (e) used.add(e.id); } }
       if (r.toId) used.add(r.toId);
     });
-    const els = (p.elements || []).filter((e) => used.has(e.id) || isJunction(e)).map((e) => [e.id, e.type, e.wallId, e.offset, e.height,
+    const inSig = (p.elements || []).filter((e) => used.has(e.id) || isJunction(e));
+    const els = inSig.map((e) => [e.id, e.type, e.wallId, e.offset, e.height,
       e.params && e.params.x, e.params && e.params.y, e.params && e.params.items, e.params && e.params.itemMeta, e.circuitId, e.layer,
       e.targetIds, e.targetId, e.chainNext, e.keys, e.swKind, e.riserLink, e.floorId, e.beamSide, e.blockVert, e.entryPost, e.reveal]);
+    // линии — только те, на которых есть проложенные точки (и их место в списке: от него зависит
+    // полоса трассы). Раньше в подписи были ВСЕ линии, и «+ линия» у ещё не проложенной точки
+    // перестраивал заново все трассы проекта — хотя ни одна из них от новой линии не зависит
+    // (а саму точку теперь прокладывает routeAssigned, не трогая остальные)
+    const cUsed = new Set(inSig.map((e) => e.circuitId).filter(Boolean));
+    (p.routes || []).forEach((r) => { if (r.circuitId) cUsed.add(r.circuitId); });
     const st = p.settings || {};
     try {
       return JSON.stringify([els, used.size,
@@ -3486,7 +3588,7 @@
         (p.voids || []).map((v) => [v.id, v.a, v.b, v.kind, v.floorId]),
         (p.panels || []).map((pn) => [pn.id, pn.x, pn.y, pn.router, pn.transformer, pn.neptun, pn.height, pn.floorId]),
         (p.guides || []).map((g) => [g.id, g.points, g.kinds, g.floorId]),
-        (p.circuits || []).map((c) => [c.id, c.panelId]),
+        (p.circuits || []).map((c, i) => (cUsed.has(c.id) ? [c.id, c.panelId, i] : null)).filter(Boolean),
         (p.floors || []).map((f) => [f.id, f.height]),
         [st.routeOffset, st.routeType, st.surfaces, st.wallThickness, st.lampDirect, st.ceilingHeight, st.slabThickness]]);
     } catch (e) { return String(Math.random()); }
@@ -4257,6 +4359,11 @@
       <div class="ep-plan-modehint">Линии идут по контуру комнаты с отступом, стены не пересекают — только перпендикулярной проходкой Ø${p.settings.sleeveD || 20} (${useFloor ? "по полу — 1 кабель на гильзу" : ""}${useFloor && useCeil ? ", " : ""}${useCeil ? (p.settings.gofraCeil !== false ? "по потолку в гофре — 1 кабель на гильзу" : "по потолку без гофры — макс. 2 кабеля на гильзу") : ""}).</div>
       <div class="ep-plan-modehint">Тёплый пол — штроба в пол ${p.settings.tpChaseW || 50}×${p.settings.tpChaseH || 50} мм. Штроба к посту блока — в редакторе точки.</div>
       ${!juncN ? `<div class="ep-plan-modehint">${T.hintJ}</div>` : ""}
+      <div class="ep-plan-srow">${T.assignLbl}
+        <button type="button" class="ep-plan-chip ep-clickable ${p.settings.routeOnAssign !== false ? "on" : ""}" data-prt-assign="1">${T.assignOn}</button>
+        <button type="button" class="ep-plan-chip ep-clickable ${p.settings.routeOnAssign === false ? "on" : ""}" data-prt-assign="0">${T.assignOff}</button>
+      </div>
+      <div class="ep-plan-srow ep-plan-hintrow">${T.assignHint}</div>
       <div class="ep-plan-srow">${T.lampLbl}
         <button type="button" class="ep-plan-chip ep-clickable ${p.settings.lampDirect !== false ? "on" : ""}" data-prt-lamp="1">${T.lampDirect}</button>
         <button type="button" class="ep-plan-chip ep-clickable ${p.settings.lampDirect === false ? "on" : ""}" data-prt-lamp="0">${T.lampContour}</button>
@@ -4374,6 +4481,11 @@
       if ((c.project.routes || []).length) build({ noUndo: true }); else sheet();
       return;
     }
+    if ((b = t.closest("[data-prt-assign]"))) { // трасса сразу при назначении линии: вкл/выкл
+      const c = core(), on = b.getAttribute("data-prt-assign") === "1";
+      if ((c.project.settings.routeOnAssign !== false) !== on) { c.commit(); c.project.settings.routeOnAssign = on; c.persist("routes-assign"); }
+      sheet(); return;
+    }
     if ((b = t.closest("[data-prt-lamp]"))) { // свет по потолку: напрямую / по контуру
       const c = core(), on = b.getAttribute("data-prt-lamp") === "1";
       if ((c.project.settings.lampDirect !== false) !== on) {
@@ -4427,5 +4539,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { feedIssues, shaftConflicts, costOf, routeStatus, routeInputSig, routeTurns, build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, unroutedComputed: () => lastUnroutedPid != null, jobs: { run: runJob, state: jobsState, cancel: cancelQueued }, editVersion: () => editVer, pointVert, panelVert, panelChaseVert, endVert, hopParts, srcElOf, cableStub, keys24Of, isFeeder, routeLayerOf, STAR_LV, BLOCK_LV, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, dropCollinear, colinearMid, routeLen, feedPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
+  EP.Plan.Routes = { routeAssigned, whyUnrouted, ownRoute, routable: isRoutable, feedIssues, shaftConflicts, costOf, routeStatus, routeInputSig, routeTurns, build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, unroutedComputed: () => lastUnroutedPid != null, jobs: { run: runJob, state: jobsState, cancel: cancelQueued }, editVersion: () => editVer, pointVert, panelVert, panelChaseVert, endVert, hopParts, srcElOf, cableStub, keys24Of, isFeeder, routeLayerOf, STAR_LV, BLOCK_LV, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, dropCollinear, colinearMid, routeLen, feedPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
 })();

@@ -169,6 +169,19 @@
 
   // карточка ТОЧКИ (двойной тап): справа, под большой палец — высота, от угла, посты рамки
   function ptEl() { const p = core().project; return S.ptPanel ? (p.elements || []).find((e) => e.id === S.ptPanel) : null; }
+  /* Линию назначили в карточке точки развёртки — трасса сразу, как в редакторе на плане
+     (plan-routes.js routeAssigned, без своего шага ↶). План за развёрткой не виден, поэтому
+     результат — сообщением внутри шторки (flash inSheet), а править трассу — на плане. */
+  function routeAfterAssign(el) {
+    const RT = EP.Plan.Routes;
+    if (!RT || !RT.routeAssigned) return;
+    const res = RT.routeAssigned([el.id]);
+    if (res.off) return;
+    const own = RT.ownRoute(core().project, el.id);
+    const say = (m) => (rooms().flash ? rooms().flash(m, { inSheet: true }) : null);
+    if (own && res.built.some((r) => r.id === own.id)) say("Трасса проложена · " + G().fmtLen(G().polylineLen(own.points || [])));
+    else { const u = res.unrouted.find((x) => x.id === el.id); if (u) say("Линия назначена, трасса не построена: " + u.reason); }
+  }
   function renderPtPanel() {
     const box = $("#ep-pu-box"); if (!box) return;
     const prev = box.querySelector(".ep-plan-unfpt"); if (prev) prev.remove();
@@ -894,12 +907,14 @@
       const id = b.getAttribute("data-pu-circ");
       const c = core();
       c.commit(); el2.circuitId = el2.circuitId === id ? null : id; c.persist("elem-circuit");
+      if (el2.circuitId) routeAfterAssign(el2);
       renderPtPanel(); rooms().renderScene(); return;
     }
     if (t.closest("[data-pu-circ-new]")) {
       const el2 = ptEl(); if (!el2) return;
       const c = core();
       c.commit(); if (EL().assignNewCircuit) EL().assignNewCircuit(el2); c.persist("circuit-add");
+      routeAfterAssign(el2);
       renderPtPanel(); rooms().renderScene(); return;
     }
     if ((b = t.closest("[data-pu-pt]"))) {
