@@ -158,7 +158,7 @@
 
     root.innerHTML = `
     <div class="pv29">
-      <div class="pv29-head"><h2>Пул розеток</h2><span class="pv29-ver">${VERSION}</span></div>
+      
 
       <details class="pv29-card" data-fold="set" ${folds.set ? "open" : ""}>
         <summary>⚙ Настройки квартиры</summary>

@@ -7062,7 +7062,7 @@ test("фото: deleteProject чистит кэш фото своего прое
 
     test("обязательные: сводка перед печатью считает только реально пропущенное", () => {
       const EP2 = loadEstimate(), E = EP2.Estimate, R = EP2.EstimateRequired;
-      eq(R.analyze().missing >= 1, true, "на пустой смете напоминает хотя бы про сдачу объекта");
+      eq(R.analyze().missing, 0, "пустая смета — ничего не требует (акт и протокол предлагаются, когда в смете что-то есть)");
       E.addItem({ type: "work", name: "Подрозетник высверливание", unit: "шт", qty: 40, price: 120 });
       const before = R.analyze().missing;
       R.apply("boxes", ["Вклейка подрозетников"]);

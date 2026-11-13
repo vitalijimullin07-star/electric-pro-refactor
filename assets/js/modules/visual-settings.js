@@ -309,7 +309,7 @@
   function themeButton(theme) {
     const active = settings.themeId === theme.id ? "active" : "";
     return `
-      <button class="theme-btn ep-clickable ${active}" type="button" data-theme="${theme.id}" style="background:linear-gradient(135deg,${theme.bgA},${theme.bgB},${theme.bgC})">
+      <button class="theme-btn ep-clickable ${active}${/^#[cdef]/i.test(theme.bgA || "") ? " is-light" : ""}" type="button" data-theme="${theme.id}" style="background:linear-gradient(135deg,${theme.bgA},${theme.bgB},${theme.bgC})">
         <strong>${theme.name}</strong>
         <small>${theme.id}</small>
       </button>
@@ -488,7 +488,7 @@
       <section class="page visual-settings-page">
         <div class="page-head">
           <h1>Настройки визуала</h1>
-          <p>Перенесённый модуль из основного проекта: темы, режимы, профили, цвета, прозрачность, скругления, анимации, звук и отклик.</p>
+          <p>Темы, день и ночь, профили, цвета, прозрачность, скругления, анимации, звук и отклик.</p>
         </div>
 
         <div class="card visual-card">
