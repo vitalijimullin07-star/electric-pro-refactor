@@ -1350,6 +1350,13 @@
     } catch (e) {}
   }
   function open(opts) {
+    // не с главной (переход из уведомления и т.п.) — сначала на главную, чат откроется там
+    if (!chatHere() && window.EP && EP.Router && EP.Router.load && curRoute() !== "login") {
+      const once = () => { window.removeEventListener("ep:route-loaded", once); setTimeout(() => open(opts), 0); };
+      window.addEventListener("ep:route-loaded", once);
+      EP.Router.load("main");
+      return;
+    }
     try { if (window.EP && EP.AppShell && EP.AppShell.closeDrawer) EP.AppShell.closeDrawer(); } catch (e) {}
     if (opts && opts.view) view = opts.view;
     startAll();
@@ -1379,20 +1386,18 @@
     render();
   }
 
-  // плавающая кнопка чата — вызов с ЛЮБОГО экрана (просьба пользователя)
+  // Чат — ПОКА только на главном экране (просьба пользователя): кнопка 💬 в шапке рядом с
+  // индикатором состояния (#topbarChatBtn, app-shell.js), видна только на «Главной» и после входа.
+  // Плавающую кнопку на всех экранах, 💬 в шапке плана и пункт бургер-меню убрали. Уходишь с
+  // главной — открытый чат закрывается. Уведомления/звук/метка продолжают работать везде.
+  const CHAT_ROUTES = new Set(["main"]);
+  const curRoute = () => (EP.state && EP.state.currentRoute) || "";
+  const chatHere = () => CHAT_ROUTES.has(curRoute());
   function ensureFab() {
-    let f = document.getElementById("ep-chat-fab");
-    if (!f) {
-      f = document.createElement("button");
-      f.id = "ep-chat-fab"; f.type = "button";
-      f.className = "ep-chat-fab ep-clickable";
-      f.setAttribute("data-fb-open", "1");
-      f.setAttribute("aria-label", "Чат");
-      f.textContent = "💬";
-      document.body.appendChild(f);
-    }
-    const route = (EP.state && EP.state.currentRoute) || "";
-    f.hidden = route === "login" || !myUid();
+    const old = document.getElementById("ep-chat-fab"); if (old) old.remove(); // прежняя плавающая кнопка
+    const b = document.getElementById("topbarChatBtn");
+    if (b) b.hidden = !chatHere() || !myUid();
+    if (!chatHere() && isOpen()) close();
     paintBadge();
   }
 

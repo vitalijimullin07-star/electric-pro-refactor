@@ -4116,13 +4116,14 @@ test("фото: deleteProject чистит кэш фото своего прое
     const imp = EP.Plan.Core.importJSON(JSON.stringify({ project: { name: "o", rooms: [], elements: [], panels: [{ id: "pn1", x: 0, y: 0, name: "Щит" }], settings: {} } }));
     eq(imp.panels[0].avr, false, "у старого щита поле появилось");
   });
-  test("журнал замечаний (чат): подключён и кнопка есть в шапке плана", () => {
+  test("чат: подключён, кнопка в шапке рядом с индикатором состояния, только на главной", () => {
     const fs = require("fs"), path = require("path"), root = path.resolve(__dirname, "..");
     const idx = fs.readFileSync(path.join(root, "index.html"), "utf8");
     ok(/ui\/feedback\.js/.test(idx), "feedback.js подключён");
     const mount = fs.readFileSync(path.join(root, "assets", "js", "modules", "plan", "plan-mount.js"), "utf8");
-    ok(/data-fb-open/.test(mount), "кнопка 💬 в шапке редактора плана");
-    ok(mount.indexOf("data-fb-open") < mount.indexOf("data-plan-realscale"), "стоит рядом с «1:1» (перед ней)");
+    ok(!/data-fb-open/.test(mount), "в шапке плана кнопки чата больше нет (чат пока только на главной)");
+    const sh0 = fs.readFileSync(path.join(root, "assets", "js", "core", "app-shell.js"), "utf8");
+    ok(/<div class="topbar-right">\s*<button class="topbar-chat[^"]*" id="topbarChatBtn" type="button" data-fb-open[^>]*hidden>💬<\/button>\s*<button class="status-btn/.test(sh0), "💬 в шапке приложения — сразу перед индикатором состояния");
     const fb = fs.readFileSync(path.join(root, "assets", "js", "modules", "ui", "feedback.js"), "utf8");
     ok(/localStorage/.test(fb) && /clipboard/.test(fb), "хранит локально и умеет копировать в буфер");
     const css = fs.readFileSync(path.join(root, "assets", "css", "base.css"), "utf8");
@@ -4141,7 +4142,7 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/data-fb-tab/.test(fb) && /"notes"/.test(fb), "локальный журнал остался отдельной вкладкой");
     ok(/chatText/.test(fb), "чат можно скопировать целиком (у разработчика доступа к базе нет)");
     const shell = fs.readFileSync(path.join(root, "assets", "js", "core", "app-shell.js"), "utf8");
-    ok(/data-fb-open[^>]*>💬 Общий чат/.test(shell), "пункт «💬 Общий чат» в бургер-меню (доступен не только в плане)");
+    ok(!/💬 Общий чат/.test(shell), "пункта в бургер-меню нет — чат пока только на главной");
     const rules = fs.readFileSync(path.join(root, "firestore.rules"), "utf8");
     const blk = rules.slice(rules.indexOf("match /chat_messages/"));
     ok(rules.indexOf("match /chat_messages/") > 0, "правила для chat_messages есть");
@@ -4190,9 +4191,13 @@ test("фото: deleteProject чистит кэш фото своего прое
     ok(/function notify\(/.test(fb) && /showNotification/.test(fb), "уведомление через service worker");
     ok(/function paintBadge/.test(fb) && /setAppBadge/.test(fb), "красная метка у кнопки чата и на иконке приложения");
     ok(/data-fb-older/.test(fb) && /function loadOlder/.test(fb), "история: загрузить предыдущие");
-    ok(/ep-chat-fab/.test(fb) && /route === "login"/.test(fb), "плавающая кнопка чата на любом экране (кроме входа)");
+    ok(/const CHAT_ROUTES = new Set\(\["main"\]\)/.test(fb), "чат — только на главном экране");
+    ok(/b\.hidden = !chatHere\(\) \|\| !myUid\(\)/.test(fb), "кнопка видна только на главной и после входа");
+    ok(/if \(!chatHere\(\) && isOpen\(\)\) close\(\)/.test(fb), "ушёл с главной — чат закрылся");
+    ok(/if \(!chatHere\(\)[^\n]*EP\.Router\.load[\s\S]{0,260}EP\.Router\.load\("main"\)/.test(fb), "открытие не с главной (уведомление) — сначала переход на главную");
+    ok(/old\.remove\(\)/.test(fb), "прежняя плавающая кнопка убирается");
     const css = fs.readFileSync(path.join(root, "assets", "css", "base.css"), "utf8");
-    ok(/\.ep-chat-fab\{[^}]*position:fixed/.test(css), "FAB зафиксирован поверх экрана");
+    ok(/\.topbar-right\{display:flex/.test(css) && /grid-template-columns:38px 1fr auto/.test(css), "правая часть шапки — чат + индикатор");
     ok(/\[data-fb-open\]\[data-unread\]::after/.test(css), "метка непрочитанных рисуется CSS у любой кнопки вызова");
     ok(/\.ep-fb-dot\.is-on/.test(css), "зелёная точка «в сети»");
     const sw = fs.readFileSync(path.join(root, "sw.js"), "utf8");
@@ -10582,7 +10587,7 @@ test("фото: deleteProject чистит кэш фото своего прое
     test("название проекта видно на узкой шапке: второстепенные кнопки уходят в меню ⋮", () => {
       const m = srcOf("assets/js/modules/plan/plan-mount.js"), css = srcOf("assets/css/plan.css");
       const top = (m.match(/<div class="ep-plan-topx" id="ep-plan-topx">([\s\S]*?)<\/div>/) || [])[1] || "";
-      ["data-plan-rename", "data-plan-meta", "data-plan-3d", "data-fb-open", "data-plan-paper", "data-plan-realscale"].forEach((a) => ok(top.indexOf(a) >= 0, "в группе второстепенных: " + a));
+      ["data-plan-rename", "data-plan-meta", "data-plan-3d", "data-plan-paper", "data-plan-realscale"].forEach((a) => ok(top.indexOf(a) >= 0, "в группе второстепенных: " + a));
       ok(top.indexOf("data-plan-full") < 0 && top.indexOf("data-plan-ctrls") < 0, "«во весь экран» и «свернуть панель» остаются в строке");
       ok(/data-plan-topx aria-label=/.test(m) && /aria-expanded="false" aria-controls="ep-plan-topx"/.test(m), "кнопка ⋮ с состоянием для диктора");
       ok(/function titleHtml\(p\) \{[\s\S]*?data-plan-rename/.test(m), "тап по названию — переименовать");

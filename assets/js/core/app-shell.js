@@ -23,9 +23,12 @@ EP.AppShell = {
               <span id="topbarBatt" hidden></span>
             </span>
           </div>
-          <button class="status-btn ep-clickable" id="firebaseStatusBtn" type="button" aria-label="Статус Firebase">
-            <span class="status-dot status-wait" id="firebaseStatusDot"></span>
-          </button>
+          <div class="topbar-right">
+            <button class="topbar-chat ep-clickable" id="topbarChatBtn" type="button" data-fb-open aria-label="Общий чат" title="Общий чат" hidden>💬</button>
+            <button class="status-btn ep-clickable" id="firebaseStatusBtn" type="button" aria-label="Статус Firebase">
+              <span class="status-dot status-wait" id="firebaseStatusDot"></span>
+            </button>
+          </div>
         </header>
 
         <div class="menu-overlay" id="menuOverlay"></div>
@@ -41,7 +44,6 @@ EP.AppShell = {
             <button class="ep-clickable" type="button" data-route="main">🏠 Главная</button>
             <button class="ep-clickable" type="button" data-route="guide">📖 Гайд</button>
             <button class="ep-clickable" type="button" data-route="whatsnew">✨ Что нового <span class="menu-badge" id="whatsnewBadge" style="display:none">NEW</span></button>
-            <button class="ep-clickable" type="button" data-fb-open>💬 Общий чат</button>
             <button class="ep-clickable" type="button" data-route="database">🗂️ База данных</button>
             <button class="ep-clickable" type="button" data-route="materials">📦 Материалы</button>
             <button class="ep-clickable" type="button" data-route="work">🧰 Работа</button>

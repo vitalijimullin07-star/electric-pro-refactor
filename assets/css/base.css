@@ -51,7 +51,7 @@ body[data-button-shape="minimal"]{--button-radius:8px;--button-opacity:.55}
 .login-card h1{margin:0;font-size:calc(32px * var(--eff-text-scale,1));letter-spacing:-1px}.login-card p{color:var(--muted);margin:6px 0 22px}.mini-note{color:var(--muted);font-size:calc(13px * var(--eff-text-scale,1));margin-top:14px;line-height:1.35}.small-login-btn{font-size:calc(12px * var(--eff-text-scale,1));padding:9px}
 .login-status-row{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:14px;color:var(--muted);font-size:calc(13px * var(--eff-text-scale,1));font-weight:800}
 .app-shell{min-height:100dvh;padding-top:calc(var(--topbar-h) + 8px)}
-.topbar{position:fixed;left:6px;right:6px;top:max(6px,env(safe-area-inset-top));z-index:50;height:var(--topbar-h);border-radius:12px;display:grid;grid-template-columns:38px 1fr 36px;align-items:center;padding:0 6px}
+.topbar{position:fixed;left:6px;right:6px;top:max(6px,env(safe-area-inset-top));z-index:50;height:var(--topbar-h);border-radius:12px;display:grid;grid-template-columns:38px 1fr auto;align-items:center;padding:0 6px}
 .icon-btn{border:0;color:var(--text);background:rgba(255,255,255,.08);border-radius:var(--button-radius);min-width:32px;height:30px;display:grid;place-items:center;cursor:pointer;font-size:calc(22px * var(--eff-text-scale,1));transition:transform calc(120ms * var(--anim-speed)) var(--anim-ease)}
 .burger-btn{gap:4px;padding:7px 8px}.burger-btn span{width:18px;height:2px;display:block;border-radius:999px;background:var(--text)}
 .topbar-title{min-width:0;display:flex;gap:8px;align-items:baseline;justify-content:center}.topbar-title strong{font-size:calc(12px * var(--eff-text-scale,1));white-space:nowrap}.topbar-title span{color:var(--muted);font-size:calc(11px * var(--eff-text-scale,1));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -66,7 +66,7 @@ body[data-button-shape="minimal"]{--button-radius:8px;--button-opacity:.55}
    остаются display:none — визуал шапки не меняется вообще. */
 body.pwa-fullscreen .topbar-title{justify-content:space-between}
 body.pwa-fullscreen .topbar-clock,body.pwa-fullscreen .topbar-sysinfo{display:inline-flex}
-.status-btn{border:0;background:transparent;height:30px;display:grid;place-items:center;cursor:pointer}.status-dot{width:13px;height:13px;border-radius:999px;display:block;box-shadow:0 0 0 4px rgba(255,255,255,.08)}.status-ok{background:var(--accent);box-shadow:0 0 16px var(--accent)}.status-error{background:var(--danger);box-shadow:0 0 16px var(--danger)}.status-wait{background:var(--warning);box-shadow:0 0 16px var(--warning)}.status-cache{background:#38bdf8;box-shadow:0 0 16px #38bdf8}
+.status-btn{border:0;background:transparent;height:30px;min-width:30px;display:grid;place-items:center;cursor:pointer}.status-dot{width:13px;height:13px;border-radius:999px;display:block;box-shadow:0 0 0 4px rgba(255,255,255,.08)}.status-ok{background:var(--accent);box-shadow:0 0 16px var(--accent)}.status-error{background:var(--danger);box-shadow:0 0 16px var(--danger)}.status-wait{background:var(--warning);box-shadow:0 0 16px var(--warning)}.status-cache{background:#38bdf8;box-shadow:0 0 16px #38bdf8}
 /* Офлайн-вход (EP.Auth.enterOffline): под точкой статуса — подпись «офлайн». Точку
    красит логгер (ошибки/предупреждения), поэтому состояние связи показываем ОТДЕЛЬНО,
    а не цветом точки: без сети логгер почти наверняка пожелтеет от неудачных запросов. */
@@ -1871,3 +1871,8 @@ body[data-noblur="1"] .ep-fb-card{backdrop-filter:none!important;-webkit-backdro
   border-top: 1px solid rgba(148, 163, 184, .22);
 }
 body[data-kb="1"] .ep-pset-ov { padding-bottom: calc(var(--kb) + 12px); }
+
+/* кнопка чата в шапке — рядом с индикатором состояния (чат пока только на главной) */
+.topbar-right{display:flex;align-items:center;gap:2px}
+.topbar-chat{border:0;background:transparent;width:34px;height:30px;display:grid;place-items:center;font-size:18px;line-height:1;border-radius:9px;cursor:pointer;color:var(--text)}
+.topbar-chat[hidden]{display:none}
