@@ -43,13 +43,13 @@
   font:900 18px/1 system-ui;
 }
 .shv28-stepper input {
-  height:34px; width:100%; text-align:center; border:1px solid rgba(255,255,255,.14);
-  border-radius:10px; background:rgba(0,0,0,.22); color:var(--text);
+  height:34px; width:100%; text-align:center; border:1px solid rgba(127,140,170,.32);
+  border-radius:10px; background:rgba(127,140,170,.09); color:var(--text);
   font:900 15px/1 system-ui; outline:none; -moz-appearance:textfield;
 }
 .shv28-stepper input::-webkit-outer-spin-button,
 .shv28-stepper input::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
-.shv28-stepper input:focus { background:rgba(0,0,0,.3); border-color:var(--accent); }
+.shv28-stepper input:focus { background:rgba(127,140,170,.16); border-color:var(--accent); }
 
 /* отдельные линии */
 .shv28-lines { display:flex; flex-direction:column; gap:7px; }
@@ -82,8 +82,8 @@
 .shv28-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .shv28-grid2 label { display:flex; flex-direction:column; gap:5px; font:800 12px/1.2 system-ui; color:var(--muted); }
 .shv28-grid2 select {
-  height:40px; border:1px solid rgba(255,255,255,.14); border-radius:10px;
-  background:rgba(0,0,0,.22); color:var(--text); font:800 14px/1 system-ui; padding:0 8px;
+  height:40px; border:1px solid rgba(127,140,170,.32); border-radius:10px;
+  background:rgba(127,140,170,.09); color:var(--text); font:800 14px/1 system-ui; padding:0 8px;
 }
 .shv28-sizemode {
   margin-top:10px; width:100%; display:flex; align-items:center; justify-content:space-between;
@@ -97,7 +97,7 @@
 /* сводка */
 .shv28-summary {
   display:grid; grid-template-columns:repeat(3,1fr); gap:8px;
-  background:rgba(0,0,0,.28); border:1px solid color-mix(in srgb,var(--accent) 35%,transparent);
+  background:rgba(var(--card-bg-rgb),var(--card-opacity,.72)); border:1px solid color-mix(in srgb,var(--accent) 35%,transparent);
   border-radius:16px; padding:12px;
 }
 .shv28-summary div { display:flex; flex-direction:column; gap:3px; text-align:center; }
@@ -131,7 +131,7 @@
 .shv28-prof-btn { border:1px solid rgba(255,255,255,.14); background:rgba(var(--card-bg-rgb),.5); color:var(--text); border-radius:12px; padding:11px 6px; font:800 13px/1.1 system-ui; }
 .shv28-prof-btn.active { background:rgba(99,102,241,.22); border-color:#818cf8; color:var(--text); }
 
-.shv28-wide { width:100%; height:42px; border:1px solid rgba(255,255,255,.14); border-radius:10px; background:rgba(0,0,0,.22); color:var(--text); font:800 14px/1 system-ui; padding:0 10px; }
+.shv28-wide { width:100%; height:42px; border:1px solid rgba(127,140,170,.32); border-radius:10px; background:rgba(127,140,170,.09); color:var(--text); font:800 14px/1 system-ui; padding:0 10px; }
 
 /* подсказки помещений */
 .shv28-room-tx { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }

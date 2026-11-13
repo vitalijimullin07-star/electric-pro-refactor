@@ -12,7 +12,7 @@
 .ep-db-pill {
   flex: 1 1 auto; min-width: 130px;
   padding: 10px 12px; border-radius: var(--button-radius);
-  border: 1px solid rgba(255,255,255,.14);
+  border: 1px solid rgba(127,140,170,.32);
   background: rgba(var(--card-bg-rgb), .55);
   color: var(--text); font-weight: 600; cursor: pointer;
   transition: background .18s, border-color .18s, transform .12s;
@@ -38,8 +38,8 @@
 .ep-db-search {
   flex: 1 1 160px; min-width: 140px;
   padding: 9px 12px; border-radius: var(--button-radius);
-  border: 1px solid rgba(255,255,255,.14);
-  background: rgba(0,0,0,.22); color: var(--text); font-size: 15px;
+  border: 1px solid rgba(127,140,170,.32);
+  background: rgba(127,140,170,.08); color: var(--text); font-size: 15px;
 }
 .ep-db-search::placeholder { color: var(--muted); }
 
@@ -87,8 +87,8 @@
 .ep-db-edit-grid .ep-db-input:first-child { grid-column: 1 / -1; }
 .ep-db-input {
   padding: 9px 10px; border-radius: 11px;
-  border: 1px solid rgba(255,255,255,.14);
-  background: rgba(0,0,0,.22); color: var(--text); font-size: 14px; width: 100%;
+  border: 1px solid rgba(127,140,170,.32);
+  background:rgba(127,140,170,.09); color: var(--text); font-size: 14px; width: 100%;
 }
 .ep-db-input::placeholder { color: var(--muted); }
 .ep-db-input-sm { }
@@ -96,8 +96,8 @@
 .ep-db-textarea {
   width: 100%; min-height: 120px; margin-top: 8px;
   padding: 10px; border-radius: 11px; resize: vertical;
-  border: 1px solid rgba(255,255,255,.14);
-  background: rgba(0,0,0,.25); color: var(--text); font-family: monospace; font-size: 13px;
+  border: 1px solid rgba(127,140,170,.32);
+  background:rgba(127,140,170,.09); color: var(--text); font-family: monospace; font-size: 13px;
 }
 
 /* нижняя панель действий (теперь сверху, компактная) */
@@ -184,7 +184,7 @@
 .ep-db-subfold-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; }
 .ep-db-fold-count {
   flex: 0 0 auto; color: var(--muted); font-size: 11px; font-weight: 600;
-  background: rgba(0,0,0,.22); padding: 1px 9px; border-radius: 999px; letter-spacing: 0;
+  background:rgba(127,140,170,.09); padding: 1px 9px; border-radius: 999px; letter-spacing: 0;
 }
 
 /* тело папки/подпапки — отступ слева как в файловом менеджере */
@@ -218,8 +218,8 @@
 /* селект валюты в тулбаре */
 .ep-db-cur {
   flex: 0 0 auto; padding: 8px 9px; border-radius: var(--button-radius);
-  border: 1px solid rgba(255,255,255,.14);
-  background: rgba(0,0,0,.22); color: var(--text); font-size: 14px; font-weight: 600;
+  border: 1px solid rgba(127,140,170,.32);
+  background:rgba(127,140,170,.09); color: var(--text); font-size: 14px; font-weight: 600;
 }
 
 /* === ФИКС читаемости карточек в день/ночь (Claude) === */

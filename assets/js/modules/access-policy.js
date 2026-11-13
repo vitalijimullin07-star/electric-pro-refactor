@@ -84,7 +84,7 @@
   function renderPolicy(policy) {
     const p = normalizePolicy(policy);
     const subTitle = p.subscription.active
-      ? `${p.subscription.title} · ${p.subscription.daysLeft || 0}д`
+      ? `${p.subscription.title} · ${p.subscription.daysLeft || 0} дн.`
       : "Нет подписки";
 
     const aiTitle = p.ai.enabled

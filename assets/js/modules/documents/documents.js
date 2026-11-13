@@ -7,6 +7,9 @@
   let ctx = { items: null, client: null };       // контекст из сохранённой сметы клиента (если открыто из раздела «Клиенты»)
   function Draft() { return ctx.items ? { getItems: function () { return ctx.items; } } : ((window.EP && EP.Estimate) || null); }
   function Profile() { return (window.EP && EP.Profile) || null; }
+  // в печатных документах — формат документа: «1 234,50 ₽» (разряды пробелом, копейки запятой), как в смете
+  function pm(v) { const P = window.EP && window.EP.EstimatePrint; return (P && P.money ? P.money(v) : Number(v || 0).toFixed(2)) + " \u20bd"; }
+  function words(v) { const P = window.EP && window.EP.EstimatePrint; return P && P.rublesInWords ? P.rublesInWords(v) : ""; }
   function money(v) { try { if (window.EPCurrency && EPCurrency.format) return EPCurrency.format(v); } catch (e) {} return Number(v || 0).toFixed(2) + " \u20bd"; }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
   const NKEY = "ep_smeta_no_v29";
@@ -166,7 +169,8 @@
   // общий конструктор печатной формы документа
   function openDoc(title, bodyHtml) {
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
-<style>body{font-family:Arial,Helvetica,sans-serif;color:#111;padding:22px;max-width:760px;margin:0 auto;font-size:13px;line-height:1.6}
+<style>@page{size:A4 portrait;margin:15mm 12mm 14mm}body{font-family:Arial,Helvetica,sans-serif;color:#111;padding:22px;max-width:760px;margin:0 auto;font-size:13px;line-height:1.6}@media print{body{padding:0;max-width:none}}
+tr,td,th{break-inside:avoid;page-break-inside:avoid}thead{display:table-header-group}.sign{break-inside:avoid;page-break-inside:avoid}
 h1{font-size:17px;margin:0 0 6px;text-align:center}h2{font-size:14px;margin:14px 0 4px}p{margin:6px 0}
 .row{display:flex;justify-content:space-between;color:#475569;margin-bottom:10px}
 table{width:100%;border-collapse:collapse;font-size:12px;margin:6px 0}th,td{border:1px solid #cbd5e1;padding:5px 7px}th{background:#f1f5f9;text-align:left}.c{text-align:center}.r{text-align:right}
@@ -201,7 +205,7 @@ table{width:100%;border-collapse:collapse;font-size:12px;margin:6px 0}th,td{bord
 <h2>1. Предмет договора</h2>
 <p>1.1. Исполнитель обязуется выполнить электромонтажные работы на объекте: ${esc(h.ci.object) || "______"}, а Заказчик — принять и оплатить их.<br>1.2. Перечень и объём работ определяются сметой (Приложение №1).</p>
 <h2>2. Стоимость и порядок оплаты</h2>
-<p>2.1. Стоимость работ составляет ${money(s.total)}.<br>2.2. Аванс ${avans}% — ${money(s.total * avans / 100)}. Окончательный расчёт производится после подписания акта выполненных работ.</p>
+<p>2.1. Стоимость работ составляет ${pm(s.total)}${words(s.total) ? ` (${words(s.total).replace(/^./, (c) => c.toLowerCase())})` : ""}.<br>2.2. Аванс ${avans}% — ${pm(s.total * avans / 100)}. Окончательный расчёт производится после подписания акта выполненных работ.</p>
 <h2>3. Сроки</h2>
 <p>3.1. Начало работ: ${esc(dp("contract", "dateStart", "______"))}. Окончание: ${esc(dp("contract", "dateEnd", "______"))}.</p>
 <h2>4. Гарантия</h2>
@@ -221,7 +225,7 @@ table{width:100%;border-collapse:collapse;font-size:12px;margin:6px 0}th,td{bord
   }
   function printAct() {
     const s = sums(); const h = docHead();
-    const wrows = s.works.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.name)}</td><td class="c">${x.qty} ${esc(x.unit)}</td><td class="r">${money(x.price)}</td><td class="r">${money(x.price * x.qty)}</td></tr>`).join("");
+    const wrows = s.works.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.name)}</td><td class="c">${x.qty} ${esc(x.unit)}</td><td class="r">${pm(x.price)}</td><td class="r">${pm(x.price * x.qty)}</td></tr>`).join("");
     const dogRef = dp("act", "dogNo", "") ? `по договору № ${esc(dp("act", "dogNo", ""))}${dp("act", "dogDate", "") ? " от " + esc(dp("act", "dogDate", "")) : ""}` : "";
     const body = `
 <h1>АКТ № ${esc(dp("act", "no", "1"))} выполненных работ</h1>
@@ -229,9 +233,9 @@ table{width:100%;border-collapse:collapse;font-size:12px;margin:6px 0}th,td{bord
 <p><b>Исполнитель:</b> ${esc(h.ml) || "—"}<br><b>Заказчик:</b> ${esc(h.ci.client) || "—"}<br><b>Объект:</b> ${esc(h.ci.object) || "—"}</p>
 <p>Исполнителем выполнены следующие работы:</p>
 <table><thead><tr><th>№</th><th>Работа</th><th class="c">Кол-во</th><th class="r">Цена</th><th class="r">Сумма</th></tr></thead><tbody>${wrows || '<tr><td colspan="5" class="c">—</td></tr>'}</tbody></table>
-<div class="sub-t">Итого работы: <b>${money(s.workSum)}</b></div>
-<div class="sub-t">Материалы: <b>${money(s.matSum)}</b></div>
-<div class="grand">ВСЕГО: ${money(s.total)}</div>
+<div class="sub-t">Итого работы: <b>${pm(s.workSum)}</b></div>
+<div class="sub-t">Материалы: <b>${pm(s.matSum)}</b></div>
+<div class="grand">ВСЕГО: ${pm(s.total)}</div>${words(s.total) ? `<p class="sub-t">Сумма прописью: ${words(s.total)}</p>` : ""}
 <p>Работы выполнены в полном объёме и в установленные сроки. Заказчик претензий по объёму, качеству и срокам выполнения работ не имеет.</p>
 <div class="sign"><div><b>Исполнитель</b><br><br>______________</div><div><b>Заказчик</b><br><br>______________</div></div>`;
     openDoc("Акт № " + dp("act", "no", "1"), body);
@@ -250,9 +254,9 @@ table{width:100%;border-collapse:collapse;font-size:12px;margin:6px 0}th,td{bord
 <p><b>Получатель:</b> ${esc(h.ml) || "—"}${m.bank ? "<br><b>Банк / счёт:</b> " + esc(m.bank) : ""}</p>
 <p><b>Плательщик:</b> ${esc(h.ci.client) || "—"}</p>
 <table><thead><tr><th>№</th><th>Наименование</th><th class="r">Сумма</th></tr></thead><tbody>
-<tr><td>1</td><td>Электромонтажные работы</td><td class="r">${money(s.workSum)}</td></tr>
-<tr><td>2</td><td>Материалы</td><td class="r">${money(s.matSum)}</td></tr></tbody></table>
-<div class="grand">Всего к оплате: ${money(s.total)}</div>
+<tr><td>1</td><td>Электромонтажные работы</td><td class="r">${pm(s.workSum)}</td></tr>
+<tr><td>2</td><td>Материалы</td><td class="r">${pm(s.matSum)}</td></tr></tbody></table>
+<div class="grand">Всего к оплате: ${pm(s.total)}</div>${words(s.total) ? `<p class="sub-t">Сумма прописью: ${words(s.total)}</p>` : ""}
 <p>Оплата настоящего счёта означает согласие с условиями выполнения работ.</p>
 <div class="sign"><div><b>Исполнитель</b><br><br>______________</div><div></div></div>`;
     openDoc("Счёт № " + dp("invoice", "no", "1"), body);
