@@ -135,7 +135,6 @@
           <button type="button" class="ep-plan-mini ep-clickable" data-plan-rename aria-label="Переименовать проект">${T.rename}<span class="ep-plan-xlbl">Переименовать</span></button>
           <button type="button" class="ep-plan-mini ep-clickable" data-plan-meta aria-label="${T.metaTitle}" title="${T.metaTitle}">${T.meta}<span class="ep-plan-xlbl">О проекте</span></button>
           <button type="button" class="ep-plan-mini ep-clickable" data-plan-3d aria-label="3D-прогулка по квартире" title="Пройтись по квартире от первого лица: стены, проёмы, точки и трассы в 3D">🚶<span class="ep-plan-xlbl">3D-прогулка</span></button>
-          <button type="button" class="ep-plan-mini ep-clickable" data-fb-open aria-label="Замечания и баги (чат)" title="Записать замечание/баг — потом скопировать и отправить">💬<span class="ep-plan-xlbl">Замечания (чат)</span></button>
           <button type="button" class="ep-plan-mini ep-clickable${paperOn() ? " on" : ""}" data-plan-paper aria-label="Бумажный режим холста" title="Холст как печатный лист: белый фон, тёмные линии — видно, как выйдет из принтера">📄<span class="ep-plan-xlbl">Бумажный вид</span></button>
           <button type="button" class="ep-plan-mini ep-clickable${p.settings.realScale ? " on" : ""}" data-plan-realscale aria-pressed="${p.settings.realScale ? "true" : "false"}" aria-label="Значки в реальном размере (1:1)" title="Значки в реальном размере, мм — рамки 84/155/226/300/368 мм (1:1)">1:1<span class="ep-plan-xlbl">Реальный размер значков</span></button>
         </div>
