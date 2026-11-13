@@ -3202,8 +3202,14 @@
     // быстрой сборкой затёрла бы только что принятый вариант
     markInputs(cur);
     c.persist("routes-build");
-    if (rooms().renderScene) rooms().renderScene();
+    sceneSoon();
     return true;
+  }
+  // трассы пришли из фонового расчёта: план — в ближайшем кадре, а не в той же задаче, что запись
+  // (аудит Астры, п. 20: задача приёма результата на большом плане шла 55-75 мс при CPU ×4)
+  function sceneSoon() {
+    const R2 = rooms();
+    if (R2.renderSceneSoon) R2.renderSceneSoon(); else if (R2.renderScene) R2.renderScene();
   }
   function setUnroutedFrom(p, list) {
     if (!Array.isArray(list)) return;
@@ -3514,9 +3520,16 @@
     // геометрия к тому моменту уедет, версия отбракует результат и autoPending поднимет
     // автоперестройку заново (см. buildHeavy)
     if (autoBusy || solverBusy) { autoPending = true; return; }
-    let snapshot;
-    try { snapshot = JSON.parse(JSON.stringify(p)); } catch (e) {
-      rebuilding = true; try { build({ silent: true, noUndo: true }); } finally { rebuilding = false; } return;
+    // СНИМОК (аудит Астры, п. 20): свободный воркер получает задание тут же, в этом вызове
+    // (runJob → pump → postMessage), а postMessage сам делает копию проекта синхронно — она и есть
+    // снимок. Своя JSON-копия перед этим была второй копией того же проекта прямо в задаче
+    // отпускания пальца (28 комнат, CPU ×4: +5-6 мс). Нужна только если задание встанет в очередь.
+    const st = wstate.get(w);
+    let snapshot = p;
+    if (!st || st.cur || st.q.length) {
+      try { snapshot = JSON.parse(JSON.stringify(p)); } catch (e) {
+        rebuilding = true; try { build({ silent: true, noUndo: true }); } finally { rebuilding = false; } return;
+      }
     }
     const seq = ++autoSeq, pid = p.id, ver = editVer;
     autoBusy = true;
@@ -3549,7 +3562,7 @@
           // перестройку (поймано живой проверкой статуса)
           markInputs(cur);
           c.persist("routes-build");
-          if (rooms().renderScene) rooms().renderScene();
+          sceneSoon();
         } finally { rebuilding = false; }
       }
       if (autoPending) { autoPending = false; autoRebuild(); }

@@ -708,13 +708,19 @@
     const q = el.params || {};
     return q.x != null && q.y != null ? { x: q.x, y: q.y, wall: null } : null;
   };
-  G.elementsInRoom = (project, roomId) => (project.elements || []).filter((el) => {
-    if (el.wallId) return String(el.wallId).split(":")[0] === roomId;
-    const q = el.params || {};
-    if (q.x == null) return false;
+  // комнату ищем ОДИН раз на вызов (аудит Астры, п. 20): раньше find по всем комнатам шёл на
+  // КАЖДУЮ свободную точку проекта, а функцию зовут на каждую комнату («Проверки» — помещение
+  // без света, пустые помещения) и на каждый выключатель (авто-цель клавиши) при каждой
+  // перерисовке — на 28 комнатах и 220 точках это 6-7 мс из 11 мс проверок (CPU ×4)
+  G.elementsInRoom = (project, roomId) => {
     const room = (project.rooms || []).find((r) => r.id === roomId);
-    return !!(room && G.pointInPolygon(q, room.points));
-  });
+    return (project.elements || []).filter((el) => {
+      if (el.wallId) return String(el.wallId).split(":")[0] === roomId;
+      const q = el.params || {};
+      if (q.x == null) return false;
+      return !!(room && G.pointInPolygon(q, room.points));
+    });
+  };
   // ---- ПОВЕРХНОСТЬ ТРАССЫ по слоям (пол/потолок) ----
   // Раньше поверхность была ОДНА на весь проект (settings.routeType). Просьба пользователя:
   // «трассы надо иметь возможность комбинировать: слаботочка по полу или потолку, освещение

@@ -249,7 +249,8 @@
         const sp = G().snapPoint({ x: a.x, y: a.y }, step);
         a.x = sp.x; a.y = sp.y;
         c.persist("appl-move");
-        R.renderScene();
+        // сцену рисует сам openEditor — раньше перед ним был ещё renderScene (и ещё один в
+        // dropLiftNodes): три полные перерисовки на одно отпускание
         openEditor(a, { keepView: true }); // вид не дёргаем — его только что выбрали тягой
       }
     });

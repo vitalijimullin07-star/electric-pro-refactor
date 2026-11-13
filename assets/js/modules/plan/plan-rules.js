@@ -107,11 +107,21 @@
     });
 
     if (R.needLightPerRoom) {
-      (p.rooms || []).forEach((r) => {
-        if ((r.points || []).length < 3) return;
-        const has = G().elementsInRoom(p, r.id).some((e) => e.type === "light" || e.type === "switch");
-        if (!has) issues.push({ roomId: r.id, msg: T.noLight(r.name) });
+      // один проход по светильникам и выключателям, а не перебор ВСЕХ точек на каждую комнату
+      // (аудит Астры, п. 20): проверки считаются заново на каждой перерисовке после правки, и на
+      // 28 комнатах этот перебор был больше половины их времени. Смысл тот же, что у
+      // elementsInRoom: точка на стене — в комнате-хозяйке стены, свободная — в каждой комнате,
+      // в контур которой попадает
+      const rs = (p.rooms || []).filter((r) => (r.points || []).length >= 3);
+      const lit = new Set();
+      (p.elements || []).forEach((e) => {
+        if (e.type !== "light" && e.type !== "switch") return;
+        if (e.wallId) { lit.add(String(e.wallId).split(":")[0]); return; }
+        const q = e.params || {};
+        if (q.x == null) return;
+        rs.forEach((r) => { if (G().pointInPolygon(q, r.points)) lit.add(r.id); });
       });
+      rs.forEach((r) => { if (!lit.has(r.id)) issues.push({ roomId: r.id, msg: T.noLight(r.name) }); });
     }
     if (R.needPanel && (p.elements || []).length && !(p.panels || []).length) issues.push({ msg: T.noPanel });
 

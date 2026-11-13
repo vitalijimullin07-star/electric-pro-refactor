@@ -247,10 +247,14 @@
   function clearSolo() { if (R.soloCircuit) { R.soloCircuit = null; renderScene(); } }
   function renderScene() {
     if (!R.canvas || !EP.Plan.Render) return;
+    if (R.deferDepth > 0) { renderSceneSoon(); return; } // см. deferRender
     // во время «подъёма» (жёсткая тяга — см. liftNodes) сцену не трогаем: объект нарисован
-    // копией поверх холста, и перерисовка оригинала дала бы двойное изображение. Сцена
-    // рисуется сразу после снятия подъёма (dropLiftNodes зовёт renderScene сам).
+    // копией поверх холста, и перерисовка оригинала дала бы двойное изображение. Сцену после
+    // снятия подъёма рисует обработчик отпускания — один раз, уже после записи (dropLiftNodes).
     if (EP.Plan.Render.isLifted && EP.Plan.Render.isLifted(R.canvas)) return;
+    // рисуем сейчас — отложенная перерисовка того же кадра больше не нужна (иначе после тяги
+    // стены, когда последний шаг пальца и отпускание пришли в одном кадре, план рисовался дважды)
+    cancelSceneSoon();
     // живой слой нежёсткой тяги (liveBegin): рисуем только область тяги в слой поверх
     // холста, основную сцену не трогаем до отпускания
     if (EP.Plan.Render.isLive && EP.Plan.Render.isLive(R.canvas)) { EP.Plan.Render.liveDraw(R.canvas, G().floorScoped(core().project), ui()); return; }
@@ -264,17 +268,23 @@
   // заметка, мебель): каждый кадр двигается только CSS-transform копии, без перерисовки
   // сцены (подробности — liftForDrag в plan-render.js). false — подъём не удался (узлов не
   // нашлось), тогда тяга работает по-старому, перерисовкой через rAF.
-  function liftNodes(selectors) { return !!(R.canvas && EP.Plan.Render && EP.Plan.Render.liftForDrag && EP.Plan.Render.liftForDrag(R.canvas, selectors)); }
+  function liftNodes(selectors) { flushSceneSoon(); return !!(R.canvas && EP.Plan.Render && EP.Plan.Render.liftForDrag && EP.Plan.Render.liftForDrag(R.canvas, selectors)); }
   function moveLiftBy(dx, dy) { return !!(R.canvas && EP.Plan.Render && EP.Plan.Render.moveLift && EP.Plan.Render.moveLift(R.canvas, dx, dy)); }
+  /* Снять «подъём» БЕЗ перерисовки (аудит Астры, п. 20). Каждый обработчик отпускания (комната,
+     шахта, заметка, мебель) сразу после этого пишет проект и рисует сцену сам — а раньше
+     dropLiftNodes рисовал её ещё раз ДО записи: на большом проекте две полные перерисовки
+     подряд в одной задаче отпускания (замер, CPU ×4, 28 комнат: 25 + 30 мс), у мебели — три.
+     Между снятием подъёма и перерисовкой браузер не рисует кадр (всё в одной задаче), так что
+     оригиналы со старыми координатами на экране не мелькают. */
   function dropLiftNodes() {
-    if (R.canvas && EP.Plan.Render && EP.Plan.Render.isLifted && EP.Plan.Render.isLifted(R.canvas)) { EP.Plan.Render.dropLift(R.canvas); renderScene(); }
+    if (R.canvas && EP.Plan.Render && EP.Plan.Render.isLifted && EP.Plan.Render.isLifted(R.canvas)) EP.Plan.Render.dropLift(R.canvas);
   }
   /* «Живой слой» на время НЕжёсткой тяги (стена/угол комнаты, проём, конец перегородки,
      излом трассы, вынос размера): на старте — liveBegin(область), дальше обычный
      renderSceneSoon() рисует только эту область в отдельный слой (см. liveBegin в
      plan-render.js). Снимается сам перед "end" обработчика (canvas.onDragDone в attach) —
      обработчик отпускания пишет проект и рисует уже основную сцену. */
-  function liveBegin(scope) { return !!(R.canvas && EP.Plan.Render && EP.Plan.Render.liveBegin && EP.Plan.Render.liveBegin(R.canvas, scope)); }
+  function liveBegin(scope) { flushSceneSoon(); return !!(R.canvas && EP.Plan.Render && EP.Plan.Render.liveBegin && EP.Plan.Render.liveBegin(R.canvas, scope)); }
   function liveAdd(scope) { return !!(R.canvas && EP.Plan.Render && EP.Plan.Render.liveAdd && EP.Plan.Render.liveAdd(R.canvas, scope)); }
   function liveEnd() { return !!(R.canvas && EP.Plan.Render && EP.Plan.Render.liveEnd && EP.Plan.Render.liveEnd(R.canvas)); }
   // область «всё, что нарисовано от стены»: комната-хозяйка (стены, цепочка, проёмы) и
@@ -306,6 +316,32 @@
   function renderSceneSoon() {
     if (sceneRaf) return;
     sceneRaf = (window.requestAnimationFrame || ((f) => setTimeout(f, 16)))(() => { sceneRaf = 0; renderScene(); });
+  }
+  function cancelSceneSoon() {
+    if (!sceneRaf) return;
+    try { (window.requestAnimationFrame && window.cancelAnimationFrame ? window.cancelAnimationFrame : clearTimeout)(sceneRaf); } catch (e) {}
+    sceneRaf = 0;
+  }
+  /* ПЕРЕРИСОВКА В БЛИЖАЙШЕМ КАДРЕ вместо «прямо сейчас» (аудит Астры, п. 20) — для обработчиков,
+     после которых браузер всё равно ничего не покажет до следующего кадра: отпускание пальца
+     после тяги, тап по плану, приход трасс из фонового расчёта. Раньше в одной задаче шли и
+     запись проекта, и карточка, и полная перерисовка — на большом плане при слабом процессоре
+     это одна задача на 55-90 мс, и касание в это время ждало. Теперь обработчик только меняет
+     данные и карточку, а план рисуется в кадре (requestAnimationFrame срабатывает ДО покраски
+     этого кадра, поэтому промежуточного состояния на экране не бывает). Несколько запросов в
+     одном обработчике сливаются в одну перерисовку. */
+  function deferRender(fn) {
+    R.deferDepth = (R.deferDepth || 0) + 1;
+    try { return fn(); } finally { R.deferDepth--; }
+  }
+  // отложенная перерисовка ещё не прошла, а нужен АКТУАЛЬНЫЙ холст (подъём и живой слой берут
+  // готовые узлы сцены) — рисуем сейчас
+  function flushSceneSoon() {
+    if (!sceneRaf) return;
+    cancelSceneSoon();
+    const d = R.deferDepth || 0;
+    R.deferDepth = 0;
+    try { renderScene(); } finally { R.deferDepth = d; }
   }
   // Перерисовка сцены при ИЗМЕНЕНИИ ВИДА (пан/зум) — вызывается из canvas.onViewChanged
   // на КАЖДЫЙ pointermove. КРИТИЧНО для слабых телефонов (репорт: Redmi Note 8 Pro,
@@ -938,7 +974,13 @@
     const fresh = !s || s.hidden || key !== R.sheetKey;
     R.sheetKey = key;
     R.sheetObj = null; // карточка объекта отметит себя сама (setSheetObj) после отрисовки
-    if (s) { putForm(s, html); s.hidden = false; s.classList.toggle("is-collapsed", keep); if (fresh) s.scrollTop = 0; }
+    // Прокрутку сбрасываем ДО замены содержимого (аудит Астры, п. 20): запись scrollTop после
+    // innerHTML заставляла браузер тут же, внутри обработчика тапа, разложить новую карточку
+    // вместе со всем холстом (2400 объектов на большом плане). У закрытой шторки прокрутки нет
+    // (содержимое снято, сама скрыта) — её не трогаем вовсе; у открытой читаем, пока раскладка
+    // ещё чистая, и пишем, только если она не в начале.
+    if (s && fresh && !s.hidden && s.scrollTop) s.scrollTop = 0;
+    if (s) { putForm(s, html); s.hidden = false; s.classList.toggle("is-collapsed", keep); }
     syncQuickbarForSheet(!keep);
     syncSheetBtn();
   }
@@ -3375,7 +3417,10 @@
   // ---------- подключение из plan-mount ----------
   function attach(canvas) {
     R.canvas = canvas;
-    canvas.onTap(onTap);
+    // тап и отпускание после тяги: данные и карточка — сейчас, план — в ближайшем кадре
+    // (см. deferRender: одна длинная задача делится на обработчик и кадр)
+    canvas.onTap((w, e) => deferRender(() => onTap(w, e)));
+    if (canvas.onDragEndWrap) canvas.onDragEndWrap((run) => deferRender(run));
     if (canvas.onDblTap) canvas.onDblTap(onDoubleTap);
     canvas.onViewChanged(onViewChanged);
     // лёгкая фиксация посреди жеста ушла за окно отсечения — дорисовать (масштаб сцены тот же)

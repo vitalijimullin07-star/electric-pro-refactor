@@ -466,7 +466,10 @@
       if (!(dragHandler && dragMoved)) return false;
       dragMoved = false;
       if (cb.dragDone) cb.dragDone(false);
-      dragHandler(0, 0, "end");
+      // cb.endWrap — модуль может выполнить отпускание в своей «обёртке» (plan-rooms: перерисовка
+      // плана в ближайшем кадре, а не внутри обработчика отпускания)
+      const run = () => dragHandler(0, 0, "end");
+      if (cb.endWrap) cb.endWrap(run); else run();
       return true;
     }
     function abortDrag() {
@@ -677,6 +680,7 @@
       // смена обработчика посреди тяги: "end" прежнему уже не придёт — снимаем его слои сами
       setDragHandler: (fn) => { if (dragMoved && cb.dragDone) cb.dragDone(true); dragHandler = fn || null; dragMoved = false; },
       onDragDone: (fn) => { cb.dragDone = fn; }, // (aborted) — тяга закончилась или оборвана
+      onDragEndWrap: (fn) => { cb.endWrap = fn; }, // (run) — обёртка вокруг "end" обработчика тяги
       onDragStart: (fn) => { cb.dragStart = fn; },   // перед "start" обработчика тяги
       onDragBegin: (fn) => { cb.dragBegin = fn; },   // обработчик взял объект (не пан) — тяга пошла
       onDragCancel: (fn) => { cb.dragCancel = fn; }, // тягу оборвала система (pointercancel) — откатить

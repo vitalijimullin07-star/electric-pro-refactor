@@ -9047,6 +9047,35 @@ test("фото: deleteProject чистит кэш фото своего прое
       posts.forEach((x) => ok(/jobId/.test(x), "в ответе есть jobId: " + x.slice(0, 60)));
       ok(/unrouted/.test(src) && /resetUnrouted/.test(src), "список без трассы — свой у каждого задания");
     });
+    test("автоперестройка: свободному воркеру — сам проект (копию делает postMessage), занятому — снимок на момент правки (аудит Астры, п. 20)", () => {
+      const P = proj(26);
+      const el = P.elements[0];
+      C.commit(); el.offset += 20; C.persist("elem-move");
+      const w = FakeWorker.last, j0 = w.job();
+      ok(j0 && j0.mode === "fast", "первая автоперестройка ушла в фон");
+      w.reply({ ok: true, jobId: j0.jobId, routes: copyRoutes(P), unrouted: [] });
+      // свободный воркер: проект отдаётся как есть, вторую JSON-копию в задаче отпускания не делаем
+      let same = null;
+      const post0 = w.postMessage;
+      w.postMessage = function (m) { if (m && m.type === "solve") same = m.project === C.project; return post0.call(this, m); };
+      C.commit(); el.offset += 20; C.persist("elem-move");
+      w.postMessage = post0;
+      eq(same, true, "в postMessage ушёл сам проект — копию он сделает сам, синхронно");
+      w.reply({ ok: true, jobId: w.job().jobId, routes: copyRoutes(P), unrouted: [] });
+      // занятый воркер: задание встаёт в очередь — нужен снимок СЕЙЧАС, иначе ушло бы будущее состояние
+      let fg = null;
+      RT.jobs.run(w, { type: "solve", mode: "fgjob" }, (d) => { fg = d; });
+      const fgId = w.job().jobId;
+      C.commit(); el.offset = 333; C.persist("elem-move");
+      el.offset = 444; // правка после постановки в очередь (тяга ещё идёт)
+      w.reply({ ok: true, jobId: fgId });
+      ok(fg && fg.ok, "первое задание завершено");
+      const j2 = w.job();
+      ok(j2 && j2.mode === "fast" && j2.jobId !== fgId, "из очереди ушла автоперестройка");
+      eq(j2.project.elements.find((e) => e.id === el.id).offset, 333, "в ней состояние на момент правки, а не более позднее");
+      el.offset = 333;
+      w.reply({ ok: true, jobId: j2.jobId, routes: copyRoutes(P), unrouted: [] });
+    });
     sandbox.Worker = oldW; EP.Plan.Rooms.toast = oldToast;
   }
 
@@ -10798,6 +10827,139 @@ test("фото: deleteProject чистит кэш фото своего прое
       ok(iDanger > iTbtn && iTbtn > 0, "«Удалить» днём красный — правило идёт после дневного правила кнопок");
       ok(/body\[data-visual-mode="day"\] \.ep-plan-projset input\[type="number"\]/.test(css), "поле общей толщины днём с рамкой (было белое на белом)");
       ok(/body\[data-visual-mode="day"\] \.ep-plan-tbtn\.is-primary/.test(css), "главная кнопка карточки и днём залита акцентом");
+    });
+  }
+
+  // ===== 85. Аудит Астры, пакет 6: перенос комнаты и стены на слабом процессоре =====
+  // Профиль по фазам (CPU ×4, 28 комнат / 220 точек / 232 трассы): движение уже плавное, длинные
+  // задачи — тап, отпускание и приход трасс из фона. Отпускание рисовало план дважды (у мебели —
+  // трижды), проверки на каждой перерисовке перебирали все точки для каждой комнаты, для фоновой
+  // перестройки проект копировался два раза, карточка заставляла браузер разложить холст внутри
+  // тапа. Теперь обработчик меняет данные и карточку, а план рисуется ОДИН раз в ближайшем кадре.
+  {
+    const fsx = require("fs"), pathx = require("path");
+    const srcOf = (f) => fsx.readFileSync(pathx.join(__dirname, "..", f), "utf8");
+    // холст-заглушка с подписками модуля + своя очередь кадров и счётчик перерисовок
+    const frameEnv = () => {
+      const q = [], keep = { raf: sandbox.requestAnimationFrame, caf: sandbox.cancelAnimationFrame, draw: EP.Plan.Render.draw };
+      sandbox.requestAnimationFrame = (fn) => { q.push(fn); return q.length; };
+      sandbox.cancelAnimationFrame = (id) => { if (id > 0) q[id - 1] = null; };
+      const env = { draws: 0, hk: {} };
+      EP.Plan.Render.draw = function () { env.draws++; return keep.draw.apply(this, arguments); };
+      env.frame = () => { const list = q.splice(0, q.length); list.forEach((f) => { if (f) f(0); }); };
+      env.pending = () => q.filter(Boolean).length;
+      const cv = fakeCanvas(), hk = env.hk;
+      Object.assign(cv, {
+        setDragHandler: (fn) => { hk.h = fn; }, onTap: (fn) => { hk.tap = fn; }, onDragEndWrap: (fn) => { hk.wrap = fn; },
+        onDblTap() {}, onViewChanged() {}, onViewMoved() {}, onHover() {}, onHoverEnd() {}, onLongPress() {}, onDragBegin() {},
+        onDragDone: (fn) => { hk.done = fn; }, onDragStart: (fn) => { hk.start = fn; }, onDragCancel() {},
+        panBy() {}, fit() {}, redraw() {}, viewTo() {}, syncSize: () => false, getView: () => ({ x: -300, y: -300, w: 1600, h: 1200 }), wrap: fakeNode(),
+        overscan: () => ({ x: 0, y: 0 }), userAdjustedView: () => false, isMoving: () => false
+      });
+      env.cv = cv;
+      // так холст завершает тягу: dragDone(false), затем "end" в обёртке модуля
+      env.release = () => { if (hk.done) hk.done(false); const run = () => hk.h(0, 0, "end"); if (hk.wrap) hk.wrap(run); else run(); };
+      env.restore = () => { sandbox.requestAnimationFrame = keep.raf; sandbox.cancelAnimationFrame = keep.caf; EP.Plan.Render.draw = keep.draw; };
+      return env;
+    };
+
+    test("холст: отпускание после тяги идёт через обёртку модуля, порядок прежний", () => {
+      const src = srcOf("assets/js/modules/plan/plan-canvas.js");
+      ok(/const run = \(\) => dragHandler\(0, 0, "end"\);\s*if \(cb\.endWrap\) cb\.endWrap\(run\); else run\(\);/.test(src), "\"end\" выполняется внутри cb.endWrap");
+      ok(/onDragEndWrap: \(fn\) => \{ cb\.endWrap = fn; \}/.test(src), "подписка на обёртку есть");
+      const iDone = src.indexOf("if (cb.dragDone) cb.dragDone(false);"), iRun = src.indexOf("if (cb.endWrap) cb.endWrap(run); else run();");
+      ok(iDone > 0 && iRun > iDone, "живой слой снимается ДО обработчика отпускания, как раньше");
+    });
+
+    test("перенос комнаты: тап и отпускание рисуют план один раз — в ближайшем кадре, а не внутри обработчика", () => {
+      const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "Гостиная"), B = M.newRoom(G.rectPoints(400, 0, 300, 300), "Спальня");
+      const { P } = install({ rooms: [A, B] });
+      const env = frameEnv(), hk = env.hk;
+      try {
+        EP.Plan.Rooms.attach(env.cv);
+        ok(typeof hk.wrap === "function", "модуль подписался на обёртку отпускания");
+        EP.Plan.Rooms.setMode("movroom");
+        env.frame(); env.draws = 0;
+        hk.tap({ x: 150, y: 120 }, { pointerType: "touch" });
+        eq(env.draws, 0, "тап по комнате: план внутри обработчика не рисуется");
+        env.frame();
+        eq(env.draws, 1, "в ближайшем кадре — ровно одна перерисовка");
+        const x0 = P.rooms[0].points[0].x;
+        if (hk.start) hk.start();
+        ok(hk.h(0, 0, "start", { x: 150, y: 120 }, {}) !== false, "взяли комнату");
+        hk.h(50, 0, "move"); hk.h(50, 0, "move");
+        env.frame(); env.draws = 0;
+        env.release();
+        eq(env.draws, 0, "отпускание: внутри обработчика план не рисуется");
+        ok(EP.Plan.Core.project.rooms[0].points[0].x === x0 + 100, "комната перенесена (модель обновлена сразу)");
+        env.frame();
+        eq(env.draws, 1, "в кадре — одна перерисовка (было две подряд в одной задаче, у мебели — три)");
+        env.frame();
+        eq(env.draws, 1, "лишних кадров с перерисовкой нет");
+      } finally { env.restore(); EP.Plan.Rooms.setMode("view"); }
+    });
+
+    test("отложенная перерисовка: прямая её заменяет, «подъём» и живой слой забирают её сразу", () => {
+      install({ rooms: [M.newRoom(G.rectPoints(0, 0, 400, 300), "К")] });
+      const env = frameEnv();
+      try {
+        EP.Plan.Rooms.attach(env.cv);
+        env.frame(); env.draws = 0;
+        // экспорт renderScene в тестах — заглушка (см. начало файла), настоящую прямую
+        // перерисовку модуль делает, например, при выборе линии для solo
+        EP.Plan.Rooms.renderSceneSoon();
+        EP.Plan.Rooms.setSoloCircuit("x");
+        eq(env.draws, 1, "прямая перерисовка — сразу");
+        env.frame();
+        eq(env.draws, 1, "а отложенная того же кадра снята (раньше после тяги стены план рисовался ещё раз)");
+        EP.Plan.Rooms.setSoloCircuit("x"); // снять solo
+        env.frame(); env.draws = 0;
+        EP.Plan.Rooms.renderSceneSoon();
+        EP.Plan.Rooms.liftNodes(["[data-room=\"x\"]"]);
+        eq(env.draws, 1, "подъём берёт узлы актуального холста — отложенная перерисовка выполнена до него");
+        env.frame();
+        eq(env.draws, 1, "и второй раз в кадре не повторяется");
+        const r = srcOf("assets/js/modules/plan/plan-rooms.js");
+        ok(/function liveBegin\(scope\) \{ flushSceneSoon\(\);/.test(r), "живой слой тоже начинается с актуального холста");
+        ok(/function dropLiftNodes\(\) \{\s*if \([^\n]*EP\.Plan\.Render\.dropLift\(R\.canvas\);\s*\}/.test(r), "снятие подъёма само план не рисует — рисует обработчик отпускания один раз");
+        const fu = srcOf("assets/js/modules/plan/plan-furniture.js");
+        ok(/c\.persist\("appl-move"\);\s*\/\/[^\n]*\n[^\n]*\n\s*openEditor\(a, \{ keepView: true \}\);/.test(fu), "у мебели перед openEditor больше нет своей перерисовки");
+      } finally { env.restore(); }
+    });
+
+    test("трассы из фона: план рисуется в ближайшем кадре, а не в задаче приёма результата", () => {
+      const rt = srcOf("assets/js/modules/plan/plan-routes.js");
+      ok(/function sceneSoon\(\) \{[\s\S]{0,200}renderSceneSoon\(\)/.test(rt), "есть общий помощник «в ближайшем кадре»");
+      const apply = rt.slice(rt.indexOf("function applyWorkerRoutes"), rt.indexOf("function setUnroutedFrom"));
+      ok(/c\.persist\("routes-build"\);\s*sceneSoon\(\);/.test(apply), "результат «Построить/Оптимизировать» — через него");
+      const auto = rt.slice(rt.indexOf("function autoRebuild()"), rt.indexOf("if (core().onChange) {"));
+      ok(/c\.persist\("routes-build"\);\s*sceneSoon\(\);/.test(auto), "результат автоперестройки — через него");
+      ok(!/rooms\(\)\.renderScene\(\)/.test(auto), "прямой перерисовки в приёме результата не осталось");
+    });
+
+    test("проверки: помещение без света — тот же смысл одним проходом по светильникам и выключателям", () => {
+      const A = M.newRoom(G.rectPoints(0, 0, 400, 300), "Свет есть"), B = M.newRoom(G.rectPoints(400, 0, 300, 300), "Выключатель есть");
+      const Cc = M.newRoom(G.rectPoints(0, 300, 700, 200), "Пусто"), D = M.newRoom(G.rectPoints(200, 100, 100, 100), "Внутри"); // накрывает часть A
+      const { P } = install({ rooms: [A, B, Cc, D] });
+      const light = M.newElement("light", null, 0, 270, "light"); light.params = { x: 250, y: 150 }; P.elements.push(light);
+      const sw = M.newElement("switch", P.rooms[1].id + ":2", 60, 90, "light"); P.elements.push(sw);
+      const sock = M.newElement("socket", P.rooms[2].id + ":0", 100, 30, "power"); P.elements.push(sock); // розетка светом не считается
+      const names = EP.Plan.Rules.run(P).issues.filter((i) => i.roomId).map((i) => P.rooms.find((r) => r.id === i.roomId).name);
+      ok(names.indexOf("Пусто") >= 0, "помещение без света и выключателя найдено");
+      ok(names.indexOf("Свет есть") < 0 && names.indexOf("Выключатель есть") < 0, "свободный светильник и выключатель на стене засчитаны своим помещениям");
+      ok(names.indexOf("Внутри") < 0, "светильник засчитан и помещению, в контур которого тоже попадает (как у elementsInRoom)");
+      eq(G.elementsInRoom(P, P.rooms[0].id).length, 1, "elementsInRoom: в «Свет есть» — светильник");
+      eq(G.elementsInRoom(P, P.rooms[2].id).map((e) => e.type).join(), "socket", "в «Пусто» — только розетка на её стене");
+      eq(G.elementsInRoom(P, "нет-такой").length, 0, "неизвестная комната — пусто, без ошибок");
+    });
+
+    test("карточка: прокрутка сбрасывается до замены содержимого, а не после (без раскладки внутри тапа)", () => {
+      const r = srcOf("assets/js/modules/plan/plan-rooms.js");
+      const os = r.slice(r.indexOf("function openSheet(html, opts)"), r.indexOf("function overlaySheet("));
+      const iScroll = os.indexOf("s.scrollTop = 0"), iPut = os.indexOf("putForm(s, html)");
+      ok(iScroll > 0 && iPut > iScroll, "scrollTop пишется ДО putForm");
+      eq((os.match(/scrollTop = 0/g) || []).length, 1, "и только там");
+      ok(/if \(s && fresh && !s\.hidden && s\.scrollTop\) s\.scrollTop = 0;/.test(os), "у закрытой шторки и шторки в начале не трогается вовсе");
     });
   }
 
