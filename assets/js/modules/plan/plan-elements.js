@@ -73,6 +73,14 @@
     confirmDel: "Удалить точку?", tapWall: "Тапни ближе к стене — элемент сядет на неё.",
     openWide: (w, len) => `Проём шире стены: ${w} см на стене ${len} см — выбери стену длиннее или поменяй ширину после установки.`,
     openNoRoom: "На этой стене нет свободного места под проём — мешают другие двери и окна.",
+    // трасса точки: сразу при назначении линии + правка прямо из редактора
+    rtTitle: "🧵 Трасса", rtNone: "🧵 Трассы нет", rtEdit: "✏️ Править трассу", rtBuild: "⚡ Проложить",
+    rtModePoint: "✏️ Ломать", rtModeSeg: "↔ Двигать", rtMore: "🧵 Ещё…",
+    rtArmedHint: "тяни её прямо на плане",
+    rtBuilt: (len) => `Трасса проложена · ${len} — тяни её на плане, чтобы поправить`,
+    rtNot: (why) => `Линия назначена, трасса не построена: ${why}`,
+    rtFail: (why) => `Трасса не построена: ${why}`,
+    rtTgtBuilt: (len) => `Трасса к этой точке проложена · ${len}`,
     tapWallTP: "Тёплый пол — это терморегулятор на стене: тапни ближе к стене (по умолчанию 90 см от пола).",
     poolTitle: "📦 Из пула", poolLeft: (n2) => `осталось расставить: ${n2}`,
     poolHint: "Заготовки из «Пула розеток»: тапни заготовку, потом тапай по стенам — каждая точка садится со своей высотой и составом, счётчик убывает.",
@@ -486,6 +494,16 @@
     // если авто-детект по месту тапа ошибся (тап почти точно на оси перегородки).
     const isBeamEl = el.wallId && String(el.wallId).slice(0, 5) === "beam:";
     const wallLen = el.wallId ? Math.round((G().wallById(p, el.wallId) || { len: 0 }).len) : 0;
+    // трасса этой точки, вооружённая для правки прямо на плане (после назначения линии или
+    // «✏️ Править трассу»): живёт, пока открыт редактор ЭТОЙ точки. В накладном редакторе
+    // (поверх развёртки) план не виден — там не вооружаем
+    const RM = rooms();
+    let armed = false;
+    if (RM.editorRouteFor) {
+      const cur = RM.editorRouteFor();
+      if (cur && (cur !== el.id || editorOverlay)) RM.disarmEditorRoute();
+      else if (cur === el.id) armed = RM.armEditorRoute(el.id);
+    }
     const put = editorOverlay ? rooms().overlaySheet : rooms().openSheet;
     put(`<div class="ep-plan-srow" data-draft-scope="el:${esc(el.id)}"><b>${esc(t.name)}</b>
         ${el.wallId ? `<span>· ${isBeamEl ? "перегородка" : "стена " + esc(el.wallId.split(":")[1] * 1 + 1)} (${wallLen} см)</span>` : "· свободно"}
@@ -501,6 +519,7 @@
         ${[hp.socket, hp.switch, hp.kitchen].map((v) => `<button type="button" class="ep-plan-chip ep-clickable" data-pe-preset="${v}">${v}</button>`).join("")}
       </div>
       ${circuitRow(el)}
+      ${editorOverlay ? "" : routeRowHtml(el, armed)}
       ${EP.Plan.Circuits ? EP.Plan.Circuits.chainHtml(p, el) : ""}
       ${t.layerChoice ? outLayerRow(el) : ""}
       ${el.type === "output3" ? threeKindRow(el) : ""}
@@ -712,6 +731,72 @@
       ${free.length ? `<div class="ep-plan-srow">Связать с существующим:
         ${free.map((x) => `<button type="button" class="ep-plan-chip ep-clickable" data-pe-riser-link="${esc(x.id)}">${esc(floorNameOf(p, x.floorId))}</button>`).join("")}
       </div>` : ""}`;
+  }
+  /* ---- 🧵 трасса точки в её редакторе ----
+     Есть своя трасса: длина и «✏️ Править трассу» — или, если уже вооружена, переключатель
+     тяги (Ломать / Двигать) и «🧵 Ещё…» (полная карточка трассы с ↺ Авто, 🔄, 🧮). Трассы нет, а
+     линия есть — «⚡ Проложить» (причину, если не выйдет, скажет сообщение над планом: заранее
+     её не угадать — «ещё не строили» и «не получится» выглядят одинаково). */
+  function routeRowHtml(el, armed) {
+    const RT = EP.Plan.Routes, p = core().project;
+    if (!RT || !RT.ownRoute) return "";
+    const own = RT.ownRoute(p, el.id);
+    if (own) {
+      const len = G().fmtLen(G().polylineLen(own.points || []));
+      if (!armed) return `<div class="ep-plan-srow ep-plan-rtrow"><b>${T.rtTitle}</b><span class="ep-plan-mshint">${esc(len)}</span><span class="ep-plan-flex"></span>
+        <button type="button" class="ep-plan-chip ep-clickable" data-pe-redit>${T.rtEdit}</button></div>`;
+      const mode = rooms().routeDragMode ? rooms().routeDragMode() : "point";
+      return `<div class="ep-plan-srow ep-plan-rtrow is-armed"><b>${T.rtTitle}</b><span class="ep-plan-mshint">${esc(len)} · ${T.rtArmedHint}</span></div>
+        <div class="ep-plan-srow ep-plan-sbtns">
+          <button type="button" class="ep-plan-chip ep-clickable ${mode !== "segment" ? "on" : ""}" data-pe-rmode="point" aria-pressed="${mode !== "segment"}">${T.rtModePoint}</button>
+          <button type="button" class="ep-plan-chip ep-clickable ${mode === "segment" ? "on" : ""}" data-pe-rmode="segment" aria-pressed="${mode === "segment"}">${T.rtModeSeg}</button>
+          <span class="ep-plan-flex"></span>
+          <button type="button" class="ep-plan-chip ep-clickable" data-pe-rmore>${T.rtMore}</button>
+        </div>`;
+    }
+    if (!el.circuitId || !(RT.routable && RT.routable(el))) return "";
+    return `<div class="ep-plan-srow ep-plan-rtrow"><b>${T.rtNone}</b><span class="ep-plan-flex"></span>
+      <button type="button" class="ep-plan-chip ep-clickable" data-pe-rbuild>${T.rtBuild}</button></div>`;
+  }
+  /* Линию назначили — трасса сразу (plan-routes.js routeAssigned, без своего шага ↶). Своя
+     трасса у точки есть — вооружаем её для правки на плане (редактор не закрывается); нет —
+     над планом причина. Выключено в настройках трасс — молча, как раньше. */
+  function afterAssign(el) {
+    const RT = EP.Plan.Routes;
+    if (!RT || !RT.routeAssigned) return null;
+    const res = RT.routeAssigned([el.id]);
+    if (res.off) return res;
+    const own = RT.ownRoute(core().project, el.id);
+    const flash = rooms().flash || rooms().toast;
+    if (own) {
+      if (!editorOverlay && rooms().armEditorRoute) rooms().armEditorRoute(el.id);
+      if (res.built.some((r) => r.id === own.id)) {
+        flash(T.rtBuilt(G().fmtLen(G().polylineLen(own.points || []))));
+        // только что проложенная трасса — целиком над шторкой редактора: её сразу тянут, а
+        // вид держал над шторкой только саму точку, и остальная трасса могла оказаться под ней
+        // (поймано живой проверкой — тяга уходила в шторку). Замер — в ближайшем кадре, уже
+        // по отрисованному редактору.
+        if (!editorOverlay && rooms().ensureVisibleAboveSheet && rooms().boxOf) rooms().ensureVisibleAboveSheet(rooms().boxOf(own.points || [], 30));
+      }
+    } else {
+      const u = res.unrouted.find((x) => x.id === el.id);
+      if (u) flash(T.rtNot(u.reason));
+    }
+    return res;
+  }
+  /* Цель клавиши назначена (чип или 🎯 тапом) — у неё появилась линия (syncTargetCircuit), а с
+     ней и трасса. Если трассы в проекте уже есть, это сделала автоперестройка ("elem-target" в
+     AUTOREBUILD_ON — она прокладывает и новые точки); если трасс ещё нет совсем, её не будет —
+     тогда прокладываем цель (и её выключатель) сами. Сообщение — только о результате. */
+  function afterTargetLink(tgt, hadRoutes) {
+    const RT = EP.Plan.Routes, p = core().project;
+    if (!tgt || !RT || !RT.routeAssigned || hadRoutes) return null;
+    const res = RT.routeAssigned([tgt.id]);
+    if (res.off) return res;
+    const own = RT.ownRoute(p, tgt.id), flash = rooms().flash || rooms().toast;
+    if (own && res.built.some((r) => r.id === own.id)) flash(T.rtTgtBuilt(G().fmtLen(G().polylineLen(own.points || []))));
+    else { const u = res.unrouted.find((x) => x.id === tgt.id); if (u) flash(T.rtNot(u.reason)); }
+    return res;
   }
   function circuitRow(el, attr) {
     const a = attr || "pe";
@@ -1213,8 +1298,12 @@
       }
       el.targetIds[ki] = next.length > 1 ? next : (next[0] || null);
       if (ki === 0) el.targetId = next.length === 1 ? next[0] : null; // legacy-алиас: только когда цель одна
-      if (val !== "auto" && next.indexOf(val) >= 0) syncTargetCircuit(el, (c.project.elements || []).find((e) => e.id === val));
-      c.persist("elem-target"); openEditor(el); rooms().renderScene(); return;
+      const tgt = val !== "auto" && next.indexOf(val) >= 0 ? (c.project.elements || []).find((e) => e.id === val) : null;
+      if (tgt) syncTargetCircuit(el, tgt);
+      const hadRoutes = (c.project.routes || []).length > 0;
+      c.persist("elem-target");
+      if (tgt) afterTargetLink(tgt, hadRoutes);
+      openEditor(el, { keepView: true }); rooms().renderScene(); return;
     }
     if ((b = t.closest("[data-pe-picktarget]"))) {
       // назначение цели клавиши ТАПОМ по плану: вооружаем одноразовый режим выбора в
@@ -1243,11 +1332,59 @@
     if ((b = t.closest("[data-pe-circ]"))) {
       const c = core(), el = current(); if (!el) return;
       const id = b.getAttribute("data-pe-circ");
-      c.commit(); el.circuitId = el.circuitId === id ? null : id; c.persist("elem-circuit"); openEditor(el); return;
+      c.commit(); el.circuitId = el.circuitId === id ? null : id; c.persist("elem-circuit");
+      if (el.circuitId) afterAssign(el); // трасса сразу (если у точки её ещё нет)
+      openEditor(el, { keepView: true }); return;
     }
     if (t.closest("[data-pe-circ-new]")) {
       const c = core(), el = current(); if (!el) return;
-      c.commit(); assignNewCircuit(el); c.persist("circuit-add"); openEditor(el); return;
+      c.commit(); assignNewCircuit(el); c.persist("circuit-add");
+      afterAssign(el);
+      openEditor(el, { keepView: true }); return;
+    }
+    // 🧵 трасса точки прямо из редактора: вооружить для правки на плане / режим тяги / полная
+    // карточка трассы / проложить вручную (если трассы нет)
+    if (t.closest("[data-pe-redit]")) {
+      const el = current(); if (!el) return;
+      if (rooms().armEditorRoute && rooms().armEditorRoute(el.id)) {
+        const own = EP.Plan.Routes.ownRoute(core().project, el.id);
+        const bx = own && rooms().boxOf ? rooms().boxOf(own.points, 30) : null;
+        openEditor(el, { keepView: true });
+        if (bx && rooms().ensureVisibleAboveSheet) rooms().ensureVisibleAboveSheet(bx); // трасса целиком над шторкой
+      }
+      return;
+    }
+    if ((b = t.closest("[data-pe-rmode]"))) {
+      const el = current(); if (!el) return;
+      if (rooms().setRouteDragMode) rooms().setRouteDragMode(b.getAttribute("data-pe-rmode"));
+      openEditor(el, { keepView: true }); return;
+    }
+    if (t.closest("[data-pe-rmore]")) {
+      const el = current(); if (!el) return;
+      if (rooms().openRouteFromEditor) rooms().openRouteFromEditor(el.id);
+      return;
+    }
+    if (t.closest("[data-pe-rbuild]")) {
+      // «⚡ Проложить» — явное действие: свой шаг ↶ (и сработает, даже если автоматическая
+      // прокладка при назначении выключена в настройках). Не вышло — снимок откатываем
+      const c = core(), el = current(); if (!el || !EP.Plan.Routes.routeAssigned) return;
+      const id = el.id;
+      c.commit();
+      const res = EP.Plan.Routes.routeAssigned([id], { force: true });
+      const flash = rooms().flash || rooms().toast;
+      if (!res.built.length) {
+        c.rollback();
+        const u = res.unrouted.find((x) => x.id === id);
+        flash(T.rtFail(u ? u.reason : "нет щита или магистрали до комнаты"));
+      } else {
+        if (rooms().armEditorRoute) rooms().armEditorRoute(id);
+        const own = EP.Plan.Routes.ownRoute(core().project, id);
+        if (own) flash(T.rtBuilt(G().fmtLen(G().polylineLen(own.points || []))));
+      }
+      const el2 = (core().project.elements || []).find((x) => x.id === id); // после отката — новый объект
+      if (el2) openEditor(el2, { keepView: true });
+      rooms().renderScene();
+      return;
     }
     if (t.closest("[data-pe-ovclose]")) { S.selId = null; closeEditorOverlayAndRefresh(); return; }
     if (t.closest("[data-pe-apply]")) return applyEditor();
@@ -1443,5 +1580,5 @@
   }
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, SW_TARGET_TYPES, onModeEnter, onOpeningModeEnter, selectType, placeAt, placeOpening, openFitMsg, hoverSnapPoint, openingNum, hitAt, openEditor, openStatusCard, closeEditorOverlay, openPanelEditor, openOpeningEditor, openingFlipFor, openingBox, selectedId, deselect, deleteElement, duplicateElement, circuitRow, assignNewCircuit, syncTargetCircuit, riserMate };
+  EP.Plan.Elements = { TYPES, OPEN_TYPES, CFG, SW_TARGET_TYPES, onModeEnter, onOpeningModeEnter, selectType, placeAt, placeOpening, openFitMsg, hoverSnapPoint, openingNum, hitAt, openEditor, openStatusCard, closeEditorOverlay, openPanelEditor, openOpeningEditor, openingFlipFor, openingBox, selectedId, deselect, deleteElement, duplicateElement, circuitRow, assignNewCircuit, syncTargetCircuit, riserMate, afterAssign, afterTargetLink };
 })();

@@ -10963,6 +10963,477 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 86. Магистраль проще, трасса сразу при назначении линии, автоматы по комнатам =====
+  // Просьба: «легче сохранять магистраль; когда магистраль и точки со щитом выставлены — назначаю
+  // линию на точку, сразу рисуется трасса, и по пути могу её редактировать; и отдельную кнопку —
+  // назначить на комнату отдельные автоматы на розетки, ТП, кондей, свет — тумблерами».
+  {
+    const fsx = require("fs"), pathx = require("path");
+    const srcOf = (f) => fsx.readFileSync(pathx.join(__dirname, "..", f), "utf8");
+    const RT = EP.Plan.Routes, EL = EP.Plan.Elements, RM = EP.Plan.Rooms, AP = EP.Plan.AutoProject, C = EP.Plan.Core;
+    // холст-заглушка: тап, двойной тап, обработчик тяги; кадры — своей очередью
+    const env86 = () => {
+      const q = [], keep = { raf: sandbox.requestAnimationFrame, caf: sandbox.cancelAnimationFrame };
+      sandbox.requestAnimationFrame = (fn) => { q.push(fn); return q.length; };
+      sandbox.cancelAnimationFrame = (id) => { if (id > 0) q[id - 1] = null; };
+      const hk = {}, cv = fakeCanvas();
+      Object.assign(cv, {
+        setDragHandler: (fn) => { hk.h = fn; }, onTap: (fn) => { hk.tap = fn; }, onDblTap: (fn) => { hk.dbl = fn; }, onDragEndWrap: (fn) => { hk.wrap = fn; },
+        onViewChanged() {}, onViewMoved() {}, onHover() {}, onHoverEnd() {}, onLongPress() {}, onDragBegin() {},
+        onDragDone() {}, onDragStart() {}, onDragCancel() {},
+        panBy() {}, fit() {}, redraw() {}, viewTo() {}, syncSize: () => false, getView: () => ({ x: -300, y: -300, w: 1600, h: 1200 }), wrap: fakeNode(),
+        overscan: () => ({ x: 0, y: 0 }), userAdjustedView: () => false, isMoving: () => false
+      });
+      return { cv, hk, frame: () => { q.splice(0, q.length).forEach((f) => { if (f) f(0); }); },
+        restore: () => { sandbox.requestAnimationFrame = keep.raf; sandbox.cancelAnimationFrame = keep.caf; } };
+    };
+    const tapT = { pointerType: "touch" };
+    // узел шторки: innerHTML запоминается (разметку проверяем текстом)
+    const sheetNode = () => ({ hidden: true, innerHTML: "", scrollTop: 0, classList: { add() {}, remove() {}, toggle() {}, contains: () => false }, querySelectorAll: () => [], querySelector: () => null });
+    const withSheet = (node, fn) => { const keep = sandbox.document.querySelector; sandbox.document.querySelector = (sel) => (sel === "#ep-plan-sheet" ? node : null); try { return fn(); } finally { sandbox.document.querySelector = keep; } };
+    // разметка, которую модуль отдаёт в ЭКСПОРТ openSheet (у редактора точки — через него)
+    const captureOpen = (fn) => { let html = ""; const keep = RM.openSheet; RM.openSheet = (h) => { html = h; }; try { fn(); } finally { RM.openSheet = keep; } return html; };
+    // кухня + спальня, щит в кухне, магистраль по обеим комнатам
+    const flat = (o) => {
+      const K = M.newRoom(G.rectPoints(0, 0, 400, 300), "Кухня"), S = M.newRoom(G.rectPoints(400, 0, 400, 300), "Спальня");
+      const { P } = install({ rooms: [K, S] });
+      if (!(o && o.noPanel)) P.panels.push(M.newPanel(100, 150, "ЩК"));
+      if (!(o && o.noGuide)) P.guides.push(M.newGuide([{ x: 50, y: 150 }, { x: 750, y: 150 }]));
+      const add = (t, wall, off, h, layer) => { const e = M.newElement(t, wall, off, h, layer); P.elements.push(e); return e; };
+      const lamp = (x, y) => { const e = M.newElement("light", null, 0, 270, "light"); e.params = { x, y }; P.elements.push(e); return e; };
+      return { P, k: P.rooms[0], s: P.rooms[1], add, lamp };
+    };
+    const elOf = (id) => C.project.elements.find((e) => e.id === id);
+    // назначить точке новую линию так же, как кнопка «+ линия» в редакторе: снимок, линия, запись
+    const assignNew = (id) => { C.commit(); EL.assignNewCircuit(elOf(id)); C.persist("circuit-add"); return elOf(id); };
+
+    // ---------- магистраль ----------
+    test("магистраль: двойной тап заканчивает линию и не зумит; одна точка — сохранять нечего", () => {
+      install({ rooms: [M.newRoom(G.rectPoints(0, 0, 800, 300), "Коридор")] });
+      const env = env86();
+      try {
+        RM.attach(env.cv);
+        RM.setMode("guide");
+        env.hk.tap({ x: 100, y: 150 }, tapT);
+        eq(env.hk.dbl({ x: 100, y: 150 }), true, "двойной тап в режиме ⇉ «съеден» — план не увеличивается");
+        eq((C.project.guides || []).length, 0, "одна точка — линии нет");
+        eq(RM.guideDraftInfo().n, 1, "и черновик на месте");
+        env.hk.tap({ x: 600, y: 150 }, tapT);
+        eq(env.hk.dbl({ x: 600, y: 150 }), true, "второй двойной тап — тоже без зума");
+        eq(C.project.guides.length, 1, "линия сохранена");
+        eq(C.project.guides[0].points.length, 2, "из тех точек, что поставлены");
+        eq(RM.guideDraftInfo().n, 0, "черновик очищен — можно рисовать следующую");
+        ok(/Магистраль ⇉1 сохранена/.test(RM.lastFlash()), "подтверждение — над планом, а не в шторке (её же и затирало)");
+      } finally { env.restore(); RM.setMode("view"); }
+    });
+
+    test("магистраль: выход из ⇉ сохраняет линию из 2+ точек, одну точку — нет", () => {
+      install({ rooms: [M.newRoom(G.rectPoints(0, 0, 800, 300), "Коридор")] });
+      const env = env86();
+      try {
+        RM.attach(env.cv);
+        RM.setMode("guide");
+        env.hk.tap({ x: 100, y: 150 }, tapT); env.hk.tap({ x: 600, y: 150 }, tapT);
+        const n0 = C.commitCount();
+        RM.setMode("view"); // другой инструмент / ✕ / «назад»
+        eq(C.project.guides.length, 1, "линия сохранилась при выходе (раньше молча пропадала)");
+        eq(C.commitCount(), n0 + 1, "одним шагом ↶");
+        ok(/Магистраль сохранена/.test(RM.lastFlash()), "и это видно");
+        RM.setMode("guide");
+        env.hk.tap({ x: 100, y: 250 }, tapT);
+        RM.setMode("rect");
+        eq(C.project.guides.length, 1, "одна точка — не линия, не сохраняется");
+      } finally { env.restore(); RM.setMode("view"); }
+    });
+
+    test("магистраль: черновик ложится на тот этаж, где рисовали, и не уходит в чужой проект", () => {
+      install({ rooms: [M.newRoom(G.rectPoints(0, 0, 800, 300), "Коридор")] });
+      const env = env86();
+      try {
+        RM.attach(env.cv);
+        const f1 = C.project.activeFloorId;
+        RM.setMode("guide");
+        env.hk.tap({ x: 100, y: 150 }, tapT); env.hk.tap({ x: 600, y: 150 }, tapT);
+        const f2 = C.addFloor("2 этаж").id; // активным стал новый этаж, а линию рисовали на первом
+        RM.setMode("view");
+        eq(C.project.guides.length, 1, "линия не потерялась");
+        eq(C.project.guides[0].floorId, f1, "и лежит на первом этаже — где её рисовали");
+        // смена этажа посреди рисования: следующий тап начинает новую линию, прежняя — на свой этаж
+        C.setActiveFloor(f1);
+        RM.setMode("guide");
+        env.hk.tap({ x: 100, y: 250 }, tapT); env.hk.tap({ x: 600, y: 250 }, tapT);
+        C.setActiveFloor(f2);
+        env.hk.tap({ x: 100, y: 50 }, tapT);
+        eq(C.project.guides.filter((g) => g.floorId === f1).length, 2, "линия первого этажа сохранена на нём");
+        eq(RM.guideDraftInfo().n, 1, "на втором этаже — новая линия с одной точки");
+        eq(RM.guideDraftInfo().fid, f2, "и помнит свой этаж");
+        // другой проект: черновик туда не сохраняется
+        env.hk.tap({ x: 600, y: 50 }, tapT);
+        install({ rooms: [M.newRoom(G.rectPoints(0, 0, 400, 300), "Другой")] });
+        RM.setMode("view");
+        eq((C.project.guides || []).length, 0, "в чужой проект линия не попала");
+      } finally { env.restore(); RM.setMode("view"); }
+    });
+
+    test("магистраль: пока рисуешь — компактная полоса «✓ Сохранить / ↩ Точка / 🗑 Стереть»", () => {
+      install({ rooms: [M.newRoom(G.rectPoints(0, 0, 800, 300), "Коридор")] });
+      const env = env86(), node = sheetNode();
+      try {
+        withSheet(node, () => {
+          RM.attach(env.cv);
+          RM.setMode("guide");
+          env.hk.tap({ x: 100, y: 150 }, tapT);
+          let h = node.innerHTML;
+          ok(/data-pg-done disabled/.test(h), "одна точка — «Сохранить» ещё недоступна");
+          ok(/data-pg-undo/.test(h) && /data-pg-drop/.test(h), "↩ Точка и 🗑 Стереть на виду");
+          ok(!/data-pg-newkind/.test(h), "группы и список нарисованных — не мешают, пока рисуешь");
+          env.hk.tap({ x: 600, y: 150 }, tapT);
+          h = node.innerHTML;
+          ok(/data-pg-done >✓ Сохранить/.test(h), "две точки — «✓ Сохранить» доступна");
+          ok(/⇉ 2<small> · 5 м<\/small>/.test(h), "видно, сколько точек и какой длины линия");
+          ok(/^<div class="ep-plan-srow ep-plan-sbtns ep-plan-actbar ep-plan-gdbar">[\s\S]*<\/div>$/.test(h.trim()) && (h.match(/<div /g) || []).length === 1, "полоса — ОДНА строка (на 360 px три строки закрывали четверть холста)");
+          ok(!/data-pg-close/.test(h), "выход — любым инструментом на панели, своего ✕ полосе не нужно");
+        });
+      } finally { env.restore(); RM.setMode("view"); }
+      const r = srcOf("assets/js/modules/plan/plan-rooms.js");
+      ok(/if \(t\.closest\("\[data-pg-drop\]"\)\) R\.guideDraft = \{ points: \[\] \}; else R\.guideDraft\.points\.pop\(\);/.test(r), "🗑 стирает черновик целиком, ↩ — последнюю точку");
+      const mt = srcOf("assets/js/modules/plan/plan-mount.js");
+      ok(/function doSwitchFloor\(id\) \{\s*leaveMode\(\);\s*core\(\)\.setActiveFloor\(id\);/.test(mt), "смена этажа: сначала выйти из инструмента — линия сохранится на свой этаж");
+      ok(/\[data-plan-back\][\s\S]{0,40}\{\s*leaveMode\(\);[^\n]*\n\s*core\(\)\.closeProject\(\)/.test(mt), "«‹ Назад» к списку проектов — тоже сначала сохранить черновик");
+      ok(/rd\.onload = \(\) => \{ leaveMode\(\); if \(core\(\)\.importJSON/.test(mt), "импорт другого проекта — тоже");
+    });
+
+    // ---------- трасса сразу при назначении линии ----------
+    test("назначил линию — трасса только этой точке, без своего шага ↶; ↶ снимает и линию, и трассу", () => {
+      const { s, add } = flat();
+      const a = add("socket", s.id + ":1", 150, 30, "power"), b = add("socket", s.id + ":0", 200, 30, "power");
+      assignNew(a.id);
+      const n0 = C.commitCount();
+      const res = RT.routeAssigned([a.id]);
+      eq(C.commitCount(), n0, "своего снимка истории нет");
+      eq(res.built.length, 1, "построена одна трасса");
+      eq(res.built[0].fromId, a.id, "у назначенной точки");
+      ok(!C.project.routes.some((r) => r.fromId === b.id), "соседняя точка без трассы не тронута");
+      ok(RT.ownRoute(C.project, a.id) === res.built[0], "ownRoute находит её");
+      C.undo();
+      ok(!elOf(a.id).circuitId, "↶ снял линию");
+      eq((C.project.routes || []).length, 0, "и трассу — тем же шагом");
+    });
+
+    test("назначил линию светильнику — трасса пойдёт через его выключатель, выключатель встанет на ту же линию", () => {
+      const { s, add, lamp } = flat();
+      const sw = add("switch", s.id + ":2", 100, 90, "light"), L = lamp(600, 150);
+      sw.targetIds = [L.id];
+      assignNew(L.id);
+      const res = RT.routeAssigned([L.id]);
+      eq(elOf(sw.id).circuitId, elOf(L.id).circuitId, "выключатель — на линии своего света");
+      const rl = RT.ownRoute(C.project, L.id), rs = RT.ownRoute(C.project, sw.id);
+      ok(rl && rl.toId === sw.id, "светильник питается от выключателя");
+      ok(rs && rs.toPanel, "выключатель — от щита");
+      eq(res.built.length, 2, "обе трассы одним действием");
+    });
+
+    test("назначил линию выключателю — проложены и светильники его клавиш", () => {
+      const { s, add, lamp } = flat();
+      const sw = add("switch", s.id + ":2", 100, 90, "light"), L = lamp(600, 150);
+      sw.targetIds = [L.id];
+      assignNew(sw.id);
+      RT.routeAssigned([sw.id]);
+      ok(RT.ownRoute(C.project, sw.id), "выключатель проложен");
+      ok(RT.ownRoute(C.project, L.id) && RT.ownRoute(C.project, L.id).toId === sw.id, "и его светильник — от него");
+    });
+
+    test("назначил линию: «Без трассы» не теряет остальные точки; без щита — причина; выключено — молчит, кнопка — работает", () => {
+      const { s, add } = flat({ noGuide: true });
+      const a = add("socket", s.id + ":1", 150, 30, "power"), b = add("socket", s.id + ":0", 200, 30, "power");
+      RT.buildIncremental({ silent: true });
+      const ids0 = RT.unroutedList().map((u) => u.id).sort().join();
+      eq(ids0, [a.id, b.id].sort().join(), "обе точки спальни без трассы (магистрали нет)");
+      assignNew(a.id);
+      const r1 = RT.routeAssigned([a.id]);
+      eq(r1.built.length, 0, "трассу не построить");
+      ok(r1.unrouted.length === 1 && /магистрал/.test(r1.unrouted[0].reason), "причина — нет магистрали");
+      eq(RT.unroutedList().map((u) => u.id).sort().join(), ids0, "в списке «Без трассы» по-прежнему ОБЕ точки (раньше оставалась только назначенная)");
+      const f2 = flat({ noPanel: true });
+      const z = f2.add("socket", f2.k.id + ":0", 100, 30, "power");
+      assignNew(z.id);
+      const r2 = RT.routeAssigned([z.id]);
+      ok(r2.unrouted.length === 1 && /нет щита/.test(r2.unrouted[0].reason), "без щита — так и сказано");
+      C.project.settings.routeOnAssign = false;
+      C.project.panels.push(M.newPanel(50, 150, "Щ"));
+      const r3 = RT.routeAssigned([z.id]);
+      ok(r3.off && !r3.built.length, "выключено в настройках — ничего не строит");
+      eq(RT.routeAssigned([z.id], { force: true }).built.length, 1, "явная кнопка «⚡ Проложить» работает и при выключенной автоматике");
+    });
+
+    test("назначение линии: настройка по умолчанию включена, бэкофилл, переключатель в «Настройках трасс»", () => {
+      eq(C.DEFAULTS.routeOnAssign, true, "по умолчанию — трасса сразу");
+      const p1 = M.newProject("x"); p1.settings.routeOnAssign = "да";
+      C.importJSON(JSON.stringify({ project: p1 }));
+      eq(C.project.settings.routeOnAssign, true, "мусорное значение — по умолчанию");
+      const p2 = M.newProject("y"); p2.settings.routeOnAssign = false;
+      C.importJSON(JSON.stringify({ project: p2 }));
+      eq(C.project.settings.routeOnAssign, false, "выключенное остаётся выключенным");
+      const rt = srcOf("assets/js/modules/plan/plan-routes.js");
+      ok(/data-prt-assign="1">\$\{T\.assignOn\}/.test(rt) && /data-prt-assign="0">\$\{T\.assignOff\}/.test(rt), "в шторке трасс — оба положения");
+      ok(/c\.project\.settings\.routeOnAssign = on; c\.persist\("routes-assign"\)/.test(rt), "переключение — обычной записью с ↶");
+    });
+
+    test("новая линия у непроложенной точки не перестраивает остальные трассы (подпись входов)", () => {
+      const { k, s, add } = flat();
+      const a = add("socket", k.id + ":0", 100, 30, "power"), b = add("socket", s.id + ":1", 150, 30, "power");
+      EL.assignNewCircuit(a); EL.assignNewCircuit(b);
+      RT.build({ noUndo: true });
+      const P1 = C.project, sig0 = RT.routeInputSig(P1);
+      const z = add("socket", s.id + ":0", 200, 30, "power");
+      eq(RT.routeInputSig(P1), sig0, "новая точка без трассы подпись не меняет");
+      EL.assignNewCircuit(elOf(z.id));
+      eq(RT.routeInputSig(P1), sig0, "и её новая линия — тоже: раньше «+ линия» перестраивал все трассы проекта");
+      elOf(a.id).circuitId = elOf(b.id).circuitId;
+      ok(RT.routeInputSig(P1) !== sig0, "а смена линии ПРОЛОЖЕННОЙ точки — меняет (её трассу перестроит автоматика)");
+    });
+
+    test("после назначения линии трасса точки выбрана и тянется на плане; перестройка не сбивает выбор", () => {
+      const { s, add } = flat();
+      const a = add("socket", s.id + ":1", 150, 30, "power");
+      const env = env86();
+      try {
+        RM.attach(env.cv);
+        const el = assignNew(a.id);
+        EL.afterAssign(el);
+        eq(RM.editorRouteFor(), a.id, "трасса точки вооружена для правки");
+        const own = RT.ownRoute(C.project, a.id);
+        eq(RM.selectedRouteId(), own.id, "и выбрана — светится на плане");
+        ok(/Трасса проложена/.test(RM.lastFlash()), "сообщение над планом");
+        ok(typeof env.hk.h === "function", "обработчик тяги на холсте — тянуть можно сразу");
+        RT.build({ noUndo: true });                 // полная перестройка: у трассы новый id
+        const own2 = RT.ownRoute(C.project, a.id);
+        ok(own2 && own2.id !== own.id, "после перестройки у трассы новый id");
+        RM.setSoloCircuit("x");                     // настоящая перерисовка модуля
+        eq(RM.selectedRouteId(), own2.id, "выбрана новая версия трассы ЭТОЙ точки");
+        RM.setSoloCircuit("x");
+        RM.setMode("rect");
+        eq(RM.editorRouteFor(), null, "смена инструмента — выбор снят");
+      } finally { env.restore(); RM.setMode("view"); }
+    });
+
+    test("трасса не вышла — причина над планом, выбора нет; цель клавиши без трасс в проекте — прокладывается", () => {
+      const env = env86();
+      try {
+        const f = flat({ noPanel: true });
+        const z = f.add("socket", f.k.id + ":0", 100, 30, "power");
+        RM.attach(env.cv);
+        EL.afterAssign(assignNew(z.id));
+        eq(RM.editorRouteFor(), null, "трассы нет — нечего выбирать");
+        ok(/трасса не построена: нет щита/.test(RM.lastFlash()), "сказано почему");
+        const g = flat();
+        const sw = g.add("switch", g.s.id + ":2", 100, 90, "light"), L = g.lamp(600, 150);
+        EL.assignNewCircuit(sw);
+        sw.targetIds = [L.id]; EL.syncTargetCircuit(sw, L);
+        eq(EL.afterTargetLink(L, true), null, "трассы в проекте уже есть — её проложит автоперестройка, не мы");
+        EL.afterTargetLink(L, false);
+        ok(RT.ownRoute(C.project, L.id) && RT.ownRoute(C.project, sw.id), "трасс нет совсем — цель и её выключатель проложены сразу");
+        ok(/Трасса к этой точке проложена/.test(RM.lastFlash()), "и это видно");
+      } finally { env.restore(); RM.setMode("view"); }
+    });
+
+    test("редактор точки: трасса — «✏️ Править трассу», вооружена — «Ломать / Двигать / Ещё», нет — «⚡ Проложить»", () => {
+      const { s, add } = flat();
+      const a = add("socket", s.id + ":1", 150, 30, "power"), b = add("socket", s.id + ":0", 200, 30, "power"), c0 = add("socket", s.id + ":0", 300, 30, "power");
+      const env = env86();
+      try {
+        RM.attach(env.cv);
+        EL.assignNewCircuit(a); RT.routeAssigned([a.id]);
+        let h = captureOpen(() => EL.openEditor(elOf(a.id)));
+        ok(/data-pe-redit/.test(h) && !/data-pe-rmode/.test(h), "трасса есть, не вооружена — «✏️ Править трассу»");
+        RM.armEditorRoute(a.id);
+        h = captureOpen(() => EL.openEditor(elOf(a.id)));
+        ok(/data-pe-rmode="point"[^>]*aria-pressed="true"/.test(h) && /data-pe-rmode="segment"/.test(h), "вооружена — «✏️ Ломать / ↔ Двигать»");
+        ok(/data-pe-rmore/.test(h), "и «🧵 Ещё…» — полная карточка трассы");
+        ok(h.indexOf("data-pe-rmode") < h.indexOf("ep-plan-chainrow") && h.indexOf("data-pe-circ-new") < h.indexOf("data-pe-rmode"), "строка трассы — сразу под выбором линии, выше справки «откуда питается» (на телефоне не уходит под прокрутку)");
+        RM.setRouteDragMode("segment");
+        h = captureOpen(() => EL.openEditor(elOf(a.id)));
+        ok(/data-pe-rmode="segment"[^>]*aria-pressed="true"/.test(h), "режим тяги виден");
+        EL.assignNewCircuit(elOf(b.id));
+        C.project.settings.routeOnAssign = false;
+        h = captureOpen(() => EL.openEditor(elOf(b.id)));
+        eq(RM.editorRouteFor(), null, "редактор другой точки снимает выбор прежней трассы");
+        ok(/data-pe-rbuild/.test(h), "линия есть, трассы нет — «⚡ Проложить»");
+        h = captureOpen(() => EL.openEditor(elOf(c0.id)));
+        ok(!/data-pe-rbuild|data-pe-redit/.test(h), "без линии строки трассы нет");
+      } finally { env.restore(); RM.setMode("view"); }
+      const el = srcOf("assets/js/modules/plan/plan-elements.js");
+      ok(/el\.circuitId = el\.circuitId === id \? null : id; c\.persist\("elem-circuit"\);\s*if \(el\.circuitId\) afterAssign\(el\);/.test(el), "выбор линии чипом — трасса сразу");
+      ok(/assignNewCircuit\(el\); c\.persist\("circuit-add"\);\s*afterAssign\(el\);/.test(el), "«+ линия» — трасса сразу");
+      ok(/c\.persist\("elem-target"\);\s*if \(tgt\) afterTargetLink\(tgt, hadRoutes\);/.test(el), "цель клавиши чипом — трасса к цели");
+      ok(/routeAssigned\(\[id\], \{ force: true \}\)[\s\S]{0,200}c\.rollback\(\);/.test(el), "«⚡ Проложить» — свой шаг ↶, не вышло — откат без пустого шага");
+      const r = srcOf("assets/js/modules/plan/plan-rooms.js");
+      ok(/function closeSheet\(\) \{[\s\S]{0,200}if \(R\.editorRoute\) \{ clearRouteSel\(\); renderSceneSoon\(\); \}/.test(r), "закрыли редактор — выбор трассы снят");
+      ok(/if \(EP\.Plan\.Elements\.afterTargetLink\) EP\.Plan\.Elements\.afterTargetLink\(hit\.el, hadRoutes\);/.test(r), "цель тапом 🎯 — тоже");
+      const u = srcOf("assets/js/modules/plan/plan-unfold.js");
+      eq((u.match(/routeAfterAssign\(el2\);/g) || []).length, 2, "в карточке точки развёртки — оба способа назначения");
+    });
+
+    test("«‹ К точке»: из карточки трассы назад в редактор точки, трасса остаётся выбранной", () => {
+      const { s, add } = flat();
+      const a = add("socket", s.id + ":1", 150, 30, "power");
+      const env = env86(), node = sheetNode();
+      try {
+        RM.attach(env.cv);
+        EL.assignNewCircuit(a); RT.routeAssigned([a.id]);
+        RM.armEditorRoute(a.id);
+        withSheet(node, () => { ok(RM.openRouteFromEditor(a.id), "карточка открыта"); });
+        ok(/data-prt2-back>‹ К точке/.test(node.innerHTML), "в шапке — «‹ К точке»");
+        ok(/data-prt2-mode="point"/.test(node.innerHTML), "и там те же режимы тяги");
+        eq(RM.selectedRouteId(), RT.ownRoute(C.project, a.id).id, "трасса выбрана");
+      } finally { env.restore(); RM.setMode("view"); }
+    });
+
+    test("холст нельзя прокрутить: фокус в шторке и scrollIntoView больше не сдвигают план (пустая полоса внизу)", () => {
+      const css = srcOf("assets/css/plan.css");
+      const rule = css.slice(css.indexOf(".ep-plan-canvas {"), css.indexOf("}", css.indexOf(".ep-plan-canvas {")));
+      ok(/overflow: hidden;[\s\S]*overflow: clip;/.test(rule), "overflow: clip (а hidden — запасной для старых браузеров, стоит ПЕРЕД ним)");
+      const mt = srcOf("assets/js/modules/plan/plan-mount.js");
+      ok(/host\.addEventListener\("scroll", \(\) => \{ if \(host\.scrollTop \|\| host\.scrollLeft\) \{ host\.scrollTop = 0; host\.scrollLeft = 0; \} \}/.test(mt), "где clip не работает — прокрутка сбрасывается сразу");
+      ok(/if \(!host\.__epNoScroll\) \{/.test(mt), "слушатель вешается один раз, а не на каждое открытие проекта");
+    });
+
+    test("отложенная запись: правки проекта не теряются, если за 400 мс сохраняется другой проект", () => {
+      const A = C.createProject("Объект А");
+      A.rooms.push(M.newRoom(G.rectPoints(0, 0, 300, 300), "Комната А")); C.persist("room-add");
+      const B = C.createProject("Объект Б"); // таймер записи в песочнице не срабатывает — как «следующий через 100 мс»
+      const savedA = JSON.parse(sandbox.localStorage.getItem("ep_plan_v1_p_" + A.id) || "null");
+      ok(savedA && savedA.rooms.length === 1, "проект А записан на диск вместе с последней правкой (раньше — терялся)");
+      ok(C.listProjects().some((r) => r.id === A.id), "в списке проектов А есть");
+      C.flushPersist();
+      ok(C.listProjects().some((r) => r.id === B.id), "и Б после своей записи");
+    });
+
+    // ---------- автоматы по комнатам ----------
+    const flat3 = () => {
+      const K = M.newRoom(G.rectPoints(0, 0, 400, 300), "Кухня"), S = M.newRoom(G.rectPoints(400, 0, 400, 300), "Спальня"), B = M.newRoom(G.rectPoints(0, 300, 300, 200), "Ванная");
+      const { P } = install({ rooms: [K, S, B] });
+      const [k, s, b] = P.rooms;
+      P.panels.push(M.newPanel(100, 150, "ЩК"));
+      P.guides.push(M.newGuide([{ x: 50, y: 150 }, { x: 750, y: 150 }]), M.newGuide([{ x: 150, y: 150 }, { x: 150, y: 450 }]));
+      const add = (t, wall, off, h, layer) => { const e = M.newElement(t, wall, off, h, layer); P.elements.push(e); return e; };
+      const lamp = (x, y) => { const e = M.newElement("light", null, 0, 270, "light"); e.params = { x, y }; P.elements.push(e); return e; };
+      const ks = [add("socket", k.id + ":0", 100, 30, "power"), add("socket", k.id + ":0", 250, 30, "power")];
+      const ss = add("socket", s.id + ":1", 150, 30, "power"), bs = add("socket", b.id + ":2", 100, 30, "power");
+      const lk = lamp(200, 100), ls = lamp(600, 100);
+      const swk = add("switch", k.id + ":3", 50, 90, "light"); swk.targetIds = [lk.id];
+      const swS = add("switch", s.id + ":3", 60, 90, "light"); // без цели — свет своей комнаты
+      const tp = add("warmfloor", b.id + ":3", 50, 90, "warm"), ac = add("ac", s.id + ":0", 300, 220, "ac");
+      const net = add("internet", s.id + ":1", 220, 30, "lv");
+      return { P, k, s, b, ks, ss, bs, lk, ls, swk, swS, tp, ac, net };
+    };
+    const cats = (o) => Object.assign({ sock: false, light: false, warm: false, ac: false, out: false, v24: false, lv: false }, o);
+
+    test("автоматы по комнатам: своя линия на комнату и вид нагрузки, влажная и ТП — с дифом, слаботочка выключена", () => {
+      const f = flat3();
+      const before = JSON.stringify(C.project);
+      const prop = AP.proposeByRoom(C.project, { cats: AP.BR_DEF, rooms: null, mode: "free" });
+      eq(JSON.stringify(C.project), before, "предложение проект не меняет");
+      const t = (s0) => prop.lines.find((l) => l.title === s0);
+      ok(t("Розетки: Кухня") && t("Розетки: Кухня").elIds.length === 2, "розетки кухни — своя линия");
+      ok(t("Розетки: Спальня") && t("Розетки: Спальня").elIds.length === 1, "розетки спальни — своя");
+      eq(t("Розетки: Ванная").prot, "own", "влажная комната — свой диф");
+      eq(t("Тёплый пол · Ванная").prot, "own", "тёплый пол — свой автомат с дифом");
+      ok(t("Кондиционер · Спальня"), "кондиционер — свой автомат");
+      eq(t("Свет: Кухня").elIds.sort().join(), [f.lk.id, f.swk.id].sort().join(), "свет кухни — со своим выключателем");
+      eq(t("Свет: Спальня").elIds.sort().join(), [f.ls.id, f.swS.id].sort().join(), "выключатель без цели — на свет своей комнаты");
+      eq(t("Розетки: Кухня").breaker, 16, "розетки — 16A"); eq(t("Свет: Кухня").breaker, 10, "свет — 10A");
+      eq(prop.groups.length, 1, "розетки сухих комнат — под одно групповое УЗО");
+      eq(t("Розетки: Кухня").groupKey, t("Розетки: Спальня").groupKey, "кухня и спальня — в нём");
+      ok(prop.scope.indexOf(f.net.id) < 0, "слаботочка по умолчанию выключена — интернет-розетку не трогаем");
+      eq(prop.lines.map((l) => l.name).join(), "QF1,QF2,QF3,QF4,QF5,QF6,QF7", "номера по порядку");
+    });
+
+    test("автоматы по комнатам: тумблер выключен — вид не трогаем; выбранные комнаты; только точки без линии", () => {
+      const f = flat3();
+      let prop = AP.proposeByRoom(C.project, { cats: cats({ sock: true, warm: true }), mode: "free" });
+      ok(!prop.lines.some((l) => /Свет|Кондиционер/.test(l.title)), "свет и кондиционер выключены — их линий нет");
+      ok(prop.scope.indexOf(f.lk.id) < 0 && prop.scope.indexOf(f.swk.id) < 0, "светильники и выключатели не тронуты");
+      prop = AP.proposeByRoom(C.project, { cats: AP.BR_DEF, rooms: [f.k.id], mode: "free" });
+      ok(prop.lines.length && prop.lines.every((l) => /Кухня/.test(l.title)), "выбрана кухня — линии только кухни");
+      elOf(f.ss.id).circuitId = EL.assignNewCircuit(elOf(f.ss.id)).id;
+      prop = AP.proposeByRoom(C.project, { cats: cats({ sock: true }), mode: "free" });
+      ok(prop.scope.indexOf(f.ss.id) < 0 && prop.skipped === 1, "уже на линии — не трогаем (пропущено 1)");
+      prop = AP.proposeByRoom(C.project, { cats: cats({ sock: true }), mode: "all" });
+      ok(prop.scope.indexOf(f.ss.id) >= 0, "«Переназначить» — берёт и её");
+    });
+
+    test("автоматы по комнатам: применить — одним шагом ↶ вместе с трассами", () => {
+      const f = flat3();
+      AP.setByRoom({ cats: AP.BR_DEF, rooms: null, mode: "free" });
+      const n0 = C.commitCount();
+      const res = AP.applyByRoomAndRoute();
+      eq(C.commitCount(), n0 + 1, "одна запись истории на всё");
+      eq(res.made.length, 7, "семь линий");
+      const P1 = C.project;
+      ok(P1.elements.filter((e) => e.type !== "internet").every((e) => e.circuitId), "все точки включённых видов — на линиях");
+      eq(P1.routes.length, 10, "трассы проложены сразу");
+      ok(/Трассы: 10 из 10/.test(res.msg), "итог — над планом");
+      eq(P1.rcdGroups.length, 1, "одно групповое УЗО");
+      C.undo();
+      eq(C.project.circuits.length, 0, "↶ — линий нет");
+      eq((C.project.routes || []).length, 0, "и трасс тоже");
+    });
+
+    test("автоматы по комнатам: переназначить комнату — опустевшая линия уходит, номер и место в УЗО переходят", () => {
+      const f = flat3();
+      AP.setByRoom({ cats: AP.BR_DEF, rooms: null, mode: "free" });
+      AP.applyByRoomAndRoute();
+      const old = C.project.circuits.find((c) => c.title === "Розетки: Кухня");
+      const prop = AP.proposeByRoom(C.project, { cats: cats({ sock: true }), rooms: [f.k.id], mode: "all" });
+      eq(prop.willFree.join(), old.id, "линия кухни опустеет");
+      eq(prop.lines.map((l) => l.name).join(), "QF1", "её номер свободен — новая линия берёт его");
+      eq(prop.groups.length, 0, "нового УЗО нет");
+      eq(prop.joined.map((j) => j.name + "+" + j.n).join(), "УЗО1+1", "линия встаёт в стоящее УЗО, где есть место");
+      AP.setByRoom({ cats: cats({ sock: true }), rooms: [f.k.id], mode: "all" });
+      const res = AP.applyByRoomAndRoute();
+      const P1 = C.project;
+      eq(res.removed, 1, "опустевшая линия убрана");
+      ok(!P1.circuits.some((c) => c.id === old.id), "старой линии нет");
+      const nw = P1.circuits.find((c) => c.title === "Розетки: Кухня");
+      eq(nw.name, "QF1", "у новой — её номер");
+      eq(P1.rcdGroups.length, 1, "УЗО по-прежнему одно");
+      eq(nw.rcdGroupId, P1.rcdGroups[0].id, "и новая линия под ним");
+      ok(f.ks.every((e) => elOf(e.id).circuitId === nw.id), "розетки кухни на новой линии");
+    });
+
+    test("автоматы по комнатам: тумблеры запоминаются на устройстве, испорченная запись — умолчания", () => {
+      sandbox.localStorage.setItem("ep_plan_byroom_v1", "{не json");
+      eq(JSON.stringify(AP.brLoad()), JSON.stringify(AP.BR_DEF), "испорченная запись — умолчания");
+      sandbox.localStorage.setItem("ep_plan_byroom_v1", JSON.stringify({ light: false, sock: "да", lishnee: true }));
+      const o = AP.brLoad();
+      eq(o.light, false, "сохранённое выключенное — выключено"); eq(o.sock, true, "мусор — по умолчанию");
+      ok(!("lishnee" in o), "чужие ключи не протекают");
+      sandbox.localStorage.removeItem("ep_plan_byroom_v1");
+      eq(AP.BR_CATS.map((c) => c.key).join(), "sock,light,warm,ac,out,v24,lv", "розетки, свет, ТП, кондиционер, выводы, 24В, слаботочка");
+    });
+
+    test("автоматы по комнатам: шторка — тумблеры (role=switch, aria-checked), комнаты, кнопка в тулбаре «Электрики»", () => {
+      flat3();
+      AP.setByRoom({ cats: Object.assign({}, AP.BR_DEF, { lv: false }), rooms: null, mode: "free" });
+      const h = captureOpen(() => AP.sheetByRoom());
+      eq((h.match(/role="switch"/g) || []).length, AP.BR_CATS.length, "тумблер на каждый вид нагрузки");
+      ok(/aria-checked="true" data-pbr-cat="sock"/.test(h) && /aria-checked="false" data-pbr-cat="lv"/.test(h), "положение тумблера — в aria-checked, не только цветом");
+      ok(/data-pbr-room="all"[^>]*>Все комнаты/.test(h) && /data-pbr-room="[^"]+"[^>]*>Ванная/.test(h), "комнаты — чипами");
+      ok(/data-pbr-apply >✓ Применить \(7 линий\)/.test(h), "кнопка с числом линий");
+      ok(/ep-ap-table/.test(h), "предпросмотр — та же таблица, что у «Сформировать проект»");
+      ok(/<div class="ep-plan-srow ep-plan-sbtns ep-plan-actbar">\s*<button[^>]*data-pbr-apply/.test(h) && /<\/button>\s*<\/div>\s*$/.test(h), "«Применить» — закреплённой полосой последним блоком (ложится на край шторки, список под ней не просвечивает)");
+      ok(!/ep-ap-apply/.test(srcOf("assets/css/plan.css")), "прежнее правило полосы (висела на 12px выше края) убрано");
+      const mt = srcOf("assets/js/modules/plan/plan-mount.js");
+      ok(/data-plan-grp="elec" data-plan-byroom/.test(mt), "кнопка 🎚 — во вкладке «Электрика»");
+      const ap = srcOf("assets/js/modules/plan/plan-autoproject.js");
+      ok(/data-plan-byroom>🎚 Свой автомат на каждую комнату/.test(ap), "из «⚡ Сформировать проект» — переход сюда");
+      const css = srcOf("assets/css/plan.css");
+      ok(/\.ep-plan-tgl\[aria-checked="true"\] \.ep-plan-tglsw::after \{ transform: translateX\(18px\); \}/.test(css), "бегунок сдвигается — состояние видно и формой");
+      ok(/prefers-reduced-motion: reduce\) \{ \.ep-plan-tglsw, \.ep-plan-tglsw::after \{ transition: none; \}/.test(css), "без анимации, если она выключена в системе");
+    });
+  }
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

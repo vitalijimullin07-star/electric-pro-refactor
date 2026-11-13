@@ -26,8 +26,10 @@
       note: "Тапни место — впиши заметку. Потом можно вытянуть стрелку-выноску к нужной точке.",
       movroom: "Тапни комнату и тяни — поедет целиком: точки, проёмы, щит и балки внутри. Углы липнут к углам соседних комнат.",
       mergeSecond: "Тапни соседнюю комнату (или ту же — отменить).",
-      guide: "Магистраль: тапай точки приоритетного направления трасс (по коридору). Повторный тап в последнюю точку — сохранить линию."
+      guide: "Магистраль: тапай точки по коридору. Двойной тап — закончить линию (или «✓ Сохранить»). Выйдешь из ⇉ — линия тоже сохранится."
     },
+    guideSaved: (n, len) => `Магистраль ⇉${n} сохранена · ${len}. Рисуй следующую — или стройте трассы (🧵).`,
+    guideAutoSaved: (len) => `Магистраль сохранена · ${len}`,
     targetPickHint: "Тапни точку на плане (свет/бра/трек/вывод/24В/розетку) — она станет целью этой клавиши.",
     targetPicked: (name) => `Клавиша → ${name} ✓`,
     targetPickMiss: "Отменено — тап не попал в подходящую точку.",
@@ -255,6 +257,9 @@
     // рисуем сейчас — отложенная перерисовка того же кадра больше не нужна (иначе после тяги
     // стены, когда последний шаг пальца и отпускание пришли в одном кадре, план рисовался дважды)
     cancelSceneSoon();
+    // трассу точки, вооружённую из её редактора, могли пересобрать (автоперестройка, фоновый
+    // вычислитель — у новой версии другой id): выбранной остаётся трасса ЭТОЙ точки
+    if (R.editorRoute) resolveEditorRoute();
     // живой слой нежёсткой тяги (liveBegin): рисуем только область тяги в слой поверх
     // холста, основную сцену не трогаем до отпускания
     if (EP.Plan.Render.isLive && EP.Plan.Render.isLive(R.canvas)) { EP.Plan.Render.liveDraw(R.canvas, G().floorScoped(core().project), ui()); return; }
@@ -378,13 +383,21 @@
     else if (br.right > rr.right - m) row.scrollLeft += br.right - (rr.right - m);
   }
   function setMode(mode) {
+    // Черновик магистрали НЕ теряется при выходе из ⇉ (просьба «легче сохранять магистраль»):
+    // смена инструмента, ✕ шторки, Android-«назад», повторный тап по ⇉ — линия из 2+ точек
+    // сохраняется. Раньше её молча стирал сброс ниже, а сохранить можно было только точным
+    // повторным тапом в последнюю точку или кнопкой в свёрнутой шторке.
+    if (R.mode === "guide" && R.guideDraft && R.guideDraft.points.length >= 2) {
+      const gd = saveGuideDraft();
+      if (gd) flash(T.guideAutoSaved(G().fmtLen(G().polylineLen(gd.points))));
+    }
     R.mode = mode;
     R.draft = { points: [] }; R.pendingRect = null; R.pendingPoly = null; R.rectAnchor = null; R.attach = null; R.split = null; R.noteId = null; R.dimDraft = null;
     R.ruler = { a: null, b: null }; R.beamDraft = { a: null, b: null }; R.voidDraft = { a: null, b: null };
     R.guideDraft = { points: [] };
     R.targetPick = null; // смена режима отменяет одноразовый выбор цели клавиши
     R.calib = { on: false, a: null, b: null };
-    R.selectedBeam = null; R.selectedVoid = null; R.selectedRoute = null; R.selectedRouteTap = null; R.mergeFirst = null; R.mergePending = null;
+    R.selectedBeam = null; R.selectedVoid = null; R.selectedRoute = null; R.selectedRouteTap = null; R.editorRoute = null; R.routeBackEl = null; R.mergeFirst = null; R.mergePending = null;
     setMove(false);
     // активный инструмент: класс (цвет + полоска) и aria-pressed — состояние не только цветом (п. 14)
     document.querySelectorAll("[data-plan-mode]").forEach((b) => {
@@ -475,8 +488,12 @@
         // линия цели — автоматически (220В-цель = линия выключателя, «Вывод 24В» — своя
         // 24В-линия): тот же хелпер, что и у чипов выбора цели в редакторе точки
         if (EP.Plan.Elements.syncTargetCircuit) EP.Plan.Elements.syncTargetCircuit(sw, hit.el);
+        const hadRoutes = (c.project.routes || []).length > 0;
         c.persist("elem-target");
         toast(T.targetPicked((EP.Plan.Elements.TYPES[hit.el.type] || {}).name || hit.el.type));
+        // у цели появилась линия — трасса к ней (если трасс ещё нет совсем; иначе её проложит
+        // автоперестройка — см. afterTargetLink)
+        if (EP.Plan.Elements.afterTargetLink) EP.Plan.Elements.afterTargetLink(hit.el, hadRoutes);
       } else {
         toast(T.targetPickMiss);
       }
@@ -591,9 +608,17 @@
     }
     if (R.mode === "guide") {
       // магистраль трасс: тапы набирают полилинию (автовыравнивание до 90°, как у
-      // комнаты по точкам). Завершение — ПОВТОРНЫЙ тап в последнюю точку (паттерн
-      // замыкания poly). Шторка закрывается на первом тапе — иначе она закрывает
-      // низ холста и съедает тапы рисования по «коридору» (поймано живым тестом).
+      // комнаты по точкам). Завершение — ДВОЙНОЙ тап (onDoubleTap), «✓ Сохранить» в
+      // компактной полосе шторки, повторный тап в последнюю точку или просто выход из ⇉.
+      // Пока рисуешь, шторка — КОМПАКТНАЯ (заголовок + кнопки, sheetGuide): полная с
+      // группами и списком закрывала низ холста и съедала тапы по «коридору».
+      // этаж или проект сменился посреди рисования (+ этаж, импорт): прежняя линия — на свой
+      // этаж, здесь начинается новая (иначе точки нового этажа дописались бы к чужой линии)
+      const d0 = R.guideDraft;
+      if (d0.points.length && ((d0.pid && d0.pid !== (p.id || null)) || (d0.fid && d0.fid !== floorIdOf(p)))) {
+        saveGuideDraft();
+        R.guideDraft = { points: [] };
+      }
       const pts = R.guideDraft.points;
       if (pts.length >= 2 && G().dist(w, pts[pts.length - 1]) <= CFG.closePolyPx * R.canvas.cmPerPx()) {
         vibrate([10, 30, 10]);
@@ -603,8 +628,16 @@
       const orthoG = G().orthoAdjust(pts[pts.length - 1] || null, w);
       const sp = G().snapSmart(p, orthoG, step, CFG.cornerSnapCm);
       if (sp.snapped) vibrate(10);
+      // черновик помнит проект и этаж: сохранить его при выходе из режима можно только туда,
+      // где его рисовали (у этажей общие координаты, а открытие другого проекта тоже зовёт setMode)
+      if (!pts.length) { R.guideDraft.pid = p.id || null; R.guideDraft.fid = floorIdOf(p); }
       pts.push({ x: sp.x, y: sp.y });
-      if (pts.length === 1) collapseSheet(); // шторка не мешает рисовать (свёрнута, ︿ вернёт); развернётся после сохранения
+      // первая точка разворачивает компактную полосу (✓ на виду), дальше — без прыжков:
+      // свернул её пользователь — так и остаётся свёрнутой
+      sheetGuide(pts.length === 1 ? null : { keepCollapsed: true });
+      // полоса только что выехала — начало линии не должно оказаться под ней (замер в кадре,
+      // по уже отрисованной полосе; если точка и так видна — вид не двигается)
+      if (pts.length === 1) ensureVisibleAboveSheet({ x: sp.x, y: sp.y });
       renderScaled();
       return;
     }
@@ -744,6 +777,13 @@
     });
   }
   function onDoubleTap(w) {
+    // ⇉ магистраль: двойной тап — закончить линию (первый тап уже поставил точку). В режиме
+    // рисования магистрали двойной тап НИКОГДА не зумит: раньше быстрый двойной тап «в конец
+    // линии» увеличивал план вместо сохранения — завершал только медленный повторный тап.
+    if (R.mode === "guide" && core().project) {
+      if (R.guideDraft.points.length >= 2) { vibrate([10, 30, 10]); finishGuide(); }
+      return true;
+    }
     // ТОЛЬКО активный этаж: у этажей общие координаты, и без фильтра двойной тап по цифре
     // на первом этаже мог открыть точку второго, чья невидимая подпись оказалась ближе
     const p = core().project && G().floorScoped(core().project);
@@ -1018,6 +1058,8 @@
   function closeSheet() {
     const s = sheet();
     R.sheetKey = null;   // следующая шторка — с начала
+    // трасса точки, вооружённая из её редактора, живёт ровно пока открыт редактор
+    if (R.editorRoute) { clearRouteSel(); renderSceneSoon(); }
     R.sheetObj = null;
     closeOverlaySheet();
     R.sheetCollapsed = false; R.sheetTransient = false;
@@ -1234,12 +1276,32 @@
       + GUIDE_KIND_CHIPS.map(([k, l]) => `<button type="button" class="ep-plan-chip ep-clickable${sel.indexOf(k) >= 0 ? " on" : ""}" ${attr}="${k}">${l}</button>`).join("");
   }
   const toggleKind = (list, k) => (k === "all" ? [] : (list.indexOf(k) >= 0 ? list.filter((x) => x !== k) : list.concat([k])));
-  function sheetGuide() {
+  const floorIdOf = (p) => (p && (p.activeFloorId || (p.floors && p.floors[0] && p.floors[0].id))) || null;
+  // Шторка ⇉ в двух видах. Пока рисуешь (в черновике есть точки) — КОМПАКТНАЯ полоса:
+  // длина, «✓ Сохранить» / «↩ Точка» / «🗑 Стереть» — сохранить видно сразу, а низ холста
+  // почти свободен. Без черновика — полная: группы новой магистрали, список нарисованных,
+  // «Предложить по комнатам». opts — как у openSheet (keepCollapsed при перерисовке).
+  function sheetGuide(opts) {
     const p = core().project;
     const gs = (G().floorScoped(p).guides || []);
     const saved = gs.length;
     const draftN = R.guideDraft.points.length;
     R.guideKinds = R.guideKinds || [];
+    if (draftN) {
+      const len = G().polylineLen(R.guideDraft.points);
+      // ОДНА строка: сколько нарисовано и три кнопки. Подсказки «двойной тап / выход тоже
+      // сохранит» и ✕ здесь нет: подсказка уже над холстом (строка режима), выйти можно любым
+      // инструментом на панели — а каждая лишняя строка на узком телефоне закрывала коридор,
+      // по которому рисуют (на 360 px полоса в три строки занимала четверть холста)
+      const kinds = R.guideKinds.length ? R.guideKinds.map((k) => (GUIDE_KIND_CHIPS.find((x) => x[0] === k) || [k, k])[1]).join(", ") : "";
+      openSheet(`<div class="ep-plan-srow ep-plan-sbtns ep-plan-actbar ep-plan-gdbar">
+          <b class="ep-plan-gdcnt"${kinds ? ` title="Для: ${esc(kinds)}"` : ""}>⇉ ${draftN}${draftN >= 2 ? `<small> · ${G().fmtLen(len)}</small>` : ""}</b>
+          <button type="button" class="ep-plan-tbtn is-primary ep-clickable" data-pg-done ${draftN >= 2 ? "" : "disabled"}>✓ Сохранить</button>
+          <button type="button" class="ep-plan-tbtn ep-clickable" data-pg-undo aria-label="Убрать последнюю точку" title="Убрать последнюю точку">↩</button>
+          <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pg-drop aria-label="Стереть линию, не сохраняя" title="Стереть линию">🗑</button>
+        </div>`, opts);
+      return;
+    }
     const rows = gs.map((gd, i) => {
       const len = G().polylineLen(gd.points || []);
       return `<div class="ep-plan-gdrow"><div class="ep-plan-srow"><b>⇉${i + 1}</b><span class="ep-plan-mshint">${(len / 100).toFixed(1).replace(".", ",")} м${gd.hidden ? " · скрыта" : ""}</span><span class="ep-plan-flex"></span>
@@ -1247,29 +1309,46 @@
         <div class="ep-plan-chips">${guideKindChips(guideKindsOf(gd), `data-pg-kind-${esc(gd.id)}`)}</div></div>`;
     }).join("");
     openSheet(`<div class="ep-plan-srow"><b>⇉ Магистраль трасс</b><span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-clickable" data-pg-close>✕</button></div>
-      <div class="ep-plan-modehint">${T.modeHint.guide} Нарисованных: ${saved}${draftN ? ` · точек в текущей: ${draftN}` : ""}. Трассы пойдут по магистрали между комнатами, внутри комнат — как обычно. После построения линия скрывается.</div>
+      <div class="ep-plan-modehint">${T.modeHint.guide} Нарисованных: ${saved}. Трассы пойдут по магистрали между комнатами, внутри комнат — как обычно. После построения линия скрывается.</div>
       <div class="ep-plan-srow ep-plan-sbtns">
-        <button type="button" class="btn btn-primary ep-clickable" data-pg-done ${draftN >= 2 ? "" : "disabled"}>✓ Готово</button>
-        <button type="button" class="ep-plan-tbtn ep-clickable" data-pg-undo ${draftN ? "" : "disabled"}>↩ Точка</button>
         ${saved ? `<button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pg-clear>🗑 Убрать все</button>` : `<button type="button" class="ep-plan-tbtn ep-clickable" data-pg-suggest>🌳 Предложить по комнатам</button>`}
       </div>
       <div class="ep-plan-slabel">Новая магистраль — для каких трасс</div>
       <div class="ep-plan-chips">${guideKindChips(R.guideKinds, "data-pg-newkind")}</div>
       ${saved ? `<div class="ep-plan-slabel">Нарисованные (номер — у начала линии на плане)</div>${rows}
-      <div class="ep-plan-mshint">«Все» — магистраль общая. Если выбрать группы, трассы других групп пойдут по общим магистралям, а не по этой (например, слаботочку — своим коридором подальше от силовых).</div>` : ""}`);
+      <div class="ep-plan-mshint">«Все» — магистраль общая. Если выбрать группы, трассы других групп пойдут по общим магистралям, а не по этой (например, слаботочку — своим коридором подальше от силовых).</div>` : ""}`, opts);
   }
-  function finishGuide() {
-    const c = core(), p = c.project;
-    if (R.guideDraft.points.length < 2) return;
+  // Сохранить черновик магистрали в проект (2+ точки). Черновик чужого проекта/этажа не
+  // сохраняется: setMode зовётся и при открытии ДРУГОГО проекта, а у этажей общие координаты.
+  function saveGuideDraft() {
+    const c = core(), p = c.project, d = R.guideDraft;
+    if (!p || !d || (d.points || []).length < 2) return null;
+    if (d.pid && d.pid !== (p.id || null)) return null;
+    // этаж, где рисовали: активный мог смениться посреди рисования (+ этаж, переключение) —
+    // линия ложится туда, где её видел человек; удалённый этаж — сохранять некуда
+    const fid = d.fid && (p.floors || []).some((f) => f.id === d.fid) ? d.fid : null;
+    if (d.fid && !fid) return null;
     c.commit();
     p.guides = p.guides || [];
-    const gd = c.model.newGuide(R.guideDraft.points.slice());
+    const gd = c.model.newGuide(d.points.slice());
+    if (fid) gd.floorId = fid;
     if ((R.guideKinds || []).length) gd.kinds = R.guideKinds.slice(); // для каких групп трасс (пусто = все)
     p.guides.push(gd);
     c.persist("guide-add");
+    return gd;
+  }
+  function finishGuide() {
+    const gd = saveGuideDraft();
     R.guideDraft = { points: [] };
-    toast("Магистраль добавлена — можно рисовать следующую или строить трассы");
+    // Подтверждение — над холстом (flash): тост рисовался в шторке и тут же затирался ею же,
+    // сообщения никто не видел. Шторка после сохранения — свёрнута: можно сразу рисовать
+    // следующую линию, список и группы — под ︿.
+    if (gd) {
+      const n = (G().floorScoped(core().project).guides || []).length;
+      flash(T.guideSaved(n, G().fmtLen(G().polylineLen(gd.points))));
+    }
     sheetGuide();
+    collapseSheet();
     renderScene();
   }
 
@@ -2345,12 +2424,59 @@
       (rt) => { const d = routeDisplay(rt.id); return d ? d.pts : null; },
       (rt) => shownOnPlan("route", rt)) : null; // трасса скрытой линии/выключенного слоя тап не ловит
   }
-  function sheetRoute(rt, tapPos) {
+  /* ---------- ТРАССА ТОЧКИ — ПРАВКА ПРЯМО ИЗ ЕЁ РЕДАКТОРА ----------
+     Просьба «назначаю линию — сразу рисуется трасса, и по пути могу её редактировать»: пока
+     открыт редактор точки, её собственная трасса (кабель от неё к щиту/предыдущей точке)
+     выбрана — светится — и тянется пальцем по плану теми же жестами, что в карточке трассы
+     (✏️ Ломать / ↔ Двигать). Редактор при этом не закрывается. Включается сам после
+     назначения линии (трасса построена) или кнопкой «✏️ Править трассу» в редакторе.
+     R.editorRoute — id ТОЧКИ, а не трассы: трассу могут пересобрать (автоперестройка, фоновый
+     вычислитель), и выбранной становится её новая версия (resolveEditorRoute в renderScene).
+     Снимается: закрытие шторки, тап мимо (clearRouteSel), смена режима, редактор другой точки. */
+  function routeMid(rt) { return (rt && rt.points && rt.points[Math.floor((rt.points.length - 1) / 2)]) || null; }
+  function ownRouteOf(elId) {
+    const p = core().project, RT = EP.Plan.Routes;
+    return p && RT && RT.ownRoute ? RT.ownRoute(p, elId) : null;
+  }
+  function armEditorRoute(elId) {
+    const rt = ownRouteOf(elId);
+    if (!rt || !R.canvas) { if (R.editorRoute === elId) disarmEditorRoute(); return false; }
+    if (R.editorRoute !== elId) R.routeDragMode = "point"; // новая точка — тяга по умолчанию «Ломать»
+    R.editorRoute = elId;
+    R.selectedRoute = rt.id;
+    R.selectedRouteTap = routeMid(rt);
+    enableRouteDrag();
+    return true;
+  }
+  function disarmEditorRoute() {
+    if (!R.editorRoute) return;
+    clearRouteSel();
+  }
+  function resolveEditorRoute() {
+    const p = core().project; if (!p) return;
+    const cur = (p.routes || []).find((r) => r.id === R.selectedRoute);
+    if (cur && cur.fromId === R.editorRoute) return;
+    const rt = ownRouteOf(R.editorRoute);
+    if (rt) { R.selectedRoute = rt.id; R.selectedRouteTap = routeMid(rt); }
+    else clearRouteSel();
+  }
+  // «🧵 Ещё…» из редактора точки — полная карточка трассы (↺ Авто, 🔄, 🧮) с возвратом к точке
+  function openRouteFromEditor(elId) {
+    const rt = ownRouteOf(elId);
+    if (!rt) return false;
+    R.editorRoute = null;
+    sheetRoute(rt, null, { backEl: elId });
+    return true;
+  }
+  function sheetRoute(rt, tapPos, opts) {
     const p = core().project;
     const circ = rt.circuitId ? (p.circuits || []).find((c) => c.id === rt.circuitId) : null;
     const len = G().polylineLen(rt.points || []);
+    // «‹ К точке»: карточку открыли из редактора точки — помним, куда вернуться (перерисовка
+    // той же трассы — смена режима тяги, разворот — возврат сохраняет)
+    R.routeBackEl = opts && opts.backEl ? opts.backEl : (R.selectedRoute === rt.id ? R.routeBackEl : null);
     if (R.selectedRoute !== rt.id) R.routeDragMode = "point"; // новая трасса выбрана — сброс режима тяги на дефолт
-    openSheet(`<div class="ep-plan-srow"><b>${T.routeTitle}</b>${circ ? ` · ${esc(circ.name)}` : ""} · ${G().fmtLen(len)}${rt.manual ? ` <span class="ep-plan-mshint">${T.routeManual}</span>` : ""}</div>
+    openSheet(`<div class="ep-plan-srow"><b>${T.routeTitle}</b>${circ ? ` · ${esc(circ.name)}` : ""} · ${G().fmtLen(len)}${rt.manual ? ` <span class="ep-plan-mshint">${T.routeManual}</span>` : ""}${R.routeBackEl ? `<span class="ep-plan-flex"></span><button type="button" class="ep-plan-mini ep-plan-back ep-clickable" data-prt2-back>‹ К точке</button>` : ""}</div>
       <div class="ep-plan-modehint">${R.routeDragMode === "segment" ? T.routeHintSeg : T.routeHintPoint}</div>
       <div class="ep-plan-srow ep-plan-sbtns">
         <button type="button" class="ep-plan-chip ep-clickable ${R.routeDragMode !== "segment" ? "on" : ""}" data-prt2-mode="point">${T.routeModePoint}</button>
@@ -2371,7 +2497,7 @@
     setSheetObj("route", rt.id, () => { const r2 = (core().project.routes || []).find((x) => x.id === rt.id); if (!r2) { clearRouteSel(); return false; } sheetRoute(r2, null); return true; });
     if (tapPos) ensureVisibleAboveSheet(tapPos);
   }
-  function clearRouteSel() { R.selectedRoute = null; R.selectedRouteTap = null; if (R.canvas) R.canvas.setDragHandler(null); }
+  function clearRouteSel() { R.selectedRoute = null; R.selectedRouteTap = null; R.editorRoute = null; R.routeBackEl = null; if (R.canvas) R.canvas.setDragHandler(null); }
   // разворачивает ближайший к последнему тапу прямой угол трассы (P->C->N сначала по
   // одной оси, потом по другой) в альтернативную вершину того же прямоугольника
   function flipNearestCorner() {
@@ -2494,7 +2620,9 @@
         rt.manual = true;
         if (EP.Plan.Routes.recomputeThroughWalls) EP.Plan.Routes.recomputeThroughWalls(c.project, rt);
         R.selectedRouteTap = rt.points[segDrag.a];
-        c.persist("route-dragseg"); grabbed = -1; segDrag = null; renderScene();
+        c.persist("route-dragseg"); grabbed = -1; segDrag = null;
+        refreshSheetObj(); // длина в карточке трассы / в редакторе точки — по новой форме
+        renderScene();
       } else if (phase === "end" && grabbed >= 0) {
         const step = c.project.settings.gridStep || 10;
         const P0 = rt.points[grabbed - 1], P1 = rt.points[grabbed + 1], raw = rt.points[grabbed];
@@ -2512,7 +2640,9 @@
         rt.manual = true;
         if (EP.Plan.Routes.recomputeThroughWalls) EP.Plan.Routes.recomputeThroughWalls(c.project, rt);
         R.selectedRouteTap = rt.points[grabbed];
-        c.persist("route-drag"); grabbed = -1; renderScene();
+        c.persist("route-drag"); grabbed = -1;
+        refreshSheetObj();
+        renderScene();
       }
     });
   }
@@ -3277,7 +3407,15 @@
     }
     if (t.closest("[data-pr-mergecancel]")) { R.mergePending = null; R.selectedRoomId = null; closeSheet(); toast(T.mergeCancelled); renderScene(); return; }
     if (t.closest("[data-pg-done]")) { finishGuide(); return; }
-    if (t.closest("[data-pg-undo]")) { R.guideDraft.points.pop(); renderScaled(); sheetGuide(); return; }
+    if (t.closest("[data-pg-undo]") || t.closest("[data-pg-drop]")) {
+      // ↩ — убрать последнюю точку; 🗑 — стереть весь черновик (НЕ сохраняя). Черновик опустел —
+      // полная шторка, свёрнутая, если магистралей ещё нет (как при входе в режим)
+      if (t.closest("[data-pg-drop]")) R.guideDraft = { points: [] }; else R.guideDraft.points.pop();
+      renderScaled();
+      if (R.guideDraft.points.length) sheetGuide({ keepCollapsed: true });
+      else { sheetGuide(); if (!(G().floorScoped(core().project).guides || []).length) collapseSheet(); }
+      return;
+    }
     if (t.closest("[data-pg-clear]")) {
       const c = core(), p = c.project;
       c.commit();
@@ -3332,6 +3470,14 @@
       return;
     }
     if (t.closest("[data-prt2-done]")) { clearRouteSel(); closeSheet(); renderScene(); return; }
+    if (t.closest("[data-prt2-back]")) {
+      // назад в редактор точки — её трасса остаётся выбранной и тянется дальше
+      const elId = R.routeBackEl, el2 = elId && (core().project.elements || []).find((x) => x.id === elId);
+      R.routeBackEl = null;
+      if (el2 && EP.Plan.Elements) { R.editorRoute = el2.id; EP.Plan.Elements.openEditor(el2, { keepView: true }); }
+      else { clearRouteSel(); closeSheet(); renderScene(); }
+      return;
+    }
     if ((el = t.closest("[data-pr-beamdel]"))) {
       const c = core(), bid = el.getAttribute("data-pr-beamdel"); c.commit();
       c.project.beams = (c.project.beams || []).filter((b) => b.id !== bid);
@@ -3494,6 +3640,11 @@
     // этот тонкий проброс, а сам обработчик (что двигать) остаётся в модуле мебели
     canvasSetDrag: (fn) => { if (R.canvas) R.canvas.setDragHandler(fn || null); },
     renderSceneSoon, liftNodes, moveLiftBy, dropLiftNodes, liveBegin, liveAdd, liveEnd,
-    mergeRooms, splitRoom, moveRoom, setWallLength, syncQuickbarVisibility, armTargetPick
+    mergeRooms, splitRoom, moveRoom, setWallLength, syncQuickbarVisibility, armTargetPick,
+    // трасса точки — правка прямо из её редактора (см. armEditorRoute)
+    armEditorRoute, disarmEditorRoute, openRouteFromEditor, editorRouteFor: () => R.editorRoute || null,
+    routeDragMode: () => (R.routeDragMode === "segment" ? "segment" : "point"),
+    setRouteDragMode: (m) => { R.routeDragMode = m === "segment" ? "segment" : "point"; },
+    guideDraftInfo: () => ({ n: R.guideDraft.points.length, pid: R.guideDraft.pid || null, fid: R.guideDraft.fid || null })
   };
 })();
