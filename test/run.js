@@ -11579,6 +11579,14 @@ test("фото: deleteProject чистит кэш фото своего прое
       K.setAuto("materials", 6000, "Материалы по смете");
       ok(K.factMaterials() === 6000, "повторное внесение не задваивает");
     });
+    test("админка и щит: токены темы, статусы по-русски, ручной режим помечен", () => {
+      const css = fs3.readFileSync(path3.join(__dirname, "../assets/css/admin.css"), "utf8");
+      ok(/\.ep-admin-page \{[^}]*--text: var\(--ep-admin-text\)/.test(css), "у админки свой --text");
+      const ad = fs3.readFileSync(path3.join(__dirname, "../assets/js/modules/admin/admin.js"), "utf8");
+      ok(/stLabel\(st\)/.test(ad) && !/>\$\{esc\(st\)\}</.test(ad), "статус показывается подписью, а не кодом");
+      const sh = fs3.readFileSync(path3.join(__dirname, "../assets/js/modules/shield/shield-configurator-v28.js"), "utf8");
+      ok((sh.match(/shv28-offnote/g) || []).length === 2, "помещения и отдельные линии помечены в ручном режиме");
+    });
   }
 
   console.log("\n" + "=".repeat(48));

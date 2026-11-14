@@ -21,6 +21,10 @@
 * { box-sizing: border-box; }
 
 .ep-admin-page {
+  /* у админки своя тёмная палитра в любой теме: общие токены внутри неё — тоже её,
+     иначе днём заголовки секций (color: var(--text) из base.css) тёмные на тёмной карточке */
+  --text: var(--ep-admin-text);
+  --muted: var(--ep-admin-muted);
   min-height: 100dvh;
   padding: 16px;
   color: var(--ep-admin-text);

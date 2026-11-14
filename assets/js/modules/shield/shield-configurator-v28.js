@@ -952,8 +952,8 @@
           <button type="button" class="shv28-railbtn" data-railopen><span>🔲 Раскладка и схема щита</span><b>${cfg.draft ? "открыть" : "нужен черновик"}</b></button>
         </div>
 
-        <div class="shv28-card">
-          <h3>Помещения</h3>
+        <div class="shv28-card shv28-roomscard${cfg.manualMode ? ` is-off" aria-disabled="true` : ""}">
+          <h3>Помещения</h3>${cfg.manualMode ? `<div class="shv28-offnote">Сейчас не учитывается — линии берутся из ручной однолинейки.</div>` : ""}
           <div class="shv28-rooms">${ROOMS.map(r => `
             <div class="shv28-room">
               <span class="shv28-room-ic">${r.icon}</span>
@@ -962,8 +962,8 @@
             </div>`).join("")}</div>
         </div>
 
-        <div class="shv28-card">
-          <h3>Отдельные линии</h3>
+        <div class="shv28-card shv28-linescard${cfg.manualMode ? ` is-off" aria-disabled="true` : ""}">
+          <h3>Отдельные линии</h3>${cfg.manualMode ? `<div class="shv28-offnote">Сейчас не учитывается — линии берутся из ручной однолинейки.</div>` : ""}
           <div class="shv28-lines">${LINES.map(l => `<button type="button" class="shv28-line ${cfg.lines[l.key] ? "on" : ""}" data-line="${l.key}"><span class="shv28-line-lb">${esc(l.label)}</span><span class="shv28-nom">${esc(l.nom)}</span><span class="shv28-tick">${cfg.lines[l.key] ? "✓" : ""}</span></button>`).join("")}</div>
         </div>
 
