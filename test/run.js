@@ -11551,6 +11551,36 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ---------- 88. Полировка, пакет 3: деньги на экране и маржа ----------
+  {
+    const vm3 = require("vm"), fs3 = require("fs"), path3 = require("path");
+    const mkSb = () => { const store = {}; const sb = { console }; sb.window = sb; sb.document = { getElementById: () => null, createElement: () => ({ style: {} }), head: { appendChild() {} }, addEventListener() {} };
+      sb.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: (k) => { delete store[k]; } };
+      sb.CustomEvent = function () {}; sb.dispatchEvent = () => true; sb.addEventListener = () => {}; return vm3.createContext(sb); };
+    const run = (ctx, f) => vm3.runInContext(fs3.readFileSync(path3.join(__dirname, "..", f), "utf8"), ctx, { filename: f });
+    test("экран: копейки через запятую, как EP.EstimatePrint.money", () => {
+      const ctx = mkSb(); run(ctx, "assets/js/modules/shield/ep-currency-v28.js");
+      const C = ctx.EPCurrency;
+      ok(C.format(1234567.891) === "1 234 567,89 ₽", "формат: " + C.format(1234567.891));
+      ok(C.format(350) === "350,00 ₽" && C.amount(-0.5) === "-0,50", "целое и отрицательное");
+      ok(C.parse("10,43") === 10.43 && C.parse("10.43") === 10.43, "разбор понимает оба вида");
+    });
+    test("затраты: материалы не в факте — подсказка и кнопка, после внесения маржа честная", () => {
+      const ctx = mkSb(); run(ctx, "assets/js/modules/shield/ep-currency-v28.js");
+      ctx.EP = { Estimate: { getItems: () => [{ type: "work", qty: 1, price: 10000 }, { type: "material", qty: 1, price: 6000 }] } };
+      run(ctx, "assets/js/modules/costs/costs.js");
+      const K = ctx.EP.Costs;
+      K.addActual("transport", 1000, "бензин");
+      ok(/data-cost-matfact/.test(K.matGapHtml()), "подсказка есть, пока материалов в факте нет");
+      ok(Math.round(K.profitFact()) === 15000, "без материалов прибыль завышена");
+      K.setAuto("materials", 6000, "Материалы по смете");
+      ok(K.matGapHtml() === "" && K.factMaterials() === 6000, "после внесения подсказка уходит");
+      ok(Math.round(K.profitFact()) === 9000, "прибыль с материалами");
+      K.setAuto("materials", 6000, "Материалы по смете");
+      ok(K.factMaterials() === 6000, "повторное внесение не задваивает");
+    });
+  }
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

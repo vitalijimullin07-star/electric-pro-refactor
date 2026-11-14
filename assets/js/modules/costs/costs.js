@@ -61,8 +61,15 @@
   }
 
   window.EP = window.EP || {};
-  EP.Costs = { income, planTotal, actualTotal, profitPlan, profitFact, addActual, setAuto };
+  EP.Costs = { income, planTotal, actualTotal, profitPlan, profitFact, addActual, setAuto, factMaterials, matGapHtml };
 
+  // материалы по смете есть, а в факт их ещё не вносили — маржа «по факту» тогда завышена
+  // (в факте только бензин и мешки). Честно говорим и даём одну кнопку внести их.
+  function factMaterials() { load(); return st.actuals.filter(x => x && x.cat === "materials").reduce((s, x) => s + num(x.amount), 0); }
+  function matGapHtml() {
+    const pm = planMaterials(); if (!(pm > 0) || factMaterials() > 0) return "";
+    return `<div class="ep-cost-gap"><span>Материалы (${money(pm)}) в факт ещё не внесены — маржа завышена.</span><button type="button" class="btn btn-ghost ep-clickable" data-cost-matfact>＋ Материалы по смете в факт</button></div>`;
+  }
   /* ---------- UI ---------- */
   function summaryHtml() {
     const inc = income(), pp = profitPlan(), pf = profitFact();
@@ -72,7 +79,7 @@
       <div class="ep-cost-sum-row"><span>Доход</span><b>${money(inc)}</b></div>
       <div class="ep-cost-sum-row"><span>Прибыль (план)</span><b class="${cls(pp)}">${money(pp)}</b></div>
       <div class="ep-cost-sum-row"><span>Прибыль (факт)</span><b class="${cls(pf)}">${money(pf)}</b></div>
-      <div class="ep-cost-sum-row mut"><span>Маржа (факт)</span><b>${margin}%</b></div>`;
+      <div class="ep-cost-sum-row mut"><span>Маржа (факт)</span><b>${margin}%</b></div>${matGapHtml()}`;
   }
   function render() {
     const root = document.getElementById("ep-costs-root"); if (!root) return;
@@ -199,6 +206,7 @@
   });
   document.addEventListener("click", (e) => {
     const t = e.target; if (!t || !t.closest) return; let el;
+    if (t.closest("[data-cost-matfact]")) { setAuto("materials", planMaterials(), "Материалы по смете"); render(); flash("Материалы внесены в факт"); return; }
     if (t.closest("[data-cost-fromest]")) { load(); st.income = estimateTotal(); save(); render(); return; }
     if (t.closest("[data-cost-add]")) {
       const root = document.getElementById("ep-costs-root"); if (!root) return;

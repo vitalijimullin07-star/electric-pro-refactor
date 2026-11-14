@@ -7,8 +7,8 @@
      .set(code)                 — сменить (сохраняет + событие 'ep-currency-changed')
      .list()                    — список валют
      .parse(str)               -> число (10.43), копейки сохраняются
-     .format(value, withSymbol) -> "10.43 ₽" (2 знака, копейки)
-     .amount(value)            -> "10.43" (без символа)
+     .format(value, withSymbol) -> "10,43 ₽" (2 знака, копейки через запятую — как в документах)
+     .amount(value)            -> "10,43" (без символа; parse() понимает и точку, и запятую)
    ============================================================ */
 (() => {
   "use strict";
@@ -50,7 +50,7 @@
     return isFinite(n) ? n : 0;
   }
 
-  // число -> "10.43" (2 знака, разделение тысяч пробелом, копейки через точку)
+  // число -> "10,43" (2 знака, тысячи пробелом, копейки через запятую — тот же вид, что EP.EstimatePrint.money в документах)
   function amount(value) {
     const n = Number(value);
     const v = isFinite(n) ? n : 0;
@@ -62,7 +62,7 @@
     const intFixed = kop === 100 ? int + 1 : int;
     const kopFixed = kop === 100 ? 0 : kop;
     const intStr = intFixed.toLocaleString("ru-RU").replace(/\u00A0/g, " ");
-    return neg + intStr + "." + String(kopFixed).padStart(2, "0");
+    return neg + intStr + "," + String(kopFixed).padStart(2, "0");
   }
 
   function format(value, withSymbol) {
