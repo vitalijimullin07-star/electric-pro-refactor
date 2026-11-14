@@ -27,6 +27,10 @@
 
   // Статусы: сначала V29 (accessStatus), потом легаси-поля для старых документов
   function uStatus(u) { return u.accessStatus || u.status || (u.isApproved ? "approved" : "pending"); }
+  // статусы и роли по-русски (класс ep-st-<код> остаётся прежним — по нему цвет)
+  const ST_LABEL = { pending: "заявка", pending_review: "заявка", approved: "доступ открыт", blocked: "заблокирован", blocked_review: "заблокирован", deleted: "удалён" };
+  const ROLE_LABEL = { master: "мастер", admin: "админ" };
+  function stLabel(st) { return ST_LABEL[st] || st; }
   function isPending(u) { const s = uStatus(u); return s === "pending" || s === "pending_review" || (!u.isApproved && ["approved", "blocked", "blocked_review", "deleted"].indexOf(s) < 0); }
   function isBlocked(u) { const s = uStatus(u); return u.blocked === true || ["blocked", "blocked_review", "deleted"].indexOf(s) >= 0; }
   function isApproved(u) { return uStatus(u) === "approved" || u.isApproved === true; }
@@ -143,7 +147,7 @@
     const st = uStatus(u);
     return `<button type="button" class="ep-urow ${isBlocked(u) ? "is-blk" : ""}" data-u-open="${esc(u.uid)}">
       <span class="ep-urow-main"><b>${esc(u.email || u.uid)}</b><small>${esc(u.displayName || "—")} · рег. ${esc(dstr(u.createdAt))}</small></span>
-      <span class="ep-urow-meta"><span class="ep-urow-bal">${esc(uBal(u))}</span><span class="ep-st ep-st-${esc(st)}">${esc(st)}</span></span>
+      <span class="ep-urow-meta"><span class="ep-urow-bal">${esc(uBal(u))}</span><span class="ep-st ep-st-${esc(st)}">${esc(stLabel(st))}</span></span>
       <span class="ep-urow-go">›</span></button>`;
   }
   function renderUsersTab() {
@@ -171,7 +175,7 @@
     const planId = sub.planId || sub.plan || "basic";
     const opt = (v, l, cur) => `<option value="${v}" ${cur === v ? "selected" : ""}>${l}</option>`;
     host.innerHTML = `<div class="ep-uback"><button type="button" class="ep-btn ep-btn-sm" data-u-back>‹ К списку</button></div>
-      <div class="ep-uhead"><h2>${esc(u.email || u.uid)}</h2><p class="ep-admin-muted">${esc(u.displayName || "—")} · рег. ${esc(dstr(u.createdAt))}</p><div class="ep-uhead-badges"><span class="ep-st ep-st-${esc(st)}">${esc(st)}</span><span class="ep-badge">${esc(u.role || "master")}</span></div></div>
+      <div class="ep-uhead"><h2>${esc(u.email || u.uid)}</h2><p class="ep-admin-muted">${esc(u.displayName || "—")} · рег. ${esc(dstr(u.createdAt))}</p><div class="ep-uhead-badges"><span class="ep-st ep-st-${esc(st)}">${esc(stLabel(st))}</span><span class="ep-badge">${esc(ROLE_LABEL[u.role || "master"] || u.role)}</span></div></div>
 
       <div class="ep-usec"><h3>🔐 Доступ</h3><div class="ep-usec-btns">
         ${access ? `<button type="button" class="ep-btn ep-btn-danger" data-u-act="block">Заблокировать</button>` : `<button type="button" class="ep-btn ep-btn-ok" data-u-act="approve">Открыть доступ</button>`}

@@ -744,6 +744,8 @@ body[data-visual-mode="night"] .main-dashboard .card p:not(.badge){color:#cbd5e1
 .ep-cost-sum-row{display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;font-size:calc(15px * var(--eff-text-scale,1));color:var(--text)}
 .ep-cost-sum-row.mut{font-size:calc(13px * var(--eff-text-scale,1));color:var(--muted);border-top:1px solid rgba(127,140,170,.2);margin-top:4px;padding-top:8px}
 .ep-cost-sum-row b{font-size:calc(16px * var(--eff-text-scale,1));font-variant-numeric:tabular-nums}
+.ep-cost-gap{display:flex;flex-direction:column;gap:6px;margin-top:8px;padding:8px 10px;border-radius:10px;border:1px solid rgba(245,158,11,.45);background:rgba(245,158,11,.1);font-size:calc(13px * var(--eff-text-scale,1));color:var(--text)}
+.ep-cost-gap .btn{align-self:flex-start;padding:6px 10px}
 .ep-cost-sum-row b.pos{color:#22c55e}
 .ep-cost-sum-row b.neg{color:#ef4444}
 .ep-cost-income{display:flex;gap:8px}
