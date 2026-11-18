@@ -708,6 +708,12 @@
     const q = el.params || {};
     return q.x != null && q.y != null ? { x: q.x, y: q.y, wall: null } : null;
   };
+  G.sameFloor = (project, a, b) => {
+    if (a.floorId === b.floorId) return true;
+    const first = project.floors && project.floors[0];
+    const fallback = first ? first.id : null;
+    return (a.floorId || fallback) === (b.floorId || fallback);
+  };
   // комнату ищем ОДИН раз на вызов (аудит Астры, п. 20): раньше find по всем комнатам шёл на
   // КАЖДУЮ свободную точку проекта, а функцию зовут на каждую комнату («Проверки» — помещение
   // без света, пустые помещения) и на каждый выключатель (авто-цель клавиши) при каждой
@@ -718,7 +724,7 @@
       if (el.wallId) return String(el.wallId).split(":")[0] === roomId;
       const q = el.params || {};
       if (q.x == null) return false;
-      return !!(room && G.pointInPolygon(q, room.points));
+      return !!(room && G.sameFloor(project, room, el) && G.pointInPolygon(q, room.points));
     });
   };
   // ---- ПОВЕРХНОСТЬ ТРАССЫ по слоям (пол/потолок) ----
@@ -796,6 +802,7 @@
     const pool = roomId ? G.elementsInRoom(project, roomId) : (project.elements || []);
     let best = null;
     pool.forEach((e) => {
+      if (!roomId && !G.sameFloor(project, el, e)) return;
       if (e.id === el.id || e.circuitId !== el.circuitId || (e.type !== "light" && e.type !== "output")) return;
       const pe = G.elemDrawPoint(project, e);
       if (!pe) return;
