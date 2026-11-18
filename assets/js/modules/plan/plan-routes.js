@@ -4053,9 +4053,9 @@
     const sf = (surf === "floor" || surf === "ceiling") ? surf : surfaceOfEl(p, el);
     // выключатель при разводке ПО ПОЛУ: линия идёт дальше на потолок (к лампе),
     // штроба у выключателя — на всю высоту, а не только до его собственной точки
-    if (el.type === "switch" && sf === "floor") return p.settings.ceilingHeight;
+    if (el.type === "switch" && sf === "floor") return G().ceilingAt(p, el);
     if (sf === "floor") return el.height || 0;
-    return Math.max(0, p.settings.ceilingHeight - (el.height || 0));
+    return Math.max(0, G().ceilingAt(p, el) - (el.height || 0));
   }
   // pn — необязательный конкретный щит (у него может быть своя высота, если её
   // подвинули в развёртке); без pn или если у него height не задан — общая
@@ -4064,7 +4064,7 @@
   function panelVert(p, pn, surf) {
     const ph = G().panelBottom(p, pn);
     const sf = (surf === "floor" || surf === "ceiling") ? surf : (p.settings.routeType === "floor" ? "floor" : "ceiling");
-    return sf === "floor" ? ph : Math.max(0, p.settings.ceilingHeight - ph);
+    return sf === "floor" ? ph : Math.max(0, G().ceilingAt(p, pn) - ph);
   }
   // ШТРОБА у щита (аудит цепей, пакет 4) — не то же, что кабель (panelVert): кабель уходит в
   // корпус и спускается к аппаратам, а стену штробят только ДО корпуса — сверху до его верха
@@ -4072,7 +4072,7 @@
   function panelChaseVert(p, pn, surf) {
     const ph = G().panelBottom(p, pn);
     const sf = (surf === "floor" || surf === "ceiling") ? surf : (p.settings.routeType === "floor" ? "floor" : "ceiling");
-    return sf === "floor" ? ph : Math.max(0, p.settings.ceilingHeight - ph - G().panelBoxCm(p).h);
+    return sf === "floor" ? ph : Math.max(0, G().ceilingAt(p, pn) - ph - G().panelBoxCm(p).h);
   }
   /* ---- МЕТРАЖ ОДНОГО КАБЕЛЯ (хопа): спуск и выпуск у ОБОИХ концов ----
      Кабель хопа идёт от поверхности трассы (потолок/пол) вниз/вверх к точке на ОДНОМ конце,
@@ -4112,7 +4112,7 @@
     if (el.type === "junction" && !el.wallId) return 0; // потолочная распайка: кабель приходит по потолку
     const sf = (surf === "floor" || surf === "ceiling") ? surf : surfaceOfEl(p, el);
     if (sf === "floor") return el.height || 0;
-    return Math.max(0, p.settings.ceilingHeight - (el.height || 0));
+    return Math.max(0, G().ceilingAt(p, el) - (el.height || 0));
   }
   // выпуск на разделку у одного конца: подрозетник/светильник — cableStubPoint, коробка
   // (и стояк — там та же протяжка/разделка) — cableStubJunction

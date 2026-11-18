@@ -366,6 +366,31 @@
   G.roomAt = (project, p) =>
     (G.floorScoped(project).rooms || []).find((r) => (r.points || []).length >= 3 && G.pointInPolygon(p, r.points)) || null;
 
+  // Высота потолка у конкретного конца кабеля. Смета суммирует трассы всех этажей,
+  // поэтому для свободной точки/щита берём этаж объекта, даже если открыт другой.
+  G.ceilingAt = (project, item) => {
+    const fallback = project.settings.ceilingHeight;
+    const rooms = project.rooms || [];
+    if (!item || !rooms.some((r) => r.height > 0)) return fallback;
+    if (item.wallId && !item.wallId.startsWith("beam:")) {
+      const ownerId = item.wallId.split(":")[0];
+      const room = rooms.find((r) => r.id === ownerId);
+      return Number(room && room.height) || fallback;
+    }
+    const pos = item.x != null ? item : G.elemPoint(project, item);
+    if (!pos) return fallback;
+    const first = project.floors && project.floors[0];
+    const floorId = item.floorId || (first && first.id);
+    const onFloor = rooms.filter((r) => (r.floorId || (first && first.id)) === floorId);
+    const scope = { rooms: onFloor };
+    const inside = G.roomAt(scope, pos);
+    if (inside) return Number(inside.height) || fallback;
+    // Щит может лежать точно на контуре, где pointInPolygon не гарантирует попадание.
+    const hit = G.wallAt(scope, pos, 1);
+    const room = hit && onFloor.find((r) => r.id === hit.wall.roomId);
+    return Number(room && room.height) || fallback;
+  };
+
   // ---- прямоугольные комнаты (размеры числом) ----
   G.rectPoints = (x, y, w, h) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
   G.isRect = (room) => {
