@@ -3442,6 +3442,41 @@ test("фото: deleteProject чистит кэш фото своего прое
     eq(d.x, 0, "сдвиг меньше половины шага сетки — ноль");
   });
 
+  test("PDF: кабельный журнал показывает щит, комнату и защиту линии при выборе любого этажа", () => {
+    const { Core, Geometry, Export } = require("./harness").loadPlan().EP.Plan;
+    const model = Core.model;
+    const p = Core.createProject("Два этажа");
+    const firstFloor = p.activeFloorId;
+    const rect = () => Geometry.rectPoints(0, 0, 400, 300);
+    p.rooms.push(model.newRoom(rect(), "Кухня"));
+    p.panels.push(model.newPanel(10, 10, "Щит кухни"));
+    Core.addFloor("Этаж 2");
+    const secondFloor = p.activeFloorId;
+    p.rooms.push(model.newRoom(rect(), "Кабинет"));
+    const panel = model.newPanel(10, 10, "Щит кабинета");
+    p.panels.push(panel);
+    const circuit = model.newCircuit("QF2", "#f00", 10);
+    circuit.panelId = panel.id;
+    circuit.rcd = true;
+    circuit.rcdRating = 10;
+    p.circuits.push(circuit);
+    const lamp = model.newElement("light", null, 0, 270, "light");
+    lamp.params = { x: 100, y: 100 };
+    lamp.circuitId = circuit.id;
+    p.elements.push(lamp);
+
+    Export.setAllSec(false);
+    Export.toggleSec("cablelog");
+    for (const floorId of [firstFloor, secondFloor]) {
+      p.activeFloorId = floorId;
+      const html = Export.sheetHtml(p);
+      const row = html.match(/<tr><td class="sp-c">1<\/td><td class="sp-c">QF2<\/td>[\s\S]*?<\/tr>/);
+      ok(row && row[0].includes("<td>Щит кабинета</td>") && row[0].includes("<td>Кабинет</td>"), "начало и конец линии на втором этаже");
+      ok(row[0].includes("10 А, диф 10мА"), "настройка дифзащиты линии");
+      eq(p.activeFloorId, floorId, "после печати открыт выбранный этаж");
+    }
+  });
+
   // ===== 28. PDF: артефакты печати + размер от БЛИЖАЙШЕГО угла в развёртке =====
   test("PDF: у печатного листа заглушена заливка polyline и скрыты магистрали", () => {
     const p = EP.Plan.Core.createProject("pdfart");
