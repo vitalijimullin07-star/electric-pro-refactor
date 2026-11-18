@@ -40,6 +40,7 @@
 ### Свободные точки в помещениях на разных этажах
 
 - Исполнитель Codex, 18.11.2026. Базовый SHA main `7f18d2e693501679f317ca2b602c7a82487a54df`, ветка `codex/plan-room-floor`.
+- Итог и история: [PR #298](https://github.com/vitalijimullin07-star/electric-pro-refactor/pull/298) открыт для проверки владельцем. Проверенный код — `da2e044`.
 - Сводка помещений и проверки должны относить свободную точку к помещению на её этаже, в том числе при одинаковых контурах этажей. Файлы — `assets/js/modules/plan/plan-geometry.js`, `assets/js/modules/plan/plan-rules.js`, `test/run.js`, `COLLABORATION.md`.
 
 ## Следующие проверки
