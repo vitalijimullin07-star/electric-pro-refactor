@@ -213,9 +213,13 @@
         const pn = (p.panels || []).find((x) => x.id === id);
         if (pn) return pn.name || "Щит";
         const e = (p.elements || []).find((x) => x.id === id);
+        if (e && e.type === "riser") {
+          const floor = (p.floors || []).find(f => f.id === e.floorId);
+          if (floor) return "Стояк («" + floor.name + "»)";
+        }
         return e ? ((TY[e.type] && TY[e.type].name) || e.type) : "?";
       };
-      const seq = (fp.toPanel ? [nm(fp.toPanel)] : ["нет щита"]).concat(fp.nodes.slice().reverse().map(nm));
+      const seq = (fp.toPanel ? [nm(fp.toPanel)] : ["путь не завершён"]).concat(fp.nodes.slice().reverse().map(nm));
       // длинный шлейф — середину сворачиваем, видно начало и конец пути
       const shown = seq.length > 5 ? seq.slice(0, 2).concat(["…" + (seq.length - 4) + "…"], seq.slice(-2)) : seq;
       path = shown.map(esc).join(" → ") + " → <b>эта точка</b>";
@@ -226,7 +230,7 @@
       ${step("УЗО", esc(ch.protText || "нет"))}
       ${step("щит", ch.panel ? esc(ch.panel.name) + (ch.panelExplicit ? "" : " (авто)") : "—")}
       ${step("кабель", esc(ch.cable || "—"))}
-      ${step("до щита", fp ? (fp.lenCm / 100).toFixed(1) + " м" : "нет трассы")}
+      ${step("до щита", fp && fp.toPanel ? (fp.lenCm / 100).toFixed(1) + " м" : (fp ? "не проложено полностью" : "нет трассы"))}
       ${step("вся линия", len)}
       ${path ? `<span class="ep-plan-chainstep ep-plan-chainpath"><i>путь</i>${path}</span>` : ""}
     </div>`;

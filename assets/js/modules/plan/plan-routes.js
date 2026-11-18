@@ -4200,18 +4200,35 @@
   // → { nodes: [id родителей от ближнего к щиту], toPanel: id щита|null, lenCm } | null
   function feedPath(p, elId) {
     const out = { nodes: [], toPanel: null, lenCm: 0 };
-    let cur = elId;
+    const next = new Map();
+    for (const r of p.routes || []) if (!next.has(r.fromId)) next.set(r.fromId, r);
+    const elements = new Map((p.elements || []).map(e => [e.id, e]));
     const seen = new Set();
-    for (let guard = 0; guard < 64 && cur && !seen.has(cur); guard++) {
+    let cur = elId, hasRoute = false;
+    while (cur && !seen.has(cur)) {
       seen.add(cur);
-      const r = (p.routes || []).find((x) => x.fromId === cur);
+      const el = elements.get(cur);
+      if (el && el.type === "riser" && riserRole(p, el) === "sink") {
+        // Приёмник питает свой этаж. Кабель между этажами уже входит в routeLen
+        // участка, который начинается у парного источника.
+        cur = el.riserLink;
+        out.nodes.push(cur);
+        continue;
+      }
+      const r = next.get(cur);
       if (!r) break;
+      hasRoute = true;
       out.lenCm += routeLen(p, r);
-      if (r.toPanel) { out.toPanel = r.toId; break; }
+      if (r.toPanel && (p.panels || []).some(pn => pn.id === r.toId)) {
+        out.toPanel = r.toId;
+        break;
+      }
+      if (!elements.has(r.toId)) break;
       out.nodes.push(r.toId);
+      if ((r.toRiser || r.toPanel) && riserRole(p, elements.get(r.toId)) !== "sink") break;
       cur = r.toId;
     }
-    return out.lenCm > 0 ? out : null;
+    return hasRoute ? out : null;
   }
   function lengths(p) {
     const byLayer = {}, byCircuit = {};
