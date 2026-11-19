@@ -2054,6 +2054,38 @@ test("по полу потолочная распайка не использу�
   RT.build({ silent: true });
   ok(P.routes.some((r) => r.toId === box.id), "по потолку точки идут в коробку");
 });
+test("угол магистрали у стены: веер не переворачивается — нет «лесенки» и трасс вне квартиры", () => {
+  const RT = EP.Plan.Routes;
+  const run = (gx, gy) => {
+    const rooms = [M.newRoom(G.rectPoints(0, 0, 1200, 150), "Коридор1"), M.newRoom(G.rectPoints(1050, 150, 150, 1050), "Коридор2")];
+    for (let i = 0; i < 3; i++) rooms.push(M.newRoom(G.rectPoints(i * 350, 150, 350, 450), "К" + (i + 1)));
+    EP.Plan.Core.importJSON(JSON.stringify({ project: Object.assign(M.newProject("T"), { rooms }) }));
+    const P = EP.Plan.Core.project;
+    P.panels.push(M.newPanel(1125, 1185, "Щ"));
+    let n = 0;
+    for (let i = 0; i < 3; i++) for (let k = 0; k < 6; k++) {
+      const c = M.newCircuit("QF" + (++n), "#e11", 16); P.circuits.push(c);
+      const e = M.newElement("socket", P.rooms[2 + i].id + ":2", 40 + k * 50, 30, "power"); e.circuitId = c.id; P.elements.push(e);
+    }
+    P.guides.push(M.newGuide([{ x: 175, y: gy }, { x: gx, y: gy }, { x: gx, y: 1150 }]));
+    for (let i = 0; i < 3; i++) P.guides.push(M.newGuide([{ x: i * 350 + 175, y: 375 }, { x: i * 350 + 175, y: gy }]));
+    RT.build({ silent: true });
+    let out = 0;
+    P.routes.forEach((r) => r.points.forEach((q) => { if (!G.roomAt(P, q) && !P.rooms.some((rm) => rm.points.some((a, j) => G.closestOnSeg(q, a, rm.points[(j + 1) % rm.points.length]).d < 15))) out++; }));
+    return { cross: RT.scoreRoutes(P).crossings, un: RT.unroutedList().length, out };
+  };
+  // было: 231 (магистраль у стены вертикального коридора) и 258 (у стены горизонтального)
+  [[1058, 75], [1125, 142], [1058, 142]].forEach(([gx, gy]) => {
+    const r = run(gx, gy);
+    ok(r.cross < 80, "пересечений линий у угла " + r.cross + " (магистраль " + gx + "," + gy + ")");
+    eq(r.un, 0, "все точки проложены"); eq(r.out, 0, "трассы не выходят за стены");
+  });
+});
+test("холст: при сдвиге посреди жеста подписи не прячутся, при масштабе — прячутся", () => {
+  const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets/js/modules/plan/plan-canvas.js"), "utf8");
+  ok(/const zoomed = !committed \|\| Math\.abs\(committed\.w - view\.w\)/.test(src), "сравнение масштаба до фиксации");
+  ok(/if \(zoomed\) svg\.classList\.add\("is-moving"\)/.test(src), "is-moving только при смене масштаба");
+});
 test("hopParts: «до щита» 24В — источник находится по синтетическому id, спуск к выключателю есть", () => {
   const { P, w } = install();
   const pn = M.newPanel(50, 50, "ЩС"); pn.transformer = true; P.panels.push(pn);
