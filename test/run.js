@@ -9102,6 +9102,22 @@ test("фото: deleteProject чистит кэш фото своего прое
       ok(/labelsOn && nearView && EP\.Plan\.Elements/.test(rd), "номера проёмов на дальнем обзоре скрыты");
       ok(/!noLod && textW\(txt, CFG\.labelPx \* kFit\) > w\.len/.test(rd), "подпись длиннее короткой стены не рисуется (кроме печати)");
     });
+    test("разнос пучка трасс на экране не зависит от зума", () => {
+      const room = M.newRoom(G.rectPoints(0, 0, 600, 400), "Коридор");
+      const { P } = install({ rooms: [room] });
+      const cs = [0, 1, 2].map((i) => { const c = M.newCircuit("QF" + (i + 1)); P.circuits.push(c); return c; });
+      P.routes = cs.map((c, i) => Object.assign(M.newRoute(null, null, [{ x: 50, y: 200 + i * 2 }, { x: 550, y: 200 + i * 2 }]),
+        { circuitId: c.id, layer: "power" }));
+      const disp = (k) => {
+        const cv = fakeCanvas(); cv.cmPerPx = () => k;
+        EP.Plan.Render.draw(cv, P, {});
+        return JSON.stringify(P.routes.map((r) => EP.Plan.Render.routeDisplay(cv, r.id)));
+      };
+      const near = disp(0.4), mid = disp(1.5), far = disp(5);
+      ok(near === mid && mid === far, "рисунок трасс одинаков на любом масштабе");
+      const ys = JSON.parse(far).map((d, i) => (d ? d.pts : P.routes[i].points)[1].y);
+      ok(Math.max(...ys) - Math.min(...ys) >= 9, "линии пучка раздвинуты по шагу чертежа: " + ys.join(","));
+    });
     test("имя Г-образной комнаты остаётся в её контуре после переноса", () => {
       const hall = M.newRoom([[0, 400], [1500, 400], [1500, 1100], [1350, 1100], [1350, 600], [0, 600]]
         .map(([x, y]) => ({ x, y })), "Коридор");
