@@ -197,6 +197,7 @@
       restRect = null;
       if (!cw) measureBox();
       fixAspect();
+      const zoomed = !committed || Math.abs(committed.w - view.w) > view.w * 1e-6;
       committed = { x: view.x, y: view.y, w: view.w, h: view.h };
       // viewBox и сброс transform — в ОДНОМ кадре: иначе сцена на миг «прыгнула» бы
       if (liveT) { liveT = null; wrap.style.transform = ""; }
@@ -212,8 +213,13 @@
          Поэтому с первой такой фиксации и до конца жеста второстепенные подписи (цифры размеров,
          высоты, имена линий, номера проёмов) скрыты классом is-moving: фиксация становится
          дешёвой, а после остановки подписи возвращаются вместе с полной фиксацией. Короткие
-         жесты, которым хватает запаса картинки, этого не касаются — подписи не мигают. */
-      if (light) { rescalePending = true; svg.classList.add("is-moving"); if (cb.viewMoved) cb.viewMoved({ ...view }); return; }
+         жесты, которым хватает запаса картинки, этого не касаются — подписи не мигают.
+         ТОЛЬКО ПРИ СМЕНЕ МАСШТАБА (жалоба владельца на «лёгкое мерцание при перетаскивании»):
+         при обычном сдвиге пальцем подписи на полсекунды пропадали и возвращались на отпускании —
+         это и мигало. Замер (квартира ×4, 636 подписей, CPU ×4): при чистом сдвиге с видимыми
+         подписями нет ни одного кадра дольше 40 мс — раскладку текста дорогой делает смена
+         МАСШТАБА (кегль в мировых единицах), а не сдвиг. Поэтому при сдвиге подписи остаются. */
+      if (light) { rescalePending = true; if (zoomed) svg.classList.add("is-moving"); if (cb.viewMoved) cb.viewMoved({ ...view }); return; }
       svg.classList.remove("is-moving");
       rescalePending = false;
       if (cb.viewChanged) cb.viewChanged({ ...view });
