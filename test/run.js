@@ -2532,6 +2532,30 @@ test("Стояк: вертикаль между этажами считаетс�
   eq(RT.riserRun(P, r1), 320, "своя высота этажа перебивает значение по умолчанию");
   eq(RT.floorHeight(P, P.floors[0].id), 290, "у этажа без своей высоты — потолок + перекрытие");
 });
+test("Карточка точки: через стояк показывает полный путь до щита после постройки обоих этажей", () => {
+  const { P, pn, r1, r2, f1, f2, roomB } = twoFloorsWithRiser();
+  const R = EP.Plan.Routes, c = M.newCircuit("QF1", "#00f", 16);
+  P.circuits.push(c);
+  const socket = M.newElement("socket", roomB.id + ":0", 100, 30, "power");
+  socket.circuitId = c.id; P.elements.push(socket);
+  R.build({ silent: true });
+  const upperRoute = P.routes.find(r => r.fromId === socket.id);
+  ok(upperRoute && upperRoute.toId === r2.id, "розетка проложена к приёмнику");
+  eq(R.feedPath(P, socket.id).toPanel, null, "участок до стояка ещё не достигает щита");
+  ok(EP.Plan.Circuits.chainHtml(P, socket).includes("не проложено полностью"), "длина до щита ещё неизвестна");
+
+  EP.Plan.Core.setActiveFloor(f1.id); R.build({ silent: true }); EP.Plan.Core.setActiveFloor(f2.id);
+  const lowerRoute = P.routes.find(r => r.fromId === r1.id);
+  const fullLength = R.routeLen(P, upperRoute) + R.routeLen(P, lowerRoute);
+  const path = R.feedPath(P, socket.id);
+  eq(path.toPanel, pn.id, "указан настоящий щит");
+  eq(path.nodes.join(), [r2.id, r1.id].join(), "оба конца перехода в порядке от розетки");
+  near(path.lenCm, fullLength, 0.01, "оба участка и одна межэтажная вертикаль");
+  const html = EP.Plan.Circuits.chainHtml(P, socket);
+  ok(html.includes((fullLength / 100).toFixed(1) + " м") && html.includes(pn.name + " → Стояк"), "карточка показала щит и полный метраж");
+  r1.riserLink = null;
+  eq(R.feedPath(P, socket.id).toPanel, null, "односторонняя пара не даёт питания");
+});
 test("Стояк: смета даёт отдельный проход через перекрытие и не считает щитовой спуск", () => {
   const { P, r2, roomB } = twoFloorsWithRiser();
   const s2 = M.newElement("socket", roomB.id + ":0", 100, 30, "power"); P.elements.push(s2);
