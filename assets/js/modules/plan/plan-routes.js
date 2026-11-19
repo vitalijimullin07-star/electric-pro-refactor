@@ -75,6 +75,21 @@
   const rooms = () => EP.Plan.Rooms;
 
   const isJunction = (el) => el.type === "junction";
+  /* ПОТОЛОЧНАЯ РАСПАЙКА ПРИ РАЗВОДКЕ ПО ПОЛУ НЕ ИСПОЛЬЗУЕТСЯ (поправка пользователя к правке
+     Codex #301: «если кабель по полу, то распайка внутри подрозетника, а не на потолке»).
+     Свободная коробка (без wallId) висит на потолке; если питание её линии (хоп до щита) идёт
+     по полу, тянуть кабели к ней на потолок никто не будет — линия собирается шлейфом через
+     подрозетники, расключение там же (работа «Собрать распайку в подрозетнике» и клеммы
+     spliceNodes уже это считают). Такая коробка в трассировку не попадает: к ней ничего не
+     подключается, своего кабеля, позиции в смете и строки «Без трассы» у неё нет, а
+     «Проверки» предлагают её убрать или поставить на стену (стенная коробка работает как раньше). */
+  function junctionIdle(p, el) {
+    if (!el || el.type !== "junction" || el.wallId) return false;
+    const key = el.circuitId ? circuitKind(p, el.circuitId) : null;
+    const layer = key === "light" ? "light" : key === "lv" ? "lv" : "power";
+    return G().routeSurface(p, layer, null, { lampHop: false }) === "floor";
+  }
+  const isActiveJunction = (p) => (el) => isJunction(el) && !junctionIdle(p, el);
   const isPoint = (el) => el.status !== "existing" && el.type !== "junction";
   // Слаботочка сети (интернет/ТВ/видеонаблюдение) — те же слои, что и в plan-calc.js
   // LV_LAYERS (для штроб/маркировки кабеля); здесь своя копия — модуль грузится
@@ -2539,7 +2554,7 @@
     // узлы: щиты + распайки (этого же этажа); router — флаг щита-хаба сети (LV-точки
     // предпочитают его, см. routeGroups)
     const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, router: !!pn.router, neptun: !!pn.neptun, transformer: !!pn.transformer })).concat(risersHere);
-    const juncts = (fp.elements || []).filter(isJunction).map((el) => ({ kind: "junction", id: el.id, el, circuitId: el.circuitId, pos: G().elemPoint(p, el) })).filter((n) => n.pos);
+    const juncts = (fp.elements || []).filter(isActiveJunction(p)).map((el) => ({ kind: "junction", id: el.id, el, circuitId: el.circuitId, pos: G().elemPoint(p, el) })).filter((n) => n.pos);
 
     // pos — ЕДИНАЯ точка отрисовки (та же, что у маркера): трасса доходит до точки,
     // а зазор между линиями QF заложен в самой точке (полоса по номеру линии).
@@ -2607,7 +2622,7 @@
 
     const haveRoute = new Set((p.routes || []).map((r) => r.fromId));
     const newPoints = points.filter((el) => !haveRoute.has(el.id) && (!only || only.has(el.id)));
-    const allJuncts = (fp.elements || []).filter(isJunction).map((el) => ({ kind: "junction", id: el.id, el, circuitId: el.circuitId, pos: G().elemPoint(p, el) })).filter((n) => n.pos);
+    const allJuncts = (fp.elements || []).filter(isActiveJunction(p)).map((el) => ({ kind: "junction", id: el.id, el, circuitId: el.circuitId, pos: G().elemPoint(p, el) })).filter((n) => n.pos);
     const newJuncts = allJuncts.filter((n) => !haveRoute.has(n.id));
 
     usedGuideIds = new Set(); // фикс №1: только магистрали, реально применённые к НОВЫМ точкам
@@ -4539,5 +4554,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { routeAssigned, whyUnrouted, ownRoute, routable: isRoutable, feedIssues, shaftConflicts, costOf, routeStatus, routeInputSig, routeTurns, build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, unroutedComputed: () => lastUnroutedPid != null, jobs: { run: runJob, state: jobsState, cancel: cancelQueued }, editVersion: () => editVer, pointVert, panelVert, panelChaseVert, endVert, hopParts, srcElOf, cableStub, keys24Of, isFeeder, routeLayerOf, STAR_LV, BLOCK_LV, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, dropCollinear, colinearMid, routeLen, feedPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
+  EP.Plan.Routes = { junctionIdle, routeAssigned, whyUnrouted, ownRoute, routable: isRoutable, feedIssues, shaftConflicts, costOf, routeStatus, routeInputSig, routeTurns, build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, unroutedComputed: () => lastUnroutedPid != null, jobs: { run: runJob, state: jobsState, cancel: cancelQueued }, editVersion: () => editVer, pointVert, panelVert, panelChaseVert, endVert, hopParts, srcElOf, cableStub, keys24Of, isFeeder, routeLayerOf, STAR_LV, BLOCK_LV, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, dropCollinear, colinearMid, routeLen, feedPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
 })();
