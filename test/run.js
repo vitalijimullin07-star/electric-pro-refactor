@@ -1300,6 +1300,25 @@ test("elemDrawPoint: отступ по толщине СВОЕЙ стены", ()
   const dp = G.elemDrawPoint(P, e1);
   near(dp.y, 18, 0.01, "отступ = 20/2+8");
 });
+test("расчёт по комнатам: бра и треки считаются как приборы, лента и выключатель — отдельно", () => {
+  const { P, w } = install();
+  const track = M.newElement("track", null, 0, 270, "light");
+  track.params = { x: 200, y: 100 };
+  const bra = M.newElement("bra", w(0), 80, 170, "light");
+  P.elements.push(track, bra);
+  eq(EP.Plan.Calc.buildBlocks(P)[0].light, 2, "помещение без обычной лампы тоже попадает в таблицу");
+
+  const light = M.newElement("light", null, 0, 270, "light");
+  light.params = { x: 300, y: 150 };
+  const existing = M.newElement("bra", w(1), 50, 170, "light");
+  existing.status = "existing";
+  P.elements.push(light, existing, M.newElement("switch", w(0), 120, 90, "light"));
+  P.ledStrips.push(M.newLedStrip(w(0), 0, 250, 270));
+  const row = EP.Plan.Calc.buildBlocks(P)[0];
+  eq(row.light, 3, "свет, новое бра и трек дают три прибора");
+  eq(row.sw, 1, "выключатель посчитан отдельно");
+});
+
 test("calcByRoutes: штробы/подрозетники/кабель/ниша по чертежу", () => {
   const { P, w } = install();
   const pn = M.newPanel(50, 50, "Щ");

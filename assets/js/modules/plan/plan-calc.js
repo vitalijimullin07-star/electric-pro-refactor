@@ -140,7 +140,8 @@
           if (it === "socket") socketHeights.push(e.height);
         });
       } else {
-        if (n[e.type] != null) n[e.type]++;
+        const kind = e.type === "bra" || e.type === "track" ? "light" : e.type;
+        if (n[kind] != null) n[kind]++;
         if (e.type === "socket") socketHeights.push(e.height);
       }
     });
