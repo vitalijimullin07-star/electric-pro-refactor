@@ -119,7 +119,7 @@
         if (e.wallId) { lit.add(String(e.wallId).split(":")[0]); return; }
         const q = e.params || {};
         if (q.x == null) return;
-        rs.forEach((r) => { if (G().pointInPolygon(q, r.points)) lit.add(r.id); });
+        rs.forEach((r) => { if (G().sameFloor(p, r, e) && G().pointInPolygon(q, r.points)) lit.add(r.id); });
       });
       rs.forEach((r) => { if (!lit.has(r.id)) issues.push({ roomId: r.id, msg: T.noLight(r.name) }); });
     }
@@ -398,7 +398,7 @@
     const roomOfEl = (el) => {
       const rid = el.wallId && String(el.wallId).indexOf("beam:") !== 0 ? String(el.wallId).split(":")[0] : null;
       let r = rid ? (p.rooms || []).find((x) => x.id === rid) : null;
-      if (!r) { const pt = G().elemPoint(p, el); r = pt ? (p.rooms || []).find((x) => (x.points || []).length >= 3 && G().pointInPolygon(pt, x.points)) : null; }
+      if (!r) { const pt = G().elemPoint(p, el); r = pt ? (p.rooms || []).find((x) => (x.points || []).length >= 3 && G().sameFloor(p, x, el) && G().pointInPolygon(pt, x.points)) : null; }
       return r ? r.name : "";
     };
     issues.forEach((i) => {

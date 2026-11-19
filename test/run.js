@@ -11028,6 +11028,34 @@ test("фото: deleteProject чистит кэш фото своего прое
       eq(G.elementsInRoom(P, "нет-такой").length, 0, "неизвестная комната — пусто, без ошибок");
     });
 
+    test("сводка и проверка света различают комнаты на разных этажах с одинаковым контуром", () => {
+      const { P } = install({ rooms: [M.newRoom(G.rectPoints(0, 0, 400, 300), "Нижняя")] });
+      const lower = P.rooms[0], upperFloor = EP.Plan.Core.addFloor("Верхний этаж");
+      const upper = M.newRoom(G.rectPoints(0, 0, 400, 300), "Верхняя");
+      upper.floorId = upperFloor.id;
+      P.rooms.push(upper);
+      const lamp = M.newElement("light", null, 0, 270, "light");
+      lamp.floorId = upper.floorId;
+      lamp.params = { x: 200, y: 150 };
+      P.elements.push(lamp);
+      for (const floor of P.floors) {
+        EP.Plan.Core.setActiveFloor(floor.id);
+        const rows = EP.Plan.Calc.buildBlocks(P);
+        eq(rows.length, 1, "точка учтена один раз");
+        eq(rows[0].room.id, upper.id, "светильник относится к верхней комнате независимо от открытого этажа");
+        ok(EP.Plan.Rules.run(P).issues.some((i) => i.roomId === lower.id), "в нижней комнате по-прежнему нет света");
+      }
+      const sensor = M.newElement("pir", null, 0, 230, "light");
+      sensor.params = { x: 200, y: 150 };
+      sensor.floorId = lower.floorId;
+      sensor.circuitId = lamp.circuitId = "shared";
+      P.elements.push(sensor);
+      eq(G.switchTarget(P, sensor), null, "датчик не выбирает светильник этажом выше автоматически");
+      P.elements.pop();
+      delete lamp.floorId;
+      eq(G.elementsInRoom(P, lower.id)[0].id, lamp.id, "у старой точки без этажа используется первый этаж");
+    });
+
     test("карточка: прокрутка сбрасывается до замены содержимого, а не после (без раскладки внутри тапа)", () => {
       const r = srcOf("assets/js/modules/plan/plan-rooms.js");
       const os = r.slice(r.indexOf("function openSheet(html, opts)"), r.indexOf("function overlaySheet("));
