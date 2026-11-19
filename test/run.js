@@ -9352,6 +9352,26 @@ test("фото: deleteProject чистит кэш фото своего прое
       f2.height = 320;
       eq(RT.riserRun(P, r1), 620, "высоты пройденных этажей складываются");
     });
+    test("стояк: длина между этажами не зависит от направления питания", () => {
+      const { P } = install();
+      P.floors.push(M.newFloor("2 этаж"), M.newFloor("3 этаж"));
+      [300, 320, 400].forEach((h, i) => { P.floors[i].height = h; });
+      const pn = M.newPanel(30, 100, "Щит"); P.panels.push(pn);
+      // Высота записана на ВЕРХНЕМ этаже пролёта: 1↔2 = 320, 2↔3 = 400, 1↔3 = 720.
+      [[0, 1, 320], [1, 2, 400], [0, 2, 720]].forEach(([lo, hi, expected]) => {
+        const low = M.newElement("riser", null, 0, 270, "power");
+        const high = M.newElement("riser", null, 0, 270, "power");
+        low.floorId = P.floors[lo].id; high.floorId = P.floors[hi].id;
+        low.riserLink = high.id; high.riserLink = low.id;
+        P.elements = [low, high];
+        pn.floorId = low.floorId;
+        eq(RT.riserRun(P, low), expected, "питание снизу: " + (lo + 1) + "→" + (hi + 1));
+        eq(RT.riserRun(P, high), 0, "приёмник наверху не удваивает вертикаль");
+        pn.floorId = high.floorId;
+        eq(RT.riserRun(P, high), expected, "питание сверху: " + (hi + 1) + "→" + (lo + 1));
+        eq(RT.riserRun(P, low), 0, "приёмник внизу не удваивает вертикаль");
+      });
+    });
     const lineWith = (types, breaker, poles) => {
       const room = M.newRoom(G.rectPoints(0, 0, 500, 400), "К");
       const pn = M.newPanel(30, 200, "ЩК");
