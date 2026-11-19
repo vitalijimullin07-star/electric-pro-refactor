@@ -2081,10 +2081,43 @@ test("угол магистрали у стены: веер не перевор�
     eq(r.un, 0, "все точки проложены"); eq(r.out, 0, "трассы не выходят за стены");
   });
 });
+test("щит на стене с коротким подводом: веер сжат до корпуса, кабели входят прямо, без петель под щитом", () => {
+  const RT = EP.Plan.Routes;
+  const rooms = [M.newRoom(G.rectPoints(0, 0, 1200, 150), "Коридор1"), M.newRoom(G.rectPoints(1050, 150, 150, 1050), "Коридор2")];
+  for (let i = 0; i < 3; i++) rooms.push(M.newRoom(G.rectPoints(i * 350, 150, 350, 450), "К" + (i + 1)));
+  EP.Plan.Core.importJSON(JSON.stringify({ project: Object.assign(M.newProject("T"), { rooms }) }));
+  const P = EP.Plan.Core.project;
+  P.settings.panelBox = { wmm: 460, hmm: 685, dmm: 120 };
+  const pn = M.newPanel(1196, 1000, "Щ"); P.panels.push(pn);
+  let n = 0;
+  for (let i = 0; i < 3; i++) for (let k = 0; k < 6; k++) {
+    const c = M.newCircuit("QF" + (++n), "#e11", 16); P.circuits.push(c);
+    const e = M.newElement("socket", P.rooms[2 + i].id + ":2", 40 + k * 50, 30, "power"); e.circuitId = c.id; P.elements.push(e);
+  }
+  // ствол по коридору и короткий (60 см) подвод к щиту — как на проекте владельца
+  P.guides.push(M.newGuide([{ x: 175, y: 75 }, { x: 1110, y: 75 }, { x: 1110, y: 1000 }, { x: 1170, y: 1000 }]));
+  for (let i = 0; i < 3; i++) P.guides.push(M.newGuide([{ x: i * 350 + 175, y: 375 }, { x: i * 350 + 175, y: 75 }]));
+  RT.build({ silent: true });
+  const toP = P.routes.filter((r) => r.toPanel);
+  eq(toP.length, 18, "все линии пришли в щит");
+  const half = 46 / 2;
+  ok(toP.filter((r) => r.combDirect).length >= 10, "кабели входят прямо (" + toP.filter((r) => r.combDirect).length + ")");
+  const lowest = Math.max(...toP.map((r) => Math.max(...r.points.map((q) => q.y))));
+  ok(lowest <= 1000 + half + 2, "ни одна линия не уходит под корпус щита (низ " + Math.round(lowest) + ")");
+  // у кромки щита подходы не пересекаются (три последние вершины каждой)
+  let cross = 0;
+  for (let i = 0; i < toP.length; i++) for (let j = i + 1; j < toP.length; j++) {
+    const A = toP[i].points.slice(-3), B = toP[j].points.slice(-3);
+    for (let a = 1; a < A.length; a++) for (let b = 1; b < B.length; b++) if (G.segIntersect(A[a - 1], A[a], B[b - 1], B[b])) cross++;
+  }
+  eq(cross, 0, "входы в щит не перекрещиваются");
+});
 test("холст: при сдвиге посреди жеста подписи не прячутся, при масштабе — прячутся", () => {
   const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets/js/modules/plan/plan-canvas.js"), "utf8");
   ok(/const zoomed = !committed \|\| Math\.abs\(committed\.w - view\.w\)/.test(src), "сравнение масштаба до фиксации");
-  ok(/if \(zoomed\) svg\.classList\.add\("is-moving"\)/.test(src), "is-moving только при смене масштаба");
+  ok(/if \(zoomed \|\| quick\) svg\.classList\.add\("is-moving"\)/.test(src), "is-moving только при смене масштаба или быстром движении");
+  ok(/quick = now - \(lastLightT \|\| motionT \|\| 0\) < QUICK_MS/.test(src), "быстрое = фиксации подряд");
+  ok(/view\.y -= vy \* dt \* k;[\s\S]{0,300}applyLive\(true\)/.test(src), "инерция фиксирует вид облегчённо");
 });
 test("hopParts: «до щита» 24В — источник находится по синтетическому id, спуск к выключателю есть", () => {
   const { P, w } = install();
@@ -8595,7 +8628,7 @@ test("фото: deleteProject чистит кэш фото своего прое
           "transform у самого svg заставляет заново раскладывать SVG-текст — только обёртка");
         ok(/else \{ userAdjusted = true; view\.x -= dx; view\.y -= dy; trackPan\(e\.clientX, e\.clientY\); applyLive\(\); \}/.test(cv), "пан — живым сдвигом");
         ok(/if \(pts\.size === 0 && \(liveT \|\| rescalePending\)\) apply\(\);/.test(cv), "по окончании жеста вид фиксируется в viewBox (и после лёгкой фиксации — полная пересборка)");
-        ok(/function apply\(light\)/.test(cv) && /if \(light\) \{ rescalePending = true;[^\n]*return; \}/.test(cv), "во время жеста фиксация лёгкая: только viewBox, без пересборки сцены");
+        ok(/function apply\(light\)/.test(cv) && /if \(light\) \{[\s\S]{0,260}rescalePending = true;[\s\S]{0,200}return;\s*\}/.test(cv), "во время жеста фиксация лёгкая: только viewBox, без пересборки сцены");
         ok(/if \(liveT\) \{ left -= liveT\.tx;/.test(cv), "попадание тапом учитывает сдвиг во время жеста");
         const css = rd66("assets", "css", "plan.css");
         ok(/\.ep-plan-svgwrap \{[^}]*will-change: transform/.test(css), "обёртка — свой композитный слой");

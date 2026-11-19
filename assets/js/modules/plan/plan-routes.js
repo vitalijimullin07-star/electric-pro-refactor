@@ -820,6 +820,24 @@
         const A = toRoot[i] ? g.nodes[e.a] : g.nodes[e.b], B = toRoot[i] ? g.nodes[e.b] : g.nodes[e.a];
         return edgeWallAdjust(p, A, B, walls, lanes, clear, true);
       });
+      /* ВЕЕР НА ПОСЛЕДНЕМ УЧАСТКЕ К ЩИТУ — В ШИРИНУ КОРПУСА (проект владельца «ДЕМО 177 м²»,
+         «возле щита каша»). Магистраль подходит к щиту участком, перпендикулярным его кромке;
+         веер на нём по 2 см на линию — у 30 линий это 60 см, полкорпуса уходило под щит к двери,
+         и каждая линия шла вниз, разворачивалась и поднималась к своему месту в гребёнке —
+         петли. На участке, который упирается в щит, веер сжимается до 80 % гребёнки и
+         центрируется на оси магистрали: линия сворачивает со ствола прямо на свою высоту в
+         щите. Порядок полос тот же — пересечений на повороте не добавляется. */
+      if (toRoot && g.rootNode != null && lanes > 0) {
+        const fit = combWidth(p) * 0.8, sc = Math.min(1, fit / lanes);
+        g.edges.forEach((e, i) => {
+          if (e.a !== g.rootNode && e.b !== g.rootNode) return;
+          // только короткий подвод к щиту (стоит щит на самом стволе — весь коридор «упирается
+          // в щит», и сжимать веер по всей его длине нельзя)
+          if (e.len > ROOT_STUB_MAX) return;
+          const adj = g.edgeAdj[i];
+          if (adj) g.edgeAdj[i] = { n: adj.n, base: -lanes * sc / 2, scale: sc };
+        });
+      }
     }
     // несколько наборов за одну сборку (общая + по группам); кэп — чтобы правки магистралей
     // не копили старые графы
@@ -1036,8 +1054,10 @@
   // сдвига, а они фиксированы per-edge.
   // ВАЖНО: офсет теперь ПЕР-РЕБЁРНЫЙ (лан-офсет линии + свой base ребра от стены), поэтому
   // ранний выход только когда суммарный офсет нулевой у ВСЕХ рёбер пути.
+  const ROOT_STUB_MAX = 120; // см: участок магистрали к щиту, на котором веер сжимается до корпуса
   function offsetGraphPath(graph, points, segEdges, off) {
-    const offOf = (ei) => edgeBase(graph, ei) + off;
+    const scaleOf = (ei) => { const adj = graph.edgeAdj && graph.edgeAdj[ei]; return adj && adj.scale ? adj.scale : 1; };
+    const offOf = (ei) => edgeBase(graph, ei) + off * scaleOf(ei);
     let any = false;
     for (let i = 0; i < segEdges.length; i++) if (Math.abs(offOf(segEdges[i])) > 0.01) { any = true; break; }
     if (!any) return points;
@@ -1147,7 +1167,32 @@
         }
       }
     }
+    /* КОЛЕНО НЕ ВЫХОДИТ ЗА ПРЕДЕЛЫ КВАРТИРЫ (проект владельца «ДЕМО 177 м²», QF21: розетка на
+       балконе, примыкающем к кабинету, а не к коридору). Прямое колено «сначала вниз до уровня
+       магистрали, потом вдоль» шло под балконом снаружи квартиры. Если так — пробуем второе
+       колено того же прямоугольника («сначала вдоль, потом поперёк»: через кабинет в коридор) и
+       берём его, если оно снаружи не выходит. */
+    if (outsideLen(p, straight) > 0) {
+      const alt = [{ x: from.x, y: from.y }, (knee.x === from.x && knee.y !== from.y) ? { x: entry.x, y: from.y } : { x: from.x, y: entry.y }, { x: entry.x, y: entry.y }];
+      if (outsideLen(p, alt) < outsideLen(p, straight)) return alt;
+    }
     return straight;
+  }
+  // длина пути (см), лежащая ВНЕ всех комнат этажа (у самих стен — не считается: точка на
+  // стене или в её толще комнате не принадлежит, но и «снаружи» не она)
+  function outsideLen(p, pts) {
+    const fp = G().floorScoped(p), rooms = fp.rooms || [];
+    let out = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i], L = dist(a, b), n = Math.max(1, Math.ceil(L / 10));
+      for (let k = 0; k < n; k++) {
+        const t = (k + 0.5) / n, q = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+        if (G().roomAt(p, q)) continue;
+        const nearWall = rooms.some((rm) => (rm.points || []).some((c, j) => G().closestOnSeg(q, c, rm.points[(j + 1) % rm.points.length]).d < 12));
+        if (!nearWall) out += L / n;
+      }
+    }
+    return out;
   }
   // Насколько СИЛЬНО последний guideRoute() реально использовал магистраль: доля длины
   // «ствола» (участка ПО магистрали) в полной длине пути. Если ствол — мелочь на фоне
@@ -1248,10 +1293,12 @@
     return best;
   }
   let lastGuideTailAdjusted = false;
+  let lastCombDirect = false; // последний guideRoute завёл кабель в щит прямо (см. ниже)
   // bPanel — цель трассы это щит (а не точка/распайка): см. обрезку у корня ниже
   function guideRoute(p, a, b, circuitId, kind, bPanel) {
     lastGuideTrunkShare = 1;
     lastGuideTailAdjusted = false;
+    lastCombDirect = false;
     let gs = guidesUsable(p);
     if (anyGuideKinds(gs)) gs = gs.filter((gd) => guideServes(gd, kind));
     if (!gs.length) return null;
@@ -1302,6 +1349,15 @@
     // обрезанная у корня линия идёт дальше ПО СВОЕЙ ПОЛОСЕ до места в гребёнке и только там
     // поворачивает; обычная — как раньше, перпендикулярным коленом от проекции
     let tail = [cutAtRoot ? (lastHoriz ? { x: b.x, y: Bo.y } : { x: Bo.x, y: b.y }) : guideKnee(b, Bo, segB, lastP), { x: b.x, y: b.y }];
+    // подвод к щиту короткий, и его веер сжат до корпуса (buildGuideGraph): кабель входит в
+    // щит ПРЯМО на своей высоте, без шага вдоль кромки; гребёнка (relayPanelCombs) это место
+    // не переставляет — трасса помечена combDirect
+    const lastEi = sp.segEdges.length ? sp.segEdges[sp.segEdges.length - 1] : -1;
+    const lastAdj = lastEi >= 0 && graph.edgeAdj ? graph.edgeAdj[lastEi] : null;
+    if (bPanel && lastAdj && lastAdj.scale && Math.abs(lastHoriz ? Bo.y - b.y : Bo.x - b.x) <= combWidth(p) / 2) {
+      tail = [lastHoriz ? { x: b.x, y: Bo.y } : { x: Bo.x, y: b.y }];
+      lastCombDirect = true;
+    }
     // В Г-образной прихожей прямое колено от конца магистрали к щиту может срезать
     // через соседние санузлы и пересечь собственный подход (реальное демо 177 м²).
     // Сам ствол НЕ укорачиваем: меняем только соединение Bo → щит, если оба конца
@@ -1933,7 +1989,7 @@
       // просто её ствол короткий (комната рядом со щитом): линия шла вплотную к стене мимо
       // общего пучка и входила в щит по его же стене.
       if (dp && dp.length >= 2 && G().polylineLen(dp) < G().polylineLen(gp) * 0.75
-          && sleeveCount(p, dp, skip, sf) <= sleeveCount(p, gp, skip, sf)) return dp;
+          && sleeveCount(p, dp, skip, sf) <= sleeveCount(p, gp, skip, sf)) { lastCombDirect = false; return dp; }
     }
     return gp;
   }
@@ -4016,11 +4072,18 @@
         //   своей половине гребёнки он крайний.
         const perp = Math.abs(pa(pre) - pa(end)) <= 1;
         const along = pa(pre2) - pa(pre);
+        /* ПРЯМОЙ ВХОД (проект владельца «ДЕМО 177 м²», «возле щита каша»): трасса пришла к щиту
+           по короткому подводу, где веер сжат до корпуса (guideRoute ставит r.combDirect), и
+           уже входит в щит на своей высоте. Её место — эта высота: ни шага вдоль кромки, ни
+           перестановки (раньше места раздавались по позиции розетки — шаги у кромки
+           перекрещивались, 98 пересечений у щита). */
+        const jog = !!r.combDirect && perp;
+        const inA = pa(end);
         const side = perp
           ? (Math.abs(along) > 1 ? (along > 0 ? 1 : -1) : (pa(pre) - a0 >= 0 ? 1 : -1))
           : (pa(pre) - a0 >= 0 ? 1 : -1);
-        info.push({ r, q, iEnd: q.length - 1, iPre: perp ? q.length - 2 : -1, end, pre, side,
-          depth: perp ? Math.abs(pnr(pre) - n0) : 0,
+        info.push({ r, q, iEnd: q.length - 1, iPre: perp ? q.length - 2 : -1, end, pre, side, inA, jog,
+          depth: jog ? 0 : perp ? Math.abs(pnr(pre) - n0) : 0,
           // тай-брейк при РАВНОЙ глубине — по позиции источника кабеля (чистая геометрия).
           // По id трассы было НЕЛЬЗЯ: id генерится случайно, и два прогона на одинаковом
           // проекте давали разный порядок гребёнки → разную геометрию → разную метрику.
@@ -4033,10 +4096,30 @@
       // тем раньше сворачиваем (слева — по возрастанию глубины, справа — по убыванию)
       info.sort((u, v) => (u.side - v.side)
         || (u.side < 0 ? u.depth - v.depth : v.depth - u.depth)
+        || (u.jog && v.jog ? u.inA - v.inA : 0)
         || (u.key - v.key));                            // детерминизм при равной глубине
       const step = Math.min(PANEL_COMB_MAX_STEP, wCm / (info.length + 1));
+      /* Прямые входы (лобовой подход в пределах корпуса) встают на свою высоту. Остальные
+         кабели — подходящие ВДОЛЬ кромки сверху или снизу — раньше получали место среди них
+         и поднимались к нему, пересекая все прямые входы ниже/выше (QF17, QF19 на проекте
+         владельца). Если прямые входы есть, такие кабели встают СНАРУЖИ их диапазона — каждый
+         у своего края корпуса, по порядку сортировки. */
+      const directs = info.filter((it) => it.jog && Math.abs(it.inA - a0) <= wCm / 2);
+      const outSlot = new Map();
+      if (directs.length && directs.length < info.length) {
+        const lo = Math.min(...directs.map((it) => it.inA)), hi = Math.max(...directs.map((it) => it.inA));
+        const st = Math.max(1, Math.min(step, 2));
+        const below = info.filter((it) => directs.indexOf(it) < 0 && it.side < 0);
+        const above = info.filter((it) => directs.indexOf(it) < 0 && it.side >= 0);
+        below.forEach((it, k) => outSlot.set(it, lo - st * (below.length - k)));
+        above.forEach((it, k) => outSlot.set(it, hi + st * (k + 1)));
+      }
       info.forEach((it, i) => {
-        const d = (a0 + (i - (info.length - 1) / 2) * step) - pa(it.end);
+        // лобовой подход, высота которого уже в пределах корпуса: место = сама эта высота —
+        // кабель входит в щит прямо, без шага вдоль кромки (шаги на одной вертикали у кромки
+        // пересекали подходы соседей)
+        const direct = it.jog && Math.abs(it.inA - a0) <= wCm / 2;
+        const d = (direct ? it.inA : outSlot.has(it) ? outSlot.get(it) : (a0 + (i - (info.length - 1) / 2) * step)) - pa(it.end);
         if (Math.abs(d) < 0.05) return;
         // ЗАМЕНЯЕМ точки новыми объектами, а НЕ правим на месте: путь может содержать
         // ссылки на точки, которые живут в кэшированной геометрии (контур комнаты, узлы
@@ -4078,7 +4161,8 @@
         && (nodeIds[r.fromId] || nodeIds[r.toId]))
       .map((r) => ({ pts: r.points, bb: bboxOf(r.points), lane: r.lane || 0 }));
     curLane = 0;
-    let pts = buildPath(p, fromEl, a, target, circuitId), lane = 0;
+    lastCombDirect = false;
+    let pts = buildPath(p, fromEl, a, target, circuitId), lane = 0, combDirect = lastCombDirect;
     const swLeg = fromEl.type === "switch" || (target.el && target.el.type === "switch");
     if (swLeg && pts && pts.length >= 2 && built.length
         && conflicts(built, pts, LANE_OVERLAP_MIN).sum > LANE_OVERLAP_MIN) {
@@ -4088,9 +4172,10 @@
       // полосу и наложений становится больше, чем было (замерено на реальном проекте).
       for (let ln = 1; ln <= LANE_MAX; ln++) {
         curLane = ln;
+        lastCombDirect = false;
         const cand = buildPath(p, fromEl, a, target, circuitId);
         if (!cand || cand.length < 2) break;
-        if (conflicts(built, cand, LANE_OVERLAP_MIN).sum <= LANE_OVERLAP_MIN) { pts = cand; lane = ln; break; }
+        if (conflicts(built, cand, LANE_OVERLAP_MIN).sum <= LANE_OVERLAP_MIN) { pts = cand; lane = ln; combDirect = lastCombDirect; break; }
       }
     }
     curLane = 0;
@@ -4103,6 +4188,7 @@
     rt.color = color;
     rt.lane = lane;                       // под-полоса внутри линии (см. curLane выше)
     rt.toPanel = target.kind === "panel"; // спуск у щита считаем один раз
+    if (combDirect && rt.toPanel) rt.combDirect = true; // вход в щит прямо на своей высоте (relayPanelCombs)
     if (target.riser) rt.toRiser = true;  // цель — стояк, а не корпус щита: спуска у щита нет
     // сечение штробы: тёплый пол — в пол (50×50), остальное — стандарт (25×30), можно менять
     const s = p.settings;

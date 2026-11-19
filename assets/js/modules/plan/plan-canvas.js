@@ -146,6 +146,8 @@
        движения пальцев: на большой квартире 70–130 мс счёта (CPU ×4) плюс раскладка и
        покраска — кадр до 300 мс прямо во время пинча. */
     let rescalePending = false; // была лёгкая фиксация — сцена ждёт пересборки под масштаб
+    let motionT = 0, lastLightT = 0;
+    const QUICK_MS = 450; // начало жеста/броска и время прошлой лёгкой фиксации
     function applyLive(active) {
       if (!committed || !cw) { apply(); return; }
       const act = !!active || pts.size > 0;
@@ -219,7 +221,17 @@
          это и мигало. Замер (квартира ×4, 636 подписей, CPU ×4): при чистом сдвиге с видимыми
          подписями нет ни одного кадра дольше 40 мс — раскладку текста дорогой делает смена
          МАСШТАБА (кегль в мировых единицах), а не сдвиг. Поэтому при сдвиге подписи остаются. */
-      if (light) { rescalePending = true; if (zoomed) svg.classList.add("is-moving"); if (cb.viewMoved) cb.viewMoved({ ...view }); return; }
+      /* …и при БЫСТРОМ движении (резкий бросок, инерция): фиксации идут одна за другой, и каждая
+         заново раскладывает сотни подписей — рывки 50–100 мс (жалоба владельца «рывки при резком
+         перемещении»). Быстрое = фиксация меньше чем через QUICK_MS от начала жеста или прошлой
+         фиксации. На лету пропадание подписей глазу не видно; медленный сдвиг их не прячет. */
+      if (light) {
+        const now = performance.now(), quick = now - (lastLightT || motionT || 0) < QUICK_MS;
+        lastLightT = now;
+        rescalePending = true; if (zoomed || quick) svg.classList.add("is-moving");
+        if (cb.viewMoved) cb.viewMoved({ ...view }); return;
+      }
+      lastLightT = 0;
       svg.classList.remove("is-moving");
       rescalePending = false;
       if (cb.viewChanged) cb.viewChanged({ ...view });
@@ -278,13 +290,16 @@
       let vx = (b.x - a.x) / (b.t - a.t), vy = (b.y - a.y) / (b.t - a.t);
       if (Math.hypot(vx, vy) < 0.25) return false;
       let last = now;
+      motionT = now; lastLightT = 0;
       const step = (t) => {
         const dt = Math.min(40, Math.max(1, t - last)); last = t;
         const decay = Math.exp(-dt / 230); // затухание: за ~0.7 с почти до нуля
         vx *= decay; vy *= decay;
         const k = pxToCm();
         view.x -= vx * dt * k; view.y -= vy * dt * k;
-        applyLive();
+        // по инерции фиксация ЛЁГКАЯ (только viewBox): полная посреди полёта пересобирала сцену
+        // и давала рывок 50–100 мс на «резком перемещении» (жалоба владельца); полная — в конце
+        applyLive(true);
         if (Math.hypot(vx, vy) < 0.02) { inertia = 0; if (liveT || rescalePending) apply(); return; }
         inertia = requestAnimationFrame(step);
       };
@@ -386,6 +401,7 @@
       svg.setPointerCapture(e.pointerId);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pts.size === 1) {
+        motionT = performance.now(); lastLightT = 0;
         downClient = { x: e.clientX, y: e.clientY };
         // этот down — второй тап двойного? (в окне dblTapMs/dblTapPx от прошлого одиночного)
         dblDown = !!(lastTapInfo && (Date.now() - lastTapInfo.t) <= CFG.dblTapMs &&
