@@ -269,11 +269,12 @@
     if (!TYPES[k]) return;
     S.pool = null; S.myb = null; S.selType = k;
   }
-  function defaultHeight(type) {
-    const s = core().project.settings;
+  function defaultHeight(type, pos, wallId) {
+    const p = core().project, s = p.settings;
     if (type === "socket") return s.heightPresets.socket;
     if (type === "switch") return s.heightPresets.switch;
-    return TYPES[type].h == null ? s.ceilingHeight : TYPES[type].h;
+    if (TYPES[type].h != null) return TYPES[type].h;
+    return pos ? G().ceilingAt(p, { x: pos.x, y: pos.y, wallId, floorId: p.activeFloorId }) : s.ceilingHeight;
   }
   function placeAt(w) {
     const c = core(), p = c.project;
@@ -307,7 +308,7 @@
     }
     c.commit();
     if (hit) {
-      const el = c.model.newElement(S.selType, hit.wall.id, G().snap(hit.offset, p.settings.gridStep), defaultHeight(S.selType), t.layer);
+      const el = c.model.newElement(S.selType, hit.wall.id, G().snap(hit.offset, p.settings.gridStep), defaultHeight(S.selType, w, hit.wall.id), t.layer);
       if (t.block) el.params = { items: ["socket"] }; // рамка начинается с одной розетки
       if (hit.wall.isBeam) el.beamSide = beamSideOf(w, hit.wall); // см. beamSideOf выше
       p.elements.push(el);
@@ -322,7 +323,7 @@
       return;
     } else if (t.free) {
       const sp = G().snapPoint(w, p.settings.gridStep);
-      const el = c.model.newElement(S.selType, null, 0, defaultHeight(S.selType), t.layer);
+      const el = c.model.newElement(S.selType, null, 0, defaultHeight(S.selType, sp), t.layer);
       el.params = { x: sp.x, y: sp.y };
       p.elements.push(el);
       if (t.ownLine && !el.circuitId) assignNewCircuit(el); // см. комментарий выше (камеры)
@@ -350,7 +351,7 @@
     if (hit) vibrate(10);
     if (!hit && !t.free) { rooms().toast(e.type === "warmfloor" ? T.tapWallTP : T.tapWall); return; }
     c.commit();
-    const h = e.height != null ? Math.max(0, Number(e.height) || 0) : defaultHeight(e.type);
+    const h = e.height != null ? Math.max(0, Number(e.height) || 0) : defaultHeight(e.type, w, hit && hit.wall.id);
     let el;
     if (hit) {
       el = c.model.newElement(e.type, hit.wall.id, G().snap(hit.offset, p.settings.gridStep), h, t.layer);

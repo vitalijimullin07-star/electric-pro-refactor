@@ -1950,6 +1950,43 @@ test("тип «Вывод»: layerChoice, силовой по умолчанию
 // ===== 13. Метраж кабеля: спуск и выпуск у ОБОИХ концов, выключатель на всю высоту при полу =====
 // Аудит цепей: раньше у дальнего конца кабеля спуск брался как «ещё раз свой» (×2), у
 // выключателя/распайки/звена цепочки не брался вовсе, выпуск считался только у начала.
+test("свой потолок комнаты входит в длину кабеля и штробы до розетки и щита", () => {
+  const { P, w } = install(), RT = EP.Plan.Routes;
+  P.rooms[0].height = 330;
+  P.settings.cableReserve = 0; P.settings.cableRoundM = 0;
+  const panel = M.newPanel(50, 50, "Щ"), socket = M.newElement("socket", w(0), 130, 30, "power");
+  panel.height = 150; P.panels.push(panel);
+  const line = M.newCircuit("QF1", "#abc", 16); socket.circuitId = line.id;
+  P.circuits.push(line); P.elements.push(socket);
+  RT.build({ silent: true });
+  eq(P.routes.length, 1, "построен один кабель");
+  const r = P.routes[0], expected = G.polylineLen(r.points) + 300 + 180;
+  near(RT.lengths(P).total, expected, 0.001, "план + спуск к розетке 300 + спуск к щиту 180 см");
+  eq(RT.pointVert(P, socket), 300, "штроба розетки");
+  eq(RT.panelChaseVert(P, panel), 180 - G.panelBoxCm(P).h, "штроба заканчивается у верха корпуса");
+  const metres = Math.round((expected + 20 + 50) / 10) / 10;
+  eq(Object.values(EP.Plan.Calc.calcByRoutes(P).cableBy)[0], metres, "смета включает оба выпуска");
+  eq(EP.Plan.Calc.perCircuit(P)[0].cableLen, metres, "сводка по линии совпадает со сметой");
+  eq(RT.endVert(P, socket, "floor"), 30, "кабель в полу зависит только от высоты точки");
+  eq(RT.panelVert(P, panel, "floor"), 150, "щит от пола");
+  P.rooms[0].height = null;
+  near(RT.lengths(P).total, expected - 120, 0.001, "без переопределения снова действует потолок проекта");
+});
+test("потолочные точки и щиты берут высоту своего этажа при одинаковых координатах", () => {
+  const { P } = install();
+  const EL = EP.Plan.Elements, RT = EP.Plan.Routes;
+  P.rooms[0].height = 310;
+  const panel = M.newPanel(50, 50, "1 этаж"); panel.height = 150; P.panels.push(panel);
+  EP.Plan.Core.addFloor("2 этаж");
+  const room = M.newRoom(G.rectPoints(0, 0, 400, 300), "Верхняя"); room.height = 350; P.rooms.push(room);
+  EL.selectType("light"); EL.placeAt({ x: 100, y: 100 });
+  const lamp = P.elements[P.elements.length - 1];
+  eq(lamp.height, 350, "новая потолочная точка стоит на потолке комнаты");
+  eq(RT.endVert(P, lamp, "ceiling"), 0, "на потолке дополнительного спуска нет");
+  lamp.height = 300;
+  eq(RT.endVert(P, lamp, "ceiling"), 50, "вручную заданная высота светильника сохраняется");
+  eq(RT.panelVert(P, panel, "ceiling"), 160, "на экране верхний этаж, но первый щит остался под потолком 310");
+});
 test("hopParts: шлейф точка→точка — спуск у обоих концов по СВОИМ высотам", () => {
   const { P, w } = install();
   const pn = M.newPanel(50, 50, "Щ"); P.panels.push(pn);
