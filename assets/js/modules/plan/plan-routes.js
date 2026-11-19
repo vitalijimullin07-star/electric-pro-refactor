@@ -1790,7 +1790,27 @@
   function buildPath(p, fromEl, a, target, circuitId, raw) {
     const pts = buildPathRaw(p, fromEl, a, target, circuitId);
     if (raw || !pts || pts.length < 2) return pts;
-    return dropCollinear(avoidShafts(p, clearOfWalls(p, pts), circuitId));
+    return dropCollinear(avoidShafts(p, clearOfWalls(p, orthoFix(pts)), circuitId));
+  }
+  /* КОСЫЕ ОТРЕЗКИ ИЗ-ЗА СКЛЕЙКИ УЗЛОВ МАГИСТРАЛИ (тест на 5-комнатной квартире: 6 трасс с
+     отрезком, уходящим вбок на 3 см). Граф магистралей склеивает концы ближе GUIDE_MERGE_EPS
+     (15 см) в один узел с координатой ОДНОЙ из магистралей — участок между двумя такими узлами
+     получает перекос в пару сантиметров. Почти осевой отрезок (перекос до ORTHO_FIX_MAX и
+     вдесятеро короче самого отрезка) заменяется осевым плюс маленькая ступенька у его конца —
+     трасса идёт строго под прямыми углами, как и должна. */
+  const ORTHO_FIX_MAX = 15; // = GUIDE_MERGE_EPS: больше склейка узлов перекоса не даёт
+  function orthoFix(pts) {
+    let out = null;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i], dx = Math.abs(b.x - a.x), dy = Math.abs(b.y - a.y);
+      const sm = Math.min(dx, dy), lg = Math.max(dx, dy);
+      if (sm > 0.5 && sm <= ORTHO_FIX_MAX && lg >= sm * 10) {
+        if (!out) out = pts.slice(0, i);
+        out.push(dx < dy ? { x: a.x, y: b.y } : { x: b.x, y: a.y });
+      }
+      if (out) out.push(b);
+    }
+    return out || pts;
   }
   /* ВЕНТШАХТА — ПРЕПЯТСТВИЕ (аудит 11.11, п.9). Шахта (p.voids, kind "shaft") вычиталась из
      площади, но трассировка её не видела: контур с отступом 15 см от стен проходил прямо
@@ -2669,6 +2689,16 @@
       reason: unroutedReason(p, w.el, targets) }));
   }
 
+  /* КОРПУС ЩИТА — ДО ТРАССИРОВКИ (тест на 5-комнатной квартире: повторное «Построить» после
+     открытия «Проверок» давало ДРУГИЕ трассы). Ширина гребёнки и сжатого подвода к щиту берутся
+     из settings.panelBox, а его пишет только Scheme.recompute — его зовут «Проверки», схема и
+     PDF. До первого их открытия корпус был «по умолчанию», после — подобранный по модулям, и
+     трассы зависели от того, что пользователь открывал. Пересчитываем перед каждой сборкой; в
+     фоновый вычислитель (там схемы нет) проект уходит уже с пересчитанным корпусом (pump). */
+  function syncPanelBox(p) {
+    const SC = EP.Plan.Scheme;
+    if (p && SC && SC.recompute && (p.circuits || []).length) { try { SC.recompute(p); } catch (e) {} }
+  }
   function build(opts) {
     const silent = !!(opts && opts.silent); // тихая автоперестройка: без тостов/шторки
     // noCommit — ПРОБНЫЙ прогон (оптимизатор гоняет build() десятки раз, перебирая порядок
@@ -2682,6 +2712,7 @@
     // (трассы «висели» мимо неё до второго ↶), а реальная глубина отмены падала вдвое.
     const noUndo = quiet || !!(opts && opts.noUndo);
     const c = core(), p = c.project;
+    syncPanelBox(p);
     p.circuits = p.circuits || [];
     const fp = G().floorScoped(p); // щиты/точки/распайки ТОЛЬКО активного этажа — иначе
     // трасса на этаже без своего щита попыталась бы дотянуться до щита другого этажа
@@ -2760,6 +2791,7 @@
     const only = opts && opts.onlyIds ? new Set(opts.onlyIds) : null;
     const c = core(), p = c.project;
     p.circuits = p.circuits || [];
+    syncPanelBox(p);
     const fp = G().floorScoped(p); // только активный этаж — та же причина, что и в build()
     const fidNow = p.activeFloorId || (p.floors && p.floors[0] && p.floors[0].id);
     const risersHere = riserNodes(p, fidNow); // этаж без щита питается через стояк
@@ -3326,6 +3358,7 @@
     const j = st.q.splice(k, 1)[0];
     st.cur = j;
     j.timer = setTimeout(() => failWorker(w, "timeout"), j.timeout);
+    if (j.msg && j.msg.project) syncPanelBox(j.msg.project);
     try { w.postMessage(Object.assign({}, j.msg, { jobId: j.id })); }
     catch (err) { endJob(w, { type: "done", ok: false, jobId: j.id, failed: "post" }); } // снимок не клонируется — дело в задании, не в воркере
   }
@@ -4077,7 +4110,11 @@
            уже входит в щит на своей высоте. Её место — эта высота: ни шага вдоль кромки, ни
            перестановки (раньше места раздавались по позиции розетки — шаги у кромки
            перекрещивались, 98 пересечений у щита). */
-        const jog = !!r.combDirect && perp;
+        // …или кабель и так уже входит прямо (две последние вершины и предыдущая — на одной
+        // линии поперёк оси) на высоте в пределах корпуса: сдвиг предпоследней точки перекосил
+        // бы длинный подход (косые отрезки у щита на тесте 5-комнатной квартиры)
+        const straightIn = perp && Math.abs(along) <= 1 && Math.abs(pa(end) - a0) <= wCm / 2;
+        const jog = (!!r.combDirect && perp) || straightIn;
         const inA = pa(end);
         const side = perp
           ? (Math.abs(along) > 1 ? (along > 0 ? 1 : -1) : (pa(pre) - a0 >= 0 ? 1 : -1))
@@ -4755,5 +4792,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Routes = { junctionIdle, routeAssigned, whyUnrouted, ownRoute, routable: isRoutable, feedIssues, shaftConflicts, costOf, routeStatus, routeInputSig, routeTurns, build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, unroutedComputed: () => lastUnroutedPid != null, jobs: { run: runJob, state: jobsState, cancel: cancelQueued }, editVersion: () => editVer, pointVert, panelVert, panelChaseVert, endVert, hopParts, srcElOf, cableStub, keys24Of, isFeeder, routeLayerOf, STAR_LV, BLOCK_LV, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, dropCollinear, colinearMid, routeLen, feedPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
+  EP.Plan.Routes = { orthoFix, junctionIdle, routeAssigned, whyUnrouted, ownRoute, routable: isRoutable, feedIssues, shaftConflicts, costOf, routeStatus, routeInputSig, routeTurns, build, buildIncremental, clearRoutes, suggestGuides, suggestTree, lastSuggest: () => lastSuggest, GUIDE_KINDS, routeKind, lengths, sheet, sleeveGroups, sleeveHoles, unroutedList: () => unroutedForSheet(core().project).slice(), resetUnrouted: () => { lastUnrouted = []; lastUnroutedPid = null; }, unroutedComputed: () => lastUnroutedPid != null, jobs: { run: runJob, state: jobsState, cancel: cancelQueued }, editVersion: () => editVer, pointVert, panelVert, panelChaseVert, endVert, hopParts, srcElOf, cableStub, keys24Of, isFeeder, routeLayerOf, STAR_LV, BLOCK_LV, chainPrevMap, chainSegCross, surfaceOfEl, surfacesUsed, scoreRoutes, setLaneOrder, optimizeRouting, optimizeRoutingMax, optimizeAndApply, buildHeavy, precalcReady, buildPath, dropCollinear, colinearMid, routeLen, feedPath, roomNear, routeAt, resetRouteToAuto, recomputeThroughWalls, chainRouteIds, riserPairs, riserRole, sinkRisersOn, floorHeight, riserRun };
 })();

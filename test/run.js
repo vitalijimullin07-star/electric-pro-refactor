@@ -2112,6 +2112,35 @@ test("щит на стене с коротким подводом: веер сж
   }
   eq(cross, 0, "входы в щит не перекрещиваются");
 });
+test("трассы не зависят от того, открывались ли «Проверки» (корпус щита пересчитывается до сборки)", () => {
+  const RT = EP.Plan.Routes;
+  const rooms = [M.newRoom(G.rectPoints(0, 0, 1200, 150), "Коридор1"), M.newRoom(G.rectPoints(1050, 150, 150, 1050), "Коридор2")];
+  for (let i = 0; i < 3; i++) rooms.push(M.newRoom(G.rectPoints(i * 350, 150, 350, 450), "К" + (i + 1)));
+  EP.Plan.Core.importJSON(JSON.stringify({ project: Object.assign(M.newProject("T"), { rooms }) }));
+  const P = EP.Plan.Core.project;
+  P.panels.push(M.newPanel(1196, 1000, "Щ"));
+  let n = 0;
+  for (let i = 0; i < 3; i++) for (let k = 0; k < 6; k++) {
+    const c = M.newCircuit("QF" + (++n), "#e11", 16); P.circuits.push(c);
+    const e = M.newElement("socket", P.rooms[2 + i].id + ":2", 40 + k * 50, 30, "power"); e.circuitId = c.id; P.elements.push(e);
+  }
+  P.guides.push(M.newGuide([{ x: 175, y: 75 }, { x: 1110, y: 75 }, { x: 1110, y: 1000 }, { x: 1170, y: 1000 }]));
+  for (let i = 0; i < 3; i++) P.guides.push(M.newGuide([{ x: i * 350 + 175, y: 375 }, { x: i * 350 + 175, y: 75 }]));
+  delete P.settings.panelBox;
+  const geo = () => JSON.stringify(P.routes.map((r) => r.points.map((q) => [Math.round(q.x * 10), Math.round(q.y * 10)])));
+  RT.build({ silent: true }); const a = geo();
+  EP.Plan.Rules.report(P); EP.Plan.Calc.estimateItems(P);
+  RT.build({ silent: true });
+  eq(geo(), a, "та же геометрия после «Проверок» и сметы");
+});
+test("трасса строго под прямыми углами: перекос склейки узлов магистрали выпрямляется", () => {
+  const f = EP.Plan.Routes.orthoFix;
+  const out = f([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 103, y: 200 }, { x: 300, y: 200 }]);
+  ok(out.every((q, i) => i === 0 || Math.abs(q.x - out[i - 1].x) < 1e-9 || Math.abs(q.y - out[i - 1].y) < 1e-9), "все отрезки осевые: " + JSON.stringify(out));
+  eq(out[out.length - 1].x, 300, "конец на месте");
+  const diag = [{ x: 0, y: 0 }, { x: 100, y: 100 }];
+  eq(f(diag), diag, "настоящая диагональ (не перекос) не трогается");
+});
 test("холст: при сдвиге посреди жеста подписи не прячутся, при масштабе — прячутся", () => {
   const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets/js/modules/plan/plan-canvas.js"), "utf8");
   ok(/const zoomed = !committed \|\| Math\.abs\(committed\.w - view\.w\)/.test(src), "сравнение масштаба до фиксации");
