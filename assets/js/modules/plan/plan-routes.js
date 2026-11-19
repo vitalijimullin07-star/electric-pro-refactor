@@ -2009,7 +2009,11 @@
       // просто её ствол короткий (комната рядом со щитом): линия шла вплотную к стене мимо
       // общего пучка и входила в щит по его же стене.
       if (dp && dp.length >= 2 && G().polylineLen(dp) < G().polylineLen(gp) * 0.75
-          && sleeveCount(p, dp, skip, sf) <= sleeveCount(p, gp, skip, sf)) { lastCombDirect = false; return dp; }
+          && sleeveCount(p, dp, skip, sf) <= sleeveCount(p, gp, skip, sf)
+          // …и не выходит за квартиру: прямой угол не знает стен, и у комнаты, выступающей за
+          // коридор, срезал угол снаружи (тест «правки после сборки»: стену удлинили — кабель
+          // к щиту пошёл в обход квартиры)
+          && outsideLen(p, dp) <= outsideLen(p, gp) + 1) { lastCombDirect = false; return dp; }
     }
     return gp;
   }
@@ -2751,7 +2755,7 @@
     const lvFail = buildBlockLvLegs(c, p, panels); // ТВ/интернет в блоках — свой кабель к роутеру
 
     if (savedManual.length) restoreManualRoutes(p, savedManual);
-    relayPanelCombs(p);  // порядок входа кабелей в щит — только когда известны ВСЕ подходы
+    relayPanelCombs(p, onActiveFloor);  // порядок входа кабелей в щит — только когда известны ВСЕ подходы
     hideGuides(p); // прячем ТОЛЬКО применённые магистрали (см. usedGuideIds/hideGuides)
     usedGuideIds = null;
     const un = collectUnrouted(p, points, juncts, panels, lvFail);
@@ -4082,7 +4086,11 @@
      его слот к тому краю гребёнки, откуда кабель пришёл. Кабели, подходящие с РАЗНЫХ
      сторон, занимают каждый свою половину гребёнки — иначе они пересекались бы между собой
      в середине. Итог: порядок слотов = (сторона подхода, затем глубина полосы). */
-  function relayPanelCombs(p) {
+  // only(r) — какие трассы переставлять: сборка этажа передаёт «только активный этаж». Пост-проход
+  // НЕ идемпотентен (по уже переставленным входам считает заново), и сборка второго этажа
+  // молча сдвигала входы в щит первого — повтор «Построить» давал другие трассы (тест на
+  // двухэтажном доме).
+  function relayPanelCombs(p, only) {
     const wCm = combWidth(p);
     (p.panels || []).forEach((pn) => {
       const base = { x: pn.x, y: pn.y };
@@ -4092,7 +4100,7 @@
       const info = [];
       (p.routes || []).forEach((r) => {
         // ручные трассы не трогаем (route.manual — правка пользователя), как и везде
-        if (!r.toPanel || r.toId !== pn.id || r.manual) return;
+        if (!r.toPanel || r.toId !== pn.id || r.manual || (only && !only(r))) return;
         const q = r.points || [];
         if (q.length < 3) return;
         const end = q[q.length - 1], pre = q[q.length - 2], pre2 = q[q.length - 3];
@@ -4128,7 +4136,18 @@
           // проверка «тот же сид — та же метрика» у оптимизатора).
           key: pa(q[0]) * 1e6 + pnr(q[0]) });
       });
-      if (info.length < 2) return;
+      // последний отрезок к щиту косой (контур комнаты подводит к точке гребёнки по прямой,
+      // а гребёнка сдвигает конец вдоль кромки) — ставим излом: вдоль оси гребёнки до высоты
+      // входа, потом прямо в щит (тест «техника и слаботочка»: камера входила в ЩС под углом)
+      const square = (it) => {
+        const q = it.q, e = q[q.length - 1], b = q[q.length - 2];
+        if (!b || Math.abs(e.x - b.x) <= 0.5 || Math.abs(e.y - b.y) <= 0.5) return;
+        if (Math.abs(ax.x) > 1e-6 && Math.abs(ax.y) > 1e-6) return;          // кромка не по осям
+        const da = pa(e) - pa(b);
+        q.splice(q.length - 1, 0, { x: b.x + ax.x * da, y: b.y + ax.y * da });
+        recomputeThroughWalls(p, it.r);
+      };
+      if (info.length < 2) { info.forEach(square); return; }
       // сторона подхода → своя половина гребёнки; внутри половины: чем дальше полоса,
       // тем раньше сворачиваем (слева — по возрастанию глубины, справа — по убыванию)
       info.sort((u, v) => (u.side - v.side)
@@ -4177,6 +4196,7 @@
         }
         recomputeThroughWalls(p, it.r);   // слот уехал на несколько см — гильзы пересчитываем
       });
+      info.forEach(square);
     });
   }
   function addRoute(c, p, fromEl, a, target, circuitId, color) {
