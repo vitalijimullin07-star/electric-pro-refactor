@@ -359,6 +359,8 @@
     // коробке без подключённых точек кабель не прокладывается — значит, она стоит не там
     (p.elements || []).forEach((j) => {
       if (j.type !== "junction" || j.status === "existing") return;
+      const RTj = EP.Plan.Routes;
+      if (j.circuitId && RTj && RTj.junctionIdle && RTj.junctionIdle(p, j)) { issues.push({ level: "warn", msg: "Распайка на потолке, а линия идёт по полу — коробка не используется: кабель расключается в подрозетниках. Убери коробку или поставь её на стену.", ref: { kind: "el", id: j.id } }); return; }
       if (!j.circuitId || !cIds.has(j.circuitId)) issues.push({ level: "warn", msg: "Распайка: линия не назначена — точки к ней не подключатся. Назначь коробке линию её точек.", ref: { kind: "el", id: j.id } });
       else if (routes.length && !routes.some((r) => r.toId === j.id)) issues.push({ level: "warn", msg: "Распайка: в этой комнате нет точек её линии — коробка не используется, кабель к ней не прокладывается.", ref: { kind: "el", id: j.id } });
     });

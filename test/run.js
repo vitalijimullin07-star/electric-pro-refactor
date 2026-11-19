@@ -1973,6 +1973,31 @@ test("hopParts: точка → распайка — выпуск в коробк
   eq(h.vTgt, 0, "потолочная коробка: кабель приходит по потолку");
   eq(h.stub, 20 + 30, "выпуск у подрозетника + выпуск в коробке (раньше в коробке был только у её собственного кабеля)");
 });
+test("по полу потолочная распайка не используется — расключение в подрозетниках", () => {
+  const { P, w } = install(), RT = EP.Plan.Routes;
+  P.settings.routeType = "floor";
+  const q = M.newCircuit("QF1", "#ff0", 16), panel = M.newPanel(20, 150, "Щ");
+  const box = M.newElement("junction", null, 0, 270, "routes"); box.params = { x: 200, y: 150 };
+  const s1 = M.newElement("socket", w(0), 120, 30, "power"), s2 = M.newElement("socket", w(0), 300, 30, "power");
+  box.circuitId = s1.circuitId = s2.circuitId = q.id;
+  P.circuits.push(q); P.panels.push(panel); P.elements.push(s1, s2, box);
+  ok(RT.junctionIdle(P, box), "потолочная коробка линии по полу — не используется");
+  RT.build({ silent: true });
+  ok(!P.routes.some((r) => r.toId === box.id || r.fromId === box.id), "к коробке кабель не идёт и от неё тоже");
+  eq(P.routes.length, 2, "розетки шлейфом: щит → розетка → розетка");
+  ok(!RT.unroutedList().some((u) => u.id === box.id), "коробка не числится «без трассы»");
+  const res = EP.Plan.Calc.calcByRoutes(P);
+  ok(!res.items.some((i) => /Распаечная коробка \(потолок\)|распаянную коробку на потолке/.test(i.name)), "в смете нет потолочной коробки");
+  ok(res.items.some((i) => /распайку в подрозетнике/.test(i.name)), "есть расключение в подрозетнике");
+  ok(EP.Plan.Rules.report(P).issues.some((i) => i.ref && i.ref.id === box.id && /по полу/.test(i.msg)), "«Проверки» предлагают убрать коробку");
+  // стенная коробка и разводка по потолку — как раньше
+  box.wallId = w(0); box.offset = 200; box.height = 250;
+  ok(!RT.junctionIdle(P, box), "коробка на стене работает и по полу");
+  box.wallId = null; P.settings.routeType = "ceiling";
+  ok(!RT.junctionIdle(P, box), "по потолку потолочная коробка работает");
+  RT.build({ silent: true });
+  ok(P.routes.some((r) => r.toId === box.id), "по потолку точки идут в коробку");
+});
 test("hopParts: «до щита» 24В — источник находится по синтетическому id, спуск к выключателю есть", () => {
   const { P, w } = install();
   const pn = M.newPanel(50, 50, "ЩС"); pn.transformer = true; P.panels.push(pn);
