@@ -811,7 +811,7 @@ test("build() ИДЕМПОТЕНТЕН: повторная сборка на т�
   eq(b, a, "второй build даёт ТУ ЖЕ геометрию");
   eq(shot(), a, "и третий тоже");
   const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-routes.js"), "utf8");
-  const fn = /function relayPanelCombs\(p\)[\s\S]*?\n  \}/.exec(src);
+  const fn = /function relayPanelCombs\(p, only\)[\s\S]*?\n  \}/.exec(src);
   ok(fn && !/it\.end\.x \+=|it\.pre\.x \+=/.test(fn[0]),
     "гребёнка ЗАМЕНЯЕТ точки пути, а не правит их на месте (иначе портит кэш геометрии)");
 });
@@ -2140,6 +2140,85 @@ test("трасса строго под прямыми углами: переко
   eq(out[out.length - 1].x, 300, "конец на месте");
   const diag = [{ x: 0, y: 0 }, { x: 100, y: 100 }];
   eq(f(diag), diag, "настоящая диагональ (не перекос) не трогается");
+});
+test("два этажа: сборка второго этажа не сдвигает входы в щит первого", () => {
+  // Тест на двухэтажном доме: пост-проход гребёнки обходил щиты ВСЕХ этажей и по уже
+  // переставленным входам считал заново — «Построить» на 2 этаже меняло трассы 1-го.
+  const P = EP.Plan.Core.createProject("этажи-гребёнка");
+  const RT = EP.Plan.Routes, f1 = P.floors[0], TY = EP.Plan.Elements.TYPES, W = (r, i) => r.id + ":" + i;
+  const R = (x, y, w, h, n) => { const r = M.newRoom(G.rectPoints(x, y, w, h), n); P.rooms.push(r); return r; };
+  const E = (t, r, i, off, h, x) => { const e = M.newElement(t, W(r, i), off, h, (TY[t] || {}).layer || "power"); Object.assign(e, x || {}); P.elements.push(e); return e; };
+  const F = (t, x, y) => { const e = M.newElement(t, null, 0, 270, (TY[t] || {}).layer || "light"); e.params = { x, y }; P.elements.push(e); return e; };
+  const hall = R(0, 0, 300, 400, "Холл"), liv = R(300, 0, 600, 400, "Гостиная"), kit = R(0, 400, 400, 350, "Кухня"), wc = R(400, 400, 200, 350, "С/у");
+  wc.zones = ["wet"];
+  [[hall, 1, 150], [hall, 2, 100], [kit, 1, 200]].forEach(([r, w, o]) => P.openings.push(M.newOpening("door", W(r, w), o, 90)));
+  P.panels.push(M.newPanel(12, 200, "ЩР"));
+  E("socket", liv, 0, 80, 30); E("socket", liv, 2, 100, 30); E("socket", liv, 1, 200, 30);
+  E("socket", kit, 3, 80, 110); const b = E("block", kit, 0, 200, 110); b.params = { items: ["socket", "socket", "socket"] }; E("output3", kit, 0, 320, 60);
+  E("socket", wc, 1, 100, 110); E("warmfloor", wc, 3, 150, 90);
+  [[liv, 3, 60, 600, 200], [kit, 0, 60, 200, 575], [wc, 0, 40, 500, 575], [hall, 1, 60, 150, 200]].forEach(([r, w, o, x, y]) => { const l = F("light", x, y); E("switch", r, w, o, 90).targetIds = [l.id]; });
+  EP.Plan.Core.persist("seed");
+  EP.Plan.AutoProject.apply(EP.Plan.AutoProject.propose(P, "all")); RT.suggestGuides();
+  const f2 = EP.Plan.Core.addFloor("2");
+  const r2 = R(0, 0, 600, 400, "Спальня"); P.panels.push(M.newPanel(12, 200, "Щ2"));
+  E("socket", r2, 0, 100, 30); E("socket", r2, 2, 100, 30);
+  EP.Plan.Core.setActiveFloor(f1.id); RT.build({ silent: true });
+  const shot = () => JSON.stringify(P.routes.filter((r) => r.floorId === f1.id).map((r) => [r.fromId, r.points]).sort());
+  // вход одного кабеля в ЩР сдвинут (как после ручной правки или прошлой сборки) — сборка
+  // ДРУГОГО этажа не должна его «поправлять»
+  const rt = P.routes.find((r) => r.floorId === f1.id && r.toPanel && r.points.length >= 3);
+  const q = rt.points, n = q.length;
+  q[n - 1] = { x: q[n - 1].x, y: q[n - 1].y + 3 }; q[n - 2] = { x: q[n - 2].x, y: q[n - 2].y + 3 };
+  const a = shot();
+  EP.Plan.Core.setActiveFloor(f2.id); RT.build({ silent: true });
+  eq(shot(), a, "трассы 1 этажа не тронуты");
+});
+test("«крюк» мимо магистрали не уводит кабель за квартиру", () => {
+  // Тест «правки после сборки»: комнату удлинили за край коридора — прямой угол к щиту
+  // срезал угол снаружи квартиры (99 см вне стен).
+  const P = EP.Plan.Core.createProject("крюк-снаружи");
+  const room = (x, y, w, h, n) => { const r = M.newRoom(G.rectPoints(x, y, w, h), n); P.rooms.push(r); return r; };
+  room(0, 0, 450, 400, "К1"); const b = room(450, 0, 520, 400, "К2"); const cor = room(0, 400, 900, 150, "Коридор");
+  P.openings.push(M.newOpening("door", cor.id + ":0", 600, 90));
+  P.panels.push(M.newPanel(888, 475, "Щ"));
+  const c = M.newCircuit("QF1", "#f00", 16); P.circuits.push(c);
+  const e = M.newElement("socket", b.id + ":1", 150, 30, "power"); e.circuitId = c.id; P.elements.push(e);
+  P.guides.push(M.newGuide([{ x: 450, y: 475 }, { x: 645, y: 475 }, { x: 645, y: 360 }]));
+  EP.Plan.Core.persist("seed"); EP.Plan.Routes.build({ silent: true });
+  const r = P.routes.find((x) => x.fromId === e.id);
+  ok(r, "трасса построена");
+  const out = r.points.filter((q, i) => i && !G.roomAt(P, { x: (q.x + r.points[i - 1].x) / 2, y: (q.y + r.points[i - 1].y) / 2 }));
+  eq(out.length, 0, "ни один отрезок не вне комнат: " + JSON.stringify(r.points));
+});
+test("вход в щит без косого отрезка (квартира с техникой и слаботочкой)", () => {
+  // Тест «техника и слаботочка»: контур подводил к точке гребёнки по прямой, а гребёнка
+  // сдвигала конец вдоль кромки — камера входила в слаботочный щит под углом.
+  const P = EP.Plan.Core.createProject("косой-вход");
+  const R = (x, y, w, h, n) => { const r = M.newRoom(G.rectPoints(x, y, w, h), n); P.rooms.push(r); return r; };
+  const TY = EP.Plan.Elements.TYPES, W = (r, i) => r.id + ":" + i;
+  const E = (t, r, i, off, h, x) => { const e = M.newElement(t, W(r, i), off, h, (TY[t] || {}).layer || "power"); Object.assign(e, x || {}); P.elements.push(e); return e; };
+  const F = (t, x, y) => { const e = M.newElement(t, null, 0, 270, (TY[t] || {}).layer || "light"); e.params = { x, y }; P.elements.push(e); return e; };
+  const liv = R(0, 0, 600, 450, "Г"), kit = R(600, 0, 400, 450, "К"), cor = R(0, 450, 1000, 180, "Кор"), bath = R(0, 630, 300, 270, "В"), bed = R(300, 630, 700, 270, "С");
+  bath.zones = ["wet"];
+  [[0, 300], [0, 800], [2, 850], [2, 300]].forEach(([w, o]) => P.openings.push(M.newOpening("door", W(cor, w), o, 90)));
+  P.panels.push(M.newPanel(12, 540, "ЩР")); const lv = M.newPanel(12, 600, "ЩС"); lv.router = true; lv.transformer = true; lv.neptun = true; P.panels.push(lv);
+  E("socket", liv, 3, 100, 30); E("socket", liv, 1, 200, 30);
+  const blk = E("block", liv, 2, 300, 30); blk.params = { items: ["socket", "socket", "tv", "internet"] };
+  const o1 = E("output24", liv, 0, 100, 250), o2 = E("output24", liv, 0, 450, 250);
+  const sw = E("switch", liv, 2, 60, 90, { keys: 3 }); const ll = F("light", 300, 225); sw.targetIds = [[ll.id], [o1.id], [o2.id]];
+  E("output3", kit, 0, 200, 60); E("socket", bath, 1, 150, 60); E("socket", kit, 1, 300, 110); E("output", kit, 3, 300, 60);
+  E("warmfloor", bath, 3, 130, 90); E("leak", bath, 2, 100, 5); E("leak", kit, 3, 50, 5);
+  E("camera", cor, 0, 50, 240, { feed: "sep" }); E("camera", cor, 2, 50, 240, { feed: "poe" }); E("intercom", cor, 3, 90, 150);
+  const lc = [F("light", 300, 540), F("light", 700, 540)]; const pir = F("pir", 500, 540); pir.targetIds = [lc.map((x) => x.id)];
+  const lk = F("light", 800, 225); E("switch", kit, 2, 40, 90).targetIds = [lk.id];
+  const lb = F("light", 150, 765); E("switch", cor, 2, 400, 90).targetIds = [lb.id];
+  E("ac", bed, 0, 200, 230); E("socket", bed, 2, 100, 30); const lbd = F("light", 650, 765); E("switch", bed, 0, 600, 90).targetIds = [lbd.id];
+  EP.Plan.Core.persist("seed");
+  const AP = EP.Plan.AutoProject; AP.applyByRoom(AP.proposeByRoom(P, { cats: { sock: 1, light: 1, warm: 1, ac: 1, out: 1, v24: 1, lv: 1 }, mode: "all" }));
+  EP.Plan.Routes.suggestGuides(); EP.Plan.Routes.build({ silent: true });
+  const bad = [];
+  P.routes.forEach((r) => r.points.forEach((q, i) => { if (i && Math.abs(q.x - r.points[i - 1].x) > 0.5 && Math.abs(q.y - r.points[i - 1].y) > 0.5) bad.push(r.points); }));
+  eq(bad.length, 0, "все отрезки осевые: " + JSON.stringify(bad[0] || null));
 });
 test("холст: при сдвиге посреди жеста подписи не прячутся, при масштабе — прячутся", () => {
   const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets/js/modules/plan/plan-canvas.js"), "utf8");
