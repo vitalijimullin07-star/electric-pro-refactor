@@ -35,7 +35,7 @@
     targetPickMiss: "Отменено — тап не попал в подходящую точку.",
     room: "Комната", create: "Создать", cancel: "Отмена", close: "Закрыть",
     splitFail: "Разрез не получился: тапни у ДВУХ противоположных стен одной комнаты.",
-    splitBlocked: "Сначала убери точку/проём с линии разреза — иначе потеряется привязка.",
+    splitBlocked: "Разрез проходит через точку, проём или ленту — сдвинь их или режь в другом месте.",
     name: "Название", width: "Ширина, см", depth: "Глубина, см", ceil: "Потолок, см",
     wet: "Влажная зона (санузел/кухня)", dup: "⧉ Копия", mirror: "⇋ Зеркало", del: "✕ Удалить",
     unfoldBtn: "Развёртка",
@@ -3073,6 +3073,39 @@
   // opts.remnant: "beam" — на месте погашенной общей стены остаётся сплошная
   // перегородка, "lintel" — только перемычка (балка) сверху проёма, иначе
   // (null/undefined) — прежнее поведение: стена исчезает совсем
+  // Проём и лента лежат на стене ОТРЕЗКОМ: при слиянии/разрезе их надо перевязывать по
+  // ОБОИМ концам (оба на одной и той же новой стене), а не по середине — иначе дверь,
+  // через которую прошёл разрез, вставала на одну половину и вылезала за край её стены, а
+  // лента (её не перевязывал никто) оставалась ссылкой на удалённую комнату и пропадала.
+  // walls — [{ww, room}]. Возвращает [{item, room, wall, a, b}] или null (какой-то отрезок
+  // некуда положить целиком — операцию надо отменить).
+  function spanRebind(p, items, walls) {
+    const out = [];
+    for (const x of items) {
+      const ww = G().wallById(p, x.item.wallId);
+      if (!ww) continue;
+      const pa = G().pointAtOffset(ww, x.a), pb = G().pointAtOffset(ww, x.b);
+      let best = null;
+      walls.forEach((w) => {
+        const ca = G().closestOnSeg(pa, w.ww.a, w.ww.b), cb = G().closestOnSeg(pb, w.ww.a, w.ww.b);
+        if (ca.d < 5 && cb.d < 5 && (!best || ca.d + cb.d < best.d)) best = { d: ca.d + cb.d, room: w.room, wall: w.ww, ta: ca.t * w.ww.len, tb: cb.t * w.ww.len };
+      });
+      if (!best) return null;
+      out.push({ item: x.item, room: best.room, wall: best.wall, a: Math.round(Math.min(best.ta, best.tb)), b: Math.round(Math.max(best.ta, best.tb)) });
+    }
+    return out;
+  }
+  function spanItems(p, owns) {
+    return (p.openings || []).filter((op) => op.wallId && owns(op.wallId)).map((op) => ({ item: op, a: op.offset, b: op.offset + op.width }))
+      .concat((p.ledStrips || []).filter((s) => s.wallId && owns(s.wallId)).map((s) => ({ item: s, a: s.offsetA, b: s.offsetB, led: true })));
+  }
+  function spanApply(binds) {
+    binds.forEach((x) => {
+      x.item.wallId = x.room.id + ":" + x.wall.i;
+      if ("width" in x.item && !("offsetA" in x.item)) x.item.offset = x.a;
+      else { x.item.offsetA = x.a; x.item.offsetB = x.b; }
+    });
+  }
   function mergeRooms(idA, idB, opts) {
     const c = core(), p = c.project;
     const roomA = (p.rooms || []).find((r) => r.id === idA);
@@ -3086,9 +3119,8 @@
     // пока старые стены ещё существуют в project
     const belongsToPair = (wallId) => { const rid = String(wallId || "").split(":")[0]; return rid === roomA.id || rid === roomB.id; };
     const els = (p.elements || []).filter((el) => el.wallId && belongsToPair(el.wallId));
-    const ops = (p.openings || []).filter((op) => op.wallId && belongsToPair(op.wallId));
+    const spans = spanItems(p, belongsToPair);
     const elPos = els.map((el) => G().elemPoint(p, el));
-    const opPos = ops.map((op) => { const ww = G().wallById(p, op.wallId); return ww ? G().pointAtOffset(ww, op.offset + op.width / 2) : null; });
 
     const newRoom = c.model.newRoom(mergedPts, roomA.name);
     newRoom.material = roomA.material || roomB.material || null;
@@ -3109,13 +3141,14 @@
       return best;
     };
     for (let i = 0; i < elPos.length; i++) if (!findNearWall(elPos[i])) { toast(T.mergeBlocked); return null; }
-    for (let i = 0; i < opPos.length; i++) if (!findNearWall(opPos[i])) { toast(T.mergeBlocked); return null; }
+    const binds = spanRebind(p, spans, newWalls.map((ww) => ({ ww, room: newRoom })));
+    if (!binds) { toast(T.mergeBlocked); return null; }
 
     c.commit();
     c.project.rooms = c.project.rooms.filter((r) => r.id !== roomA.id && r.id !== roomB.id);
     c.project.rooms.push(newRoom);
     els.forEach((el, i) => { const hit = findNearWall(elPos[i]); el.wallId = newRoom.id + ":" + hit.wall.i; el.offset = Math.round(hit.cl.t * hit.wall.len); });
-    ops.forEach((op, i) => { const hit = findNearWall(opPos[i]); op.wallId = newRoom.id + ":" + hit.wall.i; op.offset = Math.max(0, Math.round(hit.cl.t * hit.wall.len - op.width / 2)); });
+    spanApply(binds);
     if (opts && (opts.remnant === "beam" || opts.remnant === "lintel")) addMergeLintels(c.project, goneInfo.gone, roomA, roomB, opts.remnant);
     c.persist("room-merge");
     return newRoom;
@@ -3140,9 +3173,8 @@
 
     // мировые позиции точек/проёмов ДО перестройки
     const els = (p.elements || []).filter((el) => el.wallId && String(el.wallId).split(":")[0] === room.id);
-    const ops = (p.openings || []).filter((op) => op.wallId && String(op.wallId).split(":")[0] === room.id);
+    const spans = spanItems(p, (wid) => String(wid).split(":")[0] === room.id);
     const elPos = els.map((el) => G().elemPoint(p, el));
-    const opPos = ops.map((op) => { const ww = G().wallById(p, op.wallId); return ww ? G().pointAtOffset(ww, op.offset + op.width / 2) : null; });
 
     const mk = (pts, name) => {
       const r = c.model.newRoom(pts, name);
@@ -3161,13 +3193,14 @@
       return best;
     };
     for (let i = 0; i < elPos.length; i++) if (!findNearWall(elPos[i])) { toast(T.splitBlocked); return null; }
-    for (let i = 0; i < opPos.length; i++) if (!findNearWall(opPos[i])) { toast(T.splitBlocked); return null; }
+    const binds = spanRebind(p, spans, walls);
+    if (!binds) { toast(T.splitBlocked); return null; }
 
     c.commit();
     p.rooms = p.rooms.filter((r) => r.id !== room.id);
     p.rooms.push(rA, rB);
     els.forEach((el, i) => { const hit = findNearWall(elPos[i]); el.wallId = hit.room.id + ":" + hit.wall.i; el.offset = Math.round(hit.cl.t * hit.wall.len); });
-    ops.forEach((op, i) => { const hit = findNearWall(opPos[i]); op.wallId = hit.room.id + ":" + hit.wall.i; op.offset = Math.max(0, Math.round(hit.cl.t * hit.wall.len - op.width / 2)); });
+    spanApply(binds);
     if (opts && (opts.remnant === "beam" || opts.remnant === "lintel")) {
       const bm = c.model.newBeam(res.cut[0], res.cut[1]);
       bm.kind = opts.remnant;

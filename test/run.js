@@ -2190,6 +2190,73 @@ test("«крюк» мимо магистрали не уводит кабель 
   const out = r.points.filter((q, i) => i && !G.roomAt(P, { x: (q.x + r.points[i - 1].x) / 2, y: (q.y + r.points[i - 1].y) / 2 }));
   eq(out.length, 0, "ни один отрезок не вне комнат: " + JSON.stringify(r.points));
 });
+test("разрез через дверь отказан, лента переезжает на новую стену (✂ и 🔗)", () => {
+  // Третья пятёрка тестов: разрез проходил ровно через дверь — проём перевязывался по
+  // середине на одну половину и вылезал за край её стены; ленту на стенах не перевязывал
+  // никто — после слияния/разреза она ссылалась на удалённую комнату и пропадала.
+  const P = EP.Plan.Core.createProject("разрез-дверь");
+  const room = (x, y, w, h, n) => { const r = M.newRoom(G.rectPoints(x, y, w, h), n); P.rooms.push(r); return r; };
+  const a = room(0, 0, 400, 350, "А");
+  P.openings.push(M.newOpening("door", a.id + ":0", 150, 80)); // x 150..230
+  const ls = M.newLedStrip(a.id + ":0", 260, 380, 250); P.ledStrips.push(ls); // x 260..380
+  EP.Plan.Core.persist("seed");
+  const R = EP.Plan.Rooms;
+  eq(R.splitRoom(a.id, { x: 190, y: 40 }, { x: 190, y: 300 }), null, "разрез через дверь отказан");
+  eq(P.rooms.length, 1, "комната не тронута");
+  ok(R.splitRoom(a.id, { x: 100, y: 40 }, { x: 100, y: 300 }), "разрез мимо двери прошёл");
+  const half = EP.Plan.Core.project.rooms.find((r) => r.id !== a.id && r.points.some((q) => q.x === 400));
+  const lsN = EP.Plan.Core.project.ledStrips[0];
+  ok(half && lsN.wallId.split(":")[0] === half.id, "лента перевязана на правую половину");
+  const w = G.wallById(EP.Plan.Core.project, lsN.wallId);
+  const pa = G.pointAtOffset(w, lsN.offsetA), pb = G.pointAtOffset(w, lsN.offsetB);
+  eq([Math.round(Math.min(pa.x, pb.x)), Math.round(Math.max(pa.x, pb.x))].join(), "260,380", "лента на прежнем месте");
+  const op = EP.Plan.Core.project.openings[0], wo = G.wallById(EP.Plan.Core.project, op.wallId);
+  ok(op.offset >= 0 && op.offset + op.width <= wo.len + 0.5, "дверь в пределах своей стены");
+  // слияние: лента на сохранившейся стене переезжает на новую комнату
+  const p2 = EP.Plan.Core.project, rA = p2.rooms[0], rB = p2.rooms[1];
+  const m = R.mergeRooms(rA.id, rB.id);
+  ok(m, "слияние прошло");
+  const lsM = EP.Plan.Core.project.ledStrips[0];
+  eq(lsM.wallId.split(":")[0], m.id, "лента на объединённой комнате");
+  ok(G.wallById(EP.Plan.Core.project, lsM.wallId), "стена ленты существует");
+});
+test("выключатель спускается в коробку ближе к своим светильникам, а не к себе", () => {
+  // Офис с коробкой на каждую зону: раньше все выключатели уходили в коробку у входа
+  // магистрали (ближайшую к ним по пути), три коробки простаивали, а свет дальних зон
+  // тянулся шлейфом через весь зал.
+  const P = EP.Plan.Core.createProject("коробки-зон");
+  const room = (x, y, w, h, n) => { const r = M.newRoom(G.rectPoints(x, y, w, h), n); P.rooms.push(r); return r; };
+  const os = room(0, 0, 1600, 800, "Зал"), cor = room(0, 800, 1600, 300, "Коридор");
+  P.openings.push(M.newOpening("door", cor.id + ":0", 750, 120));
+  P.panels.push(M.newPanel(100, 1085, "Щ"));
+  const c = M.newCircuit("QF1", "#f00", 10); P.circuits.push(c);
+  const F = (t, x, y) => { const e = M.newElement(t, null, 0, 270, "light"); e.params = { x, y }; e.circuitId = c.id; P.elements.push(e); return e; };
+  const J = [], S = [];
+  for (let i = 0; i < 3; i++) {
+    const x = 250 + i * 550, l1 = F("light", x, 200), l2 = F("light", x, 550);
+    J.push(F("junction", x, 375));
+    const s = M.newElement("switch", cor.id + ":0", 150 + i * 550, 90, "light"); s.circuitId = c.id; s.targetIds = [[l1.id, l2.id]]; P.elements.push(s); S.push(s);
+  }
+  P.guides.push(M.newGuide([{ x: 100, y: 950 }, { x: 1500, y: 950 }]), M.newGuide([{ x: 100, y: 950 }, { x: 100, y: 375 }, { x: 1500, y: 375 }]));
+  EP.Plan.Core.persist("seed"); EP.Plan.Routes.build({ silent: true });
+  S.forEach((s, i) => { const r = P.routes.find((x) => x.fromId === s.id); ok(r && r.toId === J[i].id, "выключатель " + (i + 1) + " — в коробку своей зоны"); });
+  ok(J.every((j) => P.routes.some((r) => r.toId === j.id)), "ни одна коробка не простаивает");
+});
+test("вход на магистраль: своя комната — только если до неё дотянуться", () => {
+  // Кондиционер на стене опенспейса у коридора: магистраль опенспейса в 9 м, коридорная —
+  // в 2 м. Своя комната отбрасывала всю часть графа, и точка оставалась «Без трассы».
+  const P = EP.Plan.Core.createProject("своя-далеко");
+  const room = (x, y, w, h, n) => { const r = M.newRoom(G.rectPoints(x, y, w, h), n); P.rooms.push(r); return r; };
+  const os = room(0, 0, 2000, 1100, "Зал"), cor = room(0, 1100, 2000, 300, "Коридор");
+  P.openings.push(M.newOpening("door", cor.id + ":0", 900, 120));
+  P.panels.push(M.newPanel(100, 1385, "Щ"));
+  const c = M.newCircuit("QF1", "#f00", 16); P.circuits.push(c);
+  const ac = M.newElement("ac", os.id + ":2", 900, 230, "power"); ac.circuitId = c.id; P.elements.push(ac); // x=1100, y=1100
+  P.guides.push(M.newGuide([{ x: 100, y: 1300 }, { x: 1900, y: 1300 }]), M.newGuide([{ x: 100, y: 1300 }, { x: 100, y: 150 }, { x: 1900, y: 150 }]));
+  EP.Plan.Core.persist("seed"); EP.Plan.Routes.build({ silent: true });
+  ok(P.routes.some((r) => r.fromId === ac.id && r.toPanel), "кондиционер проложен к щиту");
+  eq(EP.Plan.Routes.unroutedList().length, 0, "без трассы никого");
+});
 test("вход в щит без косого отрезка (квартира с техникой и слаботочкой)", () => {
   // Тест «техника и слаботочка»: контур подводил к точке гребёнки по прямой, а гребёнка
   // сдвигала конец вдоль кромки — камера входила в слаботочный щит под углом.
