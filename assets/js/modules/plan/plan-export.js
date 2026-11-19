@@ -971,28 +971,33 @@
       const r = (p.rooms || []).find((x) => x.id === rid);
       if (r) return r;
     }
-    const pt = el.params && el.params.x != null ? { x: el.params.x, y: el.params.y } : null;
-    return pt ? G().roomAt(p, pt) : null;
+    const pt = G().elemPoint(p, el);
+    if (!pt) return null;
+    const firstFloor = (p.floors || [])[0];
+    const floorId = el.floorId || (firstFloor && firstFloor.id);
+    return withFloor(p, floorId, () => G().roomAt(p, pt));
   }
   function buildCableLog(p) {
     const circuits = p.circuits || [];
     if (!circuits.length) return [];
     const rl = EP.Plan.Routes ? EP.Plan.Routes.lengths(p) : { byCircuit: {} };
     const SC = EP.Plan.Scheme, R = EP.Plan.Routes;
-    const panelName = ((p.panels || [])[0] || {}).name || "Щит квартирный";
+    const CX = EP.Plan.Circuits;
     const res = Math.max(0, Number((p.settings || {}).cableReserve) || 0);
     const rows = circuits.map((c, i) => {
       const els = (p.elements || []).filter((e) => e.circuitId === c.id && e.type !== "junction");
-      const rr = {};
-      els.forEach((e) => { const r = roomOfEl(p, e); if (r) rr[r.name] = 1; });
-      const to = Object.keys(rr).join(", ") || (SC && SC.loadKindLabel ? SC.loadKindLabel(p, c) : "—");
+      const roomNames = new Set();
+      els.forEach((e) => { const r = roomOfEl(p, e); if (r) roomNames.add(r.name); });
+      const to = Array.from(roomNames).join(", ") || (SC && SC.loadKindLabel ? SC.loadKindLabel(p, c) : "—");
+      const panel = CX.panelOf(p, c).panel;
+      const protection = CX.protLabel(p, c);
       const cm = rl.byCircuit && rl.byCircuit[c.id] ? rl.byCircuit[c.id] : 0;
       const m = cm ? Math.ceil(cm / 100 * (1 + res / 100)) : 0;
       const surf = els.length && R && R.surfaceOfEl ? R.surfaceOfEl(p, els[0]) : null;
-      return `<tr><td class="sp-c">${i + 1}</td><td class="sp-c">${esc(c.name)}</td><td>${esc(panelName)}</td>
+      return `<tr><td class="sp-c">${i + 1}</td><td class="sp-c">${esc(c.name)}</td><td>${esc(panel ? panel.name : "—")}</td>
         <td>${esc(to)}</td><td class="sp-c">${esc(c.cable || (SC && SC.autoCable ? SC.autoCable(p, c) : "") || "—")}</td>
         <td class="sp-c">${m || "—"}</td><td class="sp-c">${surf === "floor" ? "в штробе / по полу" : surf === "ceiling" ? "в штробе / по потолку" : "скрыто"}</td>
-        <td class="sp-c">${(c.breaker || 16)} А${c.rcd ? ", УЗО 30 мА" : ""}</td></tr>`;
+        <td class="sp-c">${c.poles === 3 ? "3P " : ""}${esc(c.breaker || 16)} А${protection ? ", " + esc(protection) : ""}</td></tr>`;
     });
     return tablePages(T.cablelog, rows, perCableLog(), (part, i, n) =>
       `<table class="tb tb-s"><thead><tr><th>№</th><th>Обозначение<br>линии</th><th>Начало</th><th>Конец</th>
