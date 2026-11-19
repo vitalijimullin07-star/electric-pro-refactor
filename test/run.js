@@ -11768,6 +11768,83 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ---------- 89. Подход от магистрали к щиту в Г-образном коридоре ----------
+  // Уменьшенный реальный случай квартиры 177 м²: магистраль из санузла возвращается
+  // в коридор, а обычное колено к щиту вновь срезало санузел и пересекало себя.
+  {
+    const C = EP.Plan.Core, RT = EP.Plan.Routes;
+    const flat = (opts) => {
+      opts = opts || {};
+      C.createProject("Г-образный коридор");
+      const p = C.project;
+      const bath = M.newRoom(G.rectPoints(1000, 600, 350, 250), "Санузел");
+      const hall = M.newRoom([{ x: 0, y: 400 }, { x: 1500, y: 400 }, { x: 1500, y: 1100 }, { x: 1350, y: 1100 }, { x: 1350, y: 600 }, { x: 0, y: 600 }], "Коридор");
+      p.rooms.push(bath, hall, M.newRoom(G.rectPoints(600, 600, 400, 500), "Кухня"));
+      const c = M.newCircuit("QF1"), e = M.newElement("socket", bath.id + ":0", 280, 30, "power");
+      e.circuitId = c.id; p.circuits.push(c); p.elements.push(e); p.panels.push(M.newPanel(1470, 980));
+      p.guides.push(M.newGuide([{ x: 750, y: 575 }, { x: 750, y: 685 }, { x: 1310, y: 685 }]), M.newGuide([{ x: 750, y: 575 }, { x: 1170, y: 575 }]));
+      if (opts.shaft) p.voids.push(M.newVoid({ x: 1360, y: 760 }, { x: 1390, y: 820 }, "shaft"));
+      if (opts.explicit) p.guides.push(M.newGuide([{ x: 1170, y: 575 }, { x: 1170, y: 980 }, { x: 1470, y: 980 }]));
+      RT.build({ silent: true });
+      return { p, hall, e, rt: RT.ownRoute(p, e.id) };
+    };
+    const crossings = (pts) => {
+      let n = 0;
+      for (let i = 1; i < pts.length; i++) for (let j = i + 2; j < pts.length; j++) if (G.segIntersect(pts[i - 1], pts[i], pts[j - 1], pts[j])) n++;
+      return n;
+    };
+    const tail = (rt) => {
+      const i = rt.points.findIndex((q) => Math.abs(q.x - 1170) < 0.01 && Math.abs(q.y - 575) < 0.01);
+      ok(i >= 0, "конец заданной магистрали сохранён");
+      return rt.points.slice(i);
+    };
+    const inHall = (hall, pts) => {
+      for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1], b = pts[i], n = Math.max(1, Math.ceil(G.dist(a, b) / 5));
+        for (let j = 0; j <= n; j++) ok(G.pointInPolygon({ x: a.x + (b.x - a.x) * j / n, y: a.y + (b.y - a.y) * j / n }, hall.points), "подход не покидает коридор");
+      }
+    };
+    test("щит в Г-коридоре: нет петли, заданный обход по магистрали сохранён", () => {
+      const { p, e, rt } = flat();
+      eq(crossings(rt.points), 0, "петля колена к щиту устранена");
+      const a = rt.points.findIndex((q) => q.x === 750 && q.y === 685);
+      const b = rt.points.findIndex((q) => q.x === 750 && q.y === 575);
+      ok(a >= 0 && b > a && rt.points.length - tail(rt).length > b, "магистраль через кухню и коридор не вырезана");
+      ok(RT.feedPath(p, e.id).toPanel, "точка имеет путь до щита");
+    });
+    test("щит в Г-коридоре: подход внутри комнаты, без новых проходок, диагоналей и обхода тупика", () => {
+      const { p, hall, rt } = flat(), pts = tail(rt);
+      inHall(hall, pts);
+      eq(G.polylineCrossings(p, pts, null).length, 0, "подход не сверлит стены");
+      pts.slice(1).forEach((q, i) => ok(q.x === pts[i].x || q.y === pts[i].y, "прямоугольные повороты"));
+      ok(G.polylineLen(pts) <= 706, "не обходит дальний торец коридора ради ближайшей к щиту стороны контура");
+      eq(RT.scoreRoutes(p).holes, 2, "остались только две исходные проходки магистрали");
+    });
+    test("щит в Г-коридоре: исправленный подход обходит шахту", () => {
+      const { p, hall, rt } = flat({ shaft: true }), pts = tail(rt);
+      eq(RT.shaftConflicts(p).length, 0, "шахта не пересечена");
+      inHall(hall, pts);
+      eq(G.polylineCrossings(p, pts, null).length, 0, "обход шахты не проходит через стену");
+      eq(crossings(rt.points), 0, "обход не возвращает петлю");
+    });
+    test("щит в Г-коридоре: ручная петля при перестройке сохраняется", () => {
+      const { p, e, rt } = flat();
+      rt.points = [{ x: 1280, y: 613 }, { x: 1280, y: 620 }, { x: 1020, y: 620 }, { x: 1020, y: 685 }, { x: 750, y: 685 }, { x: 750, y: 575 }, { x: 1170, y: 575 }, { x: 1170, y: 980 }, { x: 1470, y: 980 }];
+      rt.manual = true;
+      const before = JSON.stringify(rt.points);
+      ok(crossings(rt.points) > 0, "вручную задана петля");
+      RT.build({ silent: true });
+      eq(JSON.stringify(RT.ownRoute(p, e.id).points), before, "ручные вершины сохранены точно");
+      ok(RT.ownRoute(p, e.id).manual, "ручной статус сохранён");
+    });
+    test("щит в Г-коридоре: намеренный обход, заданный самой магистралью, не срезается", () => {
+      const { p, e, rt } = flat({ explicit: true });
+      ok(rt.points.some((q) => q.x === 1170 && q.y === 980), "сохранён заданный поворот через санузел");
+      ok(rt.points.some((q, i) => i && q.x === 1170 && rt.points[i - 1].x === 1170 && Math.min(q.y, rt.points[i - 1].y) < 800 && Math.max(q.y, rt.points[i - 1].y) > 800), "заданный магистралью выход из коридора не заменён обходом по контуру");
+      ok(RT.feedPath(p, e.id).toPanel, "связь до щита сохранена");
+    });
+  }
+
   console.log("\n" + "=".repeat(48));
   if (failed) { console.log("ТЕСТЫ: " + passed + " ok, " + failed + " ОШИБОК\n"); fails.forEach((f) => console.log("  ✗ " + f)); process.exit(1); }
   console.log("ТЕСТЫ: все " + passed + " прошли ✓"); process.exit(0);

@@ -1159,9 +1159,68 @@
   }
   const guidesUsable = (p) => (G().floorScoped(p).guides || []).filter((gd) => (gd.points || []).length >= 2);
   const anyGuideKinds = (gs) => gs.some((gd) => guideKindsOf(gd).length);
+  // Точная проверка ломаной внутри помещения, включая вогнутые контуры. Проверка
+  // только концов/середины пропускает короткий выход через угол: делим отрезок всеми
+  // пересечениями границы и проверяем каждый открытый интервал. Граница допустима.
+  function pathInsideRoom(room, pts) {
+    const poly = room.points || [];
+    if (poly.length < 3 || !pts || pts.length < 2) return false;
+    const EPS = 1e-7;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i], dx = b.x - a.x, dy = b.y - a.y;
+      const L2 = dx * dx + dy * dy;
+      if (L2 < EPS) continue;
+      const cuts = [0, 1];
+      for (let j = 0; j < poly.length; j++) {
+        const c = poly[j], d = poly[(j + 1) % poly.length];
+        const ex = d.x - c.x, ey = d.y - c.y, den = dx * ey - dy * ex;
+        if (Math.abs(den) > EPS) {
+          const t = ((c.x - a.x) * ey - (c.y - a.y) * ex) / den;
+          const u = ((c.x - a.x) * dy - (c.y - a.y) * dx) / den;
+          if (t > 0 && t < 1 && u >= -EPS && u <= 1 + EPS) cuts.push(t);
+        } else if (Math.abs((c.x - a.x) * dy - (c.y - a.y) * dx) < EPS) {
+          [c, d].forEach((q) => { const t = ((q.x - a.x) * dx + (q.y - a.y) * dy) / L2; if (t > 0 && t < 1) cuts.push(t); });
+        }
+      }
+      cuts.sort((x, y) => x - y);
+      for (let j = 1; j < cuts.length; j++) {
+        if (cuts[j] - cuts[j - 1] < EPS) continue;
+        const t = (cuts[j] + cuts[j - 1]) / 2, q = { x: a.x + dx * t, y: a.y + dy * t };
+        if (!G().pointInPolygon(q, poly) && !poly.some((c, k) => G().closestOnSeg(q, c, poly[(k + 1) % poly.length]).d < 0.01)) return false;
+      }
+    }
+    return true;
+  }
+  // У щита в вогнутой комнате ближайшая сторона контура не всегда даёт короткий
+  // подход: до неё приходится обходить дальний конец коридора. Проверяем проекции
+  // щита на ВСЕ стороны и берём кратчайший допустимый путь по своей полосе контура.
+  function panelTailInRoom(p, room, a, b, circuitId) {
+    const ct = contourOf(p, room, circuitId);
+    if (!ct) return null;
+    const ca = G().closestOnPoly(ct, a);
+    if (!ca) return null;
+    const fid = p.activeFloorId || (p.floors && p.floors[0] && p.floors[0].id);
+    const rects = shaftRects(p, fid);
+    let best = null, bestLen = Infinity;
+    ct.forEach((c, seg) => {
+      const d = ct[(seg + 1) % ct.length];
+      const cb = Object.assign({ seg }, G().closestOnSeg(b, c, d));
+      // Проекция за концом стороны даёт диагональный срез от угла к щиту.
+      // Принимаем только перпендикулярный сход с контура, как у обычного подхода.
+      if (Math.abs((b.x - cb.x) * (d.x - c.x) + (b.y - cb.y) * (d.y - c.y)) > 0.01 * G().dist(c, d)) return;
+      const path = [a].concat(G().polyWalk(ct, ca, cb), [b]);
+      const safe = avoidShafts(p, path, circuitId);
+      if (!pathInsideRoom(room, safe) || G().polylineCrossings(p, safe, null).length || rects.some((r) => passesRect(safe, r))) return;
+      const len = G().polylineLen(safe);
+      if (len < bestLen) { best = safe; bestLen = len; }
+    });
+    return best;
+  }
+  let lastGuideTailAdjusted = false;
   // bPanel — цель трассы это щит (а не точка/распайка): см. обрезку у корня ниже
   function guideRoute(p, a, b, circuitId, kind, bPanel) {
     lastGuideTrunkShare = 1;
+    lastGuideTailAdjusted = false;
     let gs = guidesUsable(p);
     if (anyGuideKinds(gs)) gs = gs.filter((gd) => guideServes(gd, kind));
     if (!gs.length) return null;
@@ -1204,8 +1263,7 @@
     const Ao = trunk[0], Bo = trunk[trunk.length - 1];
     // соседние точки трасс (для направления колена — горизонтальный/вертикальный подход)
     const segA = sp.points[1] || sp.points[0], segB = sp.points[sp.points.length - 2] || sp.points[sp.points.length - 1];
-    // заход к точке — по контуру (если магистраль в той же комнате), иначе колено;
-    // сторона щита (Bo -> knee -> b) остаётся прежней.
+    // заход к точке — по контуру (если магистраль в той же комнате), иначе колено.
     let head = guideApproach(p, a, Ao, circuitId, guideKnee(a, Ao, sp.points[0], segA), sp.points[0], segA);
     let mid = trunk.slice(1);
     const lastP = sp.points[sp.points.length - 1];
@@ -1213,6 +1271,18 @@
     // обрезанная у корня линия идёт дальше ПО СВОЕЙ ПОЛОСЕ до места в гребёнке и только там
     // поворачивает; обычная — как раньше, перпендикулярным коленом от проекции
     let tail = [cutAtRoot ? (lastHoriz ? { x: b.x, y: Bo.y } : { x: Bo.x, y: b.y }) : guideKnee(b, Bo, segB, lastP), { x: b.x, y: b.y }];
+    // В Г-образной прихожей прямое колено от конца магистрали к щиту может срезать
+    // через соседние санузлы и пересечь собственный подход (реальное демо 177 м²).
+    // Сам ствол НЕ укорачиваем: меняем только соединение Bo → щит, если оба конца
+    // в помещении щита, а колено из него выходит. Новый путь целиком остаётся в
+    // помещении, не добавляет проходок и обходит шахты штатным алгоритмом.
+    if (bPanel && rb && !pathInsideRoom(rb, [Bo].concat(tail))) {
+      const safeTail = panelTailInRoom(p, rb, Bo, b, circuitId);
+      if (safeTail) {
+        tail = safeTail.slice(1);
+        lastGuideTailAdjusted = true;
+      }
+    }
     /* ВЫХОД ИЗ КОМНАТЫ — У СТЕНЫ, А НЕ ЧЕРЕЗ СЕРЕДИНУ. Магистраль часто заходит в комнату
        вглубь (автопредложение ведёт её до центра, мастер — «чтобы было видно»). Раньше трасса
        шла к БЛИЖАЙШЕЙ точке магистрали: от выключателя по контуру, затем через полкомнаты
@@ -1824,7 +1894,7 @@
     // ровно один отрезок графа, и она как раз работает по назначению. Плюс страховка по РЕАЛЬНОМУ числу
     // проходок (sleeveCount, с учётом двери до пола) — короткий путь не должен добавить
     // ни одной гильзы.
-    if (lastGuideTrunkShare < GUIDE_TRUNK_MIN_SHARE) {
+    if (!lastGuideTailAdjusted && lastGuideTrunkShare < GUIDE_TRUNK_MIN_SHARE) {
       const dp = ortho(p, a, b, skip);
       const sf = surfaceOf(p, fromEl && fromEl.layer, fromEl, target); // гильзы считаем по поверхности ЭТОГО хопа
       // …и выигрыш должен быть ЗАМЕТНЫМ (замеренный крюк — вдвое длиннее прямого пути). Раньше
