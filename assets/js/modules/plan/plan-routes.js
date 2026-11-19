@@ -4109,8 +4109,8 @@
   function endVert(p, el, surf) {
     if (!el) return 0;
     if (el.type === "riser") return 0;                  // стояк сам вертикаль — его метраж в riserRun
-    if (el.type === "junction" && !el.wallId) return 0; // потолочная распайка: кабель приходит по потолку
     const sf = (surf === "floor" || surf === "ceiling") ? surf : surfaceOfEl(p, el);
+    if (el.type === "junction" && !el.wallId && sf === "ceiling") return 0; // кабель уже на высоте потолочной коробки
     if (sf === "floor") return el.height || 0;
     return Math.max(0, p.settings.ceilingHeight - (el.height || 0));
   }

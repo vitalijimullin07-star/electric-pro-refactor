@@ -1973,6 +1973,30 @@ test("hopParts: точка → распайка — выпуск в коробк
   eq(h.vTgt, 0, "потолочная коробка: кабель приходит по потолку");
   eq(h.stub, 20 + 30, "выпуск у подрозетника + выпуск в коробке (раньше в коробке был только у её собственного кабеля)");
 });
+test("по полу каждый кабель достигает свободной распайки на её монтажной высоте", () => {
+  const { P, w } = install(), RT = EP.Plan.Routes;
+  P.settings.routeType = "floor";
+  P.settings.cableReserve = 0; P.settings.cableRoundM = 0;
+  const q = M.newCircuit("QF1", "#ff0", 16), panel = M.newPanel(20, 150, "Щ"); panel.height = 150;
+  const box = M.newElement("junction", null, 0, 270, "routes"); box.params = { x: 150, y: 100 };
+  const socket = M.newElement("socket", w(0), 120, 30, "power");
+  box.circuitId = socket.circuitId = q.id;
+  P.circuits.push(q); P.panels.push(panel); P.elements.push(socket, box);
+  RT.build({ silent: true });
+  eq(P.routes.length, 2, "розетка → распайка → щит");
+  const toBox = P.routes.find((r) => r.toId === box.id), fromBox = P.routes.find((r) => r.fromId === box.id);
+  ok(toBox && fromBox && toBox.routeType === "floor" && fromBox.routeType === "floor", "оба кабеля идут по полу");
+  const plane = G.polylineLen(toBox.points) + G.polylineLen(fromBox.points);
+  for (const height of [270, 90, 0]) {
+    box.height = height;
+    const expected = plane + 30 + 150 + 2 * height;
+    near(RT.lengths(P).total, expected, 0.001, "два конца у коробки, плюс розетка и щит");
+    const metres = Math.round((expected + 20 + 30 + 30 + 50) / 10) / 10;
+    eq(EP.Plan.Calc.perCircuit(P)[0].cableLen, metres, "сводка по автомату с выпусками");
+    eq(Object.values(EP.Plan.Calc.calcByRoutes(P).cableBy)[0], metres, "кабель в смете");
+  }
+  eq(RT.pointVert(P, box, "floor"), 0, "у свободной коробки нет стеновой штробы");
+});
 test("hopParts: «до щита» 24В — источник находится по синтетическому id, спуск к выключателю есть", () => {
   const { P, w } = install();
   const pn = M.newPanel(50, 50, "ЩС"); pn.transformer = true; P.panels.push(pn);
