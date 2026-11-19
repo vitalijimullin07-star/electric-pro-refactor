@@ -952,7 +952,11 @@
       if (roomFilter && (!bestIn.has(c) || cl.d < bestIn.get(c).d) && roomFilter({ x: cl.x, y: cl.y })) bestIn.set(c, rec);
     });
     const out = new Map();
-    best.forEach((v, c) => out.set(c, bestIn.get(c) || v));
+    // проекция в своей комнате — предпочтительнее, но только если до неё можно дотянуться
+    // (≤ GUIDE_SNAP_MAX): иначе pickOnGraph отбросил бы всю часть графа, хотя рядом, за
+    // стеной, есть доступная ветка той же части (кондиционер на стене опенспейса у коридора:
+    // своя магистраль в 9 м, коридорная — в 2 м, а точка оставалась «Без трассы»)
+    best.forEach((v, c) => { const bi = bestIn.get(c); out.set(c, bi && bi.d <= GUIDE_SNAP_MAX ? bi : v); });
     return out;
   }
   function pickOnGraph(graph, a, b, fa, fb) {
@@ -2402,6 +2406,17 @@
       let cand = JL.filter((n) => lampRooms.has(jRoomId(p, n)));
       if (!cand.length) { const sr = roomIdAt(p, spos); cand = JL.filter((n) => jRoomId(p, n) === sr); }
       if (!cand.length) return;
+      // коробка — та, из которой ближе всего светильникам клавиш (шлейф света от неё — это
+      // почти весь кабель схемы, спуск выключателя — один кабель). Раньше бралась ближайшая
+      // к САМОМУ выключателю по пути: на офисе с коробкой на каждую зону все выключатели
+      // уходили в одну коробку у входа магистрали, остальные простаивали, а свет дальних зон
+      // тянулся шлейфом через весь зал. При равенстве — по пути от выключателя (connectNearest).
+      if (cand.length > 1) {
+        const lp = lamps.map((l) => G().routeAnchor(p, l)).filter(Boolean);
+        const score = (n) => lp.reduce((s, q) => s + dist(q, n.pos), 0);
+        const best = Math.min.apply(null, cand.map(score));
+        cand = cand.filter((n) => score(n) <= best + 1);
+      }
       if (routingIds.has(sw.id)) {
         const rt = connectNearest(c, p, sw, spos, cand, sw.circuitId, colorOf(p, sw));
         if (!rt) return;            // до коробки не добраться — прежняя схема (свет от выключателя)
