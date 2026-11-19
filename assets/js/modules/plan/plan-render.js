@@ -202,6 +202,46 @@
     dead.forEach((id) => map.delete(id));
   }
 
+  // У вогнутой комнаты среднее вершин может оказаться в соседнем помещении.
+  // Для такого контура ищем прямоугольную площадку между двумя соседними уровнями вершин.
+  const concaveLabelCache = new WeakMap();
+  function roomLabelFrame(points, G) {
+    const center = G.centroid(points);
+    if (G.pointInPolygon(center, points)) return { center, box: G.bbox(points) };
+    const signature = JSON.stringify(points);
+    const cached = concaveLabelCache.get(points);
+    if (cached && cached.signature === signature) return cached.frame;
+
+    const levels = [...new Set(points.map(p => p.y))].sort((a, b) => a - b);
+    let best = null;
+    for (let i = 1; i < levels.length; i++) {
+      const height = levels[i] - levels[i - 1];
+      const y = levels[i - 1] + height / 2;
+      const hits = [];
+      for (let j = 0; j < points.length; j++) {
+        const a = points[j], b = points[(j + 1) % points.length];
+        if ((a.y > y) === (b.y > y)) continue;
+        const slope = (b.x - a.x) / (b.y - a.y);
+        hits.push({ x: a.x + (y - a.y) * slope, slope: Math.abs(slope) });
+      }
+      hits.sort((a, b) => a.x - b.x);
+      for (let j = 1; j < hits.length; j += 2) {
+        const left = hits[j - 1], right = hits[j];
+        const width = right.x - left.x;
+        if (width <= 0) continue;
+        // Даже у наклонных стен обе грани площадки должны лежать внутри комнаты.
+        const slopes = left.slope + right.slope;
+        const h = slopes ? Math.min(height, width / slopes) : height;
+        const w = width - slopes * h / 2;
+        if (best && w * h <= best.box.w * best.box.h) continue;
+        best = { center: { x: left.x + left.slope * h / 2 + w / 2, y }, box: { w, h }, inset: true };
+      }
+    }
+    const frame = best || { center, box: G.bbox(points) };
+    concaveLabelCache.set(points, { signature, frame });
+    return frame;
+  }
+
   function el(tag, attrs, text) {
     const n = document.createElementNS(NS, tag);
     if (attrs) for (const k in attrs) n.setAttribute(k, attrs[k]);
@@ -477,8 +517,8 @@
       let v = nudgeMemo.get(room.id);
       if (v !== undefined) return v;
       v = 0;
-      if ((room.points || []).length >= 3) {
-        const c0 = G.centroid(room.points);
+      if (freeEls.length && (room.points || []).length >= 3) {
+        const c0 = roomLabelFrame(room.points, G).center;
         for (let i = 0; i < freeEls.length; i++) { const q = freeEls[i].params; const dx = q.x - c0.x, dy = q.y - c0.y; if (dx * dx + dy * dy < 1225) { v = 1; break; } }
       }
       nudgeMemo.set(room.id, v);
@@ -701,14 +741,14 @@
           });
         }
         if (closed && labelsOn) {
-          const c = G.centroid(pts);
-          const bb = G.bbox(pts);
+          const frame = roomLabelFrame(pts, G);
+          const c = frame.center, bb = frame.box;
           const area = G.fmtArea(G.roomNetArea(project, room));
           // labelNudge: свободная точка у центроида — подпись уезжает ниже маркера. Сдвиг —
           // в размере ЗНАЧКА (на дальнем обзоре он мельче), иначе 26 px при k≈5 — это 1.3 м,
           // и имя коридора уезжало в соседнюю кухню (стресс-проверка на 4 квартирах)
           const kSymFit = kFit * (noLod ? 1 : symScaleOf(kFit));
-          const y0 = c.y + (labelNudge(room) ? 26 * kSymFit : 0);
+          const nudge = labelNudge(room) ? 26 * kSymFit : 0;
           // Имя не шире комнаты. В маленькой комнате строка «Имя · N м²» вылезала на соседнюю,
           // и имена двух комнат сливались в одно («СанузелГардероб» — скриншот аудита).
           // Раскладки по очереди: одной строкой → имя / площадь → (дальний обзор) только имя;
@@ -728,6 +768,8 @@
             if (cand.s >= 1) break;
           }
           const sc = Math.max(0.62, pick.s), f1 = fsName * sc, f2 = f1 * 0.85;
+          const labelHeight = pick.rot ? Math.max(...pick.lines.map(line => textW(line, f1))) : f1 * pick.lines.length * 1.4;
+          const y0 = c.y + (frame.inset ? Math.min(nudge, Math.max(0, (bb.h - labelHeight) / 2)) : nudge);
           const rotA = pick.rot ? { transform: `rotate(-90 ${c.x} ${y0})` } : {};
           const nameAttrs = (y, f) => Object.assign({ x: c.x, y, class: "ep-plan-name", "font-size": f, "text-anchor": "middle", "dominant-baseline": "middle" }, rotA);
           if (pick.lines.length === 1) g.appendChild(el("text", nameAttrs(y0, f1), pick.lines[0]));

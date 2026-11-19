@@ -8747,6 +8747,32 @@ test("фото: deleteProject чистит кэш фото своего прое
       ok(/labelsOn && nearView && EP\.Plan\.Elements/.test(rd), "номера проёмов на дальнем обзоре скрыты");
       ok(/!noLod && textW\(txt, CFG\.labelPx \* kFit\) > w\.len/.test(rd), "подпись длиннее короткой стены не рисуется (кроме печати)");
     });
+    test("имя Г-образной комнаты остаётся в её контуре после переноса", () => {
+      const hall = M.newRoom([[0, 400], [1500, 400], [1500, 1100], [1350, 1100], [1350, 600], [0, 600]]
+        .map(([x, y]) => ({ x, y })), "Коридор");
+      const { P } = install({ rooms: [hall] });
+      const points = P.rooms[0].points;
+      ok(!G.pointInPolygon(G.centroid(points), points), "центр вершин в вырезе");
+      const create = sandbox.document.createElementNS, canvas = fakeCanvas(), texts = [];
+      try {
+        sandbox.document.createElementNS = (ns, tag) => {
+          const n = create(ns, tag);
+          if (tag === "text") {
+            n.attrs = {}; n.setAttribute = (key, value) => { n.attrs[key] = value; };
+            texts.push(n);
+          }
+          return n;
+        };
+        for (const dx of [0, 2000]) {
+          points.forEach(p => { p.x += dx; });
+          texts.length = 0;
+          EP.Plan.Render.draw(canvas, P, {});
+          const name = texts.find(n => n.attrs.class === "ep-plan-name" && n.textContent.includes("Коридор"));
+          ok(name, "название отрисовано");
+          ok(G.pointInPolygon({ x: +name.attrs.x, y: +name.attrs.y }, points), "название внутри коридора");
+        }
+      } finally { sandbox.document.createElementNS = create; }
+    });
     test("магистраль-предложение: в конечную комнату ветка заходит только за стену, в проходную — до центра", () => {
       const rs = [0, 1, 2].map((i) => M.newRoom(G.rectPoints(i * 300, 0, 300, 300), "R" + (i + 1)));
       EP.Plan.Core.importJSON(JSON.stringify({ project: Object.assign(M.newProject("A"), { rooms: rs }) }));
