@@ -1399,6 +1399,10 @@
       .ep-plan-hatchln { stroke: #64748b; stroke-width: .8; }
       .ep-plan-gost { stroke: #111; }
       .ep-plan-gosttxt { fill: #111; }
+      .ep-plan-cat .ep-plan-catbg { fill: #fff; }
+      .ep-plan-panelbolt { stroke: #111; }
+      .ep-plan-cattxt { font-family: Arial, sans-serif; font-weight: 700; }
+      .ep-plan-cattag { font-family: Arial, sans-serif; font-weight: 700; paint-order: stroke; stroke: #fff !important; stroke-width: 2.5px; }
       .ep-plan-panelhalf { fill: #1d4ed8; }
       .ep-plan-roomhandle, .ep-plan-beamhandle { display: none; }
       .ep-plan-wallband { stroke: #111; fill: none; }

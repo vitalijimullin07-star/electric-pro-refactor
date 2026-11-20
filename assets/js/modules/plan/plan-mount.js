@@ -66,8 +66,16 @@
     if (bar) bar.style.display = hide ? "none" : "";
   }
 
+  // Кнопка «🔣 Значки» в ВЕРХНЕЙ панели приложения (#topbarSymBtn, app-shell.js) — видна только
+  // когда открыт проект плана (просьба владельца: «эта кнопка появляется только когда создали
+  // проект и открыли»). Список проектов, другие разделы — скрыта.
+  function syncSymBtn() {
+    const b = document.getElementById("topbarSymBtn");
+    if (b) b.hidden = !(V.active && core() && core().project);
+  }
   // ---------- список проектов ----------
   function renderList(root) {
+    setTimeout(syncSymBtn, 0);
     const rows = core().listProjects();
     root.innerHTML = `<div class="ep-plan">
       <div class="page-head"><p>${esc(T.subtitle)}</p></div>
@@ -127,6 +135,7 @@
   function renderEditor(root) {
     const p = core().project;
     if (!p) return renderList(root);
+    setTimeout(syncSymBtn, 0);
     root.innerHTML = `<div class="ep-plan${V.ctrlsOn ? "" : " is-ctrls-collapsed"}">
       <div class="ep-plan-top">
         <button type="button" class="btn btn-ghost ep-clickable ep-plan-backbtn" data-plan-back aria-label="${T.backLabel}">${T.backArrow}<span class="ep-plan-backtxt">${T.backText}</span></button>
@@ -1055,6 +1064,13 @@
     if (EP.Plan.Rooms) EP.Plan.Rooms.setActive(V.active);
     if (V.active) mount();
     else if (V.canvas) { try { V.canvas.destroy(); } catch (err) {} V.canvas = null; if (EP.Plan.Rooms) EP.Plan.Rooms.detach(); }
+  });
+  window.addEventListener("ep:route-loaded", () => setTimeout(syncSymBtn, 0));
+  document.addEventListener("click", (e) => {
+    const t = e.target && e.target.closest && e.target.closest("[data-plan-symbols]");
+    if (!t || !V.active || !core() || !core().project) return;
+    e.preventDefault();
+    if (EP.Plan.Rooms && EP.Plan.Rooms.sheetSymbols) EP.Plan.Rooms.sheetSymbols();
   });
 
   EP.Plan = EP.Plan || {};
