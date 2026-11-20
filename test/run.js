@@ -10561,7 +10561,10 @@ test("фото: deleteProject чистит кэш фото своего прое
       };
       return n;
     };
-    const canvasEnv = (W, H) => {
+    // opts.classic — режим движения «как раньше» (по умолчанию в приложении); без него —
+    // «слоем с докатом»: эти тесты проверяют именно его механику (живой сдвиг, докат, переход)
+    const canvasEnv = (W, H, opts) => {
+      EP.Plan.Canvas.setMotion(opts && opts.classic ? "classic" : "fast");
       const keep = { ns: sandbox.document.createElementNS, ce: sandbox.document.createElement, perf: sandbox.performance, raf: sandbox.requestAnimationFrame, caf: sandbox.cancelAnimationFrame, ro: sandbox.ResizeObserver };
       const env = { clock: 1000, raf: [], ro: null };
       sandbox.document.createElementNS = () => evNode();
@@ -10591,6 +10594,7 @@ test("фото: deleteProject чистит кэш фото своего прое
         env.cv.destroy();
         sandbox.document.createElementNS = keep.ns; sandbox.document.createElement = keep.ce;
         sandbox.performance = keep.perf; sandbox.requestAnimationFrame = keep.raf; sandbox.cancelAnimationFrame = keep.caf; sandbox.ResizeObserver = keep.ro;
+        try { sandbox.localStorage.removeItem("ep_plan_motion_v1"); } catch (e) {}
       };
       return env;
     };
@@ -10857,6 +10861,43 @@ test("фото: deleteProject чистит кэш фото своего прое
         const b = fling(true);
         ok(b[0] > 15 && b[0] <= 22, "первый кадр после отрыва ≈ шаг пальца, без провала: " + b[0].toFixed(1) + " px");
       } finally { env.restore(); }
+    });
+
+    test("холст: режим «как раньше» (по умолчанию) — viewBox на каждом шаге, без слоя, доката и перехода", () => {
+      try { sandbox.localStorage.removeItem("ep_plan_motion_v1"); } catch (e) {}
+      ok(EP.Plan.Canvas.motionClassic(), "по умолчанию — как раньше");
+      const env = canvasEnv(800, 400, { classic: true });
+      try {
+        const cv = env.cv; cv.redraw();
+        eq(parseFloat(env.svg.style.width), 800, "svg ровно с экран — запас картинки этому режиму не нужен");
+        const vb0 = env.svg.getAttribute("viewBox");
+        env.svg.fire("pointerdown", { pointerId: 1, clientX: 600, clientY: 200 });
+        let x = 600;
+        for (let i = 0; i < 6; i++) { x -= 20; env.clock += 16; env.svg.fire("pointermove", { pointerId: 1, clientX: x, clientY: 200 }); env.frame(0); }
+        ok(env.svg.getAttribute("viewBox") !== vb0, "шаг пальца сразу меняет viewBox");
+        eq(env.wrap.style.transform || "", "", "слоем картинка не двигается");
+        env.svg.fire("pointerup", { pointerId: 1, clientX: x, clientY: 200 });
+        const v1 = cv.getView().x;
+        for (let n = 0; n < 40; n++) env.frame(16);
+        eq(cv.getView().x, v1, "после броска докатывания нет — план стоит там, где отпустили");
+        ok(!env.wrap.children.some || !env.wrap.children.some((c) => /ep-plan-xfade/.test(c.className || "")), "копии для перехода нет");
+        // пинч — тоже без слоя
+        env.svg.fire("pointerdown", { pointerId: 1, clientX: 300, clientY: 200 });
+        env.svg.fire("pointerdown", { pointerId: 2, clientX: 500, clientY: 200 });
+        const w0 = cv.getView().w;
+        env.svg.fire("pointermove", { pointerId: 2, clientX: 600, clientY: 200 });
+        ok(cv.getView().w < w0, "пинч приближает");
+        eq(env.wrap.style.transform || "", "", "и при пинче слоем ничего не масштабируется — значки не раздуваются");
+        env.svg.fire("pointerup", { pointerId: 2, clientX: 600, clientY: 200 });
+        env.svg.fire("pointerup", { pointerId: 1, clientX: 300, clientY: 200 });
+        // переключение в «слоем с докатом» действует сразу на тот же холст
+        EP.Plan.Canvas.setMotion("fast");
+        ok(!EP.Plan.Canvas.motionClassic(), "режим переключается");
+        cv.viewTo(cv.getView());
+        ok(parseFloat(env.svg.style.width) > 800, "в быстром режиме вокруг экрана снова запас картинки");
+      } finally { env.restore(); }
+      const mnt = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-mount.js"), "utf8");
+      ok(/data-plan-motion/.test(mnt) && /toggleMotion/.test(mnt), "в шапке плана есть переключатель режима движения");
     });
   }
 
@@ -11248,6 +11289,7 @@ test("фото: deleteProject чистит кэш фото своего прое
       return n;
     };
     const canvas84 = (W, H) => {
+      EP.Plan.Canvas.setMotion("fast"); // механика плавного подвода — режим «слоем с докатом»
       const keep = { ns: sandbox.document.createElementNS, ce: sandbox.document.createElement, perf: sandbox.performance, raf: sandbox.requestAnimationFrame, caf: sandbox.cancelAnimationFrame, ro: sandbox.ResizeObserver };
       const env = { clock: 1000, raf: [], ro: null };
       sandbox.document.createElementNS = () => evNode84();
@@ -11265,6 +11307,7 @@ test("фото: deleteProject чистит кэш фото своего прое
         env.cv.destroy();
         sandbox.document.createElementNS = keep.ns; sandbox.document.createElement = keep.ce;
         sandbox.performance = keep.perf; sandbox.requestAnimationFrame = keep.raf; sandbox.cancelAnimationFrame = keep.caf; sandbox.ResizeObserver = keep.ro;
+        try { sandbox.localStorage.removeItem("ep_plan_motion_v1"); } catch (e) {}
       };
       return env;
     };

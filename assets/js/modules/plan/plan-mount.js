@@ -135,6 +135,7 @@
           <button type="button" class="ep-plan-mini ep-clickable" data-plan-rename aria-label="Переименовать проект">${T.rename}<span class="ep-plan-xlbl">Переименовать</span></button>
           <button type="button" class="ep-plan-mini ep-clickable" data-plan-meta aria-label="${T.metaTitle}" title="${T.metaTitle}">${T.meta}<span class="ep-plan-xlbl">О проекте</span></button>
           <button type="button" class="ep-plan-mini ep-clickable" data-plan-3d aria-label="3D-прогулка по квартире" title="Пройтись по квартире от первого лица: стены, проёмы, точки и трассы в 3D">🚶<span class="ep-plan-xlbl">3D-прогулка</span></button>
+          <button type="button" class="ep-plan-mini ep-clickable${motionFast() ? " on" : ""}" data-plan-motion aria-pressed="${motionFast() ? "true" : "false"}" aria-label="Движение плана: ${motionFast() ? "слоем с докатом" : "как раньше"}" title="Как двигается план пальцами: как раньше (перерисовка на каждом шаге, без доката) или слоем с докатом (легче для очень больших квартир)">🖐<span class="ep-plan-xlbl">${motionFast() ? "Движение: слоем с докатом" : "Движение: как раньше"}</span></button>
           <button type="button" class="ep-plan-mini ep-clickable${paperOn() ? " on" : ""}" data-plan-paper aria-label="Бумажный режим холста" title="Холст как печатный лист: белый фон, тёмные линии — видно, как выйдет из принтера">📄<span class="ep-plan-xlbl">Бумажный вид</span></button>
           <button type="button" class="ep-plan-mini ep-clickable${p.settings.realScale ? " on" : ""}" data-plan-realscale aria-pressed="${p.settings.realScale ? "true" : "false"}" aria-label="Значки в реальном размере (1:1)" title="Значки в реальном размере, мм — рамки 84/155/226/300/368 мм (1:1)">1:1<span class="ep-plan-xlbl">Реальный размер значков</span></button>
         </div>
@@ -403,6 +404,24 @@
   // проекта: живёт в localStorage устройства (как quickbar/вкладка инструментов), в
   // модель и undo-историю не попадает и на печать никак не влияет — PDF и так всегда
   // печатается на белом со своим самодостаточным <style>.
+  // «🖐» — режим движения плана (EP.Plan.Canvas.motionClassic, свойство устройства): «как раньше»
+  // (по умолчанию) — viewBox на каждом шаге пальца, без доката; «слоем с докатом» — готовая
+  // картинка сдвигается слоем, после броска докатывается. Холст читает режим на каждом шаге —
+  // переключение действует сразу, пересоздавать холст не нужно.
+  const motionFast = () => !!(EP.Plan.Canvas && EP.Plan.Canvas.motionClassic && !EP.Plan.Canvas.motionClassic());
+  function toggleMotion(root) {
+    const fast = !motionFast();
+    if (EP.Plan.Canvas && EP.Plan.Canvas.setMotion) EP.Plan.Canvas.setMotion(fast ? "fast" : "classic");
+    const r = root || document, btn = r.querySelector("[data-plan-motion]");
+    if (btn) {
+      btn.classList.toggle("on", fast); btn.setAttribute("aria-pressed", fast ? "true" : "false");
+      btn.setAttribute("aria-label", "Движение плана: " + (fast ? "слоем с докатом" : "как раньше"));
+      const l = btn.querySelector(".ep-plan-xlbl"); if (l) l.textContent = fast ? "Движение: слоем с докатом" : "Движение: как раньше";
+    }
+    // запас картинки вокруг экрана у режимов разный — перекладываем svg под текущий вид
+    if (V.canvas && V.canvas.viewTo && V.canvas.getView) V.canvas.viewTo(V.canvas.getView(), { animate: false });
+    if (EP.Plan.Rooms && EP.Plan.Rooms.flash) EP.Plan.Rooms.flash(fast ? "Движение плана: слоем с докатом после броска." : "Движение плана: как раньше — без доката, план перерисовывается под пальцем.");
+  }
   const PAPER_KEY = "ep_plan_paper_v1";
   const paperOn = () => { try { return localStorage.getItem(PAPER_KEY) === "1"; } catch (e) { return false; } };
   function togglePaper(root) {
@@ -782,6 +801,7 @@
       core().closeProject(); return renderList(r);
     }
     if (t.closest("[data-plan-ctrls]")) return toggleTopCtrls(r);
+    if (t.closest("[data-plan-motion]")) return toggleMotion(r);
     if (t.closest("[data-plan-paper]")) return togglePaper(r);
     if (t.closest("[data-plan-montage]")) return toggleMontage(r);
     if (t.closest("[data-plan-realscale]")) return toggleRealScale(r);
