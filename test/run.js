@@ -10870,6 +10870,9 @@ test("фото: deleteProject чистит кэш фото своего прое
       try {
         const cv = env.cv; cv.redraw();
         eq(parseFloat(env.svg.style.width), 800, "svg ровно с экран — запас картинки этому режиму не нужен");
+        env.resize(800, 700); // свернули панель инструментов — холст стал выше
+        eq(parseFloat(env.svg.style.height), 700, "svg растёт вместе с холстом — снизу нет пустой полосы");
+        env.resize(800, 400);
         const vb0 = env.svg.getAttribute("viewBox");
         env.svg.fire("pointerdown", { pointerId: 1, clientX: 600, clientY: 200 });
         let x = 600;
