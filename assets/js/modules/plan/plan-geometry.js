@@ -1479,7 +1479,7 @@
     eboiler: { w: 9000, own: true, p3: true, p3ok: true },
     pump: { w: 100, wet: true },
     supply: { w: 1500, own: true },
-    evcharge: { w: 7400, own: true, p3ok: true }
+    evcharge: { w: 7000, own: true, p3ok: true }
   };
   // разновидность точки (el.kind): пустая строка — основная; у конвектора основная — силовой
   const KIND_DEF = { heater: "power" };
