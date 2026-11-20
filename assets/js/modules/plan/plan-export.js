@@ -888,7 +888,7 @@
      розеток дала бы 0 кВт и таблица была бы бессмысленной. Значения ниже — обычная
      проектная прикидка для квартиры, а не норматив; об этом честно сказано в
      примечании ПОД таблицей, чтобы никто не принял их за расчёт по ГОСТ. */
-  const PT_W = { socket: 100, output: 500, output3: 1000, output24: 50, ac: 1500, warmfloor: 1000, light: 60, bra: 40, track: 80, led: 50, internet: 15, tv: 15, camera: 10, sensor: 5, intercom: 15, leak: 5, wifiap: 15, callpanel: 10, elock: 10, valve: 10, leakbtn: 1, radiorx: 3, pir: 5, lux: 5, riser: 0, junction: 0 };
+  const PT_W = { socket: 100, output: 500, output3: 1000, output24: 50, ac: 1500, warmfloor: 1000, light: 60, bra: 40, track: 80, led: 50, internet: 15, tv: 15, camera: 10, sensor: 5, intercom: 15, leak: 5, wifiap: 15, callpanel: 10, elock: 10, valve: 10, leakbtn: 1, radiorx: 3, alarm: 2, siren: 10, leakout: 0, pir: 5, lux: 5, riser: 0, junction: 0 };
   // коэффициент спроса: выделенная линия работает целиком, розеточная группа — нет
   const KS = { power: 0.7, light: 1, warm: 1, ac: 1, lv: 1, tv: 1, cctv: 1 };
   const KS_SUM = 0.7;   // коэффициент одновременности по щиту (типовой для квартиры)
@@ -1149,6 +1149,9 @@
       }
       if (type === "leak") return el && el.kind === "radio" ? "Датчик протечки радио" : el && el.kind === "zigbee" ? "Датчик протечки Zigbee" : "Датчик протечки проводной";
       if (type === "radiorx") return "Радиоприёмник контроллера «Нептун»";
+      if (type === "alarm") return ({ presence: "Извещатель охранный радарный (присутствие)", door: "Извещатель охранный магнитоконтактный", smoke: "Извещатель пожарный дымовой", heat: "Извещатель пожарный тепловой", co: "Датчик угарного газа", gas: "Сигнализатор горючего газа", vibration: "Извещатель охранный вибрационный" })[el && el.kind] || "Извещатель охранный ИК (движение)";
+      if (type === "siren") return "Оповещатель звуковой (сирена)";
+      if (type === "leakout") return null; // выход аварии — подключение, не изделие
       // выводы/распайки/стояки — не изделия, в спецификацию механизмов не идут
       // приборы (бойлер, котёл, конвектор…) — оборудование заказчика, не электроустановочное изделие
       if (G().DEVICES && G().DEVICES[type]) return null;

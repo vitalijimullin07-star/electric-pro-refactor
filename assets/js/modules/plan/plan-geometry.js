@@ -1532,10 +1532,16 @@
   const NEPTUN = { leak: 1, valve: 1, leakbtn: 1, radiorx: 1 };
   G.cableless = (el) => !!el && el.type === "leak" && (el.kind === "radio" || el.kind === "zigbee");
   G.isNeptun = (el) => !!el && !!NEPTUN[el.type] && !G.cableless(el);
+  // Каталог, пакет 4: охранная сигнализация — извещатели (el.kind — что ловит), сирена и
+  // выход аварии «Нептуна» (сухой контакт). Цель — щит с флагом security («Охранная панель»).
+  // Извещатель шлейфом (el.wire !== "own") — линия не нужна; своим кабелем — у каждого своя линия.
+  const ALARM = { alarm: 1, siren: 1, leakout: 1 };
+  G.isAlarm = (el) => !!el && !!ALARM[el.type];
+  G.alarmOwn = (el) => !!el && el.type === "alarm" && el.wire === "own";
   // кран 12 В или 220 В
   G.valve12 = (el) => !!el && el.type === "valve" && (el.kind === "cw12" || el.kind === "hw12");
   // своя марка кабеля точки слаботочки (null — общий подбор по слою/линии)
-  const DEV_CABLE = { callpanel: "КСПВ 4×0.5", elock: "КСПВ 4×0.5", leakbtn: "КСПВ 2×0.5", radiorx: "КСПВ 4×0.5" };
+  const DEV_CABLE = { alarm: "КСПВ 4×0.5", siren: "КСПВ 2×0.5", leakout: "КСПВ 2×0.5", callpanel: "КСПВ 4×0.5", elock: "КСПВ 4×0.5", leakbtn: "КСПВ 2×0.5", radiorx: "КСПВ 4×0.5" };
   G.devCable = (p, el) => {
     if (!el) return null;
     if (el.type === "valve") {

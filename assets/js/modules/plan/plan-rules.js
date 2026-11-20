@@ -172,6 +172,19 @@
     if (radios.length && !(p.elements || []).some((e) => e.type === "radiorx")) {
       issues.push({ msg: `Радиодатчики протечки (${radios.length}) есть, но нет радиоприёмника «Нептуна» — поставь точку «Радиоприёмник».` });
     }
+    // охранная сигнализация: щит «Охранная панель», извещатели «своим кабелем» — каждый своей линией
+    const alarms = (p.elements || []).filter((e) => G().isAlarm(e) && e.status !== "existing");
+    if (alarms.length && !(p.panels || []).some((pn) => pn.security)) {
+      issues.push({ msg: `Охранная сигнализация (${alarms.length}) есть, но ни один щит не помечен как «Охранная панель» — трассы пойдут в обычный слаботочный щит.` });
+    }
+    const ownA = alarms.filter((e) => G().alarmOwn(e));
+    if (ownA.length) {
+      const byC = new Map();
+      ownA.forEach((e) => { const k = e.circuitId || "_none"; byC.set(k, (byC.get(k) || 0) + 1); });
+      if ([...byC.entries()].some(([k, n]) => k === "_none" || n > 1)) {
+        issues.push({ msg: "Датчики сигнализации «своим кабелем» должны быть каждый на своей линии (зоне): есть без линии или несколько на одной." });
+      }
+    }
     // вызывная панель без домофона — кабель пойдёт в слаботочный щит
     const cps = (p.elements || []).filter((e) => e.type === "callpanel" && e.status !== "existing");
     if (cps.length && !(p.elements || []).some((e) => e.type === "intercom")) {

@@ -100,7 +100,9 @@
   // розетка → розетка (для Ethernet так нельзя) — аудит цепей, пакет 3.
   // Каталог, пакет 3: точка доступа (PoE), вызывная панель, электрозамок и узлы «Нептуна»
   // (кран, кнопка перекрытия, радиоприёмник) — тоже каждый своим кабелем.
-  const STAR_LV = { internet: 1, tv: 1, camera: 1, wifiap: 1, callpanel: 1, elock: 1, valve: 1, leakbtn: 1, radiorx: 1 };
+  const STAR_LV = { internet: 1, tv: 1, camera: 1, wifiap: 1, callpanel: 1, elock: 1, valve: 1, leakbtn: 1, radiorx: 1, siren: 1, leakout: 1 };
+  // своим кабелем: тип из списка выше или охранный извещатель с проводкой «своим кабелем»
+  const isStar = (el) => !!el && (!!STAR_LV[el.type] || G().alarmOwn(el));
   // Посты блока со своим кабелем к роутеру (слой трассы) — см. buildBlockLvLegs
   const BLOCK_LV = { internet: "lv", tv: "tv" };
   // есть ли в блоке силовые посты (у блока только из ТВ/интернета своей силовой трассы нет)
@@ -2349,6 +2351,7 @@
     const routerPanels = panels.filter((pn) => pn.router);
     const trafoPanels = panels.filter((pn) => pn.transformer);
     const neptunPanels = panels.filter((pn) => pn.neptun);
+    const securityPanels = panels.filter((pn) => pn.security);
     // «род» точки — какая группа щитов её принимает: "24" (вывод 24В -> трансформатор),
     // "lv" (слаботочка -> роутер), "pw" (все остальные -> любой щит). Считается ОДНОЙ
     // функцией и для группируемых точек, и для extraConnected-узлов шлейфа — чтобы
@@ -2358,6 +2361,7 @@
     // (просьба пользователя: «добавь датчики на нептун, линии должны идти к нептуну»).
     // Нет щита с флагом neptun — прежнее поведение (как обычная слаботочка).
     const kindOf = (el) => (trafoPanels.length && G().isLv(el)) ? "24"
+      : (securityPanels.length && G().isAlarm(el)) ? "sec"
       : (neptunPanels.length && G().isNeptun(el)) ? "leak"
       : (routerPanels.length && isLvLayer(el.layer) && !isFeeder(p, el)) ? "lv" : "pw"; // датчик, коммутирующий свет, — силовой узел
     // Щиты, принимающие СИЛОВЫЕ линии. Раньше сюда шёл весь список panels, и силовая линия
@@ -2371,7 +2375,7 @@
     // только в такие. Если же ВСЕ щиты помечены router/transformer (типовой случай — один
     // единственный комбинированный щит на квартиру), силовые идут в них, как и раньше:
     // обратная совместимость сохранена, флаг сам по себе щит из силовых не исключает.
-    const plainPanels = panels.filter((pn) => !pn.router && !pn.transformer);
+    const plainPanels = panels.filter((pn) => !pn.router && !pn.transformer && !pn.security);
     const powerPanels = plainPanels.length ? plainPanels : panels;
     // ЯВНЫЙ щит линии (circuit.panelId, движок цепей) главнее любых эвристик выше: мастер
     // сказал «эта линия — из ЩС», и трасса идёт туда, даже если другой щит ближе. Щит не на
@@ -2520,7 +2524,7 @@
       });
     });
     groups.forEach((g) => {
-      const targetPanels = pinned(g.circuitId, g.kind === "24" ? trafoPanels : g.kind === "leak" ? neptunPanels : g.kind === "lv" ? routerPanels : powerPanels);
+      const targetPanels = pinned(g.circuitId, g.kind === "24" ? trafoPanels : g.kind === "leak" ? neptunPanels : g.kind === "sec" ? securityPanels : g.kind === "lv" ? routerPanels : powerPanels);
       // распайки, доступные этой линии (своей QF; «без линии» — любые распайки)
       const J = g.circuitId ? juncts.filter((n) => n.circuitId === g.circuitId) : juncts.slice();
       // 24В — НИКОГДА не шлейфом: у каждого вывода 24В свой кабель от трансформаторного
@@ -2535,7 +2539,7 @@
         return;
       }
       // витая пара / коаксиал / камера — каждая своим кабелем к роутеру (щиту), не шлейфом
-      const starIt = g.items.filter((it) => STAR_LV[it.el.type]);
+      const starIt = g.items.filter((it) => isStar(it.el));
       starIt.forEach(({ el, pos }) => {
         // вызывная панель — к домофону (ближайшему по пути), иначе к роутеру
         if (el.type === "callpanel") {
@@ -2544,12 +2548,12 @@
         }
         connectNearest(c, p, el, pos, targetPanels, el.circuitId, colorOf(p, el));
       });
-      if (starIt.length) g.items = g.items.filter((it) => !STAR_LV[it.el.type]);
+      if (starIt.length) g.items = g.items.filter((it) => !isStar(it.el));
       if (!g.items.length) return;
       // уже подключённые точки того же рода («⚡ Построить» достраивает только новое)
       // розетка витой пары/ТВ/камера — конец своего кабеля к роутеру, а не звено шлейфа
       const extra = extraConnected ? extraConnected.filter((n) =>
-        (g.circuitId ? n.circuitId === g.circuitId : true) && kindOf(n.el) === g.kind && !(n.el && STAR_LV[n.el.type])
+        (g.circuitId ? n.circuitId === g.circuitId : true) && kindOf(n.el) === g.kind && !(n.el && isStar(n.el))
       ) : [];
       if (J.length) {
         /* РАСПАЙКИ ЛИНИИ (аудит цепей, пакет 2): точка идёт в коробку СВОЕЙ комнаты (по длине
@@ -2773,7 +2777,7 @@
 
     // узлы: щиты + распайки (этого же этажа); router — флаг щита-хаба сети (LV-точки
     // предпочитают его, см. routeGroups)
-    const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, router: !!pn.router, neptun: !!pn.neptun, transformer: !!pn.transformer })).concat(risersHere);
+    const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, router: !!pn.router, neptun: !!pn.neptun, security: !!pn.security, transformer: !!pn.transformer })).concat(risersHere);
     const juncts = (fp.elements || []).filter(isActiveJunction(p)).map((el) => ({ kind: "junction", id: el.id, el, circuitId: el.circuitId, pos: G().elemPoint(p, el) })).filter((n) => n.pos);
 
     // pos — ЕДИНАЯ точка отрисовки (та же, что у маркера): трасса доходит до точки,
@@ -2849,7 +2853,7 @@
     usedGuideIds = new Set(); // фикс №1: только магистрали, реально применённые к НОВЫМ точкам
     roomLaneCache.clear();
     if (newPoints.length || newJuncts.length) {
-      const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, router: !!pn.router, neptun: !!pn.neptun, transformer: !!pn.transformer })).concat(risersHere);
+      const panels = (fp.panels || []).map((pn) => ({ kind: "panel", id: pn.id, pos: { x: pn.x, y: pn.y }, router: !!pn.router, neptun: !!pn.neptun, security: !!pn.security, transformer: !!pn.transformer })).concat(risersHere);
       // уже проведённые точки — реальные узлы графа для шлейфа, не только щиты
       const existingPointNodes = points.filter((el) => haveRoute.has(el.id)).map((el) => {
         const pos = G().routeAnchor(p, el);
@@ -3809,7 +3813,7 @@
     const inSig = (p.elements || []).filter((e) => used.has(e.id) || isJunction(e));
     const els = inSig.map((e) => [e.id, e.type, e.wallId, e.offset, e.height,
       e.params && e.params.x, e.params && e.params.y, e.params && e.params.items, e.params && e.params.itemMeta, e.circuitId, e.layer,
-      e.targetIds, e.targetId, e.chainNext, e.keys, e.swKind, e.riserLink, e.floorId, e.beamSide, e.blockVert, e.entryPost, e.reveal]);
+      e.targetIds, e.targetId, e.chainNext, e.keys, e.swKind, e.riserLink, e.floorId, e.beamSide, e.blockVert, e.entryPost, e.reveal, e.kind, e.wire]);
     // линии — только те, на которых есть проложенные точки (и их место в списке: от него зависит
     // полоса трассы). Раньше в подписи были ВСЕ линии, и «+ линия» у ещё не проложенной точки
     // перестраивал заново все трассы проекта — хотя ни одна из них от новой линии не зависит
@@ -3823,7 +3827,7 @@
         (p.beams || []).map((b) => [b.id, b.a, b.b, b.width, b.kind, b.floorId]),
         (p.openings || []).map((o) => [o.id, o.wallId, o.offset, o.width, o.sill, o.kind, o.type]),
         (p.voids || []).map((v) => [v.id, v.a, v.b, v.kind, v.floorId]),
-        (p.panels || []).map((pn) => [pn.id, pn.x, pn.y, pn.router, pn.transformer, pn.neptun, pn.height, pn.floorId]),
+        (p.panels || []).map((pn) => [pn.id, pn.x, pn.y, pn.router, pn.transformer, pn.neptun, pn.security, pn.height, pn.floorId]),
         (p.guides || []).map((g) => [g.id, g.points, g.kinds, g.floorId]),
         (p.circuits || []).map((c, i) => (cUsed.has(c.id) ? [c.id, c.panelId, i] : null)).filter(Boolean),
         (p.floors || []).map((f) => [f.id, f.height]),
@@ -3831,7 +3835,7 @@
     } catch (e) { return String(Math.random()); }
   }
   function markInputs(p) { lastInSig = routeInputSig(p); }
-  const AUTOREBUILD_ON = { "elem-move": 1, "room-reshape": 1, "room-merge": 1, "room-move": 1, "wall-th": 1, "wall-mat": 1, "beam-move": 1, "beam-w": 1, "panel-move": 1, "panel-router": 1, "panel-neptun": 1, "panel-trafo": 1, "opening-move": 1, "elem-target": 1, "riser-pair": 1, "circuit-panel": 1, "autoproject": 1, "guide-kinds": 1 };
+  const AUTOREBUILD_ON = { "elem-move": 1, "room-reshape": 1, "room-merge": 1, "room-move": 1, "wall-th": 1, "wall-mat": 1, "beam-move": 1, "beam-w": 1, "panel-move": 1, "panel-router": 1, "panel-neptun": 1, "panel-security": 1, "panel-trafo": 1, "opening-move": 1, "elem-target": 1, "riser-pair": 1, "circuit-panel": 1, "autoproject": 1, "guide-kinds": 1 };
   let rebuilding = false;
   // ---- АВТОПЕРЕСТРОЙКА БЕЗ ФРИЗА: тяжёлый build() уходит в фоновый воркер ----
   // Замерено на стресс-проекте (30 комнат / 150 точек / 56 трасс) с эмуляцией слабого

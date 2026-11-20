@@ -54,6 +54,11 @@
     valve:     { name: "Кран «Нептун»", glyph: "Кр", layer: "lv", h: 30 },
     leakbtn:   { name: "Кнопка перекрытия", glyph: "КП", layer: "lv", h: 100 },
     radiorx:   { name: "Радиоприёмник", glyph: "РП", layer: "lv", h: 200 },
+    // каталог, пакет 4: охранная сигнализация → щит «Охранная панель». Извещатель — шлейфом
+    // (без линии) или своим кабелем (своя линия «ОС» на каждый, el.wire = "own")
+    alarm:     { name: "Охранный датчик", glyph: "ОД", layer: "lv", h: null, free: true },
+    siren:     { name: "Сирена", glyph: "Сир", layer: "lv", h: 220 },
+    leakout:   { name: "Выход аварии «Нептун»", glyph: "ВА", layer: "lv", h: 150 },
     // датчики движения/освещённости назначаются НА лампу или подсветку — targets:true
     // включает ТУ ЖЕ строку выбора цели, что у выключателя (switchTargetRow)
     pir:       { name: "Датчик движения", glyph: "ДД", layer: "lv", h: null, free: true, targets: true },
@@ -92,6 +97,7 @@
     // датчик протечки: проводной — шлейфом к «Нептуну»; радио и Zigbee — без кабеля
     leak: [["", "Проводной"], ["radio", "Радио"], ["zigbee", "Zigbee"]],
     // кран: вода и напряжение привода
+    alarm: [["", "Движение (ИК)"], ["presence", "Присутствие (радар)"], ["door", "Открытие двери/окна"], ["smoke", "Дым"], ["heat", "Нагрев"], ["co", "Угарный газ"], ["gas", "Горючий газ"], ["vibration", "Вибрация / удар"]],
     valve: [["", "ХВС · 220 В"], ["hw", "ГВС · 220 В"], ["cw12", "ХВС · 12 В"], ["hw12", "ГВС · 12 В"]]
   };
   // подсветка на низковольтном выводе — от неё число жил кабеля «от щита»
@@ -130,7 +136,10 @@
     presets: "Пресеты:",
     blockTitle: "Сборка блока", blockPosts: (n, m) => `${n}/${m} постов`,
     blockAdd: "Добавить пост:", blockTapDel: "Тап по посту в рамке — убрать",
-    kindLbl: "Вид:", ledLbl: "Подсветка:", devWatt: "Мощность, Вт",
+    kindLbl: "Вид:", ledLbl: "Подсветка:",
+    wireLbl: "Проводка:", wireLoop: "Шлейфом", wireOwn: "Своим кабелем",
+    wireLoopHint: "Датчики на одном шлейфе к охранной панели — назначать линию не нужно.",
+    wireOwnHint: "Свой кабель и своя линия (зона) на каждый датчик.", devWatt: "Мощность, Вт",
     devNeed: (nd) => `Ток ${String(nd.amps).replace(".", ",")} А → автомат ${nd.breaker}A${nd.poles === 3 ? " 3P" : ""}${nd.rcd ? ", с УЗО/дифом" : ""} · ${nd.own ? "своя линия от щита" : "шлейфом по линии розеток"}`,
     outLayer: "Тип вывода:", outPower: "Силовой", outLv: "Слаботочный",
     swTarget: "Свет от выключателя:", swAuto: "Авто (по линии)", swNone: "не задан",
@@ -358,7 +367,8 @@
       // должны все отдельными линиями идти в слаботочный щит»): линия создаётся сразу при
       // постановке, поэтому камеры физически не могут склеиться в один шлейф —
       // routeGroups группирует по circuitId, и у каждой он свой (CCTV1, CCTV2…)
-      if ((t.ownLine || G().ownDev(el)) && !el.circuitId) assignNewCircuit(el);
+      if (el.type === "alarm" && !el.wire) el.wire = (core().project.settings || {}).alarmWiring === "own" ? "own" : "loop";
+      if ((t.ownLine || G().ownDev(el) || G().alarmOwn(el)) && !el.circuitId) assignNewCircuit(el);
       c.persist("elem-add");
       if (t.block) { openEditor(el); return; } // сразу открываем сборку блока
       sheetPalette(true); // счётчик «Смонтировано: N/M» в шапке палитры — иначе M устаревает с каждой новой точкой (свёрнутость сохраняем)
@@ -368,7 +378,8 @@
       const el = c.model.newElement(S.selType, null, 0, defaultHeight(S.selType, sp), t.layer);
       el.params = { x: sp.x, y: sp.y };
       p.elements.push(el);
-      if ((t.ownLine || G().ownDev(el)) && !el.circuitId) assignNewCircuit(el); // см. комментарий выше (камеры)
+      if (el.type === "alarm" && !el.wire) el.wire = (core().project.settings || {}).alarmWiring === "own" ? "own" : "loop";
+      if ((t.ownLine || G().ownDev(el) || G().alarmOwn(el)) && !el.circuitId) assignNewCircuit(el); // см. комментарий выше (камеры)
     } else { rooms().toast(S.selType === "warmfloor" ? T.tapWallTP : T.tapWall); return; }
     c.persist("elem-add");
     sheetPalette(true); // тот же счётчик — ветка свободной точки (свет/трек/вывод)
@@ -406,7 +417,8 @@
     if (e.type === "block") el.params = Object.assign({}, el.params, { items: (e.items || ["socket"]).slice() });
     if (e.type === "switch") { if (e.keys) el.keys = Math.max(1, Math.min(3, Number(e.keys) || 1)); if (e.swKind) el.swKind = e.swKind; }
     p.elements.push(el);
-    if ((t.ownLine || G().ownDev(el)) && !el.circuitId) assignNewCircuit(el);
+    if (el.type === "alarm" && !el.wire) el.wire = (core().project.settings || {}).alarmWiring === "own" ? "own" : "loop";
+    if ((t.ownLine || G().ownDev(el) || G().alarmOwn(el)) && !el.circuitId) assignNewCircuit(el);
     c.persist("elem-add");
     e.qty = (Number(e.qty) || 1) - 1;
     if (e.qty <= 0) { q.items.splice(idx, 1); S.pool = null; }
@@ -569,6 +581,7 @@
       ${kindRow(el)}
       ${t.dev ? devRow(el) : ""}
       ${ledRow(el)}
+      ${wireRow(el)}
       ${el.type === "switch" ? switchKindRow(el) + switchKeysRow(el) + switchChainRow(el) + (el.chainNext ? "" : switchTargetRow(el)) : ""}
       ${t.targets ? switchTargetRow(el) : ""}
       ${t.feedChoice ? feedRow(el) : ""}
@@ -686,6 +699,7 @@
       <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-prouter="${esc(pn.id)}" ${pn.router ? "checked" : ""} data-draft>Роутер — сюда идут все линии интернет/ТВ/видеонаблюдение</label></div>
       <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-pavr="${esc(pn.id)}" ${pn.avr ? "checked" : ""} data-draft>Система АВР (автоматический ввод резерва: второй ввод / генератор)</label></div>
       <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-pneptun="${esc(pn.id)}" ${pn.neptun ? "checked" : ""} data-draft>Контроллер «Нептун» — сюда идут датчики протечки</label></div>
+      <div class="ep-plan-srow"><label class="ep-plan-chk"><input type="checkbox" data-pe-psec="${esc(pn.id)}" ${pn.security ? "checked" : ""} data-draft>Охранная панель — сюда идут датчики сигнализации и сирена</label></div>
       <div class="ep-plan-srow ep-plan-sbtns ep-plan-actbar">
         <button type="button" class="ep-plan-tbtn is-primary ep-clickable" data-pe-papply="${esc(pn.id)}">${T.apply}</button>
         <button type="button" class="ep-plan-tbtn ep-plan-danger ep-clickable" data-pe-pdel="${esc(pn.id)}">${T.del}</button>
@@ -712,6 +726,7 @@
     if (el && G().isLv(el)) return G().lvPrefix(el); // «12В», «24В», «48В», «24В~»…
     // розетки от ИБП — своя линия от ИБП, своя нумерация «ИБП1, ИБП2…»
     if (el && el.type === "socket" && G().elKind(el) === "ups") return "ИБП";
+    if (el && G().isAlarm(el)) return "ОС";
     if (layer === "lv") return "Int";
     if (layer === "tv") return "TV";
     if (layer === "cctv") return "CCTV";
@@ -768,6 +783,24 @@
       const sw = (p.elements || []).find((e) => e.circuitId && G().allTargetIds(e).indexOf(el.id) >= 0);
       if (sw) el.circuitId = sw.circuitId;
     }
+    if (old && !(p.elements || []).some((e) => e.circuitId === old)) p.circuits = (p.circuits || []).filter((c) => c.id !== old);
+  }
+  // охранный извещатель: шлейфом (без линии) или своим кабелем (своя линия «ОС»)
+  function wireRow(el) {
+    if (el.type !== "alarm") return "";
+    const own = el.wire === "own";
+    return `<div class="ep-plan-srow">${T.wireLbl}
+      <button type="button" class="ep-plan-chip ep-clickable ${own ? "" : "on"}" data-pe-wire="loop" aria-pressed="${!own}">${T.wireLoop}</button>
+      <button type="button" class="ep-plan-chip ep-clickable ${own ? "on" : ""}" data-pe-wire="own" aria-pressed="${own}">${T.wireOwn}</button>
+    </div><div class="ep-plan-srow ep-plan-dim">${own ? T.wireOwnHint : T.wireLoopHint}</div>`;
+  }
+  // применить проводку извещателя: своим кабелем — своя линия, шлейфом — линия снимается
+  function applyWire(el, w) {
+    const p = core().project;
+    el.wire = w === "own" ? "own" : "loop";
+    p.settings.alarmWiring = el.wire; // следующий датчик ставится так же
+    if (el.wire === "own") { if (!el.circuitId) assignNewCircuit(el); return; }
+    const old = el.circuitId; el.circuitId = null;
     if (old && !(p.elements || []).some((e) => e.circuitId === old)) p.circuits = (p.circuits || []).filter((c) => c.id !== old);
   }
   function ledRow(el) {
@@ -1632,6 +1665,14 @@
       const solo = soloCircuitOf(el2); if (solo) devToCircuit(el2, solo);
       c.persist("elem-kind"); openEditor(el2, { keepView: true }); rooms().renderScene(); return;
     }
+    if ((b = t.closest("[data-pe-wire]"))) {
+      const el2 = current(); if (!el2 || el2.type !== "alarm") return;
+      const v = b.getAttribute("data-pe-wire") === "own" ? "own" : "loop";
+      if ((el2.wire === "own" ? "own" : "loop") === v) return;
+      const c = core(); c.commit();
+      applyWire(el2, v);
+      c.persist("elem-wire"); openEditor(el2, { keepView: true }); rooms().renderScene(); return;
+    }
     if ((b = t.closest("[data-pe-led]"))) {
       const el2 = current(); if (!el2 || el2.type !== "output24") return;
       const v = b.getAttribute("data-pe-led") || "";
@@ -1656,20 +1697,21 @@
     if ((b = t.closest("[data-pe-papply]"))) {
       const c = core(), pn = c.project.panels.find((x) => x.id === b.getAttribute("data-pe-papply")); if (!pn) return;
       // только изменённые поля/галочки (как у остальных карточек): без правок ✓ просто закрывает
-      const nameF = "#ep-pe-pname", trafoF = `[data-pe-ptrafo="${pn.id}"]`, routerF = `[data-pe-prouter="${pn.id}"]`, avrF = `[data-pe-pavr="${pn.id}"]`, nepF = `[data-pe-pneptun="${pn.id}"]`;
-      if (![nameF, trafoF, routerF, avrF, nepF].some(dirtyF)) { S.selId = null; rooms().closeSheet(); rooms().renderScene(); return; }
+      const nameF = "#ep-pe-pname", trafoF = `[data-pe-ptrafo="${pn.id}"]`, routerF = `[data-pe-prouter="${pn.id}"]`, avrF = `[data-pe-pavr="${pn.id}"]`, nepF = `[data-pe-pneptun="${pn.id}"]`, secF = `[data-pe-psec="${pn.id}"]`;
+      if (![nameF, trafoF, routerF, avrF, nepF, secF].some(dirtyF)) { S.selId = null; rooms().closeSheet(); rooms().renderScene(); return; }
       c.commit();
       if (dirtyF(nameF)) pn.name = (($(nameF) || {}).value || "Щит").trim() || "Щит";
-      const trafoWas = pn.transformer, routerWas = pn.router, nepWas = pn.neptun;
+      const trafoWas = pn.transformer, routerWas = pn.router, nepWas = pn.neptun, secWas = !!pn.security;
       if (dirtyF(trafoF)) pn.transformer = !!$(trafoF).checked;
       if (dirtyF(routerF)) pn.router = !!$(routerF).checked;
       if (dirtyF(avrF)) pn.avr = !!$(avrF).checked; // АВР — на трассировку не влияет, только смета/подпись
       if (dirtyF(nepF)) pn.neptun = !!$(nepF).checked; // цель датчиков протечки — влияет на трассы
+      if (dirtyF(secF)) pn.security = !!$(secF).checked; // цель охранной сигнализации
       // panel-router/panel-trafo — отдельные метки от panel-edit: только смена флага
       // роутера/трансформатора должна тихо перестроить уже построенные трассы (LV-точки/
       // выводы 24В могли сменить целевой щит), обычное переименование щита такой
       // перестройки не требует (см. AUTOREBUILD_ON в plan-routes.js).
-      c.persist(routerWas !== pn.router ? "panel-router" : trafoWas !== pn.transformer ? "panel-trafo" : nepWas !== pn.neptun ? "panel-neptun" : "panel-edit");
+      c.persist(routerWas !== pn.router ? "panel-router" : trafoWas !== pn.transformer ? "panel-trafo" : nepWas !== pn.neptun ? "panel-neptun" : secWas !== !!pn.security ? "panel-security" : "panel-edit");
       S.selId = null; rooms().closeSheet(); rooms().renderScene(); return; // ✓ применить и закрыть
     }
     if ((b = t.closest("[data-pe-pdel]"))) {
