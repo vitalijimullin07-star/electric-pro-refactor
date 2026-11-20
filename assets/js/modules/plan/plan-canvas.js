@@ -21,6 +21,21 @@
     overscan: 0.5
   };
 
+  /* РЕЖИМ ДВИЖЕНИЯ ПЛАНА — свойство устройства (жалоба владельца 20.11: «после жеста кадр идёт чуть
+     вперёд и резко возвращается; два-три месяца назад такого не было»). Сравнение по кадрам с
+     версией до 1 октября: геометрия на экране у обеих одинаковая, разница — только в том, ЧТО
+     происходит после отрыва пальца. Тогда каждый шаг пальца сразу менял viewBox (картинка
+     перерисовывалась под палец), докатывания не было, значки при пинче оставались своего размера.
+     С 1 октября (APK 1.2.0, фризы на слабых телефонах) во время жеста двигается готовая картинка
+     слоем, а в конце — фиксация: на слабом видеочипе браузер может на кадр показать старую
+     картинку уже без сдвига (она «возвращается назад»), при пинче значки растут вместе с пальцами
+     и потом сжимаются, после броска план докатывается. На стенде это не воспроизводится (там
+     растр синхронный), поэтому режим — выбор: «classic» (по умолчанию, как раньше) и «fast»
+     (картинка слоем + докат — легче для очень больших квартир на слабом процессоре). */
+  const MOTION_KEY = "ep_plan_motion_v1";
+  function motionClassic() { try { return localStorage.getItem(MOTION_KEY) !== "fast"; } catch (e) { return true; } }
+  function setMotion(mode) { try { localStorage.setItem(MOTION_KEY, mode === "fast" ? "fast" : "classic"); } catch (e) {} }
+
   function el(tag, attrs) {
     const n = document.createElementNS(NS, tag);
     if (attrs) for (const k in attrs) n.setAttribute(k, attrs[k]);
@@ -30,7 +45,12 @@
   // opts.overscan — запас картинки вокруг экрана (доля); 0 — без запаса (офскрин-холст печати:
   // там viewBox обязан описывать ровно кадр листа, иначе масштаб чертежа считался бы с полями)
   function createCanvas(host, opts) {
-    const OVS = opts && opts.overscan != null ? Math.max(0, +opts.overscan || 0) : CFG.overscan;
+    const OVS0 = opts && opts.overscan != null ? Math.max(0, +opts.overscan || 0) : CFG.overscan;
+    // запас картинки нужен только «быстрому» режиму (там двигается готовая картинка); в
+    // классическом svg ровно с экран — меньше площадь перерисовки на каждом шаге пальца
+    let OVS = OVS0;
+    const syncOvs = () => { OVS = (OVS0 > 0 && !motionClassic()) ? OVS0 : 0; };
+    syncOvs();
     const svg = el("svg", { class: "ep-plan-svg" });
     svg.style.touchAction = "none";
     const layers = {
@@ -159,7 +179,7 @@
     let motionT = 0, lastLightT = 0;
     const QUICK_MS = 450; // начало жеста/броска и время прошлой лёгкой фиксации
     function applyLive(active) {
-      if (!committed || !cw) { apply(); return; }
+      if (!committed || !cw || motionClassic()) { apply(); return; } // как раньше: viewBox на каждом шаге
       const act = !!active || pts.size > 0;
       const s = committed.w / view.w;
       const k = cw / view.w; // экранных px на см в живом виде
@@ -263,6 +283,7 @@
     function apply(light) {
       clearTimeout(commitTimer); commitTimer = 0;
       restRect = null;
+      syncOvs();
       if (!cw) measureBox();
       fixAspect();
       const zoomed = !committed || Math.abs(committed.w - view.w) > view.w * 1e-6;
@@ -333,7 +354,7 @@
     }
     function animateTo(target, ms) {
       stopMotion();
-      if (reduceMotion || typeof requestAnimationFrame !== "function" || !liveFits(target)) { Object.assign(view, target); apply(); return; }
+      if (reduceMotion || motionClassic() || typeof requestAnimationFrame !== "function" || !liveFits(target)) { Object.assign(view, target); apply(); return; }
       const from = { ...view }, t0 = performance.now(), dur = ms || 220;
       const step = (now) => {
         const t = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - t, 3); // ease-out
@@ -365,7 +386,7 @@
     }
     function startInertia() {
       const tr = panTrail; panTrail = [];
-      if (reduceMotion || typeof requestAnimationFrame !== "function" || tr.length < 2) return false;
+      if (reduceMotion || motionClassic() || typeof requestAnimationFrame !== "function" || tr.length < 2) return false;
       const a = tr[0], b = tr[tr.length - 1], now = performance.now();
       if (now - b.t > 60 || b.t - a.t < 8) return false; // палец остановился перед отрывом — без броска
       let vx = (b.x - a.x) / (b.t - a.t), vy = (b.y - a.y) / (b.t - a.t);
@@ -803,5 +824,5 @@
   }
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Canvas = { create: createCanvas, CFG };
+  EP.Plan.Canvas = { create: createCanvas, CFG, motionClassic, setMotion };
 })();
