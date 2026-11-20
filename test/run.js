@@ -11046,6 +11046,51 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 81д. Каталог, пакет 3: слаботочка и «Нептун» =====
+  {
+    test("каталог П3: краны, кнопка и приёмник — каждый своим кабелем к «Нептуну», радиодатчик без кабеля", () => {
+      const nep = M.newPanel(390, 150, "Нептун"); nep.neptun = true;
+      const pw = M.newPanel(390, 250, "ЩК");
+      const { P, w } = install({ panels: [nep, pw] });
+      const v1 = M.newElement("valve", w(2), 100, 30, "lv");
+      const v2 = M.newElement("valve", w(2), 200, 30, "lv"); v2.kind = "hw12";
+      const bt = M.newElement("leakbtn", w(3), 100, 100, "lv");
+      const rx = M.newElement("radiorx", w(3), 200, 200, "lv");
+      const l1 = M.newElement("leak", w(2), 50, 5, "lv"), l2 = M.newElement("leak", w(2), 300, 5, "lv");
+      const lr = M.newElement("leak", w(1), 150, 5, "lv"); lr.kind = "radio";
+      P.elements.push(v1, v2, bt, rx, l1, l2, lr);
+      EP.Plan.Routes.build();
+      [v1, v2, bt, rx].forEach((e) => {
+        const r = P.routes.find((x) => x.fromId === e.id);
+        ok(r && r.toId === nep.id, e.type + " — своим кабелем в контроллер «Нептун»");
+      });
+      ok(!P.routes.some((x) => x.fromId === lr.id || x.toId === lr.id), "радиодатчик — без трассы");
+      ok(G.cableless(lr) && !G.isNeptun(lr) && G.isNeptun(l1), "радиодатчик не трассируется, проводной — да");
+      const names = EP.Plan.Calc.calcByRoutes(P).items.map((it) => it.name);
+      ok(names.some((n) => /^Кабель КСПВ 4×0\.5/.test(n)), "кран 12 В и приёмник — КСПВ 4×0.5: " + names.filter((n) => /Кабель/.test(n)).join(" | "));
+      ok(names.some((n) => /^Кабель КСПВ 2×0\.5/.test(n)), "кнопка — КСПВ 2×0.5");
+      ok(names.some((n) => /3×1\.5/.test(n)), "кран 220 В — силовой 3×1.5");
+    });
+    test("каталог П3: точка доступа — к роутеру, вызывная панель — к домофону, проверки", () => {
+      const rt = M.newPanel(390, 150, "Слаботочный"); rt.router = true;
+      const { P, w } = install({ panels: [rt] });
+      const ap = M.newElement("wifiap", null, 0, 270, "lv"); ap.params = { x: 150, y: 150 };
+      const ap2 = M.newElement("wifiap", null, 0, 270, "lv"); ap2.params = { x: 250, y: 150 };
+      const cp = M.newElement("callpanel", w(1), 100, 150, "lv");
+      const lk = M.newElement("elock", w(1), 200, 100, "lv");
+      P.elements.push(ap, ap2, cp, lk);
+      const iss0 = EP.Plan.Rules.run(P).issues.map((i) => i.msg).join(" | ");
+      ok(/домофона нет/.test(iss0), "проверки: вызывная панель без домофона");
+      const ic = M.newElement("intercom", w(3), 200, 150, "lv"); P.elements.push(ic);
+      EP.Plan.Routes.build();
+      [ap, ap2, lk].forEach((e) => ok(P.routes.some((x) => x.fromId === e.id && x.toId === rt.id), e.type + " — к роутеру своим кабелем"));
+      ok(P.routes.some((x) => x.fromId === cp.id && x.toId === ic.id), "вызывная панель — к домофону");
+      ok(!P.routes.some((x) => x.toId === ap.id || x.toId === ap2.id), "точки доступа не шлейфом");
+      const names = EP.Plan.Calc.calcByRoutes(P).items.map((it) => it.name);
+      ok(names.indexOf("Установка точки доступа Wi-Fi") >= 0 && names.indexOf("Установка вызывной панели") >= 0, "чистовые работы");
+    });
+  }
+
   // ===== 82. Аудит Астры, пакет 3: формы ↔ модель =====
   // ✓ пишет только то, что человек менял; перерисовка карточки того же объекта (тяга, ↶/↷, материал)
   // не теряет набранное; после ↶/↷ карточка показывает восстановленную модель или закрывается;
