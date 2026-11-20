@@ -9102,6 +9102,20 @@ test("фото: deleteProject чистит кэш фото своего прое
       ok(/labelsOn && nearView && EP\.Plan\.Elements/.test(rd), "номера проёмов на дальнем обзоре скрыты");
       ok(/!noLod && textW\(txt, CFG\.labelPx \* kFit\) > w\.len/.test(rd), "подпись длиннее короткой стены не рисуется (кроме печати)");
     });
+    test("после пинча и броска сцена проступает плавно: копия прежней картинки растворяется", () => {
+      const cv = read("assets/js/modules/plan/plan-canvas.js"), css = read("assets/css/plan.css");
+      const ap = cv.slice(cv.indexOf("function apply(light)"), cv.indexOf("function pxToCm"));
+      ok(/!light && \(liveT \|\| rescalePending\) && \(rescalePending \|\| zoomed \|\| svg\.classList\.contains\("is-moving"\)\)\) startXfade\(\)/.test(ap),
+        "копия — только при полной фиксации после жеста со сменой масштаба или спрятанными подписями");
+      ok(ap.indexOf("startXfade()") < ap.indexOf("committed = {"), "копия снимается ДО смены viewBox и сброса сдвига");
+      const sx = cv.slice(cv.indexOf("function startXfade"), cv.indexOf("function apply(light)"));
+      ok(/liveT\.tx[\s\S]*liveT\.s/.test(sx), "копия стоит с тем же сдвигом, что был на экране");
+      ok(/-xf/.test(sx) && /mask\[id\]/.test(sx), "маски вырезов у копии свои");
+      ok(/requestAnimationFrame\(\(\) => requestAnimationFrame\(go\)\)/.test(sx), "растворяется после перерисовки сцены под ней");
+      ok(/reduce/.test(sx) && /OVS <= 0/.test(sx), "без анимации при «меньше движения» и у холста печати");
+      ok(/dropXfade\(\);\s+\/\/ и снимает/.test(cv), "новое касание снимает копию");
+      ok(/\.ep-plan-xfade \{[^}]*transition: opacity[^}]*pointer-events: none|\.ep-plan-xfade \{[^}]*pointer-events: none[^}]*transition: opacity/.test(css) && /\.ep-plan-xfade\.is-out \{ opacity: 0; \}/.test(css), "CSS: прозрачность одного слоя, касания проходят насквозь");
+    });
     test("разнос пучка трасс на экране не зависит от зума", () => {
       const room = M.newRoom(G.rectPoints(0, 0, 600, 400), "Коридор");
       const { P } = install({ rooms: [room] });
