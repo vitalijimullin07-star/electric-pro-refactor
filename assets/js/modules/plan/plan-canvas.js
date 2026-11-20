@@ -194,12 +194,53 @@
       const cy = view.y + view.h / 2;
       view.h = view.w / asp; view.y = cy - view.h / 2;
     }
+    /* МЯГКИЙ ПЕРЕХОД ПОСЛЕ ЖЕСТА (жалоба владельца «дребезг непонятный, когда двигаешь план или
+       масштабируешь»). Замер кадр за кадром (стенд, квартира 5 комнат): само движение ровное —
+       картинка идёт за пальцем без отставаний и скачков. Дёргался МОМЕНТ ОКОНЧАНИЯ: после пинча
+       сцена пересобирается под новый масштаб за один кадр — значки рывком меньше (38 → 25 px),
+       линии тоньше, разом появляются ~170 подписей; после быстрого броска подписи, спрятанные на
+       время полёта (is-moving), через ~60 мс выскакивают обратно — мигание. Теперь перед такой
+       фиксацией поверх кладётся КОПИЯ того, что было на экране (с тем же сдвигом), под ней
+       сцена пересобирается, а копия растворяется за ~160 мс. Это прозрачность ОДНОГО слоя —
+       работа видеочипа, процессор не нагружает; пересобранная сцена проступает плавно. Чистый
+       медленный сдвиг (масштаб тот же, подписи не прятались) копию не делает — меняться нечему. */
+    let xfade = null;
+    function dropXfade() { if (xfade) { clearTimeout(xfade.t); if (xfade.box.parentNode) xfade.box.parentNode.removeChild(xfade.box); xfade = null; } }
+    function startXfade() {
+      dropXfade();
+      if (OVS <= 0 || typeof svg.cloneNode !== "function") return; // офскрин-холст печати / без DOM
+      try { if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return; } catch (e) { /* без matchMedia — переход делаем */ }
+      const box = document.createElement("div");
+      box.className = "ep-plan-xfade";
+      if (liveT) box.style.transform = "translate(" + liveT.tx + "px," + liveT.ty + "px) scale(" + liveT.s + ")";
+      const c = svg.cloneNode(true);
+      if (!c || !c.querySelectorAll) return;
+      c.removeAttribute("id");
+      c.setAttribute("aria-hidden", "true");
+      // маски вырезов проёмов — свои у копии: иначе url(#id) нашёл бы маску оригинала, а её
+      // пересборка (новый масштаб, отсечение невидимого) на миг закрасила бы двери в копии
+      const ren = {};
+      c.querySelectorAll("mask[id]").forEach((m) => { const id = m.getAttribute("id"); ren["url(#" + id + ")"] = "url(#" + id + "-xf)"; m.setAttribute("id", id + "-xf"); });
+      c.querySelectorAll("[mask]").forEach((x) => { const v = ren[x.getAttribute("mask")]; if (v) x.setAttribute("mask", v); });
+      box.appendChild(c);
+      wrap.appendChild(box);
+      const st = { box, t: 0 };
+      xfade = st;
+      // копия стоит непрозрачной, пока сцена под ней пересобирается (перерисовка — в ближайшем
+      // кадре), и только потом растворяется
+      const go = () => { if (xfade === st) box.classList.add("is-out"); };
+      if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => requestAnimationFrame(go)); else go();
+      st.t = setTimeout(() => { if (xfade === st) dropXfade(); }, 600);
+    }
     function apply(light) {
       clearTimeout(commitTimer); commitTimer = 0;
       restRect = null;
       if (!cw) measureBox();
       fixAspect();
       const zoomed = !committed || Math.abs(committed.w - view.w) > view.w * 1e-6;
+      // только после жеста/анимации (на экране — живая картинка): программные прыжки вида и
+      // подгон под новый размер холста идут как раньше
+      if (!light && (liveT || rescalePending) && (rescalePending || zoomed || svg.classList.contains("is-moving"))) startXfade();
       committed = { x: view.x, y: view.y, w: view.w, h: view.h };
       // viewBox и сброс transform — в ОДНОМ кадре: иначе сцена на миг «прыгнула» бы
       if (liveT) { liveT = null; wrap.style.transform = ""; }
@@ -397,6 +438,7 @@
       else if (e.pointerType === "touch" && penActive) return; // ладонь при работе стилусом
       interacted = true;
       stopMotion(); // новое касание ловит докатывающийся вид на месте
+      dropXfade();  // и снимает недорастворившуюся копию прошлого вида (тяга объекта прячет оригиналы)
       panTrail = [];
       svg.setPointerCapture(e.pointerId);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -707,7 +749,7 @@
       onDragAllow: (fn) => { cb.dragAllow = fn; },   // false — тяга запрещена (замок 🔒), жест = пан   // перед "start" обработчика тяги
       onDragBegin: (fn) => { cb.dragBegin = fn; },   // обработчик взял объект (не пан) — тяга пошла
       onDragCancel: (fn) => { cb.dragCancel = fn; }, // тягу оборвала система (pointercancel) — откатить
-      destroy: () => { stopMotion(); clearTimeout(commitTimer); if (ro) ro.disconnect(); if (wrap.parentNode) wrap.parentNode.removeChild(wrap); }
+      destroy: () => { stopMotion(); dropXfade(); clearTimeout(commitTimer); if (ro) ro.disconnect(); if (wrap.parentNode) wrap.parentNode.removeChild(wrap); }
     };
   }
 
