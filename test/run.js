@@ -10830,20 +10830,32 @@ test("фото: deleteProject чистит кэш фото своего прое
         env.svg.fire("pointerup", { pointerId: 3, clientX: 200, clientY: 200 });
       } finally { env.restore(); }
     });
-    test("холст: первый шаг доката после броска не короче кадра — скорость не проседает в момент отрыва", () => {
+    test("холст: докат продолжает движение пальца со СЛЕДУЮЩЕГО кадра — без двойного шага вперёд и провала скорости", () => {
       const env = canvasEnv(800, 400);
       try {
         const cv = env.cv; cv.redraw();
         const k = cv.cmPerPx();
-        env.svg.fire("pointerdown", { pointerId: 1, clientX: 600, clientY: 200 });
-        let x = 600;
-        for (let i = 0; i < 6; i++) { env.clock += 10; x -= 20; env.svg.fire("pointermove", { pointerId: 1, clientX: x, clientY: 200 }); } // 2 px/мс
-        env.clock += 2;
-        env.svg.fire("pointerup", { pointerId: 1, clientX: x, clientY: 200 });
-        const x0 = cv.getView().x;
-        env.frame(1); // кадр наступил сразу после отрыва
-        const px = (cv.getView().x - x0) / k;
-        ok(px > 25, "первый шаг доката ≈ кадр полёта (2 px/мс × 16,7 мс): " + px.toFixed(1) + " px (было 2 px — провал скорости)");
+        const fling = (lastFrameShown) => {
+          env.svg.fire("pointerdown", { pointerId: 1, clientX: 600, clientY: 200 });
+          let x = 600;
+          // палец ведёт план по 20 px на кадр (кадр 16 мс) — 1,25 px/мс
+          for (let i = 0; i < 6; i++) { x -= 20; env.clock += 2; env.svg.fire("pointermove", { pointerId: 1, clientX: x, clientY: 200 }); if (i < 5 || lastFrameShown) env.frame(14); }
+          env.clock += 2;
+          env.svg.fire("pointerup", { pointerId: 1, clientX: x, clientY: 200 });
+          const steps = [];
+          for (let f = 0; f < 3; f++) { const v0 = cv.getView().x; env.frame(f === 0 && !lastFrameShown ? 12 : 16); steps.push((cv.getView().x - v0) / k); }
+          env.frame(2000); for (let n = 0; n < 200 && env.raf.length; n++) env.frame(16);
+          return steps;
+        };
+        // отрыв в том же кадре, что и последний шаг пальца: этот кадр показывает шаг пальца,
+        // докат начинается со следующего
+        const a = fling(false);
+        ok(Math.abs(a[0]) < 0.01, "в кадре отрыва докат не добавляет шаг поверх шага пальца: " + a[0].toFixed(1) + " px (было ≈20 — двойной шаг вперёд)");
+        ok(a[1] > 15 && a[1] <= 20.5, "следующий кадр — шаг как у пальца: " + a[1].toFixed(1) + " px");
+        ok(a[2] < a[1] && a[2] > 12, "дальше плавно затухает: " + a[2].toFixed(1));
+        // последний шаг пальца уже показан в прошлом кадре — первый же кадр после отрыва двигает
+        const b = fling(true);
+        ok(b[0] > 15 && b[0] <= 22, "первый кадр после отрыва ≈ шаг пальца, без провала: " + b[0].toFixed(1) + " px");
       } finally { env.restore(); }
     });
   }
