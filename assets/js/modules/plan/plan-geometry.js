@@ -765,7 +765,7 @@
   // ТП такая же силовая, как у розеток.
   G.SURFACE_KEYS = ["light", "power", "lv", "v24"];
   G.surfaceKeyOf = (layer, el) => {
-    if (el && el.type === "output24") return "v24";
+    if (el && G.isLv(el)) return "v24";
     if (layer === "light") return "light";
     if (layer === "lv" || layer === "tv" || layer === "cctv") return "lv";
     return "power";
@@ -1506,6 +1506,24 @@
   // на хопе к такой точке 4 жилы: у аварийного светильника постоянная фаза к аккумулятору,
   // у вентилятора с таймером — постоянная фаза для выбега
   G.fourCore = (el) => !!el && ((el.type === "light" && G.elKind(el) === "emergency") || (el.type === "fan" && G.elKind(el) === "timer"));
+  /* НИЗКОВОЛЬТНОЕ ПИТАНИЕ от блока питания в щите (каталог, пакет 2; решение владельца — БП в
+     щите). «Вывод 24В» (output24) получает напряжение (el.kind: "" = 24 В пост., dc12, dc48, ac12,
+     ac24), магнитный трек — вид "mag48" у трека. Всё это трассируется как 24 В: клавиша → щит с
+     трансформатором (220 В «до щита»), щит → точка своим кабелем. G.isLv — ЕДИНЫЙ признак такой
+     точки для трассировки, сметы, линий и проверок (раньше везде стояло type === "output24"). */
+  const LV_VOLTS = { "": { v: 24, ac: false }, dc12: { v: 12, ac: false }, dc48: { v: 48, ac: false }, ac12: { v: 12, ac: true }, ac24: { v: 24, ac: true } };
+  G.isLv = (el) => !!el && (el.type === "output24" || (el.type === "track" && el.kind === "mag48"));
+  G.lvVolt = (el) => {
+    if (!G.isLv(el)) return null;
+    if (el.type === "track") return { v: 48, ac: false };
+    return LV_VOLTS[el.kind || ""] || LV_VOLTS[""];
+  };
+  // «12В», «24В~» — префикс линии и подпись «от щита (…)» в смете; у 24 В пост. — прежнее «24В»
+  G.lvPrefix = (el) => { const x = G.lvVolt(el); return x ? x.v + "В" + (x.ac ? "~" : "") : ""; };
+  // «12 В пост.», «24 В ~» — подпись на значке
+  G.lvLabel = (el) => { const x = G.lvVolt(el); return x ? x.v + " В " + (x.ac ? "~" : "пост.") : ""; };
+  // подсветка на точке: одноцветная — 2 жилы, тёплый/холодный — 3, цвет + белый — 5 (0 — не задано)
+  G.ledCores = (el) => ({ mono: 2, cct: 3, rgbw: 5 })[el && el.led] || 0;
   // проходной/перекрёстный — звенья цепочки; диммер работает как обычный выключатель
   G.chainSw = (el) => !!el && (el.swKind === "pass" || el.swKind === "cross");
 

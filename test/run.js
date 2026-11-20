@@ -11006,6 +11006,46 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 81г. Каталог, пакет 2: низковольтное питание от БП в щите =====
+  {
+    const EL = EP.Plan.Elements;
+    test("каталог П2: напряжение, подсветка и магнитный трек — единый признак низковольтной точки", () => {
+      ok(G.isLv({ type: "output24" }) && G.isLv({ type: "track", kind: "mag48" }), "вывод и магнитный трек — от БП");
+      ok(!G.isLv({ type: "track" }), "обычный трек 220 В — нет");
+      eq(G.lvPrefix({ type: "output24" }), "24В", "по умолчанию прежние 24 В");
+      eq(G.lvPrefix({ type: "output24", kind: "dc12" }), "12В"); eq(G.lvPrefix({ type: "output24", kind: "ac24" }), "24В~");
+      eq(G.lvLabel({ type: "track", kind: "mag48" }), "48 В пост.");
+      eq(G.ledCores({ led: "mono" }), 2); eq(G.ledCores({ led: "cct" }), 3); eq(G.ledCores({ led: "rgbw" }), 5); eq(G.ledCores({}), 0);
+    });
+    test("каталог П2: 12 В и магнитный трек 48 В — свои линии, кабель до щита и от БП, блоки питания в щите", () => {
+      const pn = M.newPanel(390, 150, "ЩК"); pn.transformer = true;
+      const q = M.newCircuit("QF1", "#f00", 10);
+      const { P, w } = install({ panels: [pn], circuits: [q] });
+      const sw = M.newElement("switch", w(3), 100, 90, "light"); sw.circuitId = q.id; sw.keys = 2;
+      const o12 = M.newElement("output24", null, 0, 270, "lv"); o12.params = { x: 100, y: 100 }; o12.kind = "dc12"; o12.led = "cct";
+      const tr = M.newElement("track", null, 0, 270, "light"); tr.params = { x: 250, y: 100 }; tr.kind = "mag48";
+      P.elements.push(sw, o12, tr);
+      sw.targetIds = [o12.id, tr.id];
+      EL.syncTargetCircuit(sw, o12); EL.syncTargetCircuit(sw, tr);
+      const nm = (e) => P.circuits.find((c) => c.id === e.circuitId).name;
+      eq(nm(o12), "12В1", "вывод 12 В — своя линия «12В1»");
+      eq(nm(tr), "48В1", "магнитный трек — своя линия «48В1», а не линия выключателя");
+      EP.Plan.Routes.build();
+      ok(P.routes.some((r) => r.fromId === o12.id && r.leg === "sec24"), "от БП в щите до вывода 12 В");
+      ok(P.routes.some((r) => r.fromId === tr.id && r.leg === "sec24"), "от БП до магнитного трека");
+      ok(P.routes.some((r) => String(r.fromId).indexOf("sw24:" + sw.id) === 0 && r.leg === "pri24"), "клавиша → щит (220 В до блока питания)");
+      const items = EP.Plan.Calc.calcByRoutes(P).items, names = items.map((it) => it.name);
+      ok(names.some((n) => /3×1\.5 · от щита \(12В\)/.test(n)), "тёплый/холодный — 3 жилы от щита 12В: " + names.filter((n) => /Кабель/.test(n)).join(" | "));
+      ok(names.some((n) => /2×2\.5 · от щита \(48В\)/.test(n)), "трек — 2 жилы от щита 48В");
+      ok(names.indexOf("Блок питания 12 В пост. на DIN-рейку") >= 0 && names.indexOf("Блок питания 48 В пост. на DIN-рейку") >= 0, "блоки питания по напряжению");
+      eq(items.find((it) => it.name === "Установка блока питания на DIN-рейку").qty, 2, "установка — на каждый");
+      const CX = EP.Plan.Circuits;
+      eq(CX.psuList(P).length, 2, "два БП в щите");
+      const noPsu = CX.modules(P) - 2 * CX.PSU_MOD;
+      ok(noPsu > 0, "модули щита включают блоки питания");
+    });
+  }
+
   // ===== 82. Аудит Астры, пакет 3: формы ↔ модель =====
   // ✓ пишет только то, что человек менял; перерисовка карточки того же объекта (тяга, ↶/↷, материал)
   // не теряет набранное; после ↶/↷ карточка показывает восстановленную модель или закрывается;

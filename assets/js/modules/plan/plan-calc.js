@@ -43,8 +43,8 @@
     cableFromDb: "Выбери из БД (раздел «Материалы») или впиши свою марку:",
     cableNoDb: "В активной БД нет позиций-кабелей — впиши марку вручную (можно добавить кабели в «Базу данных»).",
     rgbLbl: "Тип 24В:", rgbMono: "Монохром", rgbOn: "RGB",
-    c24Lbl: "24В от щита (монохром)", c24RgbLbl: "24В от щита (RGB)",
-    c24Hint: "Кабель «от щита до точки 24В»: у монохромного вывода 2 жилы, у RGB — 5 (общий + 3 канала). Марка «до щита» (первичка от выключателя) считается сама: 1 клавиша на 24В — 3 жилы, 2-3 клавиши — 5 жил.",
+    c24Lbl: "От БП в щите (монохром, 2 ж.)", c24RgbLbl: "От БП в щите (цвет + белый, 5 ж.)", c24CctLbl: "От БП в щите (тёпл./хол., 3 ж.)",
+    c24Hint: "Кабель «от блока питания в щите до низковольтной точки» (12/24/48 В, магнитный трек): одноцветная подсветка — 2 жилы, тёплый/холодный — 3, цвет + белый — 5. Подсветка задаётся у самой точки, иначе — по линии (RGB). Марка «до щита» (первичка от выключателя) считается сама: 1 клавиша на 24В — 3 жилы, 2-3 клавиши — 5 жил.",
     brandLbl: "Марка кабеля по умолчанию", brandHint: "Подставляется перед сечением там, где марка линии не задана вручную (однолинейка, «По линиям», смета): ВВГнг(А)-LS, ВВГнг, КГ… Пустое поле — только сечение.",
     cableHint: "Марка/сечение кабеля именно этой линии — поменяет и материал, и «Прокладку кабеля» в смете. Пустое поле — автоподбор по нагрузке/автомату, как раньше."
   };
@@ -110,7 +110,7 @@
         (p.elements || []).forEach((sw) => {
           if (sw.type !== "switch" || !R || !R.keys24Of) return;
           const tids = G().allTargetIds(sw); // клавиша может нести несколько целей
-          const feeds = tids.some((id) => { const t = (p.elements || []).find((e) => e.id === id); return t && t.type === "output24" && t.circuitId === c.id; });
+          const feeds = tids.some((id) => { const t = (p.elements || []).find((e) => e.id === id); return t && G().isLv(t) && t.circuitId === c.id; });
           if (feeds) k = Math.max(k, R.keys24Of(p, sw));
         });
         auto220 = EP.Plan.Core.cableMark(p, k >= 2 ? "5×1.5" : "3×1.5");
@@ -189,7 +189,7 @@
   function is24Circuit(p, circuitId) {
     if (!circuitId) return false;
     const els = (p.elements || []).filter((e) => e.circuitId === circuitId && e.type !== "junction");
-    return els.length > 0 && els.every((e) => e.type === "output24");
+    return els.length > 0 && els.every((e) => G().isLv(e));
   }
   // Марка кабеля ПО УМОЛЧАНИЮ (когда circuit.cable не задан вручную) — ЕДИНАЯ для сметы
   // и для блока «По линиям (QF)»: раньше смета подставляла «ВВГнг(А)-LS 3×2.5», а «По
@@ -205,6 +205,14 @@
     if (CX && CX.autoCable) return CX.autoCable(p, cc);
     const i24 = is24Circuit(p, cc.id);
     return defaultCableMark(p, layer, i24, i24 && !!cc.rgb);
+  }
+  // кабель «от щита» к низковольтной точке по числу жил подсветки (G.ledCores): 2 — одноцветная,
+  // 3 — тёплый/холодный, 5 — цвет + белый
+  function ledMark(p, cores) {
+    const s = p.settings || {};
+    if (cores >= 5) return s.cable24Rgb || "КГ ВВГнг-LS 5×1.5";
+    if (cores === 3) return s.cable24Cct || "КГ ВВГнг-LS 3×1.5";
+    return s.cable24 || "КГ ВВГнг-LS 2×2.5";
   }
   function defaultCableMark(p, layer, is24, rgb) {
     const C = EP.Plan.Core;
@@ -602,7 +610,9 @@
       if (r.leg === "pri24") {
         key = ((cc && cc.cable220) || pri24Mark(p, r)) + " · до щита (220В)";
       } else if (r.leg === "sec24") {
-        key = ((cc && cc.cable) || defaultCableMark(p, r.layer, true, rgbOf(p, r.circuitId))) + " · от щита (24В)";
+        // напряжение и жилы — с самой точки (у каждой своя подсветка), иначе — по линии (rgb)
+        const lvEl = elById(r.fromId), lc = G().ledCores(lvEl);
+        key = ((cc && cc.cable) || (lc ? ledMark(p, lc) : defaultCableMark(p, r.layer, true, rgbOf(p, r.circuitId)))) + " · от щита (" + (G().lvPrefix(lvEl) || "24В") + ")";
       } else if (r.leg === "chain") {
         key = chainMark(p, r) + " · между выключателями";
       } else if (r.leg === "swdrop") {
@@ -796,7 +806,7 @@
       origin["material|Кабель " + m] = o;
       origin["work|Прокладка кабеля " + m] = o;
     });
-    return { items: applyCalcEdits(p, addRiserItems(p, addAvrItems(p, items))), cableBy, strobe, conn, podroz, junctBoxes, junctWall, origin };
+    return { items: applyCalcEdits(p, addRiserItems(p, addPsuItems(p, addAvrItems(p, items)))), cableBy, strobe, conn, podroz, junctBoxes, junctWall, origin };
   }
 
   // ---------- правки сметы (p.calcEdits, бэкофилл в plan-core.js): скрытые позиции,
@@ -876,6 +886,18 @@
     add.forEach((it) => items.push(it));
     return items;
   }
+  // блоки питания в щите — по одному на низковольтную линию, материал по напряжению (EP.Plan.Circuits.psuList)
+  function addPsuItems(p, items) {
+    const CX = EP.Plan.Circuits;
+    const list = CX && CX.psuList ? CX.psuList(p) : [];
+    if (!list.length) return items;
+    if (!Array.isArray(items)) items = [];
+    const by = {};
+    list.forEach((x) => { by[x.label] = (by[x.label] || 0) + 1; });
+    Object.keys(by).forEach((lb) => items.push({ type: "material", name: `Блок питания ${lb} на DIN-рейку`, qty: by[lb], unit: "шт" }));
+    items.push({ type: "work", name: "Установка блока питания на DIN-рейку", qty: list.length, unit: "шт" });
+    return items;
+  }
   function addAvrItems(p, items) {
     const n = (p.panels || []).filter((pn) => pn.avr).length;
     if (!n) return items;
@@ -892,7 +914,7 @@
     const exact = exactOf(p);
     if (exact && exact.items.length) return exact.items; // правки уже применены внутри calcByRoutes
     const res = runEngine(p, stats);
-    return applyCalcEdits(p, addRiserItems(p, addAvrItems(p, addFinishItems(p, (res && res.draftItems) || null)))); // приближённый счёт — те же правки
+    return applyCalcEdits(p, addRiserItems(p, addPsuItems(p, addAvrItems(p, addFinishItems(p, (res && res.draftItems) || null))))); // приближённый счёт — те же правки
   }
 
   // ---------- МЕМО-КЭШ расчёта ----------
@@ -1014,6 +1036,8 @@
             <input type="text" value="${esc(p.settings.cable24 == null ? "" : p.settings.cable24)}" data-pc-cable24></label>
           <label class="ep-plan-range" style="flex:1 1 170px">${T.c24RgbLbl}
             <input type="text" value="${esc(p.settings.cable24Rgb == null ? "" : p.settings.cable24Rgb)}" data-pc-cable24rgb></label>
+          <label class="ep-plan-range" style="flex:1 1 170px">${T.c24CctLbl}
+            <input type="text" value="${esc(p.settings.cable24Cct == null ? "" : p.settings.cable24Cct)}" data-pc-cable24cct></label>
         </div>
         <div class="ep-plan-srow ep-plan-hintrow">${T.c24Hint}</div>
         <div class="ep-plan-srow ep-plan-hintrow">${T.stubHint}</div>
@@ -1034,7 +1058,7 @@
         </div>`;
     } else {
       const res = runEngine(p, stats);
-      items = applyCalcEdits(p, addRiserItems(p, addAvrItems(p, addFinishItems(p, res && res.draftItems ? res.draftItems : null))));
+      items = applyCalcEdits(p, addRiserItems(p, addPsuItems(p, addAvrItems(p, addFinishItems(p, res && res.draftItems ? res.draftItems : null)))));
       headHtml = `<div class="ep-plan-srow"><b>${T.workHead}</b></div>
         <div class="ep-plan-srow ep-plan-hintrow">${T.approxHint}</div>`;
     }
@@ -1414,6 +1438,11 @@
       c.project.settings.cable24 = String(e.target.value || "").trim();
       c.persist("cable-24"); sheet();
     }
+    if (e.target.getAttribute && e.target.getAttribute("data-pc-cable24cct") != null) {
+      const c = core(); c.commit();
+      c.project.settings.cable24Cct = String(e.target.value || "").trim();
+      c.persist("cable-24cct"); sheet();
+    }
     if (e.target.getAttribute && e.target.getAttribute("data-pc-cable24rgb") != null) {
       const c = core(); c.commit();
       c.project.settings.cable24Rgb = String(e.target.value || "").trim();
@@ -1447,5 +1476,5 @@
   });
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Calc = { sheet, sheetOrigin, originHtml, buildBlocks, runEngine, priceFor, calcByRoutes, estimateItems, perCircuit, setPrefetched, memoToken, sheetConsumSettings, applyCalcEdits, defaultCableMark, is24Circuit };
+  EP.Plan.Calc = { sheet, sheetOrigin, originHtml, buildBlocks, runEngine, priceFor, calcByRoutes, estimateItems, perCircuit, setPrefetched, memoToken, sheetConsumSettings, applyCalcEdits, defaultCableMark, is24Circuit, ledMark };
 })();

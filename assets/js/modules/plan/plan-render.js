@@ -508,6 +508,7 @@
       add("rect", { x: -11 * k, y: -5 * k, width: 22 * k, height: 10 * k, rx: 1.5 * k, class: mini ? null : "ep-plan-catbg", "stroke-width": 0 });
       line(-11 * k, -3 * k, 11 * k, -3 * k);
       [-7, 0, 7].forEach((x) => { line(x * k, -3 * k, x * k, -1 * k); add("rect", { x: (x - 1.8) * k, y: -1 * k, width: 3.6 * k, height: 3.6 * k }); });
+      if (kd === "mag48") tag("48 В");
     } else if (t === "ac") {
       frame(11 * k, 5.5 * k, 1.8 * k);
       [-2.5, 0, 2.5].forEach((y) => line(-8 * k, y * k, 8 * k, y * k, lw * 0.8));
@@ -546,7 +547,7 @@
       add("rect", { x: -9 * k, y: -7 * k, width: 18 * k, height: 11 * k, rx: 2 * k, class: mini ? null : "ep-plan-catbg", "stroke-width": 0 });
       add("path", { d: `M ${-8 * k} ${2 * k} H ${-1 * k} L ${3.6 * k} ${-2.6 * k}` });
       add("circle", { cx: 5 * k, cy: -4 * k, r: 1.9 * k });
-      tag(t === "output24" ? "24 В" : t === "output3" ? "380 В · 3 ф." : (kd === "reserve" ? "Резерв" : "220 В ~"));
+      tag(t === "output24" ? (EP.Plan.Geometry.lvLabel(elem) || "24 В") + (EP.Plan.Geometry.ledCores(elem) ? " · LED" : "") : t === "output3" ? "380 В · 3 ф." : (kd === "reserve" ? "Резерв" : "220 В ~"));
     }
     grp.appendChild(sub);
     return true;
@@ -1604,7 +1605,7 @@
             d: `M ${cx} ${cy + rd} Q ${cx + amp} ${cy + rd + len * 0.28} ${cx} ${cy + rd + len * 0.55} Q ${cx - amp} ${cy + rd + len * 0.82} ${cx} ${cy + rd + len}`,
             fill: "none", stroke: colEl, "stroke-width": sw * 0.8, "stroke-linecap": "round", class: "ep-plan-tail"
           }));
-          const tailLbl = elem.type === "output24" ? "24В" : (elem.type === "output3" ? "3ф · 5×" : "");
+          const tailLbl = elem.type === "output24" ? (G.lvPrefix(elem) || "24В") : (elem.type === "output3" ? "3ф · 5×" : "");
           if (tailLbl) grp.appendChild(el("text", { x: cx + rd + 3 * k, y: cy - rd, "font-size": 8 * k, fill: colEl, class: "ep-plan-tailtxt" }, tailLbl));
         } else if (!drewGost && !drewDesign && !drewCat) {
           if (realThis) {
@@ -1700,7 +1701,7 @@
             // из нескольких трансформаторных щитов берём БЛИЖАЙШИЙ К ЦЕЛИ — тот же, что
             // выберет трассировка для этой точки (routeGroups/build24Legs), иначе пунктир
             // показывал бы не тот щит, через который реально пойдёт кабель
-            const trafos = target.type === "output24" ? (project.panels || []).filter((pn) => pn.transformer) : [];
+            const trafos = G.isLv(target) ? (project.panels || []).filter((pn) => pn.transformer) : [];
             const tx24 = trafos.length ? trafos.slice().sort((x, y) => G.dist(b, x) - G.dist(b, y))[0] : null;
             if (tx24) {
               g.appendChild(swLine({ x1: a.x, y1: a.y, x2: tx24.x, y2: tx24.y, class: "ep-plan-swlink", stroke: col, "stroke-width": sw * 0.5 }));

@@ -83,7 +83,7 @@
   function lineKind(p, c) {
     const els = (p.elements || []).filter((e) => e.circuitId === c.id);
     if (!els.length) return "pw";
-    if (els.every((e) => e.type === "output24")) return "24";
+    if (els.every((e) => G().isLv(e))) return "24";
     if (els.every((e) => LV[e.layer])) return "lv";
     return "pw";
   }
@@ -139,6 +139,17 @@
     });
     return out;
   }
+  /* БЛОКИ ПИТАНИЯ в щите (каталог, пакет 2; решение владельца — БП в щите): по одному на каждую
+     низковольтную линию (вся нагрузка — G.isLv), с её напряжением. На DIN-рейке занимает
+     PSU_MOD модулей — входит в подбор корпуса; в смету — материал по напряжению и установка. */
+  const PSU_MOD = 4;
+  function psuList(p, panelId) {
+    return linesOf(p, panelId).map((c) => {
+      const els = (p.elements || []).filter((e) => e.circuitId === c.id && e.type !== "junction");
+      if (!els.length || !els.every((e) => G().isLv(e))) return null;
+      return { lineId: c.id, label: G().lvLabel(els[0]) };
+    }).filter(Boolean);
+  }
   // модулей в щите: вводной (+ вводное УЗО) — только у главного щита, у остальных
   // питающий аппарат считаем как вводной того же числа полюсов
   function modulesOfDevice(d) {
@@ -152,6 +163,7 @@
     let m = s.phases === 3 ? 3 : 1;
     if (isMain && s.mainRcd) m += s.phases === 3 ? 4 : 2;
     devices(p, panelId).forEach((d) => { m += modulesOfDevice(d); });
+    m += psuList(p, panelId).length * PSU_MOD;
     if (!(opts && opts.noReserve)) m += Math.max(0, s.panelReserve || 0);
     return m;
   }
@@ -364,8 +376,11 @@
     if (!c) return "";
     const C = core(), els = loadElsOf(p, c);
     // 24В-линия (вся нагрузка — «Вывод 24В») — питание 24В, марка из настроек (2 жилы, у RGB — 5)
-    if (els.length && els.every((e) => e.type === "output24")) {
+    if (els.length && els.every((e) => G().isLv(e))) {
       const CA = EP.Plan.Calc;
+      // подсветка, заданная у точек линии, главнее признака линии «RGB»: берём самую многожильную
+      const lc = els.reduce((m, e) => Math.max(m, G().ledCores(e)), 0);
+      if (lc && CA && CA.ledMark) return CA.ledMark(p, lc);
       if (CA && CA.defaultCableMark) return CA.defaultCableMark(p, "lv", true, !!c.rgb);
       return c.rgb ? (p.settings.cable24Rgb || "КГ ВВГнг-LS 5×1.5") : (p.settings.cable24 || "КГ ВВГнг-LS 2×2.5");
     }
@@ -385,7 +400,7 @@
   }
   // кабель линии для любого расчёта: заданный вручную, иначе автоподбор
   function cableOf(p, c) { return (c && c.cable) || autoCable(p, c); }
-  EP.Plan.Circuits = {
+  EP.Plan.Circuits = { psuList, PSU_MOD,
     autoCable, cableOf, needSection, SECTION_BY_AMP,
     toManualModel,
     RCD_RATINGS, RCD_LEAKS,

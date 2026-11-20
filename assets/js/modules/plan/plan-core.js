@@ -78,6 +78,7 @@
     routeOnAssign: true,
     cable24: "КГ ВВГнг-LS 2×2.5",
     cable24Rgb: "КГ ВВГнг-LS 5×1.5",
+    cable24Cct: "КГ ВВГнг-LS 3×1.5", // лента тёплый/холодный: общий + 2 канала
     // выпуск кабеля (концы на разделку/подключение) — см НА КАЖДЫЙ конец кабеля, добавляется
     // в метраж по марке отдельно от самой трассы/спуска (просьба пользователя: «выпуск кабеля
     // из подрозетников… длину вывода из стены любого кабеля, и так же в распред коробках…
@@ -175,7 +176,7 @@
         mainBreaker: DEFAULTS.mainBreaker, phases: DEFAULTS.phases, meter: false, mainRcd: false,
         panelBrand: DEFAULTS.panelBrand, panelReserve: DEFAULTS.panelReserve, panelBox: null,
         symbolStyle: DEFAULTS.symbolStyle, realScale: DEFAULTS.realScale, cableReserve: DEFAULTS.cableReserve, cableRoundM: DEFAULTS.cableRoundM, cableBrand: DEFAULTS.cableBrand,
-        cable24: DEFAULTS.cable24, cable24Rgb: DEFAULTS.cable24Rgb, routeQuality: DEFAULTS.routeQuality, routePrecalc: DEFAULTS.routePrecalc, lampDirect: DEFAULTS.lampDirect, routeOnAssign: DEFAULTS.routeOnAssign,
+        cable24: DEFAULTS.cable24, cable24Rgb: DEFAULTS.cable24Rgb, cable24Cct: DEFAULTS.cable24Cct, routeQuality: DEFAULTS.routeQuality, routePrecalc: DEFAULTS.routePrecalc, lampDirect: DEFAULTS.lampDirect, routeOnAssign: DEFAULTS.routeOnAssign,
         cableStubPoint: DEFAULTS.cableStubPoint, cableStubJunction: DEFAULTS.cableStubJunction, cableStubPanel: DEFAULTS.cableStubPanel,
         routeOffset: DEFAULTS.routeOffset, sleeveD: DEFAULTS.sleeveD, connectorMode: DEFAULTS.connectorMode,
         gofraCeil: DEFAULTS.gofraCeil,
@@ -748,6 +749,7 @@
       if (el.kind != null && typeof el.kind !== "string") delete el.kind;
       if (el.watt != null) { const w = fin(el.watt); if (w == null || w <= 0) delete el.watt; else el.watt = w; }
       if (el.phases != null && el.phases !== 1 && el.phases !== 3) delete el.phases;
+      if (el.led != null && !({ mono: 1, cct: 1, rgbw: 1 })[el.led]) delete el.led;
       // цели клавиш: строка (одна цель) ИЛИ массив строк (несколько) на КАЖДУЮ клавишу
       let t = el.targetIds;
       if (typeof t === "string") t = [t];
@@ -891,6 +893,7 @@
     if (typeof p.settings.routeOnAssign !== "boolean") p.settings.routeOnAssign = DEFAULTS.routeOnAssign;
     if (p.settings.cable24 == null) p.settings.cable24 = DEFAULTS.cable24;
     if (p.settings.cable24Rgb == null) p.settings.cable24Rgb = DEFAULTS.cable24Rgb;
+    if (p.settings.cable24Cct == null) p.settings.cable24Cct = DEFAULTS.cable24Cct;
     if (p.settings.cableStubPoint == null) p.settings.cableStubPoint = DEFAULTS.cableStubPoint;
     if (p.settings.cableStubJunction == null) p.settings.cableStubJunction = DEFAULTS.cableStubJunction;
     if (p.settings.cableStubPanel == null) p.settings.cableStubPanel = DEFAULTS.cableStubPanel;
