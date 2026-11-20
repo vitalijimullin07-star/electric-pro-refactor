@@ -204,7 +204,7 @@
   function newRoom(points, name) {
     return { id: uid("rm"), name: name || "Комната", points: points || [], height: null /* null = settings.ceilingHeight */, zones: [], material: null /* null = settings.wallMaterial */, floorId: curFloorId() };
   }
-  function newPanel(x, y, name) { return { id: uid("pn"), x: x || 0, y: y || 0, name: name || "Щит", transformer: false, router: false, avr: false, neptun: false /* контроллер «Нептун»: цель датчиков протечки */ /* система АВР: автоматический ввод резерва (второй ввод/генератор) */, height: null /* null = settings.panelHeight (общая на проект) */, floorId: curFloorId() }; }
+  function newPanel(x, y, name) { return { id: uid("pn"), x: x || 0, y: y || 0, name: name || "Щит", transformer: false, router: false, avr: false, neptun: false /* контроллер «Нептун»: цель датчиков протечки */, security: false /* охранная панель: цель сигнализации */ /* система АВР: автоматический ввод резерва (второй ввод/генератор) */, height: null /* null = settings.panelHeight (общая на проект) */, floorId: curFloorId() }; }
   function newElement(type, wallId, offset, height, layer) {
     return {
       id: uid("el"), type, wallId, offset: offset || 0, height: height || 0, layer: layer || "power", status: "planned",
@@ -750,6 +750,7 @@
       if (el.watt != null) { const w = fin(el.watt); if (w == null || w <= 0) delete el.watt; else el.watt = w; }
       if (el.phases != null && el.phases !== 1 && el.phases !== 3) delete el.phases;
       if (el.led != null && !({ mono: 1, cct: 1, rgbw: 1 })[el.led]) delete el.led;
+      if (el.wire != null && el.wire !== "own" && el.wire !== "loop") delete el.wire;
       // цели клавиш: строка (одна цель) ИЛИ массив строк (несколько) на КАЖДУЮ клавишу
       let t = el.targetIds;
       if (typeof t === "string") t = [t];
@@ -879,7 +880,7 @@
     p.rcdGroups = Array.isArray(p.rcdGroups) ? p.rcdGroups : [];
     p.panels = p.panels || [];
     (p.elements || []).forEach((el) => { if (el.riserLink === undefined) el.riserLink = null; });
-    p.panels.forEach((pn) => { if (pn.transformer == null) pn.transformer = false; if (pn.router == null) pn.router = false; if (pn.avr == null) pn.avr = false; if (pn.neptun == null) pn.neptun = false; });
+    p.panels.forEach((pn) => { if (pn.transformer == null) pn.transformer = false; if (pn.router == null) pn.router = false; if (pn.avr == null) pn.avr = false; if (pn.neptun == null) pn.neptun = false; if (pn.security == null) pn.security = false; });
     p.settings = p.settings || {};
     if (!p.settings.symbolStyle) p.settings.symbolStyle = DEFAULTS.symbolStyle;
     if (p.settings.realScale == null) p.settings.realScale = DEFAULTS.realScale;

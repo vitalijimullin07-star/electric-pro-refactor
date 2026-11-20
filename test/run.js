@@ -11091,6 +11091,49 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 81е. Каталог, пакет 4: охранная сигнализация =====
+  {
+    const EL = EP.Plan.Elements;
+    test("каталог П4: извещатели шлейфом к охранной панели, «своим кабелем» — каждый своей линией, сирена и выход аварии", () => {
+      const sec = M.newPanel(390, 150, "Охрана"); sec.security = true;
+      const pw = M.newPanel(390, 250, "ЩК");
+      const { P, w } = install({ panels: [sec, pw] });
+      const a1 = M.newElement("alarm", w(1), 100, 220, "lv"), a2 = M.newElement("alarm", w(1), 250, 220, "lv"), a3 = M.newElement("alarm", w(2), 150, 220, "lv");
+      a2.kind = "door";
+      const own1 = M.newElement("alarm", w(3), 100, 220, "lv"), own2 = M.newElement("alarm", w(3), 250, 220, "lv");
+      own1.wire = "own"; own2.wire = "own"; own2.kind = "smoke";
+      const sr = M.newElement("siren", w(0), 100, 220, "lv"), lo = M.newElement("leakout", w(0), 200, 150, "lv");
+      P.elements.push(a1, a2, a3, own1, own2, sr, lo);
+      const iss0 = EP.Plan.Rules.run(P).issues.map((i) => i.msg).join(" | ");
+      ok(/каждый на своей линии/.test(iss0), "проверки: «своим кабелем» без линии");
+      [own1, own2].forEach((e) => { EL.selectType("alarm"); e.circuitId = null; });
+      const c1 = M.newCircuit("ОС1", "#f00", 6), c2 = M.newCircuit("ОС2", "#0f0", 6); P.circuits.push(c1, c2);
+      own1.circuitId = c1.id; own2.circuitId = c2.id;
+      ok(!/каждый на своей линии/.test(EP.Plan.Rules.run(P).issues.map((i) => i.msg).join(" | ")), "с линиями — без замечания");
+      EP.Plan.Routes.build();
+      const to = (e) => P.routes.filter((r) => r.fromId === e.id);
+      // шлейф: к охранной панели приходит ОДИН кабель от трёх извещателей
+      const loopIds = new Set([a1.id, a2.id, a3.id]);
+      eq(P.routes.filter((r) => loopIds.has(r.fromId) && r.toId === sec.id).length, 1, "шлейф — один кабель в панель");
+      ok(P.routes.some((r) => loopIds.has(r.fromId) && loopIds.has(r.toId)), "датчики соединены друг с другом");
+      [own1, own2, sr, lo].forEach((e) => ok(to(e).length === 1 && to(e)[0].toId === sec.id, e.type + " — своим кабелем в охранную панель"));
+      ok(!P.routes.some((r) => r.toId === pw.id), "в силовой щит охрана не идёт");
+      const names = EP.Plan.Calc.calcByRoutes(P).items.map((it) => it.name);
+      ok(names.some((n) => /^Кабель КСПВ 4×0\.5/.test(n)) && names.some((n) => /^Кабель КСПВ 2×0\.5/.test(n)), "кабели КСПВ: " + names.filter((n) => /Кабель/.test(n)).join(" | "));
+      ok(names.indexOf("Установка охранного извещателя") >= 0 && names.indexOf("Установка сирены") >= 0, "чистовые работы");
+      const own3 = M.newElement("alarm", w(2), 300, 220, "lv"); own3.wire = "own"; P.elements.push(own3); EL.assignNewCircuit(own3);
+      eq(P.circuits.find((c) => c.id === own3.circuitId).name.replace(/\d+$/, ""), "ОС", "линии охраны — «ОС»");
+    });
+    test("каталог П4: без охранной панели — замечание, силовой щит охрану не принимает", () => {
+      const rt = M.newPanel(390, 150, "Слаботочный"); rt.router = true;
+      const { P, w } = install({ panels: [rt, M.newPanel(390, 250, "ЩК")] });
+      P.elements.push(M.newElement("alarm", w(1), 100, 220, "lv"));
+      ok(/«Охранная панель»/.test(EP.Plan.Rules.run(P).issues.map((i) => i.msg).join(" | ")), "замечание про охранную панель");
+      EP.Plan.Routes.build();
+      ok(P.routes.length === 1 && P.routes[0].toId === rt.id, "без охранной панели — в слаботочный щит");
+    });
+  }
+
   // ===== 82. Аудит Астры, пакет 3: формы ↔ модель =====
   // ✓ пишет только то, что человек менял; перерисовка карточки того же объекта (тяга, ↶/↷, материал)
   // не теряет набранное; после ↶/↷ карточка показывает восстановленную модель или закрывается;

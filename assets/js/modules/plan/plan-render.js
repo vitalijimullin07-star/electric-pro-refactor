@@ -415,7 +415,7 @@
      без подложки и без меток. */
   const CAT_TYPES = new Set(["socket", "switch", "light", "bra", "track", "ac", "warmfloor", "internet", "tv",
     "camera", "sensor", "leak", "intercom", "pir", "lux", "output", "output24", "output3", "heater", "towel", "waterheat", "flowheat", "eboiler", "pump", "supply", "evcharge", "fan",
-    "wifiap", "callpanel", "elock", "valve", "leakbtn", "radiorx"]);
+    "wifiap", "callpanel", "elock", "valve", "leakbtn", "radiorx", "alarm", "siren", "leakout"]);
   function drawCatalogEl(grp, elem, cx, cy, k, sw, col, opts) {
     const t = elem.type;
     if (!CAT_TYPES.has(t)) return false;
@@ -540,6 +540,23 @@
       add("path", { d: `M 0 ${-8 * k} C ${2 * k} ${-4.5 * k} ${6 * k} ${-1 * k} ${6 * k} ${2.5 * k} A ${6 * k} ${6 * k} 0 0 1 ${-6 * k} ${2.5 * k} C ${-6 * k} ${-1 * k} ${-2 * k} ${-4.5 * k} 0 ${-8 * k} Z`, class: mini ? null : "ep-plan-catbg" });
       line(-2.6 * k, 3 * k, 2.6 * k, 3 * k);
       if (kd === "radio" || kd === "zigbee") { add("path", { d: `M ${4.5 * k} ${-6 * k} A ${3 * k} ${3 * k} 0 0 1 ${7.5 * k} ${-3 * k} M ${4.5 * k} ${-8.5 * k} A ${5.5 * k} ${5.5 * k} 0 0 1 ${10 * k} ${-3 * k}`, "stroke-width": lw * 0.8 }); tag(kd === "zigbee" ? "Zigbee" : "Радио"); }
+    } else if (t === "alarm") {
+      // охранный извещатель: круг с меткой «что ловит», у «своим кабелем» — сплошной, шлейфом — штрих
+      add("circle", { cx: 0, cy: 0, r: s, class: mini ? null : "ep-plan-catbg" });
+      const AL = { "": ["ИК", "Движение"], presence: ["Р", "Присутствие"], door: ["Г", "Открытие"], smoke: ["Д", "Дым"], heat: ["Т", "Нагрев"], co: ["CO", "Угарный газ"], gas: ["Г", "Газ"], vibration: ["В", "Вибрация"] };
+      const a2 = AL[kd] || AL[""];
+      txt(0, 0, a2[0], (a2[0].length > 1 ? 5.5 : 7) * k);
+      if (kd === "door") { line(-s, s * 0.6, -s * 0.2, s * 0.6); line(s * 0.2, s * 0.6, s, s * 0.6); }
+      tag(a2[1] + (elem.wire === "own" ? " · свой кабель" : ""));
+    } else if (t === "siren") {
+      frame(s, s * 0.8);
+      add("path", { d: `M ${-5 * k} ${-2.5 * k} H ${-2 * k} L ${3 * k} ${-6 * k} V ${6 * k} L ${-2 * k} ${2.5 * k} H ${-5 * k} Z`, "stroke-width": lw * 0.8 });
+      add("path", { d: `M ${5 * k} ${-3 * k} A ${4 * k} ${4 * k} 0 0 1 ${5 * k} ${3 * k}`, "stroke-width": lw * 0.8 });
+      tag("Сирена");
+    } else if (t === "leakout") {
+      frame(s, s * 0.8);
+      txt(0, -0.5 * k, "!", 9 * k);
+      tag("Авария → охрана");
     } else if (t === "wifiap") {
       add("circle", { cx: 0, cy: 0, r: s, class: mini ? null : "ep-plan-catbg" });
       dot(0, 3 * k);
@@ -1782,6 +1799,8 @@
       // АВР (автоматический ввод резерва) — короткая метка у щита: узел заметный,
       // и по плану сразу видно, в каком щите он стоит
       if (pn.avr && labelsOn) grp.appendChild(el("text", { x: pn.x, y: pn.y - hc / 2 - 4 * k, "font-size": 8.5 * k, "text-anchor": "middle", class: "ep-plan-qf", fill: "#f59e0b" }, "АВР"));
+      // охранная панель — метка «ОХР» (над АВР, если оба)
+      if (pn.security && labelsOn) grp.appendChild(el("text", { x: pn.x, y: pn.y - hc / 2 - (pn.avr ? 13 : 4) * k, "font-size": 8.5 * k, "text-anchor": "middle", class: "ep-plan-qf", fill: "#ef4444" }, "ОХР"));
       g.appendChild(grp);
     });
 
