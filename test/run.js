@@ -9117,6 +9117,8 @@ test("фото: deleteProject чистит кэш фото своего прое
       ok(/\.ep-plan-xfade \{[^}]*transition: opacity[^}]*pointer-events: none|\.ep-plan-xfade \{[^}]*pointer-events: none[^}]*transition: opacity/.test(css) && /\.ep-plan-xfade\.is-out \{ opacity: 0; \}/.test(css), "CSS: прозрачность одного слоя, касания проходят насквозь");
       ok(/svg\.style\.opacity = "0"/.test(sx) && /svg\.style\.transition = "opacity/.test(sx), "сцена под копией проступает навстречу (иначе полупрозрачные заливки складывались дважды)");
       ok(/\.ep-plan-svgwrap > \.ep-plan-svg \{[^}]*will-change: opacity/.test(css), "у сцены свой слой прозрачности — без перестройки слоёв в конце перехода");
+      ok(/const k = canvas\.drawCmPerPx \? canvas\.drawCmPerPx\(\) : canvas\.cmPerPx\(\);/.test(read("assets/js/modules/plan/plan-render.js")),
+        "план рисуется под масштаб сцены холста (посреди жеста — прежний)");
     });
     test("разнос пучка трасс на экране не зависит от зума", () => {
       const room = M.newRoom(G.rectPoints(0, 0, 600, 400), "Коридор");
