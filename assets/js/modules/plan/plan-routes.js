@@ -2526,7 +2526,8 @@
     groups.forEach((g) => {
       const targetPanels = pinned(g.circuitId, g.kind === "24" ? trafoPanels : g.kind === "leak" ? neptunPanels : g.kind === "sec" ? securityPanels : g.kind === "lv" ? routerPanels : powerPanels);
       // распайки, доступные этой линии (своей QF; «без линии» — любые распайки)
-      const J = g.circuitId ? juncts.filter((n) => n.circuitId === g.circuitId) : juncts.slice();
+      // охрана и «Нептун» без линии в чужие (силовые) коробки не заходят
+      const J = g.circuitId ? juncts.filter((n) => n.circuitId === g.circuitId) : (g.kind === "sec" || g.kind === "leak") ? [] : juncts.slice();
       // 24В — НИКОГДА не шлейфом: у каждого вывода 24В свой кабель от трансформаторного
       // щита (просьба пользователя: «на каждый вывод 24В, которую назначили клавишой, от
       // щита идёт провод до точки»); клавиши коммутируют их независимо, шлейф физически
@@ -2573,7 +2574,7 @@
         if (rest.length) chainFromPanel(c, p, rest, targetPanels.concat(J, linked, extra), g.circuitId);
       } else {
         // НЕТ распайки -> шлейф: щит/роутер [+ уже подключённые точки того же рода] -> точка -> точка
-        chainFromPanel(c, p, g.items, targetPanels.concat(extra), g.circuitId);
+        chainFromPanel(c, p, g.items, targetPanels.concat(extra), g.circuitId, { linear: g.kind === "sec" });
       }
     });
   }
@@ -3961,8 +3962,12 @@
   // автомате); цена — 95мс против 11мс на предельных 40 точках одной линии, что после
   // кэша графа магистралей (см. buildGuideGraph выше) приемлемо.
   const CHAIN_LEN_MAX = 40;
-  function chainFromPanel(c, p, items, panels, circuitId) {
+  // opts.linear — настоящий шлейф одной линией (охрана): следующая точка цепляется только к
+  // ПОСЛЕДНЕЙ подключённой, в панель приходит один кабель (иначе — дерево от любых узлов)
+  function chainFromPanel(c, p, items, panels, circuitId, opts) {
     const connected = panels.slice(); // {kind:'panel', pos}
+    const linear = !!(opts && opts.linear);
+    let tail = null;
     const rest = items.slice();
     const useLen = rest.length <= CHAIN_LEN_MAX;
     const memo = new Map();
@@ -3978,7 +3983,7 @@
     };
     while (rest.length) {
       let best = null;
-      rest.forEach((it, idx) => connected.forEach((cn) => {
+      rest.forEach((it, idx) => (linear && tail ? [tail] : connected).forEach((cn) => {
         const d = metric(it.el, it.pos, cn);
         if (!best || d < best.d) best = { d, idx, cn };
       }));
@@ -3988,7 +3993,7 @@
       // трасса реально построена (не Infinity/недостижимая пара) — только тогда точка
       // становится узлом для следующих звеньев шлейфа; иначе она осталась бы «фиктивно
       // подключённой» и следующие точки могли бы тянуться к несуществующему проводу.
-      if (rt) connected.push({ kind: "point", id: it.el.id, el: it.el, pos: it.pos });
+      if (rt) { tail = { kind: "point", id: it.el.id, el: it.el, pos: it.pos }; connected.push(tail); }
       rest.splice(best.idx, 1);
     }
   }

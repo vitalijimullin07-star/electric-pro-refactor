@@ -384,6 +384,8 @@
       if (CA && CA.defaultCableMark) return CA.defaultCableMark(p, "lv", true, !!c.rgb);
       return c.rgb ? (p.settings.cable24Rgb || "КГ ВВГнг-LS 5×1.5") : (p.settings.cable24 || "КГ ВВГнг-LS 2×2.5");
     }
+    // своя марка у узлов каталога (охрана, «Нептун», панель, замок) — если она одна на всю линию
+    if (els.length) { const dm = els.map((e) => G().devCable(p, e)); if (dm[0] && dm.every((m) => m === dm[0])) return dm[0]; }
     // слаботочка (интернет/ТВ/видеонаблюдение) — витая пара, а не силовой по автомату
     if (els.length && els.every((e) => e.layer === "lv" || e.layer === "tv" || e.layer === "cctv")) return "Витая пара (UTP)";
     const prefix = c.poles === 3 ? "5×" : "3×";
