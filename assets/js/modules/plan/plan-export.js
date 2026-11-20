@@ -1109,6 +1109,7 @@
       if (SPEC_SKIP.test(nm)) return;
       const qty = Math.ceil(Number(it.qty) || 0);
       if (!qty) return;
+      if (/^блок питания/i.test(nm)) { push(T.secShields, nm, "", "шт.", qty); return; } // в щите
       if (/^кабель/i.test(nm)) {
         const mark = nm.replace(/^кабель\s*/i, "").split("·")[0].trim();
         const cs = CABLE_SEC(mark);
@@ -1140,7 +1141,7 @@
       if (type === "light") return ({ spot: "Светильник точечный", pendant: "Светильник подвесной", linear: "Светильник линейный", outdoor: "Светильник наружный", emergency: "Светильник аварийный" })[el && el.kind] || "Светильник потолочный";
       if (type === "fan") return "Вентилятор вытяжной";
       if (type === "bra") return "Светильник настенный (бра)";
-      if (type === "track") return "Трековый светильник";
+      if (type === "track") return el && el.kind === "mag48" ? "Магнитный трек 48 В" : "Трековый светильник";
       if (type === "ac") return "Вывод для кондиционера";
       // выводы/распайки/стояки — не изделия, в спецификацию механизмов не идут
       // приборы (бойлер, котёл, конвектор…) — оборудование заказчика, не электроустановочное изделие

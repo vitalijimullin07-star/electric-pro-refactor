@@ -101,8 +101,8 @@
       const appl = applByEl.get(el.id);
       const nd = appl && F && F.needFor ? F.needFor(appl) : null;
       if (SWITCHES[el.type]) { switches.push({ el, r }); return; }
+      if (G().isLv(el)) { add(bucket.v24, r, el); return; } // раньше света: магнитный трек 48 В — от БП
       if (LIGHTS[el.type]) { add(bucket.light, r, el); return; }
-      if (el.type === "output24") { add(bucket.v24, r, el); return; }
       if (el.type === "leak") { leaks.push(el); return; }
       if (el.type === "internet" || el.type === "sensor" || el.type === "intercom") { mk({ prefix: "Int", kind: "lv", title: `${tname(el)}${rn ? " · " + rn : ""}`, breaker: 6, elIds: [el.id], rooms: [rn] }); return; }
       if (el.type === "tv") { mk({ prefix: "TV", kind: "lv", title: `ТВ${rn ? " · " + rn : ""}`, breaker: 6, elIds: [el.id], rooms: [rn] }); return; }
@@ -191,7 +191,7 @@
       for (const id of tids) {
         if (lineOf.has(id)) { ln = lineOf.get(id); break; }
         const t = (p.elements || []).find((x) => x.id === id);
-        if (t && t.circuitId && existing.has(t.circuitId) && mode !== "all" && t.type !== "output24") { keepCid = t.circuitId; break; }
+        if (t && t.circuitId && existing.has(t.circuitId) && mode !== "all" && !G().isLv(t)) { keepCid = t.circuitId; break; }
       }
       if (!ln && !keepCid && r) ln = lightLineOfRoom.get(r.id) || null;
       if (!ln && !keepCid) ln = firstLight;
@@ -200,10 +200,7 @@
       else mk({ prefix: "QF", kind: "light", title: `Свет${r ? ": " + r.name : ""}`, breaker: 10, elIds: [el.id], rooms: [r ? r.name : ""] });
     });
     // 24В — линия на помещение
-    bucket.v24.forEach((b) => {
-      const rn = b.room ? b.room.name : "";
-      mk({ prefix: "24В", kind: "v24", title: `24В${rn ? " · " + rn : ""}`, breaker: 6, elIds: b.els.map((e) => e.id), rooms: [rn], rgb: null });
-    });
+    bucket.v24.forEach((b) => lvLines(b, mk));
     if (leaks.length) mk({ prefix: "Int", kind: "lv", title: "Датчики протечки → Нептун", breaker: 6, elIds: leaks.map((e) => e.id), rooms: [] });
 
     // порядок нумерации QF: розетки → влажные → выделенные → свет (как в щите по привычке)
@@ -328,13 +325,21 @@
   function brSave(o) { try { localStorage.setItem(BR_KEY, JSON.stringify(o)); } catch (e) { /* без запоминания */ } }
   const BS = { cats: null, rooms: null, mode: "free", last: null }; // rooms: null — все комнаты этажа
 
+  // низковольтные точки помещения — линия на КАЖДОЕ напряжение (12 В, 24 В, 48 В, 24 В ~…):
+  // у них разные блоки питания в щите
+  function lvLines(b, mk) {
+    const rn = b.room ? b.room.name : "";
+    const by = new Map();
+    b.els.forEach((e) => { const k = G().lvPrefix(e) || "24В"; if (!by.has(k)) by.set(k, []); by.get(k).push(e); });
+    by.forEach((els, pre) => mk({ prefix: pre, kind: "v24", title: `${pre}${rn ? " · " + rn : ""}`, breaker: 6, elIds: els.map((e) => e.id), rooms: [rn], rgb: null }));
+  }
   // вид нагрузки точки (null — не раскладывается: распайка, стояк, щит, проём, «было»)
   function brCatOf(el, appl) {
     if (SKIP[el.type] || el.status === "existing") return null;
     if (el.type === "block" && !((el.params && el.params.items) || []).some((t) => t === "socket" || t === "switch")) return null;
     if (SWITCHES[el.type]) return "switch";        // садится на линию своего света (вид «Свет»)
+    if (G().isLv(el)) return "v24";
     if (LIGHTS[el.type]) return "light";
-    if (el.type === "output24") return "v24";
     if (el.type === "warmfloor") return "warm";
     if (el.type === "ac") return "ac";
     if (LV_TYPES[el.type] || (el.type === "output" && el.layer === "lv")) return "lv";
@@ -460,14 +465,14 @@
       for (const id of tids) {
         if (lineOf.has(id)) { ln = lineOf.get(id); break; }
         const t = elById.get(id);
-        if (t && t.type !== "output24" && t.circuitId && existing.has(t.circuitId) && !scope.has(t.id)) { keep = t.circuitId; break; }
+        if (t && !G().isLv(t) && t.circuitId && existing.has(t.circuitId) && !scope.has(t.id)) { keep = t.circuitId; break; }
       }
       if (!ln && !keep && r) ln = lightOfRoom.get(r.id) || null;
       if (ln) ln.elIds.push(el.id);
       else if (keep) attach.push({ attach: keep, elIds: [el.id] });
       else mk({ prefix: "QF", kind: "light", title: `Свет${r ? ": " + r.name : ""}`, breaker: 10, elIds: [el.id], rooms: [r ? r.name : ""] });
     });
-    tourOf(B.v24).forEach((b) => { const rn = b.room ? b.room.name : ""; mk({ prefix: "24В", kind: "v24", title: `24В${rn ? " · " + rn : ""}`, breaker: 6, elIds: b.els.map((e) => e.id), rooms: [rn], rgb: null }); });
+    tourOf(B.v24).forEach((b) => lvLines(b, mk));
     tourOf(B.leak).forEach((b) => { const rn = b.room ? b.room.name : ""; mk({ prefix: "Int", kind: "lv", title: `Протечка → Нептун${rn ? " · " + rn : ""}`, breaker: 6, elIds: b.els.map((e) => e.id), rooms: [rn] }); });
 
     const ORDER = { sock: 0, wet: 1, ded: 2, light: 3, v24: 4, lv: 5 };

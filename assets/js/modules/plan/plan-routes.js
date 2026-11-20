@@ -139,8 +139,8 @@
   // «пол» у света, лампа↔выключатель/распайка — по потолку (прямая формулировка
   // пользователя «по полу только питание идет если по полу»).
   function surfaceOf(p, layer, fromEl, target) {
-    const keyEl = (fromEl && fromEl.type === "output24") ? fromEl
-      : (target && target.el && target.el.type === "output24") ? target.el : fromEl;
+    const keyEl = (fromEl && G().isLv(fromEl)) ? fromEl
+      : (target && target.el && G().isLv(target.el)) ? target.el : fromEl;
     const lampHop = !(target && target.kind === "panel");
     return G().routeSurface(p, layer, keyEl, { lampHop });
   }
@@ -1232,7 +1232,7 @@
     return kindCache.map[circuitId] || null;
   }
   function routeKind(p, fromEl, circuitId) {
-    if (fromEl && fromEl.type === "output24") return "v24";
+    if (fromEl && G().isLv(fromEl)) return "v24";
     const k = circuitId ? circuitKind(p, circuitId) : null;
     if (k) return k;
     return fromEl && fromEl.type !== "junction" ? G().surfaceKeyOf(fromEl.layer, fromEl) : "power";
@@ -2191,7 +2191,7 @@
       }
       tids.forEach((id) => {
         const t = id ? byId.get(id) : null;
-        if (!t || t.id === sw.id || t.type === "output24") return;
+        if (!t || t.id === sw.id || G().isLv(t)) return;
         if (!out.has(t.id)) out.set(t.id, sw);
       });
     });
@@ -2242,7 +2242,7 @@
     const byId = new Map((G().floorScoped(p).elements || []).map((e) => [e.id, e]));
     const tids = G().allTargetIds(sw);
     const seen = new Set();
-    tids.forEach((id) => { const t = id ? byId.get(id) : null; if (t && t.type === "output24") seen.add(t.id); });
+    tids.forEach((id) => { const t = id ? byId.get(id) : null; if (t && G().isLv(t)) seen.add(t.id); });
     return seen.size;
   }
   /* ---------- СТОЯК между этажами (Этажи, Этап 2) ----------
@@ -2348,7 +2348,7 @@
     // роутер-щит вместе с интернетом, а физически его шлейф идёт в контроллер «Нептун»
     // (просьба пользователя: «добавь датчики на нептун, линии должны идти к нептуну»).
     // Нет щита с флагом neptun — прежнее поведение (как обычная слаботочка).
-    const kindOf = (el) => (trafoPanels.length && el.type === "output24") ? "24"
+    const kindOf = (el) => (trafoPanels.length && G().isLv(el)) ? "24"
       : (neptunPanels.length && el.type === "leak") ? "leak"
       : (routerPanels.length && isLvLayer(el.layer) && !isFeeder(p, el)) ? "lv" : "pw"; // датчик, коммутирующий свет, — силовой узел
     // Щиты, принимающие СИЛОВЫЕ линии. Раньше сюда шёл весь список panels, и силовая линия
@@ -2623,7 +2623,7 @@
         const need = new Map(); // panelId -> { pn, t24 (для линии/цвета) }
         G().allTargetIds(sw).forEach((id) => {
           const t = byId.get(id);
-          if (!t || t.type !== "output24") return;
+          if (!t || !G().isLv(t)) return;
           const tp = G().routeAnchor(p, t) || a;
           const near = trafo.slice().sort((x, y) => dist(tp, x.pos) - dist(tp, y.pos))[0];
           if (near && !need.has(near.id)) need.set(near.id, { pn: near, t24: t });
@@ -2662,7 +2662,7 @@
     (p.routes || []).forEach((rt) => {
       if (rt.leg) return;
       const fe = byId.get(rt.fromId);
-      if (fe && fe.type === "output24" && rt.toPanel && trafo.some((t) => t.id === rt.toId)) rt.leg = "sec24";
+      if (fe && G().isLv(fe) && rt.toPanel && trafo.some((t) => t.id === rt.toId)) rt.leg = "sec24";
     });
   }
 

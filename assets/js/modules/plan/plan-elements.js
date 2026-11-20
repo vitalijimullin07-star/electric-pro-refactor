@@ -50,7 +50,8 @@
     pir:       { name: "Датчик движения", glyph: "ДД", layer: "lv", h: null, free: true, targets: true },
     lux:       { name: "Датчик освещ.",   glyph: "ДО", layer: "lv", h: null, free: true, targets: true },
     output:    { name: "Вывод",       glyph: "Вых", layer: "power", h: null, free: true, layerChoice: true },
-    output24:  { name: "Вывод 24В",   glyph: "24В", layer: "lv",    h: null, free: true },
+    // низковольтный вывод от блока питания в щите: напряжение — вид точки (12/24/48 В пост., 12/24 В ~)
+    output24:  { name: "Вывод 12–48В", glyph: "24В", layer: "lv",    h: null, free: true },
     // трёхфазный вывод: «пятижилка» (под клеммы прибора) ИЛИ силовая розетка 3ф —
     // выбор в редакторе точки (el.threeKind). Линия под него автоматически 3-полюсная,
     // поэтому автоподбор кабеля (plan-scheme.js autoCable) сразу даёт 5-жильный.
@@ -76,8 +77,12 @@
     output: [["", "Обычный"], ["reserve", "Резерв"]],
     light: [["", "Потолочный"], ["spot", "Точечный"], ["pendant", "Подвесной"], ["linear", "Линейный"], ["outdoor", "Наружный"], ["emergency", "Аварийный"]],
     heater: [["power", "Силовой — своя линия"], ["fan", "Вентиляторный — шлейфом"]],
-    fan: [["", "Без таймера"], ["timer", "С таймером"]]
+    fan: [["", "Без таймера"], ["timer", "С таймером"]],
+    output24: [["", "24 В пост."], ["dc12", "12 В пост."], ["dc48", "48 В пост."], ["ac12", "12 В ~"], ["ac24", "24 В ~"]],
+    track: [["", "Шинопровод 220 В"], ["mag48", "Магнитный 48 В"]]
   };
+  // подсветка на низковольтном выводе — от неё число жил кабеля «от щита»
+  const LEDS = [["", "Не подсветка"], ["mono", "Лента одноцветная · 2 ж."], ["cct", "Тёпл./хол. · 3 ж."], ["rgbw", "Цвет + белый · 5 ж."]];
   // статусы монтажа: ○ план → ◐ в работе → ✓ готово (+ «было» — существующая, в смету не идёт)
   const STATUS = [["planned", "План"], ["work", "В работе ◐"], ["mounted", "Готово ✓"], ["existing", "Было"]];
   const CFG = { hitPx: 22, wallSnapPx: 26, photoMax: 4, photoSide: 640, blockMax: 6 };
@@ -112,7 +117,7 @@
     presets: "Пресеты:",
     blockTitle: "Сборка блока", blockPosts: (n, m) => `${n}/${m} постов`,
     blockAdd: "Добавить пост:", blockTapDel: "Тап по посту в рамке — убрать",
-    kindLbl: "Вид:", devWatt: "Мощность, Вт",
+    kindLbl: "Вид:", ledLbl: "Подсветка:", devWatt: "Мощность, Вт",
     devNeed: (nd) => `Ток ${String(nd.amps).replace(".", ",")} А → автомат ${nd.breaker}A${nd.poles === 3 ? " 3P" : ""}${nd.rcd ? ", с УЗО/дифом" : ""} · ${nd.own ? "своя линия от щита" : "шлейфом по линии розеток"}`,
     outLayer: "Тип вывода:", outPower: "Силовой", outLv: "Слаботочный",
     swTarget: "Свет от выключателя:", swAuto: "Авто (по линии)", swNone: "не задан",
@@ -550,6 +555,7 @@
       ${el.type === "output3" ? threeKindRow(el) : ""}
       ${kindRow(el)}
       ${t.dev ? devRow(el) : ""}
+      ${ledRow(el)}
       ${el.type === "switch" ? switchKindRow(el) + switchKeysRow(el) + switchChainRow(el) + (el.chainNext ? "" : switchTargetRow(el)) : ""}
       ${t.targets ? switchTargetRow(el) : ""}
       ${t.feedChoice ? feedRow(el) : ""}
@@ -690,7 +696,7 @@
     // маркировать»): у output24 слой lv, поэтому без этой ветки линия 24В называлась бы
     // «Int N» и в подписи над точкой/однолинейке/смете читалась как интернет-линия.
     // Нумерация у каждого префикса своя (см. assignNewCircuit) → «24В1», «24В2»…
-    if (el && el.type === "output24") return "24В";
+    if (el && G().isLv(el)) return G().lvPrefix(el); // «12В», «24В», «48В», «24В~»…
     // розетки от ИБП — своя линия от ИБП, своя нумерация «ИБП1, ИБП2…»
     if (el && el.type === "socket" && G().elKind(el) === "ups") return "ИБП";
     if (layer === "lv") return "Int";
@@ -721,6 +727,42 @@
     devToCircuit(el, circ);
     cs.push(circ); el.circuitId = circ.id;
     return circ;
+  }
+  // низковольтная точка — на линию СВОЕГО напряжения (у 12 В и 24 В разные блоки питания в щите):
+  // существующая линия этого напряжения, иначе новая «12В1», «24В~1»…
+  function lvAssign(el) {
+    const p = core().project, pre = G().lvPrefix(el);
+    const re = new RegExp("^" + pre.replace(/[~]/g, "\\~") + "\\s*\\d+$");
+    const same = (cid) => {
+      const els = (p.elements || []).filter((e) => e.circuitId === cid && e.id !== el.id && e.type !== "junction");
+      return els.length > 0 && els.every((e) => G().isLv(e) && G().lvPrefix(e) === pre);
+    };
+    const ex = (p.circuits || []).find((c) => re.test(String(c.name)) || same(c.id));
+    if (ex) { el.circuitId = ex.id; return ex; }
+    return assignNewCircuit(el);
+  }
+  // сменился вид точки, от которого зависит РОД линии (напряжение вывода, трек 220 ↔ 48 В):
+  // точка уходит на подходящую линию, опустевшая прежняя линия убирается
+  function relineAfterKind(el, wasLv, wasPre) {
+    const p = core().project, nowLv = G().isLv(el);
+    if (!wasLv && !nowLv) return;
+    if (wasLv && nowLv && wasPre === G().lvPrefix(el)) return;
+    const old = el.circuitId;
+    el.circuitId = null;
+    if (nowLv) lvAssign(el);
+    else {
+      // трек снова 220 В: на линию выключателя, который им управляет
+      const sw = (p.elements || []).find((e) => e.circuitId && G().allTargetIds(e).indexOf(el.id) >= 0);
+      if (sw) el.circuitId = sw.circuitId;
+    }
+    if (old && !(p.elements || []).some((e) => e.circuitId === old)) p.circuits = (p.circuits || []).filter((c) => c.id !== old);
+  }
+  function ledRow(el) {
+    if (el.type !== "output24") return "";
+    const cur = el.led || "";
+    return `<div class="ep-plan-srow">${T.ledLbl}
+      ${LEDS.map(([k, nm]) => `<button type="button" class="ep-plan-chip ep-clickable ${cur === k ? "on" : ""}" data-pe-led="${esc(k)}" aria-pressed="${cur === k}">${esc(nm)}</button>`).join("")}
+    </div>`;
   }
   function devToCircuit(el, circ) {
     const nd = G().devNeed(el);
@@ -919,15 +961,9 @@
   function syncTargetCircuit(sw, target) {
     if (!sw || !target) return null;
     const p = core().project;
-    if (target.type === "output24") {
+    if (G().isLv(target)) {
       if (target.circuitId) return null;
-      const only24 = (cid) => {
-        const els = (p.elements || []).filter((e) => e.circuitId === cid && e.type !== "junction");
-        return els.length > 0 && els.every((e) => e.type === "output24");
-      };
-      const ex = (p.circuits || []).find((c) => /^24В/.test(String(c.name)) || only24(c.id));
-      if (ex) { target.circuitId = ex.id; return ex; }
-      return assignNewCircuit(target);
+      return lvAssign(target);
     }
     if (!sw.circuitId || target.circuitId === sw.circuitId) return null;
     target.circuitId = sw.circuitId;
@@ -1577,9 +1613,19 @@
       const v = b.getAttribute("data-pe-kind") || "";
       if (!KINDS[el2.type].some(([k]) => k === v)) return;
       const c = core(); c.commit();
+      const wasLv = G().isLv(el2), wasPre = G().lvPrefix(el2);
       el2.kind = v;
+      relineAfterKind(el2, wasLv, wasPre);
       const solo = soloCircuitOf(el2); if (solo) devToCircuit(el2, solo);
       c.persist("elem-kind"); openEditor(el2, { keepView: true }); rooms().renderScene(); return;
+    }
+    if ((b = t.closest("[data-pe-led]"))) {
+      const el2 = current(); if (!el2 || el2.type !== "output24") return;
+      const v = b.getAttribute("data-pe-led") || "";
+      if (!LEDS.some(([k]) => k === v)) return;
+      const c = core(); c.commit();
+      if (v) el2.led = v; else delete el2.led;
+      c.persist("elem-led"); openEditor(el2, { keepView: true }); rooms().renderScene(); return;
     }
     if ((b = t.closest("[data-pe-phases]"))) {
       const el2 = current(); if (!el2 || !G().DEVICES[el2.type]) return;
