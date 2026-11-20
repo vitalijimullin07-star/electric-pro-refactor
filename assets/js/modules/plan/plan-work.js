@@ -19,7 +19,7 @@
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[m]);
 
   const NOT_POINT = { junction: 1, riser: 1, panel: 1, door: 1, window: 1 };
-  const BOX_TYPES = { socket: 1, switch: 1, tv: 1, internet: 1, ac: 1, sensor: 1, warmfloor: 1, block: 1, intercom: 1, leak: 1, bra: 1 };
+  const BOX_TYPES = { socket: 1, switch: 1, tv: 1, internet: 1, ac: 1, sensor: 1, warmfloor: 1, block: 1, intercom: 1, leak: 1, bra: 1, leakbtn: 1 };
   const STAGES = [
     { id: "strobe", name: "Штробы", icon: "🔨" },
     { id: "boxes", name: "Подрозетники", icon: "⭘" },

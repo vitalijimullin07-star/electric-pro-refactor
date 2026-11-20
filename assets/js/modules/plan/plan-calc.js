@@ -522,7 +522,7 @@
       }
       const addPost = (t) => {
         if (t === "switch" || t === "warmfloor") { P(mat).deep++; trAdd("podroz|deep|" + mat, rn, 1); }
-        else if (t === "socket" || t === "tv" || t === "internet" || t === "ac" || t === "sensor") { P(mat).std++; trAdd("podroz|std|" + mat, rn, 1); }
+        else if (t === "socket" || t === "tv" || t === "internet" || t === "ac" || t === "sensor" || t === "leakbtn") { P(mat).std++; trAdd("podroz|std|" + mat, rn, 1); }
       };
       if (e2.type === "block") ((e2.params && e2.params.items) || []).forEach(addPost);
       else addPost(e2.type);
@@ -623,6 +623,9 @@
         // аварийный светильник / вентилятор с таймером: на хопе к ним 4 жилы — к коммутируемой
         // фазе добавляется постоянная (аккумулятор светильника, выбег вентилятора)
         if (!r.toPanel && (G().fourCore(elById(r.fromId)) || G().fourCore(toEl))) key = key.replace(/(^|\s)3×/, "$14×");
+        // своя марка у слаботочных узлов каталога (вызывная панель, замок, кран, кнопка, приёмник)
+        const dm = !(cc && cc.cable) && G().devCable(p, elById(r.fromId));
+        if (dm) key = dm;
       }
       // Камера/домофон с ОТДЕЛЬНЫМ питанием (el.feed === "sep") — это ДВА кабеля на одну
       // трассу: питание КГ ВВГнг 3×1.5 и данные (витая пара или оптика). При PoE

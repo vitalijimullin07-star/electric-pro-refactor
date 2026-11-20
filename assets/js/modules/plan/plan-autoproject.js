@@ -103,8 +103,8 @@
       if (SWITCHES[el.type]) { switches.push({ el, r }); return; }
       if (G().isLv(el)) { add(bucket.v24, r, el); return; } // раньше света: магнитный трек 48 В — от БП
       if (LIGHTS[el.type]) { add(bucket.light, r, el); return; }
-      if (el.type === "leak") { leaks.push(el); return; }
-      if (el.type === "internet" || el.type === "sensor" || el.type === "intercom") { mk({ prefix: "Int", kind: "lv", title: `${tname(el)}${rn ? " · " + rn : ""}`, breaker: 6, elIds: [el.id], rooms: [rn] }); return; }
+      if (el.type === "leak" || G().isNeptun(el)) { leaks.push(el); return; }
+      if (el.type === "internet" || el.type === "sensor" || el.type === "intercom" || el.type === "wifiap" || el.type === "callpanel" || el.type === "elock") { mk({ prefix: "Int", kind: "lv", title: `${tname(el)}${rn ? " · " + rn : ""}`, breaker: 6, elIds: [el.id], rooms: [rn] }); return; }
       if (el.type === "tv") { mk({ prefix: "TV", kind: "lv", title: `ТВ${rn ? " · " + rn : ""}`, breaker: 6, elIds: [el.id], rooms: [rn] }); return; }
       if (el.type === "camera") { mk({ prefix: "CCTV", kind: "lv", title: `Камера${rn ? " · " + rn : ""}`, breaker: 6, elIds: [el.id], rooms: [rn] }); return; }
       // техника со своей линией — по мощности прибора
@@ -201,7 +201,7 @@
     });
     // 24В — линия на помещение
     bucket.v24.forEach((b) => lvLines(b, mk));
-    if (leaks.length) mk({ prefix: "Int", kind: "lv", title: "Датчики протечки → Нептун", breaker: 6, elIds: leaks.map((e) => e.id), rooms: [] });
+    if (leaks.length) mk({ prefix: "Int", kind: "lv", title: "«Нептун»: датчики и краны", breaker: 6, elIds: leaks.map((e) => e.id), rooms: [] });
 
     // порядок нумерации QF: розетки → влажные → выделенные → свет (как в щите по привычке)
     const ORDER = { sock: 0, wet: 1, ded: 2, light: 3, v24: 4, lv: 5 };
@@ -313,7 +313,7 @@
   ];
   const BR_DEF = { sock: true, light: true, warm: true, ac: true, out: true, v24: true, lv: false };
   const BR_KEY = "ep_plan_byroom_v1";
-  const LV_TYPES = { internet: 1, tv: 1, camera: 1, sensor: 1, intercom: 1, leak: 1 };
+  const LV_TYPES = { internet: 1, tv: 1, camera: 1, sensor: 1, intercom: 1, leak: 1, wifiap: 1, callpanel: 1, elock: 1, valve: 1, leakbtn: 1, radiorx: 1 };
   function brLoad() {
     const o = Object.assign({}, BR_DEF);
     try {
@@ -395,7 +395,7 @@
         return;
       }
       if (cat === "lv") {
-        if (el.type === "leak") { byRoom(B.leak, r, el); return; }
+        if (el.type === "leak" || G().isNeptun(el)) { byRoom(B.leak, r, el); return; }
         const pre = el.type === "tv" ? "TV" : el.type === "camera" ? "CCTV" : "Int";
         const nm = el.type === "tv" ? "ТВ" : el.type === "camera" ? "Камера" : tname(el);
         mk({ prefix: pre, kind: "lv", title: `${nm}${rn ? " · " + rn : ""}`, breaker: 6, elIds: [el.id], rooms: [rn] });

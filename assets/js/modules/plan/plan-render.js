@@ -414,7 +414,8 @@
      (распайка, стояк, блок — у них своя отрисовка). opts.mini — пост внутри рамки блока:
      без подложки и без меток. */
   const CAT_TYPES = new Set(["socket", "switch", "light", "bra", "track", "ac", "warmfloor", "internet", "tv",
-    "camera", "sensor", "leak", "intercom", "pir", "lux", "output", "output24", "output3", "heater", "towel", "waterheat", "flowheat", "eboiler", "pump", "supply", "evcharge", "fan"]);
+    "camera", "sensor", "leak", "intercom", "pir", "lux", "output", "output24", "output3", "heater", "towel", "waterheat", "flowheat", "eboiler", "pump", "supply", "evcharge", "fan",
+    "wifiap", "callpanel", "elock", "valve", "leakbtn", "radiorx"]);
   function drawCatalogEl(grp, elem, cx, cy, k, sw, col, opts) {
     const t = elem.type;
     if (!CAT_TYPES.has(t)) return false;
@@ -538,6 +539,36 @@
     } else if (t === "leak") {
       add("path", { d: `M 0 ${-8 * k} C ${2 * k} ${-4.5 * k} ${6 * k} ${-1 * k} ${6 * k} ${2.5 * k} A ${6 * k} ${6 * k} 0 0 1 ${-6 * k} ${2.5 * k} C ${-6 * k} ${-1 * k} ${-2 * k} ${-4.5 * k} 0 ${-8 * k} Z`, class: mini ? null : "ep-plan-catbg" });
       line(-2.6 * k, 3 * k, 2.6 * k, 3 * k);
+      if (kd === "radio" || kd === "zigbee") { add("path", { d: `M ${4.5 * k} ${-6 * k} A ${3 * k} ${3 * k} 0 0 1 ${7.5 * k} ${-3 * k} M ${4.5 * k} ${-8.5 * k} A ${5.5 * k} ${5.5 * k} 0 0 1 ${10 * k} ${-3 * k}`, "stroke-width": lw * 0.8 }); tag(kd === "zigbee" ? "Zigbee" : "Радио"); }
+    } else if (t === "wifiap") {
+      add("circle", { cx: 0, cy: 0, r: s, class: mini ? null : "ep-plan-catbg" });
+      dot(0, 3 * k);
+      add("path", { d: `M ${-3 * k} ${0} A ${4 * k} ${4 * k} 0 0 1 ${3 * k} 0 M ${-5.5 * k} ${-2.5 * k} A ${7.5 * k} ${7.5 * k} 0 0 1 ${5.5 * k} ${-2.5 * k}`, "stroke-width": lw * 0.8 });
+      tag("PoE");
+    } else if (t === "callpanel") {
+      frame(s * 0.75, s);
+      add("circle", { cx: 0, cy: -3.5 * k, r: 2.2 * k, "stroke-width": lw * 0.8 });
+      line(-3 * k, 1.5 * k, 3 * k, 1.5 * k, lw * 0.7); dot(0, 5 * k, 1.3 * k);
+    } else if (t === "elock") {
+      frame(s, s * 0.75);
+      add("rect", { x: -3 * k, y: -1 * k, width: 6 * k, height: 5 * k, rx: 0.8 * k, "stroke-width": lw * 0.8 });
+      add("path", { d: `M ${-2 * k} ${-1 * k} V ${-3 * k} A ${2 * k} ${2 * k} 0 0 1 ${2 * k} ${-3 * k} V ${-1 * k}`, "stroke-width": lw * 0.8 });
+      tag("12 В");
+    } else if (t === "valve") {
+      frame(s, s * 0.8, 1.2 * k);
+      add("path", { d: `M ${-6 * k} ${-3.5 * k} L ${6 * k} ${3.5 * k} V ${-3.5 * k} L ${-6 * k} ${3.5 * k} Z`, "stroke-width": lw * 0.8 });
+      const v12 = kd === "cw12" || kd === "hw12";
+      tag((kd === "hw" || kd === "hw12" ? "ГВС" : "ХВС") + " · " + (v12 ? "12 В" : "220 В"));
+    } else if (t === "leakbtn") {
+      frame(s, s);
+      add("circle", { cx: 0, cy: 0, r: 4.5 * k, "stroke-width": lw * 0.8 });
+      line(-2.5 * k, -2.5 * k, 2.5 * k, 2.5 * k, lw * 0.8); line(2.5 * k, -2.5 * k, -2.5 * k, 2.5 * k, lw * 0.8);
+      tag("Закрыть");
+    } else if (t === "radiorx") {
+      frame(s, s * 0.7);
+      line(0, -s * 0.7, 0, -s * 0.7 - 4 * k);
+      add("path", { d: `M ${2 * k} ${-s * 0.7 - 3 * k} A ${2.5 * k} ${2.5 * k} 0 0 1 ${4.5 * k} ${-s * 0.7 - 0.5 * k}`, "stroke-width": lw * 0.8 });
+      txt(0, 0, "РП", 5 * k);
     } else if (t === "intercom") {
       frame(s, s); line(0, -s, 0, -s - 2 * k); line(0, s, 0, s + 2 * k);
       add("path", { d: `M ${-4 * k} ${-4 * k} L 0 0 L ${4 * k} ${-4 * k} M 0 0 V ${4 * k}`, "stroke-width": lw * 0.8 });

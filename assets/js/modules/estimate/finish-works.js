@@ -69,6 +69,12 @@
     { id: "sensor", group: "lv", name: "Установка прочего датчика", unit: "шт", on: true },
     { id: "camera", group: "lv", name: "Установка видеокамеры", unit: "шт", on: true },
     { id: "intercom", group: "lv", name: "Установка домофона", unit: "шт", on: true },
+    { id: "wifiap", group: "lv", name: "Установка точки доступа Wi-Fi", unit: "шт", on: true },
+    { id: "callpanel", group: "lv", name: "Установка вызывной панели", unit: "шт", on: true },
+    { id: "elock", group: "lv", name: "Монтаж и подключение электрозамка", unit: "шт", on: true },
+    { id: "valve", group: "lv", name: "Подключение крана с электроприводом", unit: "шт", on: true },
+    { id: "leakbtn", group: "lv", name: "Установка кнопки перекрытия воды", unit: "шт", on: true },
+    { id: "radiorx", group: "lv", name: "Установка радиоприёмника «Нептун»", unit: "шт", on: true },
 
     { id: "thermo", group: "equip", name: "Установка терморегулятора тёплого пола", unit: "шт", on: true },
     { id: "output", group: "equip", name: "Подключение оборудования к выводу", unit: "шт", on: true },
@@ -166,6 +172,7 @@
       case "sensor": return "sensor";
       case "camera": return "camera";
       case "intercom": return "intercom";
+      case "wifiap": case "callpanel": case "elock": case "valve": case "leakbtn": case "radiorx": return el.type;
       case "warmfloor": return "thermo";
       case "output": return "output";
       case "output3": return el.threeKind === "socket" ? "socket3" : "output3";

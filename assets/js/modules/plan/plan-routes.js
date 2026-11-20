@@ -90,7 +90,7 @@
     return G().routeSurface(p, layer, null, { lampHop: false }) === "floor";
   }
   const isActiveJunction = (p) => (el) => isJunction(el) && !junctionIdle(p, el);
-  const isPoint = (el) => el.status !== "existing" && el.type !== "junction";
+  const isPoint = (el) => el.status !== "existing" && el.type !== "junction" && !G().cableless(el);
   // Слаботочка сети (интернет/ТВ/видеонаблюдение) — те же слои, что и в plan-calc.js
   // LV_LAYERS (для штроб/маркировки кабеля); здесь своя копия — модуль грузится
   // раньше plan-calc.js в index.html, общий экспорт не переиспользуем.
@@ -98,7 +98,9 @@
   // Витая пара / коаксиал / камера — кабель только «звездой» от роутера (щита): у каждой
   // розетки свой кабель. Раньше несколько интернет-розеток на одной линии собирались шлейфом
   // розетка → розетка (для Ethernet так нельзя) — аудит цепей, пакет 3.
-  const STAR_LV = { internet: 1, tv: 1, camera: 1 };
+  // Каталог, пакет 3: точка доступа (PoE), вызывная панель, электрозамок и узлы «Нептуна»
+  // (кран, кнопка перекрытия, радиоприёмник) — тоже каждый своим кабелем.
+  const STAR_LV = { internet: 1, tv: 1, camera: 1, wifiap: 1, callpanel: 1, elock: 1, valve: 1, leakbtn: 1, radiorx: 1 };
   // Посты блока со своим кабелем к роутеру (слой трассы) — см. buildBlockLvLegs
   const BLOCK_LV = { internet: "lv", tv: "tv" };
   // есть ли в блоке силовые посты (у блока только из ТВ/интернета своей силовой трассы нет)
@@ -2336,6 +2338,13 @@
       return pos ? { kind: "panel", id: el.id, pos, riser: true, noComb: true, el } : null;
     }).filter(Boolean);
   }
+  // домофоны активного этажа — цели вызывной панели
+  function intercomNodes(p) {
+    return (G().floorScoped(p).elements || []).filter((e) => e.type === "intercom" && isRoutable(e)).map((e) => {
+      const pos = G().routeAnchor(p, e);
+      return pos ? { kind: "point", id: e.id, el: e, circuitId: e.circuitId, pos } : null;
+    }).filter(Boolean);
+  }
   function routeGroups(c, p, pointsToRoute, juncts, panels, extraConnected) {
     const routerPanels = panels.filter((pn) => pn.router);
     const trafoPanels = panels.filter((pn) => pn.transformer);
@@ -2349,7 +2358,7 @@
     // (просьба пользователя: «добавь датчики на нептун, линии должны идти к нептуну»).
     // Нет щита с флагом neptun — прежнее поведение (как обычная слаботочка).
     const kindOf = (el) => (trafoPanels.length && G().isLv(el)) ? "24"
-      : (neptunPanels.length && el.type === "leak") ? "leak"
+      : (neptunPanels.length && G().isNeptun(el)) ? "leak"
       : (routerPanels.length && isLvLayer(el.layer) && !isFeeder(p, el)) ? "lv" : "pw"; // датчик, коммутирующий свет, — силовой узел
     // Щиты, принимающие СИЛОВЫЕ линии. Раньше сюда шёл весь список panels, и силовая линия
     // могла уйти в слаботочный щит просто потому, что он оказался геометрически ближе
@@ -2527,7 +2536,14 @@
       }
       // витая пара / коаксиал / камера — каждая своим кабелем к роутеру (щиту), не шлейфом
       const starIt = g.items.filter((it) => STAR_LV[it.el.type]);
-      starIt.forEach(({ el, pos }) => connectNearest(c, p, el, pos, targetPanels, el.circuitId, colorOf(p, el)));
+      starIt.forEach(({ el, pos }) => {
+        // вызывная панель — к домофону (ближайшему по пути), иначе к роутеру
+        if (el.type === "callpanel") {
+          const ic = intercomNodes(p);
+          if (ic.length && connectNearest(c, p, el, pos, ic, el.circuitId, colorOf(p, el))) return;
+        }
+        connectNearest(c, p, el, pos, targetPanels, el.circuitId, colorOf(p, el));
+      });
       if (starIt.length) g.items = g.items.filter((it) => !STAR_LV[it.el.type]);
       if (!g.items.length) return;
       // уже подключённые точки того же рода («⚡ Построить» достраивает только новое)
