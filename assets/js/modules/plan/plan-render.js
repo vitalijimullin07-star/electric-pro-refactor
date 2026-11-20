@@ -481,7 +481,9 @@
     const cull = (!only && ui && ui.cull) || null;
     const bbVis = (bb) => !cull || !!(bb && bb.x0 <= cull.x1 && bb.x1 >= cull.x0 && bb.y0 <= cull.y1 && bb.y1 >= cull.y0);
     const ptVis = (x, y) => !cull || (x >= cull.x0 && x <= cull.x1 && y >= cull.y0 && y <= cull.y1);
-    const k = canvas.cmPerPx(); // см в одном экранном пикселе
+    // см в одном экранном пикселе; посреди жеста — масштаб последней полной фиксации
+    // (plan-canvas.js drawCmPerPx), иначе значки на кадр меняли бы размер
+    const k = canvas.drawCmPerPx ? canvas.drawCmPerPx() : canvas.cmPerPx();
     const fs = CFG.labelPx * k, fsName = CFG.namePx * k, sw = CFG.wallPx * k, off = CFG.labelOffsetPx * k;
     // режим МОНТАЖНИКА (ui.montage, 👷 в шапке): на плане остаётся нужное на объекте —
     // точки, трассы, номера линий, высоты, щит, проходки, заметки; размеры, мебель и

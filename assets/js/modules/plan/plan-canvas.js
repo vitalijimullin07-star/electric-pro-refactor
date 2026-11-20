@@ -146,6 +146,16 @@
        движения пальцев: на большой квартире 70–130 мс счёта (CPU ×4) плюс раскладка и
        покраска — кадр до 300 мс прямо во время пинча. */
     let rescalePending = false; // была лёгкая фиксация — сцена ждёт пересборки под масштаб
+    /* МАСШТАБ СЦЕНЫ ПОСРЕДИ ЖЕСТА. Значки, толщины линий и кегль подписей рисуются в мировых
+       единицах под масштаб (см на экранный пиксель). Пока идёт жест, на экране — сдвинутая и
+       увеличенная/уменьшенная картинка, нарисованная под масштаб ПОСЛЕДНЕЙ ПОЛНОЙ фиксации.
+       Любая перерисовка посреди жеста (отсечение невидимого после лёгкой фиксации, пришедшие из
+       фона трассы) обязана рисовать под ЭТОТ масштаб: иначе посреди пинча все значки и линии на
+       кадр «прыгали» к нормальному размеру, а дальше снова уменьшались вместе с пальцами
+       (замер по кадрам экрана — это и был «непонятный кадр»). Под новый масштаб сцена
+       пересобирается один раз, на полной фиксации. */
+    let drawPx = 0;
+    function drawCmPerPx() { return ((liveT || rescalePending) && drawPx > 0) ? drawPx : pxToCm(); }
     let motionT = 0, lastLightT = 0;
     const QUICK_MS = 450; // начало жеста/броска и время прошлой лёгкой фиксации
     function applyLive(active) {
@@ -204,8 +214,21 @@
        сцена пересобирается, а копия растворяется за ~160 мс. Это прозрачность ОДНОГО слоя —
        работа видеочипа, процессор не нагружает; пересобранная сцена проступает плавно. Чистый
        медленный сдвиг (масштаб тот же, подписи не прятались) копию не делает — меняться нечему. */
+    /* КАК РАСТВОРЯТЬ (вторая жалоба владельца: «кадр показывает какой-то непонятный на долю
+       секунды»). Копия плана ПОЛУПРОЗРАЧНА там, где прозрачен сам план (заливки комнат, фон), и
+       первая версия клала её поверх уже пересобранной сцены: заливки складывались дважды —
+       комнаты на 1–2 кадра темнели (замер по пикселям: 233/246/252 → 213/235/245) и за 200 мс
+       светлели обратно. Теперь растворяются ОБА слоя навстречу: копия 1 → 0, пересобранная сцена
+       0 → 1, с одной кривой. Сумма прозрачностей в каждый момент — единица, и заливка остаётся
+       той же (для заливки с непрозрачностью a — не меньше 0,93·a в середине перехода). */
     let xfade = null;
-    function dropXfade() { if (xfade) { clearTimeout(xfade.t); if (xfade.box.parentNode) xfade.box.parentNode.removeChild(xfade.box); xfade = null; } }
+    function dropXfade() {
+      if (!xfade) return;
+      clearTimeout(xfade.t);
+      if (xfade.box.parentNode) xfade.box.parentNode.removeChild(xfade.box);
+      svg.style.transition = ""; svg.style.opacity = "";
+      xfade = null;
+    }
     function startXfade() {
       dropXfade();
       if (OVS <= 0 || typeof svg.cloneNode !== "function") return; // офскрин-холст печати / без DOM
@@ -226,9 +249,14 @@
       wrap.appendChild(box);
       const st = { box, t: 0 };
       xfade = st;
-      // копия стоит непрозрачной, пока сцена под ней пересобирается (перерисовка — в ближайшем
-      // кадре), и только потом растворяется
-      const go = () => { if (xfade === st) box.classList.add("is-out"); };
+      // пока сцена пересобирается (перерисовка — в ближайшем кадре), на экране только копия;
+      // потом копия растворяется, а сцена проступает навстречу
+      svg.style.transition = "none"; svg.style.opacity = "0";
+      const go = () => {
+        if (xfade !== st) return;
+        box.classList.add("is-out");
+        svg.style.transition = "opacity .16s ease-out"; svg.style.opacity = "1";
+      };
       if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => requestAnimationFrame(go)); else go();
       st.t = setTimeout(() => { if (xfade === st) dropXfade(); }, 600);
     }
@@ -238,16 +266,20 @@
       if (!cw) measureBox();
       fixAspect();
       const zoomed = !committed || Math.abs(committed.w - view.w) > view.w * 1e-6;
+      const px = pxToCm(), rescaled = drawPx > 0 && Math.abs(px - drawPx) > drawPx * 1e-6;
       // только после жеста/анимации (на экране — живая картинка): программные прыжки вида и
-      // подгон под новый размер холста идут как раньше
-      if (!light && (liveT || rescalePending) && (rescalePending || zoomed || svg.classList.contains("is-moving"))) startXfade();
+      // подгон под новый размер холста идут как раньше. И только если сцене есть чем
+      // измениться — масштаб другой или подписи были спрятаны: после чистого сдвига
+      // пересобирать нечего, копия только зря мигнула бы
+      if (!light && (liveT || rescalePending) && (rescaled || svg.classList.contains("is-moving"))) startXfade();
+      if (!light || !(drawPx > 0)) drawPx = px;
       committed = { x: view.x, y: view.y, w: view.w, h: view.h };
       // viewBox и сброс transform — в ОДНОМ кадре: иначе сцена на миг «прыгнула» бы
       if (liveT) { liveT = null; wrap.style.transform = ""; }
       placeSvg();
       const kx = view.w / Math.max(1, cw), ky = view.h / Math.max(1, ch || cw);
       svg.setAttribute("viewBox", (view.x - ovX * kx) + " " + (view.y - ovY * ky) + " " + (view.w + 2 * ovX * kx) + " " + (view.h + 2 * ovY * ky));
-      drawGrid();
+      drawGrid(drawPx);
       // лёгкая фиксация посреди жеста: сцену под масштаб не пересобираем, но сообщаем, что
       // нарисованная область сдвинулась (отсечение невидимого должно её покрыть)
       /* Лёгкая фиксация посреди жеста — это сдвиг/масштаб viewBox, и браузер заново раскладывает
@@ -330,10 +362,15 @@
       if (now - b.t > 60 || b.t - a.t < 8) return false; // палец остановился перед отрывом — без броска
       let vx = (b.x - a.x) / (b.t - a.t), vy = (b.y - a.y) / (b.t - a.t);
       if (Math.hypot(vx, vy) < 0.25) return false;
-      let last = now;
+      /* Первый шаг доката считается от ПОСЛЕДНЕГО ДВИЖЕНИЯ пальца, а не от отрыва: отрыв
+         приходит посреди кадра, и шаг «от отрыва» был в 3–4 раза короче обычного — скорость на
+         кадр падала почти вдвое (замер по кадрам экрана: 22 → 12 → 20 px) и снова росла, это и
+         был рывок в момент броска. Не меньше одного кадра — иначе тот же провал скорости. */
+      let last = -1;
       motionT = now; lastLightT = 0;
       const step = (t) => {
-        const dt = Math.min(40, Math.max(1, t - last)); last = t;
+        const dt = last < 0 ? Math.min(50, Math.max(16.7, t - b.t)) : Math.min(40, Math.max(1, t - last));
+        last = t;
         const decay = Math.exp(-dt / 230); // затухание: за ~0.7 с почти до нуля
         vx *= decay; vy *= decay;
         const k = pxToCm();
@@ -364,8 +401,10 @@
       const s = String(sw);
       if (n.getAttribute("stroke-width") !== s) n.setAttribute("stroke-width", s);
     }
-    function drawGrid() {
-      const px = pxToCm();
+    // сетка рисуется под масштаб сцены (drawPx): посреди жеста лёгкая фиксация её шаг и
+    // толщину не меняет — иначе сетка на кадр «перескакивала» на другую густоту
+    function drawGrid(scale) {
+      const px = scale > 0 ? scale : pxToCm();
       let step = CFG.gridSteps[CFG.gridSteps.length - 1];
       for (const s of CFG.gridSteps) { if (s / px >= CFG.gridMinPx) { step = s; break; } }
       // сетка с запасом в экран во все стороны: во время жеста холст двигается
@@ -690,6 +729,7 @@
       svg, layers, wrap,
       getView: () => ({ ...view }),
       cmPerPx: pxToCm,
+      drawCmPerPx, // масштаб, под который рисовать сцену (посреди жеста — прежний)
       toWorld, fit, redraw: apply,
       // сдвиг вида в мировых см (программный, не жестом); {animate:true} — плавно доехать
       panBy: (dx, dy, opts) => {
