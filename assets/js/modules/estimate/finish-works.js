@@ -39,16 +39,25 @@
   // on — умолчание «делаю сам»; manual — в список цен, но в автосчёт не идёт
   var CATALOG = [
     { id: "socket", group: "mech", name: "Установка розетки 220В", unit: "шт", on: true },
+    { id: "socketip", group: "mech", name: "Установка влагозащищённой розетки IP44", unit: "шт", on: true },
+    { id: "socketusb", group: "mech", name: "Установка розетки с USB", unit: "шт", on: true },
+    { id: "socketsmart", group: "mech", name: "Установка умной розетки", unit: "шт", on: true },
     { id: "socket3", group: "mech", name: "Установка розетки 380В (3ф)", unit: "шт", on: true },
     { id: "sw1", group: "mech", name: "Установка выключателя 1-клавишного", unit: "шт", on: true },
     { id: "sw2", group: "mech", name: "Установка выключателя 2-клавишного", unit: "шт", on: true },
     { id: "sw3", group: "mech", name: "Установка выключателя 3-клавишного", unit: "шт", on: true },
     { id: "pass", group: "mech", name: "Установка выключателя проходного", unit: "шт", on: true },
     { id: "cross", group: "mech", name: "Установка выключателя перекрёстного", unit: "шт", on: true },
+    { id: "dimmer", group: "mech", name: "Установка диммера", unit: "шт", on: true },
     { id: "internet", group: "mech", name: "Установка розетки интернет RJ45", unit: "шт", on: true },
     { id: "tv", group: "mech", name: "Установка розетки ТВ", unit: "шт", on: true },
 
     { id: "light", group: "light", name: "Установка светильника", unit: "шт", on: true },
+    { id: "spot", group: "light", name: "Установка точечного светильника", unit: "шт", on: true },
+    { id: "pendant", group: "light", name: "Установка подвесного светильника", unit: "шт", on: true },
+    { id: "linear", group: "light", name: "Установка линейного светильника", unit: "шт", on: true },
+    { id: "outdoor", group: "light", name: "Установка наружного светильника", unit: "шт", on: true },
+    { id: "emergency", group: "light", name: "Установка аварийного светильника", unit: "шт", on: true },
     { id: "bra", group: "light", name: "Установка бра", unit: "шт", on: true },
     { id: "track", group: "light", name: "Установка трековой системы", unit: "шт", on: true },
     { id: "led", group: "light", name: "Монтаж светодиодной ленты", unit: "м", on: true },
@@ -66,12 +75,18 @@
     { id: "output3", group: "equip", name: "Подключение трёхфазного оборудования", unit: "шт", on: true },
     // кондиционер обычно подключают сами климатчики — по умолчанию выключено
     { id: "ac", group: "equip", name: "Подключение кондиционера", unit: "шт", on: false },
+    { id: "heater", group: "equip", name: "Установка и подключение конвектора", unit: "шт", on: true },
+    { id: "towel", group: "equip", name: "Подключение полотенцесушителя", unit: "шт", on: true },
+    { id: "waterheat", group: "equip", name: "Подключение накопительного водонагревателя", unit: "шт", on: true },
+    { id: "flowheat", group: "equip", name: "Подключение проточного водонагревателя", unit: "шт", on: true },
+    { id: "eboiler", group: "equip", name: "Подключение электрокотла", unit: "шт", on: true },
+    { id: "pump", group: "equip", name: "Подключение насоса", unit: "шт", on: true },
+    { id: "supply", group: "equip", name: "Подключение приточной установки", unit: "шт", on: false },
+    { id: "evcharge", group: "equip", name: "Подключение зарядной станции электромобиля", unit: "шт", on: true },
+    { id: "fan", group: "equip", name: "Установка вытяжного вентилятора", unit: "шт", on: true },
 
     { id: "chandelier", group: "extra", name: "Сборка и установка люстры", unit: "шт", on: false, manual: true },
-    { id: "spot", group: "extra", name: "Установка точечного светильника", unit: "шт", on: false, manual: true },
-    { id: "dimmer", group: "extra", name: "Установка диммера", unit: "шт", on: false, manual: true },
     { id: "bell", group: "extra", name: "Установка звонка", unit: "шт", on: false, manual: true },
-    { id: "fan", group: "extra", name: "Установка вытяжного вентилятора", unit: "шт", on: false, manual: true },
     { id: "replace", group: "extra", name: "Замена механизма розетки/выключателя", unit: "шт", on: false, manual: true }
   ];
   var BY_ID = {};
@@ -122,17 +137,26 @@
   function swId(keys, kind) {
     if (kind === "pass") return "pass";
     if (kind === "cross") return "cross";
+    if (kind === "dimmer") return "dimmer";
     var k = Math.max(1, Math.min(3, Math.round(Number(keys) || 1)));
     return "sw" + k;
   }
   // тип точки плана → работа (null — у точки нет чистовой работы: распайка, стояк, щит…)
   function planIdOf(el) {
     switch (el.type) {
-      case "socket": return "socket";
+      case "socket": {
+        var sk = el.kind || "";
+        return sk === "ip44" ? "socketip" : sk === "usb" ? "socketusb" : sk === "smart" ? "socketsmart" : "socket";
+      }
       case "switch": return swId(el.keys, el.swKind);
       case "internet": return "internet";
       case "tv": return "tv";
-      case "light": return "light";
+      case "light": {
+        var lk = el.kind || "";
+        return ({ spot: "spot", pendant: "pendant", linear: "linear", outdoor: "outdoor", emergency: "emergency" })[lk] || "light";
+      }
+      case "heater": case "towel": case "waterheat": case "flowheat": case "eboiler":
+      case "pump": case "supply": case "evcharge": case "fan": return el.type;
       case "bra": return "bra";
       case "track": return "track";
       case "output24": return "out24";

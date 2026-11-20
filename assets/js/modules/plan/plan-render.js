@@ -414,7 +414,7 @@
      (распайка, стояк, блок — у них своя отрисовка). opts.mini — пост внутри рамки блока:
      без подложки и без меток. */
   const CAT_TYPES = new Set(["socket", "switch", "light", "bra", "track", "ac", "warmfloor", "internet", "tv",
-    "camera", "sensor", "leak", "intercom", "pir", "lux", "output", "output24", "output3"]);
+    "camera", "sensor", "leak", "intercom", "pir", "lux", "output", "output24", "output3", "heater", "towel", "waterheat", "flowheat", "eboiler", "pump", "supply", "evcharge", "fan"]);
   function drawCatalogEl(grp, elem, cx, cy, k, sw, col, opts) {
     const t = elem.type;
     if (!CAT_TYPES.has(t)) return false;
@@ -429,9 +429,51 @@
     const tag = (str) => { if (!mini && str) txt(0, s + 6 * k, str, 6 * k, "ep-plan-cattag"); };
     const arrowH = (x0, x1, y) => { const a = 1.8 * k; line(x0, y, x1, y); add("path", { d: `M ${x0 + a} ${y - a} L ${x0} ${y} L ${x0 + a} ${y + a} M ${x1 - a} ${y - a} L ${x1} ${y} L ${x1 - a} ${y + a}` }); };
     const arrowV = (x, y0, y1) => { const a = 1.4 * k; line(x, y0, x, y1); add("path", { d: `M ${x - a} ${y0 + a} L ${x} ${y0} L ${x + a} ${y0 + a} M ${x - a} ${y1 - a} L ${x} ${y1} L ${x + a} ${y1 - a}` }); };
+    const kd = EP.Plan.Geometry.elKind ? EP.Plan.Geometry.elKind(elem) : (elem.kind || "");
+    const volts = () => { const nd = EP.Plan.Geometry.devNeed && EP.Plan.Geometry.devNeed(elem); return nd && nd.poles === 3 ? "380 В" : "220 В"; };
+    const zig = (x0, x1, y, h) => { const n = 5, dx = (x1 - x0) / n; let d = `M ${x0} ${y}`; for (let i = 0; i < n; i++) d += ` L ${x0 + dx * (i + 0.5)} ${y + (i % 2 ? h : -h)} L ${x0 + dx * (i + 1)} ${y}`; add("path", { d }); };
     if (t === "socket" || (t === "output3" && elem.threeKind === "socket")) {
       frame(s, s); dot(-3 * k, 0); dot(3 * k, 0);
       if (t === "output3") tag("380 В");
+      else tag(({ ip44: "IP44", usb: "USB-C", smart: "Zigbee", ups: "ИБП" })[kd] || "");
+    } else if (t === "switch" && elem.swKind === "dimmer") {
+      frame(s, s);
+      const iw = s - 2.4 * k;
+      add("rect", { x: -iw, y: -iw, width: 2 * iw, height: 2 * iw, rx: 0.8 * k });
+      const d = iw - 1.6 * k;
+      line(-d, d, d, -d); add("path", { d: `M ${d - 2.4 * k} ${-d} L ${d} ${-d} L ${d} ${-d + 2.4 * k}` });
+    } else if (t === "fan") {
+      add("circle", { cx: 0, cy: 0, r: 7 * k, class: mini ? null : "ep-plan-catbg" });
+      [0, 120, 240].forEach((a) => { const r = a * Math.PI / 180, c = Math.cos(r), sn = Math.sin(r); add("path", { d: `M 0 0 Q ${(c * 3 - sn * 2.5) * k} ${(sn * 3 + c * 2.5) * k} ${c * 5.5 * k} ${sn * 5.5 * k}` }); });
+      dot(0, 0, 1 * k);
+      if (kd === "timer") tag("Таймер");
+    } else if (t === "heater") {
+      frame(11 * k, 5 * k, 1.4 * k); zig(-8 * k, 8 * k, 0, 2.6 * k);
+      tag(kd === "fan" ? "Вент." : "Нагрев");
+    } else if (t === "towel") {
+      frame(5.5 * k, 8 * k, 1.4 * k); line(-3 * k, -8 * k, -3 * k, 8 * k); line(3 * k, -8 * k, 3 * k, 8 * k);
+      [-5, -1.7, 1.7, 5].forEach((y) => line(-3 * k, y * k, 3 * k, y * k));
+      tag("Нагрев");
+    } else if (t === "waterheat") {
+      add("rect", { x: -6 * k, y: -8.5 * k, width: 12 * k, height: 17 * k, rx: 5 * k, class: mini ? null : "ep-plan-catbg" });
+      zig(-3.6 * k, 3.6 * k, 2 * k, 2.2 * k); line(-6 * k, -3 * k, 6 * k, -3 * k);
+      tag(volts());
+    } else if (t === "flowheat") {
+      frame(8 * k, 5.5 * k, 1.4 * k); zig(-5.5 * k, 5.5 * k, 0, 2.4 * k);
+      line(-8 * k, 3.6 * k, 8 * k, 3.6 * k, lw * 0.6);
+      tag(volts());
+    } else if (t === "eboiler") {
+      frame(s, s); zig(-5 * k, 5 * k, 1 * k, 2.2 * k); txt(0, -4.5 * k, "Э", 4.5 * k);
+      tag(volts());
+    } else if (t === "pump") {
+      add("circle", { cx: 0, cy: 0, r: 7 * k, class: mini ? null : "ep-plan-catbg" }); txt(0, 0.3 * k, "Н", 6.5 * k);
+    } else if (t === "supply") {
+      frame(11 * k, 6 * k, 1.4 * k);
+      line(-7 * k, 0, 6 * k, 0); add("path", { d: `M ${3 * k} ${-2.8 * k} L ${6.5 * k} 0 L ${3 * k} ${2.8 * k}` });
+      tag("Приток");
+    } else if (t === "evcharge") {
+      frame(s, s); txt(0, 0.3 * k, "E", 7 * k);
+      tag(volts());
     } else if (t === "switch") {
       const kind = elem.swKind || "normal";
       const n = kind === "normal" ? Math.max(1, Math.min(3, elem.keys || 1)) : 1;
@@ -445,9 +487,18 @@
         else if (kind === "cross") { const d = iw - 1.8 * k; line(-d, -d, d, d); line(-d, d, d, -d); add("path", { d: `M ${d - 2 * k} ${d} L ${d} ${d} L ${d} ${d - 2 * k} M ${d - 2 * k} ${-d} L ${d} ${-d} L ${d} ${-d + 2 * k}` }); }
         else line(kx, -iw + 1.6 * k, kx, -iw + 4.2 * k);
       }
+    } else if (t === "light" && kd === "spot") {
+      add("circle", { cx: 0, cy: 0, r: 4 * k, class: mini ? null : "ep-plan-catbg" }); dot(0, 0, 1.2 * k);
+    } else if (t === "light" && kd === "linear") {
+      add("rect", { x: -11 * k, y: -3 * k, width: 22 * k, height: 6 * k, rx: 1.2 * k, class: mini ? null : "ep-plan-catbg" });
+      line(-8.5 * k, 0, 8.5 * k, 0);
+      tag("Линейный");
     } else if (t === "light") {
       const r = 7 * k, c = r * Math.SQRT1_2;
       add("circle", { cx: 0, cy: 0, r, class: mini ? null : "ep-plan-catbg" }); line(-c, -c, c, c); line(-c, c, c, -c);
+      if (kd === "pendant") line(0, -r, 0, -r - 3 * k);
+      if (kd === "emergency") add("rect", { x: -2.4 * k, y: -2.4 * k, width: 4.8 * k, height: 4.8 * k, fill: col, stroke: "none" });
+      tag(({ pendant: "Подвес", outdoor: "Наружный", emergency: "Аварийный" })[kd] || "");
     } else if (t === "bra") {
       add("rect", { x: -6 * k, y: -7 * k, width: 13 * k, height: 14 * k, rx: 2 * k, class: mini ? null : "ep-plan-catbg", "stroke-width": 0 });
       line(-5 * k, -7 * k, -5 * k, 7 * k);
@@ -495,7 +546,7 @@
       add("rect", { x: -9 * k, y: -7 * k, width: 18 * k, height: 11 * k, rx: 2 * k, class: mini ? null : "ep-plan-catbg", "stroke-width": 0 });
       add("path", { d: `M ${-8 * k} ${2 * k} H ${-1 * k} L ${3.6 * k} ${-2.6 * k}` });
       add("circle", { cx: 5 * k, cy: -4 * k, r: 1.9 * k });
-      tag(t === "output24" ? "24 В" : t === "output3" ? "380 В · 3 ф." : "220 В ~");
+      tag(t === "output24" ? "24 В" : t === "output3" ? "380 В · 3 ф." : (kd === "reserve" ? "Резерв" : "220 В ~"));
     }
     grp.appendChild(sub);
     return true;

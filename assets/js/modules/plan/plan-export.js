@@ -911,14 +911,14 @@
       els.forEach((e) => {
         if (taken[e.id]) return;
         if (e.type === "block") ((e.params && e.params.items) || []).forEach((t2) => { w += PT_W[t2] || 0; });
-        else w += PT_W[e.type] || 0;
+        else { const nd = G().devNeed ? G().devNeed(e) : null; w += nd ? nd.watt : (PT_W[e.type] || 0); }
       });
       const lay = (els[0] || {}).layer || "power";
       const ks = appl.length ? 1 : (KS[lay] == null ? 1 : KS[lay]);
       // cos φ 0.85 берём, если на линии есть ДВИГАТЕЛЬНАЯ нагрузка (кондиционер,
       // подключённая техника) — проверяем ВСЕ элементы линии, а не только первый:
       // на смешанной линии (розетка + кондиционер) первым обычно стоит розетка
-      const motor = appl.length > 0 || els.some((e) => e.type === "ac" || e.layer === "ac");
+      const motor = appl.length > 0 || els.some((e) => e.type === "ac" || e.layer === "ac" || e.type === "pump" || e.type === "supply" || e.type === "fan");
       const cos = motor ? 0.85 : 0.95;
       const pu = w / 1000, pr = pu * ks;
       const poles3 = c.poles === 3;
@@ -1124,20 +1124,27 @@
     const addDev = (name) => { dev[name] = (dev[name] || 0) + 1; };
     const TY = EP.Plan.Elements ? EP.Plan.Elements.TYPES : {};
     const nameOf = (type, el) => {
-      if (type === "socket") return "Розетка скрытой установки";
+      if (type === "socket") {
+        const sk = el && el.kind;
+        return sk === "ip44" ? "Розетка влагозащищённая IP44" : sk === "usb" ? "Розетка с USB-C" : sk === "smart" ? "Розетка умная (Zigbee)" : sk === "ups" ? "Розетка скрытой установки (от ИБП)" : "Розетка скрытой установки";
+      }
       if (type === "switch") {
         const keys = (el && el.keys) || 1;
+        if (el && el.swKind === "dimmer") return "Диммер скрытой установки";
         const kind = el && el.swKind === "pass" ? " проходной" : el && el.swKind === "cross" ? " перекрёстный" : "";
         return `Выключатель ${keys}-кл.${kind} скрытой установки`;
       }
       if (type === "internet") return "Розетка компьютерная RJ45 скрытой установки";
       if (type === "tv") return "Розетка телевизионная скрытой установки";
       if (type === "warmfloor") return "Терморегулятор тёплого пола";
-      if (type === "light") return "Светильник потолочный";
+      if (type === "light") return ({ spot: "Светильник точечный", pendant: "Светильник подвесной", linear: "Светильник линейный", outdoor: "Светильник наружный", emergency: "Светильник аварийный" })[el && el.kind] || "Светильник потолочный";
+      if (type === "fan") return "Вентилятор вытяжной";
       if (type === "bra") return "Светильник настенный (бра)";
       if (type === "track") return "Трековый светильник";
       if (type === "ac") return "Вывод для кондиционера";
       // выводы/распайки/стояки — не изделия, в спецификацию механизмов не идут
+      // приборы (бойлер, котёл, конвектор…) — оборудование заказчика, не электроустановочное изделие
+      if (G().DEVICES && G().DEVICES[type]) return null;
       if (type === "junction" || type === "output" || type === "output24" || type === "output3" || type === "riser") return null;
       return (TY[type] || {}).name || null;
     };

@@ -2397,7 +2397,7 @@
       lampsOfSw.get(sw.id).lamps.push(l);
     });
     lampsOfSw.forEach(({ sw, lamps }) => {
-      if (sw.type !== "switch" || (sw.swKind && sw.swKind !== "normal") || sw.chainNext || chainPrev.has(sw.id)) return;
+      if (sw.type !== "switch" || G().chainSw(sw) || sw.chainNext || chainPrev.has(sw.id)) return;
       const JL = sw.circuitId ? juncts.filter((n) => n.circuitId === sw.circuitId) : [];
       if (!JL.length) return;
       const spos = G().routeAnchor(p, sw);

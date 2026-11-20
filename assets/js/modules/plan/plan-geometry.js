@@ -1463,8 +1463,54 @@
     return L;
   };
 
+  /* ---- ПРИБОРЫ КАТАЛОГА и РАЗНОВИДНОСТИ ТОЧЕК (каталог Electric Pro v3, пакет 1) ----
+     Лежат здесь, а не в plan-elements.js: их читает и смета в фоновом вычислителе
+     (solver-worker.js), а редактор точек туда не грузится.
+     DEVICES — приборы, у которых линия подбирается по мощности: w — Вт по умолчанию,
+     own — своя линия от щита (иначе — шлейфом, как розетка), wet — мокрая зона (диф),
+     p3 — по умолчанию 3 фазы, p3ok — 3 фазы можно выбрать. Конвектор бывает силовым (своя
+     линия) и вентиляторным (только вентилятор — шлейфом) — просьба пользователя, по умолчанию
+     силовой до 3 кВт. */
+  G.DEVICES = {
+    heater: { w: 2000, own: true },
+    towel: { w: 500, wet: true },
+    waterheat: { w: 2500, own: true, wet: true },
+    flowheat: { w: 6000, own: true, wet: true, p3ok: true },
+    eboiler: { w: 9000, own: true, p3: true, p3ok: true },
+    pump: { w: 100, wet: true },
+    supply: { w: 1500, own: true },
+    evcharge: { w: 7400, own: true, p3ok: true }
+  };
+  // разновидность точки (el.kind): пустая строка — основная; у конвектора основная — силовой
+  const KIND_DEF = { heater: "power" };
+  G.elKind = (el) => {
+    if (!el) return "";
+    const v = el.kind;
+    return (v == null || v === "") ? (KIND_DEF[el.type] || "") : String(v);
+  };
+  const DEV_BREAKERS = [6, 10, 16, 20, 25, 32, 40, 50, 63];
+  // ток, автомат, полюса и защита прибора. Своя линия — не меньше 16A (как у техники с
+  // отдельной линией в plan-furniture.js needFor), шлейфом — честно по току
+  G.devNeed = (el) => {
+    const d = el && G.DEVICES[el.type];
+    if (!d) return null;
+    const watt = Number(el.watt) > 0 ? Number(el.watt) : d.w;
+    const p3 = d.p3ok ? (el.phases == null ? !!d.p3 : el.phases === 3) : false;
+    const amps = p3 ? watt / (400 * Math.sqrt(3)) : watt / 230;
+    const own = !!d.own && !(el.type === "heater" && G.elKind(el) === "fan");
+    const b0 = DEV_BREAKERS.find((b) => b >= amps) || DEV_BREAKERS[DEV_BREAKERS.length - 1];
+    return { watt, amps: Math.round(amps * 10) / 10, breaker: Math.max(b0, own ? 16 : 0), poles: p3 ? 3 : 1, p3, own, wet: !!d.wet, rcd: !!(d.wet || own) };
+  };
+  // своя линия у точки (прибор с own); камера — свой флаг в типе (plan-elements.js)
+  G.ownDev = (el) => { const n = G.devNeed(el); return !!(n && n.own); };
+  // на хопе к такой точке 4 жилы: у аварийного светильника постоянная фаза к аккумулятору,
+  // у вентилятора с таймером — постоянная фаза для выбега
+  G.fourCore = (el) => !!el && ((el.type === "light" && G.elKind(el) === "emergency") || (el.type === "fan" && G.elKind(el) === "timer"));
+  // проходной/перекрёстный — звенья цепочки; диммер работает как обычный выключатель
+  G.chainSw = (el) => !!el && (el.swKind === "pass" || el.swKind === "cross");
+
   // ---- форматирование ----
-  G.fmtLen = (cm) => (cm >= 100 ? (Math.round(cm) / 100).toFixed(2).replace(/\.?0+$/, "") + " м" : Math.round(cm) + " см");
+  G.fmtLen =(cm) => (cm >= 100 ? (Math.round(cm) / 100).toFixed(2).replace(/\.?0+$/, "") + " м" : Math.round(cm) + " см");
   G.fmtArea = (cm2) => (Math.round(cm2 / 1000) / 10).toFixed(1) + " м²";
 
   EP.Plan = EP.Plan || {};

@@ -16,6 +16,19 @@
     bra:       { name: "Бра",         glyph: "Бра", layer: "light", h: 170 },
     track:     { name: "Трек",        glyph: "Трек", layer: "light", h: null, free: true },
     ac:        { name: "Кондиционер", glyph: "КД", layer: "ac",    h: 220 },
+    // ---- приборы каталога Electric Pro v3: линия по мощности (G.DEVICES / G.devNeed) ----
+    // своя линия от щита — у бойлера, проточного, котла, приточки, зарядки и СИЛОВОГО
+    // конвектора; полотенцесушитель, насос и вентиляторный конвектор — шлейфом, как розетка
+    heater:    { name: "Конвектор",   glyph: "Кв", layer: "power", h: 20, dev: true },
+    towel:     { name: "Полотенцесушитель", glyph: "ПС", layer: "power", h: 110, dev: true },
+    waterheat: { name: "Бойлер",      glyph: "Бл", layer: "power", h: 170, dev: true },
+    flowheat:  { name: "Проточный нагреватель", glyph: "ПН", layer: "power", h: 120, dev: true },
+    eboiler:   { name: "Электрокотёл", glyph: "ЭК", layer: "power", h: 120, dev: true },
+    pump:      { name: "Насос",       glyph: "Н",  layer: "power", h: 40, dev: true },
+    supply:    { name: "Приточная установка", glyph: "ПУ", layer: "power", h: null, free: true, dev: true },
+    evcharge:  { name: "Зарядка ЭМ",  glyph: "ЭМ", layer: "power", h: 120, dev: true },
+    // вытяжной вентилятор — в цепи света, как светильник: от клавиши выключателя
+    fan:       { name: "Вентилятор",  glyph: "Вн", layer: "light", h: 220 },
     // точка ТП — это ТЕРМОРЕГУЛЯТОР на стене (по умолчанию 90 см — просьба пользователя), от
     // него штроба 50×50 вниз в пол. Раньше h:0 + free: точка ставилась в пол посреди комнаты,
     // штроба 50×50 по умолчанию не считалась вовсе (высота 0), а у точки без стены развёртке
@@ -56,6 +69,15 @@
     balcony: { name: "Балкон",     glyph: "Бл" },
     opening: { name: "Проём",      glyph: "Пр" }
   };
+  // разновидности точки (el.kind) — свои подписи на значке, своя чистовая работа, а у
+  // аварийного светильника и вентилятора с таймером — 4 жилы на хопе (G.fourCore)
+  const KINDS = {
+    socket: [["", "Обычная"], ["ip44", "IP44"], ["usb", "USB-C"], ["smart", "Умная (Zigbee)"], ["ups", "От ИБП"]],
+    output: [["", "Обычный"], ["reserve", "Резерв"]],
+    light: [["", "Потолочный"], ["spot", "Точечный"], ["pendant", "Подвесной"], ["linear", "Линейный"], ["outdoor", "Наружный"], ["emergency", "Аварийный"]],
+    heater: [["power", "Силовой — своя линия"], ["fan", "Вентиляторный — шлейфом"]],
+    fan: [["", "Без таймера"], ["timer", "С таймером"]]
+  };
   // статусы монтажа: ○ план → ◐ в работе → ✓ готово (+ «было» — существующая, в смету не идёт)
   const STATUS = [["planned", "План"], ["work", "В работе ◐"], ["mounted", "Готово ✓"], ["existing", "Было"]];
   const CFG = { hitPx: 22, wallSnapPx: 26, photoMax: 4, photoSide: 640, blockMax: 6 };
@@ -90,18 +112,20 @@
     presets: "Пресеты:",
     blockTitle: "Сборка блока", blockPosts: (n, m) => `${n}/${m} постов`,
     blockAdd: "Добавить пост:", blockTapDel: "Тап по посту в рамке — убрать",
+    kindLbl: "Вид:", devWatt: "Мощность, Вт",
+    devNeed: (nd) => `Ток ${String(nd.amps).replace(".", ",")} А → автомат ${nd.breaker}A${nd.poles === 3 ? " 3P" : ""}${nd.rcd ? ", с УЗО/дифом" : ""} · ${nd.own ? "своя линия от щита" : "шлейфом по линии розеток"}`,
     outLayer: "Тип вывода:", outPower: "Силовой", outLv: "Слаботочный",
     swTarget: "Свет от выключателя:", swAuto: "Авто (по линии)", swNone: "не задан",
     swPick: "🎯 На плане",
     swMulti: "Целей на клавишу можно назначить НЕСКОЛЬКО — тап по чипу добавляет/убирает (например 2 трансформатора или три вывода 24В с одной клавиши). «Авто» снимает все ручные.",
-    swKindLbl: "Тип:", swNormal: "Обычный", swPass: "Проходной", swCross: "Перекрёстный",
+    swKindLbl: "Тип:", swNormal: "Обычный", swPass: "Проходной", swCross: "Перекрёстный", swDimmer: "Диммер",
     swKeysLbl: "Клавиш:", swChain: "Цепочка — следующий:", swChainLast: "Это последнее звено → к лампе",
     swChainNone: "нет других выключателей в комнате для связи",
     beamSide: "Сторона перегородки:", beamSideFlip: "⇅ На другую сторону"
   };
   const OUT_LAYERS = [["power", "outPower"], ["lv", "outLv"]];
-  const SW_KINDS = [["normal", "swNormal"], ["pass", "swPass"], ["cross", "swCross"]];
-  const SW_KIND_GLYPH = { normal: "В", pass: "ПВ", cross: "ПкВ" };
+  const SW_KINDS = [["normal", "swNormal"], ["pass", "swPass"], ["cross", "swCross"], ["dimmer", "swDimmer"]];
+  const SW_KIND_GLYPH = { normal: "В", pass: "ПВ", cross: "ПкВ", dimmer: "Дм" };
 
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const $ = (sel, r) => (r || document).querySelector(sel);
@@ -316,7 +340,7 @@
       // должны все отдельными линиями идти в слаботочный щит»): линия создаётся сразу при
       // постановке, поэтому камеры физически не могут склеиться в один шлейф —
       // routeGroups группирует по circuitId, и у каждой он свой (CCTV1, CCTV2…)
-      if (t.ownLine && !el.circuitId) assignNewCircuit(el);
+      if ((t.ownLine || G().ownDev(el)) && !el.circuitId) assignNewCircuit(el);
       c.persist("elem-add");
       if (t.block) { openEditor(el); return; } // сразу открываем сборку блока
       sheetPalette(true); // счётчик «Смонтировано: N/M» в шапке палитры — иначе M устаревает с каждой новой точкой (свёрнутость сохраняем)
@@ -326,7 +350,7 @@
       const el = c.model.newElement(S.selType, null, 0, defaultHeight(S.selType, sp), t.layer);
       el.params = { x: sp.x, y: sp.y };
       p.elements.push(el);
-      if (t.ownLine && !el.circuitId) assignNewCircuit(el); // см. комментарий выше (камеры)
+      if ((t.ownLine || G().ownDev(el)) && !el.circuitId) assignNewCircuit(el); // см. комментарий выше (камеры)
     } else { rooms().toast(S.selType === "warmfloor" ? T.tapWallTP : T.tapWall); return; }
     c.persist("elem-add");
     sheetPalette(true); // тот же счётчик — ветка свободной точки (свет/трек/вывод)
@@ -364,7 +388,7 @@
     if (e.type === "block") el.params = Object.assign({}, el.params, { items: (e.items || ["socket"]).slice() });
     if (e.type === "switch") { if (e.keys) el.keys = Math.max(1, Math.min(3, Number(e.keys) || 1)); if (e.swKind) el.swKind = e.swKind; }
     p.elements.push(el);
-    if (t.ownLine && !el.circuitId) assignNewCircuit(el);
+    if ((t.ownLine || G().ownDev(el)) && !el.circuitId) assignNewCircuit(el);
     c.persist("elem-add");
     e.qty = (Number(e.qty) || 1) - 1;
     if (e.qty <= 0) { q.items.splice(idx, 1); S.pool = null; }
@@ -524,6 +548,8 @@
       ${EP.Plan.Circuits ? EP.Plan.Circuits.chainHtml(p, el) : ""}
       ${t.layerChoice ? outLayerRow(el) : ""}
       ${el.type === "output3" ? threeKindRow(el) : ""}
+      ${kindRow(el)}
+      ${t.dev ? devRow(el) : ""}
       ${el.type === "switch" ? switchKindRow(el) + switchKeysRow(el) + switchChainRow(el) + (el.chainNext ? "" : switchTargetRow(el)) : ""}
       ${t.targets ? switchTargetRow(el) : ""}
       ${t.feedChoice ? feedRow(el) : ""}
@@ -665,6 +691,8 @@
     // «Int N» и в подписи над точкой/однолинейке/смете читалась как интернет-линия.
     // Нумерация у каждого префикса своя (см. assignNewCircuit) → «24В1», «24В2»…
     if (el && el.type === "output24") return "24В";
+    // розетки от ИБП — своя линия от ИБП, своя нумерация «ИБП1, ИБП2…»
+    if (el && el.type === "socket" && G().elKind(el) === "ups") return "ИБП";
     if (layer === "lv") return "Int";
     if (layer === "tv") return "TV";
     if (layer === "cctv") return "CCTV";
@@ -689,8 +717,40 @@
     // линия освещения — на автомате 10A: под него кабель 3×1.5 (просьба «освещение 3×1.5»),
     // а подбор кабеля ниже таблицы больше не опускается (аудит 11.11, п.16) — при 16A был бы 2.5
     if (el.layer === "light" && el.type !== "output3") circ.breaker = 10;
+    // прибор каталога: автомат, полюса и диф — по мощности (G.devNeed)
+    devToCircuit(el, circ);
     cs.push(circ); el.circuitId = circ.id;
     return circ;
+  }
+  function devToCircuit(el, circ) {
+    const nd = G().devNeed(el);
+    if (!nd || !circ) return;
+    circ.breaker = nd.breaker; circ.poles = nd.poles;
+    if (nd.rcd) circ.rcd = true;
+  }
+  // линия, на которой этот прибор — единственная точка (своя): ей и правим автомат при смене мощности
+  function soloCircuitOf(el) {
+    const p = core().project;
+    if (!el.circuitId) return null;
+    const mates = (p.elements || []).filter((e) => e.circuitId === el.circuitId && e.type !== "junction");
+    if (mates.length !== 1 || mates[0].id !== el.id) return null;
+    return (p.circuits || []).find((c) => c.id === el.circuitId) || null;
+  }
+  function kindRow(el) {
+    const list = KINDS[el.type];
+    if (!list) return "";
+    const cur = G().elKind(el);
+    return `<div class="ep-plan-srow">${T.kindLbl}
+      ${list.map(([k, nm]) => `<button type="button" class="ep-plan-chip ep-clickable ${cur === k ? "on" : ""}" data-pe-kind="${esc(k)}" aria-pressed="${cur === k}">${esc(nm)}</button>`).join("")}
+    </div>`;
+  }
+  // мощность и фазы прибора + что из этого следует (автомат, своя линия или шлейф)
+  function devRow(el) {
+    const d = G().DEVICES[el.type], nd = G().devNeed(el);
+    if (!d || !nd) return "";
+    const ph = d.p3ok ? `<span class="ep-plan-chips">${[1, 3].map((n) => `<button type="button" class="ep-plan-chip ep-clickable ${nd.poles === n ? "on" : ""}" data-pe-phases="${n}" aria-pressed="${nd.poles === n}">${n} ф</button>`).join("")}</span>` : "";
+    return `<div class="ep-plan-srow"><label>${T.devWatt}<input id="ep-pe-watt" type="number" inputmode="numeric" min="1" step="100" value="${Math.round(nd.watt)}" data-pe-watt></label>${ph}</div>
+      <div class="ep-plan-srow ep-plan-hintrow">${T.devNeed(nd)}</div>`;
   }
   // Назначение линии (автомата): чипы существующих линий + «новая». attr — префикс
   // data-атрибутов ("pe" в главном редакторе точки, "pu" в карточке точки развёртки —
@@ -833,7 +893,7 @@
   }
   // клавиши (1-3) — только у обычного (проходной/перекрёстный всегда 1 клавиша цепочки)
   function switchKeysRow(el) {
-    if ((el.swKind || "normal") !== "normal") return "";
+    if ((el.swKind || "normal") !== "normal") return ""; // проходной/перекрёстный/диммер — одна клавиша
     return `<div class="ep-plan-srow">${T.swKeysLbl}
       ${[1, 2, 3].map((n) => `<button type="button" class="ep-plan-chip ep-clickable ${(el.keys || 1) === n ? "on" : ""}" data-pe-swkeys="${n}">${n}</button>`).join("")}
     </div>`;
@@ -845,7 +905,7 @@
   // 🎯 «На плане» — назначение цели ТАПОМ по точке прямо на плане (armTargetPick в
   // plan-rooms.js): шторка закрывается, следующий тап по подходящей точке (ЛЮБОЙ
   // комнаты, не только своей) назначает её этой клавише и возвращает редактор.
-  const SW_TARGET_TYPES = { light: 1, bra: 1, track: 1, output: 1, output24: 1, socket: 1, block: 1 };
+  const SW_TARGET_TYPES = { light: 1, bra: 1, track: 1, fan: 1, output: 1, output24: 1, socket: 1, block: 1 };
   // Клавиша назначена точке → ЛИНИЯ ТОЧКИ проставляется АВТОМАТИЧЕСКИ (просьба
   // пользователя: «если клавиша назначена на точку, то зачем на точке указывать линию,
   // можно автоматизировать»):
@@ -919,7 +979,7 @@
   // цепочка проходных/перекрёстных: провод к СЛЕДУЮЩЕМУ звену; без chainNext — это
   // последнее звено, оно ведёт к лампе (см. switchTargetRow выше)
   function switchChainRow(el) {
-    if ((el.swKind || "normal") === "normal") return "";
+    if (!G().chainSw(el)) return "";
     const p = core().project;
     const roomId = el.wallId ? String(el.wallId).split(":")[0] : null;
     const pool = (roomId ? G().elementsInRoom(p, roomId) : p.elements).filter((e) => e.id !== el.id && e.type === "switch");
@@ -1163,6 +1223,20 @@
   }
 
   // ---------- события ----------
+  // мощность прибора — на "change" (свой commit: не плодим шаг ↶ на каждую цифру); у своей
+  // линии сразу правится автомат/полюса/диф
+  document.addEventListener("change", (e) => {
+    const t = e.target;
+    if (!t || !t.matches || !t.matches("[data-pe-watt]")) return;
+    if (!rooms() || !rooms().isActive()) return;
+    const el = current(); if (!el || !G().DEVICES[el.type]) return;
+    const w = numVal("#ep-pe-watt");
+    if (!(w > 0)) return;
+    const c = core(); c.commit();
+    el.watt = Math.round(w);
+    const solo = soloCircuitOf(el); if (solo) devToCircuit(el, solo);
+    c.persist("elem-power"); openEditor(el, { keepView: true });
+  });
   document.addEventListener("click", (e) => {
     if (!rooms() || !rooms().isActive()) return;
     const t = e.target; let b;
@@ -1497,6 +1571,22 @@
       const c = core(); c.commit();
       el2.data = b.getAttribute("data-pe-data") === "fiber" ? "fiber" : "utp";
       c.persist("elem-data"); openEditor(el2); return;
+    }
+    if ((b = t.closest("[data-pe-kind]"))) {
+      const el2 = current(); if (!el2 || !KINDS[el2.type]) return;
+      const v = b.getAttribute("data-pe-kind") || "";
+      if (!KINDS[el2.type].some(([k]) => k === v)) return;
+      const c = core(); c.commit();
+      el2.kind = v;
+      const solo = soloCircuitOf(el2); if (solo) devToCircuit(el2, solo);
+      c.persist("elem-kind"); openEditor(el2, { keepView: true }); rooms().renderScene(); return;
+    }
+    if ((b = t.closest("[data-pe-phases]"))) {
+      const el2 = current(); if (!el2 || !G().DEVICES[el2.type]) return;
+      const c = core(); c.commit();
+      el2.phases = b.getAttribute("data-pe-phases") === "3" ? 3 : 1;
+      const solo = soloCircuitOf(el2); if (solo) devToCircuit(el2, solo);
+      c.persist("elem-power"); openEditor(el2, { keepView: true }); return;
     }
     if ((b = t.closest("[data-pe-3kind]"))) {
       const el2 = current(); if (!el2) return;
