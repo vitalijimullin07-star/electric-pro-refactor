@@ -24,6 +24,7 @@ EP.AppShell = {
             </span>
           </div>
           <div class="topbar-right">
+            <button class="topbar-chat ep-clickable" id="topbarSymBtn" type="button" data-plan-symbols aria-label="Значки на плане" title="Какие значки показывать на плане" hidden>🔣</button>
             <button class="topbar-chat ep-clickable" id="topbarChatBtn" type="button" data-fb-open aria-label="Общий чат" title="Общий чат" hidden>💬</button>
             <button class="status-btn ep-clickable" id="firebaseStatusBtn" type="button" aria-label="Статус Firebase">
               <span class="status-dot status-wait" id="firebaseStatusDot"></span>

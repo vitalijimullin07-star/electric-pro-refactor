@@ -2859,6 +2859,42 @@
       }
     });
   }
+  /* Шторка «🔣 Значки на плане» — открывается кнопкой в верхней панели приложения (видна только
+     в открытом проекте). Четыре стиля, у каждого — образец; «Каталог» — символы из каталога
+     обозначений владельца (drawCatalogEl в plan-render.js). Выбор пишется в проект, как и
+     чипы «Значки» в шторке 🗂 Слои (один обработчик data-pr-symst). */
+  const SYM_STYLES = [
+    { id: "simple", name: "Простые", desc: "Цветной кружок с буквой — быстро читается на телефоне." },
+    { id: "gost", name: "ГОСТ", desc: "Линейные обозначения ГОСТ 21.210 — для чертежа." },
+    { id: "design", name: "Дизайн", desc: "Рамка с иконкой и выноска к стене, как в дизайн-проекте." },
+    { id: "catalog", name: "Каталог", desc: "Символы из каталога Electric Pro: рамка механизма, клавиши, стрелки проходных, метки напряжения." }
+  ];
+  function symPreview(id) {
+    const RD = EP.Plan.Render;
+    if (id === "catalog" && RD && RD.drawCatalogEl && document.createElementNS) {
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("viewBox", "0 0 228 34"); svg.setAttribute("class", "ep-plan-symprev");
+      const g = document.createElementNS("http://www.w3.org/2000/svg", "g"); svg.appendChild(g);
+      const items = [{ type: "socket" }, { type: "switch", keys: 2 }, { type: "switch", swKind: "pass" }, { type: "light" }, { type: "bra" }, { type: "internet" }, { type: "warmfloor" }, { type: "output24" }];
+      items.forEach((it, i) => RD.drawCatalogEl(g, it, 14 + i * 28.5, 14, 1.25, 1.6, "currentColor", { mini: false }));
+      return svg.outerHTML;
+    }
+    const sample = { simple: "● Р  ● В  ● С  ● И", gost: "◡ ⊸ ⊗ ◡И", design: "▣ Р  ▣ В  ▣ С  ▣ И" }[id] || "";
+    return `<span class="ep-plan-symprevtxt">${sample}</span>`;
+  }
+  function sheetSymbols() {
+    const p = core().project; if (!p) return;
+    const st = p.settings.symbolStyle || "simple";
+    openSheet(`<div class="ep-plan-srow"><b>🔣 Значки на плане</b><span class="ep-plan-flex"></span>
+        <button type="button" class="ep-plan-mini ep-clickable" data-pr-symclose aria-label="Закрыть">✕</button></div>
+      <div class="ep-plan-symlist">${SYM_STYLES.map((x) => `
+        <button type="button" class="ep-plan-symcard ep-clickable${st === x.id ? " on" : ""}" data-pr-symst="${x.id}" data-pr-symsheet aria-pressed="${st === x.id}">
+          <span class="ep-plan-symname">${st === x.id ? "✓ " : ""}${x.name}</span>
+          <span class="ep-plan-symdesc">${x.desc}</span>
+          ${symPreview(x.id)}
+        </button>`).join("")}</div>
+      <div class="ep-plan-srow ep-plan-hintrow">Выбор относится к этому проекту и идёт в PDF. На отдельных приборах в режиме «1:1» рисуется реальный габарит.</div>`);
+  }
   function sheetLayers() {
     const p = core().project; if (!p) return;
     const st = p.settings.symbolStyle || "simple";
@@ -2871,6 +2907,7 @@
         <button type="button" class="ep-plan-chip ep-clickable ${st === "simple" ? "on" : ""}" data-pr-symst="simple">Простые</button>
         <button type="button" class="ep-plan-chip ep-clickable ${st === "gost" ? "on" : ""}" data-pr-symst="gost">ГОСТ</button>
         <button type="button" class="ep-plan-chip ep-clickable ${st === "design" ? "on" : ""}" data-pr-symst="design">Дизайн</button>
+        <button type="button" class="ep-plan-chip ep-clickable ${st === "catalog" ? "on" : ""}" data-pr-symst="catalog">Каталог</button>
       </div>
       <div class="ep-plan-srow ep-plan-s2">
         <label>Вынос размеров от стены, см<input id="ep-pr-dimoff" type="number" inputmode="numeric" min="0" max="200" step="5"
@@ -3379,7 +3416,7 @@
     if ((el = t.closest("[data-pr-symst]"))) {
       const c = core(); c.commit();
       c.project.settings.symbolStyle = el.getAttribute("data-pr-symst");
-      c.persist("symbol-style"); sheetLayers(); renderScene();
+      c.persist("symbol-style"); if (el.hasAttribute("data-pr-symsheet")) sheetSymbols(); else sheetLayers(); renderScene();
       return;
     }
     if (t.closest("[data-pr-legend]")) return sheetLegend();
@@ -3392,6 +3429,7 @@
     }
     if ((el = t.closest("[data-pr-apply]"))) return applyRoom(el.getAttribute("data-pr-apply"));
     // «✕ Закрыть» — без записи: набранное в карточке отбрасывается
+    if (t.closest("[data-pr-symclose]")) { closeSheet(); return; }
     if (t.closest("[data-pr-close]")) { R.selectedRoomId = null; closeSheet(); if (R.canvas) R.canvas.setDragHandler(null); renderScene(); return; }
     // «🧭 Перенести» из карточки — тот же режим, что кнопка 🧭 тулбара, сразу с этой комнатой
     if ((el = t.closest("[data-pr-tomove]"))) {
@@ -3674,7 +3712,7 @@
     const Rn = EP.Plan.Render;
     return !!(R.canvas && Rn && ((Rn.isLive && Rn.isLive(R.canvas)) || (Rn.isLifted && Rn.isLifted(R.canvas))));
   }
-  EP.Plan.Rooms = {
+  EP.Plan.Rooms = { sheetSymbols,
     isLocked, lockForm, LOCK_MODES,
     attach, detach, setActive, setMode, renderScene, T, CFG, gestureBusy,
     // общий доступ для модулей слоёв 2-6

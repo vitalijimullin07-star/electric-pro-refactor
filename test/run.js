@@ -4503,7 +4503,7 @@ test("фото: deleteProject чистит кэш фото своего прое
     const mount = fs.readFileSync(path.join(root, "assets", "js", "modules", "plan", "plan-mount.js"), "utf8");
     ok(!/data-fb-open/.test(mount), "в шапке плана кнопки чата больше нет (чат пока только на главной)");
     const sh0 = fs.readFileSync(path.join(root, "assets", "js", "core", "app-shell.js"), "utf8");
-    ok(/<div class="topbar-right">\s*<button class="topbar-chat[^"]*" id="topbarChatBtn" type="button" data-fb-open[^>]*hidden>💬<\/button>\s*<button class="status-btn/.test(sh0), "💬 в шапке приложения — сразу перед индикатором состояния");
+    ok(/<div class="topbar-right">\s*(?:<button[^>]*id="topbarSymBtn"[^>]*>[^<]*<\/button>\s*)?<button class="topbar-chat[^"]*" id="topbarChatBtn" type="button" data-fb-open[^>]*hidden>💬<\/button>\s*<button class="status-btn/.test(sh0), "💬 в шапке приложения — сразу перед индикатором состояния");
     const fb = fs.readFileSync(path.join(root, "assets", "js", "modules", "ui", "feedback.js"), "utf8");
     ok(/localStorage/.test(fb) && /clipboard/.test(fb), "хранит локально и умеет копировать в буфер");
     const css = fs.readFileSync(path.join(root, "assets", "css", "base.css"), "utf8");
@@ -7172,7 +7172,7 @@ test("фото: deleteProject чистит кэш фото своего прое
         "если у типа ГОСТ-символа нет — падаем на прежнюю букву, а не рисуем пустоту");
       // рамка обязана стать КОНТУРОМ: символы стро́ятся цветом линии, и на сплошной
       // заливке того же цвета их просто не видно (поймано скриншотом живого прогона)
-      ok(/style: miniGost \? `fill:none;stroke:\$\{elemColor\(elem\)\}`/.test(src),
+      ok(/style: \(miniGost \|\| miniCat\) \? `fill:none;stroke:\$\{elemColor\(elem\)\}`/.test(src),
         "в ГОСТ-стиле рамка блока — контур, а не залитая пилюля");
       ok(/цвет — ИНЛАЙН-стилем, а не атрибутом/.test(src),
         "и цвет идёт инлайн-стилем: у .ep-plan-blockrect в CSS задан белый stroke, "
@@ -10901,6 +10901,29 @@ test("фото: deleteProject чистит кэш фото своего прое
       } finally { env.restore(); }
       const mnt = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-mount.js"), "utf8");
       ok(/data-plan-motion/.test(mnt) && /toggleMotion/.test(mnt), "в шапке плана есть переключатель режима движения");
+    });
+  }
+
+  // ===== 81б. Стиль значков «Каталог» (каталог обозначений Electric Pro) =====
+  {
+    test("значки «Каталог»: символы для всех наших точек, кроме стояка, выбор кнопкой в верхней панели", () => {
+      const RD = EP.Plan.Render;
+      ok(RD.drawCatalogEl && RD.CAT_TYPES, "стиль рисуется общей функцией");
+      const TY = EP.Plan.Elements.TYPES;
+      const own = ["block", "junction", "panel", "door", "window", "riser"]; // своя отрисовка / не прибор
+      const covered = Object.keys(TY).filter((t) => own.indexOf(t) < 0 && !TY[t].opening);
+      const grp = { kids: 0, appendChild() { this.kids++; } };
+      covered.forEach((t) => ok(RD.drawCatalogEl(grp, { type: t }, 0, 0, 1, 1, "#000"), "есть символ каталога: " + t));
+      eq(RD.drawCatalogEl(grp, { type: "riser" }, 0, 0, 1, 1, "#000"), false, "стояка в каталоге нет — рисуется как раньше");
+      const src = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-render.js"), "utf8");
+      ok(/gost, design, catalog, qfOn/.test(src), "стиль входит в подпись кэша значка — смена стиля перерисовывает точки");
+      ok(/if \(catalog\) \{[\s\S]{0,80}распаечная коробка/.test(src) && /if \(catalog\) \{[\s\S]{0,80}молни/.test(src), "распайка и щит — тоже символами каталога");
+      ok(/miniCat[\s\S]{0,400}drawCatalogEl\(grp, \{ type: it/.test(src), "в рамке блока — мини-символы каталога");
+      ok(typeof EP.Plan.Rooms.sheetSymbols === "function", "шторка выбора значков");
+      const sh = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "core", "app-shell.js"), "utf8");
+      ok(/id="topbarSymBtn"[^>]*data-plan-symbols[^>]*hidden/.test(sh), "кнопка 🔣 в верхней панели приложения, по умолчанию скрыта");
+      const mnt = require("fs").readFileSync(require("path").join(__dirname, "..", "assets", "js", "modules", "plan", "plan-mount.js"), "utf8");
+      ok(/b\.hidden = !\(V\.active && core\(\) && core\(\)\.project\)/.test(mnt), "видна только в открытом проекте");
     });
   }
 

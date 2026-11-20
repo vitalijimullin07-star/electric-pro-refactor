@@ -1385,6 +1385,24 @@ body[data-visual-mode="day"] .ep-plan-hatchln { stroke: rgba(15, 23, 42, .55); }
 /* ГОСТ-символы: линии цветом линии/слоя, читаемая толщина */
 .ep-plan-gost { fill: none; }
 .ep-plan-gost text { font-family: system-ui; font-weight: 700; }
+/* стиль «Каталог» (каталог обозначений Electric Pro): контур цветом линии на подложке цвета холста */
+.ep-plan-cat .ep-plan-catbg { fill: #0f172a; fill-opacity: .92; }
+body[data-visual-mode="day"] .ep-plan-cat .ep-plan-catbg, .ep-plan.is-paper .ep-plan-cat .ep-plan-catbg { fill: #fff; }
+.ep-plan-cattxt { font-family: system-ui; font-weight: 700; }
+.ep-plan-panelbolt { stroke: #fbbf24; }
+body[data-visual-mode="day"] .ep-plan-panelbolt, .ep-plan.is-paper .ep-plan-panelbolt { stroke: #b45309; }
+.ep-plan-cattag { font-family: system-ui; font-weight: 700; paint-order: stroke; stroke: rgba(11, 18, 32, .8) !important; stroke-width: 2.5px; }
+body[data-visual-mode="day"] .ep-plan-cattag, .ep-plan.is-paper .ep-plan-cattag { stroke: rgba(255, 255, 255, .9) !important; }
+.ep-plan-svg.is-moving .ep-plan-cattag { display: none; }
+/* шторка «🔣 Значки на плане» */
+.ep-plan-symlist { display: flex; flex-direction: column; gap: 8px; }
+.ep-plan-symcard { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(148, 163, 184, .32); background: rgba(148, 163, 184, .08); color: var(--text); font: inherit; cursor: pointer; }
+.ep-plan-symcard.on { border-color: var(--accent, #22c55e); box-shadow: inset 0 0 0 1px var(--accent, #22c55e); }
+.ep-plan-symname { font-weight: 800; font-size: 15px; }
+.ep-plan-symdesc { font-size: 12.5px; color: var(--muted); line-height: 1.35; }
+.ep-plan-symprev { width: 100%; max-width: 300px; height: 44px; color: var(--text); }
+.ep-plan-symprev .ep-plan-catbg { fill: transparent; }
+.ep-plan-symprevtxt { font-size: 15px; letter-spacing: .08em; color: var(--muted); }
 .ep-plan-panelhalf { fill: #38bdf8; opacity: .9; }
 body[data-visual-mode="day"] .ep-plan-panelhalf { fill: #1d4ed8; }
 .ep-plan.is-paper .ep-plan-panelhalf { fill: #1d4ed8; }

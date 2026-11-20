@@ -405,6 +405,102 @@
     return true;
   }
 
+  /* Стиль «Каталог» (символы из каталога обозначений владельца, «Electric Pro · каталог
+     значков v3»): контурный прибор в цвете своей линии QF на подложке цвета холста, всегда
+     стоит вертикально (как «Дизайн», без выноски). Розетка/выключатель/терморегулятор —
+     квадратная рамка, выключатель — по числу клавиш (проходной — стрелки, перекрёстный —
+     крест стрелок), свет — круг с крестом, бра — «|D-», трек — шина с головками, выводы —
+     «провод с концом» + метка напряжения. Возвращает false для типов без символа в каталоге
+     (распайка, стояк, блок — у них своя отрисовка). opts.mini — пост внутри рамки блока:
+     без подложки и без меток. */
+  const CAT_TYPES = new Set(["socket", "switch", "light", "bra", "track", "ac", "warmfloor", "internet", "tv",
+    "camera", "sensor", "leak", "intercom", "pir", "lux", "output", "output24", "output3"]);
+  function drawCatalogEl(grp, elem, cx, cy, k, sw, col, opts) {
+    const t = elem.type;
+    if (!CAT_TYPES.has(t)) return false;
+    const mini = !!(opts && opts.mini);
+    const sub = el("g", { class: "ep-plan-cat", stroke: col, transform: `translate(${cx} ${cy})`, "stroke-linejoin": "round", "stroke-linecap": "round" });
+    const lw = sw * 0.8, s = 8 * k;
+    const add = (tag, a) => sub.appendChild(el(tag, Object.assign({ fill: "none", "stroke-width": lw }, a)));
+    const frame = (w, h, rx) => add("rect", { x: -w, y: -h, width: 2 * w, height: 2 * h, rx: rx == null ? 1.6 * k : rx, class: mini ? null : "ep-plan-catbg" });
+    const dot = (x, y, r) => sub.appendChild(el("circle", { cx: x, cy: y, r: r || 1.25 * k, fill: col, stroke: "none" }));
+    const txt = (x, y, str, fs, cls) => sub.appendChild(el("text", { x, y, "font-size": fs, "text-anchor": "middle", "dominant-baseline": "central", fill: col, stroke: "none", class: cls || "ep-plan-cattxt" }, str));
+    const line = (x0, y0, x1, y1, w) => add("line", { x1: x0, y1: y0, x2: x1, y2: y1, "stroke-width": w || lw });
+    const tag = (str) => { if (!mini && str) txt(0, s + 6 * k, str, 6 * k, "ep-plan-cattag"); };
+    const arrowH = (x0, x1, y) => { const a = 1.8 * k; line(x0, y, x1, y); add("path", { d: `M ${x0 + a} ${y - a} L ${x0} ${y} L ${x0 + a} ${y + a} M ${x1 - a} ${y - a} L ${x1} ${y} L ${x1 - a} ${y + a}` }); };
+    const arrowV = (x, y0, y1) => { const a = 1.4 * k; line(x, y0, x, y1); add("path", { d: `M ${x - a} ${y0 + a} L ${x} ${y0} L ${x + a} ${y0 + a} M ${x - a} ${y1 - a} L ${x} ${y1} L ${x + a} ${y1 - a}` }); };
+    if (t === "socket" || (t === "output3" && elem.threeKind === "socket")) {
+      frame(s, s); dot(-3 * k, 0); dot(3 * k, 0);
+      if (t === "output3") tag("380 В");
+    } else if (t === "switch") {
+      const kind = elem.swKind || "normal";
+      const n = kind === "normal" ? Math.max(1, Math.min(3, elem.keys || 1)) : 1;
+      frame(s, s);
+      const iw = s - 2.4 * k, kw = (2 * iw) / n;
+      add("rect", { x: -iw, y: -iw, width: 2 * iw, height: 2 * iw, rx: 0.8 * k });
+      for (let i = 1; i < n; i++) line(-iw + kw * i, -iw, -iw + kw * i, iw);
+      for (let i = 0; i < n; i++) {
+        const kx = -iw + kw * i + kw / 2;
+        if (kind === "pass") { if (n === 1) arrowH(-iw + 1.6 * k, iw - 1.6 * k, 0); else arrowV(kx, -iw + 1.6 * k, iw - 1.6 * k); }
+        else if (kind === "cross") { const d = iw - 1.8 * k; line(-d, -d, d, d); line(-d, d, d, -d); add("path", { d: `M ${d - 2 * k} ${d} L ${d} ${d} L ${d} ${d - 2 * k} M ${d - 2 * k} ${-d} L ${d} ${-d} L ${d} ${-d + 2 * k}` }); }
+        else line(kx, -iw + 1.6 * k, kx, -iw + 4.2 * k);
+      }
+    } else if (t === "light") {
+      const r = 7 * k, c = r * Math.SQRT1_2;
+      add("circle", { cx: 0, cy: 0, r, class: mini ? null : "ep-plan-catbg" }); line(-c, -c, c, c); line(-c, c, c, -c);
+    } else if (t === "bra") {
+      add("rect", { x: -6 * k, y: -7 * k, width: 13 * k, height: 14 * k, rx: 2 * k, class: mini ? null : "ep-plan-catbg", "stroke-width": 0 });
+      line(-5 * k, -7 * k, -5 * k, 7 * k);
+      add("path", { d: `M ${-3 * k} ${-5 * k} A ${5 * k} ${5 * k} 0 0 1 ${-3 * k} ${5 * k} Z` });
+      line(4 * k, 0, 6.5 * k, 0);
+    } else if (t === "track") {
+      add("rect", { x: -11 * k, y: -5 * k, width: 22 * k, height: 10 * k, rx: 1.5 * k, class: mini ? null : "ep-plan-catbg", "stroke-width": 0 });
+      line(-11 * k, -3 * k, 11 * k, -3 * k);
+      [-7, 0, 7].forEach((x) => { line(x * k, -3 * k, x * k, -1 * k); add("rect", { x: (x - 1.8) * k, y: -1 * k, width: 3.6 * k, height: 3.6 * k }); });
+    } else if (t === "ac") {
+      frame(11 * k, 5.5 * k, 1.8 * k);
+      [-2.5, 0, 2.5].forEach((y) => line(-8 * k, y * k, 8 * k, y * k, lw * 0.8));
+    } else if (t === "warmfloor") {
+      frame(s, s);
+      add("rect", { x: -4.5 * k, y: -5.5 * k, width: 9 * k, height: 5 * k, rx: 0.6 * k });
+      txt(0, -3 * k, "T", 4 * k);
+      line(-4.5 * k, 3.5 * k, -1.5 * k, 3.5 * k); line(1.5 * k, 3.5 * k, 4.5 * k, 3.5 * k); line(3 * k, 2 * k, 3 * k, 5 * k);
+    } else if (t === "internet") {
+      frame(9 * k, 6.5 * k, 1.6 * k);
+      add("path", { d: `M ${-6 * k} ${-3 * k} H ${6 * k} V ${3 * k} H ${-6 * k} Z M ${-4 * k} ${-3 * k} V ${-1 * k} M ${-2 * k} ${-3 * k} V ${-1 * k} M 0 ${-3 * k} V ${-1 * k} M ${2 * k} ${-3 * k} V ${-1 * k} M ${4 * k} ${-3 * k} V ${-1 * k}`, "stroke-width": lw * 0.8 });
+      tag("RJ45");
+    } else if (t === "tv") {
+      frame(s, s); txt(0, 0.3 * k, "TV", 6.5 * k);
+    } else if (t === "camera") {
+      add("rect", { x: -9 * k, y: -6 * k, width: 18 * k, height: 12 * k, rx: 2 * k, class: mini ? null : "ep-plan-catbg", "stroke-width": 0 });
+      add("rect", { x: -8 * k, y: -4 * k, width: 11 * k, height: 8 * k, rx: 0.8 * k });
+      add("path", { d: `M ${3 * k} ${-1.5 * k} L ${8 * k} ${-4 * k} V ${4 * k} L ${3 * k} ${1.5 * k} Z` });
+      tag(elem.feed === "poe" ? "PoE" : "IP");
+    } else if (t === "sensor" || t === "lux") {
+      add("circle", { cx: 0, cy: 0, r: 7 * k, class: mini ? null : "ep-plan-catbg" }); txt(0, 0.3 * k, "Д", 6.5 * k);
+      if (t === "lux") tag("Освещ.");
+    } else if (t === "pir") {
+      add("circle", { cx: 0, cy: 0, r: 7 * k, class: mini ? null : "ep-plan-catbg" });
+      dot(-2.5 * k, 0, 1.2 * k);
+      add("path", { d: `M ${0.5 * k} ${-3 * k} A ${3.5 * k} ${3.5 * k} 0 0 1 ${0.5 * k} ${3 * k} M ${2.5 * k} ${-4.6 * k} A ${5.2 * k} ${5.2 * k} 0 0 1 ${2.5 * k} ${4.6 * k}` });
+    } else if (t === "leak") {
+      add("path", { d: `M 0 ${-8 * k} C ${2 * k} ${-4.5 * k} ${6 * k} ${-1 * k} ${6 * k} ${2.5 * k} A ${6 * k} ${6 * k} 0 0 1 ${-6 * k} ${2.5 * k} C ${-6 * k} ${-1 * k} ${-2 * k} ${-4.5 * k} 0 ${-8 * k} Z`, class: mini ? null : "ep-plan-catbg" });
+      line(-2.6 * k, 3 * k, 2.6 * k, 3 * k);
+    } else if (t === "intercom") {
+      frame(s, s); line(0, -s, 0, -s - 2 * k); line(0, s, 0, s + 2 * k);
+      add("path", { d: `M ${-4 * k} ${-4 * k} L 0 0 L ${4 * k} ${-4 * k} M 0 0 V ${4 * k}`, "stroke-width": lw * 0.8 });
+      [[-4, -4], [4, -4], [0, 4], [0, 0]].forEach(([x, y]) => add("circle", { cx: x * k, cy: y * k, r: 1.1 * k, "stroke-width": lw * 0.7 }));
+    } else {
+      // выводы: провод с концом — горизонталь, излом вверх и кольцо (как в каталоге)
+      add("rect", { x: -9 * k, y: -7 * k, width: 18 * k, height: 11 * k, rx: 2 * k, class: mini ? null : "ep-plan-catbg", "stroke-width": 0 });
+      add("path", { d: `M ${-8 * k} ${2 * k} H ${-1 * k} L ${3.6 * k} ${-2.6 * k}` });
+      add("circle", { cx: 5 * k, cy: -4 * k, r: 1.9 * k });
+      tag(t === "output24" ? "24 В" : t === "output3" ? "380 В · 3 ф." : "220 В ~");
+    }
+    grp.appendChild(sub);
+    return true;
+  }
+
   // ---------- статичная часть: подложка + заливки комнат ----------
   function draw(canvas, project, ui) {
     const G = EP.Plan.Geometry;
@@ -1215,6 +1311,7 @@
     const circ = (id) => (project.circuits || []).find((c) => c.id === id);
     const gost = (project.settings && project.settings.symbolStyle) === "gost";
     const design = (project.settings && project.settings.symbolStyle) === "design";
+    const catalog = (project.settings && project.settings.symbolStyle) === "catalog";
     // «1:1» — настенные приборы/блоки в НАСТОЯЩИХ габаритах рамок (мм, FRAME_MM), а не
     // постоянным размером на экране. Свободные потолочные точки (свет/ТП/распайка/трек)
     // НЕ трогаем — у них нет рамки, физического габарита в плане у них не существует.
@@ -1281,7 +1378,7 @@
       const cc0 = elem.circuitId && circ(elem.circuitId);
       const qfOn = labelsOn && lodQf && !!elem.circuitId && (qfEach || qfOne.has(elem.id) || elem.id === selId);
       const eBase = JSON.stringify([elem, cx, cy, rot, elem.id === selId, bad.has(elem.id),
-        gost, design, qfOn, lodDims, cc0 ? [cc0.color, cc0.name] : null,
+        gost, design, catalog, qfOn, lodDims, cc0 ? [cc0.color, cc0.name] : null,
         layerColor2(elem.layer), circDim(elem.circuitId), montage, real]);
       const eSig = eBase + "|" + k;
       const eCached = nc.els.get(elem.id);
@@ -1311,7 +1408,14 @@
         // на плане было не видно. Инлайн-стилем: правило класса .ep-plan-junction перебивает
         // атрибут fill. Без линии — прежний цвет из CSS.
         const jst = cc0 ? { style: "fill:" + cc0.color } : {};
-        if (gost) {
+        if (catalog) {
+          // «Каталог»: распаечная коробка — квадрат с диагональным крестом, цветом линии
+          const s2 = 6 * k, jc = cc0 ? cc0.color : layerColor2("routes");
+          const jg = el("g", { class: "ep-plan-cat", stroke: jc, "stroke-width": sw * 0.8, fill: "none" });
+          jg.appendChild(el("rect", { x: pt.x - s2, y: pt.y - s2, width: s2 * 2, height: s2 * 2, class: "ep-plan-catbg" }));
+          jg.appendChild(el("path", { d: `M ${pt.x - s2} ${pt.y - s2} L ${pt.x + s2} ${pt.y + s2} M ${pt.x - s2} ${pt.y + s2} L ${pt.x + s2} ${pt.y - s2}` }));
+          grp.appendChild(jg);
+        } else if (gost) {
           // ГОСТ: соединительная коробка — закрашенный кружок
           grp.appendChild(el("circle", Object.assign({ cx: pt.x, cy: pt.y, r: 5.5 * k, class: "ep-plan-junction is-gost", "stroke-width": sw * 0.7 }, jst)));
         } else {
@@ -1372,11 +1476,12 @@
              они были бы попросту не видны (поймано скриншотом живого прогона). Заодно это
              и правильнее для чертежа: ГОСТ-символ — линия, а не плашка. */
           const miniGost = gost && !real;
+          const miniCat = catalog && !real; // «Каталог»: посты — мини-символы каталога в рамке-контуре
           grp.appendChild(el("rect", Object.assign({ x: cx - bw / 2, y: cy - bh / 2, width: bw, height: bh, rx: 5 * k,
             // цвет — ИНЛАЙН-стилем, а не атрибутом: у .ep-plan-blockrect в plan.css задан
             // белый stroke, и правило класса побеждает одноимённый presentation-атрибут
             // (тот же приём уже используется у постов развёртки)
-            style: miniGost ? `fill:none;stroke:${elemColor(elem)}` : `fill:${elemColor(elem)}`,
+            style: (miniGost || miniCat) ? `fill:none;stroke:${elemColor(elem)}` : `fill:${elemColor(elem)}`,
             class: "ep-plan-blockrect", "stroke-width": sw * 0.7 }, tr ? { transform: tr } : {})));
           const inset = real ? 0.4 : 4 * k;
           const gfs = real ? Math.min(bh * 0.5, step2 * 0.8) : 9 * k;
@@ -1396,6 +1501,11 @@
               const rx = cx + (pcx - cx) * Math.cos(radB), ry = cy + (pcx - cx) * Math.sin(radB);
               const pm = it === "switch" ? G.postMeta(elem, i) : null;
               if (drawGostEl(grp, { type: it, keys: pm ? pm.keys : 1 }, rx, ry, rotB, dp, k * 0.6, sw * 0.8, elemColor(elem))) return;
+            }
+            if (miniCat) {
+              const rx = cx + (pcx - cx) * Math.cos(radB), ry = cy + (pcx - cx) * Math.sin(radB);
+              const pm = it === "switch" ? G.postMeta(elem, i) : null;
+              if (drawCatalogEl(grp, { type: it, keys: pm ? pm.keys : 1, swKind: pm ? pm.swKind : "normal" }, rx, ry, k * 0.78, sw * 0.8, elemColor(elem), { mini: true })) return;
             }
             // у выключателя-поста дописываем клавишность и вид (В2, В2⇄ проходной,
             // В2⇆ перекрёстный) — раньше все посты выглядели одинаково «В», и двухклавишный
@@ -1430,12 +1540,13 @@
           || (elem.type === "output3" && elem.threeKind !== "socket"));
         const drewGost = !realThis && gost && drawGostEl(grp, elem, cx, cy, rot, dp, k, sw, colEl);
         const drewDesign = !realThis && !drewGost && !tailFree && design && drawDesignEl(grp, elem, pt, cx, cy, k, sw, colEl, (TY[elem.type] || {}).glyph || "?");
+        const drewCat = !realThis && !drewGost && !drewDesign && catalog && drawCatalogEl(grp, elem, cx, cy, k, sw, colEl);
         // Свободный (потолочный) «Вывод»/«Вывод 24В» — ВСЕГДА «хвостик»: точка + короткий
         // волнистый конец провода, независимо от стиля значков (просьба пользователя:
         // «возможность с потолка вывода 24в в виде хвостика»). Раньше хвостик рисовался
         // ТОЛЬКО в ГОСТ-стиле (drawGostEl), а в «Простом»/«Дизайне» это была обычная
         // пилюля с буквой — на потолке она читалась как светильник, а не как вывод.
-        if (tailFree && !drewGost) {
+        if (tailFree && !drewGost && !drewCat) {
           const rd = 2.6 * k, len = 12 * k, amp = 3 * k;
           grp.appendChild(el("circle", { cx, cy, r: rd, fill: colEl, "stroke-width": 0 }));
           grp.appendChild(el("path", {
@@ -1444,7 +1555,7 @@
           }));
           const tailLbl = elem.type === "output24" ? "24В" : (elem.type === "output3" ? "3ф · 5×" : "");
           if (tailLbl) grp.appendChild(el("text", { x: cx + rd + 3 * k, y: cy - rd, "font-size": 8 * k, fill: colEl, class: "ep-plan-tailtxt" }, tailLbl));
-        } else if (!drewGost && !drewDesign) {
+        } else if (!drewGost && !drewDesign && !drewCat) {
           if (realThis) {
             // РЕАЛЬНАЯ рамка одного поста 84×84 мм, повёрнутая вдоль стены. На плане прибор
             // виден СВЕРХУ, поэтому «лицо» (гнёзда/клавиши) здесь не рисуем — оно во
@@ -1574,7 +1685,11 @@
       const hc = pbox && pbox.hmm ? pbox.hmm / 10 : 20;
       const grp = el("g", { class: "ep-plan-panel" + (pn.id === selId ? " is-sel" : ""), "data-pn": pn.id });
       grp.appendChild(el("rect", { x: pn.x - wc / 2, y: pn.y - hc / 2, width: wc, height: hc, rx: 2, "stroke-width": sw * 0.8 }));
-      if (gost) {
+      if (catalog) {
+        // «Каталог»: распределительный щит — рамка с молнией
+        const m = Math.min(wc, hc) * 0.32;
+        grp.appendChild(el("path", { d: `M${pn.x + m * 0.3} ${pn.y - m} L${pn.x - m * 0.45} ${pn.y + m * 0.1} L${pn.x + m * 0.35} ${pn.y + m * 0.1} L${pn.x - m * 0.3} ${pn.y + m}`, class: "ep-plan-panelbolt", fill: "none", "stroke-width": sw * 0.9, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+      } else if (gost) {
         // ГОСТ: щиток — прямоугольник, половина закрашена (по диагонали)
         grp.appendChild(el("path", { d: `M${pn.x - wc / 2} ${pn.y + hc / 2} L${pn.x + wc / 2} ${pn.y + hc / 2} L${pn.x + wc / 2} ${pn.y - hc / 2} Z`, class: "ep-plan-panelhalf" }));
       } else {
@@ -1855,7 +1970,7 @@
   }
 
   EP.Plan = EP.Plan || {};
-  EP.Plan.Render = {
+  EP.Plan.Render = { drawCatalogEl, CAT_TYPES,
     draw, drawScaled, CFG, hoverPreview, clearHoverPreview,
     liftForDrag, moveLift, dropLift, isLifted, reconcile,
     liveBegin, liveAdd, liveDraw, liveEnd, isLive,
