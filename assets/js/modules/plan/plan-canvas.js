@@ -95,10 +95,13 @@
     let ovX = 0, ovY = 0;
     function placeSvg() {
       const mx = Math.round(cw * OVS), my = Math.round((ch || cw) * OVS);
-      if (mx === ovX && my === ovY && svg.style.width) return;
+      // сверяем и РАЗМЕР холста, а не только запас: без запаса (режим «как раньше») mx/my всегда 0,
+      // и холст, выросший после сворачивания панели, оставался с прежним svg — пустая полоса снизу
+      const W = cw + 2 * mx, Hh = (ch || cw) + 2 * my;
+      if (mx === ovX && my === ovY && svg.style.width === W + "px" && svg.style.height === Hh + "px") return;
       ovX = mx; ovY = my;
       svg.style.left = -mx + "px"; svg.style.top = -my + "px";
-      svg.style.width = (cw + 2 * mx) + "px"; svg.style.height = ((ch || cw) + 2 * my) + "px";
+      svg.style.width = W + "px"; svg.style.height = Hh + "px";
     }
 
     function clampView() {
