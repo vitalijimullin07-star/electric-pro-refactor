@@ -1526,6 +1526,25 @@
   G.ledCores = (el) => ({ mono: 2, cct: 3, rgbw: 5 })[el && el.led] || 0;
   // проходной/перекрёстный — звенья цепочки; диммер работает как обычный выключатель
   G.chainSw = (el) => !!el && (el.swKind === "pass" || el.swKind === "cross");
+  // Каталог, пакет 3. «Нептун»: проводной датчик протечки, кран, кнопка перекрытия и
+  // радиоприёмник трассируются в контроллер (щит с флагом neptun). Радио- и Zigbee-датчик
+  // кабеля не имеет — точка есть на плане и в смете, трассы нет.
+  const NEPTUN = { leak: 1, valve: 1, leakbtn: 1, radiorx: 1 };
+  G.cableless = (el) => !!el && el.type === "leak" && (el.kind === "radio" || el.kind === "zigbee");
+  G.isNeptun = (el) => !!el && !!NEPTUN[el.type] && !G.cableless(el);
+  // кран 12 В или 220 В
+  G.valve12 = (el) => !!el && el.type === "valve" && (el.kind === "cw12" || el.kind === "hw12");
+  // своя марка кабеля точки слаботочки (null — общий подбор по слою/линии)
+  const DEV_CABLE = { callpanel: "КСПВ 4×0.5", elock: "КСПВ 4×0.5", leakbtn: "КСПВ 2×0.5", radiorx: "КСПВ 4×0.5" };
+  G.devCable = (p, el) => {
+    if (!el) return null;
+    if (el.type === "valve") {
+      if (G.valve12(el)) return "КСПВ 4×0.5";
+      const C = EP.Plan && EP.Plan.Core;
+      return C && C.cableMark ? C.cableMark(p, "3×1.5") : "3×1.5";
+    }
+    return DEV_CABLE[el.type] || null;
+  };
 
   // ---- форматирование ----
   G.fmtLen =(cm) => (cm >= 100 ? (Math.round(cm) / 100).toFixed(2).replace(/\.?0+$/, "") + " м" : Math.round(cm) + " см");

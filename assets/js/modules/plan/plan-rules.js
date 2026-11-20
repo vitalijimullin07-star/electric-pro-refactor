@@ -163,9 +163,19 @@
     });
 
     // — СЛАБОТОЧКА: датчики протечки / камеры / датчики движения-освещённости —
-    const leaks = (p.elements || []).filter((e) => e.type === "leak" && e.status !== "existing");
+    const leaks = (p.elements || []).filter((e) => G().isNeptun(e) && e.status !== "existing");
     if (leaks.length && !(p.panels || []).some((pn) => pn.neptun)) {
-      issues.push({ msg: `Датчики протечки (${leaks.length}) есть, но ни один щит не помечен как контроллер «Нептун» — трассы пойдут в обычный слаботочный щит.` });
+      issues.push({ msg: `Датчики и краны «Нептуна» (${leaks.length}) есть, но ни один щит не помечен как контроллер «Нептун» — трассы пойдут в обычный слаботочный щит.` });
+    }
+    // радиодатчики протечки работают через радиоприёмник «Нептуна»
+    const radios = (p.elements || []).filter((e) => e.type === "leak" && e.kind === "radio" && e.status !== "existing");
+    if (radios.length && !(p.elements || []).some((e) => e.type === "radiorx")) {
+      issues.push({ msg: `Радиодатчики протечки (${radios.length}) есть, но нет радиоприёмника «Нептуна» — поставь точку «Радиоприёмник».` });
+    }
+    // вызывная панель без домофона — кабель пойдёт в слаботочный щит
+    const cps = (p.elements || []).filter((e) => e.type === "callpanel" && e.status !== "existing");
+    if (cps.length && !(p.elements || []).some((e) => e.type === "intercom")) {
+      issues.push({ msg: `Вызывная панель есть, а домофона нет — кабель от панели пойдёт в слаботочный щит. Поставь «Домофон», если панель подключается к нему.` });
     }
     const cams = (p.elements || []).filter((e) => e.type === "camera" && e.status !== "existing");
     if (cams.length) {
