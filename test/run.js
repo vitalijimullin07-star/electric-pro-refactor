@@ -9105,8 +9105,8 @@ test("фото: deleteProject чистит кэш фото своего прое
     test("после пинча и броска сцена проступает плавно: копия прежней картинки растворяется", () => {
       const cv = read("assets/js/modules/plan/plan-canvas.js"), css = read("assets/css/plan.css");
       const ap = cv.slice(cv.indexOf("function apply(light)"), cv.indexOf("function pxToCm"));
-      ok(/!light && \(liveT \|\| rescalePending\) && \(rescalePending \|\| zoomed \|\| svg\.classList\.contains\("is-moving"\)\)\) startXfade\(\)/.test(ap),
-        "копия — только при полной фиксации после жеста со сменой масштаба или спрятанными подписями");
+      ok(/!light && \(liveT \|\| rescalePending\) && \(rescaled \|\| svg\.classList\.contains\("is-moving"\)\)\) startXfade\(\)/.test(ap),
+        "копия — только при полной фиксации после жеста со сменой масштаба сцены или спрятанными подписями");
       ok(ap.indexOf("startXfade()") < ap.indexOf("committed = {"), "копия снимается ДО смены viewBox и сброса сдвига");
       const sx = cv.slice(cv.indexOf("function startXfade"), cv.indexOf("function apply(light)"));
       ok(/liveT\.tx[\s\S]*liveT\.s/.test(sx), "копия стоит с тем же сдвигом, что был на экране");
@@ -9115,6 +9115,8 @@ test("фото: deleteProject чистит кэш фото своего прое
       ok(/reduce/.test(sx) && /OVS <= 0/.test(sx), "без анимации при «меньше движения» и у холста печати");
       ok(/dropXfade\(\);\s+\/\/ и снимает/.test(cv), "новое касание снимает копию");
       ok(/\.ep-plan-xfade \{[^}]*transition: opacity[^}]*pointer-events: none|\.ep-plan-xfade \{[^}]*pointer-events: none[^}]*transition: opacity/.test(css) && /\.ep-plan-xfade\.is-out \{ opacity: 0; \}/.test(css), "CSS: прозрачность одного слоя, касания проходят насквозь");
+      ok(/svg\.style\.opacity = "0"/.test(sx) && /svg\.style\.transition = "opacity/.test(sx), "сцена под копией проступает навстречу (иначе полупрозрачные заливки складывались дважды)");
+      ok(/\.ep-plan-svgwrap > \.ep-plan-svg \{[^}]*will-change: opacity/.test(css), "у сцены свой слой прозрачности — без перестройки слоёв в конце перехода");
     });
     test("разнос пучка трасс на экране не зависит от зума", () => {
       const room = M.newRoom(G.rectPoints(0, 0, 600, 400), "Коридор");
@@ -10752,6 +10754,94 @@ test("фото: deleteProject чистит кэш фото своего прое
         [303, 305, 308].forEach((x) => env.svg.fire("pointermove", { pointerId: 2, clientX: x, clientY: 100 }));
         ok(Math.abs((x0 - cv.getView().x) - 8 * k) < 1e-6, "план под пальцем сдвинулся на все 8 px");
         env.svg.fire("pointerup", { pointerId: 2, clientX: 308, clientY: 100 });
+      } finally { env.restore(); }
+    });
+
+    // «дребезг» (20.11): классы и копия svg в тестовом DOM должны быть настоящими
+    const realClasses = (n) => {
+      const set = new Set();
+      n.classList = { add: (c) => set.add(c), remove: (c) => set.delete(c), toggle: (c, on) => (on === undefined ? (set.has(c) ? set.delete(c) : set.add(c)) : (on ? set.add(c) : set.delete(c))), contains: (c) => set.has(c) };
+      return n;
+    };
+    const xfadeEnv = (W, H) => {
+      const env = canvasEnv(W, H);
+      realClasses(env.svg);
+      env.svg.cloneNode = () => { const c = realClasses(evNode()); c.querySelectorAll = () => []; return c; };
+      env.box = () => env.wrap.children.find((c) => c.className === "ep-plan-xfade") || null;
+      return env;
+    };
+    test("холст: посреди пинча сцена и сетка рисуются под прежний масштаб — значки не «прыгают» на кадр", () => {
+      const env = xfadeEnv(800, 400);
+      try {
+        const cv = env.cv; cv.redraw();
+        const k0 = cv.cmPerPx();
+        const grid = () => env.cv.layers.grid.children.map((n) => n.getAttribute("stroke-width")).join(",");
+        const g0 = grid();
+        // пинч-отдаление: второй палец идёт к первому, пока не понадобится лёгкая фиксация
+        env.svg.fire("pointerdown", { pointerId: 1, clientX: 300, clientY: 200 });
+        env.svg.fire("pointerdown", { pointerId: 2, clientX: 600, clientY: 200 });
+        let x2 = 600, lightAt = -1;
+        for (let i = 0; i < 12; i++) {
+          env.clock += 16; x2 -= 20;
+          const vb = env.svg.getAttribute("viewBox");
+          env.svg.fire("pointermove", { pointerId: 2, clientX: x2, clientY: 200 });
+          if (lightAt < 0 && env.svg.getAttribute("viewBox") !== vb) lightAt = i;
+        }
+        ok(lightAt >= 0, "по ходу пинча была лёгкая фиксация вида");
+        ok(cv.cmPerPx() > k0 * 1.5, "вид отдалился: " + (cv.cmPerPx() / k0).toFixed(2));
+        near(cv.drawCmPerPx(), k0, 1e-9, "а сцену посреди жеста рисуем под прежний масштаб (было — под новый: значки на кадр становились крупнее)");
+        eq(grid(), g0, "сетка после лёгкой фиксации той же толщины и густоты");
+        env.clock += 100;
+        env.svg.fire("pointerup", { pointerId: 2, clientX: x2, clientY: 200 });
+        env.svg.fire("pointerup", { pointerId: 1, clientX: 300, clientY: 200 });
+        near(cv.drawCmPerPx(), cv.cmPerPx(), 1e-9, "после отпускания — новый масштаб");
+        ok(grid() !== g0, "и сетка под новый масштаб");
+      } finally { env.restore(); }
+    });
+    test("холст: в конце жеста растворяются ОБА слоя навстречу (без затемнения), а после чистого сдвига копии нет", () => {
+      const env = xfadeEnv(800, 400);
+      try {
+        const cv = env.cv; cv.redraw();
+        // долгий медленный сдвиг: лёгкая фиксация посреди, масштаб тот же
+        env.svg.fire("pointerdown", { pointerId: 1, clientX: 700, clientY: 200 });
+        let x = 700, vb0 = env.svg.getAttribute("viewBox"), moved = false;
+        for (let i = 0; i < 12; i++) { env.clock += 600; x -= 50; env.svg.fire("pointermove", { pointerId: 1, clientX: x, clientY: 200 }); if (env.svg.getAttribute("viewBox") !== vb0) moved = true; }
+        ok(moved, "сдвиг дошёл до лёгкой фиксации");
+        env.clock += 200;
+        env.svg.fire("pointerup", { pointerId: 1, clientX: x, clientY: 200 });
+        ok(!env.box(), "после чистого сдвига копия не кладётся (было: клалась и затемняла комнаты на 2 кадра)");
+        ok(env.svg.style.opacity !== "0", "сцена видна");
+        // пинч-приближение: масштаб другой — переход нужен
+        env.svg.fire("pointerdown", { pointerId: 1, clientX: 300, clientY: 200 });
+        env.svg.fire("pointerdown", { pointerId: 2, clientX: 400, clientY: 200 });
+        for (let i = 0; i < 4; i++) { env.clock += 16; env.svg.fire("pointermove", { pointerId: 2, clientX: 400 + 40 * (i + 1), clientY: 200 }); }
+        env.clock += 100;
+        env.svg.fire("pointerup", { pointerId: 2, clientX: 560, clientY: 200 });
+        env.svg.fire("pointerup", { pointerId: 1, clientX: 300, clientY: 200 });
+        ok(!!env.box(), "после пинча — копия прежней картинки");
+        eq(env.svg.style.opacity, "0", "пока сцена пересобирается, на экране только копия");
+        env.frame(16); env.frame(16);
+        eq(env.svg.style.opacity, "1", "сцена проступает навстречу растворяющейся копии");
+        ok(/opacity/.test(env.svg.style.transition), "плавно");
+        env.svg.fire("pointerdown", { pointerId: 3, clientX: 200, clientY: 200 });
+        ok(!env.box() && env.svg.style.opacity === "" && env.svg.style.transition === "", "новое касание: копия снята, сцена без остаточной прозрачности");
+        env.svg.fire("pointerup", { pointerId: 3, clientX: 200, clientY: 200 });
+      } finally { env.restore(); }
+    });
+    test("холст: первый шаг доката после броска не короче кадра — скорость не проседает в момент отрыва", () => {
+      const env = canvasEnv(800, 400);
+      try {
+        const cv = env.cv; cv.redraw();
+        const k = cv.cmPerPx();
+        env.svg.fire("pointerdown", { pointerId: 1, clientX: 600, clientY: 200 });
+        let x = 600;
+        for (let i = 0; i < 6; i++) { env.clock += 10; x -= 20; env.svg.fire("pointermove", { pointerId: 1, clientX: x, clientY: 200 }); } // 2 px/мс
+        env.clock += 2;
+        env.svg.fire("pointerup", { pointerId: 1, clientX: x, clientY: 200 });
+        const x0 = cv.getView().x;
+        env.frame(1); // кадр наступил сразу после отрыва
+        const px = (cv.getView().x - x0) / k;
+        ok(px > 25, "первый шаг доката ≈ кадр полёта (2 px/мс × 16,7 мс): " + px.toFixed(1) + " px (было 2 px — провал скорости)");
       } finally { env.restore(); }
     });
   }

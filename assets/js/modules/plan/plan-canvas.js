@@ -362,10 +362,15 @@
       if (now - b.t > 60 || b.t - a.t < 8) return false; // палец остановился перед отрывом — без броска
       let vx = (b.x - a.x) / (b.t - a.t), vy = (b.y - a.y) / (b.t - a.t);
       if (Math.hypot(vx, vy) < 0.25) return false;
-      let last = now;
+      /* Первый шаг доката считается от ПОСЛЕДНЕГО ДВИЖЕНИЯ пальца, а не от отрыва: отрыв
+         приходит посреди кадра, и шаг «от отрыва» был в 3–4 раза короче обычного — скорость на
+         кадр падала почти вдвое (замер по кадрам экрана: 22 → 12 → 20 px) и снова росла, это и
+         был рывок в момент броска. Не меньше одного кадра — иначе тот же провал скорости. */
+      let last = -1;
       motionT = now; lastLightT = 0;
       const step = (t) => {
-        const dt = Math.min(40, Math.max(1, t - last)); last = t;
+        const dt = last < 0 ? Math.min(50, Math.max(16.7, t - b.t)) : Math.min(40, Math.max(1, t - last));
+        last = t;
         const decay = Math.exp(-dt / 230); // затухание: за ~0.7 с почти до нуля
         vx *= decay; vy *= decay;
         const k = pxToCm();

@@ -195,7 +195,7 @@ body[data-visual-mode="day"] .ep-plan-moremenu { background: rgba(255, 255, 255,
    flex'ом, как раньше сам svg), а svg внутри — абсолютный на всю обёртку: размер всегда
    определённый, без процентной высоты против flex-родителя (см. комментарий выше). */
 .ep-plan-svgwrap { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; will-change: transform; transform-origin: 0 0; }
-.ep-plan-svgwrap > .ep-plan-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ep-plan-svgwrap > .ep-plan-svg { position: absolute; inset: 0; width: 100%; height: 100%; will-change: opacity; }
 /* Главный холст выбирает объекты по координатам указателя. Сам SVG принимает
    касания, а браузер может пропустить проверку попадания по его фигурам. */
 .ep-plan-svgwrap > .ep-plan-svg > g { pointer-events: none; }
@@ -210,7 +210,7 @@ body[data-visual-mode="day"] .ep-plan-moremenu { background: rgba(255, 255, 255,
 .ep-plan-svg.is-moving .ep-plan-tailtxt { display: none; }
 /* мягкий переход после жеста (plan-canvas.js startXfade): копия прежней картинки растворяется,
    пока под ней пересобирается сцена под новый масштаб */
-.ep-plan-xfade { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-origin: 0 0; pointer-events: none; opacity: 1; transition: opacity .16s ease-out; will-change: opacity; }
+.ep-plan-xfade { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-origin: 0 0; pointer-events: none; opacity: 1; transition: opacity .16s ease-out; }
 .ep-plan-xfade.is-out { opacity: 0; }
 .ep-plan-xfade > .ep-plan-svg { position: absolute; pointer-events: none; }
 .ep-plan-svgwrap > .ep-plan-dragproxy { pointer-events: none; will-change: transform; overflow: visible; cursor: grabbing; }
