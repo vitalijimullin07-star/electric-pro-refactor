@@ -744,6 +744,10 @@
       el.photos = el.photos.filter((x) => typeof x === "string");
       if (typeof el.status !== "string") el.status = "planned";
       const k = fin(el.keys); el.keys = k >= 1 && k <= 3 ? Math.round(k) : 1;
+      // разновидность и мощность прибора (каталог Electric Pro v3): мусор — к умолчанию
+      if (el.kind != null && typeof el.kind !== "string") delete el.kind;
+      if (el.watt != null) { const w = fin(el.watt); if (w == null || w <= 0) delete el.watt; else el.watt = w; }
+      if (el.phases != null && el.phases !== 1 && el.phases !== 3) delete el.phases;
       // цели клавиш: строка (одна цель) ИЛИ массив строк (несколько) на КАЖДУЮ клавишу
       let t = el.targetIds;
       if (typeof t === "string") t = [t];

@@ -271,6 +271,27 @@
       });
     }
 
+    // — ПРИБОРЫ-ТОЧКИ каталога (бойлер, котёл, конвектор, зарядка…) — та же сверка, что у
+    // техники выше, но мощность берётся у самой точки (G.devNeed)
+    if (G().devNeed) {
+      const TY = (EP.Plan.Elements && EP.Plan.Elements.TYPES) || {};
+      (p.elements || []).forEach((el) => {
+        if (el.status === "existing") return;
+        const nd = G().devNeed(el);
+        if (!nd) return;
+        const nm = (TY[el.type] || {}).name || el.type;
+        const c = (p.circuits || []).find((x) => x.id === el.circuitId);
+        if (!c) return; // «точка без линии» — общее правило выше
+        if ((c.breaker || 16) < nd.breaker) issues.push({ id: el.id, circuitId: c.id, msg: `${nm}: автомат ${c.breaker || 16}A мал под ${nd.amps} А — нужен ${nd.breaker}A.` });
+        if (nd.poles === 3 && c.poles !== 3) issues.push({ id: el.id, circuitId: c.id, msg: `${nm}: выбрано 3 фазы, а линия ${c.name} однофазная.` });
+        if (nd.rcd && !c.rcd) issues.push({ id: el.id, circuitId: c.id, msg: `${nm}: линия ${c.name} без УЗО (мокрая зона / своя линия).` });
+        if (nd.own) {
+          const pts = (p.elements || []).filter((e) => e.circuitId === c.id && e.id !== el.id && e.status !== "existing" && e.type !== "junction").length;
+          if (pts > 0) issues.push({ id: el.id, circuitId: c.id, msg: `${nm}: должен быть на ОТДЕЛЬНОЙ линии (сейчас на ${c.name} ещё ${pts} точ.).` });
+        }
+      });
+    }
+
     // — ЭТАЖИ И СТОЯКИ (Этажи, Этап 2) —
     // Проверяем ровно две вещи, которые молча оставляют этаж без трасс: стояк без пары
     // (односторонняя ссылка ничего не питает — см. riserPairs в plan-routes.js) и этаж,

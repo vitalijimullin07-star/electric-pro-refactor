@@ -10927,6 +10927,85 @@ test("фото: deleteProject чистит кэш фото своего прое
     });
   }
 
+  // ===== 81в. Каталог, пакет 1: приборы по мощности, разновидности точек =====
+  {
+    const EL = EP.Plan.Elements;
+    test("каталог П1: ток и автомат прибора по мощности, своя линия или шлейф", () => {
+      const nd = (type, extra) => G.devNeed(Object.assign({ type }, extra || {}));
+      const wh = nd("waterheat");
+      eq(wh.breaker, 16, "бойлер 2,5 кВт — 16A"); ok(wh.own && wh.rcd, "своя линия с дифом");
+      eq(nd("flowheat").breaker, 32, "проточный 6 кВт в 1 фазу — 32A");
+      const f3 = nd("flowheat", { phases: 3 });
+      eq(f3.poles, 3, "3 фазы — 3P"); eq(f3.breaker, 16, "в 3 фазы ток втрое меньше");
+      eq(nd("eboiler").poles, 3, "котёл по умолчанию 3 фазы");
+      ok(nd("heater").own, "силовой конвектор — своя линия");
+      const hf = nd("heater", { kind: "fan" });
+      ok(!hf.own, "вентиляторный конвектор — шлейфом"); eq(hf.breaker, 10, "и автомат честно по току");
+      ok(!nd("towel").own && nd("towel").rcd, "полотенцесушитель — шлейфом, но с дифом (мокрая зона)");
+      eq(nd("heater", { watt: 3000 }).breaker, 16, "конвектор до 3 кВт — 16A");
+      eq(G.devNeed({ type: "socket" }), null, "у розетки мощности нет");
+    });
+    test("каталог П1: прибор со своей линией получает её при постановке, автомат и диф по мощности", () => {
+      const { P } = install();
+      EL.selectType("waterheat"); EL.placeAt({ x: 200, y: 3 });
+      const wh = P.elements.find((e) => e.type === "waterheat");
+      ok(wh && wh.wallId, "бойлер встал на стену");
+      const c = P.circuits.find((x) => x.id === wh.circuitId);
+      ok(c, "своя линия создана сразу"); eq(c.breaker, 16); eq(c.rcd, true, "с дифом");
+      EL.selectType("evcharge"); EL.placeAt({ x: 3, y: 150 });
+      const ev = P.elements.find((e) => e.type === "evcharge");
+      eq(P.circuits.find((x) => x.id === ev.circuitId).breaker, 32, "зарядка 7 кВт — 32A");
+      EL.selectType("towel"); EL.placeAt({ x: 397, y: 150 });
+      const tw = P.elements.find((e) => e.type === "towel");
+      eq(tw.circuitId, null, "полотенцесушитель линию сам не берёт — сажают на линию розеток");
+      eq(EL.TYPES.fan.layer, "light", "вентилятор — в цепи света");
+      ok(EL.SW_TARGET_TYPES.fan, "вентилятор можно назначить на клавишу");
+    });
+    test("каталог П1: у аварийного светильника и вентилятора с таймером на хопе 4 жилы", () => {
+      const pn = M.newPanel(390, 150, "ЩК");
+      const q = M.newCircuit("QF1", "#f00", 10);
+      const { P, w } = install({ panels: [pn], circuits: [q] });
+      const sw = M.newElement("switch", w(3), 150, 90, "light"); sw.circuitId = q.id;
+      const lt = M.newElement("light", null, 0, 270, "light"); lt.params = { x: 150, y: 150 }; lt.kind = "emergency"; lt.circuitId = q.id;
+      const fn = M.newElement("fan", w(0), 300, 220, "light"); fn.kind = "timer"; fn.circuitId = q.id;
+      sw.keys = 2; sw.targetIds = [lt.id, fn.id];
+      P.elements.push(sw, lt, fn);
+      ok(G.fourCore(lt) && G.fourCore(fn), "признак 4 жил");
+      EP.Plan.Routes.build();
+      eq(P.routes.find((r) => r.fromId === fn.id).toId, sw.id, "вентилятор питается от своей клавиши");
+      const names = EP.Plan.Calc.calcByRoutes(P).items.map((it) => it.name);
+      ok(names.some((n) => /4×1\.5/.test(n)), "хоп к ним — 4×1.5: " + names.filter((n) => /Кабель/.test(n)).join(" | "));
+      ok(names.some((n) => /3×1\.5/.test(n)), "выключатель от щита — по-прежнему 3×1.5");
+    });
+    test("каталог П1: чистовые работы, проверки и санитайзер понимают новые точки", () => {
+      const FW = EP.FinishWorks;
+      const { P, w } = install();
+      const mk = (type, extra) => { const e = M.newElement(type, w(0), 50 + P.elements.length * 20, 30, "power"); Object.assign(e, extra || {}); P.elements.push(e); return e; };
+      mk("socket", { kind: "ip44" }); mk("socket", { kind: "smart" }); mk("socket");
+      mk("switch", { swKind: "dimmer" }); mk("waterheat"); mk("fan");
+      const lt = M.newElement("light", null, 0, 270, "light"); lt.params = { x: 100, y: 100 }; lt.kind = "spot"; P.elements.push(lt);
+      const r = FW.countPlan(P, () => "R").counts;
+      eq(r.socketip, 1); eq(r.socketsmart, 1); eq(r.socket, 1, "обычная розетка отдельно от особых");
+      eq(r.dimmer, 1, "диммер — своей работой"); eq(r.spot, 1, "точечный светильник"); eq(r.waterheat, 1); eq(r.fan, 1);
+      const names = FW.CATALOG.map((c) => c.name);
+      names.forEach((a, i) => names.forEach((b, j) => ok(i === j || b.toLowerCase().indexOf(a.toLowerCase()) < 0, `имя не подстрока другого: «${a}» в «${b}»`)));
+      // проверки: прибор со своей линией, посаженный к розеткам, и 3 фазы на однофазной линии
+      const q = M.newCircuit("QF1", "#f00", 16); P.circuits.push(q);
+      const fl = mk("flowheat", { phases: 3, circuitId: q.id }); mk("socket", { circuitId: q.id });
+      const msgs = EP.Plan.Rules.run(P).issues.map((x) => x.msg).join(" | ");
+      ok(/ОТДЕЛЬНОЙ линии/.test(msgs), "своя линия занята розеткой: " + msgs);
+      ok(/3 фазы/.test(msgs), "3 фазы на однофазной линии");
+      ok(fl, "");
+      const raw = M.newProject("S"); raw.rooms = [M.newRoom(G.rectPoints(0, 0, 300, 300), "R")];
+      const bad = M.newElement("heater", raw.rooms[0].id + ":0", 50, 20, "power"); bad.kind = 7; bad.watt = "abc"; bad.phases = 2;
+      raw.elements = [bad];
+      EP.Plan.Core.importJSON(JSON.stringify({ project: raw }));
+      const e2 = EP.Plan.Core.project.elements[0];
+      ok(e2.kind == null && e2.watt == null && e2.phases == null, "мусор в виде/мощности/фазах — к умолчанию");
+      eq(G.devNeed(e2).watt, 2000, "и прибор считается по каталожной мощности");
+    });
+  }
+
   // ===== 82. Аудит Астры, пакет 3: формы ↔ модель =====
   // ✓ пишет только то, что человек менял; перерисовка карточки того же объекта (тяга, ↶/↷, материал)
   // не теряет набранное; после ↶/↷ карточка показывает восстановленную модель или закрывается;

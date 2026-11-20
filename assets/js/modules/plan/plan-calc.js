@@ -610,6 +610,9 @@
       } else {
         const i24 = is24Circuit(p, r.circuitId);
         key = cc ? lineCable(p, cc, r.layer) : defaultCableMark(p, r.layer, i24, i24 && rgbOf(p, r.circuitId));
+        // аварийный светильник / вентилятор с таймером: на хопе к ним 4 жилы — к коммутируемой
+        // фазе добавляется постоянная (аккумулятор светильника, выбег вентилятора)
+        if (!r.toPanel && (G().fourCore(elById(r.fromId)) || G().fourCore(toEl))) key = key.replace(/(^|\s)3×/, "$14×");
       }
       // Камера/домофон с ОТДЕЛЬНЫМ питанием (el.feed === "sep") — это ДВА кабеля на одну
       // трассу: питание КГ ВВГнг 3×1.5 и данные (витая пара или оптика). При PoE

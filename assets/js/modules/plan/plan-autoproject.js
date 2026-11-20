@@ -34,7 +34,7 @@
   const WET_RE = /ванн|санузел|с\/у|туалет|уборн|душ|сауна|бассейн|постирочн/i;
   const KITCHEN_RE = /кухн|кухон/i;
   const SKIP = { junction: 1, riser: 1, panel: 1, door: 1, window: 1 };
-  const LIGHTS = { light: 1, bra: 1, track: 1 };
+  const LIGHTS = { light: 1, bra: 1, track: 1, fan: 1 };
   const SWITCHES = { switch: 1, pir: 1, lux: 1 };
 
   const S = { mode: "free", last: null }; // mode: "free" — только точки без линии, "all" — пересобрать всё
@@ -114,6 +114,8 @@
         return;
       }
       if (el.type === "ac") { mk({ prefix: "QF", kind: "ded", title: `Кондиционер${rn ? " · " + rn : ""}`, breaker: 16, elIds: [el.id], rooms: [rn] }); return; }
+      const dn = G().devNeed(el); // прибор каталога со своей линией — по его мощности
+      if (dn && dn.own) { mk({ prefix: "QF", kind: "ded", title: `${tname(el)}${rn ? " · " + rn : ""}`, breaker: dn.breaker, poles: dn.poles, prot: dn.rcd ? "own" : "none", elIds: [el.id], rooms: [rn] }); return; }
       if (el.type === "warmfloor") { mk({ prefix: "QF", kind: "ded", title: `Тёплый пол${rn ? " · " + rn : ""}`, breaker: 16, prot: "own", elIds: [el.id], rooms: [rn] }); return; }
       if (el.type === "output3") { mk({ prefix: "QF", kind: "ded", title: `Вывод 3ф${rn ? " · " + rn : ""}`, breaker: 25, poles: 3, elIds: [el.id], rooms: [rn] }); return; }
       if (el.type === "output") {
@@ -337,7 +339,7 @@
     if (el.type === "ac") return "ac";
     if (LV_TYPES[el.type] || (el.type === "output" && el.layer === "lv")) return "lv";
     const F = EP.Plan.Furniture, nd = appl && F && F.needFor ? F.needFor(appl) : null;
-    if ((nd && nd.own) || el.type === "output" || el.type === "output3") return "out";
+    if ((nd && nd.own) || el.type === "output" || el.type === "output3" || G().ownDev(el)) return "out";
     return "sock"; // розетки, блоки и прочее силовое
   }
 
@@ -381,6 +383,8 @@
           return;
         }
         if (el.type === "output3") { mk({ prefix: "QF", kind: "ded", title: `Вывод 3ф${rn ? " · " + rn : ""}`, breaker: 25, poles: 3, elIds: [el.id], rooms: [rn] }); return; }
+        const dn = G().devNeed(el);
+        if (dn && dn.own) { mk({ prefix: "QF", kind: "ded", title: `${tname(el)}${rn ? " · " + rn : ""}`, breaker: dn.breaker, poles: dn.poles, prot: dn.rcd ? "own" : "none", elIds: [el.id], rooms: [rn] }); return; }
         mk({ prefix: "QF", kind: "ded", title: `${nd ? (appl.name || "Прибор") : "Вывод"}${rn ? " · " + rn : ""}`, breaker: nd ? nd.breaker : 16,
           prot: (nd && nd.rcd) || isWet(r) ? "own" : "none", elIds: [el.id], rooms: [rn] });
         return;
